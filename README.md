@@ -31,17 +31,18 @@ Windows 11에서 실행 파일만 받아 바로 쓰려면 **Releases** 페이지
 https://github.com/jihoon22-lee/devbox/releases
 ```
 
-- **현재 공개 최신 안정판:** [`v0.5.1`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.1)
-- **v0.6.0 준비 상태:** milestone W01~W10 source는 main에 반영됐고 W11 통합 회귀·package
-  checkpoint·Windows/WSL acceptance를 진행한다. v0.6.0 tag/release는 아직 만들지 않았으며
-  [통합 릴리스 계획](./docs/superpowers/plans/2026-08-31-v0.6.0-release.md)과
-  [release issue #493](https://github.com/jihoon22-lee/devbox/issues/493)이 현재 gate의 기준이다.
-- **v0.5.1 stable source/bundle:** #470 Windows acceptance inventory, #473 Run reader,
+- **현재 공개 최신 안정판:** [`v0.6.0`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)
+- **v0.6.0 stable source/bundle:** milestone #2의 W01~W11을 한 번에 포함한다. exact source
+  `d2fa25a0a1f087459838449daded00c0b09764b4`의 private candidate
+  [33384213398](https://github.com/jihoon22-lee/devbox/actions/runs/33384213398)과 annotated tag의
+  release workflow [33390009009](https://github.com/jihoon22-lee/devbox/actions/runs/33390009009)가
+  모두 통과했다. 공개 자산은 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이며
+  [post-release 체크리스트 #518](https://github.com/jihoon22-lee/devbox/issues/518)에는 설치된
+  WSL Desktop의 zellij/terminal reconnect만 physical observation으로 남아 있다.
+- **v0.5.1 historical stable:** #470 Windows acceptance inventory, #473 Run reader,
   #477 release gate, #478 Manager 보강, #479/#474 Run Manager named sidecar 계약을 포함한다.
   정확한 tag commit·workflow 결과·release asset 수와 digest·Latest metadata는
-  [GitHub v0.5.1 release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.1)가, Windows
-  수동 acceptance는 #176이 권위 있는 source다. release contract는 15개 앱·32개 public asset·
-  31개 manifest-declared asset·mismatch 0이다.
+  [GitHub v0.5.1 release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.5.1)에서 확인한다.
 - **v0.5.0 stable evidence (historical):** source tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`, release
   workflow `33216176818` 성공, 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0,
   `draft=false`, `prerelease=false`, GitHub Latest였다. 이 수치는 v0.5.0 공개 package의 historical
@@ -50,8 +51,8 @@ https://github.com/jihoon22-lee/devbox/releases
   assets 독립 size·SHA-256 대조와 exact stable API Playground portable의 packaged
   H1-A~D·cleanup을 통과했다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)에서
   RC1 historical failure, RC2 수정 검증과 stable evidence를 함께 확인할 수 있다.
-- **#176 수동 경계:** 63개 항목은 확인됐고 7개 physical Windows-only 항목은 아직 미확인이다.
-  이는 공개 package의 asset count/hash 증거와 별도의 수동 acceptance 상태다.
+- **체크리스트 이력:** #176은 v0.5.1 historical checklist로 닫혔다. 현재 자동·package evidence와
+  사용자 환경 관찰은 #518에서 구분해 관리한다.
 - **RC 역사:** `v0.5.0-rc1`은 PR #464/CI `33173371194`, release workflow `33175165583`와
   32-asset 독립 검증을 남겼고 source audit에서 3/15 single-instance 누락으로 W4를 시작하지
   않았다. fix PR #465/CI `33178381902`는
@@ -72,7 +73,7 @@ https://github.com/jihoon22-lee/devbox/releases
 | [사용 가이드](./docs/windows-guide.md) | Windows 11에서 설치·사용·빌드·문제 해결 |
 | [개발자 가이드](./docs/development.md) | 구조, 시작하기, 개발 워크플로 |
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
-| [로드맵](./docs/roadmap.md) | 진행 상황 / v0.5.0 history / v0.5.1 stable bundle |
+| [로드맵](./docs/roadmap.md) | 진행 상황 / 과거 release history / v0.6.0 stable bundle |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
 | [v0.5.0 릴리스 계획](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md) | 목표 version, RC asset, Windows W1~W4, stable 승격·정리 gate |
 | [v0.6.0 통합 릴리스 계획](./docs/superpowers/plans/2026-08-31-v0.6.0-release.md) | W01~W11, 앱별 version, 비공개 package checkpoint, Windows/WSL acceptance와 stable publication |

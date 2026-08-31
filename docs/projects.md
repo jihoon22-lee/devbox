@@ -1,12 +1,12 @@
 # Projects
 
-15개 구현 앱의 요약. 현재 v0.5.1 stable은 #470/#473/#477/#478/#479를 포함한 15개 앱
+15개 구현 앱의 요약. 현재 v0.6.0 stable은 milestone #2의 W01~W11을 포함한 15개 앱
 bundle이다. 상세 소개는 각
 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
 ## W08 PR2 (#489) 문서 계약
 
-W08 PR2는 v0.5.1 stable release와 별개의 integration 작업이다. Log Lens 0.2.0은
+W08 PR2는 v0.6.0 stable에 포함된 integration 작업이다. Log Lens 0.2.0은
 source 설정과 filter만 담는 strict app-local saved view(schema v1, 최대 20개)를 제공한다.
 저장소는 revision CAS, atomic/no-link write를 사용하고 corrupt/oversized/unknown-field
 내용을 보존한 채 fail-closed한다. WSL file source와 ephemeral Webhook capture는 저장하지
@@ -17,8 +17,8 @@ method, redacted origin-form target, timestamp, header names, 최대 4 KiB redac
 preview와 flags만 전달한다. Header values, raw body, filesystem path, command, environment,
 credential, archive는 handoff와 argv에 포함하지 않으며 launch 실패 시 정확한 pending entry만
 정리한다. Canonical wire `displayName`은 영어(`Webhook capture`)로 유지하고 UI는 한국어로
-제공한다. Windows packaged acceptance는 아직 pending이며 이 문서는 release 완료를 주장하지
-않는다.
+제공한다. exact-main candidate의 15-app packaged runtime과 v0.6.0 release 검증은 완료됐고,
+설치 사용자 환경에서 남은 physical observation은 #518에서 별도로 관리한다.
 
 | # | 앱 | 디렉터리 | 핵심 목적 | Phase | 연계 |
 |---|---|---|---|---|---|

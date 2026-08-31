@@ -6,32 +6,25 @@
 
 ## Release status
 
-- 공개 Latest stable은 v0.5.1이다. 현재 stable source/bundle은 #470/#473/#477/#478/#479를
-  포함하며, #474는 닫혔고 named `run-manager/v1/jobs-services.json`
-  sidecar 계약이 포함된다. 15-app/32-public-asset/31-declared/mismatch-0은 release contract다.
-  정확한 tag·workflow 결과·asset digest·Latest publication metadata는 GitHub Release가, Windows
-  수동 acceptance는 #176이 권위 있는 source다.
-- v0.5.0 stable은 source tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`와 workflow
-  `33216176818`에서 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0으로
-  검증된 historical stable evidence다.
-- #176은 63 checked와 7 physical Windows-only pending이며 release asset evidence와 별도다.
-  RC1~RC3 tag/release는 사용자 지시로 삭제됐고 workflow/evidence만 역사로 보존한다. 향후 RC는
-  사용자가 명시적으로 요청한 경우에만 만든다.
-- W07은 catalog revision 15에서 선택 텍스트 handoff와 daily activity sidecar 계약을 추가했다.
-  이 문서와 source 변경은 Windows 실기 acceptance 완료를 주장하지 않으며, 해당 검증은 #493
-  release gate에 남긴다.
-- W08 PR1은 catalog revision 16에서 Run Manager·Workbench의 privacy-safe port binding sidecar,
-  Port Manager correlation/action/timeline, Webhook deterministic rule/conflict preview, bounded
-  OpenAPI draft와 disabled Run service export를 묶는다. source 검증과 Windows packaged 실기는
-  분리하며 실제 앱 간 실행 증거는 #493 release gate에 남긴다.
-- W09는 Everything+ WSL root와 Code Pad·Knowledge Base WSL file workflow, lazy Mermaid 및
-  초기 bundle 측정 기반을 완료했다. W10은 이 기반을 15개 앱 전부로 확장해 공통 semantic
-  token·한국어 UI·keyboard/focus/IME·axe smoke·manifest/budget gate를 한 품질 계약으로 묶는다.
-  jsdom이 측정할 수 없는 색 대비와 packaged Windows 고대비·screen reader 확인은 #493에 남긴다.
-- W01~W10 source package는 main에 병합됐다. W11은 #492/#493에서 전체 회귀, 앱별 version,
-  dependency/action runtime, exact unpublished Windows package와 stable publication을 묶어
-  진행한다. 공개 Latest는 모든 gate가 끝날 때까지 v0.5.1이며 v0.6.0 tag/release는 아직 없다.
-  상세 순서는 [v0.6.0 통합 릴리스 계획](./superpowers/plans/2026-08-31-v0.6.0-release.md)이 기준이다.
+- 공개 Latest stable은 [v0.6.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)이다.
+  milestone #2의 W01~W11이 모두 main과 stable bundle에 포함됐다.
+- annotated tag object `a974adf975862da3d5ada16c6c6efe704387ddd7`는 peeled source
+  `d2fa25a0a1f087459838449daded00c0b09764b4`를 가리킨다. exact-main candidate workflow
+  `33384213398`과 release workflow `33390009009`가 15 apps·32 public assets·31
+  manifest-declared assets·missing/undeclared/failure 0을 각각 검증했다.
+- #492/#493은 완료된 W11 source/release ledger다. 현재 post-release checklist는 #518이며,
+  사용자 승인으로 남은 유일한 physical observation은 설치된 WSL Desktop의 zellij/terminal
+  reconnect다. 이 관찰은 공개 package의 asset/digest evidence와 구분한다.
+- v0.5.0과 v0.5.1의 tag·workflow·acceptance는 historical evidence로 보존한다. #176은 닫힌
+  v0.5.1 historical checklist다. RC1~RC3 tag/release는 삭제됐고 workflow/evidence만 보존하며,
+  향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다.
+- W07의 selection/activity, W08의 port/webhook/log observability, W09의 WSL file workflow,
+  W10의 15-app semantic token·한국어 UI·keyboard/focus/IME·axe smoke·manifest/budget 계약도
+  모두 v0.6.0에 포함됐다. 상세 실행 이력은
+  [v0.6.0 통합 릴리스 계획](./superpowers/plans/2026-08-31-v0.6.0-release.md)과 #493에 보존한다.
+- 확정된 v0.7+ milestone이나 구현 roadmap은 없다. WSL 내부 LSP, Protocol/MCP Lab의 WSL
+  stdio, legacy MCP SSE/GET, OCR·semantic search는 실사용 근거와 우선순위가 정해지기 전까지
+  선택적 후보로만 유지한다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
@@ -68,8 +61,8 @@
   worktree를 preview·근거·차단 사유와 함께 확인하고, 명시적으로 선택·승인한 대상만 bounded
   `branch --delete`/`worktree remove`로 정리한다. mutation 직전 common/worktree filesystem
   identity, branch object/upstream/current/checked-out 상태, worktree HEAD/registration/status를
-  재검증하며 force delete/reset/clean/prune은 제공하지 않는다. 코드·CI acceptance는 완료됐고
-  실제 Windows packaged UX 관찰만 #176의 physical boundary로 남긴다.
+  재검증하며 force delete/reset/clean/prune은 제공하지 않는다. 코드·CI acceptance와 v0.6.0
+  packaged runtime gate가 완료됐으며, 새 실사용 회귀는 별도 bug evidence로 관리한다.
 - [x] **log-lens 0.1.0 bootstrap** — local/WSL/journal/container read-only adapter, plain/JSONL/logfmt parser,
   deterministic merge/follow/filter/bookmark/export와 bounded in-memory ring. Run/WSL producer handoff는
   별도 integration PR에서 연결했고, Run reader #473은 v0.5.0 tag 이후 v0.5.1 stable에 반영됐다.
@@ -109,12 +102,13 @@ strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit
   `jobs-services.json` named sidecar로 별도 발행한다. Workbench/Life Log의 v1 status 소비자와
   Launcher의 sidecar→flat fallback을 보존한다. job/service action은 opaque id만 전달하며
   command/cwd/environment/path/credential/log 원문은 snapshot에 복사하지 않는다.
-  이 source correction은 v0.5.0 tag 이후 반영됐고 현재 v0.5.1 stable source/bundle에 포함된다.
-  공개 v0.5.0 binary에는 포함되지 않으며 v0.5.1 publication metadata와 asset digest는 GitHub
-  Release에서 확인한다.
-- [ ] **#349–#350 Windows packaged 확인** — filter 조합과 저장/재시작/삭제, Launcher에서 열기,
-  snapshot 쓰기 실패 복구를 W3 smoke로 재확인한다. Linux Rust/frontend 및 CI gate 통과와 별개인
-  v0.5.0 historical release checkpoint이며 #176의 7 physical Windows-only pending과 분리한다.
+  이 source correction은 v0.5.0 tag 이후 반영돼 v0.5.1에서 처음 배포됐고 현재 v0.6.0에도
+  포함된다. 공개 v0.5.0 binary에는 포함되지 않으며 release별 publication metadata와 asset
+  digest는 각 GitHub Release에서 확인한다.
+- [x] **#349–#350 historical Windows checkpoint 종료** — filter 조합과 저장/재시작/삭제,
+  Launcher에서 열기, snapshot 쓰기 실패 복구의 source/CI 계약과 이후 v0.6.0 15-app packaged
+  runtime gate를 보존한다. 과거 W3의 정확한 수동 시나리오를 실행했다고 소급 주장하지 않으며,
+  v0.5.0 전용 미체크 항목을 현재 roadmap으로 이관하지 않는다. 실사용 회귀는 새 bug로 기록한다.
 
 | 문서 | 범위 |
 |---|---|
@@ -150,8 +144,9 @@ strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit
 
 v0.4.1은 안정판 핫픽스로 배포됐다. 자동화된 migration 사례와 10개 앱의
 `tauri::Builder::default()` 이전 호출 위치는 검증했지만, 사용 가능한 Windows 장비에서 legacy path가
-이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며, 남은
-Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 post-release로 계속 관리한다.
+이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며,
+당시 남은 Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에
+historical record로 남아 있다. 현재 v0.6.0 post-release 관찰은 #518에서 관리한다.
 
 ### v0.4.2 — API Playground 보안 핫픽스 (안정판 배포 완료)
 
@@ -274,8 +269,8 @@ historical workflow/evidence로 기록하지만 tag/release는 삭제됐고 stab
 당시 RC3는 위 correction의 exact descendant에서 새 preparation PR·annotated tag·32-asset
 release를 만들고 E:의 fresh directory에서 size·SHA-256을 독립 검증하는 historical 단계였다.
 RC1~RC3 tag/release는 사용자 지시로 삭제됐고, 이 문단의 workflow/evidence와 W1→W2→W3→W4
-계획만 기록으로 남긴다. 현재 stable은 v0.5.1이며, 향후 RC는
-사용자가 명시적으로 요청한 경우에만 만든다. 실행 순서와 증거 형식은
+계획만 기록으로 남긴다. 이 문단의 v0.5.1은 당시 승격 판단을 설명하는 역사 기록이고 현재
+stable은 v0.6.0이다. 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다. 실행 순서와 증거 형식은
 [v0.5.0 릴리스 계획](./superpowers/plans/2026-08-28-v0.5.0-release.md)을 기준으로 한다.
 
 #### P1 — 선행 필수
@@ -504,8 +499,9 @@ Launcher는 named sidecar의 bounded entry를 다시 읽어 exact SHA-256 entry 
 source는 명시적 확인 없이는 실행하지 않으며, Workbench/WSL Desktop profile ID와 Repo Manager
 path는 각 수신 앱에서도 현재 상태를 다시 확인한다. favorites/recency에는 result ID만 저장해
 path·payload·label·source detail·secret을 보존하지 않는다. missing/corrupt/permission/linked
-source는 각각의 진단으로 격리되어 다른 source 검색을 막지 않는다. 이 구현 기록은 Windows
-실기 acceptance나 v0.6.0 release 완료를 의미하지 않으며 해당 검증은 release gate로 남는다.
+source는 각각의 진단으로 격리되어 다른 source 검색을 막지 않는다. 이 구현 기록만으로는 당시
+Windows 실기 acceptance나 v0.6.0 release 완료를 주장하지 않았고, 후속 #493 candidate/release
+gate가 이를 별도로 완료했다.
 
 **2026-08-31 #491 W10 PR B 구현 상태.** Devbox Manager의 `로컬 품질` 탭은 명시적 새로고침
 시에만 catalog·validated registry·`discover_report`를 읽고, 경로·generatedAt·payload content·
@@ -1219,13 +1215,13 @@ v0.5.0-rc2 historical checkpoint — tag/release 삭제, Workbench source-audit 
 v0.5.0-rc3 historical preparation record — tag/release 삭제, 향후 RC는 명시 요청 전 금지  ◐
 v0.5.0   stable — tag efc98dd, workflow 33216176818, 15 apps/32 assets/31 declared/mismatch 0  ✅
 v0.5.1   stable — #470/#473/#477/#478/#479 보강; publication metadata는 GitHub Release authority  ✅
+v0.6.0   stable — W01~W11, candidate 33384213398, release 33390009009, 15/32/31/mismatch 0  ✅
 ```
 
 ## 현재 상태
 - 현재 15개 앱(기존 13개 + Devbox Launcher + Log Lens)의 P1·P2·선택 P3 구현 이슈는 모두
-  main에 병합됐다. v0.5.0 stable package evidence는 별도 보존하고, #470/#473/#477/#478/#479를
-  포함한 maintenance bundle은 v0.5.1 stable이다. exact tag·workflow·asset
-  publication metadata는 GitHub Release가, Windows acceptance는 #176이 권위 있는 source다.
+  main에 병합됐다. milestone #2의 W01~W11도 완료돼 v0.6.0 stable에 포함됐다. exact
+  tag·workflow·asset publication metadata는 GitHub Release가 권위 있는 source다.
 - 각 앱은 기능 단위 PR로 main에 머지됨
 - v0.4.0 정식 배포 완료 (13개 앱)
 - v0.4.1 안정판 핫픽스 배포 완료; C1/C2는 legacy path 제거로 재현하지 못했으므로 Windows packaged-runtime
@@ -1234,8 +1230,13 @@ v0.5.1   stable — #470/#473/#477/#478/#479 보강; publication metadata는 Git
   H1-A~D·cleanup을 통과했다.
 - v0.5.0 stable은 source tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`와 workflow
   `33216176818`에서 15개 앱/32개 public asset/31개 manifest-declared/mismatch 0으로 검증됐다.
+- v0.6.0 stable은 source `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate
+  `33384213398`, release workflow `33390009009`에서 15개 앱/32개 public asset/31개
+  manifest-declared/mismatch 0과 15/15 packaged runtime·installer lifecycle을 검증했다.
 - RC1~RC3은 각각의 32-asset publication, source audit, correction과 workflow/evidence를
   historical record로 남기지만 tag/release는 삭제됐다. 이 기록을 현재 release 상태로 읽지 않는다.
-- #176은 63 checked와 7 physical Windows-only pending으로 유지하며, package evidence와 별도다.
-- [통합 Windows 검증 체크리스트](https://github.com/jihoon22-lee/devbox/issues/176) — 남은 Windows 실기·패키지·프로토콜·경로·시각
-  acceptance를 post-release 수동 체크리스트로 관리한다.
+- #176은 닫힌 v0.5.1 historical checklist다.
+- [v0.6.0 post-release 체크리스트](https://github.com/jihoon22-lee/devbox/issues/518) — 설치된
+  WSL Desktop zellij/terminal reconnect와 repository 유지보수를 package evidence와 구분해 관리한다.
+- open v0.7+ milestone이나 확정 기능 roadmap은 없다. 선택적 후보는 실사용 근거와 사용자
+  우선순위가 확인된 뒤에만 묶음 이슈와 새 milestone으로 승격한다.
