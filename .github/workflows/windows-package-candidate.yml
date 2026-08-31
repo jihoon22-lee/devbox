@@ -216,12 +216,32 @@ jobs:
             --commit $env:CANDIDATE_COMMIT
           if ($LASTEXITCODE -ne 0) { throw 'packaged app runtime acceptance failed' }
           $report = Get-Content -LiteralPath '${{ steps.paths.outputs.output }}' -Raw | ConvertFrom-Json
+          $directWindowContracts = @(
+            $report.apps | Where-Object { $_.secondInstance.windowContract -eq 'direct-restoration' }
+          ).Count
+          $hostedWindowContracts = @(
+            $report.apps | Where-Object { $_.secondInstance.windowContract -eq 'hosted-visible-primary' }
+          ).Count
+          $restoredPolicyContracts = @(
+            $report.apps | Where-Object {
+              $_.cdpOverride -eq 'hklm-policy' -and $_.cleanup.cdpPolicyRestored -eq $true
+            }
+          ).Count
+          if (($directWindowContracts + $hostedWindowContracts) -ne 15) {
+            throw 'packaged window contract accounting mismatch'
+          }
+          if ($report.host.elevated -eq $true -and $restoredPolicyContracts -ne 15) {
+            throw 'elevated WebView2 policy restoration accounting mismatch'
+          }
           @(
             '### Packaged app runtime acceptance'
             "- passed: $($report.summary.passed) / 15"
             "- failed: $($report.summary.failed)"
             "- skipped: $($report.summary.skipped)"
             "- unattempted: $($report.summary.unattempted)"
+            "- direct window restoration contracts: $directWindowContracts"
+            "- GitHub-hosted visible-primary contracts: $hostedWindowContracts"
+            "- restored elevated CDP policy contracts: $restoredPolicyContracts"
             "- runtime root removed: $($report.runtimeRootRemoved)"
           ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
 

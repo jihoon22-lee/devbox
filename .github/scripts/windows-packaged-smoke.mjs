@@ -104,6 +104,108 @@ function powershell(script) {
   fail("bounded Windows helper failed");
 }
 
+// Registry mutation must never be retried: an ambiguous timeout may have
+// committed the value even when the helper did not return a success status.
+// The caller records ownership before invoking this helper and restores it in
+// runApp's finally block.
+function powershellOnce(script, failureMessage) {
+  const result = spawnSync(
+    "powershell.exe",
+    ["-NoLogo", "-NoProfile", "-NonInteractive", "-Command", script],
+    { encoding: "utf8", windowsHide: true, maxBuffer: 1024 * 1024, timeout: 15_000 },
+  );
+  if (result.status !== 0) fail(failureMessage);
+  return result.stdout.trim();
+}
+
+const CDP_POLICY_KEY =
+  "HKLM:\\Software\\Policies\\Microsoft\\Edge\\WebView2\\AdditionalBrowserArguments";
+
+function powershellUtf8(value) {
+  return Buffer.from(value, "utf8").toString("base64");
+}
+
+function windowsProcessIsElevated() {
+  return powershell(
+    `$identity=[Security.Principal.WindowsIdentity]::GetCurrent(); ` +
+      `$principal=[Security.Principal.WindowsPrincipal]::new($identity); ` +
+      `$principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator) | ConvertTo-Json -Compress`,
+  ) === "true";
+}
+
+function inspectElevatedCdpPolicy(imageName, port) {
+  const policy = {
+    imageName,
+    arguments: `--remote-debugging-port=${port}`,
+    keyExisted: false,
+    mutationAttempted: false,
+  };
+  const name = powershellUtf8(policy.imageName);
+  const inspection = JSON.parse(
+    powershellOnce(
+      `$ErrorActionPreference='Stop'; $decode=[Text.Encoding]::UTF8; $key='${CDP_POLICY_KEY}'; ` +
+        `$name=$decode.GetString([Convert]::FromBase64String('${name}')); ` +
+        `$keyExisted=Test-Path -LiteralPath $key; $valueExists=$false; ` +
+        `if($keyExisted){$valueExists=@((Get-Item -LiteralPath $key -ErrorAction Stop).GetValueNames()) -icontains $name}; ` +
+        `[ordered]@{keyExisted=[bool]$keyExisted;valueExists=[bool]$valueExists} | ConvertTo-Json -Compress`,
+      "WebView2 CDP policy preflight failed",
+    ),
+  );
+  policy.keyExisted = inspection.keyExisted === true;
+  if (inspection.valueExists === true) fail("WebView2 CDP policy value already exists");
+  return policy;
+}
+
+function installElevatedCdpPolicy(policy) {
+  const name = powershellUtf8(policy.imageName);
+  const value = powershellUtf8(policy.arguments);
+  policy.mutationAttempted = true;
+  powershellOnce(
+    `$ErrorActionPreference='Stop'; $decode=[Text.Encoding]::UTF8; $key='${CDP_POLICY_KEY}'; ` +
+      `$name=$decode.GetString([Convert]::FromBase64String('${name}')); ` +
+      `$value=$decode.GetString([Convert]::FromBase64String('${value}')); ` +
+      `if(!(Test-Path -LiteralPath $key)){New-Item -Path $key -Force -ErrorAction Stop | Out-Null}; ` +
+      `if(@((Get-Item -LiteralPath $key -ErrorAction Stop).GetValueNames()) -icontains $name){throw 'policy collision'}; ` +
+      `New-ItemProperty -LiteralPath $key -Name $name -Value $value -PropertyType String -ErrorAction Stop | Out-Null; ` +
+      `$actual=[string](Get-ItemPropertyValue -LiteralPath $key -Name $name -ErrorAction Stop); ` +
+      `if($actual -cne $value){throw 'policy read-back mismatch'}`,
+    "WebView2 CDP policy installation failed",
+  );
+}
+
+function restoreElevatedCdpPolicy(policy) {
+  if (!policy.mutationAttempted) return;
+  const name = powershellUtf8(policy.imageName);
+  const value = powershellUtf8(policy.arguments);
+  const removeEmptyKey = policy.keyExisted ? "$false" : "$true";
+  powershellOnce(
+    `$ErrorActionPreference='Stop'; $decode=[Text.Encoding]::UTF8; $key='${CDP_POLICY_KEY}'; ` +
+      `$name=$decode.GetString([Convert]::FromBase64String('${name}')); ` +
+      `$expected=$decode.GetString([Convert]::FromBase64String('${value}')); ` +
+      `if(Test-Path -LiteralPath $key){` +
+      `$names=@((Get-Item -LiteralPath $key -ErrorAction Stop).GetValueNames()); ` +
+      `if($names -icontains $name){` +
+      `$actual=[string](Get-ItemPropertyValue -LiteralPath $key -Name $name -ErrorAction Stop); ` +
+      `if($actual -cne $expected){throw 'policy ownership changed'}; ` +
+      `Remove-ItemProperty -LiteralPath $key -Name $name -ErrorAction Stop}; ` +
+      `$remainingNames=@((Get-Item -LiteralPath $key -ErrorAction Stop).GetValueNames()); ` +
+      `$remainingChildren=@(Get-ChildItem -LiteralPath $key -ErrorAction Stop); ` +
+      `if(${removeEmptyKey} -and $remainingNames.Count -eq 0 -and $remainingChildren.Count -eq 0){` +
+      `Remove-Item -LiteralPath $key -ErrorAction Stop}}; ` +
+      `if((Test-Path -LiteralPath $key) -and @((Get-Item -LiteralPath $key -ErrorAction Stop).GetValueNames()) -icontains $name){` +
+      `throw 'policy value residue'}`,
+    "WebView2 CDP policy restoration failed",
+  );
+}
+
+function isGitHubHostedWindowsAcceptanceHost(environment) {
+  return (
+    environment.GITHUB_ACTIONS === "true" &&
+    environment.RUNNER_ENVIRONMENT === "github-hosted" &&
+    environment.RUNNER_OS === "Windows"
+  );
+}
+
 function windowsLocalAppData() {
   const encoded = powershell(
     `$ErrorActionPreference='Stop'; ` +
@@ -271,21 +373,40 @@ function nativeWindowState(pid, minimize = false) {
   return output ? JSON.parse(output) : null;
 }
 
-async function displaceOwnedWindow(pid, allowInitiallyHidden) {
+async function displaceOwnedWindow(pid, allowInitiallyHidden, allowHostedFallback) {
   const initial = nativeWindowState(pid);
   if (!initial) fail("packaged main window state was unavailable");
   if (!initial.HasHandle || !initial.Visible) {
     if (!allowInitiallyHidden) fail("packaged main window was unexpectedly hidden");
-    return { mode: "initially-hidden", displaced: true };
+    return {
+      mode: "initially-hidden",
+      displaced: true,
+      directRestorationRequired: true,
+    };
   }
   nativeWindowState(pid, true);
   const deadline = Date.now() + 5_000;
+  let observed = initial;
   while (Date.now() < deadline) {
     const current = nativeWindowState(pid);
+    if (current) observed = current;
     if (current?.Minimized && current.ForegroundPid !== pid) {
-      return { mode: "minimized", displaced: true };
+      return {
+        mode: "minimized",
+        displaced: true,
+        directRestorationRequired: true,
+      };
     }
     await sleep(100);
+  }
+  if (allowHostedFallback && isOwnedRestoredWindow(observed)) {
+    return {
+      mode: "github-hosted-process-contract",
+      displaced: false,
+      directRestorationRequired: false,
+      limitation: "external window-state transitions are unavailable in the hosted elevated session",
+      foregroundDisplaced: observed.ForegroundPid !== pid,
+    };
   }
   fail("could not displace focus from the packaged main window");
 }
@@ -412,25 +533,33 @@ async function unusedPort() {
 
 async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
   const deadline = Date.now() + timeoutMilliseconds;
+  let lastObservation = "no HTTP response";
   while (Date.now() < deadline) {
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, {
         signal: AbortSignal.timeout(1_000),
       });
+      lastObservation = `HTTP ${response.status}`;
       if (response.ok) {
         const payload = await response.text();
         if (payload.length > 1_048_576) fail("CDP target list exceeded its bound");
         const targets = JSON.parse(payload);
         const candidates = targets.filter((target) => target.type === "page" && target.webSocketDebuggerUrl);
+        lastObservation =
+          `HTTP ${response.status}; page titles=${JSON.stringify(candidates.map((target) => target.title))}`;
         const exact = candidates.find((target) => target.title === expectedTitle);
         if (exact) return exact;
       }
-    } catch {
+    } catch (error) {
+      lastObservation = error?.cause?.code ?? error?.code ?? error?.name ?? "request failed";
       // The app owns this loopback port and may still be starting.
     }
     await sleep(250);
   }
-  fail("packaged WebView2 CDP target did not appear");
+  fail(
+    `packaged WebView2 CDP target did not appear ` +
+      `(${lastObservation}; owners=${JSON.stringify(listenerOwnerPids(port))})`,
+  );
 }
 
 class Cdp {
@@ -929,6 +1058,23 @@ function runVerificationContractSelfTest() {
   if (isOwnedRestoredWindow({ HasHandle: true, Visible: true, Minimized: true, ForegroundPid: 7 })) {
     fail("restored-window self-test accepted a minimized window");
   }
+  const hostedWindows = {
+    GITHUB_ACTIONS: "true",
+    RUNNER_ENVIRONMENT: "github-hosted",
+    RUNNER_OS: "Windows",
+  };
+  if (!isGitHubHostedWindowsAcceptanceHost(hostedWindows)) {
+    fail("GitHub-hosted Windows self-test did not enable the scoped contract");
+  }
+  if (
+    isGitHubHostedWindowsAcceptanceHost({
+      ...hostedWindows,
+      RUNNER_ENVIRONMENT: "self-hosted",
+    }) ||
+    isGitHubHostedWindowsAcceptanceHost({ ...hostedWindows, RUNNER_OS: "Linux" })
+  ) {
+    fail("hosted window fallback self-test escaped its Windows runner scope");
+  }
   const inaccessibleChild = { Pid: 7, ParentPid: 6, Created: "created", Name: "conhost.exe", Path: "" };
   assertTrackableProcessIdentity(inaccessibleChild);
   let incompleteRejected = false;
@@ -1033,6 +1179,7 @@ async function runApp(app, context) {
   let secondLineageRoot;
   let secondExitedBeforeIdentityObservation = false;
   let cdp;
+  let cdpPolicy;
   let isolatedRoot;
   let transactionJournal;
   let ownedDescendants = [];
@@ -1097,6 +1244,13 @@ async function runApp(app, context) {
       result.isolatedKnowledgeRoot = true;
     }
     const port = await unusedPort();
+    if (context.elevated) {
+      cdpPolicy = inspectElevatedCdpPolicy(imageName, port);
+      installElevatedCdpPolicy(cdpPolicy);
+      result.cdpOverride = "hklm-policy";
+    } else {
+      result.cdpOverride = "process-environment";
+    }
     const environment = sanitizedWindowsEnvironment({
       LOCALAPPDATA: isolatedLocal,
       APPDATA: isolatedRoaming,
@@ -1201,7 +1355,11 @@ async function runApp(app, context) {
       survivedTenSeconds: true,
     };
 
-    result.focusDisplacement = await displaceOwnedWindow(child.pid, app.allowHiddenWindow === true);
+    result.focusDisplacement = await displaceOwnedWindow(
+      child.pid,
+      app.allowHiddenWindow === true,
+      context.hostedWindowFallback,
+    );
     processesBeforeSecond = allWindowsProcesses();
     secondChild = spawn(executable, [], { env: environment, windowsHide: false, stdio: ["ignore", "pipe", "pipe"] });
     secondChild.on("error", () => {});
@@ -1228,7 +1386,12 @@ async function runApp(app, context) {
       ),
     );
     const postSecondInventory = imageProcesses(imageName);
-    result.nativeWindowAfterSecond = await waitForOwnedRestoredWindow(child.pid);
+    result.nativeWindowAfterSecond = result.focusDisplacement.directRestorationRequired
+      ? await waitForOwnedRestoredWindow(child.pid)
+      : nativeWindowState(child.pid);
+    if (!isOwnedRestoredWindow(result.nativeWindowAfterSecond)) {
+      fail("single-instance primary window was not owned, visible, and restored");
+    }
     const focusedAfter = await cdp.evaluate("document.hasFocus()");
     const firstStateAfterSecond = processState(child.pid);
     const firstHealthyAfterSecond =
@@ -1244,6 +1407,9 @@ async function runApp(app, context) {
       firstFocusedAfter: focusedAfter,
       firstRespondingAfter: firstStateAfterSecond?.Responding === true,
       firstTitleAfter: firstStateAfterSecond?.Title ?? "",
+      windowContract: result.focusDisplacement.directRestorationRequired
+        ? "direct-restoration"
+        : "hosted-visible-primary",
       stdout: secondStdout(),
       stderr: secondStderr(),
     };
@@ -1349,6 +1515,18 @@ async function runApp(app, context) {
         };
       } catch (error) {
         result.cleanup.processError = publicErrorMessage(error, "process cleanup failed");
+      }
+    }
+    if (cdpPolicy?.mutationAttempted) {
+      try {
+        restoreElevatedCdpPolicy(cdpPolicy);
+        result.cleanup.cdpPolicyRestored = true;
+      } catch (error) {
+        result.cleanup.cdpPolicyRestored = false;
+        result.cleanup.cdpPolicyError = publicErrorMessage(
+          error,
+          "WebView2 CDP policy cleanup failed",
+        );
       }
     }
     try {
@@ -1510,7 +1688,8 @@ async function runApp(app, context) {
       result.cleanup.backupResidue !== 0 ||
       result.cleanup.quarantineResidue !== 0 ||
       result.cleanup.stagingResidue !== 0 ||
-      result.cleanup.journalResidue !== 0
+      result.cleanup.journalResidue !== 0 ||
+      result.cleanup.cdpPolicyRestored === false
     ) {
       result.status = "FAIL";
       result.cleanup.releaseGateBlocked = true;
@@ -1594,6 +1773,8 @@ async function main() {
   assertPlainPathAndAncestors(actualTemp, true);
   acquireAcceptanceLock(path.join(actualTemp, ".devbox-packaged-acceptance.lock"), runId);
   mkdirSync(runtimeRoot, { recursive: true });
+  const elevated = windowsProcessIsElevated();
+  const githubHosted = isGitHubHostedWindowsAcceptanceHost(process.env);
   const context = {
     assetsDirectory,
     runtimeRoot,
@@ -1602,6 +1783,8 @@ async function main() {
     actualLocalAppData,
     sharedLocalDataRoot: path.join(actualLocalAppData, "devbox"),
     protectedProcessNames,
+    elevated,
+    hostedWindowFallback: elevated && githubHosted,
   };
   const report = {
     schemaVersion: 1,
@@ -1614,6 +1797,9 @@ async function main() {
       platform: process.platform,
       architecture: process.arch,
       node: process.version,
+      elevated,
+      githubHosted,
+      hostedWindowFallback: context.hostedWindowFallback,
     },
     apps: [],
   };
