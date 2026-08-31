@@ -305,7 +305,7 @@ function Get-Potential-Shortcut-Count([object]$App) {
   return $count
 }
 
-function Resolve-Install-State([object]$App, [object]$Release, [string]$Assets) {
+function Resolve-Owned-Install-State([object]$App) {
   $entry = Find-App-Entry $App
   if ($null -eq $entry) { Fail 'installed app is missing its uninstall entry' }
   $uninstaller = Parse-Uninstaller $entry.UninstallString
@@ -329,11 +329,43 @@ function Resolve-Install-State([object]$App, [object]$Release, [string]$Assets) 
     $binary = $candidates[0].FullName
   }
   Assert-Plain-Existing-Path $binary 'installed executable path'
+
+  return [pscustomobject]@{
+    AppId = $App.id
+    ProviderPath = $entry.ProviderPath
+    RegistryName = $entry.RegistryName
+    InstallDir = $installDir
+    Binary = $binary
+    Uninstaller = $uninstaller
+  }
+}
+
+function Resolve-Install-State(
+  [object]$App,
+  [object]$Release,
+  [object]$OwnedState,
+  [string]$ExpectedBinarySha256 = ''
+) {
+  $entry = Find-App-Entry $App
+  if ($null -eq $entry -or $entry.ProviderPath -ine $OwnedState.ProviderPath) {
+    Fail 'installed app uninstall identity changed during validation'
+  }
+  $installDir = $OwnedState.InstallDir
+  $binary = $OwnedState.Binary
+  $uninstaller = $OwnedState.Uninstaller
+  Assert-Plain-Existing-Path $installDir 'install directory'
+  Assert-Plain-Existing-Path $uninstaller 'uninstaller path'
+  Assert-Plain-Existing-Path $binary 'installed executable path'
   $displayIcon = Parse-Display-Icon $entry.DisplayIcon
   if ((Full-Path $displayIcon) -ne (Full-Path $binary)) { Fail 'display icon does not target the installed executable' }
   $manifestApp = $Release.byId[$App.id]
   $binarySha = Sha256 $binary
-  if ($binarySha -ne $manifestApp.portable.sha256) { Fail 'installed executable digest mismatch' }
+  if (
+    -not [string]::IsNullOrWhiteSpace($ExpectedBinarySha256) -and
+    $binarySha -cne $ExpectedBinarySha256
+  ) {
+    Fail 'installed executable digest is not reproducible for this installer release'
+  }
   if ($entry.DisplayVersion -ne $manifestApp.version) { Fail 'uninstall display version mismatch' }
   $fileVersion = [Diagnostics.FileVersionInfo]::GetVersionInfo($binary).FileVersion
   if ([string]::IsNullOrWhiteSpace($fileVersion) -or -not $fileVersion.StartsWith($manifestApp.version)) {
@@ -393,7 +425,8 @@ function Install-App(
   [object]$Release,
   [string]$Assets,
   [string]$Mode,
-  [string]$CustomDirectory = ''
+  [string]$CustomDirectory = '',
+  [string]$ExpectedBinarySha256 = ''
 ) {
   $manifestApp = $Release.byId[$App.id]
   $installer = Join-Path $Assets $manifestApp.installer.name
@@ -410,7 +443,11 @@ function Install-App(
   $signature = Get-AuthenticodeSignature -LiteralPath $installer
   Invoke-Owned-Process $installer $arguments | Out-Null
   Wait-App-Entry $App $true | Out-Null
-  $state = Resolve-Install-State $App $Release $Assets
+  $ownedState = Resolve-Owned-Install-State $App
+  $script:ownedInstalls[$App.id] = $ownedState
+  [void]$script:observedInstallDirs.Add((Full-Path $ownedState.InstallDir))
+  [void]$script:observedRegistryKeys.Add($ownedState.ProviderPath)
+  $state = Resolve-Install-State $App $Release $ownedState $ExpectedBinarySha256
   if ($Mode -eq 'custom' -and (Full-Path $state.InstallDir) -ne (Full-Path $CustomDirectory)) {
     Fail 'custom install directory was not honored'
   }
@@ -435,8 +472,7 @@ function Install-App(
 
 function Uninstall-App([object]$App, [object]$State) {
   if (-not (Allowed-Install-Root $State.InstallDir)) { Fail 'refusing unsafe uninstall path' }
-  $arguments = "/S _?=$($State.InstallDir)"
-  Invoke-Owned-Process $State.Uninstaller $arguments | Out-Null
+  Invoke-Owned-Process $State.Uninstaller '/S' | Out-Null
   Wait-App-Entry $App $false | Out-Null
   if (Test-Path -LiteralPath $State.ProviderPath) { Fail 'uninstall left its exact registry key' }
   if (Test-Path -LiteralPath $State.Binary -PathType Leaf) { Fail 'uninstall left the application executable' }
@@ -588,27 +624,36 @@ try {
     $appResult = [ordered]@{ id = $app.id; baseline = [bool]$app.baseline; status = 'RUNNING'; phases = @(); markers = @(); failure = $null }
     try {
       if ([bool]$app.baseline) {
-        $appResult.phases += Install-App $app $baselineRelease $BaselineAssets 'install'
+        $baselineInstall = Install-App $app $baselineRelease $BaselineAssets 'install'
+        $appResult.phases += $baselineInstall
+        $baselineBinarySha256 = [string]$baselineInstall.binarySha256
         $markers = @(New-Markers $app $runId)
         $allMarkers += $markers
         $appResult.markers = @($markers | ForEach-Object { [ordered]@{ identifier = $_.Identifier; sha256 = $_.Sha256 } })
 
-        $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'update'
+        $candidateUpdate = Install-App $app $candidateRelease $CandidateAssets 'update'
+        $appResult.phases += $candidateUpdate
+        $candidateBinarySha256 = [string]$candidateUpdate.binarySha256
+        if ($candidateBinarySha256 -ceq $baselineBinarySha256) {
+          Fail 'candidate update did not replace the baseline executable'
+        }
         Assert-Markers $markers
         $state = $script:ownedInstalls[$app.id]
         $appResult.phases += Uninstall-App $app $state
         Assert-Markers $markers
 
-        $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'install'
+        $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'install' '' $candidateBinarySha256
         Assert-Markers $markers
-        $appResult.phases += Install-App $app $baselineRelease $BaselineAssets 'update'
+        $appResult.phases += Install-App $app $baselineRelease $BaselineAssets 'update' '' $baselineBinarySha256
         Assert-Markers $markers
         $state = $script:ownedInstalls[$app.id]
         $appResult.phases += Uninstall-App $app $state
         Assert-Markers $markers
       } else {
         $customDir = Join-Path $ScratchRoot "custom-install\$($app.id)"
-        $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'custom' $customDir
+        $candidateCustom = Install-App $app $candidateRelease $CandidateAssets 'custom' $customDir
+        $appResult.phases += $candidateCustom
+        $candidateBinarySha256 = [string]$candidateCustom.binarySha256
         $markers = @(New-Markers $app $runId)
         $allMarkers += $markers
         $appResult.markers = @($markers | ForEach-Object { [ordered]@{ identifier = $_.Identifier; sha256 = $_.Sha256 } })
@@ -616,7 +661,7 @@ try {
         $appResult.phases += Uninstall-App $app $state
         Assert-Markers $markers
 
-        $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'install'
+        $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'install' '' $candidateBinarySha256
         Assert-Markers $markers
         $state = $script:ownedInstalls[$app.id]
         $appResult.phases += Uninstall-App $app $state

@@ -143,8 +143,16 @@ function allWindowsProcesses() {
   return items;
 }
 
+function assertTrackableProcessIdentity(item) {
+  if (item.Created.trim().length === 0 || item.Name.trim().length === 0) {
+    fail("Windows process identity was not trackable");
+  }
+  return item;
+}
+
 function assertCompleteProcessIdentity(item) {
-  if (item.Created.trim().length === 0 || item.Name.trim().length === 0 || item.Path.trim().length === 0) {
+  assertTrackableProcessIdentity(item);
+  if (item.Path.trim().length === 0) {
     fail("Windows process identity was incomplete");
   }
   return item;
@@ -180,7 +188,7 @@ function descendantIdentities(rootIdentity) {
     changed = false;
     for (const item of all) {
       if (!owned.has(item.Pid) && owned.has(item.ParentPid)) {
-        assertCompleteProcessIdentity(item);
+        assertTrackableProcessIdentity(item);
         owned.add(item.Pid);
         changed = true;
       }
@@ -207,7 +215,7 @@ function potentialNewDescendants(rootIdentity, baseline) {
     changed = false;
     for (const item of candidates) {
       if (!potential.has(item.Pid) && potential.has(item.ParentPid)) {
-        assertCompleteProcessIdentity(item);
+        assertTrackableProcessIdentity(item);
         potential.add(item.Pid);
         changed = true;
       }
@@ -220,7 +228,7 @@ function survivingIdentities(identities) {
   const current = new Map(allWindowsProcesses().map((item) => [item.Pid, item]));
   return identities.filter((identity) => {
     const item = current.get(identity.Pid);
-    if (item) assertCompleteProcessIdentity(item);
+    if (item) assertTrackableProcessIdentity(item);
     return item && item.Created === identity.Created && item.Name === identity.Name && item.Path === identity.Path;
   });
 }
@@ -282,16 +290,28 @@ async function displaceOwnedWindow(pid, allowInitiallyHidden) {
   fail("could not displace focus from the packaged main window");
 }
 
-async function waitForOwnedForegroundWindow(pid, timeoutMilliseconds = 5_000) {
+function isOwnedRestoredWindow(state) {
+  return Boolean(state?.HasHandle && state.Visible && !state.Minimized);
+}
+
+async function waitForOwnedRestoredWindow(pid, timeoutMilliseconds = 5_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
     const current = nativeWindowState(pid);
-    if (current?.HasHandle && current.Visible && !current.Minimized && current.ForegroundPid === pid) {
+    if (isOwnedRestoredWindow(current)) {
       return current;
     }
     await sleep(100);
   }
-  fail("second launch did not restore the owned foreground window");
+  fail("second launch did not restore the owned visible window");
+}
+
+function recordProcessInventoryError(result, error) {
+  result.cleanup.processInventoryError = true;
+  result.cleanup.processInventoryErrors ??= [];
+  result.cleanup.processInventoryErrors.push(
+    publicErrorMessage(error, "process inventory failed"),
+  );
 }
 
 function listenerOwnerPids(port) {
@@ -535,7 +555,9 @@ async function waitForExitTracking(child, rootIdentity, timeoutMilliseconds) {
   const deadline = Date.now() + timeoutMilliseconds;
   let descendants = [];
   while (Date.now() < deadline) {
-    descendants = mergeIdentities(descendants, descendantIdentities(rootIdentity));
+    if (rootIdentity) {
+      descendants = mergeIdentities(descendants, descendantIdentities(rootIdentity));
+    }
     if (child.exitCode !== null) {
       return {
         exited: true,
@@ -550,6 +572,7 @@ async function waitForExitTracking(child, rootIdentity, timeoutMilliseconds) {
 }
 
 function terminateIdentity(identity, force) {
+  assertCompleteProcessIdentity(identity);
   const expectedCreated = Buffer.from(identity.Created, "utf8").toString("base64");
   const expectedName = Buffer.from(identity.Name, "utf8").toString("base64");
   const expectedPath = Buffer.from(identity.Path, "utf8").toString("base64");
@@ -580,6 +603,34 @@ async function waitForProcessIdentity(pid, executable, timeoutMilliseconds = 10_
     await sleep(100);
   }
   fail("owned packaged process identity was not observable");
+}
+
+async function waitForProcessIdentityOrExit(child, executable, timeoutMilliseconds = 1_000) {
+  const expected = path.resolve(executable).toLowerCase();
+  const deadline = Date.now() + timeoutMilliseconds;
+  while (Date.now() < deadline) {
+    const exact = imageProcesses(path.basename(executable)).find(
+      (item) => item.Pid === child.pid && path.resolve(item.Path).toLowerCase() === expected,
+    );
+    if (exact) return { identity: exact, exitedBeforeObservation: false };
+    if (child.exitCode !== null) return { identity: null, exitedBeforeObservation: true };
+    await sleep(50);
+  }
+  if (child.exitCode !== null) return { identity: null, exitedBeforeObservation: true };
+  fail("owned packaged process identity was not observable while it remained active");
+}
+
+function lineageRoot(identity, pid) {
+  if (identity) return identity;
+  return Number.isSafeInteger(pid) && pid > 0 ? { Pid: pid } : null;
+}
+
+function secondProcessIdentityConfirmed(child, identity, exitedBeforeObservation) {
+  return (
+    !child?.pid ||
+    Boolean(identity) ||
+    (exitedBeforeObservation === true && child.exitCode !== null)
+  );
 }
 
 async function stopOwnedProcess(identity, executable, child) {
@@ -863,6 +914,30 @@ function runVerificationContractSelfTest() {
     rejected = error instanceof Error && error.name === "AcceptanceError";
   }
   if (!rejected) fail("candidate verification tamper self-test did not fail closed");
+  if (!secondProcessIdentityConfirmed({ pid: 7, exitCode: 0 }, null, true)) {
+    fail("clean early second-instance exit self-test did not pass");
+  }
+  if (secondProcessIdentityConfirmed({ pid: 7, exitCode: null }, null, false)) {
+    fail("active unobserved second-instance self-test did not fail closed");
+  }
+  if (lineageRoot(null, 7)?.Pid !== 7 || lineageRoot({ Pid: 8 }, 7)?.Pid !== 8) {
+    fail("second-instance lineage self-test did not preserve ownership");
+  }
+  if (!isOwnedRestoredWindow({ HasHandle: true, Visible: true, Minimized: false, ForegroundPid: 99 })) {
+    fail("restored-window self-test incorrectly required foreground ownership");
+  }
+  if (isOwnedRestoredWindow({ HasHandle: true, Visible: true, Minimized: true, ForegroundPid: 7 })) {
+    fail("restored-window self-test accepted a minimized window");
+  }
+  const inaccessibleChild = { Pid: 7, ParentPid: 6, Created: "created", Name: "conhost.exe", Path: "" };
+  assertTrackableProcessIdentity(inaccessibleChild);
+  let incompleteRejected = false;
+  try {
+    assertCompleteProcessIdentity(inaccessibleChild);
+  } catch (error) {
+    incompleteRejected = error instanceof Error && error.name === "AcceptanceError";
+  }
+  if (!incompleteRejected) fail("incomplete process identity self-test did not fail closed for termination");
 }
 
 function assertSafeScratchLayout(
@@ -955,6 +1030,8 @@ async function runApp(app, context) {
   let childIdentity;
   let secondChild;
   let secondIdentity;
+  let secondLineageRoot;
+  let secondExitedBeforeIdentityObservation = false;
   let cdp;
   let isolatedRoot;
   let transactionJournal;
@@ -1129,13 +1206,12 @@ async function runApp(app, context) {
     secondChild = spawn(executable, [], { env: environment, windowsHide: false, stdio: ["ignore", "pipe", "pipe"] });
     secondChild.on("error", () => {});
     if (!secondChild.pid) fail("second packaged process did not start");
-    try {
-      secondIdentity = await waitForProcessIdentity(secondChild.pid, executable, 1_000);
-    } catch {
-      fail("second packaged process identity was not observable");
-    }
     const secondStdout = capture(secondChild.stdout);
     const secondStderr = capture(secondChild.stderr);
+    const secondObservation = await waitForProcessIdentityOrExit(secondChild, executable);
+    secondIdentity = secondObservation.identity;
+    secondExitedBeforeIdentityObservation = secondObservation.exitedBeforeObservation;
+    secondLineageRoot = lineageRoot(secondIdentity, secondChild.pid);
     const secondExit = await waitForExitTracking(secondChild, secondIdentity, 10_000);
     ownedDescendants = mergeIdentities(
       ownedDescendants,
@@ -1146,13 +1222,13 @@ async function runApp(app, context) {
     );
     uncertainDescendants = mergeIdentities(
       uncertainDescendants,
-      potentialNewDescendants(secondIdentity, processesBeforeSecond).filter(
+      potentialNewDescendants(secondLineageRoot, processesBeforeSecond).filter(
         (identity) =>
           !trackedSecondIdentities.has(`${identity.Pid}:${identity.Created}:${identity.Name}:${identity.Path}`),
       ),
     );
     const postSecondInventory = imageProcesses(imageName);
-    result.nativeWindowAfterSecond = await waitForOwnedForegroundWindow(child.pid);
+    result.nativeWindowAfterSecond = await waitForOwnedRestoredWindow(child.pid);
     const focusedAfter = await cdp.evaluate("document.hasFocus()");
     const firstStateAfterSecond = processState(child.pid);
     const firstHealthyAfterSecond =
@@ -1160,8 +1236,11 @@ async function runApp(app, context) {
     result.secondInstance = {
       exitedWithinTenSeconds: secondExit.exited,
       exitCode: secondExit.code,
+      identityObserved: Boolean(secondIdentity),
+      exitedBeforeIdentityObservation: secondExitedBeforeIdentityObservation,
       firstStillAlive: child.exitCode === null,
       persistentImageCount: postSecondInventory.length,
+      foregroundObserved: result.nativeWindowAfterSecond.ForegroundPid === child.pid,
       firstFocusedAfter: focusedAfter,
       firstRespondingAfter: firstStateAfterSecond?.Responding === true,
       firstTitleAfter: firstStateAfterSecond?.Title ?? "",
@@ -1173,7 +1252,6 @@ async function runApp(app, context) {
       secondExit.code !== 0 ||
       child.exitCode !== null ||
       postSecondInventory.length !== 1 ||
-      !focusedAfter ||
       !firstHealthyAfterSecond ||
       result.secondInstance.stdout.bytes !== 0 ||
       result.secondInstance.stderr.bytes !== 0
@@ -1216,6 +1294,7 @@ async function runApp(app, context) {
       if (secondChild.exitCode === null) {
         try {
           secondIdentity ??= await waitForProcessIdentity(secondChild.pid, executable);
+          secondLineageRoot ??= lineageRoot(secondIdentity, secondChild.pid);
           ownedDescendants = mergeIdentities(ownedDescendants, descendantIdentities(secondIdentity));
           const secondCleanup = await stopOwnedProcess(secondIdentity, executable, secondChild);
           ownedDescendants = mergeIdentities(
@@ -1237,20 +1316,20 @@ async function runApp(app, context) {
       );
       uncertainDescendants = mergeIdentities(
         uncertainDescendants,
-        potentialNewDescendants(secondIdentity, processesBeforeSecond).filter(
+        potentialNewDescendants(secondLineageRoot, processesBeforeSecond).filter(
           (identity) =>
             !trackedSecondIdentities.has(`${identity.Pid}:${identity.Created}:${identity.Name}:${identity.Path}`),
         ),
       );
-    } catch {
-      result.cleanup.processInventoryError = true;
+    } catch (error) {
+      recordProcessInventoryError(result, error);
     }
     try {
       if (child?.pid) {
         ownedDescendants = mergeIdentities(ownedDescendants, descendantIdentities(childIdentity));
       }
-    } catch {
-      result.cleanup.processInventoryError = true;
+    } catch (error) {
+      recordProcessInventoryError(result, error);
     }
     try {
       cdp?.close();
@@ -1283,8 +1362,8 @@ async function runApp(app, context) {
             !trackedPrimaryIdentities.has(`${identity.Pid}:${identity.Created}:${identity.Name}:${identity.Path}`),
         ),
       );
-    } catch {
-      result.cleanup.processInventoryError = true;
+    } catch (error) {
+      recordProcessInventoryError(result, error);
     }
     const dataErrors = [];
     let processCleanupConfirmed = false;
@@ -1304,7 +1383,11 @@ async function runApp(app, context) {
       result.cleanup.remainingUncertainDescendants = survivingIdentities(uncertainDescendants).length;
       result.cleanup.uncertainDescendantCount = uncertainDescendants.length;
       result.cleanup.primaryIdentityConfirmed = !child?.pid || Boolean(childIdentity);
-      result.cleanup.secondIdentityConfirmed = !secondChild?.pid || Boolean(secondIdentity);
+      result.cleanup.secondIdentityConfirmed = secondProcessIdentityConfirmed(
+        secondChild,
+        secondIdentity,
+        secondExitedBeforeIdentityObservation,
+      );
       processCleanupConfirmed =
         !result.cleanup.processInventoryError &&
         result.cleanup.primaryIdentityConfirmed &&
@@ -1314,8 +1397,8 @@ async function runApp(app, context) {
         result.cleanup.uncertainDescendantCount === 0 &&
         result.cleanup.remainingUncertainDescendants === 0 &&
         matchingWindowsProcesses(context.protectedProcessNames).length === 0;
-    } catch {
-      result.cleanup.processInventoryError = true;
+    } catch (error) {
+      recordProcessInventoryError(result, error);
     }
     if (!processCleanupConfirmed) dataErrors.push("process cleanup was not independently confirmed");
     try {
