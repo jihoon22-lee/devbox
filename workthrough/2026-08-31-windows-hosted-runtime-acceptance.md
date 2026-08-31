@@ -110,10 +110,90 @@ CDP policy restored                 true / true
 runtime root removed                true / true
 ```
 
+## Exact-main candidate follow-up
+
+Candidate run `33371506798` rebuilt exact main
+`fc7a49cd4df828f6917990019d0e1dc8d4f7618b`. Its unpublished artifact
+`9752181424` (`sha256:fcb309cbd05d9bc26a2be997caf904d2bb50a0111b08f7bbc4113897c427f4b0`)
+independently verified all 15 apps, 32 downloaded assets, and 31 manifest-declared assets with zero
+missing, undeclared, digest, or size mismatches. Installer evidence `9752273014`
+(`sha256:a4147e13b21af13c69e449bf701bbaded74a60e6c03ffa7af61275527af0a5b2`)
+passed all six install/update/uninstall phases for all 15 apps with zero registry, install-directory,
+marker, app-data, or integration residue.
+
+The packaged runtime evidence `9752424801`
+(`sha256:7cf5e36859e6ef753049454770bfb3dc347db52992f7e1ca24e20d67be453fa7`)
+failed closed at 13/15 while preserving complete cleanup and policy restoration for every attempted
+app. Both failures were isolated after the common renderer, native IPC, ten-second process, and
+cleanup checks:
+
+- Devbox Launcher intentionally starts with its Tauri window hidden. Windows
+  `Process.MainWindowHandle` selected the visible internal WebView2
+  `com.devbox.devboxlauncher-siw` window instead of the hidden titled `Devbox Launcher` window, so
+  the harness rejected a healthy process before exercising the second-launch restoration contract.
+- WSL Desktop correctly returned the bounded unavailable-runtime result on a hosted machine without
+  WSL, but its opportunistic background snapshot writer printed the expected error to GUI stderr.
+  The exact 88-byte output had SHA-256
+  `2d6c922ac70b50920d5fa3924488201ad5b7476894c5cb2d4179b0a105dff93b`.
+
+### Follow-up corrections
+
+- The Windows helper now enumerates top-level windows owned by the packaged PID and selects only the
+  window whose title exactly matches the app contract. First-instance health, minimize/hide, and
+  second-instance restoration therefore inspect the Tauri app window instead of an implementation
+  detail chosen by `Process.MainWindowHandle`.
+- A pure first-instance contract requires a responding live process plus an exact titled native
+  window. Visible apps must be visible and non-minimized; an app may begin hidden only when its
+  packaged config explicitly allows that state and the exact titled window is actually hidden.
+  Self-tests cover visible and hidden success plus wrong-title, unapproved-hidden, minimized,
+  unresponsive, and exited failures.
+- WSL Desktop's periodic snapshot writer now treats collection as opportunistic: it preserves the
+  last-good snapshot and retries without writing expected environment failures to stderr. Explicit
+  dashboard refresh still returns the same bounded user-safe error through IPC.
+
+### Exact-artifact Launcher diagnostic
+
+Run `33380179211` reused the exact failed candidate instead of rebuilding it and applied only the
+revised acceptance helper. Artifact `9753458118`
+(`sha256:6c1d6418fdfe158205ed415afbb4877dbc5a0840e22fb93452ef914f95bf310c`)
+recorded:
+
+```text
+packaged status                     PASS
+first process                       responding for ten seconds
+exact titled native window          present, hidden, non-minimized
+first displacement mode             initially-hidden
+second process                      exit 0
+primary after second launch         visible, non-minimized, exact title
+window contract                     direct-restoration
+remaining executable images         0 after cleanup
+stdout / stderr                     0 bytes / 0 bytes
+CDP policy / app data restored      true / true
+runtime root removed                true
+```
+
+### Follow-up local verification
+
+```text
+node --check windows-packaged-smoke.mjs                         PASS
+node windows-packaged-smoke.mjs --self-test                    PASS
+test-windows-package-candidate-config.py                       PASS
+test-windows-packaged-smoke-config.py                          PASS
+test-windows-installer-acceptance-config.py                    PASS
+check-catalog.sh                                               PASS
+cargo fmt --check (wsl-desktop)                                PASS
+cargo test -p wsl-desktop --lib -j1                            PASS — 102 / 102
+cargo check -p wsl-desktop --all-targets -j1                   PASS
+cargo clippy -p wsl-desktop --all-targets -j1 -- -D warnings   PASS
+pnpm -r --workspace-concurrency=1 build                         PASS — 22 / 22
+git diff --check                                               PASS
+```
+
 ## Next steps
 
-- Merge only after all six required source CI jobs pass.
-- Rebuild an unpublished candidate from the new exact main commit.
+- Merge this follow-up only after all six required source CI jobs pass.
+- Rebuild one unpublished candidate from the new exact main commit; do not run it for ordinary
+  intermediate merges.
 - Require all 15 packaged runtime contracts and all 15 installer lifecycles to pass from fresh
   `windows-2025` runners before creating the annotated `v0.6.0` tag.
 - Publish once, run the fresh public-download verifier, update the release ledger, and remove all

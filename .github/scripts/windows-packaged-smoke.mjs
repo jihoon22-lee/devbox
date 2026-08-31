@@ -352,20 +352,35 @@ function processState(pid) {
   return output ? JSON.parse(output) : null;
 }
 
-function nativeWindowState(pid, minimize = false) {
+function nativeWindowState(pid, expectedTitle, minimize = false) {
+  const title = powershellUtf8(expectedTitle);
   const output = powershell(
     `Add-Type -Namespace DevboxAcceptance -Name NativeMethods -MemberDefinition '` +
+      `public delegate bool EnumWindowsProc(System.IntPtr hWnd, System.IntPtr lParam); ` +
+      `[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool EnumWindows(EnumWindowsProc callback, System.IntPtr lParam); ` +
       `[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern System.IntPtr GetForegroundWindow(); ` +
       `[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(System.IntPtr hWnd, out uint processId); ` +
+      `[System.Runtime.InteropServices.DllImport("user32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)] public static extern int GetWindowTextW(System.IntPtr hWnd, System.Text.StringBuilder text, int count); ` +
+      `[System.Runtime.InteropServices.DllImport("user32.dll", CharSet=System.Runtime.InteropServices.CharSet.Unicode)] public static extern int GetWindowTextLengthW(System.IntPtr hWnd); ` +
       `[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsIconic(System.IntPtr hWnd); ` +
       `[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool IsWindowVisible(System.IntPtr hWnd); ` +
       `[System.Runtime.InteropServices.DllImport("user32.dll")] public static extern bool ShowWindowAsync(System.IntPtr hWnd, int command);'; ` +
       `$p=Get-Process -Id ${Number(pid)} -ErrorAction SilentlyContinue; if(!$p){exit 0}; ` +
-      `$handle=$p.MainWindowHandle; ` +
+      `$expectedTitle=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${title}')); ` +
+      `$script:devboxWindow=[IntPtr]::Zero; ` +
+      `$callback=[DevboxAcceptance.NativeMethods+EnumWindowsProc]{param([IntPtr]$candidate,[IntPtr]$data); ` +
+      `[uint32]$windowPid=0; [void][DevboxAcceptance.NativeMethods]::GetWindowThreadProcessId($candidate,[ref]$windowPid); ` +
+      `if($windowPid -ne ${Number(pid)}){return $true}; ` +
+      `$length=[DevboxAcceptance.NativeMethods]::GetWindowTextLengthW($candidate); ` +
+      `$buffer=[Text.StringBuilder]::new($length+1); ` +
+      `[void][DevboxAcceptance.NativeMethods]::GetWindowTextW($candidate,$buffer,$buffer.Capacity); ` +
+      `if($buffer.ToString() -ceq $expectedTitle){$script:devboxWindow=$candidate; return $false}; return $true}; ` +
+      `[void][DevboxAcceptance.NativeMethods]::EnumWindows($callback,[IntPtr]::Zero); $handle=$script:devboxWindow; ` +
       (minimize ? `if($handle -ne [IntPtr]::Zero){[void][DevboxAcceptance.NativeMethods]::ShowWindowAsync($handle,6)}; ` : ``) +
       `$foreground=[DevboxAcceptance.NativeMethods]::GetForegroundWindow(); [uint32]$foregroundPid=0; ` +
       `if($foreground -ne [IntPtr]::Zero){[void][DevboxAcceptance.NativeMethods]::GetWindowThreadProcessId($foreground,[ref]$foregroundPid)}; ` +
       `[pscustomobject]@{HasHandle=($handle -ne [IntPtr]::Zero);` +
+      `Title=$(if($handle -eq [IntPtr]::Zero){''}else{$expectedTitle});` +
       `Visible=$(if($handle -eq [IntPtr]::Zero){$false}else{[DevboxAcceptance.NativeMethods]::IsWindowVisible($handle)});` +
       `Minimized=$(if($handle -eq [IntPtr]::Zero){$false}else{[DevboxAcceptance.NativeMethods]::IsIconic($handle)});` +
       `ForegroundPid=[int]$foregroundPid} | ConvertTo-Json -Compress`,
@@ -373,8 +388,8 @@ function nativeWindowState(pid, minimize = false) {
   return output ? JSON.parse(output) : null;
 }
 
-async function displaceOwnedWindow(pid, allowInitiallyHidden, allowHostedFallback) {
-  const initial = nativeWindowState(pid);
+async function displaceOwnedWindow(pid, expectedTitle, allowInitiallyHidden, allowHostedFallback) {
+  const initial = nativeWindowState(pid, expectedTitle);
   if (!initial) fail("packaged main window state was unavailable");
   if (!initial.HasHandle || !initial.Visible) {
     if (!allowInitiallyHidden) fail("packaged main window was unexpectedly hidden");
@@ -384,11 +399,11 @@ async function displaceOwnedWindow(pid, allowInitiallyHidden, allowHostedFallbac
       directRestorationRequired: true,
     };
   }
-  nativeWindowState(pid, true);
+  nativeWindowState(pid, expectedTitle, true);
   const deadline = Date.now() + 5_000;
   let observed = initial;
   while (Date.now() < deadline) {
-    const current = nativeWindowState(pid);
+    const current = nativeWindowState(pid, expectedTitle);
     if (current) observed = current;
     if (current?.Minimized && current.ForegroundPid !== pid) {
       return {
@@ -415,10 +430,29 @@ function isOwnedRestoredWindow(state) {
   return Boolean(state?.HasHandle && state.Visible && !state.Minimized);
 }
 
-async function waitForOwnedRestoredWindow(pid, timeoutMilliseconds = 5_000) {
+function firstInstanceContract(processInfo, nativeWindow, expectedTitle, allowHiddenWindow, childAlive) {
+  const titleMatched = nativeWindow?.HasHandle === true && nativeWindow.Title === expectedTitle;
+  const visibleAndRestored = titleMatched && isOwnedRestoredWindow(nativeWindow);
+  const hiddenWithoutVisibleMainWindow =
+    titleMatched &&
+    allowHiddenWindow === true &&
+    nativeWindow.Visible === false &&
+    nativeWindow.Minimized === false;
+  return {
+    healthy:
+      processInfo?.Responding === true &&
+      childAlive === true &&
+      (visibleAndRestored || hiddenWithoutVisibleMainWindow),
+    titleMatched,
+    visibleAndRestored,
+    hiddenWithoutVisibleMainWindow,
+  };
+}
+
+async function waitForOwnedRestoredWindow(pid, expectedTitle, timeoutMilliseconds = 5_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
-    const current = nativeWindowState(pid);
+    const current = nativeWindowState(pid, expectedTitle);
     if (isOwnedRestoredWindow(current)) {
       return current;
     }
@@ -1058,6 +1092,45 @@ function runVerificationContractSelfTest() {
   if (isOwnedRestoredWindow({ HasHandle: true, Visible: true, Minimized: true, ForegroundPid: 7 })) {
     fail("restored-window self-test accepted a minimized window");
   }
+  const visibleWindow = {
+    HasHandle: true,
+    Title: "Devbox Launcher",
+    Visible: true,
+    Minimized: false,
+    ForegroundPid: 7,
+  };
+  const hiddenWindow = { ...visibleWindow, Visible: false };
+  const respondingProcess = { Responding: true, Title: "com.devbox.devboxlauncher-siw" };
+  const visibleContract = firstInstanceContract(
+    respondingProcess,
+    visibleWindow,
+    "Devbox Launcher",
+    false,
+    true,
+  );
+  if (!visibleContract.healthy || !visibleContract.visibleAndRestored) {
+    fail("visible first-instance self-test did not pass");
+  }
+  const hiddenContract = firstInstanceContract(
+    respondingProcess,
+    hiddenWindow,
+    "Devbox Launcher",
+    true,
+    true,
+  );
+  if (!hiddenContract.healthy || !hiddenContract.hiddenWithoutVisibleMainWindow) {
+    fail("hidden first-instance self-test did not pass");
+  }
+  const rejectedFirstInstances = [
+    firstInstanceContract(respondingProcess, hiddenWindow, "Devbox Launcher", false, true),
+    firstInstanceContract(respondingProcess, { ...visibleWindow, Title: "Other" }, "Devbox Launcher", false, true),
+    firstInstanceContract(respondingProcess, { ...visibleWindow, Minimized: true }, "Devbox Launcher", false, true),
+    firstInstanceContract({ Responding: false }, visibleWindow, "Devbox Launcher", false, true),
+    firstInstanceContract(respondingProcess, visibleWindow, "Devbox Launcher", false, false),
+  ];
+  if (rejectedFirstInstances.some((contract) => contract.healthy)) {
+    fail("invalid first-instance self-test did not fail closed");
+  }
   const hostedWindows = {
     GITHUB_ACTIONS: "true",
     RUNNER_ENVIRONMENT: "github-hosted",
@@ -1344,19 +1417,29 @@ async function runApp(app, context) {
     const elapsed = Date.now() - Date.parse(startedAt);
     if (elapsed < 10_000) await sleep(10_000 - elapsed);
     const firstState = processState(child.pid);
-    const acceptableWindowTitle = firstState?.Title === app.title || (app.allowHiddenWindow && firstState?.Title === "");
-    if (!firstState || !firstState.Responding || !acceptableWindowTitle || child.exitCode !== null) {
-      fail("packaged parent was not healthy after ten seconds");
-    }
+    const firstNativeWindow = nativeWindowState(child.pid, app.title);
+    const firstContract = firstInstanceContract(
+      firstState,
+      firstNativeWindow,
+      app.title,
+      app.allowHiddenWindow === true,
+      child.exitCode === null,
+    );
     result.firstInstance = {
-      pidObserved: true,
-      responding: firstState.Responding,
-      title: firstState.Title,
-      survivedTenSeconds: true,
+      pidObserved: Boolean(firstState),
+      responding: firstState?.Responding === true,
+      processTitle: firstState?.Title ?? "",
+      nativeWindow: firstNativeWindow,
+      titleMatched: firstContract.titleMatched,
+      visibleAndRestored: firstContract.visibleAndRestored,
+      hiddenWithoutVisibleMainWindow: firstContract.hiddenWithoutVisibleMainWindow,
+      survivedTenSeconds: child.exitCode === null,
     };
+    if (!firstContract.healthy) fail("packaged parent was not healthy after ten seconds");
 
     result.focusDisplacement = await displaceOwnedWindow(
       child.pid,
+      app.title,
       app.allowHiddenWindow === true,
       context.hostedWindowFallback,
     );
@@ -1387,15 +1470,17 @@ async function runApp(app, context) {
     );
     const postSecondInventory = imageProcesses(imageName);
     result.nativeWindowAfterSecond = result.focusDisplacement.directRestorationRequired
-      ? await waitForOwnedRestoredWindow(child.pid)
-      : nativeWindowState(child.pid);
+      ? await waitForOwnedRestoredWindow(child.pid, app.title)
+      : nativeWindowState(child.pid, app.title);
     if (!isOwnedRestoredWindow(result.nativeWindowAfterSecond)) {
       fail("single-instance primary window was not owned, visible, and restored");
     }
     const focusedAfter = await cdp.evaluate("document.hasFocus()");
     const firstStateAfterSecond = processState(child.pid);
     const firstHealthyAfterSecond =
-      firstStateAfterSecond?.Responding === true && firstStateAfterSecond.Title === app.title;
+      firstStateAfterSecond?.Responding === true &&
+      child.exitCode === null &&
+      isOwnedRestoredWindow(result.nativeWindowAfterSecond);
     result.secondInstance = {
       exitedWithinTenSeconds: secondExit.exited,
       exitCode: secondExit.code,

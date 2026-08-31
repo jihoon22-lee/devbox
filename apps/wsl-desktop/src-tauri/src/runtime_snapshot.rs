@@ -95,11 +95,11 @@ async fn run_pending_writes(state: Arc<SessionState>, coordinator: Arc<SnapshotC
     loop {
         while coordinator.pending.swap(false, Ordering::AcqRel) {
             sleep(SNAPSHOT_DEBOUNCE).await;
-            if let Err(error) = write_snapshot(Arc::clone(&state), Arc::clone(&coordinator)).await {
-                // error는 고정된 사용자 안전 메시지만 반환한다. command argv, path,
-                // stdout/stderr와 Docker 원문은 로그에도 남기지 않는다.
-                eprintln!("wsl-desktop runtime snapshot 실패: {error}");
-            }
+            // Background publication is opportunistic: a host without an available WSL runtime
+            // keeps the last-good snapshot and retries on the next event/interval. Explicit
+            // dashboard refreshes still return the bounded user-safe error through IPC, while a
+            // packaged GUI process emits no expected-environment diagnostics to stderr.
+            let _ = write_snapshot(Arc::clone(&state), Arc::clone(&coordinator)).await;
         }
 
         coordinator.running.store(false, Ordering::Release);

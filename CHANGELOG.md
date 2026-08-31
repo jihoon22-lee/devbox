@@ -72,6 +72,9 @@ API Playground, Task Runner는 Run Manager·Workbench 안에서 검증한다.
   확인할 수 있는데 Manager가 Windows app 등록만 보고 미설치로 표시하던 오탐을 수정했다.
 - **Dependency Lens fixture** — filesystem mtime 경계 때문에 stale lockfile 회귀가 간헐적으로
   실패하던 fixture를 결정적인 시각 경계로 고정했다.
+- **Windows packaged runtime gate (#493)** — 숨김 시작 Launcher의 내부 WebView2 창을 대표 창으로
+  오인하던 검증을 exact titled native window 열거로 교체했다. WSL이 없는 호스트에서 WSL Desktop의
+  주기적 snapshot writer가 예상 가능한 수집 실패를 GUI stderr에 출력하던 동작도 제거했다.
 
 ### Security
 
