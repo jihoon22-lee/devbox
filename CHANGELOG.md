@@ -5,10 +5,17 @@
 
 ## [Unreleased]
 
+### Changed
+
+- v0.6.0을 current stable로 문서 전체에 동기화하고, 닫힌 #176 대신 #518을 post-release
+  체크리스트로 연결했다. `glib 0.18.5` Dependabot 경고는 2026-09-01 공식 Tauri release/dev
+  graph와 Cargo resolver로 재검토했으며 compatible patched line이 없어 alert open·기존
+  2026-11-30 만료를 유지한다.
+
 ## [v0.6.0] - 2026-08-31
 
 v0.6.0은 15개 앱의 WSL-native 개발 흐름, dependency/protocol/task 도구, 앱 간 handoff와
-공통 UX 품질을 한 번에 배포할 예정인 통합 기능 릴리스다. 별도 신규 앱을 늘리지 않고 Dependency
+공통 UX 품질을 한 번에 배포한 통합 기능 릴리스다. 별도 신규 앱을 늘리지 않고 Dependency
 Lens는 Repo Manager·Workbench, Dev Setup과 로컬 품질은 Devbox Manager, Protocol/MCP Lab은
 API Playground, Task Runner는 Run Manager·Workbench 안에서 검증한다.
 
@@ -84,19 +91,21 @@ API Playground, Task Runner는 Run Manager·Workbench 안에서 검증한다.
 - OAuth state/PKCE, TLS/mTLS, imported YAML, dependency metadata와 one-time handoff는 각각
   strict schema, fixed endpoint/host, no-redirect 또는 explicit confirmation, DPAPI/zeroizing,
   stale identity 재검증과 fail-closed 오류를 적용한다.
-- Dependabot `glib 0.18.5` GHSA는 2026-08-31 다시 평가했다. 현재 Tauri 2.11.5의 Linux-only
-  GTK3 graph에서 compatible patched line이 없어 2026-11-30 만료 예외를 유지하되 alert를
-  dismiss하지 않고, Windows package에 link되지 않는 범위만 인정한다.
+- Dependabot `glib 0.18.5` GHSA는 2026-09-01 post-release로 다시 평가했다. 공식 최신 Tauri
+  2.11.5와 upstream `dev`의 Linux-only GTK3 graph에서 compatible patched line이 없어
+  2026-11-30 만료 예외를 유지하되 alert를 dismiss하지 않고, Windows package에 link되지 않는
+  범위만 인정한다.
 
 ### Verification
 
-- W01~W10 구현 PR은 frontend, Linux Rust, Windows Rust, catalog, dependency와 scope gate를
-  통과한 뒤 main에 병합했다. W11은 전체 source gate와 exact version/notices/action-runtime
-  계약을 다시 실행한다.
-- stable tag는 비공개 15-app candidate의 asset/digest 및 installer lifecycle, 실제 Windows/WSL
-  packaged 회귀를 #492/#493에 기록한 뒤에만 만든다. 공개 workflow는 exact annotated tag에서
-  새 32개 asset을 build하고, 15 apps/31 manifest-declared/32 public/mismatch 0을 검증한 draft만
-  Latest stable로 전환한다.
+- W01~W11은 frontend, Linux/Windows Rust, catalog, dependency와 scope gate를 통과한 뒤
+  main에 병합됐다. exact-main candidate
+  [33384213398](https://github.com/jihoon22-lee/devbox/actions/runs/33384213398)은 15-app packaged
+  runtime과 installer lifecycle을 통과했다.
+- annotated `v0.6.0` release workflow
+  [33390009009](https://github.com/jihoon22-lee/devbox/actions/runs/33390009009)는 새 32개 asset을
+  build하고 15 apps/31 manifest-declared/32 public/mismatch 0을 검증한 뒤 Latest stable로
+  게시했다. 설치된 WSL Desktop zellij/terminal reconnect만 #518의 non-blocking observation이다.
 
 ## [v0.5.1] - 2026-08-29
 
@@ -420,7 +429,9 @@ v0.4.1은 v0.4.0 이후 발견된 터미널·앱 간 열기·Run Manager lifecyc
 
 - 자동화된 migration 사례와 10개 앱의 `tauri::Builder::default()` 이전 호출 위치는 검증했다.
 - Windows C1/C2는 사용 가능한 Windows 장비에서 legacy path가 이미 제거되어 안전하게 재현할 수
-  없었다. 이는 packaged-runtime 검증이 아니며, 남은 수동 acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서 계속 관리한다.
+  없었다. 이는 packaged-runtime 검증이 아니며 당시 남은 수동 acceptance는
+  [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에 기록했다. #176은 v0.5.1
+  historical checklist로 닫혔고 현재 v0.6.0 post-release 관찰은 #518에서 관리한다.
 
 ## [v0.4.1-rc4] - 2026-08-20
 

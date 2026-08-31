@@ -1,6 +1,6 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 현재 v0.5.1 stable의 15개 앱을 설치하거나
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 현재 v0.6.0 stable의 15개 앱을 설치하거나
 source에서 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
@@ -11,10 +11,10 @@ source에서 빌드하고 실행**하는 방법을 설명한다.
 > `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
 > `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
 
-> 현재 v0.5.1 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱과
-> #470/#473/#477/#478/#479 보강이 들어 있다. 정확한 binary·workflow·asset digest·Latest
-> metadata는 GitHub Release에서 확인한다. #176은 63 checked와 7 physical Windows-only
-> pending이며 Windows W3 packaged 확인은 별도 acceptance다.
+> 현재 v0.6.0 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱과 milestone
+> #2의 W01~W11 보강이 들어 있다. 정확한 binary·workflow·asset digest·Latest metadata는
+> [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)에서 확인한다.
+> 설치된 WSL Desktop의 zellij/terminal reconnect만 #518의 physical observation으로 남아 있다.
 
 ---
 
@@ -31,8 +31,8 @@ source에서 빌드하고 실행**하는 방법을 설명한다.
 > 빌드를 새로 하고 싶을 때(GitHub Actions가 대신 빌드):
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
 > 2. **방법 1 (안정판 태그로 배포, 권장)**: WSL/로컬에서 annotated tag를 만들고 push
->    (예: `git tag -a v0.5.2 -m "devbox v0.5.2"` 후 `git push origin refs/tags/v0.5.2`)
->    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.5.2`)
+>    (예: `git tag -a v0.6.1 -m "devbox v0.6.1"` 후 `git push origin refs/tags/v0.6.1`)
+>    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.6.1`)
 > 3. 그러면 Windows CI가 현재 catalog의 15개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
@@ -41,7 +41,7 @@ source에서 빌드하고 실행**하는 방법을 설명한다.
 > 때만 **수동 dispatch**에서 정확한 전체 버전을 입력하고 `allow_prerelease`를 `true`로
 > 선택한다. 이 gate의 기본값은 `false`다.
 
-> v0.5.1 stable의 exact annotated tag, workflow·32 public assets·31 manifest-declared assets,
+> v0.6.0 stable의 exact annotated tag, workflow·32 public assets·31 manifest-declared assets,
 > hash와 Latest 상태는 GitHub Release가 권위 있는 source다. RC1~RC3 tag/release는 삭제된
 > historical evidence이며, 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다.
 
@@ -237,8 +237,8 @@ ProductName 매핑:
 | devbox-launcher | DevboxLauncher |
 | log-lens | LogLens |
 
-Log Lens의 v0.5.0 bootstrap과 v0.5.1 #473 Run reader는 stable에 포함됐다. Windows W3 실기만
-#176에서 별도 acceptance로 관리한다.
+Log Lens의 v0.5.0 bootstrap, v0.5.1 #473 Run reader와 v0.6.0 W08 보강은 current stable에
+포함됐다. post-release 사용자 환경 관찰은 #518에서 관리한다.
 
 ---
 

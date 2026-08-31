@@ -7,9 +7,14 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 
 ## Release evidence boundary
 
+- 현재 v0.6.0 stable은 annotated tag object
+  `a974adf975862da3d5ada16c6c6efe704387ddd7`에서 peeled source
+  `d2fa25a0a1f087459838449daded00c0b09764b4`를 가리킨다. candidate workflow
+  `33384213398`과 release workflow `33390009009`가 15개 앱·32개 public asset·31개
+  manifest-declared asset·mismatch 0을 각각 검증했다.
 - 공개 v0.5.0 stable은 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`, workflow `33216176818`,
   15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0의 evidence를 가진다.
-- v0.5.1 stable source/bundle은 #470/#473/#477/#478/#479를 포함한다. 15-app/32-public-asset/
+- v0.5.1 historical stable source/bundle은 #470/#473/#477/#478/#479를 포함한다. 15-app/32-public-asset/
   31-manifest-declared/mismatch-0 contract와 정확한 tag commit·workflow·asset digest·Latest
   metadata는 GitHub Release가 권위 있는 publication source다.
 - v0.5.0 stable `Cargo.lock` SHA-256은
@@ -18,7 +23,9 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
   `018e8191ba4a2e019516d2423fd081b224b228ec39c0ca135c2aa74c7da9f181`이다. 현재
   v0.5.1 stable source 비교값은 각각
   `a3398f535faeba6be0a8f7a05a8ae57f1141808310c42344c132d769740fde3a`와
-  `b2cc4ca07b0886700e04364b4fb0eb0c98da99b6dde10fb58c47ab03bb563d35`이며 v0.5.0 evidence와
+  `b2cc4ca07b0886700e04364b4fb0eb0c98da99b6dde10fb58c47ab03bb563d35`다. 현재 v0.6.0 stable
+  source의 비교값은 각각 `ebe22c7df176d95685cc9ff9c0eb3760ac08b95829498d7c5884f89dd10977c7`와
+  `6cbc242562e62ac8892bc88e3ca8fcad5e1dd7911db2b46a200cb8d1786a26d9`이며 release별 evidence를
   혼용하지 않는다.
 
 ## Enforced gates
@@ -31,13 +38,13 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 | Notices | 두 lockfile + package metadata | 666 Rust package와 157 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
 | Distribution | `tauri.conf.json`, release manifest | 모든 release 앱 installer에 notices resource를 넣고, release에는 notices와 그 size/SHA-256을 manifest-declared asset으로 게시 |
 
-v0.5.1 stable source의 `THIRD_PARTY_NOTICES.md`는 140,357 bytes이며 위 SHA-256과 함께
+v0.6.0 stable source의 `THIRD_PARTY_NOTICES.md`는 145,317 bytes이며 위 SHA-256과 함께
 기록된 비교값이다. installer에서는 동일 파일을 압축 resource로 포함하므로 새 executable
 runtime이나 network dependency를 추가하지 않는다. portable 사용자는 release의 독립 notice
 asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 optional `notices` 필드를
 추가하므로 기존 Devbox Manager parser와 호환된다. v0.5.0 stable evidence는 15개 앱 기준
-30 binaries + notices + manifest의 32 assets였고, v0.5.1 release workflow도 같은 contract를
-독립 검증한다.
+30 binaries + notices + manifest의 32 assets였고, v0.6.0 release workflow도 같은 contract를
+독립 검증했다.
 
 ## Current decisions
 
@@ -108,12 +115,18 @@ code, a downloaded compiler, or a certificate-verification bypass.
 
 ### Manual review record
 
-- `glib` GHSA-wrw7-89jp-8q8g는 Linux-only Tauri GTK transitive dependency다. 2026-08-31
-  v0.6.0 release-preparation review에서 현재 Tauri `2.11.5`가 계속 GTK3/glib `0.18.5`를
-  resolve하며, patched glib `0.20`은 해당 compatible graph 밖임을 다시 확인했다. Windows installer에
-  link되지 않는다는 engineering boundary만 기록하며 alert는 dismiss하지 않는다. policy
-  exception expiry `2026-11-30` 전 또는 Tauri update 때 graph를 다시 검토한다. 이는
-  vulnerability-free 또는 법적 면책 선언이 아니다.
+- `glib` [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g)는 Linux-only
+  Tauri GTK transitive dependency다. 2026-09-01 post-release review에서 GitHub advisory의
+  affected range가 `>=0.15.0,<0.20.0`, patched version이 `0.20.0`임을 확인했다. 공식
+  [최신 Tauri release `2.11.5`](https://github.com/tauri-apps/tauri/releases/tag/tauri-v2.11.5)와
+  [upstream `dev` manifest](https://github.com/tauri-apps/tauri/blob/dev/crates/tauri/Cargo.toml) 모두
+  `gtk = "0.18"`을 유지하고, 로컬 `cargo tree -i glib@0.18.5 --workspace -e normal`은
+  `tauri 2.11.5 → gtk/webkit2gtk → glib 0.18.5` 경로를 확인했다.
+  `cargo update -p glib@0.18.5 --precise 0.20.0 --dry-run`은 `gtk 0.18.2`의 `glib ^0.18`
+  제약으로 해석에 실패하므로 compatible patched graph는 아직 없다. Windows installer에
+  link되지 않는다는 engineering boundary만 기록하고 Dependabot alert는 open 상태로 유지한다.
+  exception expiry `2026-11-30`은 연장하지 않았으며, 그 전 또는 Tauri update 때 graph를 다시
+  검토한다. 이는 vulnerability-free 또는 법적 면책 선언이 아니다.
 - MPL transitive crates는 upstream source를 수정하지 않은 engineering 상태와 exact version/source/
   digest를 notices에 남긴다. source를 수정하면 MPL source-distribution 검토를 다시 한다.
 - `dompurify`의 `(MPL-2.0 OR Apache-2.0)` 중 Apache branch를 선택한 것은 배포 engineering

@@ -4,19 +4,19 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ## Release status boundary
 
-- 공개 v0.5.0 stable은 15개 앱과 32개 public asset(31개 manifest-declared, mismatch 0)을
-  tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54` 및 workflow `33216176818`에서 검증했다.
-- v0.5.1 stable source/bundle은 #470 Windows acceptance inventory, #473 Run reader,
-  #477 prerelease gate, #478 Manager 보강, #479로 닫힌 #474 named sidecar 계약을 포함한다.
-  15-app/32-public-asset/31-declared/mismatch-0은 release contract이며, 정확한 tag·workflow·asset digest·Latest metadata는
-  GitHub Release가, Windows 수동 acceptance는 #176이 권위 있는 source다.
-- #176은 63 checked와 7 physical Windows-only pending으로 유지한다. RC1~RC3 tag/release는
-  삭제된 historical evidence이며, 미래 RC는 사용자의 명시 요청 전에는 만들지 않는다.
-- v0.6.0 W01~W10 source는 main에 통합됐고 W11의 version/dependency/package/physical acceptance가
-  진행 중이다. `Windows package candidate`는 exact current main의 15 portable·15 NSIS·notices·
-  manifest를 private Actions artifact로만 만들고 disposable installer lifecycle을 실행한다.
-  이 artifact는 catalog/runtime source가 아니며 public release, RC 또는 Latest 상태를 만들지
-  않는다. 실제 publication identity와 digest는 #493 및 향후 GitHub v0.6.0 Release만 소유한다.
+- 공개 Latest stable은 [v0.6.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)이다.
+  milestone #2의 W01~W11, 15개 앱과 32개 public asset(31개 manifest-declared, mismatch 0)을
+  peeled source `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate workflow `33384213398`,
+  release workflow `33390009009`에서 검증했다.
+- 정확한 annotated tag object·workflow·asset digest·Latest metadata는 GitHub Release가 권위 있는
+  publication source다. #493은 완료된 release ledger이고, #518은 설치된 WSL Desktop의
+  zellij/terminal reconnect와 post-release 유지보수를 구분해 관리한다.
+- v0.5.0과 v0.5.1의 tag·workflow·acceptance는 historical evidence로 보존한다. #176은 닫힌
+  v0.5.1 checklist이며, RC1~RC3 tag/release는 삭제된 historical evidence다. 미래 RC는 사용자가
+  명시적으로 요청하기 전에는 만들지 않는다.
+- `Windows package candidate`는 앞으로도 exact current main의 portable·NSIS·notices·manifest를
+  private Actions artifact로만 만들고 disposable installer lifecycle을 실행하는 pre-publication
+  gate다. candidate는 catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
 
 ## 핵심 원칙
 
@@ -47,9 +47,9 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-위 그림은 v0.5.0 historical stable과 현재 v0.5.1 stable에 공통인 구조다.
+위 그림은 v0.5.0/v0.5.1 historical stable과 현재 v0.6.0 stable에 공통인 구조다.
 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다. v0.5.1의 maintenance correction은
-v0.5.0 binary와 별도다.
+v0.5.0 binary와 별도이며 v0.6.0에도 유지된다.
 
 - 신규 독립 앱 `devbox-launcher`·`log-lens` bootstrap 구현 — 현재 15개 앱. Log Lens의
   Run reader #473과 Run Manager named sidecar #479/#474는 v0.5.0 tag 이후 source correction으로
@@ -192,9 +192,10 @@ devbox-manager:   React → commands → catalog/manifest/install-root preview �
 workbench:        React → commands → ProjectProfile/read-only health + 다른 앱 실행 (CLI argument,
                    v0.4.0에서는 argv 수신 부재로 미동작했으나, v0.4.1에서 crates/applink와
                    single-instance pending-open 수신을 Code Pad/WSL Desktop/Workbench에 구현.
-                   v0.4.1은 이 핫픽스를 포함한 안정판으로 배포됐다. 남은 Windows packaged-runtime
-                   acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에서
-                   post-release로 계속 관리한다.
+                   v0.4.1은 이 핫픽스를 포함한 안정판으로 배포됐다. 당시 남은 Windows
+                   packaged-runtime acceptance는
+                   [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에 기록됐고,
+                   현재 v0.6.0 post-release 관찰은 #518에서 관리한다.
                    ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate → repository/worktree 탐색·생성
@@ -870,9 +871,9 @@ multi-view envelope이다. jobs-services는 모든 job/service를
 bounded action entry로 제공한다. producer는 command/cwd/environment/path/credential/log를
 복사하지 않으며, invalid/duplicate/bounded-out definitions는 sidecar atomic replace를 거부해
 last-good sidecar를 유지한다. Launcher는 sidecar를 우선 읽고, sidecar가 없는 경우에만 v1
-flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 tag 이후 반영됐고
-현재 v0.5.1 stable source/bundle에 포함된다. 공개 v0.5.0 binary에는 포함되지 않으며,
-v0.5.1 publication metadata와 asset digest는 GitHub Release에서 확인한다.
+flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 tag 이후 반영돼
+v0.5.1에서 처음 배포됐고 현재 v0.6.0에도 포함된다. 공개 v0.5.0 binary에는 포함되지 않으며,
+release별 publication metadata와 asset digest는 각 GitHub Release에서 확인한다.
 
 catalog revision 13(`#484`)부터 Repo Manager는
 `snapshot:repo-manager/dependency-summary/v1` capability를 생산한다. 사용자가 선택한 repository의
@@ -918,8 +919,9 @@ snapshot을 다시 읽어 entry·target capability·payload를 재검증하며, 
 각 수신 경계에서 다시 확인한다. Launcher의 favorites/recency 파일에는 result ID만 저장하고
 label·path·query·payload·source detail·secret은 저장하지 않는다. sidecar가 없거나 읽을 수
 없거나 손상된 경우 missing·corrupt·permission·linked를 source별로 구분해 격리하며, 한 source
-오류가 다른 source 검색을 막지 않는다. 이 문단은 source 구현 계약만 기록하며 Windows 실기
-acceptance와 v0.6.0 release 완료를 의미하지 않는다.
+오류가 다른 source 검색을 막지 않는다. 이 문단은 source 구현 계약만 기록하며, 작성 당시에는
+Windows 실기 acceptance와 v0.6.0 release 완료를 주장하지 않았다. 후속 #493 candidate/release
+gate가 이를 별도로 완료했다.
 
 catalog revision 15(W07)에서는 `developer-toolbox`가 `handoff:toolbox-text/v1`을 accept하고
 기존 `handoff:api-request/v1`와 `handoff:knowledge-draft/v2`를 produce한다. API Playground와
