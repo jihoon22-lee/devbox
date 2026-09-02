@@ -186,6 +186,7 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
     isFocusedPane: false,
     broadcastOn: false,
     broadcastTargetIds: [],
+    isBroadcastTarget: false,
     copyOnSelect: true,
     fontSize: 13,
     fontFamily: fontFamilyFor(DEFAULT_SETTINGS.fontId),

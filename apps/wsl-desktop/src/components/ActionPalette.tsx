@@ -5,6 +5,8 @@ export interface PaletteAction {
   id: string;
   label: string;
   description?: string;
+  /** 같은 동작의 키보드 단축키. 팔레트가 자기가 대신하는 조합을 알려 준다. */
+  keys?: string;
   danger?: boolean;
   run: () => void;
 }
@@ -99,7 +101,10 @@ export default function ActionPalette({ open, actions, onClose }: ActionPaletteP
               onMouseEnter={() => setSelectedIndex(index)}
               onClick={() => run(action)}
             >
-              <span>{action.label}</span>
+              <span className="palette-label">
+                {action.label}
+                {action.keys && <kbd className="palette-keys">{action.keys}</kbd>}
+              </span>
               {action.description && <small>{action.description}</small>}
             </button>
           ))}

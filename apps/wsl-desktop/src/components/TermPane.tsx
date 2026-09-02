@@ -56,6 +56,8 @@ interface TermPaneProps {
   broadcastOn: boolean;
   /** broadcast 대상 세션 id 목록 (활성 탭의 paneIds). */
   broadcastTargetIds: string[];
+  /** 이 팬이 지금 무장된 동시 입력의 대상인지. 화면에 그대로 표시한다. */
+  isBroadcastTarget: boolean;
   /** 새 native/mux 세션에만 한 번 보내며, 기존 mux 재연결에는 전달하지 않는다. */
   initialCommand?: string;
   copyOnSelect: boolean;
@@ -124,6 +126,7 @@ export default function TermPane({
   isFocusedPane,
   broadcastOn,
   broadcastTargetIds,
+  isBroadcastTarget,
   initialCommand,
   copyOnSelect,
   fontSize,
@@ -628,11 +631,14 @@ export default function TermPane({
 
   return (
     <div
-      className={`pane ${isFocusedPane ? "pane-focused" : ""}`}
+      className={`pane ${isFocusedPane ? "pane-focused" : ""} ${isBroadcastTarget ? "pane-broadcast-target" : ""}`}
       style={style}
+      // 팬은 터미널과 그 컨트롤을 묶은 영역이다. role 없는 div에는 컨텍스트 메뉴 trigger가
+      // 붙이는 aria-haspopup/aria-expanded를 쓸 수 없다.
+      role="group"
       tabIndex={-1}
       data-pane-id={sessionId}
-      aria-label={`${title} 터미널 팬`}
+      aria-label={isBroadcastTarget ? `${title} 터미널 팬 · 동시 입력 대상` : `${title} 터미널 팬`}
       onMouseDownCapture={onFocusPane}
       // xterm 내부 handler가 bubble을 중단해도 pane menu가 먼저 열리도록 capture에서 받는다.
       onContextMenuCapture={onContextMenu}
@@ -650,6 +656,11 @@ export default function TermPane({
         {multiplexer !== "native" && (
           <span className="pane-badge" title={`이 팬은 ${multiplexer} 세션으로 실행 중입니다`}>
             {multiplexer}
+          </span>
+        )}
+        {isBroadcastTarget && (
+          <span className="pane-badge broadcast" title="동시 입력이 이 팬에도 전달됩니다">
+            동시 입력
           </span>
         )}
         {resumed && (

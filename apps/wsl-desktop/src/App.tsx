@@ -25,6 +25,7 @@ import {
 import AppDialog, { useAppDialog, type AskDialog } from "./components/AppDialog";
 import DistroPanel from "./components/DistroPanel";
 import SettingsPanel from "./components/SettingsPanel";
+import ShortcutReference from "./components/ShortcutReference";
 import ActionPalette, { type PaletteAction } from "./components/ActionPalette";
 import PaneCanvas from "./components/PaneCanvas";
 import type { TerminalPaneCapabilities, TerminalPaneHandle } from "./components/TermPane";
@@ -34,6 +35,7 @@ import { routeOpenRequest } from "./lib/applink";
 import { makeId } from "./lib/id";
 import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./lib/contextMenu";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
+import { nextPaneIndex, type FocusDirection } from "./lib/paneGeometry";
 import {
   MAX_BROADCAST_TARGETS,
   nextBroadcastTargets,
@@ -87,6 +89,12 @@ import {
 } from "./lib/settings";
 import "./App.css";
 
+const LAYOUT_LABELS: Readonly<Record<Layout, string>> = {
+  grid: "격자",
+  cols: "세로 분할",
+  rows: "가로 분할",
+};
+
 const DASHBOARD_ERROR_MESSAGE = "WSL resource snapshot을 갱신하지 못했습니다. 마지막 정상 상태를 유지합니다.";
 
 export default function App() {
@@ -104,6 +112,7 @@ export default function App() {
   const [settings, setSettings] = useState<TerminalSettings>(loadSettings);
   const panelOpen = settings.sidePanelOpen;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
   const [cwd, setCwd] = useState<string>(() => (loadPinned() ? loadPinnedCwd() : ""));
   const [recentPaths, setRecentPaths] = useState<string[]>(loadRecentPaths);
@@ -1032,7 +1041,13 @@ export default function App() {
     if (workspaceLoading) setPaletteOpen(false);
   }, [workspaceLoading]);
 
-  const openNewTab = () => startInTab(null, selected);
+  // 분할이 활성 팬의 cwd를 물려받는 것과 같은 기대에 맞춘다. 툴바에 사용자가 직접 입력한
+  // 경로가 있으면 그 값이 우선한다.
+  const openNewTab = () => {
+    const activePane = panes.find((pane) => pane.sessionId === activePaneId);
+    const inherited = cwd.trim() ? undefined : activePane?.cwd;
+    return startInTab(null, activePane?.distro ?? selected, inherited);
+  };
   // 툴바 "+ Terminal"과 Ctrl+Shift+D는 같은 동작이다: 활성 탭이 있으면 분할 추가,
   // 없으면(앱을 막 띄운 직후) 새 탭을 만든다.
   const addPane = () => startInTab(tabs.length === 0 ? null : activeTabId, selected);
@@ -1212,13 +1227,18 @@ export default function App() {
 
   const setActiveTabLayout = (layout: Layout) => setTabLayout(activeTabId, layout);
 
-  const focusPane = (dir: 1 | -1) => {
+  const focusPane = (direction: FocusDirection) => {
     const tab = tabs.find((t) => t.id === activeTabId);
     if (!tab || tab.paneIds.length === 0) return;
-    const idx = tab.paneIds.indexOf(activePaneId ?? "");
-    const base = idx === -1 ? (dir === 1 ? -1 : 0) : idx;
-    const next = (base + dir + tab.paneIds.length) % tab.paneIds.length;
-    setActivePaneId(tab.paneIds[next]);
+    const current = tab.paneIds.indexOf(activePaneId ?? "");
+    if (current === -1) {
+      setActivePaneId(tab.paneIds[0]);
+      return;
+    }
+    // 화면상의 이웃으로만 옮긴다. 목록 순환이면 격자에서 오른쪽을 눌렀는데 아래 줄
+    // 첫 팬으로 건너뛰는 일이 생긴다.
+    const next = nextPaneIndex(tab.layout, tab.paneIds.length, current, direction);
+    if (next !== null) setActivePaneId(tab.paneIds[next]);
   };
 
   const handleShortcut = (action: ShortcutAction) => {
@@ -1246,7 +1266,7 @@ export default function App() {
         gotoTab(action.index);
         break;
       case "focus-pane":
-        focusPane(action.dir);
+        focusPane(action.direction);
         break;
     }
   };
@@ -1461,6 +1481,40 @@ export default function App() {
 
   const paletteActions: PaletteAction[] = [
     {
+      id: "new-tab",
+      label: "탭: 새 탭",
+      description: "활성 팬의 배포판·cwd를 물려받는다",
+      keys: "Ctrl+Shift+T",
+      run: () => void openNewTab(),
+    },
+    {
+      id: "new-pane",
+      label: "팬: 활성 탭에 추가",
+      keys: "Ctrl+Shift+D",
+      run: () => void addPane(),
+    },
+    {
+      id: "rename-tab",
+      label: "탭: 이름 변경",
+      run: () => {
+        if (activeTab) void renameContextTab(activeTab);
+      },
+    },
+    {
+      id: "close-tab",
+      label: "탭: 닫기",
+      description: "탭의 모든 터미널이 함께 닫힌다",
+      danger: true,
+      run: () => {
+        if (activeTabId) void requestCloseTab(activeTabId);
+      },
+    },
+    ...(["grid", "cols", "rows"] as const).map((layout): PaletteAction => ({
+      id: `layout-${layout}`,
+      label: `레이아웃: ${LAYOUT_LABELS[layout]}`,
+      run: () => setActiveTabLayout(layout),
+    })),
+    {
       id: "split-vertical",
       label: "팬: 세로 분할",
       description: "활성 팬과 같은 배포판/cwd로 오른쪽에 추가",
@@ -1476,7 +1530,24 @@ export default function App() {
       id: "search",
       label: "팬: 출력 검색",
       description: "활성 팬의 스크롤백 검색",
+      keys: "Ctrl+Shift+F",
       run: () => activePaneId && terminalHandles.current.get(activePaneId)?.openSearch(),
+    },
+    {
+      id: "copy",
+      label: "팬: 선택 복사",
+      keys: "Ctrl+Shift+C",
+      run: () => {
+        if (activePaneId) void terminalHandles.current.get(activePaneId)?.copySelection();
+      },
+    },
+    {
+      id: "paste",
+      label: "팬: 붙여넣기",
+      keys: "Ctrl+Shift+V",
+      run: () => {
+        if (activePaneId) void terminalHandles.current.get(activePaneId)?.pasteClipboard();
+      },
     },
     {
       id: "copy-cwd",
@@ -1485,6 +1556,12 @@ export default function App() {
       run: () => {
         if (activePaneId) void terminalHandles.current.get(activePaneId)?.copyCwd();
       },
+    },
+    {
+      id: "font-reset",
+      label: "글꼴 크기 기본값",
+      keys: "Ctrl+0",
+      run: () => updateTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE),
     },
     {
       id: "settings",
@@ -1496,11 +1573,40 @@ export default function App() {
       id: "close-pane",
       label: "팬: 닫기",
       description: "실행 중인 작업이 종료될 수 있음",
+      keys: "Ctrl+Shift+W",
       danger: true,
       run: () => {
         if (activePaneId) void requestClosePane(activePaneId);
       },
     },
+    {
+      id: "toggle-panel",
+      label: `사이드 패널 ${panelOpen ? "숨기기" : "보이기"}`,
+      run: () => updateSettings({ sidePanelOpen: !panelOpen }),
+    },
+    {
+      id: "refresh-snapshot",
+      label: "WSL snapshot 새로 고침",
+      run: () => {
+        if (logLensBusyRef.current === null) void refreshDashboard(true).catch(() => undefined);
+      },
+    },
+    {
+      id: "save-profile",
+      label: "현재 레이아웃을 프로필로 저장",
+      run: () => void saveCurrentProfile(),
+    },
+    {
+      id: "shortcuts",
+      label: "키보드 단축키 보기",
+      run: () => setShortcutsOpen(true),
+    },
+    ...distros.map((distro): PaletteAction => ({
+      id: `open-distro-${distro.name}`,
+      label: `터미널 열기: ${distro.name}`,
+      description: distro.default ? "기본 배포판" : undefined,
+      run: () => openDistroTerminal(distro.name),
+    })),
     ...profiles.map((profile): PaletteAction => ({
       id: `profile-${profile.id}`,
       label: `프로필 전환: ${profile.name}`,
@@ -1590,6 +1696,9 @@ export default function App() {
         </button>
         <button className="btn" title="설정" onClick={() => setSettingsOpen(true)}>
           설정
+        </button>
+        <button className="btn" title="키보드 단축키" onClick={() => setShortcutsOpen(true)}>
+          단축키
         </button>
         <span className="spacer" />
         <label
@@ -1711,13 +1820,29 @@ export default function App() {
         )}
 
         <div className="terminal-area">
-          {error && <div className="error" role="alert" aria-live="assertive">{error}</div>}
+          {error && (
+            <div className="error" role="alert">
+              <span>{error}</span>
+              <button
+                type="button"
+                className="error-dismiss"
+                aria-label="오류 메시지 닫기"
+                onClick={() => setError(null)}
+              >
+                ✕
+              </button>
+            </div>
+          )}
 
           <TabBar
             tabs={tabs}
             activeTabId={activeTabId}
             onActivate={activateTab}
             onClose={(tabId) => void requestCloseTab(tabId)}
+            onRename={(tabId) => {
+              const tab = tabs.find((candidate) => candidate.id === tabId);
+              if (tab) void renameContextTab(tab);
+            }}
             onReorder={reorderTabs}
             onDropPane={movePaneToTab}
             onNewTab={() => void openNewTab()}
@@ -1785,6 +1910,7 @@ export default function App() {
         ariaLabel="터미널 탭 메뉴"
       />
       <ActionPalette open={paletteOpen} actions={paletteActions} onClose={() => setPaletteOpen(false)} />
+      <ShortcutReference open={shortcutsOpen} onClose={() => setShortcutsOpen(false)} />
       <SettingsPanel
         open={settingsOpen}
         settings={settings}

@@ -295,7 +295,7 @@ describe("WSL Desktop pane and tab context menus", () => {
     await screen.findByLabelText("Ubuntu 2 터미널 탭");
 
     fireEvent.contextMenu(tab);
-    expect(tab).toHaveAttribute("aria-current", "true");
+    expect(tab).toHaveAttribute("aria-selected", "true");
     fireEvent.click(screen.getByRole("menuitem", { name: "다른 탭 닫기" }));
     await answerDialog(false);
     expect(closeSessionMock).not.toHaveBeenCalled();
