@@ -1,5 +1,5 @@
 import { useEffect, useRef, type CSSProperties, type HTMLAttributes } from "react";
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
@@ -131,8 +131,21 @@ vi.mock("./api", () => ({
 
 const startSessionMock = vi.mocked(startSession);
 const closeSessionMock = vi.mocked(closeSession);
-const confirmMock = vi.fn<(message?: string) => boolean>();
-const promptMock = vi.fn<(message?: string, defaultValue?: string) => string | null>();
+
+/** 앱 내장 대화상자는 취소가 첫 버튼, 확인이 마지막 버튼이다. */
+async function openDialog(): Promise<HTMLElement> {
+  return screen.findByRole("alertdialog");
+}
+
+async function answerDialog(confirmed: boolean, value?: string): Promise<void> {
+  const dialog = await openDialog();
+  if (value !== undefined) {
+    fireEvent.change(within(dialog).getByRole("textbox"), { target: { value } });
+  }
+  const buttons = within(dialog).getAllByRole("button");
+  fireEvent.click(confirmed ? buttons[buttons.length - 1] : buttons[0]);
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+}
 
 async function renderWithPane(cwd = "") {
   render(<App />);
@@ -160,10 +173,6 @@ beforeEach(() => {
     multiplexer: "native",
   }));
   closeSessionMock.mockReset().mockResolvedValue(undefined);
-  confirmMock.mockReset().mockReturnValue(false);
-  promptMock.mockReset().mockReturnValue(null);
-  Object.defineProperty(window, "confirm", { configurable: true, value: confirmMock });
-  Object.defineProperty(window, "prompt", { configurable: true, value: promptMock });
 });
 
 afterEach(() => cleanup());
@@ -224,14 +233,14 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.keyDown(pane, { key: "F10", code: "F10", shiftKey: true });
     fireEvent.click(screen.getByRole("menuitem", { name: "팬 닫기" }));
 
-    expect(confirmMock).toHaveBeenCalledTimes(1);
+    await answerDialog(false);
     expect(closeSessionMock).not.toHaveBeenCalled();
     await waitFor(() => expect(mocks.terminalFocus).toHaveBeenCalledWith("session-1"));
-    expect(document.activeElement).toBe(pane);
+    await waitFor(() => expect(document.activeElement).toBe(pane));
 
-    confirmMock.mockReturnValueOnce(true);
     fireEvent.keyDown(pane, { key: "ContextMenu", code: "ContextMenu" });
     fireEvent.click(screen.getByRole("menuitem", { name: "팬 닫기" }));
+    await answerDialog(true);
     await waitFor(() => expect(closeSessionMock).toHaveBeenCalledWith("session-1"));
     await waitFor(() => expect(screen.queryByLabelText("Ubuntu 터미널 팬")).not.toBeInTheDocument());
   });
@@ -246,11 +255,12 @@ describe("WSL Desktop pane and tab context menus", () => {
     }
     expect(screen.getByRole("menuitem", { name: "다른 탭 닫기" })).toHaveAttribute("aria-disabled", "true");
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    await answerDialog(false);
     await waitFor(() => expect(document.activeElement).toBe(tab));
 
-    promptMock.mockReturnValueOnce("작업 탭");
     fireEvent.keyDown(tab, { key: "ContextMenu", code: "ContextMenu" });
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    await answerDialog(true, "작업 탭");
     const renamed = await screen.findByLabelText("작업 탭 터미널 탭") as HTMLDivElement;
 
     fireEvent.contextMenu(renamed);
@@ -266,9 +276,9 @@ describe("WSL Desktop pane and tab context menus", () => {
     const autoTitle = await screen.findByLabelText("npm test 터미널 탭");
     expect(pane).toHaveAttribute("aria-label", "npm test 터미널 팬");
 
-    promptMock.mockReturnValueOnce("내 작업");
     fireEvent.contextMenu(autoTitle);
     fireEvent.click(screen.getByRole("menuitem", { name: "이름 변경" }));
+    await answerDialog(true, "내 작업");
     const customTitle = await screen.findByLabelText("내 작업 터미널 탭");
 
     fireEvent.click(screen.getByTitle("Emit title session-1"));
@@ -285,11 +295,12 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.contextMenu(tab);
     expect(tab).toHaveAttribute("aria-current", "true");
     fireEvent.click(screen.getByRole("menuitem", { name: "다른 탭 닫기" }));
+    await answerDialog(false);
     expect(closeSessionMock).not.toHaveBeenCalled();
 
-    confirmMock.mockReturnValueOnce(true);
     fireEvent.contextMenu(tab);
     fireEvent.click(screen.getByRole("menuitem", { name: "다른 탭 닫기" }));
+    await answerDialog(true);
     await waitFor(() => expect(closeSessionMock).toHaveBeenCalledWith("session-2"));
     expect(closeSessionMock).not.toHaveBeenCalledWith("session-1");
     await waitFor(() => expect(screen.queryByLabelText("Ubuntu 2 터미널 탭")).not.toBeInTheDocument());
@@ -299,13 +310,13 @@ describe("WSL Desktop pane and tab context menus", () => {
     const { tab } = await renderWithPane();
 
     fireEvent.click(screen.getByTitle("탭 닫기"));
-    expect(confirmMock).toHaveBeenCalledTimes(1);
+    await answerDialog(false);
     expect(closeSessionMock).not.toHaveBeenCalled();
     expect(tab).toBeInTheDocument();
 
-    confirmMock.mockReturnValueOnce(true);
     fireEvent.contextMenu(tab);
     fireEvent.click(screen.getByRole("menuitem", { name: "닫기" }));
+    await answerDialog(true);
     await waitFor(() => expect(closeSessionMock).toHaveBeenCalledWith("session-1"));
     await waitFor(() => expect(screen.queryByLabelText("Ubuntu 터미널 탭")).not.toBeInTheDocument());
   });
@@ -320,10 +331,9 @@ describe("WSL Desktop pane and tab context menus", () => {
     closeSessionMock.mockImplementation(async (id) => {
       if (id === "session-3") throw new Error(raw);
     });
-    confirmMock.mockReturnValueOnce(true);
-
     fireEvent.contextMenu(tab);
     fireEvent.click(screen.getByRole("menuitem", { name: "다른 탭 닫기" }));
+    await answerDialog(true);
 
     await waitFor(() => expect(closeSessionMock).toHaveBeenCalledWith("session-2"));
     await waitFor(() => expect(closeSessionMock).toHaveBeenCalledWith("session-3"));
@@ -346,8 +356,8 @@ describe("WSL Desktop pane and tab context menus", () => {
     expect(document.body.textContent).not.toContain(raw);
 
     closeSessionMock.mockRejectedValueOnce(new Error(raw));
-    confirmMock.mockReturnValueOnce(true);
     fireEvent.click(screen.getByTitle("Close terminal session-1"));
+    await answerDialog(true);
     expect(await screen.findByText("터미널 팬을 닫지 못했습니다.")).toBeInTheDocument();
     expect(document.body.textContent).not.toContain(raw);
   });

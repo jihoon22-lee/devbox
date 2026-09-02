@@ -1,5 +1,6 @@
 import type { CSSProperties } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
+import type { AskDialog } from "./AppDialog";
 import TermPane, { type TerminalPaneHandle } from "./TermPane";
 import type { Pane, Tab } from "../types";
 import type { ShortcutAction } from "../lib/shortcuts";
@@ -29,6 +30,8 @@ interface PaneCanvasProps {
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
   actionsDisabled: boolean;
+  ask: AskDialog;
+  onConfirmLinkHost: (host: string) => Promise<boolean>;
 }
 
 /**
@@ -71,6 +74,8 @@ export default function PaneCanvas({
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
+  ask,
+  onConfirmLinkHost,
 }: PaneCanvasProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activePaneIds = activeTab?.paneIds ?? [];
@@ -130,6 +135,8 @@ export default function PaneCanvas({
             windowsBuildNumber={windowsBuildNumber}
             contextMenuTriggerProps={contextMenuTriggerProps}
             actionsDisabled={actionsDisabled}
+            ask={ask}
+            onConfirmLinkHost={onConfirmLinkHost}
             style={active ? { order } : { display: "none" }}
           />
         );

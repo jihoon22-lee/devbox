@@ -10,10 +10,16 @@
 - **클립보드** — 선택 자동 복사(기본 켬, 설정 저장), `Ctrl+Shift+C/V`, 가운데 버튼
   붙여넣기. `Ctrl+C`는 선택 유무와 무관하게 항상 셸의 SIGINT로 남고, 개행이 든
   붙여넣기는 내용 대신 줄 수만 표시해 확인한다. 단일 paste는 최대 1,000,000자다.
+- **앱 내장 확인·입력 창** — 모든 확인과 이름 입력은 native `confirm`/`prompt` 대신 앱 안의
+  대화상자를 쓴다. 테마·`Esc` 취소·IME·focus 복원(연 곳으로 정확히 되돌림)을 앱의 다른
+  대화상자와 공유하고, 요청이 겹치면 순서대로 하나씩 묻는다. 실행 직전 최종 문자열은
+  monospace 블록으로 그대로 보여 준다.
 - **검색·메타데이터·링크** — 팬별 스크롤백 검색(`Ctrl+Shift+F`, Enter/Shift+Enter),
   OSC 0/2 제목과 OSC 7 현재 cwd, OSC 8·일반 HTTP(S) 링크를 지원한다. 자동 탭 제목은
   활성 팬을 따르지만 사용자가 바꾼 탭 이름은 OSC가 덮어쓰지 않는다. 링크는 scheme과
-  자격 증명을 검사하고 host 확인 뒤 기본 브라우저에서 연다. 검색어는 최대 512자다.
+  자격 증명을 검사하고 host 확인 뒤 기본 브라우저에서 연다. host 확인에서 "이 창에서는 이
+  host를 다시 묻지 않기"를 고르면 그 창이 살아 있는 동안만 같은 host를 다시 묻지 않으며,
+  이 선택은 저장하지 않는다. 검색어는 최대 512자다.
 - **팬·탭 컨텍스트 메뉴** — 팬 복사·붙여넣기·검색·세로/가로 분할·cwd 복사·확인 후
   닫기, 탭 닫기·다른 탭 닫기·이름 변경·레이아웃 전환. 우클릭과
   `Shift+F10`/Menu 키를 지원하고 닫힌 뒤 실제 터미널로 focus를 복원한다. 복사와 cwd
@@ -36,9 +42,14 @@
 - **동시 입력(broadcast)** — 기본 OFF. 활성 탭의 팬을 최소 2개, 최대 32개까지 직접 선택하고 대상 수를
   확인해야 켤 수 있다. 여러 줄 붙여넣기와 위험 명령 Enter는 대상 수와 실행 위험을 다시
   확인한다. 셸 redirection(`<`, `>`, `<<`, `>>`)은 공백이 없어도 위험 명령으로 분류한다.
-  취소한 위험 명령은 다음 Enter에서도 재확인한다. resource/session snapshot이
-  새로 고쳐지는 중이거나 오래되면 동시 입력은 자동으로 OFF/fail-closed가 되고, 일반 팬의
-  단일 입력·PTY I/O는 계속 사용할 수 있다.
+  취소한 위험 명령은 다음 Enter에서도 재확인한다. 확인 창이 열려 있는 동안 들어온 입력은
+  버리지 않고 도착 순서대로 최대 256 chunk까지 대기시켰다가 확인 뒤 같은 순서로 보낸다.
+  resource/session snapshot 수집이 실패했거나 마지막 정상 snapshot이 TTL을 넘겼거나 대상 팬
+  구성이 바뀌면 동시 입력은 자동으로 OFF/fail-closed가 된다. 새 collection이 진행 중이라는
+  사실만으로는 끄지 않는다 — snapshot은 distro별 개수만 담고 대상 세션의 정체성은 담지
+  않으며 backend가 보유하지 않은 세션의 broadcast를 스스로 거부하므로, 진행 중이라는 이유로
+  끄는 것은 안전을 더하지 않고 TTL 주기마다 사용자가 켜 둔 상태만 되돌린다. 일반 팬의 단일
+  입력·PTY I/O는 어느 경우에도 계속 사용할 수 있다.
 - **선택적 프로세스 유지** — native workspace는 외부 도구 없이 완전하게 동작한다. 이미
   설치된 tmux/zellij만 감지해 stable `wsld-*` 세션에 opt-in attach하며, 설치·download하지
   않고 부재/감지 실패 시 native로 폴백한다. 감지는 login shell이나 rc 파일을 실행하지 않고
@@ -111,6 +122,7 @@
 - 프로젝트·git 상태는 Workbench로 이관됨 (`com.devbox.workbench\project-profiles.json`)
 - `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기, version 1
   마지막 레이아웃. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
+  링크 host의 "다시 묻지 않기" 선택은 process memory에만 두며 저장하지 않는다.
 - Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지
   않는다.
 - 공용 integration snapshot은 `%LOCALAPPDATA%\\devbox\\integration\\wsl-desktop\\v1\\summary.json`
@@ -200,8 +212,9 @@
   start/close/reader cleanup은 250ms debounce trigger를 공유한다. producer당 단일 worker와
   dashboard command의 collection lock이 동시 trigger/수동 refresh를 합치며, 수집은 distro별
   순차 실행으로 고정한다. 화면은 snapshot revision 하나의 distro/resource/Docker/terminal
-  결과만 사용하고, stale/refreshing/error 또는 Docker/workspace action 중에는 Docker mutation,
-  broadcast target과 ON 상태를 fail-closed한다.
+  결과만 사용한다. Docker mutation과 broadcast는 마지막 정상 snapshot이 TTL 안에 있고 수집이
+  실패하지 않았을 때 사용할 수 있으며, error·만료·Docker/workspace action 진행 중에는
+  fail-closed한다. 진행 중인 collection은 그 자체로 조작을 막지 않는다.
   snapshot 갱신 실패가 terminal I/O나 기존 read-only Docker panel display를 막지는 않는다.
 - `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
   탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문

@@ -29,6 +29,7 @@ import {
   type TerminalKeyAction,
 } from "../lib/terminalUx";
 import { assessBroadcastInput } from "../lib/broadcastSafety";
+import type { AskDialog } from "./AppDialog";
 
 export interface TerminalPaneCapabilities {
   hasSelection: boolean;
@@ -75,6 +76,10 @@ interface TermPaneProps {
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
   actionsDisabled: boolean;
+  /** In-app confirm/prompt. Replaces the native dialogs so focus, theme and IME match. */
+  ask: AskDialog;
+  /** Resolves the per-session host trust decision for an outbound link. */
+  onConfirmLinkHost: (host: string) => Promise<boolean>;
   /** PaneCanvas가 display:none(비활성) 또는 order(활성 탭 안에서의 시각적 순서)를 준다. */
   style?: CSSProperties;
 }
@@ -105,6 +110,9 @@ const SELECTION_COPY_DEBOUNCE_MS = 120;
 const MIN_ROWS = 4;
 const MIN_COLS = 20;
 
+// Bounded so a confirmation left open cannot grow an unbounded input backlog.
+const MAX_QUEUED_INPUT_CHUNKS = 256;
+
 export default function TermPane({
   sessionId,
   title,
@@ -131,6 +139,8 @@ export default function TermPane({
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
+  ask,
+  onConfirmLinkHost,
   style,
 }: TermPaneProps) {
   const ref = useRef<HTMLDivElement>(null);
@@ -163,6 +173,10 @@ export default function TermPane({
   onTerminalErrorRef.current = onTerminalError;
   const onBroadcastFailureRef = useRef(onBroadcastFailure);
   onBroadcastFailureRef.current = onBroadcastFailure;
+  const askRef = useRef(ask);
+  askRef.current = ask;
+  const onConfirmLinkHostRef = useRef(onConfirmLinkHost);
+  onConfirmLinkHostRef.current = onConfirmLinkHost;
 
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
@@ -176,9 +190,16 @@ export default function TermPane({
   const seqRef = useRef(0);
   const broadcastPendingCommandRef = useRef("");
   const appliedFontSizeRef = useRef(clampTerminalFontSize(fontSize));
+  // The in-app confirmation resolves asynchronously, so later keystrokes must not overtake
+  // the one being confirmed. While a confirmation is open, input queues here in arrival
+  // order and is replayed through the same dispatch path once it resolves.
+  const confirmOpenRef = useRef(false);
+  const queuedInputRef = useRef<string[]>([]);
 
   useEffect(() => {
     broadcastPendingCommandRef.current = "";
+    // A target or mode change invalidates anything still waiting behind a confirmation.
+    queuedInputRef.current = [];
   }, [broadcastOn, broadcastTargetIds.join("|")]);
 
   const copyText = useCallback(async (text: string, failureMessage: string) => {
@@ -203,12 +224,18 @@ export default function TermPane({
         onTerminalErrorRef.current("붙여넣을 내용이 1,000,000자를 초과합니다.");
         return;
       }
-      if (
-        hasMultilinePaste(text)
-        && !window.confirm(`${pasteLineCount(text)}줄을 터미널에 붙여넣을까요? 명령이 실행될 수 있습니다.`)
-      ) {
-        termRef.current?.focus();
-        return;
+      if (hasMultilinePaste(text)) {
+        const approved = await askRef.current({
+          kind: "confirm",
+          title: `${pasteLineCount(text)}줄을 터미널에 붙여넣을까요?`,
+          lines: ["각 줄이 명령으로 실행될 수 있습니다."],
+          confirmLabel: "붙여넣기",
+          danger: true,
+        });
+        if (!approved.confirmed) {
+          termRef.current?.focus();
+          return;
+        }
       }
       termRef.current?.paste(text);
       termRef.current?.focus();
@@ -251,7 +278,7 @@ export default function TermPane({
       return;
     }
     const host = new URL(url).hostname;
-    if (!window.confirm(`'${host}' 링크를 기본 브라우저에서 열까요?`)) return;
+    if (!(await onConfirmLinkHostRef.current(host))) return;
     try {
       await openTerminalLink(url);
     } catch {
@@ -389,23 +416,60 @@ export default function TermPane({
       return false;
     });
 
-    const dataDisposable = term.onData((data) => {
+    const sendBroadcast = (targets: string[], data: string) => {
+      void broadcast(targets, data).catch(() => {
+        broadcastPendingCommandRef.current = "";
+        onBroadcastFailureRef.current?.();
+        onTerminalErrorRef.current("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
+      });
+    };
+
+    const flushQueuedInput = () => {
+      while (!confirmOpenRef.current && queuedInputRef.current.length > 0) {
+        dispatchInput(queuedInputRef.current.shift() as string);
+      }
+    };
+
+    const dispatchInput = (data: string) => {
       const targets = broadcastTargetsRef.current;
-      if (broadcastRef.current && targets.length >= 2) {
-        const assessment = assessBroadcastInput(data, broadcastPendingCommandRef.current, targets.length);
-        if (assessment.confirmation && !window.confirm(assessment.confirmation)) return;
-        broadcastPendingCommandRef.current = assessment.nextPendingCommand;
-        void broadcast(targets, data).catch(() => {
-          broadcastPendingCommandRef.current = "";
-          onBroadcastFailureRef.current?.();
-          onTerminalErrorRef.current("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
-        });
-      } else {
+      if (!broadcastRef.current || targets.length < 2) {
         broadcastPendingCommandRef.current = "";
         void writeSession(sessionId, data).catch(() => {
           onTerminalErrorRef.current("터미널 입력을 전달하지 못했습니다.");
         });
+        return;
       }
+      const assessment = assessBroadcastInput(data, broadcastPendingCommandRef.current, targets.length);
+      if (!assessment.confirmation) {
+        broadcastPendingCommandRef.current = assessment.nextPendingCommand;
+        sendBroadcast(targets, data);
+        return;
+      }
+      confirmOpenRef.current = true;
+      void askRef.current({
+        kind: "confirm",
+        title: assessment.confirmation,
+        confirmLabel: "보내기",
+        danger: true,
+      }).then((approved) => {
+        confirmOpenRef.current = false;
+        if (approved.confirmed) {
+          broadcastPendingCommandRef.current = assessment.nextPendingCommand;
+          sendBroadcast(targets, data);
+        }
+        flushQueuedInput();
+      });
+    };
+
+    const dataDisposable = term.onData((data) => {
+      // Hold input in arrival order behind an open confirmation. The dialog takes focus so
+      // this is rare, but a keystroke landing in the frame before it renders must not be
+      // delivered ahead of the chunk still awaiting approval.
+      if (confirmOpenRef.current) {
+        if (queuedInputRef.current.length < MAX_QUEUED_INPUT_CHUNKS) queuedInputRef.current.push(data);
+        return;
+      }
+      dispatchInput(data);
     });
     const selectionDisposable = term.onSelectionChange(() => {
       window.clearTimeout(selectionCopyTimerRef.current);
@@ -459,6 +523,8 @@ export default function TermPane({
     return () => {
       window.clearTimeout(selectionCopyTimerRef.current);
       window.clearTimeout(resizeTimerRef.current);
+      confirmOpenRef.current = false;
+      queuedInputRef.current = [];
       ro.disconnect();
       dataDisposable.dispose();
       selectionDisposable.dispose();

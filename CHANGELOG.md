@@ -5,7 +5,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- **WSL Desktop 앱 내장 확인·입력 창** — 모든 확인과 이름 입력이 native `confirm`/`prompt`
+  대신 앱 대화상자를 사용한다. 테마·`Esc` 취소·IME·focus 복원을 앱과 공유하고, 겹친 요청은
+  순서대로 처리하며, 링크 host 확인에는 그 창에서만 유효하고 저장하지 않는 "다시 묻지 않기"를
+  제공한다. 확인 창이 열려 있는 동안 도착한 터미널 입력은 순서를 지켜 대기했다가 확인 뒤
+  전달한다.
+
 ### Changed
+
+- **WSL Desktop snapshot gating** — 동시 입력과 Docker 상태 변경이 마지막 정상 snapshot이
+  TTL 안에 있으면 새 collection이 진행 중이어도 계속 사용 가능하다. 이전에는 30초 주기 refresh가
+  시작될 때마다 사용자가 켜 둔 동시 입력이 스스로 꺼지고 Docker 버튼이 비활성화됐다. 수집
+  실패, TTL 초과, 대상 팬 구성 변경에서는 그대로 fail-closed하며 backend의 broadcast 대상
+  검증도 변경하지 않는다.
 
 - v0.6.0을 current stable로 문서 전체에 동기화하고, 닫힌 #176 대신 #518을 post-release
   체크리스트로 연결했다. `glib 0.18.5` Dependabot 경고는 2026-09-01 공식 Tauri release/dev

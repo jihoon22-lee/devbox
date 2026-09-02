@@ -22,6 +22,7 @@ import {
   saveWorkspaceProfile,
   takePendingOpen,
 } from "./api";
+import AppDialog, { useAppDialog, type AskDialog } from "./components/AppDialog";
 import DistroPanel from "./components/DistroPanel";
 import ActionPalette, { type PaletteAction } from "./components/ActionPalette";
 import PaneCanvas from "./components/PaneCanvas";
@@ -75,6 +76,7 @@ import type {
   WorkspaceProfile,
 } from "./types";
 import type { DashboardFreshness } from "./lib/resourceDisplay";
+import { isSnapshotActionable, isSnapshotExpired } from "./lib/snapshotState";
 import "./App.css";
 
 const DASHBOARD_ERROR_MESSAGE = "WSL resource snapshot을 갱신하지 못했습니다. 마지막 정상 상태를 유지합니다.";
@@ -86,6 +88,9 @@ export default function App() {
   const [dockerMissing, setDockerMissing] = useState(false);
   const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
   const [dashboardState, setDashboardState] = useState<DashboardFreshness>("loading");
+  // Recomputed by the freshness tick below so an in-flight refresh that outlives the TTL
+  // still fails closed, without treating "a refresh started" as "unsafe".
+  const [snapshotExpired, setSnapshotExpired] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [logLensBusy, setLogLensBusy] = useState<string | null>(null);
   const [panelOpen, setPanelOpen] = useState(true);
@@ -121,6 +126,12 @@ export default function App() {
     hasCwd: false,
   });
   const [contextTab, setContextTab] = useState<Tab | null>(null);
+  const { ask, pending: pendingDialog, answer: answerDialog } = useAppDialog();
+  const askRef = useRef<AskDialog>(ask);
+  askRef.current = ask;
+  // Hosts the user chose not to be asked about again. Session-scoped on purpose: a
+  // remembered host must not outlive the window that granted it.
+  const trustedLinkHosts = useRef(new Set<string>());
   // TermPane must not create xterm until this one-time lookup resolves, so
   // every terminal receives its final ConPTY build-number option.
   const [windowsBuildNumber, setWindowsBuildNumber] = useState<number | null | undefined>(undefined);
@@ -182,6 +193,20 @@ export default function App() {
   const unregisterTerminalHandle = useCallback((id: string) => {
     terminalHandles.current.delete(id);
   }, []);
+  /** 링크 host 확인. 사용자가 기억을 선택한 host는 이 창이 살아 있는 동안만 다시 묻지 않는다. */
+  const confirmLinkHost = useCallback(async (host: string): Promise<boolean> => {
+    if (trustedLinkHosts.current.has(host)) return true;
+    const answer = await askRef.current({
+      kind: "confirm",
+      title: `'${host}' 링크를 기본 브라우저에서 열까요?`,
+      confirmLabel: "열기",
+      rememberLabel: "이 창에서는 이 host를 다시 묻지 않기",
+    });
+    if (!answer.confirmed) return false;
+    if (answer.remember) trustedLinkHosts.current.add(host);
+    return true;
+  }, []);
+
   const updateTerminalFontSize = useCallback((value: number) => {
     const next = clampTerminalFontSize(value);
     setTerminalFontSize(next);
@@ -361,9 +386,12 @@ export default function App() {
     if (!dashboardSnapshot) return;
     const updateFreshness = () => {
       dashboardClockRef.current = Date.now();
+      const expired = isSnapshotExpired(dashboardSnapshot, dashboardClockRef.current);
+      // Tracked even while a collection is in flight: a refresh that runs past the TTL must
+      // still close snapshot-gated actions, and a fast one must not.
+      setSnapshotExpired(expired);
       if (dashboardRequestRef.current) return;
-      const stale = dashboardClockRef.current - dashboardSnapshot.capturedAtMs > dashboardSnapshot.staleAfterMs;
-      setDashboardState((current) => (current === "error" ? current : stale ? "stale" : "fresh"));
+      setDashboardState((current) => (current === "error" ? current : expired ? "stale" : "fresh"));
     };
     updateFreshness();
     const timer = window.setInterval(updateFreshness, 1_000);
@@ -381,12 +409,16 @@ export default function App() {
     return () => window.clearInterval(timer);
   }, [dashboardSnapshot, refreshDashboard]);
 
+  // One rule for every snapshot-gated control. An in-flight collection is not by itself a
+  // reason to close them; a failed or expired one is.
+  const snapshotActionable = isSnapshotActionable(dashboardState, dashboardSnapshot !== null, snapshotExpired);
+
   const onDockerAction = async (id: string, action: "start" | "stop" | "restart") => {
     if (busyRef.current !== null || logLensBusyRef.current !== null) return;
     const snapshot = dashboardSnapshot?.distros.find((distro) => distro.name === selected);
     if (
       !snapshot
-      || dashboardState !== "fresh"
+      || !snapshotActionable
       || snapshot.dockerAvailability !== "available"
       || !snapshot.containers.some((container) => container.id === id)
     ) {
@@ -415,12 +447,21 @@ export default function App() {
     setSelected(name);
   };
 
-  const openJournalInLogLens = (name: string) => {
+  const openJournalInLogLens = async (name: string): Promise<void> => {
     if (busyRef.current !== null
       || logLensBusyRef.current !== null
       || workspaceLoadingRef.current
       || contextActionBusy) return;
-    if (!window.confirm(`'${name}'의 WSL journal을 Log Lens에서 읽기 전용으로 열까요?\n\n로그 원문·명령·자격 증명은 handoff에 포함되지 않습니다.`)) return;
+    const confirmed = await ask({
+      kind: "confirm",
+      title: `'${name}'의 WSL journal을 Log Lens에서 열까요?`,
+      lines: [
+        "읽기 전용으로만 열립니다.",
+        "로그 원문·명령·자격 증명은 handoff에 포함되지 않습니다.",
+      ],
+      confirmLabel: "Log Lens에서 열기",
+    });
+    if (!confirmed.confirmed) return;
     const generation = ++logLensGeneration.current;
     const token = ++logLensOperationToken.current;
     const operation = `log-lens-journal:${name}`;
@@ -450,19 +491,35 @@ export default function App() {
       });
   };
 
-  const openFileInLogLens = (name: string) => {
+  const openFileInLogLens = async (name: string): Promise<void> => {
     if (busyRef.current !== null
       || logLensBusyRef.current !== null
       || workspaceLoadingRef.current
       || contextActionBusy) return;
-    const entered = window.prompt("Log Lens에서 열 WSL 파일의 절대 경로를 입력하세요 (예: /var/log/app.log)");
-    if (entered === null) return;
-    const wslPath = entered.trim();
+    const entered = await ask({
+      kind: "prompt",
+      title: "Log Lens에서 열 WSL 파일",
+      lines: ["열려는 파일의 절대 경로를 입력하세요."],
+      inputLabel: "WSL 파일 절대 경로",
+      placeholder: "/var/log/app.log",
+      confirmLabel: "계속",
+    });
+    if (!entered.confirmed) return;
+    const wslPath = entered.value.trim();
     if (!wslPath) {
       setError("WSL 파일 경로를 입력해야 합니다.");
       return;
     }
-    if (!window.confirm(`'${name}'의 선택한 WSL 파일을 Log Lens에서 읽기 전용으로 열까요?\n\n경로는 검증된 WSL adapter 설정으로만 한 번 전달됩니다.`)) return;
+    const confirmed = await ask({
+      kind: "confirm",
+      title: `'${name}'의 선택한 WSL 파일을 Log Lens에서 열까요?`,
+      lines: [
+        "읽기 전용으로만 열립니다.",
+        "경로는 검증된 WSL adapter 설정으로만 한 번 전달됩니다.",
+      ],
+      confirmLabel: "Log Lens에서 열기",
+    });
+    if (!confirmed.confirmed) return;
     const generation = ++logLensGeneration.current;
     const token = ++logLensOperationToken.current;
     const operation = `log-lens-file:${name}`;
@@ -648,9 +705,14 @@ export default function App() {
         setError(commandError);
         return false;
       }
-      if (!window.confirm(`다음 시작 명령을 '${distro}' 터미널에서 실행할까요?\n\n${usedStartCommand}`)) {
-        return false;
-      }
+      const approved = await ask({
+        kind: "confirm",
+        title: `다음 시작 명령을 '${distro}' 터미널에서 실행할까요?`,
+        detail: usedStartCommand,
+        confirmLabel: "실행",
+        danger: true,
+      });
+      if (!approved.confirmed) return false;
     }
     const key = options?.paneKey ?? makeId("p");
     const requestedMultiplexer = options?.multiplexer ?? multiplexer;
@@ -699,18 +761,29 @@ export default function App() {
   ): Promise<boolean> => {
     if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return false;
     const oldSessionIds = panes.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
-    if (
-      options.replaceExisting
-      && oldSessionIds.length > 0
-      && !window.confirm(`'${options.label}' 프로필로 전환할까요? 현재 터미널 ${oldSessionIds.length}개가 닫힙니다.`)
-    ) return false;
+    if (options.replaceExisting && oldSessionIds.length > 0) {
+      const switched = await ask({
+        kind: "confirm",
+        title: `'${options.label}' 프로필로 전환할까요?`,
+        lines: [`현재 터미널 ${oldSessionIds.length}개가 닫힙니다.`],
+        confirmLabel: "전환",
+        danger: true,
+      });
+      if (!switched.confirmed) return false;
+    }
 
     const commands = workspace.panes.flatMap((pane) => pane.startCommand
       ? [`[${pane.distro} · ${pane.key}] ${pane.startCommand}`]
       : []);
-    const runStartCommands = commands.length === 0 || window.confirm(
-      `다음 시작 명령 ${commands.length}개를 실행할까요?\n취소하면 레이아웃만 엽니다.\n\n${commands.join("\n")}`,
-    );
+    const runStartCommands = commands.length === 0 || (await ask({
+      kind: "confirm",
+      title: `시작 명령 ${commands.length}개를 실행할까요?`,
+      lines: ["취소하면 레이아웃만 엽니다."],
+      detail: commands.join("\n"),
+      confirmLabel: "실행",
+      cancelLabel: "레이아웃만 열기",
+      danger: true,
+    })).confirmed;
 
     workspaceLoadingRef.current = true;
     setWorkspaceLoading(true);
@@ -832,9 +905,16 @@ export default function App() {
       setError("저장할 터미널 레이아웃이 없습니다.");
       return;
     }
-    const input = window.prompt("현재 터미널 레이아웃의 프로필 이름", "새 터미널 프로필");
-    if (input === null) return;
-    const name = input.trim();
+    const input = await ask({
+      kind: "prompt",
+      title: "현재 터미널 레이아웃의 프로필 이름",
+      inputLabel: "프로필 이름",
+      defaultValue: "새 터미널 프로필",
+      maxLength: 120,
+      confirmLabel: "저장",
+    });
+    if (!input.confirmed) return;
+    const name = input.value.trim();
     if (!name) {
       setError("프로필 이름은 비워둘 수 없습니다.");
       return;
@@ -857,7 +937,14 @@ export default function App() {
 
   const requestDeleteProfile = async (profile: WorkspaceProfile): Promise<void> => {
     if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return;
-    if (!window.confirm(`'${profile.name}' 터미널 프로필을 삭제할까요? 실행 중인 터미널은 닫히지 않습니다.`)) return;
+    const confirmed = await ask({
+      kind: "confirm",
+      title: `'${profile.name}' 터미널 프로필을 삭제할까요?`,
+      lines: ["실행 중인 터미널은 닫히지 않습니다."],
+      confirmLabel: "삭제",
+      danger: true,
+    });
+    if (!confirmed.confirmed) return;
     workspaceLoadingRef.current = true;
     setWorkspaceLoading(true);
     setError(null);
@@ -974,25 +1061,48 @@ export default function App() {
     }
   };
 
-  const requestClosePane = (paneId: string) => {
+  const requestClosePane = async (paneId: string): Promise<void> => {
     const pane = panes.find((candidate) => candidate.sessionId === paneId);
-    if (!pane || !window.confirm(`'${pane.distro}' 터미널 팬을 닫을까요? 실행 중인 작업이 종료될 수 있습니다.`)) return;
-    void closePane(paneId);
+    if (!pane) return;
+    const confirmed = await ask({
+      kind: "confirm",
+      title: `'${pane.distro}' 터미널 팬을 닫을까요?`,
+      lines: ["실행 중인 작업이 종료될 수 있습니다."],
+      confirmLabel: "닫기",
+      danger: true,
+    });
+    if (!confirmed.confirmed) return;
+    await closePane(paneId);
   };
 
-  const requestCloseTab = (tabId: string) => {
+  const requestCloseTab = async (tabId: string): Promise<void> => {
     const tab = tabs.find((candidate) => candidate.id === tabId);
-    if (!tab || !window.confirm(`'${tab.title}' 탭과 터미널 ${tab.paneIds.length}개를 닫을까요? 실행 중인 작업이 종료될 수 있습니다.`)) return;
-    void closeTabs([tab.id]);
+    if (!tab) return;
+    const confirmed = await ask({
+      kind: "confirm",
+      title: `'${tab.title}' 탭을 닫을까요?`,
+      lines: [`터미널 ${tab.paneIds.length}개가 함께 닫히고 실행 중인 작업이 종료될 수 있습니다.`],
+      confirmLabel: "닫기",
+      danger: true,
+    });
+    if (!confirmed.confirmed) return;
+    await closeTabs([tab.id]);
   };
 
-  const requestCloseOtherTabs = (tabId: string) => {
+  const requestCloseOtherTabs = async (tabId: string): Promise<void> => {
     const tab = tabs.find((candidate) => candidate.id === tabId);
     const otherTabs = tabs.filter((candidate) => candidate.id !== tabId);
     if (!tab || otherTabs.length === 0) return;
     const paneCount = otherTabs.reduce((total, candidate) => total + candidate.paneIds.length, 0);
-    if (!window.confirm(`'${tab.title}' 외 탭 ${otherTabs.length}개와 터미널 ${paneCount}개를 닫을까요?`)) return;
-    void closeTabs(otherTabs.map((candidate) => candidate.id));
+    const confirmed = await ask({
+      kind: "confirm",
+      title: `'${tab.title}' 외 탭 ${otherTabs.length}개를 닫을까요?`,
+      lines: [`터미널 ${paneCount}개가 함께 닫히고 실행 중인 작업이 종료될 수 있습니다.`],
+      confirmLabel: "닫기",
+      danger: true,
+    });
+    if (!confirmed.confirmed) return;
+    await closeTabs(otherTabs.map((candidate) => candidate.id));
   };
 
   const activateTab = (tabId: string) => {
@@ -1074,7 +1184,7 @@ export default function App() {
         setPaletteOpen(true);
         break;
       case "close-pane":
-        if (activePaneId && !contextActionBusy) requestClosePane(activePaneId);
+        if (activePaneId && !contextActionBusy) void requestClosePane(activePaneId);
         break;
       case "next-tab":
         stepTab(1);
@@ -1177,10 +1287,17 @@ export default function App() {
     }).finally(() => setContextActionBusy(false));
   };
 
-  const renameContextTab = (tab: Tab) => {
-    const input = window.prompt("탭 이름 변경", tab.title);
-    if (input === null) return;
-    const name = normalizeTabName(input);
+  const renameContextTab = async (tab: Tab): Promise<void> => {
+    const input = await ask({
+      kind: "prompt",
+      title: "탭 이름 변경",
+      inputLabel: "탭 이름",
+      defaultValue: tab.title,
+      maxLength: 80,
+      confirmLabel: "변경",
+    });
+    if (!input.confirmed) return;
+    const name = normalizeTabName(input.value);
     if (!name) {
       setError("탭 이름은 비워둘 수 없습니다.");
       return;
@@ -1201,16 +1318,16 @@ export default function App() {
     else if (id === "copy-cwd") void handle?.copyCwd();
     else if (id === "split-vertical") splitContextPane("cols");
     else if (id === "split-horizontal") splitContextPane("rows");
-    else if (id === "close") requestClosePane(pane.sessionId);
+    else if (id === "close") void requestClosePane(pane.sessionId);
   };
 
   const onTabContextSelect = (id: string) => {
     if (workspaceLoadingRef.current) return;
     const tab = contextTab;
     if (!tab) return;
-    if (id === "close") requestCloseTab(tab.id);
-    else if (id === "close-others") requestCloseOtherTabs(tab.id);
-    else if (id === "rename") renameContextTab(tab);
+    if (id === "close") void requestCloseTab(tab.id);
+    else if (id === "close-others") void requestCloseOtherTabs(tab.id);
+    else if (id === "rename") void renameContextTab(tab);
     else if (id === "layout-grid") setTabLayout(tab.id, "grid");
     else if (id === "layout-cols") setTabLayout(tab.id, "cols");
     else if (id === "layout-rows") setTabLayout(tab.id, "rows");
@@ -1248,7 +1365,7 @@ export default function App() {
   const activeLayout = activeTab?.layout ?? "grid";
   const activePaneIds = activeTab?.paneIds ?? [];
   const selectedBroadcastIds = activePaneIds.filter((id) => broadcastTargetIds.has(id));
-  const broadcastReady = dashboardState === "fresh"
+  const broadcastReady = snapshotActionable
     && !workspaceLoading
     && !contextActionBusy
     && busy === null;
@@ -1325,7 +1442,7 @@ export default function App() {
       description: "실행 중인 작업이 종료될 수 있음",
       danger: true,
       run: () => {
-        if (activePaneId) requestClosePane(activePaneId);
+        if (activePaneId) void requestClosePane(activePaneId);
       },
     },
     ...profiles.map((profile): PaletteAction => ({
@@ -1509,8 +1626,8 @@ export default function App() {
               selectedDistro={selected}
               onSelectDistro={selectDistro}
               onOpenTerminal={openDistroTerminal}
-              onOpenJournalInLogLens={openJournalInLogLens}
-              onOpenFileInLogLens={openFileInLogLens}
+              onOpenJournalInLogLens={(name) => void openJournalInLogLens(name)}
+              onOpenFileInLogLens={(name) => void openFileInLogLens(name)}
               containers={containers}
               dockerMissing={dockerMissing}
               busy={busy}
@@ -1521,6 +1638,7 @@ export default function App() {
               }}
               dashboardDistros={dashboardSnapshot?.distros}
               snapshotState={dashboardState}
+              snapshotActionable={snapshotActionable}
             />
             <WorkspacePanel
               profiles={profiles}
@@ -1540,7 +1658,7 @@ export default function App() {
             tabs={tabs}
             activeTabId={activeTabId}
             onActivate={activateTab}
-            onClose={requestCloseTab}
+            onClose={(tabId) => void requestCloseTab(tabId)}
             onReorder={reorderTabs}
             onDropPane={movePaneToTab}
             onNewTab={() => void openNewTab()}
@@ -1564,7 +1682,9 @@ export default function App() {
               unregisterFocus={unregisterFocus}
               registerTerminalHandle={registerTerminalHandle}
               unregisterTerminalHandle={unregisterTerminalHandle}
-              onClosePane={requestClosePane}
+              onClosePane={(id) => void requestClosePane(id)}
+              ask={ask}
+              onConfirmLinkHost={confirmLinkHost}
               onFocusPane={(id) => {
                 setActivePaneId(id);
                 const owner = tabs.find((t) => t.paneIds.includes(id));
@@ -1601,6 +1721,7 @@ export default function App() {
         ariaLabel="터미널 탭 메뉴"
       />
       <ActionPalette open={paletteOpen} actions={paletteActions} onClose={() => setPaletteOpen(false)} />
+      <AppDialog pending={pendingDialog} onAnswer={answerDialog} />
     </div>
   );
 }

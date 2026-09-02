@@ -18,6 +18,8 @@ interface Props {
   /** Complete resource/session generation shared with broadcast safety. */
   dashboardDistros?: DashboardDistroSnapshot[];
   snapshotState?: DashboardFreshness;
+  /** Whether the last good snapshot still backs a state change. Owned by App. */
+  snapshotActionable?: boolean;
 }
 
 const DISTRO_STATE_LABELS: Readonly<Record<string, string>> = {
@@ -46,9 +48,12 @@ export default function DistroPanel({
   onRefresh,
   dashboardDistros = [],
   snapshotState = "loading",
+  snapshotActionable = false,
 }: Props) {
   const running = containers.filter((c) => dockerDisplayState(c.status).running).length;
-  const snapshotFresh = snapshotState === "fresh";
+  // A collection being in flight does not close the Docker controls; an expired or failed
+  // one does. App owns that rule so the panel and broadcast never disagree.
+  const dockerActionsEnabled = snapshotActionable;
   const snapshotByDistro = new Map(dashboardDistros.map((distro) => [distro.name, distro]));
   const selectedSnapshot = snapshotByDistro.get(selectedDistro);
   const dockerError = selectedSnapshot?.dockerAvailability === "error";
@@ -210,7 +215,7 @@ export default function DistroPanel({
                       <button
                         className="btn"
                         type="button"
-                        disabled={anyBusy || !snapshotFresh}
+                        disabled={anyBusy || !dockerActionsEnabled}
                         onClick={() => onAction(c.id, "start")}
                       >
                         시작
@@ -220,7 +225,7 @@ export default function DistroPanel({
                         <button
                           className="btn danger"
                           type="button"
-                          disabled={anyBusy || !snapshotFresh}
+                          disabled={anyBusy || !dockerActionsEnabled}
                           onClick={() => onAction(c.id, "stop")}
                         >
                           중지
@@ -228,7 +233,7 @@ export default function DistroPanel({
                         <button
                           className="btn"
                           type="button"
-                          disabled={anyBusy || !snapshotFresh}
+                          disabled={anyBusy || !dockerActionsEnabled}
                           onClick={() => onAction(c.id, "restart")}
                         >
                           재시작
