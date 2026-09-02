@@ -25,8 +25,20 @@
   `Shift+F10`/Menu 키를 지원하고 닫힌 뒤 실제 터미널로 focus를 복원한다. 복사와 cwd
   복사는 우클릭한 exact 팬에 selection 또는 유효한 OSC 7 값이 있을 때만 활성화된다.
 - **글꼴·스크롤백·resize** — 글꼴 크기 `Ctrl++/-/0`과 툴바 조절값을 저장하며 xterm을
-  재마운트하지 않는다. 10,000줄 scrollback, ConPTY wrap 보정, resize ack 후 commit·실패
-  재시도, hidden pane/최소 크기 보호를 적용한다.
+  재마운트하지 않는다. ConPTY wrap 보정, resize ack 후 commit·실패 재시도, hidden pane/최소
+  크기 보호를 적용한다.
+- **설정** — 툴바 `설정`과 명령 팔레트에서 연다. 팬 하나 닫기 확인 여부, 시작할 때 터미널
+  하나 열기, 글꼴(고정 목록), 색 테마(어두움/밝음/고대비), 커서 모양·깜박임, 스크롤백
+  줄 수(1,000~100,000, 기본 10,000)를 `localStorage`에 저장한다. 글꼴은 임의 문자열을 받지
+  않고 앱이 가진 목록에서만 고르며, 값이 손상되면 그 필드만 기본값으로 되돌린다. 변경은
+  xterm 옵션만 갱신하므로 스크롤백과 PTY 연결이 유지된다.
+- **시작 상태** — 복원할 레이아웃이 없고 배포판 조회에 성공했으면 기본 배포판 터미널을
+  하나 연다(설정으로 끌 수 있음). 수집이 실패한 상태에서는 열지 않는다. 마지막으로 선택한
+  세션 유지 방식과 사이드 패널 열림 상태도 복원하며, 저장된 유지 방식을 현재 배포판이
+  제공하지 않으면 조용히 native로 되돌린다.
+- **팬 상태 표시** — 팬 머리글에 실제로 시작된 유지 방식(native가 아닐 때)과 기존 세션에
+  다시 붙었을 때의 `재연결됨` 배지를 보여 준다. 요청한 방식이 backend에서 native로 낮춰졌는지
+  화면에서 바로 확인할 수 있다.
 - **워크스페이스·프로필** — stable pane key로 마지막 탭/팬/distro/cwd/layout/시작 명령을
   복원하고, 현재 구성을 이름 있는 터미널 프로필로 저장한다. `OpenTarget::Profile` cold/hot
   요청은 같은 전환 경로를 사용한다. 시작 명령은 실행 전에 최종 문자열을 확인하고 새 세션에
@@ -121,6 +133,7 @@
 
 - 프로젝트·git 상태는 Workbench로 이관됨 (`com.devbox.workbench\project-profiles.json`)
 - `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기, version 1
+  설정(확인 동작·시작 동작·사이드 패널·유지 방식·글꼴 id·테마·커서·스크롤백), version 1
   마지막 레이아웃. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
   링크 host의 "다시 묻지 않기" 선택은 process memory에만 두며 저장하지 않는다.
 - Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지

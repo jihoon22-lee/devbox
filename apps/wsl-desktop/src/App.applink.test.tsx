@@ -103,6 +103,8 @@ const profile: WorkspaceProfile = {
 
 beforeEach(() => {
   localStorage.clear();
+  // 이 스위트는 시작 시 자동으로 열리는 터미널이 아니라 명시적으로 연 터미널을 검증한다.
+  localStorage.setItem("wsl-desktop:settings", JSON.stringify({ version: 1, openTerminalOnStart: false }));
   mocks.openHandler = null;
   mocks.order.length = 0;
   mocks.paneCanvasProps = null;

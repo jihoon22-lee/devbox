@@ -2,6 +2,7 @@ import type { ComponentProps } from "react";
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import TermPane from "./TermPane";
+import { DEFAULT_SETTINGS, TERMINAL_THEMES, fontFamilyFor } from "../lib/settings";
 import {
   MAX_TERMINAL_PASTE_CHARACTERS,
   MAX_TERMINAL_SEARCH_CHARACTERS,
@@ -187,6 +188,13 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
     broadcastTargetIds: [],
     copyOnSelect: true,
     fontSize: 13,
+    fontFamily: fontFamilyFor(DEFAULT_SETTINGS.fontId),
+    theme: TERMINAL_THEMES[DEFAULT_SETTINGS.theme],
+    cursorStyle: DEFAULT_SETTINGS.cursorStyle,
+    cursorBlink: DEFAULT_SETTINGS.cursorBlink,
+    scrollbackLines: DEFAULT_SETTINGS.scrollbackLines,
+    multiplexer: "native" as const,
+    resumed: false,
     registerWrite: vi.fn(),
     unregisterWrite: vi.fn(),
     registerFocus: stableRegisterFocus,

@@ -30,6 +30,8 @@ import {
 } from "../lib/terminalUx";
 import { assessBroadcastInput } from "../lib/broadcastSafety";
 import type { AskDialog } from "./AppDialog";
+import type { CursorStyle, TerminalTheme } from "../lib/settings";
+import type { MultiplexerKind } from "../types";
 
 export interface TerminalPaneCapabilities {
   hasSelection: boolean;
@@ -58,6 +60,15 @@ interface TermPaneProps {
   initialCommand?: string;
   copyOnSelect: boolean;
   fontSize: number;
+  fontFamily: string;
+  theme: TerminalTheme;
+  cursorStyle: CursorStyle;
+  cursorBlink: boolean;
+  scrollbackLines: number;
+  /** 실제로 시작된 유지 방식. 요청과 다를 수 있으므로 팬에 그대로 표시한다. */
+  multiplexer: MultiplexerKind;
+  /** 기존 multiplexer 세션에 다시 붙었는지. */
+  resumed: boolean;
   registerWrite: (id: string, fn: (data: string) => void) => void;
   unregisterWrite: (id: string) => void;
   registerFocus: (id: string, fn: () => void) => void;
@@ -83,13 +94,6 @@ interface TermPaneProps {
   /** PaneCanvas가 display:none(비활성) 또는 order(활성 탭 안에서의 시각적 순서)를 준다. */
   style?: CSSProperties;
 }
-
-const THEME = {
-  background: "#111418",
-  foreground: "#e6e9ef",
-  cursor: "#4f8cff",
-  selectionBackground: "#264f78",
-};
 
 const SEARCH_DECORATIONS = {
   matchBackground: "#5c4b16",
@@ -123,6 +127,13 @@ export default function TermPane({
   initialCommand,
   copyOnSelect,
   fontSize,
+  fontFamily,
+  theme,
+  cursorStyle,
+  cursorBlink,
+  scrollbackLines,
+  multiplexer,
+  resumed,
   registerWrite,
   unregisterWrite,
   registerFocus,
@@ -163,6 +174,8 @@ export default function TermPane({
   copyOnSelectRef.current = copyOnSelect;
   const fontSizeRef = useRef(fontSize);
   fontSizeRef.current = fontSize;
+  const appearanceRef = useRef({ fontFamily, theme, cursorStyle, cursorBlink, scrollbackLines });
+  appearanceRef.current = { fontFamily, theme, cursorStyle, cursorBlink, scrollbackLines };
   const onShortcutRef = useRef(onShortcut);
   onShortcutRef.current = onShortcut;
   const onFontSizeChangeRef = useRef(onFontSizeChange);
@@ -327,12 +340,14 @@ export default function TermPane({
 
     const initialFontSize = clampTerminalFontSize(fontSizeRef.current);
     appliedFontSizeRef.current = initialFontSize;
+    const appearance = appearanceRef.current;
     const term = new Terminal({
       fontSize: initialFontSize,
-      fontFamily: '"Cascadia Code", Consolas, monospace',
-      theme: THEME,
-      cursorBlink: true,
-      scrollback: 10000, // xterm 기본값(1000)보다 크게
+      fontFamily: appearance.fontFamily,
+      theme: appearance.theme,
+      cursorStyle: appearance.cursorStyle,
+      cursorBlink: appearance.cursorBlink,
+      scrollback: appearance.scrollbackLines, // xterm 기본값(1000)보다 크게
       allowProposedApi: true, // Unicode11Addon 전제
       linkHandler: {
         activate: (event, text) => {
@@ -572,6 +587,23 @@ export default function TermPane({
     return () => cancelAnimationFrame(raf);
   }, [fontSize]);
 
+  // 글꼴·테마·커서·스크롤백은 옵션만 갱신한다. xterm을 재생성하면 스크롤백과 PTY 연결이
+  // 함께 사라지므로, 크기가 달라지는 글꼴만 기존 ack-after-commit resize 경로를 다시 탄다.
+  useEffect(() => {
+    const term = termRef.current;
+    if (!term) return;
+    const changesCellSize = term.options.fontFamily !== fontFamily;
+    term.options.fontFamily = fontFamily;
+    term.options.theme = theme;
+    term.options.cursorStyle = cursorStyle;
+    term.options.cursorBlink = cursorBlink;
+    term.options.scrollback = scrollbackLines;
+    if (!changesCellSize) return;
+    window.clearTimeout(resizeTimerRef.current);
+    const raf = requestAnimationFrame(() => fitAndSendResizeRef.current());
+    return () => cancelAnimationFrame(raf);
+  }, [cursorBlink, cursorStyle, fontFamily, scrollbackLines, theme]);
+
   // 활성 팬이 바뀌면(클릭 또는 Alt+Arrow 이동) xterm에 키보드 포커스를 준다.
   // 포커스 이동 없이 activePaneId만 바뀌면 입력이 이전 팬에 남는다.
   useEffect(() => {
@@ -615,6 +647,16 @@ export default function TermPane({
         }}
       >
         <span className="pane-title" title={title}>{title}</span>
+        {multiplexer !== "native" && (
+          <span className="pane-badge" title={`이 팬은 ${multiplexer} 세션으로 실행 중입니다`}>
+            {multiplexer}
+          </span>
+        )}
+        {resumed && (
+          <span className="pane-badge resumed" title="기존 세션에 다시 연결했습니다. 시작 명령은 다시 실행하지 않았습니다.">
+            재연결됨
+          </span>
+        )}
         <button className="pane-close" title="터미널 닫기" disabled={actionsDisabled} onClick={onClose}>
           ✕
         </button>
