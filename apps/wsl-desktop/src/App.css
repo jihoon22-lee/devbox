@@ -1076,3 +1076,113 @@ select {
   background: var(--bg);
   color: var(--text);
 }
+
+.tab-list {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: thin;
+}
+
+.pane-badge.broadcast {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.pane-broadcast-target {
+  outline: 1px solid var(--red);
+  outline-offset: -1px;
+}
+
+.pane-broadcast-target.pane-focused {
+  outline: 2px solid var(--red);
+}
+
+.error {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.error > span {
+  flex: 1;
+  min-width: 0;
+}
+
+.error-dismiss {
+  flex-shrink: 0;
+  background: transparent;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+  padding: 2px 4px;
+}
+
+.palette-label {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.palette-keys,
+.shortcut-list kbd {
+  flex-shrink: 0;
+  padding: 1px 6px;
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  background: var(--bg);
+  color: var(--dim);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+/* ── 단축키 안내 ──────────────────────────────────────────────── */
+
+.shortcut-reference {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.shortcut-group-title {
+  margin: 8px 0 0;
+  color: var(--dim);
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.shortcut-list {
+  display: grid;
+  grid-template-columns: max-content 1fr;
+  gap: 4px 12px;
+  margin: 0;
+  font-size: 12px;
+}
+
+.shortcut-list > div {
+  display: contents;
+}
+
+.shortcut-list dt {
+  text-align: right;
+}
+
+.shortcut-list dd {
+  margin: 0;
+  color: var(--dim);
+}

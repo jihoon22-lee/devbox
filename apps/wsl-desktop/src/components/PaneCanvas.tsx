@@ -127,6 +127,7 @@ export default function PaneCanvas({
             isFocusedPane={sessionId === activePaneId}
             broadcastOn={broadcastOn}
             broadcastTargetIds={broadcastTargetIds}
+            isBroadcastTarget={broadcastOn && broadcastTargetIds.includes(sessionId)}
             initialCommand={pane.initialCommand}
             copyOnSelect={copyOnSelect}
             fontSize={fontSize}
