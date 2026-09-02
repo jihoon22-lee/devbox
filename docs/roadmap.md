@@ -1238,5 +1238,10 @@ v0.6.0   stable — W01~W11, candidate 33384213398, release 33390009009, 15/32/3
 - #176은 닫힌 v0.5.1 historical checklist다.
 - [v0.6.0 post-release 체크리스트](https://github.com/jihoon22-lee/devbox/issues/518) — 설치된
   WSL Desktop zellij/terminal reconnect와 repository 유지보수를 package evidence와 구분해 관리한다.
+- [WSL Desktop 사용감 보강 검토](./superpowers/reports/2026-09-02-wsl-desktop-usability-review.md) —
+  v0.6.0 source 기준 read-only 검토다. snapshot refresh가 동시 입력·Docker 조작을 스스로
+  끄는 문제, 확인창 과다, 빈 첫 화면, 탭/팬 방향 감각, 세션 유지 모드 표시와 spec §4.3의
+  드래그 팬 크기 조절·WebGL 렌더러 미적용을 근거와 함께 정리했다. 모든 항목은 milestone
+  없는 후보이며 사용자 우선순위 확인 전에는 이슈로 승격하지 않는다.
 - open v0.7+ milestone이나 확정 기능 roadmap은 없다. 선택적 후보는 실사용 근거와 사용자
   우선순위가 확인된 뒤에만 묶음 이슈와 새 milestone으로 승격한다.
