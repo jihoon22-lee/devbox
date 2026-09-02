@@ -8,7 +8,6 @@ import type { DashboardSnapshot } from "./types";
 
 const mocks = vi.hoisted(() => ({
   nextSession: 0,
-  focused: [] as string[],
   broadcastTargets: new Map<string, boolean>(),
 }));
 
@@ -26,7 +25,6 @@ vi.mock("./components/TermPane", () => ({
     contextMenuTriggerProps: HTMLAttributes<HTMLElement>;
   }) => {
     mocks.broadcastTargets.set(props.sessionId, props.isBroadcastTarget);
-    if (props.isFocusedPane) mocks.focused.push(props.sessionId);
     const ref = useRef<HTMLDivElement>(null);
     useEffect(() => {
       props.registerFocus(props.sessionId, () => undefined);
@@ -48,6 +46,7 @@ vi.mock("./components/TermPane", () => ({
         role="group"
         tabIndex={-1}
         data-pane-id={props.sessionId}
+        data-focused={String(props.isFocusedPane)}
         data-broadcast-target={String(props.isBroadcastTarget)}
         aria-label={`${props.title} 터미널 팬`}
         {...props.contextMenuTriggerProps}
@@ -109,18 +108,24 @@ async function renderWithPanes(count: number, layout?: "cols" | "rows") {
     await waitFor(() => expect(screen.getAllByLabelText(/터미널 팬/u)).toHaveLength(index + 1));
   }
   if (layout) fireEvent.click(screen.getByRole("button", { name: layout }));
-  mocks.focused.length = 0;
 }
 
-function focusedPane(): string | undefined {
-  return mocks.focused[mocks.focused.length - 1];
+/**
+ * 지금 focus된 팬을 DOM에서 직접 읽는다. 렌더 기록의 마지막 항목을 보는 방식은 렌더가
+ * 몇 번 어떤 순서로 커밋되는지에 좌우돼 느린 실행기에서 거짓 결과를 낸다.
+ */
+function focusedPane(): string | null {
+  return document.querySelector("[data-focused='true']")?.getAttribute("data-pane-id") ?? null;
+}
+
+async function expectFocusedPane(sessionId: string): Promise<void> {
+  await waitFor(() => expect(focusedPane()).toBe(sessionId));
 }
 
 beforeEach(() => {
   localStorage.clear();
   localStorage.setItem("wsl-desktop:settings", JSON.stringify({ version: 1, openTerminalOnStart: false }));
   mocks.nextSession = 0;
-  mocks.focused.length = 0;
   mocks.broadcastTargets.clear();
   snapshotMock.mockReset().mockImplementation(async () => snapshot());
   startSessionMock.mockReset().mockImplementation(async () => ({
@@ -135,33 +140,39 @@ afterEach(() => cleanup());
 describe("directional pane focus", () => {
   it("2×2 격자에서 Alt+방향키가 실제 이웃으로 이동한다", async () => {
     await renderWithPanes(4);
-    // 팬 순서: 0 1 / 2 3. 마지막으로 추가한 팬(3)이 활성이다.
+    // 팬 순서: 0 1 / 2 3. 마지막으로 추가한 네 번째 팬이 활성이다.
+    await expectFocusedPane("session-4");
+
     fireEvent.keyDown(window, { key: "ArrowLeft", altKey: true });
-    await waitFor(() => expect(focusedPane()).toBe("session-3"));
+    await expectFocusedPane("session-3");
 
     fireEvent.keyDown(window, { key: "ArrowUp", altKey: true });
-    await waitFor(() => expect(focusedPane()).toBe("session-1"));
+    await expectFocusedPane("session-1");
 
     fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
-    await waitFor(() => expect(focusedPane()).toBe("session-2"));
+    await expectFocusedPane("session-2");
   });
 
   it("격자 가장자리에서는 반대편으로 순환하지 않는다", async () => {
     await renderWithPanes(4);
+    await expectFocusedPane("session-4");
+
+    // 오른쪽 아래 팬에서 오른쪽·아래로는 갈 곳이 없다.
     fireEvent.keyDown(window, { key: "ArrowRight", altKey: true });
     fireEvent.keyDown(window, { key: "ArrowDown", altKey: true });
-    await waitFor(() => expect(screen.getAllByLabelText(/터미널 팬/u)).toHaveLength(4));
-    expect(focusedPane() ?? "session-4").toBe("session-4");
+    expect(focusedPane()).toBe("session-4");
   });
 
   it("세로 분할에서는 위아래 이동이 팬을 바꾸지 않는다", async () => {
     await renderWithPanes(3, "cols");
+    await expectFocusedPane("session-3");
+
     fireEvent.keyDown(window, { key: "ArrowUp", altKey: true });
     fireEvent.keyDown(window, { key: "ArrowDown", altKey: true });
-    expect(focusedPane() ?? "session-3").toBe("session-3");
+    expect(focusedPane()).toBe("session-3");
 
     fireEvent.keyDown(window, { key: "ArrowLeft", altKey: true });
-    await waitFor(() => expect(focusedPane()).toBe("session-2"));
+    await expectFocusedPane("session-2");
   });
 });
 
