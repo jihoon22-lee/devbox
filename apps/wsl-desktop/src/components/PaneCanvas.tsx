@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import type { AskDialog } from "./AppDialog";
+import type { CursorStyle, TerminalTheme } from "../lib/settings";
 import TermPane, { type TerminalPaneHandle } from "./TermPane";
 import type { Pane, Tab } from "../types";
 import type { ShortcutAction } from "../lib/shortcuts";
@@ -14,6 +15,11 @@ interface PaneCanvasProps {
   broadcastTargetIds: string[];
   copyOnSelect: boolean;
   fontSize: number;
+  fontFamily: string;
+  theme: TerminalTheme;
+  cursorStyle: CursorStyle;
+  cursorBlink: boolean;
+  scrollbackLines: number;
   registerWrite: (id: string, fn: (data: string) => void) => void;
   unregisterWrite: (id: string) => void;
   registerFocus: (id: string, fn: () => void) => void;
@@ -58,6 +64,11 @@ export default function PaneCanvas({
   broadcastTargetIds,
   copyOnSelect,
   fontSize,
+  fontFamily,
+  theme,
+  cursorStyle,
+  cursorBlink,
+  scrollbackLines,
   registerWrite,
   unregisterWrite,
   registerFocus,
@@ -119,6 +130,13 @@ export default function PaneCanvas({
             initialCommand={pane.initialCommand}
             copyOnSelect={copyOnSelect}
             fontSize={fontSize}
+            fontFamily={fontFamily}
+            theme={theme}
+            cursorStyle={cursorStyle}
+            cursorBlink={cursorBlink}
+            scrollbackLines={scrollbackLines}
+            multiplexer={pane.multiplexer}
+            resumed={pane.resumed === true}
             registerWrite={registerWrite}
             unregisterWrite={unregisterWrite}
             registerFocus={registerFocus}

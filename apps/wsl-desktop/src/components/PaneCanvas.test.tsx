@@ -3,6 +3,7 @@ import { useEffect, type CSSProperties } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PaneCanvas from "./PaneCanvas";
 import type { Pane, Tab } from "../types";
+import { DEFAULT_SETTINGS, TERMINAL_THEMES, fontFamilyFor } from "../lib/settings";
 
 /**
  * TermPane을 모킹해 마운트/언마운트를 스파이로 잡는다. 실제 xterm은 jsdom에서 돌지
@@ -58,6 +59,11 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     broadcastTargetIds: [] as string[],
     copyOnSelect: true,
     fontSize: 13,
+    fontFamily: fontFamilyFor(DEFAULT_SETTINGS.fontId),
+    theme: TERMINAL_THEMES[DEFAULT_SETTINGS.theme],
+    cursorStyle: DEFAULT_SETTINGS.cursorStyle,
+    cursorBlink: DEFAULT_SETTINGS.cursorBlink,
+    scrollbackLines: DEFAULT_SETTINGS.scrollbackLines,
     registerWrite: vi.fn(),
     unregisterWrite: vi.fn(),
     registerFocus: vi.fn(),

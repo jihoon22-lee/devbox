@@ -24,6 +24,7 @@ import {
 } from "./api";
 import AppDialog, { useAppDialog, type AskDialog } from "./components/AppDialog";
 import DistroPanel from "./components/DistroPanel";
+import SettingsPanel from "./components/SettingsPanel";
 import ActionPalette, { type PaletteAction } from "./components/ActionPalette";
 import PaneCanvas from "./components/PaneCanvas";
 import type { TerminalPaneCapabilities, TerminalPaneHandle } from "./components/TermPane";
@@ -77,6 +78,13 @@ import type {
 } from "./types";
 import type { DashboardFreshness } from "./lib/resourceDisplay";
 import { isSnapshotActionable, isSnapshotExpired } from "./lib/snapshotState";
+import {
+  fontFamilyFor,
+  loadSettings,
+  saveSettings,
+  TERMINAL_THEMES,
+  type TerminalSettings,
+} from "./lib/settings";
 import "./App.css";
 
 const DASHBOARD_ERROR_MESSAGE = "WSL resource snapshot을 갱신하지 못했습니다. 마지막 정상 상태를 유지합니다.";
@@ -93,7 +101,9 @@ export default function App() {
   const [snapshotExpired, setSnapshotExpired] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [logLensBusy, setLogLensBusy] = useState<string | null>(null);
-  const [panelOpen, setPanelOpen] = useState(true);
+  const [settings, setSettings] = useState<TerminalSettings>(loadSettings);
+  const panelOpen = settings.sidePanelOpen;
+  const [settingsOpen, setSettingsOpen] = useState(false);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
   const [cwd, setCwd] = useState<string>(() => (loadPinned() ? loadPinnedCwd() : ""));
   const [recentPaths, setRecentPaths] = useState<string[]>(loadRecentPaths);
@@ -105,7 +115,7 @@ export default function App() {
   const [broadcastTargetIds, setBroadcastTargetIds] = useState<Set<string>>(() => new Set());
   const [broadcastPickerOpen, setBroadcastPickerOpen] = useState(false);
   const [startCommand, setStartCommand] = useState("");
-  const [multiplexer, setMultiplexer] = useState<MultiplexerKind>("native");
+  const multiplexer = settings.multiplexer;
   const [muxAvailability, setMuxAvailability] = useState<MultiplexerAvailability[]>([
     { kind: "native", status: "available", version: null, source: null },
     { kind: "tmux", status: "missing", version: null, source: null },
@@ -129,6 +139,12 @@ export default function App() {
   const { ask, pending: pendingDialog, answer: answerDialog } = useAppDialog();
   const askRef = useRef<AskDialog>(ask);
   askRef.current = ask;
+  const settingsRef = useRef(settings);
+  settingsRef.current = settings;
+  const dashboardStateRef = useRef(dashboardState);
+  dashboardStateRef.current = dashboardState;
+  const selectedRef = useRef(selected);
+  selectedRef.current = selected;
   // Hosts the user chose not to be asked about again. Session-scoped on purpose: a
   // remembered host must not outlive the window that granted it.
   const trustedLinkHosts = useRef(new Set<string>());
@@ -207,6 +223,14 @@ export default function App() {
     return true;
   }, []);
 
+  const updateSettings = useCallback((patch: Partial<TerminalSettings>) => {
+    setSettings((previous) => {
+      const next = { ...previous, ...patch };
+      saveSettings(next);
+      return next;
+    });
+  }, []);
+
   const updateTerminalFontSize = useCallback((value: number) => {
     const next = clampTerminalFontSize(value);
     setTerminalFontSize(next);
@@ -269,9 +293,17 @@ export default function App() {
       .then((availability) => {
         if (disposed) return;
         setMuxAvailability(availability);
-        setMultiplexer((current) =>
-          availability.some((item) => item.kind === current && item.status === "available") ? current : "native"
-        );
+        // A stored choice is honoured only while the selected distro still reports it as
+        // available; otherwise this quietly falls back the same way the backend does.
+        setSettings((current) => {
+          if (availability.some((item) => item.kind === current.multiplexer && item.status === "available")) {
+            return current;
+          }
+          if (current.multiplexer === "native") return current;
+          const next: TerminalSettings = { ...current, multiplexer: "native" };
+          saveSettings(next);
+          return next;
+        });
       })
       .catch(() => {
         if (!disposed) {
@@ -280,7 +312,12 @@ export default function App() {
             { kind: "tmux", status: "error", version: null, source: null },
             { kind: "zellij", status: "error", version: null, source: null },
           ]);
-          setMultiplexer("native");
+          setSettings((current) => {
+            if (current.multiplexer === "native") return current;
+            const next: TerminalSettings = { ...current, multiplexer: "native" };
+            saveSettings(next);
+            return next;
+          });
         }
       });
     return () => {
@@ -727,6 +764,7 @@ export default function App() {
         startCommand: usedStartCommand,
         initialCommand: started.resumed ? undefined : usedStartCommand,
         multiplexer: started.multiplexer,
+        resumed: started.resumed,
       }]);
 
       if (tabId === null) {
@@ -811,6 +849,7 @@ export default function App() {
             startCommand: definition.startCommand ?? undefined,
             initialCommand: started.resumed ? undefined : command,
             multiplexer: started.multiplexer,
+            resumed: started.resumed,
           });
         } catch {
           failed += 1;
@@ -881,6 +920,8 @@ export default function App() {
 
   const launchWorkspaceRef = useRef(launchWorkspace);
   launchWorkspaceRef.current = launchWorkspace;
+  const startInTabRef = useRef(startInTab);
+  startInTabRef.current = startInTab;
 
   const openProfile = async (profile: WorkspaceProfile): Promise<boolean> =>
     launchWorkspace(profile, { replaceExisting: true, label: profile.name });
@@ -964,6 +1005,13 @@ export default function App() {
     restoreStarted.current = true;
     const saved = loadLastWorkspace();
     if (!saved) {
+      // Nothing to restore. Open one terminal in the default distro so the app that exists to
+      // hold terminals does not start empty. Skipped when the distro collection failed, so a
+      // failed hydration never starts a shell against a guessed distro.
+      if (settingsRef.current.openTerminalOnStart && dashboardStateRef.current !== "error") {
+        void startInTabRef.current(null, selectedRef.current).finally(() => setWorkspaceReady(true));
+        return;
+      }
       setWorkspaceReady(true);
       return;
     }
@@ -1064,14 +1112,16 @@ export default function App() {
   const requestClosePane = async (paneId: string): Promise<void> => {
     const pane = panes.find((candidate) => candidate.sessionId === paneId);
     if (!pane) return;
-    const confirmed = await ask({
-      kind: "confirm",
-      title: `'${pane.distro}' 터미널 팬을 닫을까요?`,
-      lines: ["실행 중인 작업이 종료될 수 있습니다."],
-      confirmLabel: "닫기",
-      danger: true,
-    });
-    if (!confirmed.confirmed) return;
+    if (settingsRef.current.confirmSinglePaneClose) {
+      const confirmed = await ask({
+        kind: "confirm",
+        title: `'${pane.distro}' 터미널 팬을 닫을까요?`,
+        lines: ["실행 중인 작업이 종료될 수 있습니다."],
+        confirmLabel: "닫기",
+        danger: true,
+      });
+      if (!confirmed.confirmed) return;
+    }
     await closePane(paneId);
   };
 
@@ -1437,6 +1487,12 @@ export default function App() {
       },
     },
     {
+      id: "settings",
+      label: "설정 열기",
+      description: "글꼴·테마·커서·스크롤백과 확인 동작",
+      run: () => setSettingsOpen(true),
+    },
+    {
       id: "close-pane",
       label: "팬: 닫기",
       description: "실행 중인 작업이 종료될 수 있음",
@@ -1460,7 +1516,7 @@ export default function App() {
         <button
           className={`btn panel-toggle ${panelOpen ? "active" : ""}`}
           title="사이드 패널 토글 (배포판/Docker/프로젝트)"
-          onClick={() => setPanelOpen((prev) => !prev)}
+          onClick={() => updateSettings({ sidePanelOpen: !panelOpen })}
         >
           ☰
         </button>
@@ -1479,7 +1535,7 @@ export default function App() {
         <select
           aria-label="세션 유지 방식"
           value={multiplexer}
-          onChange={(event) => setMultiplexer(event.currentTarget.value as MultiplexerKind)}
+          onChange={(event) => updateSettings({ multiplexer: event.currentTarget.value as MultiplexerKind })}
           title="native는 외부 도구 없이 동작합니다. tmux/zellij는 설치된 경우에만 선택할 수 있습니다."
         >
           {muxAvailability.map((item) => (
@@ -1531,6 +1587,9 @@ export default function App() {
         </button>
         <button className="btn" title="명령 팔레트 (Ctrl+Shift+P)" onClick={() => setPaletteOpen(true)}>
           명령…
+        </button>
+        <button className="btn" title="설정" onClick={() => setSettingsOpen(true)}>
+          설정
         </button>
         <span className="spacer" />
         <label
@@ -1676,6 +1735,11 @@ export default function App() {
               broadcastTargetIds={selectedBroadcastIds}
               copyOnSelect={copyOnSelect}
               fontSize={terminalFontSize}
+              fontFamily={fontFamilyFor(settings.fontId)}
+              theme={TERMINAL_THEMES[settings.theme]}
+              cursorStyle={settings.cursorStyle}
+              cursorBlink={settings.cursorBlink}
+              scrollbackLines={settings.scrollbackLines}
               registerWrite={registerWrite}
               unregisterWrite={unregisterWrite}
               registerFocus={registerFocus}
@@ -1721,6 +1785,12 @@ export default function App() {
         ariaLabel="터미널 탭 메뉴"
       />
       <ActionPalette open={paletteOpen} actions={paletteActions} onClose={() => setPaletteOpen(false)} />
+      <SettingsPanel
+        open={settingsOpen}
+        settings={settings}
+        onChange={updateSettings}
+        onClose={() => setSettingsOpen(false)}
+      />
       <AppDialog pending={pendingDialog} onAnswer={answerDialog} />
     </div>
   );

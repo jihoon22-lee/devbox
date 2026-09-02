@@ -24,6 +24,8 @@ export interface Pane {
   initialCommand?: string;
   /** 실제로 시작된 모드. 요청한 외부 도구가 없으면 backend가 native로 낮춘다. */
   multiplexer: MultiplexerKind;
+  /** 이 팬이 기존 multiplexer 세션에 다시 붙었는지. 새 세션이면 false다. */
+  resumed?: boolean;
 }
 
 /** 탭 하나. 항상 팬을 최소 1개 갖는다 (탭 생성은 첫 세션 시작 성공과 함께 일어나고,

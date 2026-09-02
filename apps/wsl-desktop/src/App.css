@@ -994,3 +994,85 @@ select {
   border-color: var(--red);
   color: var(--red);
 }
+
+.pane-badge {
+  flex-shrink: 0;
+  padding: 0 6px;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--dim);
+  font-size: 10px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.pane-badge.resumed {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+/* ── 설정 ─────────────────────────────────────────────────────── */
+
+.settings-panel {
+  width: min(560px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.settings-group {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 12px 14px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+}
+
+.settings-group legend {
+  padding: 0 6px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.settings-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  font-size: 12px;
+}
+
+.settings-row > span {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.settings-row small {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.settings-row input[type="checkbox"] {
+  order: -1;
+  flex-shrink: 0;
+}
+
+.settings-row input[type="number"] {
+  width: 110px;
+  padding: 5px 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+}
