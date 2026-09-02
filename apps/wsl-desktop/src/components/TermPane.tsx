@@ -44,6 +44,9 @@ export interface TerminalPaneHandle {
   pasteClipboard: () => Promise<void>;
   openSearch: () => void;
   copyCwd: () => Promise<void>;
+  clearScrollback: () => void;
+  scrollToBottom: () => void;
+  selectAll: () => void;
 }
 
 interface TermPaneProps {
@@ -107,6 +110,7 @@ const SEARCH_DECORATIONS = {
 };
 
 const RESIZE_DEBOUNCE_MS = 100;
+const BELL_VISIBLE_MS = 4000;
 const SELECTION_COPY_DEBOUNCE_MS = 120;
 
 // FitAddon.proposeDimensions() clamps to a minimum of 1 row / 2 cols — it never
@@ -166,6 +170,12 @@ export default function TermPane({
     resultIndex: -1,
     resultCount: 0,
   });
+  const [bellAt, setBellAt] = useState<number | null>(null);
+  const [searchOptions, setSearchOptions] = useState({
+    caseSensitive: false,
+    wholeWord: false,
+    regex: false,
+  });
 
   // 매 렌더마다 최신 값을 반영하는 ref들 — mount effect(아래)의 의존성 배열에는 넣지
   // 않는다. 넣으면 이 prop들이 바뀔 때마다 xterm이 재생성되어 스크롤백을 잃는다.
@@ -197,6 +207,7 @@ export default function TermPane({
   const termRef = useRef<Terminal | null>(null);
   const fitRef = useRef<FitAddon | null>(null);
   const searchAddonRef = useRef<SearchAddon | null>(null);
+  const webglAddonRef = useRef<{ dispose: () => void } | null>(null);
   const cwdRef = useRef<string | null>(null);
   const lastAutoCopiedRef = useRef<string | null>(null);
   const selectionCopyTimerRef = useRef<number | undefined>(undefined);
@@ -209,6 +220,7 @@ export default function TermPane({
   // The in-app confirmation resolves asynchronously, so later keystrokes must not overtake
   // the one being confirmed. While a confirmation is open, input queues here in arrival
   // order and is replayed through the same dispatch path once it resolves.
+  const bellTimerRef = useRef<number | undefined>(undefined);
   const confirmOpenRef = useRef(false);
   const queuedInputRef = useRef<string[]>([]);
 
@@ -281,6 +293,23 @@ export default function TermPane({
     await copyText(cwdRef.current, "현재 경로를 클립보드에 복사하지 못했습니다.");
   }, [copyText]);
 
+  const clearScrollback = useCallback(() => {
+    const term = termRef.current;
+    if (!term) return;
+    // 화면에 보이는 줄은 남기고 위쪽 스크롤백만 버린다. 셸의 `clear`는 버퍼를 비우지 않는다.
+    term.clear();
+    term.focus();
+  }, []);
+
+  const scrollToBottom = useCallback(() => {
+    termRef.current?.scrollToBottom();
+    termRef.current?.focus();
+  }, []);
+
+  const selectAll = useCallback(() => {
+    termRef.current?.selectAll();
+  }, []);
+
   const getCapabilities = useCallback<TerminalPaneHandle["getCapabilities"]>(() => ({
     hasSelection: Boolean(termRef.current?.hasSelection()),
     hasCwd: cwdRef.current !== null,
@@ -333,9 +362,24 @@ export default function TermPane({
       pasteClipboard,
       openSearch,
       copyCwd,
+      clearScrollback,
+      scrollToBottom,
+      selectAll,
     });
     return () => unregisterTerminalHandle(sessionId);
-  }, [copyCwd, copySelection, getCapabilities, openSearch, pasteClipboard, registerTerminalHandle, sessionId, unregisterTerminalHandle]);
+  }, [
+    clearScrollback,
+    copyCwd,
+    copySelection,
+    getCapabilities,
+    openSearch,
+    pasteClipboard,
+    registerTerminalHandle,
+    scrollToBottom,
+    selectAll,
+    sessionId,
+    unregisterTerminalHandle,
+  ]);
 
   useEffect(() => {
     const el = ref.current;
@@ -381,6 +425,26 @@ export default function TermPane({
     termRef.current = term;
     fitRef.current = fit;
     searchAddonRef.current = search;
+
+    // WebGL 렌더러는 대량 출력과 전체 화면 TUI에서 기본 DOM 렌더러보다 훨씬 빠르다.
+    // 첫 화면에는 필요 없으므로 별도 chunk로 나중에 불러오고, chunk 로딩·컨텍스트 생성·
+    // 나중의 컨텍스트 손실 중 무엇이 실패하든 조용히 DOM 렌더러로 남는다 — 터미널 자체는
+    // 어느 경우에도 계속 동작해야 하므로 실패를 오류로 올리지 않는다.
+    let torndown = false;
+    void import("@xterm/addon-webgl")
+      .then(({ WebglAddon }) => {
+        if (torndown || termRef.current !== term) return;
+        const webgl = new WebglAddon();
+        webgl.onContextLoss(() => {
+          webgl.dispose();
+          if (webglAddonRef.current === webgl) webglAddonRef.current = null;
+        });
+        term.loadAddon(webgl);
+        webglAddonRef.current = webgl;
+      })
+      .catch(() => {
+        webglAddonRef.current = null;
+      });
 
     // fit() 후 실제 rows/cols를 PTY에 전달한다. display:none인 동안(비활성 탭)에는
     // fit()이 0 크기를 계산하므로 건너뛴다 — 그 상태에서도 lastSizeRef는 마지막 실측
@@ -517,6 +581,13 @@ export default function TermPane({
       return true;
     });
     const searchResultDisposable = search.onDidChangeResults((result) => setSearchResult(result));
+    // 벨은 소리 대신 팬 머리글을 잠깐 표시한다. 비활성 탭에서도 남아 있어 무엇이 울렸는지
+    // 놓치지 않는다.
+    const bellDisposable = term.onBell(() => {
+      setBellAt(Date.now());
+      window.clearTimeout(bellTimerRef.current);
+      bellTimerRef.current = window.setTimeout(() => setBellAt(null), BELL_VISIBLE_MS);
+    });
 
     registerWrite(sessionId, (data: string) => term.write(data));
     // registerWrite 직후, 마운트당 정확히 한 번. 리더 스레드는 start_session이 아니라
@@ -539,6 +610,7 @@ export default function TermPane({
     term.write("\x1b[2J\x1b[H");
 
     return () => {
+      torndown = true;
       window.clearTimeout(selectionCopyTimerRef.current);
       window.clearTimeout(resizeTimerRef.current);
       confirmOpenRef.current = false;
@@ -549,11 +621,16 @@ export default function TermPane({
       titleDisposable.dispose();
       osc7Disposable.dispose();
       searchResultDisposable.dispose();
+      bellDisposable.dispose();
+      window.clearTimeout(bellTimerRef.current);
       unregisterWrite(sessionId);
       cwdRef.current = null;
       termRef.current = null;
       fitRef.current = null;
       searchAddonRef.current = null;
+      // xterm보다 먼저 정리해야 addon이 이미 사라진 renderer에 접근하지 않는다.
+      webglAddonRef.current?.dispose();
+      webglAddonRef.current = null;
       term.dispose();
     };
   }, [initialCommand, sessionId, registerWrite, unregisterWrite]);
@@ -615,7 +692,11 @@ export default function TermPane({
     }
   }, [active, isFocusedPane, searchOpen]);
 
-  const runSearch = (direction: "next" | "previous", query = searchQuery) => {
+  const runSearch = (
+    direction: "next" | "previous",
+    query = searchQuery,
+    modifiers = searchOptions,
+  ) => {
     const addon = searchAddonRef.current;
     if (!addon) return;
     const boundedQuery = query.slice(0, MAX_TERMINAL_SEARCH_CHARACTERS);
@@ -624,9 +705,22 @@ export default function TermPane({
       setSearchResult({ resultIndex: -1, resultCount: 0 });
       return;
     }
-    const options = { decorations: SEARCH_DECORATIONS, incremental: direction === "next" };
+    // decorations를 주면 addon이 현재 일치뿐 아니라 버퍼 전체의 일치를 표시한다.
+    const options = {
+      decorations: SEARCH_DECORATIONS,
+      incremental: direction === "next",
+      caseSensitive: modifiers.caseSensitive,
+      wholeWord: modifiers.wholeWord,
+      regex: modifiers.regex,
+    };
     if (direction === "next") addon.findNext(boundedQuery, options);
     else addon.findPrevious(boundedQuery, options);
+  };
+
+  const toggleSearchOption = (key: keyof typeof searchOptions) => {
+    const next = { ...searchOptions, [key]: !searchOptions[key] };
+    setSearchOptions(next);
+    runSearch("next", searchQuery, next);
   };
 
   return (
@@ -656,6 +750,11 @@ export default function TermPane({
         {multiplexer !== "native" && (
           <span className="pane-badge" title={`이 팬은 ${multiplexer} 세션으로 실행 중입니다`}>
             {multiplexer}
+          </span>
+        )}
+        {bellAt !== null && (
+          <span className="pane-badge bell" role="status" title="터미널이 벨 문자를 보냈습니다">
+            벨
           </span>
         )}
         {isBroadcastTarget && (
@@ -695,6 +794,27 @@ export default function TermPane({
             }}
             placeholder="터미널 출력 검색"
           />
+          <button
+            type="button"
+            className={`search-option ${searchOptions.caseSensitive ? "active" : ""}`}
+            aria-pressed={searchOptions.caseSensitive}
+            title="대/소문자 구분"
+            onClick={() => toggleSearchOption("caseSensitive")}
+          >Aa</button>
+          <button
+            type="button"
+            className={`search-option ${searchOptions.wholeWord ? "active" : ""}`}
+            aria-pressed={searchOptions.wholeWord}
+            title="단어 단위로 일치"
+            onClick={() => toggleSearchOption("wholeWord")}
+          >ab|</button>
+          <button
+            type="button"
+            className={`search-option ${searchOptions.regex ? "active" : ""}`}
+            aria-pressed={searchOptions.regex}
+            title="정규식으로 검색"
+            onClick={() => toggleSearchOption("regex")}
+          >.*</button>
           <span className="search-count" aria-live="polite">
             {searchResult.resultCount > 0 ? `${searchResult.resultIndex + 1}/${searchResult.resultCount}` : "0/0"}
           </span>

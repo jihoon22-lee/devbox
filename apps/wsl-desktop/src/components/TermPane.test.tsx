@@ -28,6 +28,9 @@ const {
   FakeSearchAddon,
   FakeUnicode11Addon,
   FakeWebLinksAddon,
+  FakeWebglAddon,
+  createdWebglAddons,
+  bufferSpy,
 } = vi.hoisted(() => {
   type TerminalOptions = {
     fontSize?: number;
@@ -40,6 +43,8 @@ const {
   const createdTerminals: FakeTerminal[] = [];
   const createdSearchAddons: FakeSearchAddon[] = [];
   const createdWebLinksAddons: FakeWebLinksAddon[] = [];
+  const createdWebglAddons: FakeWebglAddon[] = [];
+  const bufferSpy = vi.fn<(action: string) => void>();
   const fitSizes: TerminalSize[] = [];
   const observerState: { callback?: () => void } = {};
   const focusSpy = vi.fn();
@@ -54,6 +59,7 @@ const {
     selectionHandler?: () => void;
     dataHandler?: (data: string) => void;
     titleHandler?: (title: string) => void;
+    bellHandler?: () => void;
     osc7Handler?: (payload: string) => boolean;
     parser = {
       registerOscHandler: (identifier: number, handler: (payload: string) => boolean): Disposable => {
@@ -82,6 +88,19 @@ const {
     onTitleChange(handler: (title: string) => void) {
       this.titleHandler = handler;
       return { dispose: () => undefined };
+    }
+    onBell(handler: () => void) {
+      this.bellHandler = handler;
+      return { dispose: () => undefined };
+    }
+    clear() {
+      bufferSpy("clear");
+    }
+    scrollToBottom() {
+      bufferSpy("scrollToBottom");
+    }
+    selectAll() {
+      bufferSpy("selectAll");
     }
     getSelection() {
       return this.selection;
@@ -113,8 +132,18 @@ const {
 
   class FakeSearchAddon {
     resultHandler?: (result: SearchResult) => void;
-    findNext = vi.fn<(term: string) => boolean>().mockReturnValue(true);
-    findPrevious = vi.fn<(term: string) => boolean>().mockReturnValue(true);
+    lastQuery?: string;
+    lastOptions?: { caseSensitive?: boolean; wholeWord?: boolean; regex?: boolean };
+    findNext = vi.fn((term: string, options?: Record<string, unknown>) => {
+      this.lastQuery = term;
+      this.lastOptions = options as FakeSearchAddon["lastOptions"];
+      return true;
+    });
+    findPrevious = vi.fn((term: string, options?: Record<string, unknown>) => {
+      this.lastQuery = term;
+      this.lastOptions = options as FakeSearchAddon["lastOptions"];
+      return true;
+    });
     clearDecorations = vi.fn();
     constructor() {
       createdSearchAddons.push(this);
@@ -133,10 +162,28 @@ const {
     activate() {}
   }
 
+  class FakeWebglAddon {
+    disposed = false;
+    contextLossHandler?: () => void;
+    constructor() {
+      createdWebglAddons.push(this);
+    }
+    activate() {}
+    onContextLoss(handler: () => void) {
+      this.contextLossHandler = handler;
+      return { dispose: () => undefined };
+    }
+    dispose() {
+      this.disposed = true;
+    }
+  }
+
   return {
     createdTerminals,
     createdSearchAddons,
     createdWebLinksAddons,
+    createdWebglAddons,
+    bufferSpy,
     fitSizes,
     observerState,
     focusSpy,
@@ -146,6 +193,7 @@ const {
     FakeSearchAddon,
     FakeUnicode11Addon,
     FakeWebLinksAddon,
+    FakeWebglAddon,
   };
 });
 
@@ -154,6 +202,7 @@ vi.mock("@xterm/addon-fit", () => ({ FitAddon: FakeFitAddon }));
 vi.mock("@xterm/addon-search", () => ({ SearchAddon: FakeSearchAddon }));
 vi.mock("@xterm/addon-unicode11", () => ({ Unicode11Addon: FakeUnicode11Addon }));
 vi.mock("@xterm/addon-web-links", () => ({ WebLinksAddon: FakeWebLinksAddon }));
+vi.mock("@xterm/addon-webgl", () => ({ WebglAddon: FakeWebglAddon }));
 
 const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink, mockBroadcast, mockWriteSession } = vi.hoisted(() => ({
   mockResizeSession: vi.fn().mockResolvedValue(undefined),
@@ -221,6 +270,8 @@ beforeEach(() => {
   createdTerminals.length = 0;
   createdSearchAddons.length = 0;
   createdWebLinksAddons.length = 0;
+  createdWebglAddons.length = 0;
+  bufferSpy.mockClear();
   fitSizes.length = 0;
   observerState.callback = undefined;
   focusSpy.mockClear();
@@ -667,5 +718,70 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
     await waitFor(() => expect(onBroadcastFailure).toHaveBeenCalledTimes(1));
     expect(onTerminalError).toHaveBeenCalledWith("broadcast 입력을 모든 대상 터미널에 전달하지 못했습니다.");
     expect(onTerminalError).not.toHaveBeenCalledWith(expect.stringContaining(raw));
+  });
+});
+
+describe("TermPane — renderer, search options and buffer commands", () => {
+  it("WebGL 렌더러를 나중에 붙이고 컨텍스트를 잃으면 조용히 DOM 렌더러로 돌아간다", async () => {
+    const onTerminalError = vi.fn();
+    render(<TermPane {...baseProps({ onTerminalError })} />);
+    await waitFor(() => expect(createdWebglAddons).toHaveLength(1));
+
+    createdWebglAddons[0].contextLossHandler?.();
+    expect(createdWebglAddons[0].disposed).toBe(true);
+    expect(onTerminalError).not.toHaveBeenCalled();
+  });
+
+  it("renderer chunk를 불러오지 못해도 터미널은 계속 동작한다", async () => {
+    const onTerminalError = vi.fn();
+    const { unmount } = render(<TermPane {...baseProps({ onTerminalError })} />);
+    await waitFor(() => expect(createdWebglAddons).toHaveLength(1));
+    unmount();
+    // 언마운트 뒤 도착한 chunk는 이미 사라진 terminal에 addon을 붙이지 않는다.
+    expect(onTerminalError).not.toHaveBeenCalled();
+  });
+
+  it("검색 옵션 토글은 같은 질의를 새 옵션으로 다시 실행한다", () => {
+    render(<TermPane {...baseProps({})} />);
+    const term = createdTerminals[0];
+    act(() => term.keyHandler?.({
+      type: "keydown",
+      key: "f",
+      ctrlKey: true,
+      shiftKey: true,
+      preventDefault: () => undefined,
+      stopPropagation: () => undefined,
+    } as unknown as KeyboardEvent));
+
+    fireEvent.change(screen.getByLabelText("검색어"), { target: { value: "error" } });
+    const addon = createdSearchAddons[0];
+    expect(addon.lastOptions?.caseSensitive).toBe(false);
+
+    fireEvent.click(screen.getByTitle("대/소문자 구분"));
+    expect(addon.lastQuery).toBe("error");
+    expect(addon.lastOptions?.caseSensitive).toBe(true);
+
+    fireEvent.click(screen.getByTitle("정규식으로 검색"));
+    expect(addon.lastOptions?.regex).toBe(true);
+    expect(addon.lastOptions?.caseSensitive).toBe(true);
+  });
+
+  it("팬 handle이 스크롤백 비우기·맨 아래로·전체 선택을 제공한다", () => {
+    const registerTerminalHandle = vi.fn();
+    render(<TermPane {...baseProps({ registerTerminalHandle })} />);
+    const handle = registerTerminalHandle.mock.calls[0][1];
+
+    handle.clearScrollback();
+    handle.scrollToBottom();
+    handle.selectAll();
+    expect(bufferSpy.mock.calls.map((call) => call[0])).toEqual(["clear", "scrollToBottom", "selectAll"]);
+  });
+
+  it("벨은 소리 대신 팬 머리글 배지로 알린다", async () => {
+    render(<TermPane {...baseProps({})} />);
+    expect(screen.queryByTitle(/벨 문자를 보냈습니다/u)).not.toBeInTheDocument();
+
+    act(() => createdTerminals[0].bellHandler?.());
+    expect(await screen.findByTitle(/벨 문자를 보냈습니다/u)).toBeInTheDocument();
   });
 });

@@ -12,14 +12,18 @@ describe("WSL Desktop context menu contracts", () => {
     expect(normalizeTabName(" \r\n ")).toBeNull();
   });
 
-  it("pane 메뉴의 정확한 항목과 #262 비범위를 유지한다", () => {
-    const items = buildPaneContextMenu({ busy: false, hasSelection: true, hasCwd: true });
+  it("pane 메뉴의 정확한 항목 순서를 유지한다", () => {
+    const items = buildPaneContextMenu({ busy: false, hasSelection: true, hasCwd: true, zoomed: false });
     expect(labels(items)).toEqual([
       "복사",
       "붙여넣기",
       "검색",
+      "전체 선택",
+      "스크롤백 비우기",
+      "맨 아래로 이동",
       "세로 분할",
       "가로 분할",
+      "확대",
       "cwd 복사",
       "팬 닫기",
     ]);
@@ -32,15 +36,27 @@ describe("WSL Desktop context menu contracts", () => {
   });
 
   it("pane action은 busy 동안 모두 비활성화된다", () => {
-    const items = buildPaneContextMenu({ busy: true, hasSelection: true, hasCwd: true });
-    for (const id of ["copy", "paste", "search", "split-vertical", "split-horizontal", "copy-cwd", "close"]) {
+    const items = buildPaneContextMenu({ busy: true, hasSelection: true, hasCwd: true, zoomed: false });
+    for (const id of [
+      "copy",
+      "paste",
+      "search",
+      "select-all",
+      "clear-scrollback",
+      "scroll-bottom",
+      "split-vertical",
+      "split-horizontal",
+      "zoom",
+      "copy-cwd",
+      "close",
+    ]) {
       const item = items.find((candidate) => candidate.type === "item" && candidate.id === id);
       expect(item?.type === "item" && item.disabled).toBe(true);
     }
   });
 
   it("selection과 OSC 7 cwd가 없는 exact pane의 해당 action만 비활성화한다", () => {
-    const items = buildPaneContextMenu({ busy: false, hasSelection: false, hasCwd: false });
+    const items = buildPaneContextMenu({ busy: false, hasSelection: false, hasCwd: false, zoomed: false });
     const disabled = (id: string) => {
       const item = items.find((candidate) => candidate.type === "item" && candidate.id === id);
       return item?.type === "item" && item.disabled;
@@ -73,5 +89,17 @@ describe("WSL Desktop context menu contracts", () => {
     const closeOthers = items.find((item) => item.type === "item" && item.id === "close-others");
     expect(close?.type === "item" && close.disabled).toBe(false);
     expect(closeOthers?.type === "item" && closeOthers.disabled).toBe(true);
+  });
+});
+
+describe("pane zoom entry", () => {
+  it("확대 상태에 따라 항목 문구가 바뀐다", () => {
+    const zoomLabel = (zoomed: boolean) => {
+      const item = buildPaneContextMenu({ busy: false, hasSelection: false, hasCwd: false, zoomed })
+        .find((candidate) => candidate.type === "item" && candidate.id === "zoom");
+      return item?.type === "item" ? item.label : null;
+    };
+    expect(zoomLabel(false)).toBe("확대");
+    expect(zoomLabel(true)).toBe("확대 해제");
   });
 });

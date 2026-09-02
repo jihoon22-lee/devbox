@@ -14,9 +14,10 @@ export interface PaneContextCapabilities {
   busy: boolean;
   hasSelection: boolean;
   hasCwd: boolean;
+  zoomed: boolean;
 }
 
-export function buildPaneContextMenu({ busy, hasSelection, hasCwd }: PaneContextCapabilities): readonly ContextMenuEntry[] {
+export function buildPaneContextMenu({ busy, hasSelection, hasCwd, zoomed }: PaneContextCapabilities): readonly ContextMenuEntry[] {
   return [
     {
       type: "item",
@@ -36,8 +37,12 @@ export function buildPaneContextMenu({ busy, hasSelection, hasCwd }: PaneContext
       label: "검색",
       disabled: busy,
     },
+    { type: "item", id: "select-all", label: "전체 선택", disabled: busy },
+    { type: "item", id: "clear-scrollback", label: "스크롤백 비우기", disabled: busy },
+    { type: "item", id: "scroll-bottom", label: "맨 아래로 이동", disabled: busy },
     { type: "item", id: "split-vertical", label: "세로 분할", disabled: busy },
     { type: "item", id: "split-horizontal", label: "가로 분할", disabled: busy },
+    { type: "item", id: "zoom", label: zoomed ? "확대 해제" : "확대", disabled: busy },
     {
       type: "item",
       id: "copy-cwd",

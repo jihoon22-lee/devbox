@@ -113,6 +113,24 @@ code, a downloaded compiler, or a certificate-verification bypass.
 | Offline | Local `.proto` compilation, descriptor projection, ProtoJSON conversion, TLS credential management, and history work entirely in process after installation. No `protoc`, code generator executable, runtime crate download, or sidecar is used. Reflection and RPC calls intentionally require the user-selected server; network failure never causes a protocol downgrade or request retry. |
 | Maintenance | API Playground maintainers own the aligned tonic/prost/protox family. Monitor RustSec and the official tonic, prost, prost-reflect, protox, tokio, and rustls-pki-types releases; upgrades must preserve Linux/Windows CI, reflection fixtures, all four RPC kinds, ProtoJSON compatibility, TLS roots/mTLS, bounds, notices, and package evidence. The rollback boundary is the gRPC tab and its native commands; removing it removes the direct family without changing MCP or REST persistence. |
 
+### WSL Desktop WebGL renderer decision (2026-09-02)
+
+`@xterm/addon-webgl` is approved as the terminal renderer for WSL Desktop only. This decision does
+not permit any other renderer addon, a WebGL dependency in another app, or removal of the DOM
+renderer fallback.
+
+| Field | Decision record |
+|---|---|
+| Purpose | WSL Desktop shipped on xterm's DOM renderer, the slowest one xterm provides. Heavy command output and full-screen TUIs repaint through DOM nodes per cell. The official WebGL addon renders the same buffer on the GPU. The terminal design document already named this addon with a canvas/DOM fallback in its usability table; it was excluded from #262's acceptance and is completed here. |
+| Alternatives | Keeping the DOM renderer leaves the app's core surface on its slowest path. The canvas addon is deprecated upstream in favour of WebGL. Writing a renderer against xterm's internal render API would duplicate maintained upstream code and break on every xterm release. Doing nothing was rejected because rendering speed is the terminal's primary perceived quality. |
+| Source | Official registry entry [`@xterm/addon-webgl`](https://www.npmjs.com/package/@xterm/addon-webgl/v/0.19.0) from the same [xtermjs/xterm.js](https://github.com/xtermjs/xterm.js) project that already supplies `@xterm/xterm`, `addon-fit`, `addon-search`, `addon-unicode11` and `addon-web-links`. Registry package only; no git or binary dependency. |
+| Pin | Manifest constraint `@xterm/addon-webgl: ^0.19.0`; the lock resolves exactly `0.19.0` with integrity `sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==`. It adds no transitive package. |
+| License | MIT, the same expression as every other xterm package already bundled, and already on the pnpm allowlist. Generated `THIRD_PARTY_NOTICES.md` records the expression, source and integrity. |
+| Size | The addon is loaded through a dynamic import, so it is a separate chunk and stays out of the initial bundle. Measured with the repository's own budget check: initial raw 665,650 to 679,733 bytes, initial gzip 190,941 to 196,300; the lazy chunk is 110,225 bytes raw and 29,794 gzip. Both initial budgets (755,000 raw, 220,000 gzip) still pass. These are build checkpoints, not installer claims. |
+| Security | The addon renders the terminal buffer already held in the renderer; it opens no network, filesystem or IPC path and receives no new data. `pnpm audit --audit-level moderate` reports no known vulnerability. Failure to load the chunk, failure to obtain a WebGL context, and later context loss all fall back to the DOM renderer silently; the terminal, its PTY connection and its scrollback are unaffected in every case. |
+| Offline | The chunk is built into the installed app, so the renderer works with no network. There is no runtime download and no external GPU driver requirement beyond what WebView2 already provides; without a context the app simply keeps the DOM renderer. |
+| Maintenance | WSL Desktop maintainers own it and upgrade it together with `@xterm/xterm`, whose version it must match. Monitor the official xterm.js releases and npm advisories. The rollback boundary is one dynamic import in `TermPane`; removing it restores the DOM renderer without touching any other behaviour. |
+
 ### Manual review record
 
 - `glib` [GHSA-wrw7-89jp-8q8g](https://github.com/advisories/GHSA-wrw7-89jp-8q8g)는 Linux-only

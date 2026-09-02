@@ -1,7 +1,8 @@
-import type { CSSProperties } from "react";
+import { useCallback, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import type { AskDialog } from "./AppDialog";
 import type { CursorStyle, TerminalTheme } from "../lib/settings";
+import { normalizeFractions, resizeAdjacent, toGridTemplate } from "../lib/paneSizing";
 import TermPane, { type TerminalPaneHandle } from "./TermPane";
 import type { Pane, Tab } from "../types";
 import type { ShortcutAction } from "../lib/shortcuts";
@@ -36,6 +37,8 @@ interface PaneCanvasProps {
   windowsBuildNumber: number | null;
   contextMenuTriggerProps: ContextMenuTriggerProps;
   actionsDisabled: boolean;
+  /** 확대해서 혼자 보이는 팬. 활성 탭에 없으면 무시한다. */
+  zoomedPaneId: string | null;
   ask: AskDialog;
   onConfirmLinkHost: (host: string) => Promise<boolean>;
 }
@@ -85,30 +88,126 @@ export default function PaneCanvas({
   windowsBuildNumber,
   contextMenuTriggerProps,
   actionsDisabled,
+  zoomedPaneId,
   ask,
   onConfirmLinkHost,
 }: PaneCanvasProps) {
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
-  const activePaneIds = activeTab?.paneIds ?? [];
+  const allActivePaneIds = activeTab?.paneIds ?? [];
+  // 확대된 팬은 활성 탭 안에 있을 때만 유효하다. 탭을 옮기면 자동으로 풀린다.
+  const zoomed = zoomedPaneId !== null && allActivePaneIds.includes(zoomedPaneId) ? zoomedPaneId : null;
+  const activePaneIds = zoomed ? [zoomed] : allActivePaneIds;
 
+  const layout = zoomed ? "grid" : (activeTab?.layout ?? "grid");
   const gridCols = activePaneIds.length === 0 ? 1 : Math.ceil(Math.sqrt(activePaneIds.length));
   const gridRows = Math.ceil(activePaneIds.length / gridCols);
-  const layout = activeTab?.layout ?? "grid";
-  const gridStyle: CSSProperties =
-    layout === "cols"
-      ? { gridTemplateColumns: `repeat(${Math.max(1, activePaneIds.length)}, 1fr)` }
-      : layout === "rows"
-        ? { gridTemplateRows: `repeat(${Math.max(1, activePaneIds.length)}, 1fr)` }
-        : {
-            // activePaneIds.length === 0일 때 gridRows도 0이 되어 `repeat(0, 1fr)`은 무효
-            // CSS라 이전 렌더의 gridTemplateRows가 그대로 남는다. cols/rows 분기엔 있던
-            // Math.max(1, …) 가드가 #189에서 이 grid 분기에만 누락됐었다.
-            gridTemplateColumns: `repeat(${Math.max(1, gridCols)}, 1fr)`,
-            gridTemplateRows: `repeat(${Math.max(1, gridRows)}, 1fr)`,
-          };
+  // 트랙 수는 레이아웃이 정한다. 하나뿐인 축에는 구분선을 만들지 않는다.
+  const columnCount = layout === "cols"
+    ? Math.max(1, activePaneIds.length)
+    : layout === "rows" ? 1 : Math.max(1, gridCols);
+  const rowCount = layout === "rows"
+    ? Math.max(1, activePaneIds.length)
+    : layout === "cols" ? 1 : Math.max(1, gridRows);
+
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [sizing, setSizing] = useState<Record<string, { columns: number[]; rows: number[] }>>({});
+  // 팬 수나 레이아웃이 바뀌면 길이가 어긋나 균등 분할로 되돌아간다.
+  const columns = normalizeFractions(sizing[activeTabId]?.columns, columnCount);
+  const rows = normalizeFractions(sizing[activeTabId]?.rows, rowCount);
+
+  const applySizing = useCallback((axis: "columns" | "rows", next: number[]) => {
+    setSizing((previous) => {
+      const current = previous[activeTabId] ?? { columns: [], rows: [] };
+      return { ...previous, [activeTabId]: { ...current, [axis]: next } };
+    });
+  }, [activeTabId]);
+
+  const startDrag = (
+    axis: "columns" | "rows",
+    index: number,
+    event: ReactPointerEvent<HTMLDivElement>,
+  ) => {
+    const container = containerRef.current;
+    if (!container || actionsDisabled) return;
+    event.preventDefault();
+    const rect = container.getBoundingClientRect();
+    const extent = axis === "columns" ? rect.width : rect.height;
+    if (extent <= 0) return;
+    const origin = axis === "columns" ? event.clientX : event.clientY;
+    const start = axis === "columns" ? columns : rows;
+    const handle = event.currentTarget;
+    handle.setPointerCapture(event.pointerId);
+
+    const move = (moveEvent: PointerEvent) => {
+      const position = axis === "columns" ? moveEvent.clientX : moveEvent.clientY;
+      applySizing(axis, resizeAdjacent(start, index, (position - origin) / extent));
+    };
+    const stop = () => {
+      handle.releasePointerCapture?.(event.pointerId);
+      handle.removeEventListener("pointermove", move);
+      handle.removeEventListener("pointerup", stop);
+      handle.removeEventListener("pointercancel", stop);
+    };
+    handle.addEventListener("pointermove", move);
+    handle.addEventListener("pointerup", stop);
+    handle.addEventListener("pointercancel", stop);
+  };
+
+  const nudge = (axis: "columns" | "rows", index: number, delta: number) => {
+    if (actionsDisabled) return;
+    applySizing(axis, resizeAdjacent(axis === "columns" ? columns : rows, index, delta));
+  };
+
+  const dividers = (axis: "columns" | "rows") => {
+    const fractions = axis === "columns" ? columns : rows;
+    if (fractions.length < 2) return null;
+    let offset = 0;
+    return fractions.slice(0, -1).map((fraction, index) => {
+      offset += fraction;
+      const percent = `${(offset * 100).toFixed(4)}%`;
+      const value = Math.round(offset * 100);
+      return (
+        <div
+          key={`${axis}-${index}`}
+          className={`pane-divider ${axis}`}
+          role="separator"
+          aria-orientation={axis === "columns" ? "vertical" : "horizontal"}
+          aria-label={`${index + 1}번째 구분선 크기 조절`}
+          aria-valuenow={value}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          tabIndex={0}
+          style={axis === "columns" ? { left: percent } : { top: percent }}
+          onPointerDown={(event) => startDrag(axis, index, event)}
+          onDoubleClick={() => applySizing(axis, normalizeFractions(undefined, fractions.length))}
+          onKeyDown={(event) => {
+            const grow = axis === "columns" ? "ArrowRight" : "ArrowDown";
+            const shrink = axis === "columns" ? "ArrowLeft" : "ArrowUp";
+            if (event.key === grow) {
+              event.preventDefault();
+              nudge(axis, index, 0.02);
+            } else if (event.key === shrink) {
+              event.preventDefault();
+              nudge(axis, index, -0.02);
+            } else if (event.key === "Home") {
+              event.preventDefault();
+              applySizing(axis, normalizeFractions(undefined, fractions.length));
+            }
+          }}
+        />
+      );
+    });
+  };
+
+  const gridStyle: CSSProperties = {
+    gridTemplateColumns: toGridTemplate(columns),
+    gridTemplateRows: toGridTemplate(rows),
+  };
 
   return (
-    <div className="panes" style={gridStyle}>
+    <div className="panes" ref={containerRef} style={gridStyle}>
+      {!zoomed && dividers("columns")}
+      {!zoomed && dividers("rows")}
       {panes.map((pane) => {
         // 세션이 아직 붙지 않은 팬(sessionId === null)은 TermPane을 마운트할 것이 없다
         // — 지금 이 릴리스에서는 startSession 성공 후에만 팬이 생기므로 실질적으로는

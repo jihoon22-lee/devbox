@@ -7,7 +7,7 @@ const CWD_KEY = "wsl-desktop:cwd-value";
 const RECENT_KEY = "wsl-desktop:recent-paths";
 const COPY_ON_SELECT_KEY = "wsl-desktop:copy-on-select";
 const FONT_SIZE_KEY = "wsl-desktop:font-size";
-const MAX_RECENT = 5;
+const MAX_RECENT = 12;
 
 export function loadPinned(): boolean {
   return localStorage.getItem(PINNED_KEY) === "1";
@@ -34,7 +34,7 @@ export function loadRecentPaths(): string[] {
   }
 }
 
-/** MRU(최근 사용 순) 목록 갱신 + 저장. 최대 5개, 중복 제거. */
+/** MRU(최근 사용 순) 목록 갱신 + 저장. 최대 12개, 중복 제거. */
 export function pushRecentPath(path: string): string[] {
   const trimmed = path.trim();
   if (!trimmed) return loadRecentPaths();

@@ -69,11 +69,13 @@ describe("pushRecentPath", () => {
     expect(loadRecentPaths()).toEqual(["/a", "/c", "/b"]);
   });
 
-  it("최대 5개까지만 유지한다", () => {
-    for (const p of ["/1", "/2", "/3", "/4", "/5", "/6"]) pushRecentPath(p);
+  it("최대 12개까지만 유지한다", () => {
+    for (let index = 1; index <= 13; index += 1) pushRecentPath(`/${index}`);
     const result = loadRecentPaths();
-    expect(result).toHaveLength(5);
-    expect(result).toEqual(["/6", "/5", "/4", "/3", "/2"]);
+    expect(result).toHaveLength(12);
+    expect(result[0]).toBe("/13");
+    expect(result[11]).toBe("/2");
+    expect(result).not.toContain("/1");
   });
 
   it("공백만 있는 경로는 무시하고 기존 목록을 그대로 반환한다", () => {
