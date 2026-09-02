@@ -19,6 +19,7 @@ function baseProps(
     onAction: vi.fn(),
     onRefresh: vi.fn(),
     snapshotState: "fresh",
+    snapshotActionable: true,
     ...overrides,
   };
 }
@@ -122,11 +123,26 @@ describe("DistroPanel distro state", () => {
       <DistroPanel
         {...baseProps({
           snapshotState: "stale",
+          snapshotActionable: false,
           containers: [{ id: "abc123", name: "api", image: "api:latest", status: "Created", ports: "" }],
         })}
       />,
     );
     expect(screen.getByRole("button", { name: "시작" })).toBeDisabled();
+  });
+
+  it("keeps Docker mutations available while a refresh collects over a last-good snapshot", () => {
+    render(
+      <DistroPanel
+        {...baseProps({
+          snapshotState: "refreshing",
+          snapshotActionable: true,
+          containers: [{ id: "abc123", name: "api", image: "api:latest", status: "Created", ports: "" }],
+        })}
+      />,
+    );
+    expect(screen.getByRole("status")).toHaveTextContent("새로 고치는 중");
+    expect(screen.getByRole("button", { name: "시작" })).toBeEnabled();
   });
 
   it("does not present a stopped or failed Docker query as an empty list", () => {

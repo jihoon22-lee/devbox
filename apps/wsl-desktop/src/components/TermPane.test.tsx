@@ -163,6 +163,10 @@ const { mockResizeSession, mockReadClipboardText, mockOpenTerminalLink, mockBroa
 }));
 const stableRegisterFocus = vi.fn<(id: string, focus: () => void) => void>();
 const stableUnregisterFocus = vi.fn<(id: string) => void>();
+const askMock = vi.fn().mockResolvedValue({ confirmed: false, value: "", remember: false });
+const confirmLinkHostMock = vi.fn<(host: string) => Promise<boolean>>().mockResolvedValue(true);
+const approve = () => askMock.mockResolvedValue({ confirmed: true, value: "", remember: false });
+const reject = () => askMock.mockResolvedValue({ confirmed: false, value: "", remember: false });
 
 vi.mock("../api", () => ({
   attachSession: vi.fn().mockResolvedValue(undefined),
@@ -198,6 +202,8 @@ function baseProps(overrides: Partial<ComponentProps<typeof TermPane>> = {}): Co
     windowsBuildNumber: null,
     contextMenuTriggerProps: {},
     actionsDisabled: false,
+    ask: askMock,
+    onConfirmLinkHost: confirmLinkHostMock,
     ...overrides,
   };
 }
@@ -217,13 +223,12 @@ beforeEach(() => {
   mockWriteSession.mockReset().mockResolvedValue(undefined);
   stableRegisterFocus.mockClear();
   stableUnregisterFocus.mockClear();
+  askMock.mockReset();
+  reject();
+  confirmLinkHostMock.mockReset().mockResolvedValue(true);
   Object.defineProperty(navigator, "clipboard", {
     configurable: true,
     value: { writeText: vi.fn().mockResolvedValue(undefined) },
-  });
-  Object.defineProperty(window, "confirm", {
-    configurable: true,
-    value: vi.fn().mockReturnValue(false),
   });
   // TermPane 마운트는 항상 `new ResizeObserver(...)`를 호출한다. jsdom은 이를 구현하지
   // 않으므로(ReferenceError) 최소 스텁으로 대체한다. 이 스위트는 ResizeObserver의
@@ -420,8 +425,7 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
   it("exact pane handle이 복사·다중행 확인 붙여넣기·OSC cwd 복사·검색을 제공한다", async () => {
     const registerTerminalHandle = vi.fn();
     const onTerminalError = vi.fn();
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(true);
+    approve();
     mockReadClipboardText.mockResolvedValue("echo one\r\necho two");
     const { container } = render(<TermPane {...baseProps({ registerTerminalHandle, onTerminalError })} />);
     const term = createdTerminals[0];
@@ -433,7 +437,10 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     expect(navigator.clipboard.writeText).toHaveBeenCalledWith("selected output");
 
     await handle.pasteClipboard();
-    expect(confirm).toHaveBeenCalledWith("2줄을 터미널에 붙여넣을까요? 명령이 실행될 수 있습니다.");
+    expect(askMock).toHaveBeenCalledWith(expect.objectContaining({
+      kind: "confirm",
+      title: "2줄을 터미널에 붙여넣을까요?",
+    }));
     expect(pasteSpy).toHaveBeenCalledWith("echo one\r\necho two");
 
     const raw = "C:\\secret\\clipboard-read credential-raw";
@@ -534,8 +541,6 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     const onTerminalError = vi.fn();
     const registerWrite = vi.fn();
     const unregisterWrite = vi.fn();
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(true);
     const props = (nextFontSize: number) => baseProps({
       fontSize: nextFontSize,
       onTerminalError,
@@ -555,7 +560,7 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
       "https://example.com/docs",
     );
     await waitFor(() => expect(mockOpenTerminalLink).toHaveBeenCalledWith("https://example.com/docs"));
-    expect(confirm).toHaveBeenCalledWith("'example.com' 링크를 기본 브라우저에서 열까요?");
+    expect(confirmLinkHostMock).toHaveBeenCalledWith("example.com");
 
     rerender(<TermPane {...props(16)} />);
     expect(createdTerminals).toHaveLength(1);
@@ -576,32 +581,58 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
   });
 
   it("명시적으로 선택한 대상에만 broadcast하고 위험 Enter 취소 시 실행을 막는다", async () => {
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
+    reject();
     render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s3"] })} />);
     const term = createdTerminals[0];
 
     act(() => term.dataHandler?.("sudo rm -rf ./cache"));
     expect(mockBroadcast).toHaveBeenCalledWith(["s1", "s3"], "sudo rm -rf ./cache");
     act(() => term.dataHandler?.("\r"));
-    expect(confirm).toHaveBeenCalledWith("2개 터미널에 위험할 수 있는 명령을 동시에 보낼까요?");
+    await waitFor(() => expect(askMock).toHaveBeenCalledWith(expect.objectContaining({
+      title: "2개 터미널에 위험할 수 있는 명령을 동시에 보낼까요?",
+    })));
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
     act(() => term.dataHandler?.("\r"));
-    expect(confirm).toHaveBeenCalledTimes(2);
+    await waitFor(() => expect(askMock).toHaveBeenCalledTimes(2));
     expect(mockBroadcast).toHaveBeenCalledTimes(1);
   });
 
-  it("multiline broadcast는 대상 수 확인 뒤 취소하고 raw command를 확인문에 넣지 않는다", () => {
-    const confirm = vi.mocked(window.confirm);
-    confirm.mockReturnValue(false);
+  it("확인이 열려 있는 동안 들어온 입력은 순서를 지켜 확인 뒤에 전달된다", async () => {
+    let release: ((answer: { confirmed: boolean; value: string; remember: boolean }) => void) | undefined;
+    askMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s2"] })} />);
+    const term = createdTerminals[0];
+
+    act(() => term.dataHandler?.("rm -rf ./cache"));
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    act(() => term.dataHandler?.("\r"));
+    await waitFor(() => expect(release).toBeDefined());
+
+    // Arrives in the frame before the dialog takes focus: it must wait its turn.
+    act(() => term.dataHandler?.("echo after"));
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+
+    approve();
+    act(() => release?.({ confirmed: true, value: "", remember: false }));
+    await waitFor(() => expect(mockBroadcast).toHaveBeenCalledTimes(3));
+    expect(mockBroadcast.mock.calls.map((call) => call[1])).toEqual([
+      "rm -rf ./cache",
+      "\r",
+      "echo after",
+    ]);
+  });
+
+  it("multiline broadcast는 대상 수 확인 뒤 취소하고 raw command를 확인문에 넣지 않는다", async () => {
+    reject();
     render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s2", "s4"] })} />);
     const term = createdTerminals[0];
 
     act(() => term.dataHandler?.("echo raw-one\necho raw-two\n"));
+    await waitFor(() => expect(askMock).toHaveBeenCalledTimes(1));
     expect(mockBroadcast).not.toHaveBeenCalled();
-    const message = String(confirm.mock.calls[0]?.[0]);
-    expect(message).toContain("3개");
-    expect(message).not.toContain("raw-one");
+    const request = askMock.mock.calls[0]?.[0] as { title: string };
+    expect(request.title).toContain("3개");
+    expect(JSON.stringify(request)).not.toContain("raw-one");
   });
 
   it("대상 2개 미만이면 broadcast mode가 켜져 있어도 현재 팬에만 입력한다", () => {

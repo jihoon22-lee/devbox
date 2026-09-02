@@ -1,4 +1,4 @@
-import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
 import {
@@ -118,8 +118,16 @@ beforeEach(() => {
   dockerActionMock.mockReset().mockResolvedValue(undefined);
   getDashboardSnapshotMock.mockClear();
   openWslJournalInLogLensMock.mockReset().mockResolvedValue(undefined);
-  Object.defineProperty(window, "confirm", { configurable: true, value: vi.fn(() => true) });
+
 });
+
+/** 앱 내장 대화상자를 승인한다. 취소가 첫 버튼, 확인이 마지막 버튼이다. */
+async function acceptDialog(): Promise<void> {
+  const dialog = await screen.findByRole("alertdialog");
+  const buttons = within(dialog).getAllByRole("button");
+  fireEvent.click(buttons[buttons.length - 1]);
+  await waitFor(() => expect(screen.queryByRole("alertdialog")).not.toBeInTheDocument());
+}
 
 afterEach(() => cleanup());
 
@@ -258,6 +266,7 @@ describe("App app-link delivery", () => {
     const addTerminalButton = await screen.findByRole("button", { name: "+ 터미널" });
 
     fireEvent.click(journalButton);
+    await acceptDialog();
     await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledWith("Ubuntu", null));
     expect(journalButton).toBeDisabled();
     expect(startButton).toBeDisabled();
@@ -283,9 +292,11 @@ describe("App app-link delivery", () => {
     render(<App />);
     const journalButton = await screen.findByRole("button", { name: "Log Lens에서 저널 열기" });
     fireEvent.click(journalButton);
+    await acceptDialog();
     await screen.findByText("Log Lens journal handoff를 시작하지 못했습니다.");
 
     fireEvent.click(journalButton);
+    await acceptDialog();
     await waitFor(() => expect(openWslJournalInLogLensMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByText("Log Lens journal handoff를 시작하지 못했습니다.")).not.toBeInTheDocument());
   });

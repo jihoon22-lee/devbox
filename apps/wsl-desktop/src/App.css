@@ -896,3 +896,101 @@ select {
   padding: 16px 10px;
   text-align: center;
 }
+
+/* ── 앱 내장 확인·입력 대화상자 ───────────────────────────────── */
+
+.dialog-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 1100;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  background: rgba(0, 0, 0, 0.55);
+}
+
+.app-dialog {
+  width: min(520px, calc(100vw - 32px));
+  max-height: calc(100vh - 32px);
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  color: var(--text);
+  box-shadow: 0 18px 48px rgba(0, 0, 0, 0.45);
+}
+
+.app-dialog.danger {
+  border-color: var(--red);
+}
+
+.dialog-title {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.dialog-line {
+  margin: 0;
+  color: var(--dim);
+  font-size: 12px;
+  overflow-wrap: anywhere;
+}
+
+.dialog-detail {
+  margin: 0;
+  max-height: 180px;
+  overflow: auto;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.dialog-input {
+  padding: 7px 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg);
+  color: var(--text);
+  outline: none;
+}
+
+.dialog-input:focus {
+  border-color: var(--accent);
+}
+
+.dialog-remember {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.dialog-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-top: 2px;
+}
+
+.btn.primary {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.btn.primary.danger {
+  border-color: var(--red);
+  color: var(--red);
+}

@@ -73,6 +73,8 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     windowsBuildNumber: null,
     contextMenuTriggerProps: {},
     actionsDisabled: false,
+    ask: vi.fn().mockResolvedValue({ confirmed: true, value: "", remember: false }),
+    onConfirmLinkHost: vi.fn().mockResolvedValue(true),
     ...overrides,
   };
 }
