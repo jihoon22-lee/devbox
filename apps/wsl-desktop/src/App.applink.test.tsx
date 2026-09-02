@@ -273,10 +273,9 @@ describe("App app-link delivery", () => {
     expect(journalButton).toBeDisabled();
     expect(startButton).toBeDisabled();
     expect(addTerminalButton).toBeDisabled();
-    const toolbarDistroSelector = screen.getByRole("combobox", { name: "현재 WSL 배포판" });
-    const panelDistroSelector = screen.getByRole("combobox", { name: "WSL 배포판 선택" });
-    expect(toolbarDistroSelector).toBeDisabled();
-    expect(panelDistroSelector).toBeDisabled();
+    // 배포판 선택기는 툴바 하나로 합쳐졌다. 패널은 카드로만 배포판을 다룬다.
+    expect(screen.getByRole("combobox", { name: "현재 WSL 배포판" })).toBeDisabled();
+    expect(screen.queryByRole("combobox", { name: "WSL 배포판 선택" })).not.toBeInTheDocument();
 
     fireEvent.click(startButton);
     expect(dockerActionMock).not.toHaveBeenCalled();

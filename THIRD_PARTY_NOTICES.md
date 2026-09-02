@@ -5,7 +5,7 @@ license for devbox itself; workspace packages are private and excluded from this
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
 - Cargo.lock SHA-256: `ebe22c7df176d95685cc9ff9c0eb3760ac08b95829498d7c5884f89dd10977c7`
-- pnpm-lock.yaml SHA-256: `1cc237c8a7d0064588c8d8934ba73e1cb79eb7c1257250a28f83219c82475c0a`
+- pnpm-lock.yaml SHA-256: `f7f5d97b350782d85fa0925d45f126decd24002a0a527ebf069da0535cad1f84`
 
 ## Rust dependencies
 
@@ -824,6 +824,7 @@ to the CI license gate but are not shipped in the compiled frontend bundle.
 | @xterm/addon-search | 0.16.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-9OeuBFu0/uZJPu+9AHKY6g/w0Czyb/Ut0A5t79I4ULoU4IfU5BEpPFVGQxP4zTTMdfZEYkVIRYbHBX1xWwjeSA==` |
 | @xterm/addon-unicode11 | 0.9.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-FxDnYcyuXhNl+XSqGZL/t0U9eiNb/q3EWT5rYkQT/zuig8Gz/VagnQANKHdDWFM2lTMk9ly0EFQxxxtZUoRetw==` |
 | @xterm/addon-web-links | 0.12.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-4Smom3RPyVp7ZMYOYDoC/9eGJJJqYhnPLGGqJ6wOBfB8VxPViJNSKdgRYb8NpaM6YSelEKbA2SStD7lGyqaobw==` |
+| @xterm/addon-webgl | 0.19.0 | MIT | https://github.com/xtermjs/xterm.js/tree/master#readme | `sha512-b3fMOsyLVuCeNJWxolACEUED0vm7qC0cy4wRvf3oURSzDTYVQiGPhTnhWZwIHdvC48Y+oLhvYXnY4XDXPoJo6A==` |
 | @xterm/xterm | 6.0.0 | MIT | https://github.com/xtermjs/xterm.js#readme | `sha512-TQwDdQGtwwDt+2cgKDLn0IRaSxYu1tSUjgKarSDkUM0ZNiSRXFpjxEsvc/Zgc5kq5omJ+V0a8/kIM2WD3sMOYg==` |
 | codemirror | 6.0.2 | MIT | https://github.com/codemirror/basic-setup#readme | `sha512-VhydHotNW5w1UGK0Qj96BwSk/Zqbp9WbnyK2W/eVMv4QyF41INRGpjUhFJY7/uDNuudSc33a/PKr4iDqRduvHw==` |
 | commander | 7.2.0 | MIT | https://github.com/tj/commander.js#readme | `sha512-QrWXB+ZQSVPmIWIhtEO9H+gwHaMGYiF5ChvoJ+K9ZGHG/sVsa6yiesAD1GC/x46sET00Xlwo1u49RVVVzvcSkw==` |

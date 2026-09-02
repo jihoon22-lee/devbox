@@ -1,6 +1,13 @@
 import { useRef } from "react";
 import { restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
+  DEFAULT_TERMINAL_FONT_SIZE,
+  MAX_TERMINAL_FONT_SIZE,
+  MIN_TERMINAL_FONT_SIZE,
+  clampTerminalFontSize,
+} from "../lib/terminalUx";
+import type { MultiplexerAvailability } from "../types";
+import {
   CURSOR_LABELS,
   FONT_CHOICES,
   MAX_SCROLLBACK_LINES,
@@ -17,9 +24,30 @@ interface SettingsPanelProps {
   settings: TerminalSettings;
   onChange: (patch: Partial<TerminalSettings>) => void;
   onClose: () => void;
+  muxAvailability: readonly MultiplexerAvailability[];
+  copyOnSelect: boolean;
+  onCopyOnSelectChange: (enabled: boolean) => void;
+  fontSize: number;
+  onFontSizeChange: (fontSize: number) => void;
 }
 
-export default function SettingsPanel({ open, settings, onChange, onClose }: SettingsPanelProps) {
+const MULTIPLEXER_STATUS_SUFFIX: Readonly<Record<MultiplexerAvailability["status"], string>> = {
+  available: " (설치됨)",
+  missing: " (없음)",
+  error: " (확인 오류)",
+};
+
+export default function SettingsPanel({
+  open,
+  settings,
+  onChange,
+  onClose,
+  muxAvailability,
+  copyOnSelect,
+  onCopyOnSelectChange,
+  fontSize,
+  onFontSizeChange,
+}: SettingsPanelProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
   if (open && !openerRef.current) {
@@ -82,7 +110,51 @@ export default function SettingsPanel({ open, settings, onChange, onClose }: Set
         </fieldset>
 
         <fieldset className="settings-group">
+          <legend>세션</legend>
+          <label className="settings-row">
+            <span>
+              세션 유지 방식
+              <small>native는 외부 도구 없이 동작합니다. tmux·zellij는 설치된 배포판에서만 고를 수 있습니다.</small>
+            </span>
+            <select
+              aria-label="세션 유지 방식"
+              value={settings.multiplexer}
+              onChange={(event) => onChange({ multiplexer: event.currentTarget.value as TerminalSettings["multiplexer"] })}
+            >
+              {muxAvailability.map((item) => (
+                <option key={item.kind} value={item.kind} disabled={item.status !== "available"}>
+                  {item.kind}{item.kind === "native" ? " (기본)" : MULTIPLEXER_STATUS_SUFFIX[item.status]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="settings-row">
+            <input
+              type="checkbox"
+              checked={copyOnSelect}
+              onChange={(event) => onCopyOnSelectChange(event.currentTarget.checked)}
+            />
+            <span>선택한 터미널 텍스트를 자동으로 복사</span>
+          </label>
+        </fieldset>
+
+        <fieldset className="settings-group">
           <legend>터미널 표시</legend>
+          <label className="settings-row">
+            <span>
+              글꼴 크기
+              <small>터미널에서 Ctrl 그리고 +, -, 0으로도 바꿀 수 있습니다.</small>
+            </span>
+            <input
+              type="number"
+              aria-label="터미널 글꼴 크기"
+              min={MIN_TERMINAL_FONT_SIZE}
+              max={MAX_TERMINAL_FONT_SIZE}
+              step={1}
+              value={fontSize}
+              onChange={(event) => onFontSizeChange(clampTerminalFontSize(Number(event.currentTarget.value)))}
+            />
+          </label>
           <label className="settings-row">
             <span>글꼴</span>
             <select
@@ -142,6 +214,9 @@ export default function SettingsPanel({ open, settings, onChange, onClose }: Set
         </fieldset>
 
         <div className="dialog-actions">
+          <button type="button" className="btn" onClick={() => onFontSizeChange(DEFAULT_TERMINAL_FONT_SIZE)}>
+            글꼴 크기 초기화
+          </button>
           <button type="button" className="btn primary" onClick={close}>닫기</button>
         </div>
       </section>

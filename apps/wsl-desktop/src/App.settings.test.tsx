@@ -150,16 +150,16 @@ describe("persisted settings", () => {
   it("사이드 패널 상태를 저장하고 다음 창에서 복원한다", async () => {
     storedSettings({ openTerminalOnStart: false, sidePanelOpen: true });
     const first = render(<App />);
-    await screen.findByRole("combobox", { name: "WSL 배포판 선택" });
+    await screen.findByRole("button", { name: "새로고침" });
 
     fireEvent.click(screen.getByTitle(/사이드 패널 토글/u));
-    await waitFor(() => expect(screen.queryByRole("combobox", { name: "WSL 배포판 선택" })).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByRole("button", { name: "새로고침" })).not.toBeInTheDocument());
     expect(loadSettings().sidePanelOpen).toBe(false);
 
     first.unmount();
     render(<App />);
     await screen.findAllByRole("option", { name: /Ubuntu/u });
-    expect(screen.queryByRole("combobox", { name: "WSL 배포판 선택" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "새로고침" })).not.toBeInTheDocument();
   });
 
   it("선택한 세션 유지 방식을 저장하고 다음 창에서 복원한다", async () => {
@@ -170,6 +170,8 @@ describe("persisted settings", () => {
     ]);
     storedSettings({ openTerminalOnStart: false });
     const first = render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const selector = await screen.findByRole("combobox", { name: "세션 유지 방식" });
     await waitFor(() => expect(within(selector).getByRole("option", { name: /tmux/u })).toBeEnabled());
 
@@ -178,6 +180,8 @@ describe("persisted settings", () => {
 
     first.unmount();
     render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const restored = await screen.findByRole("combobox", { name: "세션 유지 방식" }) as HTMLSelectElement;
     await waitFor(() => expect(restored.value).toBe("tmux"));
   });
@@ -185,9 +189,12 @@ describe("persisted settings", () => {
   it("저장된 유지 방식을 현재 배포판이 제공하지 않으면 조용히 native로 되돌린다", async () => {
     storedSettings({ openTerminalOnStart: false, multiplexer: "zellij" });
     render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    await waitFor(() => expect(loadSettings().multiplexer).toBe("native"));
+
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const selector = await screen.findByRole("combobox", { name: "세션 유지 방식" }) as HTMLSelectElement;
-    await waitFor(() => expect(selector.value).toBe("native"));
-    expect(loadSettings().multiplexer).toBe("native");
+    expect(selector.value).toBe("native");
   });
 
   it("팬 하나 닫기 확인은 설정으로 끌 수 있고 탭 닫기 확인은 남는다", async () => {

@@ -6,7 +6,9 @@
 ## 주요 기능
 
 - **임베디드 터미널** — xterm.js + PTY(ConPTY), WSL 배포판 선택·지정 경로로 열기
-- **탭 + 분할** — 탭 안에 격자/가로/세로 분할, 드래그로 탭 이동·재배치, 단축키 전환.
+- **탭 + 분할** — 탭 안에 격자/가로/세로 분할, 팬 사이 구분선을 끌어 크기 조절(더블 클릭 또는
+  `Home`으로 균등 복원, 방향키로 미세 조절), 활성 팬만 탭 전체에 보이는 확대 토글, 드래그로
+  탭 이동·재배치, 단축키 전환.
   탭 바는 `tablist`/`tab` 의미를 가지며 좌우·Home·End로 이동하고 활성 탭을 항상 시야 안으로
   스크롤한다. 가운데 클릭과 `Delete`로 닫고 더블 클릭으로 이름을 바꾼다. 눈에 보이는 ✕는
   마우스 전용 보조 수단이라 접근성 트리에서 감추며, 키보드·보조기술은 컨텍스트 메뉴·
@@ -20,7 +22,13 @@
   대화상자를 쓴다. 테마·`Esc` 취소·IME·focus 복원(연 곳으로 정확히 되돌림)을 앱의 다른
   대화상자와 공유하고, 요청이 겹치면 순서대로 하나씩 묻는다. 실행 직전 최종 문자열은
   monospace 블록으로 그대로 보여 준다.
-- **검색·메타데이터·링크** — 팬별 스크롤백 검색(`Ctrl+Shift+F`, Enter/Shift+Enter),
+- **렌더러** — 공식 `@xterm/addon-webgl`을 별도 chunk로 나중에 불러와 대량 출력과 전체 화면
+  TUI를 GPU로 그린다. chunk 로딩·컨텍스트 생성 실패나 이후 컨텍스트 손실에서는 조용히 DOM
+  렌더러로 남으며 터미널·PTY 연결·스크롤백은 영향을 받지 않는다.
+- **버퍼 명령** — 스크롤백 비우기, 맨 아래로 이동, 전체 선택을 팬 메뉴와 명령 팔레트에서
+  실행한다. 벨 문자는 소리 대신 팬 머리글 배지로 알린다.
+- **검색·메타데이터·링크** — 팬별 스크롤백 검색(`Ctrl+Shift+F`, Enter/Shift+Enter,
+  대/소문자·단어 단위·정규식 옵션과 버퍼 전체 일치 강조),
   OSC 0/2 제목과 OSC 7 현재 cwd, OSC 8·일반 HTTP(S) 링크를 지원한다. 자동 탭 제목은
   활성 팬을 따르지만 사용자가 바꾼 탭 이름은 OSC가 덮어쓰지 않는다. 링크는 scheme과
   자격 증명을 검사하고 host 확인 뒤 기본 브라우저에서 연다. host 확인에서 "이 창에서는 이
@@ -34,8 +42,9 @@
   재마운트하지 않는다. ConPTY wrap 보정, resize ack 후 commit·실패 재시도, hidden pane/최소
   크기 보호를 적용한다.
 - **설정** — 툴바 `설정`과 명령 팔레트에서 연다. 팬 하나 닫기 확인 여부, 시작할 때 터미널
-  하나 열기, 글꼴(고정 목록), 색 테마(어두움/밝음/고대비), 커서 모양·깜박임, 스크롤백
-  줄 수(1,000~100,000, 기본 10,000)를 `localStorage`에 저장한다. 글꼴은 임의 문자열을 받지
+  하나 열기, 세션 유지 방식, 선택 시 자동 복사, 글꼴 크기, 글꼴(고정 목록), 색 테마(어두움/
+  밝음/고대비), 커서 모양·깜박임, 스크롤백 줄 수(1,000~100,000, 기본 10,000)를
+  `localStorage`에 저장한다. 툴바에는 자주 쓰는 조작만 남기고 나머지는 이 창으로 모았다. 글꼴은 임의 문자열을 받지
   않고 앱이 가진 목록에서만 고르며, 값이 손상되면 그 필드만 기본값으로 되돌린다. 변경은
   xterm 옵션만 갱신하므로 스크롤백과 PTY 연결이 유지된다.
 - **시작 상태** — 복원할 레이아웃이 없고 배포판 조회에 성공했으면 기본 배포판 터미널을
@@ -106,15 +115,16 @@
   원문은 오류에 노출하지 않는다. 이 범위는 WSL Desktop producer와 Log Lens claim/preview
   lifecycle에 한정된다. Run log를 읽는 Log Lens receiver adapter는 #473에서 완성되어
   v0.5.1 stable에 포함됐지만 v0.5.0 binary에는 없는 maintenance correction이다.
-- **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장
+- **open path 핀·최근 경로** — 자주 쓰는 작업 경로 저장 (최근 12개)
 
 ## 기술
 
 - `portable-pty` 기반 ConPTY (PTY resize, 탭 모델, 드래그와 앱/터미널 단축키)
 - 공용 `packages/context-menu` — viewport 배치·keyboard navigation·focus 복원·submenu를
   공유하고, WSL 전용 항목·exact pane/tab 대상·danger 확인은 앱이 소유한다.
-- 공식 xterm MIT addon(`addon-search`, `addon-web-links`)과 Tauri clipboard plugin을 앱에
-  포함하므로 설치 뒤 검색·링크 감지·붙여넣기는 network나 별도 외부 도구 없이 동작한다.
+- 공식 xterm MIT addon(`addon-search`, `addon-web-links`, `addon-webgl`)과 Tauri clipboard
+  plugin을 앱에 포함하므로 설치 뒤 검색·링크 감지·붙여넣기·GPU 렌더링은 network나 별도 외부
+  도구 없이 동작한다. `addon-webgl`은 dynamic import로 분리해 초기 번들에 넣지 않는다.
   clipboard capability는 읽기 텍스트 하나만 허용한다.
 - tmux/zellij 어댑터는 shell 문자열 조립 없이 exact argv만 사용한다. tmux UI option은 해당
   session에만 적용하고 zellij는 내장 `disable-status` layout과 frame/mouse off option을
@@ -147,7 +157,7 @@
 - 프로젝트·git 상태는 Workbench로 이관됨 (`com.devbox.workbench\project-profiles.json`)
 - `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기, version 1
   설정(확인 동작·시작 동작·사이드 패널·유지 방식·글꼴 id·테마·커서·스크롤백), version 1
-  마지막 레이아웃. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
+  마지막 레이아웃. 팬 크기 비율과 확대 상태는 창이 살아 있는 동안만 유지하며 저장하지 않는다. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
   링크 host의 "다시 묻지 않기" 선택은 process memory에만 두며 저장하지 않는다.
 - Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지
   않는다.

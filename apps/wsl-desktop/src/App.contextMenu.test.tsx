@@ -225,7 +225,10 @@ describe("WSL Desktop pane and tab context menus", () => {
     ));
     await waitFor(() => expect(screen.getAllByLabelText("Ubuntu 터미널 팬")).toHaveLength(3));
     const canvas = document.querySelector(".panes") as HTMLElement;
-    expect(canvas.style.gridTemplateColumns).toContain("repeat(3");
+    // 세로 분할은 팬 수만큼의 열 트랙을 만든다. 트랙은 드래그로 조절할 수 있도록
+    // 명시적 fr 값이며, 조절 전에는 균등 분할이다.
+    expect(canvas.style.gridTemplateColumns.split(" ")).toHaveLength(3);
+    expect(canvas.style.gridTemplateRows).toBe("1000fr");
   });
 
   it("pane 닫기는 confirmation 전 backend를 호출하지 않고 취소 뒤 terminal focus를 복원한다", async () => {
@@ -268,7 +271,7 @@ describe("WSL Desktop pane and tab context menus", () => {
     fireEvent.contextMenu(renamed);
     fireEvent.click(screen.getByRole("menuitem", { name: "레이아웃 전환" }));
     fireEvent.click(screen.getByRole("menuitem", { name: "가로 분할" }));
-    expect(screen.getByRole("button", { name: "rows" })).toHaveClass("active");
+    expect(screen.getByRole("combobox", { name: "탭 레이아웃" })).toHaveValue("rows");
   });
 
   it("자동 탭 제목은 활성 pane OSC 제목을 따르고 수동 rename 뒤에는 덮어쓰지 않는다", async () => {

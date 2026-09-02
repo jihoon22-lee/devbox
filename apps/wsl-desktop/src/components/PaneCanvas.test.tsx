@@ -1,4 +1,4 @@
-import { cleanup, render } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { useEffect, type CSSProperties } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PaneCanvas from "./PaneCanvas";
@@ -79,6 +79,7 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     windowsBuildNumber: null,
     contextMenuTriggerProps: {},
     actionsDisabled: false,
+    zoomedPaneId: null as string | null,
     ask: vi.fn().mockResolvedValue({ confirmed: true, value: "", remember: false }),
     onConfirmLinkHost: vi.fn().mockResolvedValue(true),
     ...overrides,
@@ -199,5 +200,93 @@ describe("PaneCanvas — grid 레이아웃 가드 (#189 회귀)", () => {
     const panesEl = container.querySelector(".panes") as HTMLElement;
     expect(panesEl.style.gridTemplateRows).not.toContain("repeat(0");
     expect(panesEl.style.gridTemplateColumns).not.toContain("repeat(0");
+  });
+});
+
+describe("PaneCanvas — 크기 조절과 확대", () => {
+  const twoPaneTabs = [{ ...tab("t1", ["p1", "p2"]), layout: "cols" as const }];
+  const twoPanes = [pane("p1"), pane("p2")];
+
+  it("세로 분할에는 팬 사이마다 구분선을 하나씩 둔다", () => {
+    render(<PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />);
+    const dividers = screen.getAllByRole("separator");
+    expect(dividers).toHaveLength(1);
+    expect(dividers[0]).toHaveAttribute("aria-orientation", "vertical");
+    expect(dividers[0]).toHaveAttribute("aria-valuenow", "50");
+  });
+
+  it("방향키로 구분선을 옮기면 트랙 비율이 바뀌고 Home으로 되돌린다", () => {
+    render(<PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />);
+    const divider = screen.getByRole("separator");
+    const canvas = document.querySelector(".panes") as HTMLElement;
+    const before = canvas.style.gridTemplateColumns;
+
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(canvas.style.gridTemplateColumns).not.toBe(before);
+    expect(divider).toHaveAttribute("aria-valuenow", "52");
+
+    fireEvent.keyDown(divider, { key: "Home" });
+    expect(canvas.style.gridTemplateColumns).toBe(before);
+  });
+
+  it("팬을 추가하면 조절한 비율은 균등 분할로 되돌아간다", () => {
+    const { rerender } = render(
+      <PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />,
+    );
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+    const canvas = document.querySelector(".panes") as HTMLElement;
+    expect(canvas.style.gridTemplateColumns).toBe("520fr 480fr");
+
+    rerender(
+      <PaneCanvas
+        {...baseProps({
+          tabs: [{ ...tab("t1", ["p1", "p2", "p3"]), layout: "cols" as const }],
+          panes: [...twoPanes, pane("p3")],
+          activeTabId: "t1",
+        })}
+      />,
+    );
+    expect(canvas.style.gridTemplateColumns).toBe("333fr 333fr 333fr");
+  });
+
+  it("가로 분할 구분선은 위아래 방향으로만 움직인다", () => {
+    render(
+      <PaneCanvas
+        {...baseProps({
+          tabs: [{ ...tab("t1", ["p1", "p2"]), layout: "rows" as const }],
+          panes: twoPanes,
+          activeTabId: "t1",
+        })}
+      />,
+    );
+    const divider = screen.getByRole("separator");
+    expect(divider).toHaveAttribute("aria-orientation", "horizontal");
+    const canvas = document.querySelector(".panes") as HTMLElement;
+
+    fireEvent.keyDown(divider, { key: "ArrowRight" });
+    expect(canvas.style.gridTemplateRows).toBe("500fr 500fr");
+    fireEvent.keyDown(divider, { key: "ArrowDown" });
+    expect(canvas.style.gridTemplateRows).toBe("520fr 480fr");
+  });
+
+  it("확대하면 그 팬만 보이고 구분선은 사라진다", () => {
+    render(
+      <PaneCanvas
+        {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1", zoomedPaneId: "p2" })}
+      />,
+    );
+    expect(screen.queryAllByRole("separator")).toHaveLength(0);
+    expect(screen.getByTestId("pane-p2")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("pane-p1")).toHaveAttribute("data-active", "false");
+  });
+
+  it("확대한 팬이 활성 탭에 없으면 확대를 무시한다", () => {
+    render(
+      <PaneCanvas
+        {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1", zoomedPaneId: "other" })}
+      />,
+    );
+    expect(screen.getByTestId("pane-p1")).toHaveAttribute("data-active", "true");
+    expect(screen.getByTestId("pane-p2")).toHaveAttribute("data-active", "true");
   });
 });

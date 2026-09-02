@@ -107,7 +107,9 @@ async function renderWithPanes(count: number, layout?: "cols" | "rows") {
     fireEvent.click(addButton);
     await waitFor(() => expect(screen.getAllByLabelText(/터미널 팬/u)).toHaveLength(index + 1));
   }
-  if (layout) fireEvent.click(screen.getByRole("button", { name: layout }));
+  if (layout) {
+    fireEvent.change(screen.getByRole("combobox", { name: "탭 레이아웃" }), { target: { value: layout } });
+  }
 }
 
 /**

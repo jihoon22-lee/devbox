@@ -20,6 +20,8 @@ interface Props {
   snapshotState?: DashboardFreshness;
   /** Whether the last good snapshot still backs a state change. Owned by App. */
   snapshotActionable?: boolean;
+  /** The toolbar already owns a distro selector; the panel repeats it only when asked. */
+  showDistroSelect?: boolean;
 }
 
 const DISTRO_STATE_LABELS: Readonly<Record<string, string>> = {
@@ -49,6 +51,7 @@ export default function DistroPanel({
   dashboardDistros = [],
   snapshotState = "loading",
   snapshotActionable = false,
+  showDistroSelect = true,
 }: Props) {
   const running = containers.filter((c) => dockerDisplayState(c.status).running).length;
   // A collection being in flight does not close the Docker controls; an expired or failed
@@ -84,18 +87,20 @@ export default function DistroPanel({
         </button>
       </div>
 
-      <select
-        aria-label="WSL 배포판 선택"
-        disabled={logLensBusy !== null}
-        value={selectedDistro}
-        onChange={(e) => onSelectDistro(e.currentTarget.value)}
-      >
-        {distros.map((d) => (
-          <option key={d.name} value={d.name}>
-            {d.name} {d.default ? "(기본)" : ""}
-          </option>
-        ))}
-      </select>
+      {showDistroSelect && (
+        <select
+          aria-label="WSL 배포판 선택"
+          disabled={logLensBusy !== null}
+          value={selectedDistro}
+          onChange={(e) => onSelectDistro(e.currentTarget.value)}
+        >
+          {distros.map((d) => (
+            <option key={d.name} value={d.name}>
+              {d.name} {d.default ? "(기본)" : ""}
+            </option>
+          ))}
+        </select>
+      )}
 
       {dockerMissing && (
         <div className="banner">

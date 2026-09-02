@@ -113,6 +113,7 @@ export default function App() {
   const panelOpen = settings.sidePanelOpen;
   const [settingsOpen, setSettingsOpen] = useState(false);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
+  const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
   const [cwd, setCwd] = useState<string>(() => (loadPinned() ? loadPinnedCwd() : ""));
   const [recentPaths, setRecentPaths] = useState<string[]>(loadRecentPaths);
@@ -1331,8 +1332,9 @@ export default function App() {
       busy: domainActionsBusy,
       hasSelection: contextPaneCapabilities.hasSelection,
       hasCwd: contextPaneCapabilities.hasCwd,
+      zoomed: zoomedPaneId !== null,
     }),
-    [domainActionsBusy, contextPaneCapabilities.hasCwd, contextPaneCapabilities.hasSelection],
+    [domainActionsBusy, contextPaneCapabilities.hasCwd, contextPaneCapabilities.hasSelection, zoomedPaneId],
   );
   const tabContextItems = useMemo<readonly ContextMenuEntry[]>(
     () => buildTabContextMenu(domainActionsBusy, tabs.length > 1),
@@ -1386,6 +1388,10 @@ export default function App() {
     else if (id === "paste") void handle?.pasteClipboard();
     else if (id === "search") handle?.openSearch();
     else if (id === "copy-cwd") void handle?.copyCwd();
+    else if (id === "select-all") handle?.selectAll();
+    else if (id === "clear-scrollback") handle?.clearScrollback();
+    else if (id === "scroll-bottom") handle?.scrollToBottom();
+    else if (id === "zoom") setZoomedPaneId((current) => (current ? null : pane.sessionId));
     else if (id === "split-vertical") splitContextPane("cols");
     else if (id === "split-horizontal") splitContextPane("rows");
     else if (id === "close") void requestClosePane(pane.sessionId);
@@ -1580,6 +1586,34 @@ export default function App() {
       },
     },
     {
+      id: "zoom-pane",
+      label: zoomedPaneId ? "팬: 확대 해제" : "팬: 확대",
+      description: "활성 팬만 탭 전체에 표시",
+      run: () => setZoomedPaneId((current) => (current ? null : activePaneId)),
+    },
+    {
+      id: "clear-scrollback",
+      label: "팬: 스크롤백 비우기",
+      description: "화면에 보이는 줄만 남기고 버퍼를 비운다",
+      run: () => {
+        if (activePaneId) terminalHandles.current.get(activePaneId)?.clearScrollback();
+      },
+    },
+    {
+      id: "scroll-bottom",
+      label: "팬: 맨 아래로 이동",
+      run: () => {
+        if (activePaneId) terminalHandles.current.get(activePaneId)?.scrollToBottom();
+      },
+    },
+    {
+      id: "select-all",
+      label: "팬: 전체 선택",
+      run: () => {
+        if (activePaneId) terminalHandles.current.get(activePaneId)?.selectAll();
+      },
+    },
+    {
       id: "toggle-panel",
       label: `사이드 패널 ${panelOpen ? "숨기기" : "보이기"}`,
       run: () => updateSettings({ sidePanelOpen: !panelOpen }),
@@ -1635,24 +1669,6 @@ export default function App() {
           {distros.map((d) => (
             <option key={d.name} value={d.name}>
               {d.name} {d.default ? "(기본)" : ""}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label="세션 유지 방식"
-          value={multiplexer}
-          onChange={(event) => updateSettings({ multiplexer: event.currentTarget.value as MultiplexerKind })}
-          title="native는 외부 도구 없이 동작합니다. tmux/zellij는 설치된 경우에만 선택할 수 있습니다."
-        >
-          {muxAvailability.map((item) => (
-            <option key={item.kind} value={item.kind} disabled={item.status !== "available"}>
-              {item.kind}{item.kind === "native"
-                ? " (기본)"
-                : item.status === "available"
-                  ? " (설치됨)"
-                  : item.status === "missing"
-                    ? " (없음)"
-                    : " (확인 오류)"}
             </option>
           ))}
         </select>
@@ -1724,43 +1740,17 @@ export default function App() {
           aria-controls="broadcast-target-picker"
           onClick={() => setBroadcastPickerOpen((open) => !open)}
         >대상 {selectedBroadcastIds.length}/{activePaneIds.length}</button>
-        <label className="toggle" title="선택한 터미널 텍스트를 자동으로 복사합니다">
-          <input
-            type="checkbox"
-            checked={copyOnSelect}
-            onChange={(event) => {
-              const enabled = event.currentTarget.checked;
-              setCopyOnSelect(enabled);
-              saveCopyOnSelect(enabled);
-            }}
-          />
-          선택 시 복사
-        </label>
-        <div className="font-controls" aria-label="터미널 글꼴 크기">
-          <button
-            type="button"
-            className="btn compact"
-            title="글꼴 축소 (Ctrl+-)"
-            onClick={() => updateTerminalFontSize(terminalFontSize - 1)}
-          >A−</button>
-          <button
-            type="button"
-            className="btn font-size"
-            title="기본 글꼴 크기로 복원 (Ctrl+0)"
-            onClick={() => updateTerminalFontSize(DEFAULT_TERMINAL_FONT_SIZE)}
-          >{terminalFontSize}px</button>
-          <button
-            type="button"
-            className="btn compact"
-            title="글꼴 확대 (Ctrl++)"
-            onClick={() => updateTerminalFontSize(terminalFontSize + 1)}
-          >A+</button>
-        </div>
-        {(["grid", "cols", "rows"] as const).map((l) => (
-          <button key={l} className={`btn ${activeLayout === l ? "active" : ""}`} disabled={domainActionsBusy} onClick={() => setActiveTabLayout(l)}>
-            {l}
-          </button>
-        ))}
+        <select
+          aria-label="탭 레이아웃"
+          className="layout-select"
+          value={activeLayout}
+          disabled={domainActionsBusy}
+          onChange={(event) => setActiveTabLayout(event.currentTarget.value as Layout)}
+        >
+          {(["grid", "cols", "rows"] as const).map((option) => (
+            <option key={option} value={option}>{LAYOUT_LABELS[option]}</option>
+          ))}
+        </select>
       </header>
 
       {broadcastPickerOpen && (
@@ -1792,6 +1782,7 @@ export default function App() {
             <DistroPanel
               distros={distros}
               selectedDistro={selected}
+              showDistroSelect={false}
               onSelectDistro={selectDistro}
               onOpenTerminal={openDistroTerminal}
               onOpenJournalInLogLens={(name) => void openJournalInLogLens(name)}
@@ -1887,6 +1878,7 @@ export default function App() {
               windowsBuildNumber={windowsBuildNumber}
               contextMenuTriggerProps={paneContextMenu.triggerProps}
               actionsDisabled={contextActionBusy || workspaceLoading}
+              zoomedPaneId={zoomedPaneId}
             />
           )}
         </div>
@@ -1916,6 +1908,14 @@ export default function App() {
         settings={settings}
         onChange={updateSettings}
         onClose={() => setSettingsOpen(false)}
+        muxAvailability={muxAvailability}
+        copyOnSelect={copyOnSelect}
+        onCopyOnSelectChange={(enabled) => {
+          setCopyOnSelect(enabled);
+          saveCopyOnSelect(enabled);
+        }}
+        fontSize={terminalFontSize}
+        onFontSizeChange={updateTerminalFontSize}
       />
       <AppDialog pending={pendingDialog} onAnswer={answerDialog} />
     </div>
