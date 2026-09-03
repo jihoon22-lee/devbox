@@ -3,7 +3,7 @@
 devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. GitHub Releases의 manifest를 단일 원본으로 신뢰한다.
 산출물: `DevboxManager.exe` (`apps/devbox-manager`).
 
-공개 Latest manifest는 v0.6.0 stable을 가리킨다. 정확한 tag commit·workflow·manifest·asset
+공개 Latest manifest는 v0.7.0 stable을 가리킨다. 정확한 tag commit·workflow·manifest·asset
 metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모드의 immutable fallback은
 아래 설명처럼 v0.5.0 manifest fixture를 의도적으로 유지한다.
 

@@ -80,3 +80,12 @@ parser and execution gate.
 After required PR CI passes and the correction is merged, a new exact-main Windows candidate must
 run all three package shards, assembly, packaged runtime and installer acceptance. Only a fully
 successful replacement candidate authorizes the annotated v0.7.0 tag.
+
+## Publication outcome
+
+PR #539 passed required CI `33779657145` and merged as
+`3a23f49c85aa3c3d04b86f227e8aa184ef964085`. Replacement candidate `33782002859` passed all three
+shards, exact assembly, packaged runtime 15/15 and installer lifecycle 15/15. Port Manager's candidate
+fresh install carried the expected v0.7.0 notice digest
+`e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4`, and all installer residue
+counters were zero. That evidence authorized the annotated v0.7.0 stable tag.

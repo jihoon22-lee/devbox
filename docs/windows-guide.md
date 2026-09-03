@@ -1,7 +1,7 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 공개 v0.6.0 stable의 15개 앱을 설치하거나,
-v0.7.0 준비 source를 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 공개 v0.7.0 stable의 15개 앱을 설치하거나,
+현재 source를 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
@@ -11,12 +11,12 @@ v0.7.0 준비 source를 빌드하고 실행**하는 방법을 설명한다.
 > `DevboxManager.exe` `Code Pad.exe` `Run Manager.exe`
 > `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
 
-> 현재 v0.6.0 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱과 milestone
-> #2의 W01~W11 보강이 들어 있다. 정확한 binary·workflow·asset digest·Latest metadata는
-> [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)에서 확인한다.
+> 현재 v0.7.0 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱, milestone
+> #2의 W01~W11, WSL Desktop cwd 복원·Quick Summon과 검증/릴리스 효율화가 들어 있다. 정확한
+> binary·workflow·asset digest·Latest metadata는
+> [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.7.0)에서 확인한다.
 > 설치된 WSL Desktop의 zellij/terminal reconnect는 #518에서 2026-09-03 사용자 실기 PASS로
-> 완료했다. v0.7.0 source는 정확한 cwd 복원·Quick Summon과 검증/릴리스 효율화를 더하며,
-> exact-main candidate와 release가 끝날 때까지 공개 Latest는 v0.6.0이다.
+> 완료했다. v0.7.0 candidate는 packaged runtime·installer lifecycle을 각각 15/15로 통과했다.
 
 ---
 
@@ -37,11 +37,13 @@ v0.7.0 준비 source를 빌드하고 실행**하는 방법을 설명한다.
 >    build되고 하나의 후보로 조립된다. 조립과 두 acceptance job이 모두 성공할 때까지 기다린다.
 >    중간 shard는 1일, 최종 private 후보는 14일 동안 보존된다.
 > 3. 같은 commit에 annotated tag를 만들고 push한다
->    (예: `git tag -a v0.7.0 <SHA> -m "devbox v0.7.0"` 후 `git push origin refs/tags/v0.7.0`).
->    tag push가 실패한 release를 재시도할 때는 GitHub → Actions → **Release** → **Run workflow**에서
->    이미 존재하는 동일 tag를 입력할 수 있다.
+>    (예: `git tag -a vX.Y.Z <SHA> -m "devbox vX.Y.Z"` 후 `git push origin refs/tags/vX.Y.Z`).
+>    release가 아직 생성되지 않은 채 tag workflow만 실패했다면 GitHub → Actions → **Release** →
+>    **Run workflow**에서 이미 존재하는 동일 tag를 입력해 재시도할 수 있다.
 > 4. Release workflow는 성공한 후보의 tag·commit·workflow·32개 digest를 다시 검증하고,
->    바이너리를 재빌드하지 않은 채 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
+>    바이너리를 재빌드하지 않은 채 draft를 만든다. 최종 job은 draft 32개 파일을 다시 내려받아
+>    검증한 뒤에만 공개하며, stable에서 prerelease build가 skip돼도 명시적 success 조건으로 실행된다.
+>    **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
 > 릴리스 보호 정책: `vX.Y.Z` 안정판은 위 두 경로를 사용한다. `vX.Y.Z-...` prerelease/RC
@@ -49,7 +51,7 @@ v0.7.0 준비 source를 빌드하고 실행**하는 방법을 설명한다.
 > 때만 **수동 dispatch**에서 정확한 전체 버전을 입력하고 `allow_prerelease`를 `true`로
 > 선택한다. 이 gate의 기본값은 `false`다.
 
-> v0.6.0 stable의 exact annotated tag, workflow·32 public assets·31 manifest-declared assets,
+> v0.7.0 stable의 exact annotated tag, workflow·32 public assets·31 manifest-declared assets,
 > hash와 Latest 상태는 GitHub Release가 권위 있는 source다. RC1~RC3 tag/release는 삭제된
 > historical evidence이며, 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다.
 

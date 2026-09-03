@@ -30,6 +30,15 @@ assert WORKFLOW.index(
 assert "needs.build-prerelease-windows.result == 'skipped'" in WORKFLOW
 assert "needs.build-prerelease-windows.result == 'success'" in WORKFLOW
 
+# A stable publication intentionally skips the prerelease builder. GitHub carries that
+# skipped ancestor through the job graph, so the final verifier must replace the implicit
+# success() guard and explicitly require the two jobs it consumes to have succeeded.
+VERIFY_BLOCK = WORKFLOW.split("\n  verify:\n", maxsplit=1)[1]
+assert "always() &&" in VERIFY_BLOCK
+assert "needs.preflight.result == 'success'" in VERIFY_BLOCK
+assert "needs.publish.result == 'success'" in VERIFY_BLOCK
+assert VERIFY_BLOCK.index("always() &&") < VERIFY_BLOCK.index("runs-on: ubuntu-latest")
+
 assert (
     "artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT"
     in CANDIDATE_WORKFLOW

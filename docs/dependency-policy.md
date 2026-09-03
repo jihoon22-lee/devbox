@@ -7,11 +7,16 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 
 ## Release evidence boundary
 
-- 현재 v0.6.0 stable은 annotated tag object
-  `a974adf975862da3d5ada16c6c6efe704387ddd7`에서 peeled source
-  `d2fa25a0a1f087459838449daded00c0b09764b4`를 가리킨다. candidate workflow
-  `33384213398`과 release workflow `33390009009`가 15개 앱·32개 public asset·31개
-  manifest-declared asset·mismatch 0을 각각 검증했다.
+- 현재 v0.7.0 stable은 annotated tag object
+  `ec41ceb2ed4b4864d34afe383e5ff816481b3d37`에서 peeled source
+  `3a23f49c85aa3c3d04b86f227e8aa184ef964085`를 가리킨다. candidate workflow
+  `33782002859`는 packaged runtime과 installer lifecycle을 각각 15/15로 통과했고, release
+  workflow `33785966618`과 fresh-download verifier가 15개 앱·32개 public asset·31개
+  manifest-declared asset·missing/undeclared/failure 0을 확인했다.
+- v0.6.0 historical stable은 annotated tag object
+  `a974adf975862da3d5ada16c6c6efe704387ddd7`, peeled source
+  `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate `33384213398`, release workflow
+  `33390009009`의 evidence를 보존한다.
 - 공개 v0.5.0 stable은 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`, workflow `33216176818`,
   15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0의 evidence를 가진다.
 - v0.5.1 historical stable source/bundle은 #470/#473/#477/#478/#479를 포함한다. 15-app/32-public-asset/
@@ -23,15 +28,16 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
   `018e8191ba4a2e019516d2423fd081b224b228ec39c0ca135c2aa74c7da9f181`이다. 현재
   v0.5.1 stable source 비교값은 각각
   `a3398f535faeba6be0a8f7a05a8ae57f1141808310c42344c132d769740fde3a`와
-  `b2cc4ca07b0886700e04364b4fb0eb0c98da99b6dde10fb58c47ab03bb563d35`다. 현재 v0.6.0 stable
+  `b2cc4ca07b0886700e04364b4fb0eb0c98da99b6dde10fb58c47ab03bb563d35`다. v0.6.0 historical stable
   source의 비교값은 각각 `ebe22c7df176d95685cc9ff9c0eb3760ac08b95829498d7c5884f89dd10977c7`와
   `6cbc242562e62ac8892bc88e3ca8fcad5e1dd7911db2b46a200cb8d1786a26d9`이며 release별 evidence를
   혼용하지 않는다.
-- v0.7.0 release-preparation graph의 `Cargo.lock` SHA-256은
+- 현재 v0.7.0 stable source의 `Cargo.lock` SHA-256은
   `aec85df4631d0f7ebb0d8d4b6f0e6b4ca38fb9eed3b4fa164525e7b085a5db3d`, generated
   `THIRD_PARTY_NOTICES.md` SHA-256은
-  `e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4`다. 이는 tag/publication
-  evidence가 아니라 release source audit 비교값이며, v0.6.0 stable 값과 혼용하지 않는다.
+  `e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4`다. 공개 notice asset도
+  같은 digest이며 release manifest SHA-256은
+  `e92dda897d40de1891d8a204d20f28524674c0b336f09923d52381fd764217ab`다.
 
 ## Enforced gates
 
@@ -43,7 +49,7 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 | Notices | 두 lockfile + package metadata | 732 Rust package와 160 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
 | Distribution | `tauri.conf.json`, release manifest | 모든 release 앱 installer에 notices resource를 넣고, release에는 notices와 그 size/SHA-256을 manifest-declared asset으로 게시 |
 
-v0.6.0 stable source의 `THIRD_PARTY_NOTICES.md`는 145,317 bytes이며 위 SHA-256과 함께
+v0.6.0 historical stable source의 `THIRD_PARTY_NOTICES.md`는 145,317 bytes이며 위 SHA-256과 함께
 기록된 비교값이다. installer에서는 동일 파일을 압축 resource로 포함하므로 새 executable
 runtime이나 network dependency를 추가하지 않는다. portable 사용자는 release의 독립 notice
 asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 optional `notices` 필드를
@@ -51,10 +57,10 @@ asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 
 30 binaries + notices + manifest의 32 assets였고, v0.6.0 release workflow도 같은 contract를
 독립 검증했다.
 
-v0.7.0 release-preparation notices는 146,028 bytes다. WebGL addon과 Quick Summon의 공식 Tauri
-plugin graph를 포함하고, 이번 app version 동기화는 workspace package version과 lock hash만
-바꾸며 third-party inventory를 추가하지 않았다. generator read-back과 `cargo deny --locked check`를
-release source gate에서 다시 실행한다.
+v0.7.0 stable notices는 146,028 bytes다. WebGL addon과 Quick Summon의 공식 Tauri plugin graph를
+포함하고, app version 동기화는 workspace package version과 lock hash만 바꾸며 third-party
+inventory를 추가하지 않았다. source generator read-back과 `cargo deny --locked check`, Windows
+installer resource digest, candidate/public release fresh download를 모두 통과했다.
 
 ## Current decisions
 

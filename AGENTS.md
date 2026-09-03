@@ -1,7 +1,6 @@
 # AGENTS.md
 
-devbox — Tauri 15개 데스크톱 앱 모노레포. 공개 v0.6.0 안정판 source/bundle을 유지하며
-v0.7.0 stable release를 준비한다.
+devbox — Tauri 15개 데스크톱 앱 모노레포. 현재 공개 v0.7.0 안정판 source/bundle을 유지한다.
 모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는
 `docs/superpowers/specs/` 설계 문서.
 
@@ -22,11 +21,16 @@ v0.7.0 stable release를 준비한다.
 - 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
 - v0.5.0 stable evidence는 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`와 workflow `33216176818` 기준 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이다.
 - v0.5.1은 #470/#473/#477/#478/#479(및 닫힌 #474 계약)를 포함한 historical stable이다.
-- 현재 v0.6.0 stable은 milestone #2의 W01~W11을 포함한다. annotated tag object는 `a974adf975862da3d5ada16c6c6efe704387ddd7`, peeled source commit은 `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate workflow는 `33384213398`, release workflow는 `33390009009`다. release contract는 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이며 모두 통과했다.
-- v0.7.0 release preparation은 #521~#536을 묶는다. WSL Desktop `0.6.0`, Developer Toolbox
-  `0.4.1`, API Playground·Knowledge Base·Devbox Manager·Code Pad·Run Manager `0.5.1`, Log Lens
-  `0.2.1`로 변경하고 나머지 7개 앱 version은 유지한다. candidate와 release evidence가 생기기
-  전에는 v0.7.0을 current stable로 기록하지 않는다.
+- 현재 v0.7.0 stable은 #521~#536을 묶는다. annotated tag object는
+  `ec41ceb2ed4b4864d34afe383e5ff816481b3d37`, peeled source commit은
+  `3a23f49c85aa3c3d04b86f227e8aa184ef964085`, candidate workflow는 `33782002859`, release
+  workflow는 `33785966618`이다. candidate는 packaged runtime 15/15와 installer lifecycle
+  15/15를 통과했고, 공개 release는 15개 앱·32개 public asset·31개 manifest-declared asset·
+  missing/undeclared/failure 0이며 `draft=false`, `prerelease=false`, Latest다.
+- v0.6.0은 milestone #2의 W01~W11을 포함한 historical stable이다. annotated tag object
+  `a974adf975862da3d5ada16c6c6efe704387ddd7`, peeled source
+  `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate `33384213398`, release workflow
+  `33390009009`의 evidence를 보존한다.
 - #518은 설치된 WSL Desktop의 user-local zellij 탐색·attach·disconnect/reconnect·session 및
   workspace 유지가 2026-09-03 사용자 실기에서 PASS해 completed로 닫혔다. #176은 닫힌 v0.5.1
   historical checklist다. RC1~RC3 tag/release는 삭제된 historical record이며 미래 RC는 사용자의
@@ -54,7 +58,8 @@ v0.7.0 stable release를 준비한다.
   package shard와 Linux assembly, packaged runtime, installer acceptance를 모두 통과시킨다.
   assembly는 15개 앱·32개 파일의 exact coverage를 검증한다. annotated tag는 동일 commit에 만들며
   release workflow는 일치하는 비만료 후보만 독립 검증해 승격하고, 후보가 없으면 새 바이너리를
-  대신 만들지 않는다.
+  대신 만들지 않는다. Stable에서 의도적으로 skip되는 prerelease builder가 있어도 최종 verifier는
+  `always()`와 preflight/draft-stage의 명시적 success 조건으로 실행되어야 한다.
 - 커밋: Conventional Commits, 영어, 현재형 — `feat(port-manager): add netstat parser`
 - 코드 산출물의 완료 정의: 집중 테스트 + `pnpm verify:affected` + GitHub Actions CI 통과.
   전체 workspace 검증은 affected resolver가 `all`을 선택하거나 release·명시적 감사일 때만 수행한다.

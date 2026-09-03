@@ -3,7 +3,7 @@
 - 상태: MVP 구현 및 v0.5.0 stable 반영 완료 — #314 captured fixture 저장·#315 Webhook→API
   handoff·#362 captured replay·#363 response sequence 완료. v0.5.1에서도 이 설계 기록과
   구현을 유지한다. W08 Webhook→Log Lens와 service export를 포함한 v0.6.0 #493 hosted packaged
-  gate도 통과했으며, 현재 main은 v0.7.0 release를 준비한다.
+  gate도 통과했으며, 현재 main과 공개 Latest는 v0.7.0 stable이다.
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.3, §17.9
 

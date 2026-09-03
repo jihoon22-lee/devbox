@@ -202,7 +202,9 @@ src/
   이전 release resource가 새 installer에 재사용되지 않게 한다. 이후 같은 commit에
   annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·workflow run·32개
   asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는 성공 후보가 없거나
-  만료된 경우 공개 전에 fail-closed한다.
+  만료된 경우 공개 전에 fail-closed한다. 안정판에서는 prerelease build job이 의도적으로 skip되므로,
+  최종 draft download verifier는 암묵적 `success()`에 의존하지 않고 `always()` 아래 preflight와
+  draft-stage job의 명시적 success를 요구한다.
 - `.github/workflows/release.yml`의 안정판 경로는 정확한 `vX.Y.Z` annotated tag push 또는
   명시적인 `workflow_dispatch`로 유지한다. `workflow_dispatch`의 `version`은 기본값 없이
   매번 전체 tag를 입력한다.

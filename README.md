@@ -2,8 +2,8 @@
 
 Tauri 15개 데스크톱 앱(기존 안정판 13개 + v0.5.0에서 추가된 Devbox Launcher·Log Lens)을 하나의
 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
-아래 앱 표는 현재 main source를 설명하며, 실제 설치 가능한 Latest와 준비 중 release의 경계는
-다운로드 섹션에 따로 명시합니다.
+아래 앱 표는 현재 main source와 공개 Latest를 설명하며, 과거 release evidence는 다운로드
+섹션에서 별도로 구분합니다.
 
 ## 앱 소개
 
@@ -33,13 +33,19 @@ Windows 11에서 실행 파일만 받아 바로 쓰려면 **Releases** 페이지
 https://github.com/jihoon22-lee/devbox/releases
 ```
 
-- **현재 공개 최신 안정판:** [`v0.6.0`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)
-- **v0.7.0 stable 준비:** #521~#534의 WSL Desktop 사용성·복원·Quick Summon, #525/#526/#529/#530의
-  상태 수명 수정, #527의 영향 범위 CI, #535/#536의 candidate 승격·3-way Windows build를 묶는다.
-  변경 앱의 정확한 version과 gate는
-  [v0.7.0 릴리스 계획](./docs/superpowers/plans/2026-09-03-v0.7.0-release.md)에 고정한다. 전체 source
-  audit, exact-main candidate와 installer acceptance가 끝나기 전에는 v0.7.0 tag나 Release를 만들지 않는다.
-- **v0.6.0 stable source/bundle:** milestone #2의 W01~W11을 한 번에 포함한다. exact source
+- **현재 공개 최신 안정판:** [`v0.7.0`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.7.0)
+- **v0.7.0 stable source/bundle:** #521~#536의 WSL Desktop 사용성·복원·Quick Summon, 상태 수명
+  보강, 영향 범위 CI와 candidate 승격·3-way Windows build를 묶는다. annotated tag object
+  `ec41ceb2ed4b4864d34afe383e5ff816481b3d37`은 exact source
+  `3a23f49c85aa3c3d04b86f227e8aa184ef964085`를 가리킨다. private candidate
+  [33782002859](https://github.com/jihoon22-lee/devbox/actions/runs/33782002859)는 15/15 packaged
+  runtime과 15/15 installer lifecycle을 통과했고, release workflow
+  [33785966618](https://github.com/jihoon22-lee/devbox/actions/runs/33785966618)는 앱을 다시 빌드하지
+  않고 같은 32개 파일을 draft에 올렸다. fresh-download 검증 결과는 15 apps·32 public assets·31
+  manifest-declared assets·missing/undeclared/failure 0이며 stable Latest read-back도 완료했다.
+  세부 실패 후보와 publication 복구 이력은
+  [v0.7.0 릴리스 계획](./docs/superpowers/plans/2026-09-03-v0.7.0-release.md)에 보존한다.
+- **v0.6.0 historical stable:** milestone #2의 W01~W11을 한 번에 포함한다. exact source
   `d2fa25a0a1f087459838449daded00c0b09764b4`의 private candidate
   [33384213398](https://github.com/jihoon22-lee/devbox/actions/runs/33384213398)과 annotated tag의
   release workflow [33390009009](https://github.com/jihoon22-lee/devbox/actions/runs/33390009009)가
@@ -80,7 +86,7 @@ https://github.com/jihoon22-lee/devbox/releases
 | [사용 가이드](./docs/windows-guide.md) | Windows 11에서 설치·사용·빌드·문제 해결 |
 | [개발자 가이드](./docs/development.md) | 구조, 시작하기, 개발 워크플로 |
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
-| [로드맵](./docs/roadmap.md) | 진행 상황 / 과거 release history / v0.6.0 stable과 v0.7.0 준비 |
+| [로드맵](./docs/roadmap.md) | 진행 상황 / 과거 release history / 현재 v0.7.0 stable |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
 | [v0.5.0 릴리스 계획](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md) | 목표 version, RC asset, Windows W1~W4, stable 승격·정리 gate |
 | [v0.6.0 통합 릴리스 계획](./docs/superpowers/plans/2026-08-31-v0.6.0-release.md) | W01~W11, 앱별 version, 비공개 package checkpoint, Windows/WSL acceptance와 stable publication |

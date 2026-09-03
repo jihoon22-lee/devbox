@@ -138,5 +138,5 @@ The Log Lens bootstrap is included in the published v0.5.0 assets. The Run
 reader was completed by #472/#473 after the v0.5.0 tag and is included in the
 v0.5.1 stable release; it does not rewrite or replace the historical v0.5.0
 assets. GitHub Release metadata is authoritative for each exact tag, workflow
-result, and asset digest; v0.6.0 is the current public stable baseline during
-v0.7.0 release preparation.
+result, and asset digest; v0.7.0 is the current public stable and includes Log
+Lens 0.2.1.
