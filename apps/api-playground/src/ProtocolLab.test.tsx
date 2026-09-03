@@ -521,4 +521,103 @@ describe("Protocol Lab", () => {
     expect(await screen.findByText(/로컬에서 제거했습니다/)).not.toBeNull();
     expect(screen.queryByText("선택한 OAuth grant")).toBeNull();
   });
+
+  it("keeps a prompt argument typed right after the list loads and across prompt switches", async () => {
+    mocks.connect.mockResolvedValueOnce({
+      ...connection,
+      server: { ...connection.server, capabilities: { prompts: {} } },
+    });
+    mocks.invoke
+      .mockResolvedValueOnce(invokeResult({
+        resultType: "complete",
+        prompts: [
+          { name: "draft", arguments: [{ name: "topic", required: true }] },
+          { name: "summary", arguments: [{ name: "scope", required: true }] },
+        ],
+      }))
+      .mockResolvedValueOnce(invokeResult({
+        resultType: "complete",
+        description: "drafted",
+        messages: [],
+      }));
+
+    render(<ProtocolLab environment={[]} native />);
+    await connect();
+    const prompts = screen.getByRole("heading", { name: "Prompts" }).closest("section");
+    if (!prompts) throw new Error("prompts section missing");
+
+    fireEvent.click(within(prompts).getByRole("button", { name: "목록 조회" }));
+    const topic = await within(prompts).findByLabelText(/topic/) as HTMLInputElement;
+
+    // The derived arguments cover every field of the selected prompt on the commit that first
+    // renders them, so the send button never waits for a follow-up reset to enable itself.
+    expect((within(prompts).getByRole("button", { name: "Prompt 가져오기" }) as HTMLButtonElement)
+      .disabled).toBe(false);
+
+    fireEvent.change(topic, { target: { value: "release" } });
+    expect(topic.value).toBe("release");
+
+    // Switching away and back must not hand the typed value to a reset.
+    const select = within(prompts).getByRole("combobox", { name: "MCP prompt" });
+    fireEvent.change(select, { target: { value: "summary" } });
+    expect((within(prompts).getByLabelText(/scope/) as HTMLInputElement).value).toBe("");
+    fireEvent.change(select, { target: { value: "draft" } });
+    expect((within(prompts).getByLabelText(/topic/) as HTMLInputElement).value).toBe("release");
+
+    fireEvent.click(within(prompts).getByRole("button", { name: "Prompt 가져오기" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
+      connection.connectionId,
+      expect.stringMatching(/^mcp-/),
+      "prompts/get",
+      { name: "draft", arguments: { topic: "release" } },
+    ));
+  });
+
+  it("keeps a tool argument typed right after the list loads and across tool switches", async () => {
+    mocks.invoke
+      .mockResolvedValueOnce(invokeResult({
+        resultType: "complete",
+        tools: [
+          {
+            name: "echo",
+            inputSchema: {
+              type: "object",
+              required: ["message"],
+              properties: { message: { type: "string" } },
+            },
+          },
+          {
+            name: "ping",
+            inputSchema: {
+              type: "object",
+              required: ["host"],
+              properties: { host: { type: "string" } },
+            },
+          },
+        ],
+      }))
+      .mockResolvedValueOnce(invokeResult({ resultType: "complete", content: [] }));
+
+    render(<ProtocolLab environment={[]} native />);
+    await connect();
+
+    fireEvent.click(screen.getByRole("button", { name: "목록 조회" }));
+    const message = await screen.findByLabelText("message string") as HTMLInputElement;
+    fireEvent.change(message, { target: { value: "hello" } });
+    expect(message.value).toBe("hello");
+
+    const select = screen.getByRole("combobox", { name: "MCP tool" });
+    fireEvent.change(select, { target: { value: "ping" } });
+    expect((screen.getByLabelText("host string") as HTMLInputElement).value).toBe("");
+    fireEvent.change(select, { target: { value: "echo" } });
+    expect((screen.getByLabelText("message string") as HTMLInputElement).value).toBe("hello");
+
+    fireEvent.click(screen.getByRole("button", { name: "선택 tool 호출" }));
+    await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
+      connection.connectionId,
+      expect.stringMatching(/^mcp-/),
+      "tools/call",
+      { name: "echo", arguments: { message: "hello" } },
+    ));
+  });
 });

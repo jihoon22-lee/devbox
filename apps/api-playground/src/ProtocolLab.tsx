@@ -186,10 +186,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   const [resourceTemplates, setResourceTemplates] = useState<ListState>(emptyList);
   const [prompts, setPrompts] = useState<ListState>(emptyList);
   const [selectedToolName, setSelectedToolName] = useState("");
-  const [toolArguments, setToolArguments] = useState<Record<string, unknown>>({});
+  const [toolDraft, setToolDraft] = useState<{ name: string; values: Record<string, unknown> }>(
+    { name: "", values: {} },
+  );
   const [selectedResourceUri, setSelectedResourceUri] = useState("");
   const [selectedPromptName, setSelectedPromptName] = useState("");
-  const [promptArguments, setPromptArguments] = useState<Record<string, string>>({});
+  const [promptDraft, setPromptDraft] = useState<{ name: string; values: Record<string, string> }>(
+    { name: "", values: {} },
+  );
   const generationRef = useRef(0);
   const connectionRef = useRef<McpConnectResult | null>(null);
   const connectionTransportRef = useRef<McpTransport | null>(null);
@@ -236,6 +240,14 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     () => analyzeMcpToolSchema(toolSchema),
     [toolSchema],
   );
+  // Arguments are derived during render rather than reset from an effect: the editor has to show a
+  // complete value set on the commit that first renders it, so a value typed straight away cannot
+  // be overwritten by a reset arriving one commit later.
+  const toolArguments = useMemo(() => {
+    if (toolDraft.name === selectedToolName) return toolDraft.values;
+    if (!selectedTool || schemaAnalysis.mode !== "form" || !schemaAnalysis.schema) return {};
+    return initialMcpArguments(schemaAnalysis.schema);
+  }, [schemaAnalysis, selectedTool, selectedToolName, toolDraft]);
   const argumentIssues = useMemo(
     () => schemaAnalysis.mode === "form" && schemaAnalysis.schema
       ? validateMcpArguments(schemaAnalysis.schema, toolArguments)
@@ -248,20 +260,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
   const promptFields = Array.isArray(selectedPrompt?.arguments)
     ? selectedPrompt.arguments.filter(isPromptArgument)
     : [];
-
-  useEffect(() => {
-    if (!selectedTool || schemaAnalysis.mode !== "form" || !schemaAnalysis.schema) {
-      setToolArguments({});
-      return;
-    }
-    setToolArguments(initialMcpArguments(schemaAnalysis.schema));
-  }, [schemaAnalysis, selectedTool]);
-
-  useEffect(() => {
-    const next: Record<string, string> = {};
-    for (const field of promptFields) next[field.name] = "";
-    setPromptArguments(next);
-  }, [selectedPromptName]);
+  const promptArguments = promptDraft.name === selectedPromptName
+    ? promptDraft.values
+    : Object.fromEntries(promptFields.map((field) => [field.name, ""]));
 
   const resetExplorer = () => {
     setTools(emptyList());
@@ -269,10 +270,10 @@ function McpLab({ environment, native }: ProtocolLabProps) {
     setResourceTemplates(emptyList());
     setPrompts(emptyList());
     setSelectedToolName("");
-    setToolArguments({});
+    setToolDraft({ name: "", values: {} });
     setSelectedResourceUri("");
     setSelectedPromptName("");
-    setPromptArguments({});
+    setPromptDraft({ name: "", values: {} });
     setResult(null);
     setTimeline([]);
   };
@@ -1129,7 +1130,7 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                     schema={schemaAnalysis.schema}
                     value={toolArguments}
                     disabled={busy}
-                    onChange={setToolArguments}
+                    onChange={(next) => setToolDraft({ name: selectedToolName, values: next })}
                   />
                 ) : (
                   <div className="mcp-schema-fallback">
@@ -1250,13 +1251,10 @@ function McpLab({ environment, native }: ProtocolLabProps) {
                   value={promptArguments[field.name] ?? ""}
                   disabled={busy}
                   maxLength={256 * 1024}
-                  onChange={(event) => {
-                    const value = event.currentTarget.value;
-                    setPromptArguments((current) => ({
-                      ...current,
-                      [field.name]: value,
-                    }));
-                  }}
+                  onChange={(event) => setPromptDraft({
+                    name: selectedPromptName,
+                    values: { ...promptArguments, [field.name]: event.currentTarget.value },
+                  })}
                 />
               </label>
             ))}
