@@ -682,6 +682,38 @@ describe("TermPane — profile command와 safe broadcast (#263)", () => {
     ]);
   });
 
+  it("확인 중 대상이 바뀌면 승인해도 이전 대상에는 보내지 않는다", async () => {
+    let release: ((answer: { confirmed: boolean; value: string; remember: boolean }) => void) | undefined;
+    askMock.mockImplementationOnce(() => new Promise((resolve) => { release = resolve; }));
+    const registerWrite = vi.fn();
+    const unregisterWrite = vi.fn();
+    const props = (targets: string[]) => baseProps({
+      broadcastOn: true,
+      broadcastTargetIds: targets,
+      registerWrite,
+      unregisterWrite,
+    });
+    const { rerender } = render(<TermPane {...props(["s1", "s2"])} />);
+    const term = createdTerminals[0];
+
+    act(() => term.dataHandler?.("rm -rf ./cache"));
+    act(() => term.dataHandler?.("\r"));
+    await waitFor(() => expect(release).toBeDefined());
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    act(() => term.dataHandler?.("echo queued"));
+
+    rerender(<TermPane {...props(["s1", "s3"])} />);
+    act(() => release?.({ confirmed: true, value: "", remember: false }));
+    await Promise.resolve();
+
+    expect(mockBroadcast).toHaveBeenCalledTimes(1);
+    expect(mockBroadcast).not.toHaveBeenCalledWith(["s1", "s2"], "\r");
+    expect(mockBroadcast).not.toHaveBeenCalledWith(["s1", "s3"], "echo queued");
+
+    act(() => term.dataHandler?.("echo current"));
+    expect(mockBroadcast).toHaveBeenLastCalledWith(["s1", "s3"], "echo current");
+  });
+
   it("multiline broadcast는 대상 수 확인 뒤 취소하고 raw command를 확인문에 넣지 않는다", async () => {
     reject();
     render(<TermPane {...baseProps({ broadcastOn: true, broadcastTargetIds: ["s1", "s2", "s4"] })} />);
