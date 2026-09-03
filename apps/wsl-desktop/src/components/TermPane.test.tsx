@@ -323,6 +323,18 @@ afterEach(() => {
 });
 
 describe("TermPane — resize 바닥값 (§2.3)", () => {
+  it("요청한 multiplexer가 native로 낮아지면 fallback을 명시한다", () => {
+    render(<TermPane {...baseProps({
+      requestedMultiplexer: "zellij",
+      multiplexer: "native",
+    })} />);
+
+    expect(screen.getByText("zellij → native")).toHaveAttribute(
+      "title",
+      "zellij를 요청했지만 사용할 수 없어 native로 실행 중입니다",
+    );
+  });
+
   it("context menu trigger와 terminal focus 복구 함수를 pane root에 연결한다", () => {
     const onContextMenu = vi.fn();
     const onKeyDown = vi.fn();

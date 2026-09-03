@@ -96,7 +96,14 @@ const onTerminalOutputMock = vi.mocked(onTerminalOutput);
 const profile: WorkspaceProfile = {
   id: "profile-1",
   name: "개발",
-  tabs: [{ id: "tab-1", title: "dev", customTitle: true, layout: "cols", paneKeys: ["pane-1", "pane-2"] }],
+  tabs: [{
+    id: "tab-1",
+    title: "dev",
+    customTitle: true,
+    layout: "cols",
+    paneKeys: ["pane-1", "pane-2"],
+    sizing: { columns: [0.65, 0.35], rows: [1] },
+  }],
   panes: [
     { key: "pane-1", distro: "Ubuntu", cwd: "/mnt/e/projects/devbox", startCommand: null, multiplexer: "native" },
     { key: "pane-2", distro: "Ubuntu", cwd: "/mnt/e/projects/devbox", startCommand: null, multiplexer: "tmux" },
@@ -230,9 +237,42 @@ describe("App app-link delivery", () => {
     render(<App />);
 
     await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
-    expect(startSessionMock).toHaveBeenNthCalledWith(1, "Ubuntu", "/mnt/e/projects/devbox", "pane-1", "native");
-    expect(startSessionMock).toHaveBeenNthCalledWith(2, "Ubuntu", "/mnt/e/projects/devbox", "pane-2", "tmux");
+    expect(startSessionMock).toHaveBeenNthCalledWith(1, "Ubuntu", "/mnt/e/projects/devbox", "pane-2", "tmux");
+    expect(startSessionMock).toHaveBeenNthCalledWith(2, "Ubuntu", "/mnt/e/projects/devbox", "pane-1", "native");
     await waitFor(() => expect((mocks.paneCanvasProps as { activePaneId: string }).activePaneId).toBe("session-pane-2"));
+    expect((mocks.paneCanvasProps as { tabs: Array<{ sizing: unknown }> }).tabs[0].sizing)
+      .toEqual({ columns: [0.65, 0.35], rows: [1] });
+  });
+
+  it("waits for the active pane before starting any remaining restore work", async () => {
+    const activeStart = deferred<Awaited<ReturnType<typeof startSession>>>();
+    listWorkspaceProfilesMock.mockResolvedValueOnce([profile]);
+    takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "profile", id: profile.id }, from: "devbox-launcher" });
+    startSessionMock.mockImplementation(async (_distro, _cwd, paneKey, requestedMultiplexer) => {
+      if (paneKey === "pane-2") return activeStart.promise;
+      return { sessionId: `session-${paneKey}`, resumed: false, multiplexer: requestedMultiplexer };
+    });
+
+    render(<App />);
+
+    await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(1));
+    expect(startSessionMock.mock.calls[0]?.[2]).toBe("pane-2");
+    expect((mocks.paneCanvasProps as {
+      activePaneId: string;
+      panes: Array<{ sessionId: string | null; restoreStatus?: string }>;
+    })).toMatchObject({
+      activePaneId: "pane-2",
+      panes: [
+        { sessionId: null, restoreStatus: "connecting" },
+        { sessionId: null, restoreStatus: "connecting" },
+      ],
+    });
+    await act(async () => {
+      activeStart.resolve({ sessionId: "session-pane-2", resumed: false, multiplexer: "tmux" });
+      await activeStart.promise;
+    });
+    await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
+    expect(startSessionMock.mock.calls[1]?.[2]).toBe("pane-1");
   });
 
   it("hot profile target consumes the pending slot and follows the same restore path", async () => {
@@ -248,10 +288,10 @@ describe("App app-link delivery", () => {
 
     await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
-    expect(startSessionMock.mock.calls.map((call) => call[2])).toEqual(["pane-1", "pane-2"]);
+    expect(startSessionMock.mock.calls.map((call) => call[2])).toEqual(["pane-2", "pane-1"]);
   });
 
-  it("profile 일부 세션 시작 실패 시 성공한 팬과 유효한 active identity를 보존한다", async () => {
+  it("profile 일부 세션 시작 실패 시 원래 자리와 active identity를 보존하고 재시도한다", async () => {
     listWorkspaceProfilesMock.mockResolvedValueOnce([profile]);
     takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "profile", id: profile.id }, from: "devbox-launcher" });
     startSessionMock.mockImplementation(async (_distro, _cwd, paneKey, requestedMultiplexer) => {
@@ -263,10 +303,29 @@ describe("App app-link delivery", () => {
 
     await waitFor(() => expect(startSessionMock).toHaveBeenCalledTimes(2));
     await waitFor(() => {
-      const props = mocks.paneCanvasProps as { activePaneId: string; panes: unknown[] };
-      expect(props.panes).toHaveLength(1);
-      expect(props.activePaneId).toBe("session-pane-1");
+      const props = mocks.paneCanvasProps as {
+        activePaneId: string;
+        panes: Array<{ key: string; sessionId: string | null; restoreStatus?: string }>;
+      };
+      expect(props.panes).toHaveLength(2);
+      expect(props.panes.find((pane) => pane.key === "pane-2")).toMatchObject({
+        sessionId: null,
+        restoreStatus: "failed",
+      });
+      expect(props.activePaneId).toBe("pane-2");
     });
+
+    startSessionMock.mockImplementation(async (_distro, _cwd, paneKey, requestedMultiplexer) => ({
+      sessionId: `retry-${paneKey}`,
+      resumed: false,
+      multiplexer: requestedMultiplexer,
+    }));
+    await act(async () => {
+      await (mocks.paneCanvasProps as { onRetryPane: (key: string) => Promise<void> }).onRetryPane("pane-2");
+    });
+    await waitFor(() => expect(
+      (mocks.paneCanvasProps as { activePaneId: string }).activePaneId,
+    ).toBe("retry-pane-2"));
   });
 
   it("isolates a pending Log Lens handoff from Docker, distro, and new terminal actions", async () => {

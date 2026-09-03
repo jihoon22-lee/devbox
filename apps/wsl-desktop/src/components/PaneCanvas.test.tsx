@@ -4,6 +4,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import PaneCanvas from "./PaneCanvas";
 import type { Pane, Tab } from "../types";
 import { DEFAULT_SETTINGS, TERMINAL_THEMES, fontFamilyFor } from "../lib/settings";
+import { normalizePaneSizing } from "../lib/paneSizing";
 
 /**
  * TermPane을 모킹해 마운트/언마운트를 스파이로 잡는다. 실제 xterm은 jsdom에서 돌지
@@ -46,7 +47,13 @@ function pane(id: string, distro = "Ubuntu"): Pane {
 }
 
 function tab(id: string, paneIds: string[]): Tab {
-  return { id, title: id, layout: "grid", paneIds };
+  return {
+    id,
+    title: id,
+    layout: "grid",
+    paneIds,
+    sizing: normalizePaneSizing(undefined, "grid", paneIds.length),
+  };
 }
 
 function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
@@ -71,7 +78,9 @@ function baseProps(overrides: Partial<Parameters<typeof PaneCanvas>[0]> = {}) {
     registerTerminalHandle: vi.fn(),
     unregisterTerminalHandle: vi.fn(),
     onClosePane: vi.fn(),
+    onRetryPane: vi.fn(),
     onFocusPane: vi.fn(),
+    onSizingChange: vi.fn(),
     onShortcut: vi.fn(),
     onFontSizeChange: vi.fn(),
     onMetadataChange: vi.fn(),
@@ -203,9 +212,49 @@ describe("PaneCanvas — grid 레이아웃 가드 (#189 회귀)", () => {
   });
 });
 
+describe("PaneCanvas — workspace 복원 placeholder", () => {
+  it("실패한 팬을 원래 순서에 남기고 안전한 정보와 재시도를 제공한다", () => {
+    const failed: Pane = {
+      key: "pane-failed",
+      sessionId: null,
+      distro: "Ubuntu",
+      cwd: "/mnt/e/projects/devbox",
+      multiplexer: "zellij",
+      requestedMultiplexer: "zellij",
+      restoreStatus: "failed",
+      restoreError: "터미널을 복원하지 못했습니다.",
+    };
+    const onRetryPane = vi.fn();
+    render(<PaneCanvas {...baseProps({
+      tabs: [tab("t1", ["pane-failed"])],
+      panes: [failed],
+      activeTabId: "t1",
+      activePaneId: "pane-failed",
+      onRetryPane,
+    })} />);
+
+    expect(screen.getByRole("group", { name: "Ubuntu 터미널 복원 실패" })).toHaveFocus();
+    expect(screen.getByText("/mnt/e/projects/devbox")).toBeInTheDocument();
+    expect(screen.getByText("zellij")).toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "다시 시도" }));
+    expect(onRetryPane).toHaveBeenCalledWith("pane-failed");
+  });
+});
+
 describe("PaneCanvas — 크기 조절과 확대", () => {
   const twoPaneTabs = [{ ...tab("t1", ["p1", "p2"]), layout: "cols" as const }];
   const twoPanes = [pane("p1"), pane("p2")];
+
+  it("workspace에 저장된 분할 비율을 첫 렌더부터 적용한다", () => {
+    render(<PaneCanvas {...baseProps({
+      tabs: [{ ...twoPaneTabs[0], sizing: { columns: [0.65, 0.35], rows: [1] } }],
+      panes: twoPanes,
+      activeTabId: "t1",
+    })} />);
+
+    expect((document.querySelector(".panes") as HTMLElement).style.gridTemplateColumns)
+      .toBe("650fr 350fr");
+  });
 
   it("세로 분할에는 팬 사이마다 구분선을 하나씩 둔다", () => {
     render(<PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />);

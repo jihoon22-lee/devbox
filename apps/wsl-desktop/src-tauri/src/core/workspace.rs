@@ -8,7 +8,8 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 
-pub const PROFILE_STORE_VERSION: u32 = 1;
+const LEGACY_PROFILE_STORE_VERSION: u32 = 1;
+pub const PROFILE_STORE_VERSION: u32 = 2;
 pub const MAX_PROFILES: usize = 100;
 pub const MAX_TABS: usize = 16;
 pub const MAX_PANES: usize = 32;
@@ -47,7 +48,14 @@ pub struct WorkspacePane {
     pub multiplexer: MultiplexerKind,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct PaneSizing {
+    pub columns: Vec<f64>,
+    pub rows: Vec<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceTab {
     pub id: String,
@@ -56,9 +64,11 @@ pub struct WorkspaceTab {
     pub custom_title: bool,
     pub layout: Layout,
     pub pane_keys: Vec<String>,
+    #[serde(default)]
+    pub sizing: PaneSizing,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct WorkspaceProfile {
     #[serde(default)]
@@ -71,7 +81,7 @@ pub struct WorkspaceProfile {
     pub active_pane_key: Option<String>,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct ProfileStore {
     pub version: u32,
@@ -96,8 +106,16 @@ impl ProfileStore {
     /// empty value. Callers may show an empty read view, but mutations must
     /// preserve invalid source bytes until the user explicitly repairs them.
     pub fn load(input: &str) -> Result<Self, String> {
-        let store = serde_json::from_str::<Self>(input)
+        let mut store = serde_json::from_str::<Self>(input)
             .map_err(|_| "터미널 프로필 저장소 형식이 올바르지 않습니다".to_string())?;
+        if store.version == LEGACY_PROFILE_STORE_VERSION {
+            for profile in &mut store.profiles {
+                for tab in &mut profile.tabs {
+                    tab.sizing = PaneSizing::even(tab.layout, tab.pane_keys.len());
+                }
+            }
+            store.version = PROFILE_STORE_VERSION;
+        }
         store.validate()?;
         Ok(store)
     }
@@ -228,8 +246,55 @@ impl WorkspaceTab {
                 return Err("터미널 탭에 중복된 팬이 있습니다".into());
             }
         }
+        self.sizing.validate(self.layout, self.pane_keys.len())?;
         Ok(())
     }
+}
+
+impl PaneSizing {
+    fn even(layout: Layout, pane_count: usize) -> Self {
+        let (columns, rows) = track_counts(layout, pane_count);
+        Self {
+            columns: even_fractions(columns),
+            rows: even_fractions(rows),
+        }
+    }
+
+    fn validate(&self, layout: Layout, pane_count: usize) -> Result<(), String> {
+        let (columns, rows) = track_counts(layout, pane_count);
+        if !valid_fractions(&self.columns, columns) || !valid_fractions(&self.rows, rows) {
+            return Err("터미널 탭의 팬 크기 비율이 올바르지 않습니다".into());
+        }
+        Ok(())
+    }
+}
+
+fn track_counts(layout: Layout, pane_count: usize) -> (usize, usize) {
+    let count = pane_count.max(1);
+    match layout {
+        Layout::Cols => (count, 1),
+        Layout::Rows => (1, count),
+        Layout::Grid => {
+            let columns = (count as f64).sqrt().ceil() as usize;
+            (columns.max(1), count.div_ceil(columns.max(1)).max(1))
+        }
+    }
+}
+
+fn even_fractions(count: usize) -> Vec<f64> {
+    vec![1.0 / count.max(1) as f64; count.max(1)]
+}
+
+fn valid_fractions(values: &[f64], expected: usize) -> bool {
+    if values.len() != expected
+        || values
+            .iter()
+            .any(|value| !value.is_finite() || *value <= 0.0)
+    {
+        return false;
+    }
+    let total = values.iter().sum::<f64>();
+    total.is_finite() && (total - 1.0).abs() <= 0.001
 }
 
 fn validate_id(value: &str, label: &str) -> Result<(), String> {
@@ -357,6 +422,7 @@ mod tests {
                 custom_title: true,
                 layout: Layout::Cols,
                 pane_keys: vec!["pane-1".into(), "pane-2".into()],
+                sizing: PaneSizing::even(Layout::Cols, 2),
             }],
             panes: vec![
                 WorkspacePane {
@@ -394,6 +460,24 @@ mod tests {
     }
 
     #[test]
+    fn version_one_store_migrates_to_even_version_two_sizing() {
+        let mut legacy = serde_json::to_value(ProfileStore {
+            version: LEGACY_PROFILE_STORE_VERSION,
+            profiles: vec![profile()],
+        })
+        .unwrap();
+        legacy["profiles"][0]["tabs"][0]
+            .as_object_mut()
+            .unwrap()
+            .remove("sizing");
+
+        let migrated = ProfileStore::load(&serde_json::to_string(&legacy).unwrap()).unwrap();
+        assert_eq!(migrated.version, PROFILE_STORE_VERSION);
+        assert_eq!(migrated.profiles[0].tabs[0].sizing.columns, vec![0.5, 0.5]);
+        assert_eq!(migrated.profiles[0].tabs[0].sizing.rows, vec![1.0]);
+    }
+
+    #[test]
     fn rejects_duplicate_or_missing_pane_references() {
         let mut duplicated = profile();
         duplicated.tabs[0].pane_keys.push("pane-1".into());
@@ -411,6 +495,7 @@ mod tests {
                 custom_title: false,
                 layout: Layout::Grid,
                 pane_keys: vec!["pane-1".into()],
+                sizing: PaneSizing::even(Layout::Grid, 1),
             },
             WorkspaceTab {
                 id: "tab-2".into(),
@@ -418,6 +503,7 @@ mod tests {
                 custom_title: false,
                 layout: Layout::Grid,
                 pane_keys: vec!["pane-2".into()],
+                sizing: PaneSizing::even(Layout::Grid, 1),
             },
         ];
         wrong_active_tab.active_tab_id = "tab-1".into();
@@ -440,6 +526,21 @@ mod tests {
         assert!(validate_start_command("curl -H 'Authorization: Bearer $TOKEN'").is_ok());
         assert!(validate_start_command("tool --token={{token_ref}}").is_ok());
         assert!(validate_start_command("task-runner --mode dev").is_ok());
+    }
+
+    #[test]
+    fn rejects_malformed_or_wrong_topology_sizing() {
+        let mut wrong_length = profile();
+        wrong_length.tabs[0].sizing.columns = vec![1.0];
+        assert!(wrong_length.validate().is_err());
+
+        let mut wrong_sum = profile();
+        wrong_sum.tabs[0].sizing.columns = vec![0.8, 0.8];
+        assert!(wrong_sum.validate().is_err());
+
+        let mut non_finite = profile();
+        non_finite.tabs[0].sizing.columns = vec![f64::NAN, 1.0];
+        assert!(non_finite.validate().is_err());
     }
 
     #[test]

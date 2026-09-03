@@ -5,7 +5,14 @@ import TabBar from "./TabBar";
 import type { Tab } from "../types";
 
 function tab(id: string, title: string): Tab {
-  return { id, title, paneIds: [`${id}-pane`], layout: "grid", customTitle: false };
+  return {
+    id,
+    title,
+    paneIds: [`${id}-pane`],
+    layout: "grid",
+    customTitle: false,
+    sizing: { columns: [1], rows: [1] },
+  };
 }
 
 function renderBar(overrides: Partial<Parameters<typeof TabBar>[0]> = {}) {

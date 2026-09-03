@@ -2,15 +2,17 @@ import type {
   Layout,
   MultiplexerKind,
   Pane,
+  PaneSizing,
   Tab,
   WorkspaceDefinition,
   WorkspacePaneDefinition,
   WorkspaceProfile,
   WorkspaceTabDefinition,
 } from "../types";
+import { normalizePaneSizing, paneTrackCounts } from "./paneSizing";
 
 const LAST_LAYOUT_KEY = "wsl-desktop:last-layout";
-const LAYOUT_VERSION = 1;
+const LAYOUT_VERSION = 2;
 export const MAX_WORKSPACE_TABS = 16;
 export const MAX_WORKSPACE_PANES = 32;
 export const MAX_START_COMMAND_CHARACTERS = 4096;
@@ -19,7 +21,7 @@ const MAX_NAME_BYTES = 120;
 const MAX_PATH_BYTES = 4096;
 
 interface PersistedLayout extends WorkspaceDefinition {
-  version: 1;
+  version: 2;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -134,12 +136,32 @@ function normalizeTab(value: unknown): WorkspaceTabDefinition | null {
     || !value.paneKeys.every(validId)) return null;
   const paneKeys = [...value.paneKeys];
   if (new Set(paneKeys).size !== paneKeys.length) return null;
+  const tracks = paneTrackCounts(value.layout, paneKeys.length);
+  let sizing: PaneSizing;
+  if (value.sizing === undefined) {
+    // version 1 local layouts and profile stores did not persist split ratios.
+    sizing = normalizePaneSizing(undefined, value.layout, paneKeys.length);
+  } else {
+    if (!isRecord(value.sizing)
+      || !Array.isArray(value.sizing.columns)
+      || !Array.isArray(value.sizing.rows)
+      || value.sizing.columns.length !== tracks.columns
+      || value.sizing.rows.length !== tracks.rows
+      || ![...value.sizing.columns, ...value.sizing.rows].every(
+        (fraction) => typeof fraction === "number" && Number.isFinite(fraction) && fraction > 0,
+      )) return null;
+    sizing = normalizePaneSizing({
+      columns: value.sizing.columns,
+      rows: value.sizing.rows,
+    }, value.layout, paneKeys.length);
+  }
   return {
     id: value.id,
     title: value.title.trim(),
     customTitle: value.customTitle === true,
     layout: value.layout,
     paneKeys,
+    sizing,
   };
 }
 
@@ -192,8 +214,8 @@ export function workspaceFromRuntime(
   activePaneId: string | null,
 ): WorkspaceDefinition | null {
   if (tabs.length === 0 || panes.length === 0) return null;
-  const sessionToKey = new Map(
-    panes.flatMap((pane) => pane.sessionId === null ? [] : [[pane.sessionId, pane.key] as const]),
+  const identityToKey = new Map(
+    panes.map((pane) => [pane.sessionId ?? pane.key, pane.key] as const),
   );
   const definition: WorkspaceDefinition = {
     tabs: tabs.map((tab) => ({
@@ -201,17 +223,18 @@ export function workspaceFromRuntime(
       title: tab.title,
       customTitle: tab.customTitle === true,
       layout: tab.layout,
-      paneKeys: tab.paneIds.map((id) => sessionToKey.get(id)).filter((key): key is string => Boolean(key)),
+      paneKeys: tab.paneIds.map((id) => identityToKey.get(id)).filter((key): key is string => Boolean(key)),
+      sizing: normalizePaneSizing(tab.sizing, tab.layout, tab.paneIds.length),
     })).filter((tab) => tab.paneKeys.length > 0),
-    panes: panes.flatMap((pane) => pane.sessionId === null ? [] : [{
+    panes: panes.map((pane) => ({
       key: pane.key,
       distro: pane.distro,
       cwd: pane.cwd && isSafeWorkspacePath(pane.cwd) ? pane.cwd : null,
       startCommand: pane.startCommand ?? null,
-      multiplexer: pane.multiplexer,
-    }]),
+      multiplexer: pane.requestedMultiplexer ?? pane.multiplexer,
+    })),
     activeTabId,
-    activePaneKey: activePaneId ? (sessionToKey.get(activePaneId) ?? null) : null,
+    activePaneKey: activePaneId ? (identityToKey.get(activePaneId) ?? null) : null,
   };
   return normalizeWorkspace(definition);
 }
@@ -219,7 +242,7 @@ export function workspaceFromRuntime(
 export function loadLastWorkspace(): WorkspaceDefinition | null {
   try {
     const value: unknown = JSON.parse(localStorage.getItem(LAST_LAYOUT_KEY) ?? "null");
-    if (!isRecord(value) || value.version !== LAYOUT_VERSION) return null;
+    if (!isRecord(value) || (value.version !== 1 && value.version !== LAYOUT_VERSION)) return null;
     return normalizeWorkspace(value);
   } catch {
     return null;

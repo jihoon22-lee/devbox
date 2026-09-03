@@ -127,7 +127,7 @@ fn looks_like_environment(value: &str) -> bool {
 mod tests {
     use super::*;
     use crate::core::workspace::{
-        Layout, MultiplexerKind, WorkspacePane, WorkspaceTab, PROFILE_STORE_VERSION,
+        Layout, MultiplexerKind, PaneSizing, WorkspacePane, WorkspaceTab, PROFILE_STORE_VERSION,
     };
     use devbox_integration::{
         named_view_snapshot_path_in, read_named_view_snapshot_in, write_named_view_snapshot_atomic,
@@ -144,6 +144,10 @@ mod tests {
                 custom_title: false,
                 layout: Layout::Grid,
                 pane_keys: vec!["pane-1".into()],
+                sizing: PaneSizing {
+                    columns: vec![1.0],
+                    rows: vec![1.0],
+                },
             }],
             panes: vec![WorkspacePane {
                 key: "pane-1".into(),

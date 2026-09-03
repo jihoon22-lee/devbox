@@ -36,6 +36,7 @@ import { makeId } from "./lib/id";
 import { buildPaneContextMenu, buildTabContextMenu, normalizeTabName } from "./lib/contextMenu";
 import { matchShortcut, type ShortcutAction } from "./lib/shortcuts";
 import { nextPaneIndex, type FocusDirection } from "./lib/paneGeometry";
+import { normalizePaneSizing } from "./lib/paneSizing";
 import {
   MAX_BROADCAST_TARGETS,
   nextBroadcastTargets,
@@ -61,6 +62,11 @@ import {
   startCommandError,
   workspaceFromRuntime,
 } from "./lib/workspace";
+import {
+  orderWorkspacePanes,
+  RESTORE_START_CONCURRENCY,
+  runWithConcurrencyLimit,
+} from "./lib/workspaceRestore";
 import {
   DEFAULT_TERMINAL_FONT_SIZE,
   clampTerminalFontSize,
@@ -96,6 +102,11 @@ const LAYOUT_LABELS: Readonly<Record<Layout, string>> = {
 };
 
 const DASHBOARD_ERROR_MESSAGE = "WSL resource snapshot을 갱신하지 못했습니다. 마지막 정상 상태를 유지합니다.";
+const RESTORE_FAILURE_MESSAGE = "터미널을 복원하지 못했습니다. 설정을 확인한 뒤 다시 시도하세요.";
+
+function paneIdentity(pane: Pane): string {
+  return pane.sessionId ?? pane.key;
+}
 
 export default function App() {
   const [distros, setDistros] = useState<DistroInfo[]>([]);
@@ -141,6 +152,7 @@ export default function App() {
   const [terminalFontSize, setTerminalFontSize] = useState(loadTerminalFontSize);
   const [error, setError] = useState<string | null>(null);
   const [contextActionBusy, setContextActionBusy] = useState(false);
+  const contextActionBusyRef = useRef(false);
   const [contextPane, setContextPane] = useState<Pane | null>(null);
   const [contextPaneCapabilities, setContextPaneCapabilities] = useState<TerminalPaneCapabilities>({
     hasSelection: false,
@@ -148,6 +160,13 @@ export default function App() {
   });
   const [contextTab, setContextTab] = useState<Tab | null>(null);
   const { ask, pending: pendingDialog, answer: answerDialog } = useAppDialog();
+  const shortcutBlockersRef = useRef({
+    pendingDialog,
+    paletteOpen,
+    settingsOpen,
+    shortcutsOpen,
+  });
+  shortcutBlockersRef.current = { pendingDialog, paletteOpen, settingsOpen, shortcutsOpen };
   const askRef = useRef<AskDialog>(ask);
   askRef.current = ask;
   const settingsRef = useRef(settings);
@@ -170,7 +189,10 @@ export default function App() {
   const paneFocus = useRef(new Map<string, () => void>());
   const terminalHandles = useRef(new Map<string, TerminalPaneHandle>());
   const restoreStarted = useRef(false);
+  const panesRef = useRef(panes);
+  panesRef.current = panes;
   const workspaceLoadingRef = useRef(false);
+  const workspaceRestoreGeneration = useRef(0);
   const layoutSaveTimer = useRef<number | undefined>(undefined);
   const dashboardRequestRef = useRef<Promise<void> | null>(null);
   const dashboardRefreshQueuedRef = useRef(false);
@@ -187,13 +209,20 @@ export default function App() {
   const dashboardOperationToken = useRef(0);
   const logLensOperationToken = useRef(0);
 
+  const setContextBusy = (value: boolean) => {
+    contextActionBusyRef.current = value;
+    setContextActionBusy(value);
+  };
+
   useEffect(() => {
     mountedRef.current = true;
     return () => {
       mountedRef.current = false;
+      workspaceRestoreGeneration.current += 1;
       logLensGeneration.current += 1;
       busyRef.current = null;
       logLensBusyRef.current = null;
+      contextActionBusyRef.current = false;
     };
   }, []);
 
@@ -592,11 +621,15 @@ export default function App() {
     void startInTab(null, name);
   };
 
-  // 팬 하나(세션)를 상태에서 제거한다. 마지막 팬이면 소속 탭도 함께 닫는다.
+  // 팬 하나(연결된 session id 또는 실패 placeholder key)를 제거한다. 마지막 팬이면 탭도 닫는다.
   // stateRef를 통해서만 tabs/activeTabId/activePaneId를 읽는다 — 위 주석 참고.
   const dropPane = useCallback((paneId: string) => {
     const { tabs: curTabs, activeTabId: curActiveTabId, activePaneId: curActivePaneId } = stateRef.current;
-    setPanes((prev) => prev.filter((p) => p.sessionId !== paneId));
+    setPanes((prev) => {
+      const next = prev.filter((pane) => paneIdentity(pane) !== paneId);
+      panesRef.current = next;
+      return next;
+    });
 
     const ownerIdx = curTabs.findIndex((t) => t.paneIds.includes(paneId));
     if (ownerIdx === -1) {
@@ -609,7 +642,11 @@ export default function App() {
 
     const nextTabs = tabClosed
       ? curTabs.filter((t) => t.id !== owner.id)
-      : curTabs.map((t) => (t.id === owner.id ? { ...t, paneIds: remaining } : t));
+      : curTabs.map((tab) => (tab.id === owner.id ? {
+          ...tab,
+          paneIds: remaining,
+          sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
+        } : tab));
     setTabs(nextTabs);
 
     if (tabClosed && curActiveTabId === owner.id) {
@@ -774,24 +811,40 @@ export default function App() {
     try {
       const started = await startSession(distro, usedCwd, key, requestedMultiplexer);
       const id = started.sessionId;
-      setPanes((prev) => [...prev, {
-        key,
-        sessionId: id,
-        distro,
-        cwd: usedCwd,
-        startCommand: usedStartCommand,
-        initialCommand: started.resumed ? undefined : usedStartCommand,
-        multiplexer: started.multiplexer,
-        resumed: started.resumed,
-      }]);
+      setPanes((prev) => {
+        const next = [...prev, {
+          key,
+          sessionId: id,
+          distro,
+          cwd: usedCwd,
+          startCommand: usedStartCommand,
+          initialCommand: started.resumed ? undefined : usedStartCommand,
+          multiplexer: started.multiplexer,
+          requestedMultiplexer,
+          resumed: started.resumed,
+        }];
+        panesRef.current = next;
+        return next;
+      });
 
       if (tabId === null) {
         const title = nextTabTitle(tabs.map((t) => t.title), distro);
         const newTabId = makeId("t");
-        setTabs((prev) => [...prev, { id: newTabId, title, customTitle: false, layout: "grid", paneIds: [id] }]);
+        setTabs((prev) => [...prev, {
+          id: newTabId,
+          title,
+          customTitle: false,
+          layout: "grid",
+          paneIds: [id],
+          sizing: normalizePaneSizing(undefined, "grid", 1),
+        }]);
         setActiveTabId(newTabId);
       } else {
-        setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, paneIds: [...t.paneIds, id] } : t)));
+        setTabs((prev) => prev.map((tab) => {
+          if (tab.id !== tabId) return tab;
+          const paneIds = [...tab.paneIds, id];
+          return { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
+        }));
       }
       setActivePaneId(id);
 
@@ -811,12 +864,64 @@ export default function App() {
     }
   };
 
+  const adoptRestoredSession = (
+    key: string,
+    requestedMultiplexer: MultiplexerKind,
+    started: Awaited<ReturnType<typeof startSession>>,
+    generation: number,
+  ): boolean => {
+    if (!mountedRef.current || workspaceRestoreGeneration.current !== generation) return false;
+    const placeholder = panesRef.current.find((pane) =>
+      pane.key === key && pane.sessionId === null && pane.restoreStatus === "connecting",
+    );
+    if (!placeholder) return false;
+    const restoredPane: Pane = {
+      ...placeholder,
+      sessionId: started.sessionId,
+      initialCommand: started.resumed ? undefined : placeholder.initialCommand,
+      multiplexer: started.multiplexer,
+      requestedMultiplexer,
+      resumed: started.resumed,
+      restoreStatus: undefined,
+      restoreError: undefined,
+    };
+    const restoredPanes = panesRef.current.map((pane) => pane.key === key ? restoredPane : pane);
+    panesRef.current = restoredPanes;
+    setPanes(restoredPanes);
+
+    const current = stateRef.current;
+    const restoredTabs = current.tabs.map((tab) => ({
+      ...tab,
+      paneIds: tab.paneIds.map((id) => id === key ? started.sessionId : id),
+    }));
+    const restoredActivePane = current.activePaneId === key ? started.sessionId : current.activePaneId;
+    stateRef.current = { ...current, tabs: restoredTabs, activePaneId: restoredActivePane };
+    setTabs(restoredTabs);
+    setActivePaneId(restoredActivePane);
+    if (restoredActivePane === started.sessionId) setSelected(placeholder.distro);
+    return true;
+  };
+
+  const markRestoreFailed = (key: string, generation: number): boolean => {
+    if (!mountedRef.current || workspaceRestoreGeneration.current !== generation) return false;
+    let changed = false;
+    const failedPanes = panesRef.current.map((pane) => {
+      if (pane.key !== key || pane.sessionId !== null) return pane;
+      changed = true;
+      return { ...pane, restoreStatus: "failed" as const, restoreError: RESTORE_FAILURE_MESSAGE };
+    });
+    if (!changed) return false;
+    panesRef.current = failedPanes;
+    setPanes(failedPanes);
+    return true;
+  };
+
   const launchWorkspace = async (
     workspace: WorkspaceDefinition,
     options: { replaceExisting: boolean; label: string },
   ): Promise<boolean> => {
-    if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return false;
-    const oldSessionIds = panes.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
+    if (workspaceLoadingRef.current || contextActionBusyRef.current || logLensBusyRef.current !== null) return false;
+    const oldSessionIds = panesRef.current.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
     if (options.replaceExisting && oldSessionIds.length > 0) {
       const switched = await ask({
         kind: "confirm",
@@ -841,15 +946,56 @@ export default function App() {
       danger: true,
     })).confirmed;
 
+    const generation = ++workspaceRestoreGeneration.current;
     workspaceLoadingRef.current = true;
     setWorkspaceLoading(true);
     setError(null);
-    const sessionByPaneKey = new Map<string, string>();
-    const nextPanes: Pane[] = [];
+    const nextPanes: Pane[] = workspace.panes.map((definition) => ({
+      key: definition.key,
+      sessionId: null,
+      distro: definition.distro,
+      cwd: definition.cwd ?? undefined,
+      startCommand: definition.startCommand ?? undefined,
+      initialCommand: runStartCommands ? (definition.startCommand ?? undefined) : undefined,
+      multiplexer: definition.multiplexer,
+      requestedMultiplexer: definition.multiplexer,
+      restoreStatus: "connecting",
+    }));
+    const nextTabs: Tab[] = workspace.tabs.map((definition) => ({
+      id: definition.id,
+      title: definition.title,
+      customTitle: definition.customTitle,
+      layout: definition.layout,
+      paneIds: [...definition.paneKeys],
+      sizing: normalizePaneSizing(definition.sizing, definition.layout, definition.paneKeys.length),
+    }));
+    const nextActiveTab = nextTabs.find((tab) => tab.id === workspace.activeTabId) ?? nextTabs[0];
+    const requestedActivePane = workspace.activePaneKey && nextActiveTab.paneIds.includes(workspace.activePaneKey)
+      ? workspace.activePaneKey
+      : (nextActiveTab.paneIds[0] ?? null);
+
+    // Render the complete topology before starting PTYs. A failed start therefore replaces its
+    // connecting card in place instead of deleting the pane and collapsing adjacent tracks.
+    stateRef.current = {
+      tabs: nextTabs,
+      activeTabId: nextActiveTab.id,
+      activePaneId: requestedActivePane,
+    };
+    panesRef.current = nextPanes;
+    setPanes(nextPanes);
+    setTabs(nextTabs);
+    setActiveTabId(nextActiveTab.id);
+    setActivePaneId(requestedActivePane);
+    setBroadcastOn(false);
+    setBroadcastTargetIds(new Set());
+    setBroadcastPickerOpen(false);
+    const activeDefinition = workspace.panes.find((pane) => pane.key === requestedActivePane);
+    if (activeDefinition) setSelected(activeDefinition.distro);
+
     let failed = 0;
+    let startedCount = 0;
     try {
-      // 프로필 하나가 과도한 동시 WSL 시작을 만들지 않도록 의도적으로 순차 실행한다.
-      for (const definition of workspace.panes) {
+      const startDefinition = async (definition: WorkspaceDefinition["panes"][number]): Promise<void> => {
         try {
           const started = await startSession(
             definition.distro,
@@ -857,82 +1003,84 @@ export default function App() {
             definition.key,
             definition.multiplexer,
           );
-          sessionByPaneKey.set(definition.key, started.sessionId);
-          const command = runStartCommands ? (definition.startCommand ?? undefined) : undefined;
-          nextPanes.push({
-            key: definition.key,
-            sessionId: started.sessionId,
-            distro: definition.distro,
-            cwd: definition.cwd ?? undefined,
-            startCommand: definition.startCommand ?? undefined,
-            initialCommand: started.resumed ? undefined : command,
-            multiplexer: started.multiplexer,
-            resumed: started.resumed,
-          });
+          if (!adoptRestoredSession(
+            definition.key,
+            definition.multiplexer,
+            started,
+            generation,
+          )) {
+            await closeSession(started.sessionId).catch(() => undefined);
+            return;
+          }
+          startedCount += 1;
         } catch {
-          failed += 1;
+          if (markRestoreFailed(definition.key, generation)) failed += 1;
         }
-      }
-
-      const nextTabs: Tab[] = workspace.tabs.flatMap((definition) => {
-        const paneIds = definition.paneKeys
-          .map((key) => sessionByPaneKey.get(key))
-          .filter((id): id is string => Boolean(id));
-        return paneIds.length === 0 ? [] : [{
-          id: definition.id,
-          title: definition.title,
-          customTitle: definition.customTitle,
-          layout: definition.layout,
-          paneIds,
-        }];
-      });
-      if (nextTabs.length === 0) {
-        await Promise.allSettled(nextPanes.flatMap((pane) => pane.sessionId ? [closeSession(pane.sessionId)] : []));
-        setError("프로필의 터미널을 하나도 시작하지 못했습니다.");
-        return false;
-      }
-
-      const nextActiveTab = nextTabs.find((tab) => tab.id === workspace.activeTabId) ?? nextTabs[0];
-      const requestedActiveSession = workspace.activePaneKey
-        ? sessionByPaneKey.get(workspace.activePaneKey)
-        : undefined;
-      const nextActivePane = requestedActiveSession && nextActiveTab.paneIds.includes(requestedActiveSession)
-        ? requestedActiveSession
-        : nextActiveTab.paneIds[nextActiveTab.paneIds.length - 1] ?? null;
-
-      // terminal-closed 이벤트가 늦게 와도 새 workspace를 오래된 tab 상태로 제거하지 않게
-      // ref를 React commit보다 먼저 새 identity로 전환한다.
-      stateRef.current = {
-        tabs: nextTabs,
-        activeTabId: nextActiveTab.id,
-        activePaneId: nextActivePane,
       };
-      setPanes(nextPanes);
-      setTabs(nextTabs);
-      setActiveTabId(nextActiveTab.id);
-      setActivePaneId(nextActivePane);
-      setBroadcastOn(false);
-      setBroadcastTargetIds(new Set());
-      setBroadcastPickerOpen(false);
-      const activeDefinition = nextActivePane
-        ? workspace.panes.find((pane) => sessionByPaneKey.get(pane.key) === nextActivePane)
-        : undefined;
-      if (activeDefinition) setSelected(activeDefinition.distro);
+
+      const restorePlan = orderWorkspacePanes(workspace);
+      // The active pane is started alone so the user's primary shell becomes interactive first.
+      await startDefinition(restorePlan.active);
+      await runWithConcurrencyLimit(
+        restorePlan.remaining,
+        RESTORE_START_CONCURRENCY,
+        startDefinition,
+      );
 
       const closeResults = await Promise.allSettled(oldSessionIds.map((id) => closeSession(id)));
       const closeFailed = closeResults.filter((result) => result.status === "rejected").length;
       if (failed > 0 || closeFailed > 0) {
         const details = [
-          failed > 0 ? `시작 실패 ${failed}개` : "",
+          failed > 0 ? `복원 실패 ${failed}개(자리에서 재시도 가능)` : "",
           closeFailed > 0 ? `이전 세션 닫기 실패 ${closeFailed}개` : "",
         ].filter(Boolean).join(" · ");
-        setError(`프로필을 부분적으로 열었습니다. ${details}`);
+        setError(`${startedCount > 0 ? "프로필을 부분적으로 열었습니다." : "프로필 레이아웃만 복원했습니다."} ${details}`);
       }
       void refreshDashboard(true).catch(() => undefined);
       return true;
     } finally {
-      workspaceLoadingRef.current = false;
-      setWorkspaceLoading(false);
+      if (workspaceRestoreGeneration.current === generation) {
+        workspaceLoadingRef.current = false;
+        setWorkspaceLoading(false);
+      }
+    }
+  };
+
+  const retryWorkspacePane = async (key: string): Promise<void> => {
+    if (workspaceLoadingRef.current || contextActionBusyRef.current || logLensBusyRef.current !== null) return;
+    const placeholder = panesRef.current.find((pane) =>
+      pane.key === key && pane.sessionId === null && pane.restoreStatus === "failed",
+    );
+    if (!placeholder) return;
+    const generation = workspaceRestoreGeneration.current;
+    const requestedMultiplexer = placeholder.requestedMultiplexer ?? placeholder.multiplexer;
+    const connectingPanes = panesRef.current.map((pane) => pane.key === key
+      ? { ...pane, restoreStatus: "connecting" as const, restoreError: undefined }
+      : pane);
+    panesRef.current = connectingPanes;
+    setPanes(connectingPanes);
+    setContextBusy(true);
+    setError(null);
+    try {
+      const started = await startSession(
+        placeholder.distro,
+        placeholder.cwd,
+        placeholder.key,
+        requestedMultiplexer,
+      );
+      if (!adoptRestoredSession(key, requestedMultiplexer, started, generation)) {
+        await closeSession(started.sessionId).catch(() => undefined);
+        return;
+      }
+      void refreshDashboard(true).catch(() => undefined);
+    } catch {
+      if (markRestoreFailed(key, generation)) {
+        setError("터미널 복원 재시도에 실패했습니다. 실패한 자리는 그대로 유지됩니다.");
+      }
+    } finally {
+      if (mountedRef.current && workspaceRestoreGeneration.current === generation) {
+        setContextBusy(false);
+      }
     }
   };
 
@@ -1067,15 +1215,21 @@ export default function App() {
 
   const closePane = async (paneId: string): Promise<void> => {
     setError(null);
-    setContextActionBusy(true);
+    const pane = panesRef.current.find((candidate) => paneIdentity(candidate) === paneId);
+    if (!pane) return;
+    if (pane.sessionId === null) {
+      dropPane(paneId);
+      return;
+    }
+    setContextBusy(true);
     try {
-      await closeSession(paneId);
+      await closeSession(pane.sessionId);
       dropPane(paneId);
       void refreshDashboard(true).catch(() => undefined);
     } catch {
       setError("터미널 팬을 닫지 못했습니다.");
     } finally {
-      setContextActionBusy(false);
+      setContextBusy(false);
     }
   };
 
@@ -1084,34 +1238,42 @@ export default function App() {
     const currentTabs = stateRef.current.tabs;
     const targets = currentTabs.filter((tab) => ids.has(tab.id));
     if (targets.length === 0) return;
-    const sessionIds = targets.flatMap((tab) => tab.paneIds);
+    const targetPaneIds = new Set(targets.flatMap((tab) => tab.paneIds));
+    const targetPanes = panesRef.current.filter((pane) => targetPaneIds.has(paneIdentity(pane)));
+    const sessionIds = targetPanes.flatMap((pane) => pane.sessionId ? [pane.sessionId] : []);
+    const placeholderIds = targetPanes.flatMap((pane) => pane.sessionId === null ? [pane.key] : []);
     setError(null);
-    setContextActionBusy(true);
+    setContextBusy(true);
     try {
       const results = await Promise.allSettled(sessionIds.map((id) => closeSession(id)));
       const closedSessionIds = new Set(
         sessionIds.filter((_id, index) => results[index]?.status === "fulfilled"),
       );
+      const removedPaneIds = new Set([...closedSessionIds, ...placeholderIds]);
       const latestTabs = stateRef.current.tabs;
       const latestActiveTabId = stateRef.current.activeTabId;
       const latestActivePaneId = stateRef.current.activePaneId;
       const activeIndex = latestTabs.findIndex((tab) => tab.id === latestActiveTabId);
-      const nextTabs = closedSessionIds.size === 0
+      const nextTabs = removedPaneIds.size === 0
         ? latestTabs
         : latestTabs
-            .map((tab) => ({
-              ...tab,
-              paneIds: tab.paneIds.filter((id) => !closedSessionIds.has(id)),
-            }))
+            .map((tab) => {
+              const paneIds = tab.paneIds.filter((id) => !removedPaneIds.has(id));
+              return paneIds.length === tab.paneIds.length
+                ? tab
+                : { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
+            })
             .filter((tab) => tab.paneIds.length > 0);
 
-      if (closedSessionIds.size > 0) {
+      if (removedPaneIds.size > 0) {
         // close_session 완료 이벤트가 먼저 도착했어도 멱등적이다. 닫기 중 팬이
         // 다른 탭으로 이동했거나 새 팬이 추가된 경우에도 성공한 session ID만 제거해
         // 최신 탭/팬 소유권을 보존한다.
-        setPanes((previous) => previous.filter(
-          (pane) => pane.sessionId === null || !closedSessionIds.has(pane.sessionId),
-        ));
+        setPanes((previous) => {
+          const next = previous.filter((pane) => !removedPaneIds.has(paneIdentity(pane)));
+          panesRef.current = next;
+          return next;
+        });
         setTabs(nextTabs);
       }
 
@@ -1133,18 +1295,20 @@ export default function App() {
       }
       void refreshDashboard(true).catch(() => undefined);
     } finally {
-      setContextActionBusy(false);
+      setContextBusy(false);
     }
   };
 
   const requestClosePane = async (paneId: string): Promise<void> => {
-    const pane = panes.find((candidate) => candidate.sessionId === paneId);
+    const pane = panes.find((candidate) => paneIdentity(candidate) === paneId);
     if (!pane) return;
     if (settingsRef.current.confirmSinglePaneClose) {
       const confirmed = await ask({
         kind: "confirm",
         title: `'${pane.distro}' 터미널 팬을 닫을까요?`,
-        lines: ["실행 중인 작업이 종료될 수 있습니다."],
+        lines: pane.sessionId === null
+          ? ["실패한 복원 자리만 레이아웃에서 제거합니다."]
+          : ["실행 중인 작업이 종료될 수 있습니다."],
         confirmLabel: "닫기",
         danger: true,
       });
@@ -1227,16 +1391,34 @@ export default function App() {
     const withoutOwnerPane =
       remaining.length === 0
         ? tabs.filter((t) => t.id !== owner.id)
-        : tabs.map((t) => (t.id === owner.id ? { ...t, paneIds: remaining } : t));
-    const next = withoutOwnerPane.map((t) => (t.id === targetTabId ? { ...t, paneIds: [...t.paneIds, paneId] } : t));
+        : tabs.map((tab) => (tab.id === owner.id ? {
+            ...tab,
+            paneIds: remaining,
+            sizing: normalizePaneSizing(undefined, tab.layout, remaining.length),
+          } : tab));
+    const next = withoutOwnerPane.map((tab) => {
+      if (tab.id !== targetTabId) return tab;
+      const paneIds = [...tab.paneIds, paneId];
+      return { ...tab, paneIds, sizing: normalizePaneSizing(undefined, tab.layout, paneIds.length) };
+    });
     setTabs(next);
     setActiveTabId(targetTabId);
     setActivePaneId(paneId);
   };
 
   const setTabLayout = (tabId: string, layout: Layout) => {
-    setTabs((prev) => prev.map((t) => (t.id === tabId ? { ...t, layout } : t)));
+    setTabs((prev) => prev.map((tab) => (tab.id === tabId ? {
+      ...tab,
+      layout,
+      sizing: normalizePaneSizing(undefined, layout, tab.paneIds.length),
+    } : tab)));
   };
+
+  const setTabSizing = useCallback((tabId: string, sizing: Tab["sizing"]) => {
+    setTabs((previous) => previous.map((tab) => tab.id === tabId
+      ? { ...tab, sizing: normalizePaneSizing(sizing, tab.layout, tab.paneIds.length) }
+      : tab));
+  }, []);
 
   const setActiveTabLayout = (layout: Layout) => setTabLayout(activeTabId, layout);
 
@@ -1257,7 +1439,8 @@ export default function App() {
   const handleShortcut = (action: ShortcutAction) => {
     // Dialogs own the keyboard while open. This guard covers both the window listener and the
     // TermPane callback, including the frame before an in-app dialog moves focus away from xterm.
-    if (pendingDialog || paletteOpen || settingsOpen || shortcutsOpen) return;
+    const blockers = shortcutBlockersRef.current;
+    if (blockers.pendingDialog || blockers.paletteOpen || blockers.settingsOpen || blockers.shortcutsOpen) return;
     if ((!workspaceReady || workspaceLoadingRef.current) && action.type !== "command-palette") return;
     switch (action.type) {
       case "new-tab":
@@ -1362,7 +1545,7 @@ export default function App() {
       pane?.sessionId !== null && pane?.sessionId !== undefined && tab.paneIds.includes(pane.sessionId),
     );
     if (!pane || !owner || pane.sessionId === null) return;
-    setContextActionBusy(true);
+    setContextBusy(true);
     void startInTab(
       owner.id,
       pane.distro,
@@ -1371,7 +1554,7 @@ export default function App() {
       { startCommand: null, multiplexer: pane.multiplexer },
     ).then((started) => {
       if (started) setTabLayout(owner.id, layout);
-    }).finally(() => setContextActionBusy(false));
+    }).finally(() => setContextBusy(false));
   };
 
   const renameContextTab = async (tab: Tab): Promise<void> => {
@@ -1454,7 +1637,9 @@ export default function App() {
 
   const activeTab = tabs.find((t) => t.id === activeTabId) ?? null;
   const activeLayout = activeTab?.layout ?? "grid";
-  const activePaneIds = activeTab?.paneIds ?? [];
+  const activePaneIds = (activeTab?.paneIds ?? []).filter((id) =>
+    panes.some((pane) => pane.sessionId === id),
+  );
   const selectedBroadcastIds = activePaneIds.filter((id) => broadcastTargetIds.has(id));
   const broadcastReady = snapshotActionable
     && !workspaceLoading
@@ -1488,7 +1673,7 @@ export default function App() {
   const splitActivePane = (layout: "cols" | "rows") => {
     const pane = panes.find((item) => item.sessionId === activePaneId);
     if (!pane || !activeTab) return;
-    setContextActionBusy(true);
+    setContextBusy(true);
     void startInTab(
       activeTab.id,
       pane.distro,
@@ -1497,7 +1682,7 @@ export default function App() {
       { startCommand: null, multiplexer: pane.multiplexer },
     ).then((started) => {
       if (started) setTabLayout(activeTab.id, layout);
-    }).finally(() => setContextActionBusy(false));
+    }).finally(() => setContextBusy(false));
   };
 
   const paletteActions: PaletteAction[] = [
@@ -1888,6 +2073,7 @@ export default function App() {
               registerTerminalHandle={registerTerminalHandle}
               unregisterTerminalHandle={unregisterTerminalHandle}
               onClosePane={(id) => void requestClosePane(id)}
+              onRetryPane={(key) => void retryWorkspacePane(key)}
               ask={ask}
               onConfirmLinkHost={confirmLinkHost}
               onFocusPane={(id) => {
@@ -1896,6 +2082,7 @@ export default function App() {
                 if (owner) setActiveTabId(owner.id);
               }}
               onShortcut={handleShortcut}
+              onSizingChange={setTabSizing}
               onFontSizeChange={updateTerminalFontSize}
               onMetadataChange={updatePaneMetadata}
               onTerminalError={setError}
