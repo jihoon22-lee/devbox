@@ -1,4 +1,11 @@
-import { useCallback, useRef, useState, type CSSProperties, type PointerEvent as ReactPointerEvent } from "react";
+import {
+  useCallback,
+  useEffect,
+  useRef,
+  useState,
+  type CSSProperties,
+  type PointerEvent as ReactPointerEvent,
+} from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import type { AskDialog } from "./AppDialog";
 import type { CursorStyle, TerminalTheme } from "../lib/settings";
@@ -41,6 +48,12 @@ interface PaneCanvasProps {
   zoomedPaneId: string | null;
   ask: AskDialog;
   onConfirmLinkHost: (host: string) => Promise<boolean>;
+}
+
+interface PaneSizingState {
+  topology: string;
+  columns: number[];
+  rows: number[];
 }
 
 /**
@@ -98,7 +111,8 @@ export default function PaneCanvas({
   const zoomed = zoomedPaneId !== null && allActivePaneIds.includes(zoomedPaneId) ? zoomedPaneId : null;
   const activePaneIds = zoomed ? [zoomed] : allActivePaneIds;
 
-  const layout = zoomed ? "grid" : (activeTab?.layout ?? "grid");
+  const baseLayout = activeTab?.layout ?? "grid";
+  const layout = zoomed ? "grid" : baseLayout;
   const gridCols = activePaneIds.length === 0 ? 1 : Math.ceil(Math.sqrt(activePaneIds.length));
   const gridRows = Math.ceil(activePaneIds.length / gridCols);
   // 트랙 수는 레이아웃이 정한다. 하나뿐인 축에는 구분선을 만들지 않는다.
@@ -109,18 +123,60 @@ export default function PaneCanvas({
     ? Math.max(1, activePaneIds.length)
     : layout === "cols" ? 1 : Math.max(1, gridRows);
 
+  const baseGridCols = allActivePaneIds.length === 0 ? 1 : Math.ceil(Math.sqrt(allActivePaneIds.length));
+  const baseGridRows = Math.ceil(allActivePaneIds.length / baseGridCols);
+  const baseColumnCount = baseLayout === "cols"
+    ? Math.max(1, allActivePaneIds.length)
+    : baseLayout === "rows" ? 1 : Math.max(1, baseGridCols);
+  const baseRowCount = baseLayout === "rows"
+    ? Math.max(1, allActivePaneIds.length)
+    : baseLayout === "cols" ? 1 : Math.max(1, baseGridRows);
+  // Include order as well as count: moving a pane changes which adjacent pair a divider sizes.
+  // Zoom is intentionally absent because it is temporary and must preserve the underlying split.
+  const topology = activeTab ? JSON.stringify([baseLayout, ...allActivePaneIds]) : "";
+
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sizing, setSizing] = useState<Record<string, { columns: number[]; rows: number[] }>>({});
-  // 팬 수나 레이아웃이 바뀌면 길이가 어긋나 균등 분할로 되돌아간다.
-  const columns = normalizeFractions(sizing[activeTabId]?.columns, columnCount);
-  const rows = normalizeFractions(sizing[activeTabId]?.rows, rowCount);
+  const [sizing, setSizing] = useState<Record<string, PaneSizingState>>({});
+  const currentSizing = sizing[activeTabId];
+  const sizingMatchesTopology = currentSizing?.topology === topology;
+  // A different pane order/layout renders evenly immediately. The effect below also replaces
+  // the stored generation so returning to an earlier pane count cannot resurrect an old split.
+  const columns = zoomed
+    ? [1]
+    : normalizeFractions(sizingMatchesTopology ? currentSizing.columns : undefined, columnCount);
+  const rows = zoomed
+    ? [1]
+    : normalizeFractions(sizingMatchesTopology ? currentSizing.rows : undefined, rowCount);
+
+  useEffect(() => {
+    if (!activeTabId || !topology) return;
+    setSizing((previous) => {
+      if (previous[activeTabId]?.topology === topology) return previous;
+      return {
+        ...previous,
+        [activeTabId]: {
+          topology,
+          columns: normalizeFractions(undefined, baseColumnCount),
+          rows: normalizeFractions(undefined, baseRowCount),
+        },
+      };
+    });
+  }, [activeTabId, baseColumnCount, baseRowCount, topology]);
 
   const applySizing = useCallback((axis: "columns" | "rows", next: number[]) => {
+    if (!activeTabId || !topology) return;
     setSizing((previous) => {
-      const current = previous[activeTabId] ?? { columns: [], rows: [] };
+      const stored = previous[activeTabId];
+      const current = stored?.topology === topology
+        ? stored
+        : {
+            topology,
+            columns: normalizeFractions(undefined, baseColumnCount),
+            rows: normalizeFractions(undefined, baseRowCount),
+          };
       return { ...previous, [activeTabId]: { ...current, [axis]: next } };
     });
-  }, [activeTabId]);
+  }, [activeTabId, baseColumnCount, baseRowCount, topology]);
 
   const startDrag = (
     axis: "columns" | "rows",

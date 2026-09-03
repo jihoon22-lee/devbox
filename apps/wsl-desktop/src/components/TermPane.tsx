@@ -535,9 +535,19 @@ export default function TermPane({
         danger: true,
       }).then((approved) => {
         confirmOpenRef.current = false;
-        if (approved.confirmed) {
+        // The confirmation belongs to the exact mode/target generation that opened it. A pane
+        // may close or the user may disarm/change targets while the modal is visible; approving
+        // that stale modal must never send to its captured session list.
+        const currentTargets = broadcastTargetsRef.current;
+        const contextStillCurrent = broadcastRef.current
+          && currentTargets.length === targets.length
+          && currentTargets.every((target, index) => target === targets[index]);
+        if (approved.confirmed && contextStillCurrent) {
           broadcastPendingCommandRef.current = assessment.nextPendingCommand;
           sendBroadcast(targets, data);
+        } else if (!contextStillCurrent) {
+          broadcastPendingCommandRef.current = "";
+          queuedInputRef.current = [];
         }
         flushQueuedInput();
       });

@@ -368,7 +368,7 @@ export default function App() {
         })));
         const fallback = next.distros.find((distro) => distro.default)?.name
           ?? next.distros[0]?.name
-          ?? "Ubuntu";
+          ?? "";
         setSelected((previous) =>
           next.distros.some((distro) => distro.name === previous) ? previous : fallback,
         );
@@ -743,6 +743,10 @@ export default function App() {
     },
   ): Promise<boolean> => {
     if (workspaceLoadingRef.current || logLensBusyRef.current !== null) return false;
+    if (!distro.trim()) {
+      setError("사용 가능한 WSL 배포판이 없습니다.");
+      return false;
+    }
     setError(null);
     const usedCwd = (cwdOverride ?? cwd).trim() || undefined;
     const usedStartCommand = (options?.startCommand === undefined ? startCommand : options.startCommand)?.trim() || undefined;
@@ -1018,7 +1022,11 @@ export default function App() {
       // Nothing to restore. Open one terminal in the default distro so the app that exists to
       // hold terminals does not start empty. Skipped when the distro collection failed, so a
       // failed hydration never starts a shell against a guessed distro.
-      if (settingsRef.current.openTerminalOnStart && dashboardStateRef.current !== "error") {
+      if (
+        settingsRef.current.openTerminalOnStart
+        && dashboardStateRef.current !== "error"
+        && selectedRef.current
+      ) {
         void startInTabRef.current(null, selectedRef.current).finally(() => setWorkspaceReady(true));
         return;
       }
@@ -1243,6 +1251,9 @@ export default function App() {
   };
 
   const handleShortcut = (action: ShortcutAction) => {
+    // Dialogs own the keyboard while open. This guard covers both the window listener and the
+    // TermPane callback, including the frame before an in-app dialog moves focus away from xterm.
+    if (pendingDialog || paletteOpen || settingsOpen || shortcutsOpen) return;
     if ((!workspaceReady || workspaceLoadingRef.current) && action.type !== "command-palette") return;
     switch (action.type) {
       case "new-tab":
@@ -1704,7 +1715,11 @@ export default function App() {
         >
           📌
         </button>
-        <button className="btn" disabled={contextActionBusy || workspaceLoading || logLensBusy !== null || !workspaceReady} onClick={() => void addPane()}>
+        <button
+          className="btn"
+          disabled={contextActionBusy || workspaceLoading || logLensBusy !== null || !workspaceReady || !selected}
+          onClick={() => void addPane()}
+        >
           + 터미널
         </button>
         <button className="btn" title="명령 팔레트 (Ctrl+Shift+P)" onClick={() => setPaletteOpen(true)}>
@@ -1838,7 +1853,7 @@ export default function App() {
             onDropPane={movePaneToTab}
             onNewTab={() => void openNewTab()}
             contextMenuTriggerProps={tabContextMenu.triggerProps}
-            actionsDisabled={contextActionBusy || workspaceLoading}
+            actionsDisabled={contextActionBusy || workspaceLoading || !selected}
           />
 
           {windowsBuildNumber !== undefined && (

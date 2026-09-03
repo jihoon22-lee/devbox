@@ -3,7 +3,7 @@ import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-li
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
-import { getDashboardSnapshot, startSession } from "./api";
+import { getDashboardSnapshot, startSession, takePendingOpen } from "./api";
 import { DEFAULT_SETTINGS, loadSettings } from "./lib/settings";
 import type { DashboardSnapshot, MultiplexerKind } from "./types";
 
@@ -98,6 +98,7 @@ vi.mock("./api", () => ({
 
 const snapshotMock = vi.mocked(getDashboardSnapshot);
 const startSessionMock = vi.mocked(startSession);
+const takePendingOpenMock = vi.mocked(takePendingOpen);
 const detectMock = vi.mocked((await import("./api")).detectMultiplexers);
 
 function storedSettings(patch: Record<string, unknown>) {
@@ -119,6 +120,7 @@ beforeEach(() => {
     resumed: false,
     multiplexer: multiplexer as MultiplexerKind,
   }));
+  takePendingOpenMock.mockClear();
 });
 
 afterEach(() => cleanup());
@@ -142,6 +144,21 @@ describe("startup", () => {
     snapshotMock.mockReset().mockRejectedValue(new Error("collection failed"));
     render(<App />);
     await screen.findByText(/WSL resource snapshot을 갱신하지 못했습니다/u);
+    expect(startSessionMock).not.toHaveBeenCalled();
+  });
+
+  it("설치된 배포판이 없으면 Ubuntu를 추측해 터미널을 시작하지 않는다", async () => {
+    snapshotMock.mockResolvedValueOnce({ ...snapshot(), distros: [] });
+    render(<App />);
+
+    await screen.findByText(/터미널이 없습니다/u);
+    expect(startSessionMock).not.toHaveBeenCalled();
+    expect(screen.getByRole("button", { name: "+ 터미널" })).toBeDisabled();
+    expect(screen.getByTitle("새 탭 (Ctrl+Shift+T)")).toBeDisabled();
+
+    await waitFor(() => expect(takePendingOpenMock).toHaveBeenCalled());
+    fireEvent.keyDown(window, { key: "T", ctrlKey: true, shiftKey: true });
+    await screen.findByText("사용 가능한 WSL 배포판이 없습니다.");
     expect(startSessionMock).not.toHaveBeenCalled();
   });
 });
@@ -229,6 +246,36 @@ describe("persisted settings", () => {
 
     fireEvent.click(within(dialog).getByRole("button", { name: "닫기" }));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "WSL Desktop 설정" })).not.toBeInTheDocument());
+  });
+
+  it("설정 대화상자가 열린 동안 앱 단축키가 뒤의 터미널 UI를 실행하지 않는다", async () => {
+    storedSettings({ openTerminalOnStart: false });
+    render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    const dialog = await screen.findByRole("dialog", { name: "WSL Desktop 설정" });
+    fireEvent.keyDown(dialog, { key: "T", ctrlKey: true, shiftKey: true });
+    await Promise.resolve();
+
+    expect(startSessionMock).not.toHaveBeenCalled();
+    expect(dialog).toBeInTheDocument();
+  });
+
+  it("확인창이 열린 동안 앱 단축키가 뒤의 터미널 UI를 실행하지 않는다", async () => {
+    storedSettings({ openTerminalOnStart: true });
+    render(<App />);
+    const pane = await screen.findByLabelText("Ubuntu 터미널 팬");
+    expect(startSessionMock).toHaveBeenCalledTimes(1);
+
+    fireEvent.keyDown(pane, { key: "F10", code: "F10", shiftKey: true });
+    fireEvent.click(screen.getByRole("menuitem", { name: "팬 닫기" }));
+    const dialog = await screen.findByRole("alertdialog");
+    fireEvent.keyDown(dialog, { key: "T", ctrlKey: true, shiftKey: true });
+    await Promise.resolve();
+
+    expect(startSessionMock).toHaveBeenCalledTimes(1);
+    expect(dialog).toBeInTheDocument();
   });
 
   it("스크롤백 입력은 상한을 넘겨도 clamp된 값만 저장한다", async () => {

@@ -249,6 +249,52 @@ describe("PaneCanvas — 크기 조절과 확대", () => {
     expect(canvas.style.gridTemplateColumns).toBe("333fr 333fr 333fr");
   });
 
+  it("팬을 추가했다 제거해도 이전 구성의 조절 비율이 되살아나지 않는다", () => {
+    const { rerender } = render(
+      <PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />,
+    );
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+    const canvas = document.querySelector(".panes") as HTMLElement;
+    expect(canvas.style.gridTemplateColumns).toBe("520fr 480fr");
+
+    rerender(
+      <PaneCanvas
+        {...baseProps({
+          tabs: [{ ...tab("t1", ["p1", "p2", "p3"]), layout: "cols" as const }],
+          panes: [...twoPanes, pane("p3")],
+          activeTabId: "t1",
+        })}
+      />,
+    );
+    expect(canvas.style.gridTemplateColumns).toBe("333fr 333fr 333fr");
+
+    rerender(<PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />);
+    expect(canvas.style.gridTemplateColumns).toBe("500fr 500fr");
+  });
+
+  it("레이아웃을 바꿨다 돌아와도 이전 레이아웃의 조절 비율이 되살아나지 않는다", () => {
+    const { rerender } = render(
+      <PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />,
+    );
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+    const canvas = document.querySelector(".panes") as HTMLElement;
+    expect(canvas.style.gridTemplateColumns).toBe("520fr 480fr");
+
+    rerender(
+      <PaneCanvas
+        {...baseProps({
+          tabs: [{ ...tab("t1", ["p1", "p2"]), layout: "rows" as const }],
+          panes: twoPanes,
+          activeTabId: "t1",
+        })}
+      />,
+    );
+    expect(canvas.style.gridTemplateRows).toBe("500fr 500fr");
+
+    rerender(<PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />);
+    expect(canvas.style.gridTemplateColumns).toBe("500fr 500fr");
+  });
+
   it("가로 분할 구분선은 위아래 방향으로만 움직인다", () => {
     render(
       <PaneCanvas
@@ -278,6 +324,30 @@ describe("PaneCanvas — 크기 조절과 확대", () => {
     expect(screen.queryAllByRole("separator")).toHaveLength(0);
     expect(screen.getByTestId("pane-p2")).toHaveAttribute("data-active", "true");
     expect(screen.getByTestId("pane-p1")).toHaveAttribute("data-active", "false");
+  });
+
+  it("확대를 켰다 꺼도 그 전의 팬 크기 비율은 유지한다", () => {
+    const { rerender } = render(
+      <PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />,
+    );
+    fireEvent.keyDown(screen.getByRole("separator"), { key: "ArrowRight" });
+    const canvas = document.querySelector(".panes") as HTMLElement;
+    expect(canvas.style.gridTemplateColumns).toBe("520fr 480fr");
+
+    rerender(
+      <PaneCanvas
+        {...baseProps({
+          tabs: twoPaneTabs,
+          panes: twoPanes,
+          activeTabId: "t1",
+          zoomedPaneId: "p2",
+        })}
+      />,
+    );
+    expect(canvas.style.gridTemplateColumns).toBe("1000fr");
+
+    rerender(<PaneCanvas {...baseProps({ tabs: twoPaneTabs, panes: twoPanes, activeTabId: "t1" })} />);
+    expect(canvas.style.gridTemplateColumns).toBe("520fr 480fr");
   });
 
   it("확대한 팬이 활성 탭에 없으면 확대를 무시한다", () => {
