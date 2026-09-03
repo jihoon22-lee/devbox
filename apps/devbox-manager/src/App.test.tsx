@@ -190,6 +190,16 @@ const relatedToolsMock = vi.mocked(relatedTools);
 const onPendingOpenMock = vi.mocked(onPendingOpen);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const confirmMock = vi.fn<(message?: string) => boolean>();
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 const portablePath: InstallPathInfo = {
   appId: "port-manager",
   mode: "portable",
@@ -597,6 +607,23 @@ describe("Devbox Manager app row context menu", () => {
     if (!(row instanceof HTMLTableRowElement)) throw new Error("Launcher row was not rendered");
     await waitFor(() => expect(row.getAttribute("aria-current")).toBe("true"));
     expect(screen.getByText("Launcher 요청: 선택한 앱의 설치 방법을 고르세요.")).toBeTruthy();
+  });
+
+  it("releases a late AppLink listener without consuming the cold request", async () => {
+    const registration = deferred<() => void>();
+    const stop = vi.fn();
+    onPendingOpenMock.mockReturnValueOnce(registration.promise);
+    const view = render(<App />);
+    await waitFor(() => expect(onPendingOpenMock).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    await act(async () => {
+      registration.resolve(stop);
+      await registration.promise;
+    });
+
+    expect(stop).toHaveBeenCalledTimes(1);
+    expect(takePendingOpenMock).not.toHaveBeenCalled();
   });
 
   it("shows the exact app actions with portable state gates", async () => {

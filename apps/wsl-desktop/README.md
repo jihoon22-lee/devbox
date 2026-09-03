@@ -124,6 +124,9 @@
 ## 기술
 
 - `portable-pty` 기반 ConPTY (PTY resize, 탭 모델, 드래그와 앱/터미널 단축키)
+- `terminal-output`과 `terminal-closed` frontend listener는 각각 독립적으로 수명을 소유한다.
+  React effect가 먼저 정리되면 나중에 완료된 등록을 즉시 해제하고 stale event를 적용하지 않아
+  StrictMode 재등록 뒤 출력·종료 event가 중복 처리되지 않는다.
 - 공용 `packages/context-menu` — viewport 배치·keyboard navigation·focus 복원·submenu를
   공유하고, WSL 전용 항목·exact pane/tab 대상·danger 확인은 앱이 소유한다.
 - 공식 xterm MIT addon(`addon-search`, `addon-web-links`, `addon-webgl`)과 Tauri clipboard

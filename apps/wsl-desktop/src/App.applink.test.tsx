@@ -7,6 +7,8 @@ import {
   getWindowsBuildNumber,
   listWorkspaceProfiles,
   onOpenRequest,
+  onTerminalClosed,
+  onTerminalOutput,
   openWslJournalInLogLens,
   startSession,
   takePendingOpen,
@@ -88,6 +90,8 @@ const listWorkspaceProfilesMock = vi.mocked(listWorkspaceProfiles);
 const dockerActionMock = vi.mocked(dockerAction);
 const getDashboardSnapshotMock = vi.mocked(getDashboardSnapshot);
 const openWslJournalInLogLensMock = vi.mocked(openWslJournalInLogLens);
+const onTerminalClosedMock = vi.mocked(onTerminalClosed);
+const onTerminalOutputMock = vi.mocked(onTerminalOutput);
 
 const profile: WorkspaceProfile = {
   id: "profile-1",
@@ -100,6 +104,16 @@ const profile: WorkspaceProfile = {
   activeTabId: "tab-1",
   activePaneKey: "pane-2",
 };
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 beforeEach(() => {
   localStorage.clear();
@@ -120,6 +134,8 @@ beforeEach(() => {
   dockerActionMock.mockReset().mockResolvedValue(undefined);
   getDashboardSnapshotMock.mockClear();
   openWslJournalInLogLensMock.mockReset().mockResolvedValue(undefined);
+  onTerminalClosedMock.mockReset().mockResolvedValue(() => undefined);
+  onTerminalOutputMock.mockReset().mockResolvedValue(() => undefined);
 
 });
 
@@ -148,6 +164,28 @@ describe("App app-link delivery", () => {
     await act(async () => resolveBuild?.(22631));
     await waitFor(() => expect(mocks.paneCanvasProps).not.toBeNull());
     expect((mocks.paneCanvasProps as { windowsBuildNumber: number }).windowsBuildNumber).toBe(22631);
+  });
+
+  it("releases terminal listeners that finish registering after unmount", async () => {
+    const outputRegistration = deferred<() => void>();
+    const closedRegistration = deferred<() => void>();
+    const stopOutput = vi.fn();
+    const stopClosed = vi.fn();
+    onTerminalOutputMock.mockReturnValueOnce(outputRegistration.promise);
+    onTerminalClosedMock.mockReturnValueOnce(closedRegistration.promise);
+    const view = render(<App />);
+    await waitFor(() => expect(onTerminalOutputMock).toHaveBeenCalledTimes(1));
+    await waitFor(() => expect(onTerminalClosedMock).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    await act(async () => {
+      outputRegistration.resolve(stopOutput);
+      closedRegistration.resolve(stopClosed);
+      await Promise.all([outputRegistration.promise, closedRegistration.promise]);
+    });
+
+    expect(stopOutput).toHaveBeenCalledTimes(1);
+    expect(stopClosed).toHaveBeenCalledTimes(1);
   });
 
   it("listens before the initial take and consumes the pending slot on relaunch", async () => {

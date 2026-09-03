@@ -161,6 +161,7 @@ export default function App() {
     let unlisten: (() => void) | undefined;
 
     const consumePendingOpen = () => {
+      if (disposed) return;
       void takePendingOpen()
         .then((request) => {
           if (!disposed && request) handleOpenRequestRef.current(request);
@@ -169,18 +170,25 @@ export default function App() {
           if (!disposed) setHandoffError(safeToolboxTextError(cause));
         });
     };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
 
     void onOpenRequest(() => consumePendingOpen())
       .then((stop) => {
         if (disposed) stop();
         else {
           unlisten = stop;
-          consumePendingOpen();
+          consumeColdStart();
         }
       })
       .catch((cause) => {
-        if (!disposed) setHandoffError(safeToolboxTextError(cause));
-        consumePendingOpen();
+        if (disposed) return;
+        setHandoffError(safeToolboxTextError(cause));
+        consumeColdStart();
       });
 
     return () => {

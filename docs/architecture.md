@@ -841,6 +841,14 @@ traversal 없는 기존 절대 파일인지 재검증한 뒤 `from=everything-pl
 app-link를 만든다. locator/manifest가 없거나 대상이 제거되면 submenu는 비활성화되며 임의
 fallback executable을 실행하지 않는다.
 
+Tauri frontend event 등록은 비동기로 `Promise<UnlistenFn>`을 돌려주므로 React effect가 등록
+완료보다 먼저 정리될 수 있다. 모든 consumer는 정리 여부를 먼저 기록하고, 늦게 받은 unlisten을
+즉시 실행하며, 여러 listener 중 일부만 성공해도 각 성공한 listener의 소유권을 독립적으로
+보존한다. AppLink one-shot consumer는 live listener가 준비된 뒤 cold pending slot을 정확히 한 번
+pull하고, 등록 실패 때만 현재 살아 있는 effect가 fallback pull한다. 정리된 effect는 pending slot을
+소비하거나 늦은 결과를 UI에 반영하지 않는다. 이 계약은 React StrictMode의 setup → cleanup →
+setup 재실행과 일반 unmount 모두에 동일하게 적용된다.
+
 Knowledge Base는 catalog revision 2부터 `path`와 `query`를 수신한다. cold argv와 hot
 single-instance relaunch를 모두 one-shot `PendingOpen`으로 모으고, frontend listener는 event
 payload를 직접 적용하지 않고 pending slot을 pull한다. Path는 canonical Knowledge root 내부의

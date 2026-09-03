@@ -151,6 +151,8 @@ Windows 실제 import/export/apply/cancel acceptance는 CI/manual 검증 대기 
 ## 기술
 
 - `apps/catalog.json`(앱 단일 원본) + 릴리스 `release-manifest.json`만 신뢰
+- Launcher의 install AppLink는 listener 등록 뒤 cold pending request를 한 번만 적용한다. effect가
+  먼저 정리되면 늦게 등록된 listener를 즉시 해제하고 pending request를 소비하지 않는다.
 - 브라우저 개발 모드 fallback은 immutable `v0.5.0` release manifest의 정확한 앱 버전·portable/
   installer asset metadata를 사용한다. 15개 catalog 중 Manager 자신은 관리 대상에서 제외한
   14개만 표시하며, Devbox Launcher와 Log Lens를 포함한다.

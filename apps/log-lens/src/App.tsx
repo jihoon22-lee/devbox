@@ -686,6 +686,7 @@ function App() {
     let disposed = false;
     let stop: (() => void) | undefined;
     const consumePending = () => {
+      if (disposed) return;
       void takePendingOpen()
         .then((request) => {
           if (disposed || !request || request.target.kind !== "handoff") return;
@@ -699,14 +700,25 @@ function App() {
           if (!disposed) setError("Log Lens source handoff를 확인하지 못했습니다.");
         });
     };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePending();
+    };
     void onOpenRequest(consumePending)
       .then((unlisten) => {
-        if (disposed) unlisten(); else stop = unlisten;
+        if (disposed) unlisten();
+        else {
+          stop = unlisten;
+          consumeColdStart();
+        }
       })
       .catch(() => {
-        if (!disposed) setError("Log Lens source handoff listener를 시작하지 못했습니다.");
+        if (disposed) return;
+        setError("Log Lens source handoff listener를 시작하지 못했습니다.");
+        consumeColdStart();
       });
-    consumePending();
     return () => {
       disposed = true;
       stop?.();

@@ -310,11 +310,18 @@ export default function App() {
 
   // 외부 편집 watcher가 docs-changed를 보내면 트리·태그를 새로고침한다
   useEffect(() => {
+    let disposed = false;
     let unlisten: (() => void) | null = null;
-    void onDocsChanged(() => void loadMeta()).then((u) => {
-      unlisten = u;
+    void onDocsChanged(() => {
+      if (!disposed) void loadMeta();
+    }).then((stop) => {
+      if (disposed) stop();
+      else unlisten = stop;
     }).catch(() => undefined);
-    return () => unlisten?.();
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, [loadMeta]);
 
   useEffect(() => {

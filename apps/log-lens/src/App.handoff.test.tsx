@@ -87,6 +87,16 @@ function request(id: string) {
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 async function openPreview(id = firstId) {
   takePendingOpenMock.mockResolvedValueOnce(request(id));
   await act(async () => mocks.openHandler?.());
@@ -130,6 +140,24 @@ afterEach(() => {
 });
 
 describe("Log Lens handoff lifecycle", () => {
+  it("registers the wakeup listener before pulling the cold one-shot request", async () => {
+    const registration = deferred<() => void>();
+    onOpenRequestMock.mockReturnValueOnce(registration.promise);
+    takePendingOpenMock.mockResolvedValueOnce(request(firstId));
+    render(<App />);
+
+    await waitFor(() => expect(onOpenRequestMock).toHaveBeenCalledTimes(1));
+    expect(takePendingOpenMock).not.toHaveBeenCalled();
+
+    await act(async () => {
+      registration.resolve(() => undefined);
+      await registration.promise;
+    });
+    await screen.findByRole("dialog", { name: "Log Lens source 미리보기" });
+    expect(takePendingOpenMock).toHaveBeenCalledTimes(1);
+    expect(previewLogSourceMock).toHaveBeenCalledWith("log-source/v1", firstId);
+  });
+
   it("clears a stale modal on terminal cancel and drains the newest queued id", async () => {
     render(<App />);
     await waitFor(() => expect(mocks.openHandler).not.toBeNull());

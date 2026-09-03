@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
@@ -56,12 +56,16 @@ const appLinkHandlerRef: {
 } = { current: null };
 const appLinkOrder: string[] = [];
 const rejectAppLinkListenRef = { current: false };
+const rejectLspStatusListenRef = { current: false };
 
 vi.mock("@tauri-apps/api/event", () => ({
   listen: vi.fn(async (event: string, handler: unknown) => {
     if (event === "file-changed") fileChangedHandlerRef.current = handler as typeof fileChangedHandlerRef.current;
     if (event === "lsp/diagnostics") lspDiagnosticsHandlerRef.current = handler as typeof lspDiagnosticsHandlerRef.current;
-    if (event === "lsp/status") lspStatusHandlerRef.current = handler as typeof lspStatusHandlerRef.current;
+    if (event === "lsp/status") {
+      if (rejectLspStatusListenRef.current) throw new Error("status listener unavailable");
+      lspStatusHandlerRef.current = handler as typeof lspStatusHandlerRef.current;
+    }
     if (event === "devbox://open") {
       if (rejectAppLinkListenRef.current) throw new Error("listener unavailable");
       appLinkOrder.push("listen");
@@ -400,6 +404,7 @@ beforeEach(() => {
   appLinkHandlerRef.current = null;
   appLinkOrder.length = 0;
   rejectAppLinkListenRef.current = false;
+  rejectLspStatusListenRef.current = false;
 });
 
 afterEach(() => cleanup());
@@ -436,6 +441,20 @@ describe("App editor shell operations", () => {
     const { container, getByRole } = render(<App />);
     await waitFor(() => expect((getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false));
     await assertNoA11yViolations(container);
+  });
+
+  it("releases a successful LSP listener when its sibling registration fails", async () => {
+    rejectLspStatusListenRef.current = true;
+    const view = render(<App />);
+    await waitFor(() => expect(lspDiagnosticsHandlerRef.current).not.toBeNull());
+    expect(lspStatusHandlerRef.current).toBeNull();
+
+    await act(async () => {
+      view.unmount();
+      await Promise.resolve();
+    });
+
+    expect(lspDiagnosticsHandlerRef.current).toBeNull();
   });
 
   it("exposes separate editor and preview regions while keeping preview state explicit", async () => {

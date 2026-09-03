@@ -632,17 +632,31 @@ export default function App() {
   }, []);
 
   useEffect(() => {
-    const unsubs: (() => void)[] = [];
+    let disposed = false;
+    let stopOutput: (() => void) | undefined;
+    let stopClosed: (() => void) | undefined;
     void onTerminalOutput(({ session_id, data }) => {
+      if (disposed) return;
       writes.current.get(session_id)?.(data);
-    }).then((u) => unsubs.push(u));
+    }).then((stop) => {
+      if (disposed) stop();
+      else stopOutput = stop;
+    }).catch(() => undefined);
     void onTerminalClosed(({ session_id }) => {
+      if (disposed) return;
       // 백엔드가 세션 리소스를 정리한 뒤 보내는 이벤트다. 여기서는 UI 상태만
       // 제거하고 close_session은 호출하지 않는다.
       dropPane(session_id);
       writes.current.delete(session_id);
-    }).then((u) => unsubs.push(u));
-    return () => unsubs.forEach((u) => u());
+    }).then((stop) => {
+      if (disposed) stop();
+      else stopClosed = stop;
+    }).catch(() => undefined);
+    return () => {
+      disposed = true;
+      stopOutput?.();
+      stopClosed?.();
+    };
   }, [dropPane]);
 
   // Inbound cross-app open requests (§3). Redefined every render so it always

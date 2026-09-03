@@ -244,6 +244,10 @@ masked `toolbox-text/v1` handoff로 Developer Toolbox에 도착한다. Toolbox�
 명시적으로 preview하고 apply할 때만 소비하며, stale selection/source generation이나 clipboard
 fallback을 허용하지 않는다.
 
+Cold pending request는 live AppLink listener 등록이 끝난 뒤 한 번만 가져온다. listener 등록이
+실패하면 현재 살아 있는 renderer effect만 fallback으로 가져오며, StrictMode cleanup이 끝난 effect는
+one-time handoff를 소비하거나 오류를 화면에 반영하지 않는다.
+
 Toolbox output을 Knowledge로 보내는 동작은 별도의 `knowledge-draft/v2` one-time handoff다.
 Knowledge는 이를 preview한 뒤 사용자가 Save를 확정할 때만 저장한다. Life Log의 기존
 `knowledge-draft/v1` handoff는 별도의 호환 경로로 유지한다.

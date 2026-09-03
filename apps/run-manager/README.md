@@ -259,6 +259,9 @@ blocked이며 이 PR2가 범위를 넓히지 않는다.
 - 공용 크레이트 `crates/wsl`·`crates/secrets`·`crates/integration`, 프로세스/서비스 실행은 자체 구현(`src-tauri/src/platform/`)
 - 트레이 상주 + 백그라운드 tokio 루프 + SQLite
 - `packages/diff-view`·`packages/context-menu`
+- Launcher task와 Workbench handoff의 cold pending request는 AppLink listener가 준비된 뒤 한 번만
+  가져온다. listener 등록 실패 fallback과 늦은 take 결과는 현재 살아 있는 renderer effect에만
+  귀속해 StrictMode 재등록 중 이전 effect가 one-shot 요청을 빼앗지 않는다.
 
 ## 로그 검색 계약 (#311)
 
