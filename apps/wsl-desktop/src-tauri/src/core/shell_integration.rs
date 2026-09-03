@@ -260,7 +260,8 @@ mod tests {
     use super::*;
 
     #[cfg(target_os = "linux")]
-    fn run_shell(shell: &str, script: &str, syntax_only: bool) -> std::process::Output {
+    fn run_shell(shell: &str, script: &str, syntax_only: bool) -> Option<std::process::Output> {
+        use std::io::ErrorKind;
         use std::io::Write;
         use std::process::{Command, Stdio};
 
@@ -268,19 +269,23 @@ mod tests {
         if syntax_only {
             command.arg("-n");
         }
-        let mut child = command
+        let mut child = match command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .spawn()
-            .unwrap();
+        {
+            Ok(child) => child,
+            Err(error) if error.kind() == ErrorKind::NotFound => return None,
+            Err(error) => panic!("failed to start {shell}: {error}"),
+        };
         child
             .stdin
             .take()
             .unwrap()
             .write_all(script.as_bytes())
             .unwrap();
-        child.wait_with_output().unwrap()
+        Some(child.wait_with_output().unwrap())
     }
 
     #[test]
@@ -400,7 +405,10 @@ mod tests {
     #[cfg(target_os = "linux")]
     fn canonical_blocks_are_valid_shell_syntax() {
         for (shell, block) in [("bash", BASH_BLOCK), ("zsh", ZSH_BLOCK)] {
-            let output = run_shell(shell, block, true);
+            let Some(output) = run_shell(shell, block, true) else {
+                assert_eq!(shell, "zsh", "bash is required for the Linux test suite");
+                continue;
+            };
             assert!(
                 output.status.success(),
                 "{shell}: {}",
@@ -414,7 +422,10 @@ mod tests {
     fn canonical_encoders_percent_encode_special_and_utf8_bytes() {
         for (shell, block) in [("bash", BASH_BLOCK), ("zsh", ZSH_BLOCK)] {
             let script = format!("{block}\n__devbox_wsld_encode_path '/tmp/a b#한글'\n");
-            let output = run_shell(shell, &script, false);
+            let Some(output) = run_shell(shell, &script, false) else {
+                assert_eq!(shell, "zsh", "bash is required for the Linux test suite");
+                continue;
+            };
             assert!(
                 output.status.success(),
                 "{shell}: {}",
