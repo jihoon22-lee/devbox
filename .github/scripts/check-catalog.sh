@@ -222,6 +222,8 @@ python3 .github/scripts/test-windows-packaged-smoke-config.py
 python3 .github/scripts/test-verify-downloaded-release.py
 python3 .github/scripts/test-windows-installer-acceptance-config.py
 python3 .github/scripts/test-build-candidate-metadata.py
+python3 .github/scripts/test-plan-windows-package-shards.py
+python3 .github/scripts/test-flatten-windows-packages.py
 python3 .github/scripts/test-windows-package-candidate-config.py
 python3 .github/scripts/test-resolve-release-candidate.py
 python3 .github/scripts/test-release-candidate-promotion-config.py
@@ -231,7 +233,6 @@ if command -v pwsh >/dev/null 2>&1; then
   pwsh -NoLogo -NoProfile -NonInteractive -Command '
     $scripts = @(
       ".github/scripts/build-windows-packages.ps1",
-      ".github/scripts/flatten-windows-packages.ps1",
       ".github/scripts/windows-installer-acceptance.ps1"
     )
     foreach ($script in $scripts) {

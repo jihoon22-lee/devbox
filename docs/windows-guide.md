@@ -31,8 +31,9 @@ source에서 빌드하고 실행**하는 방법을 설명한다.
 > 빌드를 새로 하고 싶을 때(GitHub Actions가 대신 빌드):
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
 > 2. 현재 `main`의 40자리 commit SHA를 확인하고 GitHub → Actions → **Windows package
->    candidate**에서 예정 tag와 SHA를 입력한다. 15개 앱 build와 두 acceptance job이 모두 성공할
->    때까지 기다린다. 이 private 후보는 14일 동안 보존된다.
+>    candidate**에서 예정 tag와 SHA를 입력한다. 15개 앱은 3개 Windows shard(각 5개)에서 병렬로
+>    build되고 하나의 후보로 조립된다. 조립과 두 acceptance job이 모두 성공할 때까지 기다린다.
+>    중간 shard는 1일, 최종 private 후보는 14일 동안 보존된다.
 > 3. 같은 commit에 annotated tag를 만들고 push한다
 >    (예: `git tag -a v0.6.1 <SHA> -m "devbox v0.6.1"` 후 `git push origin refs/tags/v0.6.1`).
 >    tag push가 실패한 release를 재시도할 때는 GitHub → Actions → **Release** → **Run workflow**에서

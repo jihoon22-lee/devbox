@@ -2,7 +2,9 @@
 param(
   [Parameter(Mandatory = $true)]
   [ValidateNotNullOrEmpty()]
-  [string]$StagingRoot
+  [string]$StagingRoot,
+
+  [string[]]$AppIds = @()
 )
 
 Set-StrictMode -Version Latest
@@ -35,12 +37,13 @@ if (Test-Path -LiteralPath $stagingPath) {
 Push-Location $repositoryRoot
 try {
   $catalog = Get-Content -LiteralPath 'apps/catalog.json' -Raw -Encoding UTF8 | ConvertFrom-Json
-  $apps = @($catalog.apps | Where-Object { $_.release -eq $true })
-  if ($apps.Count -ne 15) {
-    throw "release catalog must contain exactly 15 apps (found $($apps.Count))"
+  $releaseApps = @($catalog.apps | Where-Object { $_.release -eq $true })
+  if ($releaseApps.Count -ne 15) {
+    throw "release catalog must contain exactly 15 apps (found $($releaseApps.Count))"
   }
 
-  foreach ($entry in $apps) {
+  $releaseById = @{}
+  foreach ($entry in $releaseApps) {
     $appId = [string]$entry.id
     if ($appId -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
       throw 'release catalog contains an unsafe app id'
@@ -53,7 +56,41 @@ try {
     if ([string]$entry.appDir -cne $expectedAppDir) {
       throw "release catalog appDir mismatch: $appId"
     }
+    if ($releaseById.ContainsKey($appId)) {
+      throw "release catalog contains a duplicate app id: $appId"
+    }
+    $releaseById[$appId] = $entry
+  }
 
+  if ($AppIds.Count -eq 0) {
+    $apps = $releaseApps
+    $includeNotices = $true
+  } else {
+    if ($AppIds.Count -gt $releaseApps.Count) {
+      throw 'requested app count exceeds the release catalog'
+    }
+    $requested = @{}
+    $apps = @()
+    foreach ($appId in $AppIds) {
+      if ($appId -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
+        throw 'requested app list contains an unsafe app id'
+      }
+      if ($requested.ContainsKey($appId)) {
+        throw "requested app list contains a duplicate: $appId"
+      }
+      if (-not $releaseById.ContainsKey($appId)) {
+        throw "requested app is not in the release catalog: $appId"
+      }
+      $requested[$appId] = $true
+      $apps += $releaseById[$appId]
+    }
+    $includeNotices = $false
+  }
+
+  foreach ($entry in $apps) {
+    $appId = [string]$entry.id
+    $cargoPackage = [string]$entry.cargoPackage
+    $expectedAppDir = "apps/$appId"
     Write-Host "Building $appId" -ForegroundColor Cyan
     Push-Location $expectedAppDir
     try {
@@ -92,9 +129,12 @@ try {
     Move-Item -LiteralPath $installer -Destination (Join-Path $installerOutput "${appId}_${version}_x64-setup.exe")
   }
 
-  Copy-Item -LiteralPath 'THIRD_PARTY_NOTICES.md' -Destination (Join-Path $stagingPath 'THIRD_PARTY_NOTICES.md')
+  if ($includeNotices) {
+    Copy-Item -LiteralPath 'THIRD_PARTY_NOTICES.md' -Destination (Join-Path $stagingPath 'THIRD_PARTY_NOTICES.md')
+  }
 } finally {
   Pop-Location
 }
 
-Write-Host "Staged 15 Windows app pairs and notices in $stagingPath" -ForegroundColor Green
+$noticeDescription = if ($includeNotices) { ' with notices' } else { '' }
+Write-Host "Staged $($apps.Count) Windows app pairs$noticeDescription in $stagingPath" -ForegroundColor Green

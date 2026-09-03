@@ -181,10 +181,12 @@ src/
 ### 릴리스 트리거와 prerelease 보호
 
 - 안정판을 만들기 전에 exact current `main` commit과 예정 `vX.Y.Z`를 입력해
-  `Windows package candidate`를 실행하고 packaged runtime·installer acceptance까지 통과시킨다.
-  이후 같은 commit에 annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·
-  workflow run·32개 asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는
-  성공 후보가 없거나 만료된 경우 공개 전에 fail-closed한다.
+  `Windows package candidate`를 실행한다. 카탈로그 순서로 균등 분할한 3개 Windows shard가
+  각각 5개 앱만 빌드하고, Linux assembly가 누락·중복 없이 15개 앱·32개 파일인지 다시 검증한다.
+  조립된 단일 후보로 packaged runtime·installer acceptance까지 통과시킨다. 이후 같은 commit에
+  annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·workflow run·32개
+  asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는 성공 후보가 없거나
+  만료된 경우 공개 전에 fail-closed한다.
 - `.github/workflows/release.yml`의 안정판 경로는 정확한 `vX.Y.Z` annotated tag push 또는
   명시적인 `workflow_dispatch`로 유지한다. `workflow_dispatch`의 `version`은 기본값 없이
   매번 전체 tag를 입력한다.

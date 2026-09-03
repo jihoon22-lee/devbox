@@ -14,11 +14,13 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 - v0.5.0과 v0.5.1의 tag·workflow·acceptance는 historical evidence로 보존한다. #176은 닫힌
   v0.5.1 checklist이며, RC1~RC3 tag/release는 삭제된 historical evidence다. 미래 RC는 사용자가
   명시적으로 요청하기 전에는 만들지 않는다.
-- `Windows package candidate`는 앞으로도 exact current main의 portable·NSIS·notices·manifest를
-  private Actions artifact로만 만들고 disposable installer lifecycle을 실행하는 pre-publication
-  gate다. stable release는 같은 tag·commit의 성공한 비만료 candidate를 repository·workflow-run·
-  asset digest까지 독립 검증한 뒤 승격하므로 동일 15개 앱을 다시 컴파일하지 않는다. candidate
-  자체는 여전히 catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
+- `Windows package candidate`는 exact current main의 앱을 카탈로그 순서 기반 3개 bounded Windows
+  shard(각 5개)로 나눠 portable·NSIS를 병렬 생성한다. Linux assembly가 notices·manifest를 더하고
+  누락·중복·예상 밖 topology를 거부한 뒤 private Actions artifact 하나로 만든다. 이 artifact로
+  packaged runtime과 disposable installer lifecycle을 실행하는 pre-publication gate다. stable
+  release는 같은 tag·commit의 성공한 비만료 candidate를 repository·workflow-run·asset digest까지
+  독립 검증한 뒤 승격하므로 동일 15개 앱을 다시 컴파일하지 않는다. candidate 자체는 여전히
+  catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
 
 ## 핵심 원칙
 

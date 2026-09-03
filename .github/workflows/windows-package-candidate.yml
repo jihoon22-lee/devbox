@@ -20,12 +20,13 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  build:
-    name: Build unpublished Windows packages
-    runs-on: windows-2025
-    timeout-minutes: 180
+  plan:
+    name: Validate source and plan package shards
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
     outputs:
       artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      matrix: ${{ steps.shards.outputs.matrix }}
     steps:
       - uses: actions/checkout@v7
         with:
@@ -69,6 +70,31 @@ jobs:
           fi
           echo "artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
 
+      - id: shards
+        name: Plan three bounded app shards
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/plan-windows-package-shards.py \
+            --catalog apps/catalog.json \
+            --shards 3 \
+            --github-output "$GITHUB_OUTPUT"
+
+  build:
+    name: Build Windows packages (shard ${{ matrix.shard }})
+    needs: plan
+    runs-on: windows-2025
+    timeout-minutes: 90
+    strategy:
+      fail-fast: true
+      max-parallel: 3
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -92,22 +118,84 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-windows-package
+          save-if: ${{ matrix.shard == '01' }}
 
       - name: Install frontend dependencies
         run: pnpm install --frozen-lockfile
 
-      - name: Build and stage all 15 app packages
+      - name: Build and stage assigned app packages
         shell: pwsh
-        run: '& ./.github/scripts/build-windows-packages.ps1 -StagingRoot ''candidate/staging'''
+        env:
+          SHARD_APPS: ${{ matrix.apps }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Set-StrictMode -Version Latest
+          $apps = @($env:SHARD_APPS -split ',')
+          if ($apps.Count -ne ${{ matrix.app_count }}) {
+            throw 'package shard input count mismatch'
+          }
+          & ./.github/scripts/build-windows-packages.ps1 `
+            -StagingRoot 'candidate/staging' `
+            -AppIds $apps
+
+      - name: Upload staged package shard
+        uses: actions/upload-artifact@v7
+        with:
+          name: windows-package-candidate-shard-${{ github.run_id }}-${{ matrix.shard }}
+          path: candidate/staging
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
+  assemble:
+    name: Assemble and verify unpublished candidate
+    needs: [plan, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    outputs:
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+
+      - id: identity
+        name: Preserve candidate artifact identity
+        shell: bash
+        env:
+          ARTIFACT_NAME: ${{ needs.plan.outputs.artifact_name }}
+        run: echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Download and merge all package shards
+        uses: actions/download-artifact@v8
+        with:
+          pattern: windows-package-candidate-shard-${{ github.run_id }}-*
+          path: candidate/staging
+          merge-multiple: true
 
       - name: Build manifest and flat candidate set
-        shell: pwsh
+        shell: bash
         env:
           CANDIDATE_TAG: ${{ inputs.candidate_tag }}
         run: |
-          python3 .github/scripts/build-manifest.py candidate/staging $env:CANDIDATE_TAG apps/catalog.json candidate/staging/release-manifest.json
-          if ($LASTEXITCODE -ne 0) { throw 'candidate manifest generation failed' }
-          & ./.github/scripts/flatten-windows-packages.ps1 -StagingRoot 'candidate/staging' -OutputRoot 'candidate/assets'
+          set -euo pipefail
+          for reserved in THIRD_PARTY_NOTICES.md release-manifest.json; do
+            if [[ -e "candidate/staging/$reserved" || -L "candidate/staging/$reserved" ]]; then
+              echo "package shard supplied reserved assembly asset: $reserved"
+              exit 1
+            fi
+          done
+          cp THIRD_PARTY_NOTICES.md candidate/staging/THIRD_PARTY_NOTICES.md
+          python3 .github/scripts/build-manifest.py \
+            candidate/staging \
+            "$CANDIDATE_TAG" \
+            apps/catalog.json \
+            candidate/staging/release-manifest.json
+          python3 .github/scripts/flatten-windows-packages.py \
+            --staging candidate/staging \
+            --catalog apps/catalog.json \
+            --output candidate/assets
 
       - name: Generate and independently verify candidate metadata
         shell: bash
@@ -138,12 +226,13 @@ jobs:
         id: upload
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.identity.outputs.artifact_name }}
+          name: ${{ needs.plan.outputs.artifact_name }}
           path: |
             candidate/assets
             candidate/evidence
           if-no-files-found: error
           retention-days: 14
+          compression-level: 0
 
       - name: Record candidate artifact digest
         shell: bash
@@ -152,14 +241,15 @@ jobs:
             echo "### Unpublished Windows package candidate"
             echo "- commit: \`${{ inputs.candidate_commit }}\`"
             echo "- intended tag: \`${{ inputs.candidate_tag }}\`"
-            echo "- artifact: \`${{ steps.identity.outputs.artifact_name }}\`"
+            echo "- artifact: \`${{ needs.plan.outputs.artifact_name }}\`"
             echo "- artifact digest: \`${{ steps.upload.outputs.artifact-digest }}\`"
+            echo "- package shards: \`3 x 5 apps\`"
             echo "- contract: 15 apps / 32 files / 31 manifest-declared / mismatch 0"
           } >> "$GITHUB_STEP_SUMMARY"
 
   packaged-smoke:
     name: Packaged app runtime acceptance
-    needs: build
+    needs: assemble
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -197,7 +287,7 @@ jobs:
       - name: Download exact unpublished candidate
         uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.build.outputs.artifact_name }}
+          name: ${{ needs.assemble.outputs.artifact_name }}
           path: ${{ steps.paths.outputs.download }}
 
       - name: Run all packaged app contracts
@@ -258,7 +348,7 @@ jobs:
 
   installer-acceptance:
     name: Installer upgrade and rollback acceptance
-    needs: build
+    needs: assemble
     runs-on: windows-2025
     timeout-minutes: 120
     steps:
@@ -293,7 +383,7 @@ jobs:
       - name: Download exact unpublished candidate
         uses: actions/download-artifact@v8
         with:
-          name: ${{ needs.build.outputs.artifact_name }}
+          name: ${{ needs.assemble.outputs.artifact_name }}
           path: ${{ steps.paths.outputs.candidate }}
 
       - name: Download and describe the pinned stable baseline
