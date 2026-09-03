@@ -528,6 +528,7 @@ describe("TermPane — clipboard, OSC, search, link와 font UX (#262)", () => {
     expect(handle.getCapabilities()).toEqual({ hasSelection: true, hasCwd: true });
     await handle.copyCwd();
     expect(navigator.clipboard.writeText).toHaveBeenLastCalledWith("/mnt/c/My Repo");
+    expect(screen.getByText("cwd 추적")).toBeInTheDocument();
     expect(await screen.findByRole("search", { name: "터미널 출력 검색" })).toBeInTheDocument();
 
     fireEvent.change(screen.getByRole("textbox", { name: "검색어" }), { target: { value: "error" } });

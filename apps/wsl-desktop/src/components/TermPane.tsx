@@ -171,6 +171,7 @@ export default function TermPane({
     resultCount: 0,
   });
   const [bellAt, setBellAt] = useState<number | null>(null);
+  const [cwdTracked, setCwdTracked] = useState(false);
   const [searchOptions, setSearchOptions] = useState({
     caseSensitive: false,
     wholeWord: false,
@@ -223,6 +224,10 @@ export default function TermPane({
   const bellTimerRef = useRef<number | undefined>(undefined);
   const confirmOpenRef = useRef(false);
   const queuedInputRef = useRef<string[]>([]);
+
+  useEffect(() => {
+    setCwdTracked(false);
+  }, [sessionId]);
 
   useEffect(() => {
     broadcastPendingCommandRef.current = "";
@@ -586,6 +591,7 @@ export default function TermPane({
       const nextCwd = parseOsc7Cwd(payload);
       if (nextCwd) {
         cwdRef.current = nextCwd;
+        setCwdTracked(true);
         onMetadataChangeRef.current(sessionId, { cwd: nextCwd });
       }
       return true;
@@ -762,6 +768,15 @@ export default function TermPane({
             {multiplexer}
           </span>
         )}
+        <span
+          className={`pane-badge ${cwdTracked ? "cwd-tracked" : "cwd-untracked"}`}
+          role="status"
+          title={cwdTracked
+            ? "셸이 현재 경로를 보고하고 있어 다음 실행에서 이 팬의 cwd를 복원할 수 있습니다"
+            : "셸 연동 신호를 아직 받지 못해 시작 경로만 저장됩니다"}
+        >
+          {cwdTracked ? "cwd 추적" : "cwd 미확인"}
+        </span>
         {bellAt !== null && (
           <span className="pane-badge bell" role="status" title="터미널이 벨 문자를 보냈습니다">
             벨

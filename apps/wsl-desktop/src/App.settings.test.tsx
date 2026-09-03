@@ -5,7 +5,7 @@ import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
 import { getDashboardSnapshot, startSession, takePendingOpen } from "./api";
 import { DEFAULT_SETTINGS, loadSettings } from "./lib/settings";
-import type { DashboardSnapshot, MultiplexerKind } from "./types";
+import type { DashboardSnapshot, MultiplexerKind, ShellIntegrationReport } from "./types";
 
 const mocks = vi.hoisted(() => ({
   nextSession: 0,
@@ -83,6 +83,8 @@ vi.mock("./api", () => ({
   dockerAction: vi.fn().mockResolvedValue(undefined),
   startSession: vi.fn(),
   detectMultiplexers: vi.fn(),
+  inspectShellIntegration: vi.fn(),
+  updateShellIntegration: vi.fn(),
   listWorkspaceProfiles: vi.fn().mockResolvedValue([]),
   saveWorkspaceProfile: vi.fn(),
   deleteWorkspaceProfile: vi.fn(),
@@ -100,6 +102,32 @@ const snapshotMock = vi.mocked(getDashboardSnapshot);
 const startSessionMock = vi.mocked(startSession);
 const takePendingOpenMock = vi.mocked(takePendingOpen);
 const detectMock = vi.mocked((await import("./api")).detectMultiplexers);
+const inspectShellIntegrationMock = vi.mocked((await import("./api")).inspectShellIntegration);
+const updateShellIntegrationMock = vi.mocked((await import("./api")).updateShellIntegration);
+
+function shellIntegrationReport(): ShellIntegrationReport {
+  return {
+    distro: "Ubuntu",
+    shells: [
+      {
+        shell: "bash",
+        rcFile: "~/.bashrc",
+        status: "missing",
+        revision: "bash-revision",
+        blockPreview: "# bash integration\n",
+        defaultShell: true,
+      },
+      {
+        shell: "zsh",
+        rcFile: "~/.zshrc",
+        status: "missing",
+        revision: "zsh-revision",
+        blockPreview: "# zsh integration\n",
+        defaultShell: false,
+      },
+    ],
+  };
+}
 
 function storedSettings(patch: Record<string, unknown>) {
   localStorage.setItem("wsl-desktop:settings", JSON.stringify({ version: 1, ...patch }));
@@ -115,6 +143,8 @@ beforeEach(() => {
     { kind: "tmux", status: "missing", version: null, source: null },
     { kind: "zellij", status: "missing", version: null, source: null },
   ]);
+  inspectShellIntegrationMock.mockReset().mockImplementation(async () => shellIntegrationReport());
+  updateShellIntegrationMock.mockReset();
   startSessionMock.mockReset().mockImplementation(async (_distro, _cwd, _key, multiplexer) => ({
     sessionId: `session-${++mocks.nextSession}`,
     resumed: false,

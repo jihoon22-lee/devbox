@@ -5,6 +5,7 @@ mod integration;
 mod log_lens;
 mod runtime_snapshot;
 
+use commands::shell_integration::ShellIntegrationState;
 use commands::terminal::SessionState;
 use std::sync::Arc;
 use tauri::{Emitter, Manager};
@@ -60,6 +61,8 @@ pub fn run() {
             commands::dashboard::docker_ps,
             commands::dashboard::docker_action,
             commands::multiplexer::detect_multiplexers,
+            commands::shell_integration::inspect_shell_integration,
+            commands::shell_integration::update_shell_integration,
             commands::workspace::list_workspace_profiles,
             commands::workspace::save_workspace_profile,
             commands::workspace::delete_workspace_profile,
@@ -84,6 +87,7 @@ pub fn run() {
             }
             let state = Arc::new(SessionState::new());
             app.manage(Arc::clone(&state));
+            app.manage(ShellIntegrationState::default());
             runtime_snapshot::spawn_snapshot_writer(state);
             Ok(())
         })
