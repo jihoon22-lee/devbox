@@ -25,6 +25,8 @@ interface SettingsPanelProps {
   onChange: (patch: Partial<TerminalSettings>) => void;
   onClose: () => void;
   muxAvailability: readonly MultiplexerAvailability[];
+  muxScanning: boolean;
+  onRefreshMux: () => void;
   copyOnSelect: boolean;
   onCopyOnSelectChange: (enabled: boolean) => void;
   fontSize: number;
@@ -43,6 +45,8 @@ export default function SettingsPanel({
   onChange,
   onClose,
   muxAvailability,
+  muxScanning,
+  onRefreshMux,
   copyOnSelect,
   onCopyOnSelectChange,
   fontSize,
@@ -55,6 +59,9 @@ export default function SettingsPanel({
   }
 
   if (!open) return null;
+
+  const preferredMux = muxAvailability.find((item) => item.kind === settings.multiplexer);
+  const preferredMuxUnavailable = settings.multiplexer !== "native" && preferredMux?.status !== "available";
 
   const close = () => {
     const opener = openerRef.current;
@@ -128,6 +135,26 @@ export default function SettingsPanel({
               ))}
             </select>
           </label>
+          {preferredMuxUnavailable && (
+            <div className="banner" role="status">
+              선호 방식은 {settings.multiplexer}로 유지됩니다. 지금 사용할 수 없으면 새 터미널만 native로 열립니다.
+            </div>
+          )}
+          <div className="settings-row">
+            <span>
+              설치 상태 다시 확인
+              <small>선택한 배포판의 PATH와 사용자 설치 경로를 다시 검색합니다.</small>
+            </span>
+            <button
+              type="button"
+              className="btn compact"
+              disabled={muxScanning}
+              aria-busy={muxScanning}
+              onClick={onRefreshMux}
+            >
+              {muxScanning ? "검색 중…" : "다시 검색"}
+            </button>
+          </div>
           <label className="settings-row">
             <input
               type="checkbox"

@@ -203,15 +203,67 @@ describe("persisted settings", () => {
     await waitFor(() => expect(restored.value).toBe("tmux"));
   });
 
-  it("저장된 유지 방식을 현재 배포판이 제공하지 않으면 조용히 native로 되돌린다", async () => {
+  it("저장된 유지 방식을 현재 배포판이 제공하지 않아도 선호 설정을 보존한다", async () => {
     storedSettings({ openTerminalOnStart: false, multiplexer: "zellij" });
     render(<App />);
     await screen.findAllByRole("option", { name: /Ubuntu/u });
-    await waitFor(() => expect(loadSettings().multiplexer).toBe("native"));
+    await waitFor(() => expect(detectMock).toHaveBeenCalledWith("Ubuntu"));
+    expect(loadSettings().multiplexer).toBe("zellij");
 
     fireEvent.click(screen.getByRole("button", { name: "설정" }));
     const selector = await screen.findByRole("combobox", { name: "세션 유지 방식" }) as HTMLSelectElement;
-    expect(selector.value).toBe("native");
+    expect(selector.value).toBe("zellij");
+    expect(within(selector).getByRole("option", { name: /zellij/u })).toBeDisabled();
+    expect(screen.getByText(/선호 방식은 zellij로 유지됩니다/u)).toBeInTheDocument();
+  });
+
+  it("설정에서 멀티플렉서를 다시 검색해 새 설치를 바로 반영한다", async () => {
+    detectMock
+      .mockResolvedValueOnce([
+        { kind: "native", status: "available", version: null, source: null },
+        { kind: "tmux", status: "missing", version: null, source: null },
+        { kind: "zellij", status: "missing", version: null, source: null },
+      ])
+      .mockResolvedValueOnce([
+        { kind: "native", status: "available", version: null, source: null },
+        { kind: "tmux", status: "missing", version: null, source: null },
+        { kind: "zellij", status: "available", version: "0.42.2", source: "cargoBin" },
+      ]);
+    storedSettings({ openTerminalOnStart: false, multiplexer: "zellij" });
+    render(<App />);
+    await waitFor(() => expect(detectMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    const selector = await screen.findByRole("combobox", { name: "세션 유지 방식" });
+    await waitFor(() => expect(within(selector).getByRole("option", { name: /zellij/u })).toBeDisabled());
+
+    fireEvent.click(screen.getByRole("button", { name: "다시 검색" }));
+    await waitFor(() => expect(detectMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(within(selector).getByRole("option", { name: /zellij/u })).toBeEnabled());
+    expect(loadSettings().multiplexer).toBe("zellij");
+  });
+
+  it("멀티플렉서 조회 자체가 실패해도 선호 설정을 보존하고 재시도를 제공한다", async () => {
+    detectMock.mockRejectedValueOnce(new Error("probe failed"));
+    storedSettings({ openTerminalOnStart: false, multiplexer: "tmux" });
+    render(<App />);
+    await waitFor(() => expect(detectMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    const selector = await screen.findByRole("combobox", { name: "세션 유지 방식" });
+    await waitFor(() => expect(within(selector).getByRole("option", { name: /tmux \(확인 오류\)/u })).toBeDisabled());
+    expect(loadSettings().multiplexer).toBe("tmux");
+    expect(screen.getByRole("button", { name: "다시 검색" })).toBeEnabled();
+  });
+
+  it("WSL 새로고침이 멀티플렉서 설치 상태도 함께 갱신한다", async () => {
+    storedSettings({ openTerminalOnStart: false });
+    render(<App />);
+    const refresh = await screen.findByRole("button", { name: "새로고침" });
+    await waitFor(() => expect(detectMock).toHaveBeenCalledTimes(1));
+
+    fireEvent.click(refresh);
+    await waitFor(() => expect(detectMock).toHaveBeenCalledTimes(2));
   });
 
   it("팬 하나 닫기 확인은 설정으로 끌 수 있고 탭 닫기 확인은 남는다", async () => {
