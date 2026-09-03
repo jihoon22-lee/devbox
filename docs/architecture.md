@@ -4,16 +4,16 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 
 ## Release status boundary
 
-- 공개 Latest stable은 [v0.6.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)이다.
-  milestone #2의 W01~W11, 15개 앱과 32개 public asset(31개 manifest-declared, mismatch 0)을
-  peeled source `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate workflow `33384213398`,
-  release workflow `33390009009`에서 검증했다.
-- v0.7.0 release preparation은 WSL Desktop의 in-app dialog·설정·탐색·pane/WebGL, marker-owned
+- 공개 Latest stable은 [v0.7.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.7.0)이다.
+  15개 앱과 32개 public asset(31개 manifest-declared, missing/undeclared/failure 0)을 peeled source
+  `3a23f49c85aa3c3d04b86f227e8aa184ef964085`, candidate workflow `33782002859`, release workflow
+  `33785966618`과 fresh-download verifier에서 확인했다.
+- v0.7.0은 WSL Desktop의 in-app dialog·설정·탐색·pane/WebGL, marker-owned
   Bash/Zsh cwd integration, 점진적 exact workspace restore와 Quick Summon을 하나의 minor release로
   묶는다. frontend listener와 API/Run draft 수명 수정, 영향 범위 CI, candidate 승격과 3-way package
-  sharding도 포함한다. candidate/tag/release evidence 전에는 v0.6.0이 계속 Latest다.
+  sharding도 포함한다.
 - 정확한 annotated tag object·workflow·asset digest·Latest metadata는 GitHub Release가 권위 있는
-  publication source다. #493은 완료된 v0.6.0 release ledger이고, #518도 설치된 WSL Desktop의
+  publication source다. #493은 완료된 v0.6.0 historical release ledger이고, #518도 설치된 WSL Desktop의
   user-local zellij·terminal reconnect·session/workspace 유지가 사용자 실기에서 PASS해 닫혔다.
 - v0.5.0과 v0.5.1의 tag·workflow·acceptance는 historical evidence로 보존한다. #176은 닫힌
   v0.5.1 checklist이며, RC1~RC3 tag/release는 삭제된 historical evidence다. 미래 RC는 사용자가
@@ -29,7 +29,9 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   이전 NSIS resource payload가 새 후보에 섞이지 않도록 한다. Stable release는 같은
   tag·commit의 성공한 비만료 candidate를 repository·workflow-run·asset digest까지
   독립 검증한 뒤 승격하므로 동일 15개 앱을 다시 컴파일하지 않는다. candidate 자체는 여전히
-  catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
+  catalog/runtime source, public release, RC 또는 Latest 상태가 아니다. 최종 draft verifier는
+  의도적으로 skip된 prerelease builder의 상태 전파를 무시하고 preflight와 draft-stage의 명시적
+  성공만 요구한다.
 
 ## v0.7.0 WSL Desktop state boundaries
 
@@ -77,7 +79,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-위 그림은 v0.5.0/v0.5.1 historical stable, 현재 v0.6.0 stable과 v0.7.0 준비 source에 공통인 구조다.
+위 그림은 v0.5.0/v0.5.1/v0.6.0 historical stable과 현재 v0.7.0 stable에 공통인 구조다.
 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다. v0.5.1의 maintenance correction은
 v0.5.0 binary와 별도이며 v0.6.0에도 유지된다.
 
@@ -912,7 +914,7 @@ bounded action entry로 제공한다. producer는 command/cwd/environment/path/c
 복사하지 않으며, invalid/duplicate/bounded-out definitions는 sidecar atomic replace를 거부해
 last-good sidecar를 유지한다. Launcher는 sidecar를 우선 읽고, sidecar가 없는 경우에만 v1
 flat active-service fallback을 사용한다. 이 source correction은 v0.5.0 tag 이후 반영돼
-v0.5.1에서 처음 배포됐고 현재 v0.6.0에도 포함된다. 공개 v0.5.0 binary에는 포함되지 않으며,
+v0.5.1에서 처음 배포됐고 현재 v0.7.0에도 포함된다. 공개 v0.5.0 binary에는 포함되지 않으며,
 release별 publication metadata와 asset digest는 각 GitHub Release에서 확인한다.
 
 catalog revision 13(`#484`)부터 Repo Manager는

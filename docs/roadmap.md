@@ -6,15 +6,16 @@
 
 ## Release status
 
-- 공개 Latest stable은 [v0.6.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)이다.
-  milestone #2의 W01~W11이 모두 main과 stable bundle에 포함됐다.
-- 현재 main은 #521~#536을 묶은 v0.7.0 stable release preparation 단계다. app version과
-  CHANGELOG를 확정하고 source 전체 audit → exact-main candidate → annotated tag 승격 순서로
-  진행하며, candidate/tag evidence 전에는 v0.6.0이 계속 Latest다.
-- annotated tag object `a974adf975862da3d5ada16c6c6efe704387ddd7`는 peeled source
-  `d2fa25a0a1f087459838449daded00c0b09764b4`를 가리킨다. exact-main candidate workflow
-  `33384213398`과 release workflow `33390009009`가 15 apps·32 public assets·31
-  manifest-declared assets·missing/undeclared/failure 0을 각각 검증했다.
+- 공개 Latest stable은 [v0.7.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.7.0)이다.
+  #521~#536과 milestone #2의 W01~W11이 모두 main과 15-app stable bundle에 포함됐다.
+- annotated tag object `ec41ceb2ed4b4864d34afe383e5ff816481b3d37`은 peeled source
+  `3a23f49c85aa3c3d04b86f227e8aa184ef964085`를 가리킨다. exact-main candidate workflow
+  `33782002859`는 packaged runtime·installer lifecycle을 각각 15/15로 통과했다. release
+  workflow `33785966618`이 같은 후보를 재빌드 없이 draft로 승격했고, 독립 fresh-download
+  verifier와 Latest API read-back이 15 apps·32 public assets·31 manifest-declared assets·
+  missing/undeclared/failure 0을 확인했다.
+- v0.6.0은 candidate `33384213398`, release workflow `33390009009`, 15/32/31/mismatch-0의
+  historical stable evidence를 보존한다.
 - #492/#493은 완료된 W11 source/release ledger다. #518의 설치된 WSL Desktop user-local
   zellij 탐색·attach·disconnect/reconnect·session/workspace 유지도 2026-09-03 사용자 실기에서
   PASS해 completed로 닫혔다. 이 관찰은 공개 package의 asset/digest evidence와 구분한다.
@@ -30,7 +31,7 @@
   MCP SSE/GET, OCR·semantic search는 실사용 근거와 우선순위가 정해지기 전까지 선택적 후보로만
   유지한다.
 
-## v0.7.0 — WSL Desktop usability와 delivery 효율화 (release preparation) ✅
+## v0.7.0 — WSL Desktop usability와 delivery 효율화 (released) ✅
 
 - [x] **일상 터미널 UX (#521~#524)** — in-app dialog, persistent terminal settings, 화면 topology
   기반 tab/pane navigation, resizable split, WebGL fallback, buffer/search command를 구현했다.
@@ -43,9 +44,9 @@
 - [x] **v0.6.0 설치 실기 (#518)** — user-local zellij 탐색, 새/기존 session attach,
   disconnect/reconnect, Codex/zellij session과 terminal workspace 유지가 PASS했다. legacy identifier와
   Life Log absorption migration은 v0.7.0 전체에서 유지하고 v0.7.x data read-back 뒤 재평가한다.
-- [ ] **stable publication** — [v0.7.0 릴리스 계획](./superpowers/plans/2026-09-03-v0.7.0-release.md)의
+- [x] **stable publication** — [v0.7.0 릴리스 계획](./superpowers/plans/2026-09-03-v0.7.0-release.md)의
   app version/전체 source audit, exact-main Windows candidate·v0.6.0 update/rollback, annotated tag,
-  15-app/32-public/31-declared/mismatch-0 Latest read-back을 완료해야 한다.
+  15-app/32-public/31-declared/mismatch-0 Latest read-back을 완료했다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
@@ -123,7 +124,7 @@ strict bounded JSON, corrupt fallback, atomic persistence와 close/tray/explicit
   `jobs-services.json` named sidecar로 별도 발행한다. Workbench/Life Log의 v1 status 소비자와
   Launcher의 sidecar→flat fallback을 보존한다. job/service action은 opaque id만 전달하며
   command/cwd/environment/path/credential/log 원문은 snapshot에 복사하지 않는다.
-  이 source correction은 v0.5.0 tag 이후 반영돼 v0.5.1에서 처음 배포됐고 현재 v0.6.0에도
+  이 source correction은 v0.5.0 tag 이후 반영돼 v0.5.1에서 처음 배포됐고 현재 v0.7.0에도
   포함된다. 공개 v0.5.0 binary에는 포함되지 않으며 release별 publication metadata와 asset
   digest는 각 GitHub Release에서 확인한다.
 - [x] **#349–#350 historical Windows checkpoint 종료** — filter 조합과 저장/재시작/삭제,
@@ -291,7 +292,7 @@ historical workflow/evidence로 기록하지만 tag/release는 삭제됐고 stab
 release를 만들고 E:의 fresh directory에서 size·SHA-256을 독립 검증하는 historical 단계였다.
 RC1~RC3 tag/release는 사용자 지시로 삭제됐고, 이 문단의 workflow/evidence와 W1→W2→W3→W4
 계획만 기록으로 남긴다. 이 문단의 v0.5.1은 당시 승격 판단을 설명하는 역사 기록이고 현재
-stable은 v0.6.0이다. 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다. 실행 순서와 증거 형식은
+stable은 v0.7.0이다. 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다. 실행 순서와 증거 형식은
 [v0.5.0 릴리스 계획](./superpowers/plans/2026-08-28-v0.5.0-release.md)을 기준으로 한다.
 
 #### P1 — 선행 필수
@@ -1239,11 +1240,12 @@ v0.5.0-rc3 historical preparation record — tag/release 삭제, 향후 RC는 �
 v0.5.0   stable — tag efc98dd, workflow 33216176818, 15 apps/32 assets/31 declared/mismatch 0  ✅
 v0.5.1   stable — #470/#473/#477/#478/#479 보강; publication metadata는 GitHub Release authority  ✅
 v0.6.0   stable — W01~W11, candidate 33384213398, release 33390009009, 15/32/31/mismatch 0  ✅
+v0.7.0   stable — WSL Desktop UX·affected CI·candidate promotion, candidate 33782002859, 15/32/31/0  ✅
 ```
 
 ## 현재 상태
 - 현재 15개 앱(기존 13개 + Devbox Launcher + Log Lens)의 P1·P2·선택 P3 구현 이슈는 모두
-  main에 병합됐다. milestone #2의 W01~W11도 완료돼 v0.6.0 stable에 포함됐다. exact
+  main에 병합됐다. milestone #2의 W01~W11과 v0.7.0 #521~#536도 stable에 포함됐다. exact
   tag·workflow·asset publication metadata는 GitHub Release가 권위 있는 source다.
 - 각 앱은 기능 단위 PR로 main에 머지됨
 - v0.4.0 정식 배포 완료 (13개 앱)
@@ -1256,15 +1258,19 @@ v0.6.0   stable — W01~W11, candidate 33384213398, release 33390009009, 15/32/3
 - v0.6.0 stable은 source `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate
   `33384213398`, release workflow `33390009009`에서 15개 앱/32개 public asset/31개
   manifest-declared/mismatch 0과 15/15 packaged runtime·installer lifecycle을 검증했다.
+- v0.7.0 stable은 source `3a23f49c85aa3c3d04b86f227e8aa184ef964085`, candidate
+  `33782002859`, release workflow `33785966618`과 독립 fresh-download verifier에서 15개 앱/
+  32개 public asset/31개 manifest-declared/missing·undeclared·failure 0 및 15/15 packaged
+  runtime·installer lifecycle을 검증했다.
 - RC1~RC3은 각각의 32-asset publication, source audit, correction과 workflow/evidence를
   historical record로 남기지만 tag/release는 삭제됐다. 이 기록을 현재 release 상태로 읽지 않는다.
 - #176은 닫힌 v0.5.1 historical checklist다.
 - [v0.6.0 post-release 체크리스트](https://github.com/jihoon22-lee/devbox/issues/518) — 설치된
-  WSL Desktop zellij/terminal reconnect와 repository 유지보수를 package evidence와 구분해 관리한다.
+  WSL Desktop zellij/terminal reconnect를 package evidence와 구분해 PASS로 기록하고 닫았다.
 - [WSL Desktop 사용감 보강 검토](./superpowers/reports/2026-09-02-wsl-desktop-usability-review.md) —
   v0.6.0 source 기준 read-only 검토다. snapshot refresh가 동시 입력·Docker 조작을 스스로
   끄는 문제, 확인창 과다, 빈 첫 화면, 탭/팬 방향 감각, 세션 유지 모드 표시와 spec §4.3의
   드래그 팬 크기 조절·WebGL 렌더러 미적용을 근거와 함께 정리했다. 모든 항목은 milestone
   없는 후보이며 사용자 우선순위 확인 전에는 이슈로 승격하지 않는다.
-- open v0.7+ milestone이나 확정 기능 roadmap은 없다. 선택적 후보는 실사용 근거와 사용자
+- open v0.8+ milestone이나 확정 기능 roadmap은 없다. 선택적 후보는 실사용 근거와 사용자
   우선순위가 확인된 뒤에만 묶음 이슈와 새 milestone으로 승격한다.

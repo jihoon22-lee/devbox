@@ -1,7 +1,7 @@
 # Projects
 
-15개 구현 앱의 요약. 공개 v0.6.0 stable은 milestone #2의 W01~W11을 포함한 15개 앱
-bundle이고, 현재 main은 v0.7.0 stable을 준비한다. 상세 소개는 각
+15개 구현 앱의 요약. 공개 v0.7.0 stable은 WSL Desktop 사용성·복원과 delivery 효율화를 포함한
+15개 앱 bundle이다. 상세 소개는 각
 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
 ## W08 PR2 (#489) 문서 계약
@@ -17,10 +17,11 @@ method, redacted origin-form target, timestamp, header names, 최대 4 KiB redac
 preview와 flags만 전달한다. Header values, raw body, filesystem path, command, environment,
 credential, archive는 handoff와 argv에 포함하지 않으며 launch 실패 시 정확한 pending entry만
 정리한다. Canonical wire `displayName`은 영어(`Webhook capture`)로 유지하고 UI는 한국어로
-제공한다. exact-main candidate의 15-app packaged runtime과 v0.6.0 release 검증은 완료됐다.
+제공한다. v0.7.0 exact-main candidate의 15-app packaged runtime·installer 검증과 stable
+publication은 완료됐다.
 #518의 설치 사용자 환경 zellij/terminal reconnect도 2026-09-03 PASS해 completed로 닫혔다.
 
-## v0.7.0 release boundary
+## v0.7.0 release scope
 
 - WSL Desktop은 in-app dialog와 terminal 설정, 화면 topology 기반 navigation, pane resize/WebGL,
   multiplexer 재검색, Bash/Zsh cwd integration, progressive exact restore와 Quick Summon을 포함한다.
@@ -28,7 +29,7 @@ credential, archive는 handoff와 argv에 포함하지 않으며 launch 실패 �
   보완한다. 앱별 세부 계약은 각 README와 2026-09-03 workthrough에 기록한다.
 - 개발 검증은 영향 package와 역의존 소비자만 선택하고, stable package는 5개 앱씩 3개 shard로
   한 번 생성한 candidate를 검증 후 그대로 release로 승격한다. 전체 audit와 exact-main candidate는
-  계속 release blocker다.
+  release blocker이며 v0.7.0에서 모두 통과했다.
 
 | # | 앱 | Version | 디렉터리 | 핵심 목적 | Phase | 연계 |
 |---|---|---:|---|---|---|---|

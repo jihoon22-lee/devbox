@@ -64,6 +64,10 @@ run, independently verifies its assets and provenance, and uploads those flat as
 then downloads and verifies the complete draft before making it public, as before. A missing, expired, or
 mismatched candidate fails before release creation.
 
+The final verifier uses `always()` and explicitly requires successful preflight and draft-stage jobs.
+This is necessary because the stable path intentionally skips the prerelease builder and GitHub can carry
+that skipped ancestor through an otherwise successful downstream job graph.
+
 The explicitly gated manual prerelease path retains its existing Windows build. This preserves the
 documented prerelease escape hatch while the unpublished candidate workflow remains stable-only.
 

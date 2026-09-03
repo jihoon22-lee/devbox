@@ -20,7 +20,7 @@
   acceptance 경계를 아래 계약에 기록한다.
 - 2026-09-03: 위 두 W08 packaged 경계는 v0.6.0 #493 hosted gate에서 완료됐다. #518의
   installed WSL Desktop zellij/terminal reconnect도 사용자 실기 PASS로 닫혔으며, 임의 사용자
-  환경 전체를 관찰했다는 주장과는 구분한다. 현재 release 상태는 v0.7.0 준비 문서를 우선한다.
+  환경 전체를 관찰했다는 주장과는 구분한다. 현재 release 상태는 v0.7.0 release 문서를 우선한다.
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 현재 15개 앱(Devbox Launcher·Log Lens 포함)
@@ -29,8 +29,8 @@
 
 > **Release boundary:** 공개 v0.5.0 stable은 15개 앱/32개 asset evidence를 보유한다. #470/#473/
 > #477/#478 및 #479로 닫힌 #474는 v0.5.0 tag 이후 반영된 v0.5.1 stable maintenance다.
-> 정확한 release별 tag/workflow/asset evidence는 GitHub Release에서 확인한다. 공개 Latest는
-> v0.6.0이고 현재 main은 v0.7.0 stable release를 준비한다.
+> 정확한 release별 tag/workflow/asset evidence는 GitHub Release에서 확인한다. 공개 Latest와
+> 현재 main의 배포 기준은 v0.7.0 stable이다.
 
 > **2026-08-22 확장.** 이 문서의 v0.5.0 제안 범위는
 > [v0.5.0 네이티브 우선 계획](./2026-08-22-v0.5.0-native-first-plan.md)에서 확정됐다.

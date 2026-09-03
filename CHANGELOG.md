@@ -5,6 +5,13 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **Stable release 최종 검증 job** — 안정판에서 prerelease builder가 의도적으로 skip돼도
+  fresh-download verifier가 함께 skip되지 않도록 `always()` 아래 preflight와 draft-stage의
+  명시적 success 조건을 적용했다. 두 직접 dependency 중 하나가 실패하면 publication은 계속
+  fail-closed한다.
+
 ## [v0.7.0] - 2026-09-03
 
 v0.7.0은 WSL Desktop을 일상적인 주 터미널로 쓰는 흐름을 강화하고, 모노레포 검증과 stable

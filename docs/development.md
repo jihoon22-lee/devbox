@@ -1,10 +1,9 @@
 # 개발자 가이드
 
-devbox는 현재 v0.6.0 안정판의 15개 Tauri 데스크톱 앱을 하나의 모노레포로 관리한다.
-v0.6.0은 milestone #2의 W01~W11을 포함하며, 정확한 tag commit·workflow·asset publication
-metadata는 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)에서 확인한다.
-현재 main은 v0.7.0 release preparation 단계이며, source 전체 audit와 exact-main Windows
-candidate가 완료되기 전에는 v0.7.0을 stable로 간주하지 않는다.
+devbox는 현재 v0.7.0 안정판의 15개 Tauri 데스크톱 앱을 하나의 모노레포로 관리한다.
+v0.7.0은 WSL Desktop 사용성·상태 복원과 영향 범위 CI·candidate 승격·3-way Windows package
+build를 포함하며, 정확한 tag commit·workflow·asset publication metadata는
+[GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.7.0)에서 확인한다.
 
 - **pnpm workspace** — `apps/*`, `packages/*`
 - **Cargo workspace** — 앱(src-tauri) + 공용 crates
@@ -69,8 +68,8 @@ source가 바뀐 8개 앱만 올리며, 세 manifest와 packaged-smoke config �
 
 상세 정책은 `CONVENTIONS.md` §9, v0.5.0/v0.5.1 history와 v0.6.0 구현 범위는
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
-stable은 exact annotated `vX.Y.Z` tag 또는 명시적 manual dispatch 뒤 release workflow가
-성공하고, 15-app/32-asset/31-declared/mismatch-0 및 Windows evidence를 독립 확인한 뒤에만
+stable은 exact annotated `vX.Y.Z` tag 또는 명시적 manual dispatch 뒤 release graph와 독립
+fresh-download verification이 성공하고, 15-app/32-asset/31-declared/mismatch-0 및 Windows evidence를 확인한 뒤에만
 주장한다. 안정판은 tag를 만들기 전에 exact current main과 예정 tag로 `Windows package
 candidate`를 실행해 build·packaged runtime·installer lifecycle을 모두 통과시킨다. release는
 같은 tag·commit의 후보를 provenance와 digest까지 다시 검증해 승격하며, 후보가 없거나 만료되면
@@ -81,6 +80,8 @@ Candidate package build는 카탈로그의 15개 release 앱을 결정론적으�
 별도 Windows runner에서 병렬 실행한다. 각 shard는 할당된 앱만 stage하며, 이후 Linux assembly가
 모든 shard를 합쳐 notices와 manifest를 생성하고 exact 15-app/32-file 계약을 검증한다. 중간 shard
 artifact는 1일, acceptance 대상인 최종 candidate artifact는 14일 보존한다.
+안정판 경로에서 prerelease builder는 의도적으로 skip되므로 최종 verifier job은 `always()`와
+preflight/draft-stage의 명시적 success 조건으로 skip 전파를 차단한다.
 
 ## 시작하기
 
