@@ -22,6 +22,27 @@ function Resolve-RepositoryChild([string]$RepositoryRoot, [string]$RelativePath,
   return $resolved
 }
 
+function Reset-Bundle-Staging([string]$RepositoryRoot) {
+  $bundlePath = Resolve-RepositoryChild $RepositoryRoot 'target/release/bundle' 'bundle staging root'
+  if (-not (Test-Path -LiteralPath $bundlePath)) { return }
+
+  $bundle = Get-Item -LiteralPath $bundlePath -Force -ErrorAction Stop
+  if (-not $bundle.PSIsContainer -or ($bundle.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
+    throw 'bundle staging root must be a plain directory'
+  }
+  $reparsePoints = @(Get-ChildItem -LiteralPath $bundlePath -Recurse -Force | Where-Object {
+    ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
+  })
+  if ($reparsePoints.Count -ne 0) {
+    throw 'bundle staging root contains a reparse point'
+  }
+
+  Remove-Item -LiteralPath $bundlePath -Recurse -Force
+  if (Test-Path -LiteralPath $bundlePath) {
+    throw 'bundle staging root cleanup did not converge'
+  }
+}
+
 $repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
 $stagingPath = Resolve-RepositoryChild $repositoryRoot $StagingRoot 'staging root'
 
@@ -92,6 +113,7 @@ try {
     $cargoPackage = [string]$entry.cargoPackage
     $expectedAppDir = "apps/$appId"
     Write-Host "Building $appId" -ForegroundColor Cyan
+    Reset-Bundle-Staging $repositoryRoot
     Push-Location $expectedAppDir
     try {
       & pnpm tauri build --bundles nsis

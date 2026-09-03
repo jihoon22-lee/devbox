@@ -21,6 +21,7 @@ FLATTEN_SCRIPT = (ROOT / ".github/scripts/flatten-windows-packages.py").read_tex
 PACKAGED_SMOKE = (ROOT / ".github/scripts/windows-packaged-smoke.mjs").read_text(
     encoding="utf-8"
 )
+GIT_ATTRIBUTES = (ROOT / ".gitattributes").read_text(encoding="utf-8")
 
 assert WORKFLOW.startswith(
     "name: Windows package candidate\n\non:\n  workflow_dispatch:\n"
@@ -99,7 +100,13 @@ assert "requested app is not in the release catalog" in BUILD_SCRIPT
 assert "pnpm tauri build --bundles nsis" in BUILD_SCRIPT
 assert "THIRD_PARTY_NOTICES.md" in BUILD_SCRIPT
 assert "staging root must be absent or empty" in BUILD_SCRIPT
-assert "Remove-Item" not in BUILD_SCRIPT
+assert "function Reset-Bundle-Staging" in BUILD_SCRIPT
+assert "'target/release/bundle' 'bundle staging root'" in BUILD_SCRIPT
+assert "bundle staging root contains a reparse point" in BUILD_SCRIPT
+assert "Remove-Item -LiteralPath $bundlePath -Recurse -Force" in BUILD_SCRIPT
+assert "Reset-Bundle-Staging $repositoryRoot" in BUILD_SCRIPT
+assert "cargo clean" not in BUILD_SCRIPT
+assert "THIRD_PARTY_NOTICES.md text eol=lf" in GIT_ATTRIBUTES
 
 assert "EXPECTED_FILES = EXPECTED_RELEASE_APPS * 2 + 2" in FLATTEN_SCRIPT
 assert "release-manifest.json" in FLATTEN_SCRIPT
