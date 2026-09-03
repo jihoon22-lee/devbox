@@ -49,9 +49,10 @@
   modern `2026-07-28` `server/discover`와 legacy `2025-11-25` initialize/session 흐름을
   선택하거나 안전한 auto fallback으로 협상하며, stdio는 검토한 executable을 shell 없이 실행한다.
   capability가 확인된 tool/resource/prompt만 한 page씩 명시적으로 조회·호출하고, 지원하는 JSON
-  Schema 부분집합만 form으로 실행한다. HTTP OAuth 2.1은 system browser·PKCE로 authorize하며
-  Windows DPAPI로 봉인한 token만 저장한다. Protocol profile/result/cursor/timeline은 저장하지
-  않으며 OAuth grant metadata와 token 저장은 별도 native 보안 경계다. 브라우저 preview는 MCP,
+  Schema 부분집합만 form으로 실행한다. 같은 연결에서 tool이나 prompt를 오갈 때 입력 초안은
+  검증된 이름별로 독립 보존하고 연결이 끝나면 모두 폐기한다. HTTP OAuth 2.1은 system browser·
+  PKCE로 authorize하며 Windows DPAPI로 봉인한 token만 저장한다. Protocol profile/result/cursor/
+  timeline은 저장하지 않으며 OAuth grant metadata와 token 저장은 별도 native 보안 경계다. 브라우저 preview는 MCP,
   stdio, OAuth network 요청을 보내지 않는다.
 
 ## Protocol Lab · MCP (`#485`)

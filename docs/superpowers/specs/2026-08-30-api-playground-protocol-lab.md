@@ -258,7 +258,9 @@ strings or keys are rejected before IPC.
 Before call, the complete argument object is checked against the supported projection. Unsupported
 schema does not make the tool executable through a misleading partial form. Prompt names and their
 required/optional string arguments are likewise captured only from validated list pages and checked
-again at the native boundary before `prompts/get`.
+again at the native boundary before `prompts/get`. Tool and prompt form drafts are isolated by their
+validated exact names for the lifetime of the current connection, and all drafts are discarded when
+the explorer resets or disconnects. They are never persisted.
 
 ## 9. Error contract
 
