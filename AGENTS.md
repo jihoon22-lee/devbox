@@ -40,6 +40,9 @@ devbox — Tauri 15개 데스크톱 앱 모노레포. 현재 v0.6.0 안정판 so
   관련 문서는 여러 이슈를 한 PR로 묶을 수 있다. 독립 배포·rollback·보안 경계이거나 리뷰
   범위가 과도해지는 작업은 계속 분리한다. PR 본문에 포함 이슈와 묶음 근거를 명시한다.
 - **모든 PR은 GitHub Actions CI(`.github/workflows/ci.yml`) 통과 후에만 main으로 머지**
+- 안정판 릴리스는 tag 생성 전에 exact-main `Windows package candidate`의 build·packaged runtime·
+  installer acceptance를 모두 통과시킨다. annotated tag는 동일 commit에 만들며 release workflow는
+  일치하는 비만료 후보만 독립 검증해 승격하고, 후보가 없으면 새 바이너리를 대신 만들지 않는다.
 - 커밋: Conventional Commits, 영어, 현재형 — `feat(port-manager): add netstat parser`
 - 코드 산출물의 완료 정의: 집중 테스트 + `pnpm verify:affected` + GitHub Actions CI 통과.
   전체 workspace 검증은 affected resolver가 `all`을 선택하거나 release·명시적 감사일 때만 수행한다.

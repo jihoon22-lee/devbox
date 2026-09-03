@@ -10,7 +10,6 @@ import subprocess
 import sys
 import tempfile
 
-
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 VERIFIER = ROOT / ".github/scripts/verify-downloaded-release.py"
 TAG = "v0.6.0"
@@ -64,7 +63,11 @@ def fixture(root: pathlib.Path) -> tuple[pathlib.Path, pathlib.Path, pathlib.Pat
     manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
 
     remote = [
-        {"name": item["name"], "size": item["size"], "digest": f"sha256:{item['sha256']}"}
+        {
+            "name": item["name"],
+            "size": item["size"],
+            "digest": f"sha256:{item['sha256']}",
+        }
         for item in declared
     ]
     manifest_remote = identity(manifest_path)
@@ -121,6 +124,15 @@ def run_verifier(
     ]
     if artifact_kind == "release":
         command.extend(("--draft", "false", "--prerelease", "false"))
+    else:
+        command.extend(
+            (
+                "--repository",
+                "jihoon22-lee/devbox",
+                "--workflow-run",
+                "123456",
+            )
+        )
     return subprocess.run(
         command,
         check=False,
@@ -140,7 +152,10 @@ def main() -> int:
         assert passed_result["draft"] is False
         assert passed_result["metadataAssets"] == 32
         assert passed_result["verifiedAssets"] == 32
-        assert passed_result["configSha256"] == hashlib.sha256(config.read_bytes()).hexdigest()
+        assert (
+            passed_result["configSha256"]
+            == hashlib.sha256(config.read_bytes()).hexdigest()
+        )
 
         candidate_payload = json.loads(release.read_text(encoding="utf-8"))
         candidate_payload.update(
@@ -156,7 +171,9 @@ def main() -> int:
         candidate = pathlib.Path(temporary) / "candidate.json"
         candidate.write_text(json.dumps(candidate_payload), encoding="utf-8")
         candidate_passed = run_verifier(assets, candidate, config, "candidate")
-        assert candidate_passed.returncode == 0, candidate_passed.stdout + candidate_passed.stderr
+        assert candidate_passed.returncode == 0, (
+            candidate_passed.stdout + candidate_passed.stderr
+        )
         candidate_result = json.loads(candidate_passed.stdout)
         assert candidate_result["status"] == "PASS"
         assert candidate_result["artifactKind"] == "candidate"
@@ -168,7 +185,30 @@ def main() -> int:
         candidate.write_text(json.dumps(candidate_payload), encoding="utf-8")
         invalid_candidate = run_verifier(assets, candidate, config, "candidate")
         assert invalid_candidate.returncode == 1
-        assert "candidate metadata envelope mismatch" in json.loads(invalid_candidate.stdout)["failures"]
+        assert (
+            "candidate metadata envelope mismatch"
+            in json.loads(invalid_candidate.stdout)["failures"]
+        )
+
+        candidate_payload["workflowRun"] = 123456
+        candidate_payload["repository"] = "someone/fork"
+        candidate.write_text(json.dumps(candidate_payload), encoding="utf-8")
+        wrong_repository = run_verifier(assets, candidate, config, "candidate")
+        assert wrong_repository.returncode == 1
+        assert (
+            "candidate repository mismatch"
+            in json.loads(wrong_repository.stdout)["failures"]
+        )
+
+        candidate_payload["repository"] = "jihoon22-lee/devbox"
+        candidate_payload["workflowRun"] = 654321
+        candidate.write_text(json.dumps(candidate_payload), encoding="utf-8")
+        wrong_run = run_verifier(assets, candidate, config, "candidate")
+        assert wrong_run.returncode == 1
+        assert (
+            "candidate workflow run mismatch"
+            in json.loads(wrong_run.stdout)["failures"]
+        )
 
         manifest_path = assets / "release-manifest.json"
         original_manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
@@ -176,7 +216,10 @@ def main() -> int:
         manifest_path.write_text(json.dumps(invalid_manifest), encoding="utf-8")
         malformed = run_verifier(assets, release, config)
         assert malformed.returncode == 1, malformed.stdout + malformed.stderr
-        assert "manifest envelope or schema mismatch" in json.loads(malformed.stdout)["failures"]
+        assert (
+            "manifest envelope or schema mismatch"
+            in json.loads(malformed.stdout)["failures"]
+        )
 
         unsafe_manifest = json.loads(json.dumps(original_manifest))
         unsafe_manifest["apps"][0]["portable"]["name"] = "../outside.exe"
@@ -184,14 +227,22 @@ def main() -> int:
         manifest_path.write_text(json.dumps(unsafe_manifest), encoding="utf-8")
         unsafe = run_verifier(assets, release, config)
         assert unsafe.returncode == 1, unsafe.stdout + unsafe.stderr
-        assert "unsafe portable manifest asset name: app-00" in json.loads(unsafe.stdout)["failures"]
+        assert (
+            "unsafe portable manifest asset name: app-00"
+            in json.loads(unsafe.stdout)["failures"]
+        )
 
         malformed_asset_manifest = json.loads(json.dumps(original_manifest))
         malformed_asset_manifest["apps"][0]["portable"] = []
         manifest_path.write_text(json.dumps(malformed_asset_manifest), encoding="utf-8")
         malformed_asset = run_verifier(assets, release, config)
-        assert malformed_asset.returncode == 1, malformed_asset.stdout + malformed_asset.stderr
-        assert "invalid portable manifest entry: app-00" in json.loads(malformed_asset.stdout)["failures"]
+        assert malformed_asset.returncode == 1, (
+            malformed_asset.stdout + malformed_asset.stderr
+        )
+        assert (
+            "invalid portable manifest entry: app-00"
+            in json.loads(malformed_asset.stdout)["failures"]
+        )
 
         manifest_path.write_text(json.dumps(original_manifest), encoding="utf-8")
         release_payload = json.loads(release.read_text(encoding="utf-8"))
@@ -209,7 +260,9 @@ def main() -> int:
         assert result["status"] == "FAIL"
         assert any("app-00.exe" in failure for failure in result["failures"])
 
-    print("VERIFY ARTIFACT TESTS OK: release/candidate fixtures pass and tampering fails")
+    print(
+        "VERIFY ARTIFACT TESTS OK: release/candidate fixtures pass and tampering fails"
+    )
     return 0
 
 

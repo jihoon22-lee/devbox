@@ -30,10 +30,15 @@ source에서 빌드하고 실행**하는 방법을 설명한다.
 
 > 빌드를 새로 하고 싶을 때(GitHub Actions가 대신 빌드):
 > 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
-> 2. **방법 1 (안정판 태그로 배포, 권장)**: WSL/로컬에서 annotated tag를 만들고 push
->    (예: `git tag -a v0.6.1 -m "devbox v0.6.1"` 후 `git push origin refs/tags/v0.6.1`)
->    - **방법 2 (수동)**: GitHub → Actions 탭 → **Release** → **Run workflow** → 버전 입력(예: `v0.6.1`)
-> 3. 그러면 Windows CI가 현재 catalog의 15개 앱을 빌드해 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
+> 2. 현재 `main`의 40자리 commit SHA를 확인하고 GitHub → Actions → **Windows package
+>    candidate**에서 예정 tag와 SHA를 입력한다. 15개 앱 build와 두 acceptance job이 모두 성공할
+>    때까지 기다린다. 이 private 후보는 14일 동안 보존된다.
+> 3. 같은 commit에 annotated tag를 만들고 push한다
+>    (예: `git tag -a v0.6.1 <SHA> -m "devbox v0.6.1"` 후 `git push origin refs/tags/v0.6.1`).
+>    tag push가 실패한 release를 재시도할 때는 GitHub → Actions → **Release** → **Run workflow**에서
+>    이미 존재하는 동일 tag를 입력할 수 있다.
+> 4. Release workflow는 성공한 후보의 tag·commit·workflow·32개 digest를 다시 검증하고,
+>    바이너리를 재빌드하지 않은 채 **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 새 릴리스를 만든다.
 >    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
 
 > 릴리스 보호 정책: `vX.Y.Z` 안정판은 위 두 경로를 사용한다. `vX.Y.Z-...` prerelease/RC

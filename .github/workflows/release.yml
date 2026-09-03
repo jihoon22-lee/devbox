@@ -76,9 +76,10 @@ jobs:
             exit 1
           fi
 
-  build-windows:
-    name: Build Windows installers
+  build-prerelease-windows:
+    name: Build prerelease Windows installers
     needs: preflight
+    if: ${{ needs.preflight.outputs.prerelease == 'true' }}
     runs-on: windows-latest
     permissions:
       contents: read
@@ -139,19 +140,77 @@ jobs:
 
   publish:
     name: Stage draft release
-    needs: [preflight, build-windows]
+    needs: [preflight, build-prerelease-windows]
+    if: >-
+      ${{
+        always() &&
+        needs.preflight.result == 'success' &&
+        (
+          (needs.preflight.outputs.prerelease == 'false' && needs.build-prerelease-windows.result == 'skipped') ||
+          (needs.preflight.outputs.prerelease == 'true' && needs.build-prerelease-windows.result == 'success')
+        )
+      }}
     runs-on: ubuntu-latest
     permissions:
+      actions: read
       contents: write
     steps:
       - uses: actions/checkout@v7
 
+      - id: candidate
+        name: Resolve the exact successful stable candidate
+        if: ${{ needs.preflight.outputs.prerelease == 'false' }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ needs.preflight.outputs.tag }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/resolve-release-candidate.py \
+            --repository "$GITHUB_REPOSITORY" \
+            --commit "$EXPECTED_COMMIT" \
+            --tag "$TAG" \
+            --github-output "$GITHUB_OUTPUT"
+
+      - name: Download the exact stable candidate
+        if: ${{ needs.preflight.outputs.prerelease == 'false' }}
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ steps.candidate.outputs.artifact_name }}
+          path: candidate
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ steps.candidate.outputs.run_id }}
+
+      - name: Independently verify candidate assets and provenance
+        if: ${{ needs.preflight.outputs.prerelease == 'false' }}
+        shell: bash
+        env:
+          TAG: ${{ needs.preflight.outputs.tag }}
+          EXPECTED_COMMIT: ${{ github.sha }}
+          CANDIDATE_RUN: ${{ steps.candidate.outputs.run_id }}
+        run: |
+          set -euo pipefail
+          python3 .github/scripts/verify-downloaded-release.py \
+            --artifact-kind candidate \
+            --assets candidate/assets \
+            --release candidate/evidence/candidate-metadata.json \
+            --config .github/scripts/windows-packaged-smoke-config.json \
+            --tag "$TAG" \
+            --commit "$EXPECTED_COMMIT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow-run "$CANDIDATE_RUN" \
+            | tee candidate-promotion-verification.json
+
       - uses: actions/download-artifact@v8
+        if: ${{ needs.preflight.outputs.prerelease == 'true' }}
         with:
           name: windows-installers
           path: artifacts/staging
 
       - uses: actions/download-artifact@v8
+        if: ${{ needs.preflight.outputs.prerelease == 'true' }}
         with:
           name: release-manifest
           path: artifacts/staging
@@ -172,6 +231,7 @@ jobs:
           TAG: ${{ needs.preflight.outputs.tag }}
           PRERELEASE: ${{ needs.preflight.outputs.prerelease }}
           NOTES_FILE: ${{ steps.notes.outputs.path }}
+          CANDIDATE_RUN_URL: ${{ steps.candidate.outputs.run_url }}
         run: |
           set -euo pipefail
           existing_release_ids=$(gh api --paginate \
@@ -182,12 +242,16 @@ jobs:
             exit 1
           fi
           shopt -s nullglob
-          assets=(
-            artifacts/staging/*/portable/*.exe
-            artifacts/staging/*/installer/*.exe
-            artifacts/staging/THIRD_PARTY_NOTICES.md
-            artifacts/staging/release-manifest.json
-          )
+          if [[ "$PRERELEASE" == "false" ]]; then
+            assets=(candidate/assets/*)
+          else
+            assets=(
+              artifacts/staging/*/portable/*.exe
+              artifacts/staging/*/installer/*.exe
+              artifacts/staging/THIRD_PARTY_NOTICES.md
+              artifacts/staging/release-manifest.json
+            )
+          fi
           if [[ ${#assets[@]} -ne 32 ]]; then
             echo "draft release requires exactly 32 staged assets"
             exit 1
@@ -204,6 +268,13 @@ jobs:
             command+=(--prerelease)
           fi
           "${command[@]}" "${assets[@]}"
+          if [[ "$PRERELEASE" == "false" ]]; then
+            {
+              echo "### Promoted Windows package candidate"
+              echo "- candidate run: $CANDIDATE_RUN_URL"
+              echo "- contract: 15 apps / 32 files / 31 manifest-declared / mismatch 0"
+            } >> "$GITHUB_STEP_SUMMARY"
+          fi
 
   verify:
     name: Verify and publish release

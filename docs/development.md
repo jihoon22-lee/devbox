@@ -46,7 +46,11 @@ docs/        architecture / roadmap / projects
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
 stable은 exact annotated `vX.Y.Z` tag 또는 명시적 manual dispatch 뒤 release workflow가
 성공하고, 15-app/32-asset/31-declared/mismatch-0 및 Windows evidence를 독립 확인한 뒤에만
-주장한다. prerelease/RC는 사용자의 명시 요청 없이는 만들지 않는다.
+주장한다. 안정판은 tag를 만들기 전에 exact current main과 예정 tag로 `Windows package
+candidate`를 실행해 build·packaged runtime·installer lifecycle을 모두 통과시킨다. release는
+같은 tag·commit의 후보를 provenance와 digest까지 다시 검증해 승격하며, 후보가 없거나 만료되면
+공개 전에 실패한다. prerelease/RC는 사용자의 명시 요청 없이는 만들지 않으며, 명시적으로 허용된
+prerelease는 stable-only candidate와 분리된 기존 Windows build 경로를 사용한다.
 
 ## 시작하기
 
