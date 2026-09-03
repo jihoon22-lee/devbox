@@ -169,7 +169,97 @@ describe("JobEditor", () => {
     expect(envKey.tagName).toBe("SELECT");
     expect(Array.from((envKey as HTMLSelectElement).options).map((option) => option.value)).toEqual(["", "BUILD_TOKEN"]);
   });
+
+  it("keeps the edited draft when a job list refresh replaces the job object", () => {
+    const job = editableJob();
+    const { getByLabelText, rerender } = render(
+      <JobEditor job={job} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+
+    fireEvent.change(getByLabelText("작업 이름"), { target: { value: "renamed" } });
+    expect((getByLabelText("작업 이름") as HTMLInputElement).value).toBe("renamed");
+
+    // refreshJobs() re-fetches the list, so the editor is handed an equal-but-new Job object.
+    rerender(<JobEditor job={{ ...job }} onSave={vi.fn()} onCancel={vi.fn()} />);
+    expect((getByLabelText("작업 이름") as HTMLInputElement).value).toBe("renamed");
+  });
+
+  it("keeps the edited draft when the workspace task object identity changes", () => {
+    const job = editableJob();
+    const workspaceTask = editableWorkspaceTask(job.id);
+    const { getByLabelText, rerender } = render(
+      <JobEditor job={job} workspaceTask={workspaceTask} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+
+    fireEvent.change(getByLabelText("cron 표현식"), { target: { value: "*/5 * * * *" } });
+    expect((getByLabelText("cron 표현식") as HTMLInputElement).value).toBe("*/5 * * * *");
+
+    rerender(
+      <JobEditor job={job} workspaceTask={{ ...workspaceTask }} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect((getByLabelText("cron 표현식") as HTMLInputElement).value).toBe("*/5 * * * *");
+  });
+
+  it("still reloads the draft when a different job is opened", () => {
+    const job = editableJob();
+    const { getByLabelText, rerender } = render(
+      <JobEditor job={job} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+    fireEvent.change(getByLabelText("작업 이름"), { target: { value: "renamed" } });
+
+    rerender(
+      <JobEditor job={{ ...job, id: "job-other", name: "Other" }} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+    expect((getByLabelText("작업 이름") as HTMLInputElement).value).toBe("Other");
+  });
 });
+
+function editableJob(): Job {
+  return {
+    id: "job-editable",
+    kind: "job",
+    name: "Build",
+    command: "node",
+    cwd: "C:\\work\\demo",
+    targetKind: "windows",
+    targetDistro: null,
+    envConfigured: false,
+    cronExpr: "0 * * * *",
+    enabled: false,
+    overlapPolicy: "skip",
+    catchUp: false,
+    lastEvaluatedAt: null,
+    nextQueueSequence: 0,
+    restartPolicy: null,
+    autoStart: null,
+    healthTcpAddress: null,
+    healthTcpPort: null,
+    healthStartGraceMs: null,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
+
+function editableWorkspaceTask(jobId: string): WorkspaceTaskState {
+  return {
+    jobId,
+    sourceId: "source-1",
+    label: "Build",
+    taskKind: "process",
+    sourceRoot: "C:\\work\\demo",
+    revision: "revision-1",
+    targetKind: "windows",
+    targetDistro: null,
+    environmentKeys: ["BUILD_TOKEN"],
+    appliedOverride: "windows",
+    dependsOn: [],
+    dependsOrder: "parallel",
+    hasProblemMatcher: false,
+    trusted: false,
+    shellTrusted: false,
+    available: true,
+  };
+}
 
 function getByTextSafe(getByRole: ReturnType<typeof render>["getByRole"], text: string): HTMLElement {
   // Keep the assertion helper independent of a global `screen`, which makes

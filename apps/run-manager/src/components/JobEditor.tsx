@@ -31,14 +31,50 @@ function newEnvironmentRow(): EnvironmentDraft {
   return { id: `env-${Math.random().toString(36).slice(2)}`, key: "", value: "", persisted: false };
 }
 
+interface JobEditorState {
+  key: string;
+  draft: JobDraft;
+  errors: JobFieldErrors;
+  workspaceFieldError: string | null;
+}
+
+function emptyEditorState(job: Job | null): JobEditorState {
+  return {
+    key: job?.id ?? "",
+    draft: job ? draftFromJob(job) : { ...EMPTY_JOB_DRAFT, environment: [] },
+    errors: {},
+    workspaceFieldError: null,
+  };
+}
+
 export default function JobEditor({ job, workspaceTask = null, onSave, onCancel }: JobEditorProps) {
-  const [draft, setDraft] = useState<JobDraft>(() => (job ? draftFromJob(job) : { ...EMPTY_JOB_DRAFT }));
-  const [errors, setErrors] = useState<JobFieldErrors>({});
+  const jobKey = job?.id ?? "";
+  // Editor state is derived during render rather than reset from an effect: every job-list refresh
+  // hands `job` and `workspaceTask` fresh object identities, and an effect keyed on them would wipe
+  // whatever the user had already typed.
+  const [editorState, setEditorState] = useState<JobEditorState>(() => emptyEditorState(job));
+  const { draft, errors, workspaceFieldError } = useMemo(
+    () => (editorState.key === jobKey ? editorState : emptyEditorState(job)),
+    [editorState, job, jobKey],
+  );
+  const patchEditorState = (apply: (state: JobEditorState) => JobEditorState) =>
+    setEditorState((previous) => ({
+      ...apply(previous.key === jobKey ? previous : emptyEditorState(job)),
+      key: jobKey,
+    }));
+  const setDraft = (apply: (value: JobDraft) => JobDraft) =>
+    patchEditorState((state) => ({ ...state, draft: apply(state.draft) }));
+  const setErrors = (next: JobFieldErrors | ((value: JobFieldErrors) => JobFieldErrors)) =>
+    patchEditorState((state) => ({
+      ...state,
+      errors: typeof next === "function" ? next(state.errors) : next,
+    }));
+  const setWorkspaceFieldError = (next: string | null) =>
+    patchEditorState((state) => ({ ...state, workspaceFieldError: next }));
   const [saving, setSaving] = useState(false);
   const [previewItems, setPreviewItems] = useState<CronPreviewItem[]>([]);
   const [previewError, setPreviewError] = useState<string | null>(null);
   const [previewLoading, setPreviewLoading] = useState(false);
-  const [workspaceFieldError, setWorkspaceFieldError] = useState<string | null>(null);
   const previewRequest = useRef(0);
   const managed = workspaceTask !== null;
   const allowedEnvironmentKeys = workspaceTask?.environmentKeys ?? [];
@@ -52,12 +88,6 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
     && workspaceTask.dependsOn.length === 0
     && (workspaceTask.taskKind !== "shell" || workspaceTask.shellTrusted)
   );
-
-  useEffect(() => {
-    setDraft(job ? draftFromJob(job) : { ...EMPTY_JOB_DRAFT, environment: [] });
-    setErrors({});
-    setWorkspaceFieldError(null);
-  }, [job, workspaceTask]);
 
   useEffect(() => {
     const requestId = ++previewRequest.current;

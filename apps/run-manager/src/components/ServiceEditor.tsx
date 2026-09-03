@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from "react";
+import { useMemo, useState, type FormEvent } from "react";
 import { friendlyErrorMessage } from "../api";
 import {
   draftFromService,
@@ -16,17 +16,42 @@ interface ServiceEditorProps {
   onCancel: () => void;
 }
 
-export default function ServiceEditor({ service, onSave, onCancel }: ServiceEditorProps) {
-  const [draft, setDraft] = useState<ServiceDraft>(() =>
-    service ? draftFromService(service) : { ...EMPTY_SERVICE_DRAFT },
-  );
-  const [errors, setErrors] = useState<ServiceFieldErrors>({});
-  const [saving, setSaving] = useState(false);
+interface ServiceEditorState {
+  key: string;
+  draft: ServiceDraft;
+  errors: ServiceFieldErrors;
+}
 
-  useEffect(() => {
-    setDraft(service ? draftFromService(service) : { ...EMPTY_SERVICE_DRAFT });
-    setErrors({});
-  }, [service]);
+function emptyEditorState(service: Job | null): ServiceEditorState {
+  return {
+    key: service?.id ?? "",
+    draft: service ? draftFromService(service) : { ...EMPTY_SERVICE_DRAFT, environment: [] },
+    errors: {},
+  };
+}
+
+export default function ServiceEditor({ service, onSave, onCancel }: ServiceEditorProps) {
+  const serviceKey = service?.id ?? "";
+  // Derived during render rather than reset from an effect, for the same reason as JobEditor: a
+  // service-list refresh replaces `service` with an equal-but-new object.
+  const [editorState, setEditorState] = useState<ServiceEditorState>(() => emptyEditorState(service));
+  const { draft, errors } = useMemo(
+    () => (editorState.key === serviceKey ? editorState : emptyEditorState(service)),
+    [editorState, service, serviceKey],
+  );
+  const patchEditorState = (apply: (state: ServiceEditorState) => ServiceEditorState) =>
+    setEditorState((previous) => ({
+      ...apply(previous.key === serviceKey ? previous : emptyEditorState(service)),
+      key: serviceKey,
+    }));
+  const setDraft = (apply: (value: ServiceDraft) => ServiceDraft) =>
+    patchEditorState((state) => ({ ...state, draft: apply(state.draft) }));
+  const setErrors = (next: ServiceFieldErrors | ((value: ServiceFieldErrors) => ServiceFieldErrors)) =>
+    patchEditorState((state) => ({
+      ...state,
+      errors: typeof next === "function" ? next(state.errors) : next,
+    }));
+  const [saving, setSaving] = useState(false);
 
   const update = <K extends keyof ServiceDraft>(field: K, value: ServiceDraft[K]) => {
     setDraft((current) => ({ ...current, [field]: value }));
