@@ -30,6 +30,7 @@ describe("terminal settings", () => {
       theme: "light",
       scrollbackLines: 20_000,
     });
+    expect(JSON.parse(localStorage.getItem("wsl-desktop:settings") ?? "null").version).toBe(2);
   });
 
   it("설정이 없으면 기본값을 쓴다", () => {
@@ -43,6 +44,22 @@ describe("terminal settings", () => {
     expect(loadSettings()).toEqual(DEFAULT_SETTINGS);
   });
 
+  it("version 1 설정은 보존하면서 빠른 호출 기본값을 채워 version 2로 이관한다", () => {
+    localStorage.setItem("wsl-desktop:settings", JSON.stringify({
+      version: 1,
+      theme: "light",
+      sidePanelOpen: false,
+    }));
+
+    expect(loadSettings()).toMatchObject({
+      theme: "light",
+      sidePanelOpen: false,
+      quickSummonEnabled: true,
+      quickSummonShortcut: "Ctrl+Alt+Space",
+      keepInTray: false,
+    });
+  });
+
   it("알 수 없는 필드만 기본값으로 되돌리고 나머지는 보존한다", () => {
     const normalized = normalizeSettings({
       confirmSinglePaneClose: false,
@@ -51,6 +68,8 @@ describe("terminal settings", () => {
       cursorStyle: "beam",
       fontId: "../../evil",
       scrollbackLines: "many",
+      quickSummonShortcut: "Alt+F4",
+      keepInTray: "yes",
     });
     expect(normalized.confirmSinglePaneClose).toBe(false);
     expect(normalized.multiplexer).toBe(DEFAULT_SETTINGS.multiplexer);
@@ -58,6 +77,8 @@ describe("terminal settings", () => {
     expect(normalized.cursorStyle).toBe(DEFAULT_SETTINGS.cursorStyle);
     expect(normalized.fontId).toBe(DEFAULT_SETTINGS.fontId);
     expect(normalized.scrollbackLines).toBe(DEFAULT_SETTINGS.scrollbackLines);
+    expect(normalized.quickSummonShortcut).toBe(DEFAULT_SETTINGS.quickSummonShortcut);
+    expect(normalized.keepInTray).toBe(DEFAULT_SETTINGS.keepInTray);
   });
 
   it("scrollback은 상·하한으로 clamp한다", () => {

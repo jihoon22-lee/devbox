@@ -7,6 +7,7 @@ import {
   clampTerminalFontSize,
 } from "../lib/terminalUx";
 import type { MultiplexerAvailability } from "../types";
+import type { QuickSummonStatus } from "../api";
 import type { AskDialog } from "./AppDialog";
 import ShellIntegrationSettings from "./ShellIntegrationSettings";
 import {
@@ -14,6 +15,7 @@ import {
   FONT_CHOICES,
   MAX_SCROLLBACK_LINES,
   MIN_SCROLLBACK_LINES,
+  QUICK_SUMMON_SHORTCUTS,
   THEME_LABELS,
   clampScrollbackLines,
   type CursorStyle,
@@ -24,6 +26,7 @@ import {
 interface SettingsPanelProps {
   open: boolean;
   settings: TerminalSettings;
+  quickSummonStatus: QuickSummonStatus | null;
   onChange: (patch: Partial<TerminalSettings>) => void;
   onClose: () => void;
   muxAvailability: readonly MultiplexerAvailability[];
@@ -44,9 +47,33 @@ const MULTIPLEXER_STATUS_SUFFIX: Readonly<Record<MultiplexerAvailability["status
   error: " (확인 오류)",
 };
 
+function shortcutStatusMessage(settings: TerminalSettings, status: QuickSummonStatus | null): string {
+  if (!settings.quickSummonEnabled) return "전역 단축키를 사용하지 않습니다.";
+  if (!status) return "전역 단축키 등록 상태를 확인하는 중입니다…";
+  if (status.issues.includes("backendUnavailable")) {
+    return "native 설정에 연결하지 못했습니다. 앱을 다시 시작한 뒤 확인하세요.";
+  }
+  if (status.issues.includes("invalidShortcut")) {
+    return "허용되지 않은 단축키입니다. 목록에서 다시 선택하세요.";
+  }
+  if (status.issues.includes("shortcutBackendUnavailable")) {
+    return "이 환경에서 전역 단축키 기능을 시작하지 못했습니다. WSL Desktop을 다시 시작한 뒤 확인하세요.";
+  }
+  if (status.issues.includes("shortcutRollbackFailed")) {
+    return "단축키 변경과 이전 단축키 복구에 실패했습니다. 다른 조합을 선택하거나 앱을 다시 시작하세요.";
+  }
+  if (status.issues.includes("shortcutUnavailable")) {
+    const retained = status.activeShortcut ? ` 이전 단축키 ${status.activeShortcut}는 계속 동작합니다.` : "";
+    return `선택한 단축키를 등록하지 못했습니다. 다른 앱이 사용 중이거나 Windows가 예약한 조합일 수 있습니다.${retained}`;
+  }
+  if (status.shortcutRegistered) return `등록됨: ${status.activeShortcut ?? settings.quickSummonShortcut}`;
+  return "전역 단축키가 등록되지 않았습니다.";
+}
+
 export default function SettingsPanel({
   open,
   settings,
+  quickSummonStatus,
   onChange,
   onClose,
   muxAvailability,
@@ -122,6 +149,66 @@ export default function SettingsPanel({
               <small>복원할 레이아웃이 없고 배포판 조회에 성공한 경우에만 엽니다.</small>
             </span>
           </label>
+        </fieldset>
+
+        <fieldset className="settings-group quick-summon-settings">
+          <legend>빠른 호출</legend>
+          <label className="settings-row">
+            <input
+              type="checkbox"
+              checked={settings.quickSummonEnabled}
+              onChange={(event) => onChange({ quickSummonEnabled: event.currentTarget.checked })}
+            />
+            <span>
+              시스템 전역 단축키로 창 표시·숨기기
+              <small>다른 앱을 사용 중이어도 기존 WSL Desktop 창과 터미널을 그대로 호출합니다.</small>
+            </span>
+          </label>
+          <label className="settings-row">
+            <span>전역 단축키</span>
+            <select
+              aria-label="빠른 호출 전역 단축키"
+              value={settings.quickSummonShortcut}
+              disabled={!settings.quickSummonEnabled}
+              onChange={(event) => onChange({
+                quickSummonShortcut: event.currentTarget.value as TerminalSettings["quickSummonShortcut"],
+              })}
+            >
+              {QUICK_SUMMON_SHORTCUTS.map((choice) => (
+                <option key={choice.value} value={choice.value}>{choice.label}</option>
+              ))}
+            </select>
+          </label>
+          <p
+            className={`quick-summon-status ${quickSummonStatus?.issues.length ? "warning" : ""}`}
+            role="status"
+            aria-live="polite"
+          >
+            {shortcutStatusMessage(settings, quickSummonStatus)}
+          </p>
+          <label className="settings-row">
+            <input
+              type="checkbox"
+              checked={settings.keepInTray}
+              onChange={(event) => onChange({ keepInTray: event.currentTarget.checked })}
+            />
+            <span>
+              닫을 때 트레이에 유지
+              <small>트레이 메뉴의 ‘완전히 종료’를 선택할 때만 프로세스와 native PTY가 종료됩니다.</small>
+            </span>
+          </label>
+          <div
+            className={`quick-summon-close-behavior ${quickSummonStatus?.issues.includes("trayUnavailable") ? "warning" : ""}`}
+            role="status"
+          >
+            {settings.keepInTray && !quickSummonStatus
+              ? "닫기 버튼 동작을 적용하는 중입니다…"
+              : quickSummonStatus?.issues.includes("trayUnavailable")
+                ? "트레이를 만들지 못했습니다. 안전을 위해 닫기 버튼은 앱을 종료합니다."
+                : quickSummonStatus?.closeBehavior === "hideToTray"
+                  ? "현재 닫기 버튼: 창만 숨기고 터미널 상태 유지"
+                  : "현재 닫기 버튼: 앱과 native PTY 세션 종료"}
+          </div>
         </fieldset>
 
         <ShellIntegrationSettings distro={distro} ask={ask} onError={onError} />

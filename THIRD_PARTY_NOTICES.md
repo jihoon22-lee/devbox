@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `ebe22c7df176d95685cc9ff9c0eb3760ac08b95829498d7c5884f89dd10977c7`
+- Cargo.lock SHA-256: `8f2914074fdc81392d07964fa95bf2253231e75cb9faf10b7735dde347400af5`
 - pnpm-lock.yaml SHA-256: `f7f5d97b350782d85fa0925d45f126decd24002a0a527ebf069da0535cad1f84`
 
 ## Rust dependencies
@@ -210,6 +210,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | glib-macros | 0.18.5 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:0bb0228f477c0900c880fd78c8759b95c7636dbd7842707f49e132378aa2acdc` |
 | glib-sys | 0.18.1 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:063ce2eb6a8d0ea93d2bf8ba1957e78dbab6be1c2220dd3daca57d5a9d869898` |
 | glob | 0.3.4 | MIT OR Apache-2.0 | https://github.com/rust-lang/glob | `sha256:e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b` |
+| global-hotkey | 0.8.0 | Apache-2.0 OR MIT | https://github.com/tauri-apps/global-hotkey | `sha256:8c386b0a4a70cb2d39fffd74480f985b6f0bfbcb934b6a6b6b7e630e448f242e` |
 | gobject-sys | 0.18.0 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:0850127b514d1c4a4654ead6dedadb18198999985908e6ffe4436f53c785ce44` |
 | gtk | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:fd56fb197bfc42bd5d2751f4f017d44ff59fbb58140c6b49f9b3b2bdab08506a` |
 | gtk-sys | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:8f29a1c21c59553eb7dd40e918be54dccd60c52b049b75119d5d96ce6b624414` |
@@ -519,6 +520,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tauri-plugin-clipboard-manager | 2.3.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:206dc20af4ed210748ba945c2774e60fd0acd52b9a73a028402caf809e9b6ecf` |
 | tauri-plugin-dialog | 2.7.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b2d3c1dbe38037e7f590cdf2492594d5ceebe031e7bc7e827509b22a999d2940` |
 | tauri-plugin-fs | 2.5.1 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b7ecc274121aca0c036a2b42d1cbe83d368d348f54e0bb8a735c2b1548e8f371` |
+| tauri-plugin-global-shortcut | 2.3.2 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b4dd9f4c5136c09cd962da0c86dc4accd4666db2ea591cf16e6597435843bd2b` |
 | tauri-plugin-notification | 2.3.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:01fc2c5ff41105bd1f7242d8201fdf3efd70749b82fa013a17f2126357d194cc` |
 | tauri-plugin-opener | 2.5.4 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:17e1bea14edce6b793a04e2417e3fd924b9bc4faae83cdee7d714156cceeed29` |
 | tauri-plugin-single-instance | 2.4.3 | Apache-2.0 OR MIT | https://github.com/tauri-apps/plugins-workspace | `sha256:b3214becf9ef5783c0ae99a3bb25adf5353a7a16ebf53e74b909e29205735c6c` |
@@ -713,6 +715,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | x11-dl | 2.21.0 | MIT | https://github.com/AltF02/x11-rs.git | `sha256:38735924fedd5314a6e548792904ed8c6de6636285cb9fec04d5b1db85c1516f` |
 | x11rb | 0.13.2 | MIT OR Apache-2.0 | https://github.com/psychon/x11rb | `sha256:9993aa5be5a26815fe2c3eacfc1fde061fc1a1f094bf1ad2a18bf9c495dd7414` |
 | x11rb-protocol | 0.13.2 | MIT OR Apache-2.0 | https://github.com/psychon/x11rb | `sha256:ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd` |
+| xkeysym | 0.2.1 | MIT OR Apache-2.0 OR Zlib | https://github.com/notgull/xkeysym | `sha256:b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56` |
 | yoke | 0.8.3 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:709fe23a0424b6a435d82152b1bd3fdfb0833487d5fa90d05d42762a9891fef5` |
 | yoke-derive | 0.8.2 | Unicode-3.0 | https://github.com/unicode-org/icu4x | `sha256:de844c262c8848816172cef550288e7dc6c7b7814b4ee56b3e1553f275f1858e` |
 | zbus | 5.19.0 | MIT | https://github.com/z-galaxy/zbus/ | `sha256:5db4be7c075cb421e4b7ee645541604239bd243ba7c357511f4ff3a74b555907` |
