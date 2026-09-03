@@ -104,7 +104,8 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 - 외부 편집 watcher는 bounded event queue와 이벤트당 256개·32KiB path, 4,096개 경로 debounce
   상한을 사용하고, 현재 identity 안의 regular UTF-8 문서만 최대 10 MiB까지 안정된 metadata
   snapshot 전후로 읽는다. scan은 최대 4,096개 파일·폴더와 Markdown 64 MiB로 제한하며 불완전한
-  scan의 누락은 삭제 증거로 쓰지 않는다. modal은 title/body UTF-8 byte
+  scan의 누락은 삭제 증거로 쓰지 않는다. renderer effect보다 늦게 등록된 docs-changed listener는
+  즉시 해제하며 정리된 handler는 metadata를 다시 읽지 않는다. modal은 title/body UTF-8 byte
   사용량, initial focus·Escape·Tab trap·focus restore를 제공하며, stale/expiry/unmount 응답과
   중복 Save/Cancel은 화면 또는 native 상태를 다시 오염시키지 않는다
 - clipboard IPC는 `allow-read-text`만 허용하며 편집기에서 사용자가 붙여넣기를 고른 순간의 plain text만 읽는다. clipboard history나 background 수집은 하지 않는다

@@ -1083,19 +1083,41 @@ export default function App() {
   }, [refresh]);
 
   useEffect(() => {
-    let alive = true;
+    let disposed = false;
     const applyInstallRequest = (request: { target: { kind: "install"; appId: string } }) => {
-      if (!alive || request.target.kind !== "install") return;
+      if (disposed || request.target.kind !== "install") return;
       setTab("apps");
       setSelectedAppId(request.target.appId);
       setNotice("Launcher 요청: 선택한 앱의 설치 방법을 고르세요.");
     };
     let unlisten: (() => void) | undefined;
-    void onPendingOpen((request) => applyInstallRequest(request)).then((dispose) => {
-      unlisten = dispose;
-      void takePendingOpen().then((request) => { if (request) applyInstallRequest(request); }).catch(() => undefined);
-    }).catch(() => undefined);
-    return () => { alive = false; unlisten?.(); };
+    const consumePendingOpen = () => {
+      if (disposed) return;
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) applyInstallRequest(request);
+        })
+        .catch(() => undefined);
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
+    void onPendingOpen((request) => applyInstallRequest(request))
+      .then((stop) => {
+        if (disposed) stop();
+        else {
+          unlisten = stop;
+          consumeColdStart();
+        }
+      })
+      .catch(() => consumeColdStart());
+    return () => {
+      disposed = true;
+      unlisten?.();
+    };
   }, []);
 
   const onInstallRootInput = (value: string) => {

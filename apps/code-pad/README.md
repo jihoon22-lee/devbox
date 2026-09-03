@@ -55,6 +55,8 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - 공용 `packages/mermaid-renderer`의 lazy Mermaid, `securityLevel: "strict"`
 - LSP 관리 dialog는 header/footer를 고정하고 본문 하나만 scroll한다. 상태와 설치 목록에 별도 nested
   scroll을 만들지 않으며 viewport 안에서 최대 900px 높이를 사용한다
+- LSP diagnostics와 status frontend listener는 등록·실패·해제를 서로 독립적으로 관리한다. 한쪽
+  등록만 실패하거나 effect 정리 뒤 등록이 완료돼도 성공한 listener를 잃지 않고 정확히 해제한다.
 - 파일 이름 변경(탭 컨텍스트 메뉴)은 같은 폴더의 단일 이름만 허용하고 기존 대상을 덮어쓰지 않는다. 삭제는 복구 불가·미저장 버퍼 손실을 명시적으로 확인하며, 두 작업 모두 mtime·크기·SHA-256이 열린 탭의 스냅샷과 일치할 때만 실행한다. LSP의 여러 파일 내용 변경은 위의 별도 preview/rollback 경로를 사용한다.
 - clipboard IPC는 `allow-read-text`만 허용한다. 사용자가 편집기 메뉴의 붙여넣기를 고른 순간에만 plain text를 읽어 현재 CodeMirror selection에 삽입하며 history·background 수집은 하지 않는다
 

@@ -56,6 +56,16 @@ function preview(id = firstId, producerId = "api-playground"): ToolboxTextHandof
   };
 }
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 async function waitForListener(): Promise<void> {
   await waitFor(() => expect(mocks.wakeup).not.toBeNull());
 }
@@ -107,6 +117,32 @@ describe("Developer Toolbox toolbox-text/v1 receiver", () => {
     expect(previewToolboxTextMock).toHaveBeenCalledWith(firstId);
     expect(screen.getByText("API Playground")).toBeTruthy();
     expect(screen.getByText("toolbox-text/v1")).toBeTruthy();
+  });
+
+  it("falls back to the cold pull when live listener registration fails", async () => {
+    onOpenRequestMock.mockRejectedValueOnce(new Error("listener unavailable"));
+    takePendingOpenMock.mockResolvedValueOnce(request());
+
+    render(<App />);
+
+    await screen.findByRole("dialog", { name: "Toolbox 텍스트 미리보기" });
+    expect(takePendingOpenMock).toHaveBeenCalledTimes(1);
+    expect(previewToolboxTextMock).toHaveBeenCalledWith(firstId);
+  });
+
+  it("does not let a disposed listener failure consume the one-shot slot", async () => {
+    const registration = deferred<() => void>();
+    onOpenRequestMock.mockReturnValueOnce(registration.promise);
+    const view = render(<App />);
+    await waitFor(() => expect(onOpenRequestMock).toHaveBeenCalledTimes(1));
+
+    view.unmount();
+    await act(async () => {
+      registration.reject(new Error("late listener failure"));
+      await Promise.resolve();
+    });
+
+    expect(takePendingOpenMock).not.toHaveBeenCalled();
   });
 
   it("treats a hot event as a wakeup and re-takes the pending request", async () => {

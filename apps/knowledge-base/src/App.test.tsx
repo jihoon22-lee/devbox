@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
@@ -9,6 +9,8 @@ import {
   deleteFile,
   discardRenamePreview,
   entryPath,
+  listTree,
+  onDocsChanged,
   openIn,
   openTargets,
   previewRename,
@@ -116,6 +118,18 @@ const revealEntryMock = vi.mocked(revealEntry);
 const openTargetsMock = vi.mocked(openTargets);
 const openInMock = vi.mocked(openIn);
 const readFileMock = vi.mocked(readFile);
+const listTreeMock = vi.mocked(listTree);
+const onDocsChangedMock = vi.mocked(onDocsChanged);
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
 
 afterEach(() => {
   cleanup();
@@ -131,6 +145,8 @@ afterEach(() => {
   openTargetsMock.mockClear();
   openInMock.mockClear();
   readFileMock.mockClear();
+  listTreeMock.mockClear();
+  onDocsChangedMock.mockClear();
 });
 
 it("shows the active WSL vault polling mode without treating it as an error", async () => {
@@ -142,6 +158,30 @@ it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
   const { container } = render(<App />);
   await waitFor(() => expect(screen.getByText("Knowledge")).toBeTruthy());
   await assertNoA11yViolations(container);
+});
+
+it("ignores and releases a docs listener that outlives its effect", async () => {
+  const registration = deferred<() => void>();
+  const stop = vi.fn();
+  let handler: Parameters<typeof onDocsChanged>[0] | undefined;
+  onDocsChangedMock.mockImplementationOnce((next) => {
+    handler = next;
+    return registration.promise;
+  });
+  const view = render(<App />);
+  await waitFor(() => expect(handler).toBeDefined());
+  await waitFor(() => expect(listTreeMock).toHaveBeenCalled());
+  const callsBeforeUnmount = listTreeMock.mock.calls.length;
+
+  view.unmount();
+  await act(async () => {
+    handler?.();
+    registration.resolve(stop);
+    await registration.promise;
+  });
+
+  expect(listTreeMock).toHaveBeenCalledTimes(callsBeforeUnmount);
+  expect(stop).toHaveBeenCalledTimes(1);
 });
 
 describe("knowledge-base App — 모드 토글 & 프리뷰 비활성화", () => {

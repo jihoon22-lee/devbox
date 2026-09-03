@@ -899,26 +899,33 @@ export default function App() {
   // checked before any run, service action, or task-control handoff is used.
   useEffect(() => {
     if (loading) return;
-    const consumePendingOpen = () => {
-      void takePendingOpen()
-        .then((request) => {
-          if (request) openRequestRef.current(request);
-        })
-        .catch((cause) => setError(friendlyErrorMessage(cause)));
-    };
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void onOpenRequest(() => {
-      if (!disposed) consumePendingOpen();
-    })
+    const consumePendingOpen = () => {
+      if (disposed) return;
+      void takePendingOpen()
+        .then((request) => {
+          if (!disposed && request) openRequestRef.current(request);
+        })
+        .catch((cause) => {
+          if (!disposed) setError(friendlyErrorMessage(cause));
+        });
+    };
+    let coldStartConsumed = false;
+    const consumeColdStart = () => {
+      if (disposed || coldStartConsumed) return;
+      coldStartConsumed = true;
+      consumePendingOpen();
+    };
+    void onOpenRequest(() => consumePendingOpen())
       .then((stop) => {
         if (disposed) stop();
         else {
           unlisten = stop;
-          consumePendingOpen();
+          consumeColdStart();
         }
       })
-      .catch(() => consumePendingOpen());
+      .catch(() => consumeColdStart());
     return () => {
       disposed = true;
       unlisten?.();

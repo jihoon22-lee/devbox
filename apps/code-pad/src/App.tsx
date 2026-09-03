@@ -335,17 +335,19 @@ export default function App() {
     let disposed = false;
     let stopDiagnostics: (() => void) | undefined;
     let stopStatus: (() => void) | undefined;
-    void Promise.all([
-      listen<LspDiagnosticsEvent>("lsp/diagnostics", (event) => lspSync.acceptDiagnosticsEvent(event.payload)),
-      listen<LspStatusEvent>("lsp/status", (event) => lspSync.acceptStatusEvent(event.payload)),
-    ]).then(([diagnosticsStop, statusStop]) => {
-      if (disposed) {
-        diagnosticsStop();
-        statusStop();
-      } else {
-        stopDiagnostics = diagnosticsStop;
-        stopStatus = statusStop;
-      }
+    void listen<LspDiagnosticsEvent>(
+      "lsp/diagnostics",
+      (event) => lspSync.acceptDiagnosticsEvent(event.payload),
+    ).then((stop) => {
+      if (disposed) stop();
+      else stopDiagnostics = stop;
+    }).catch(() => undefined);
+    void listen<LspStatusEvent>(
+      "lsp/status",
+      (event) => lspSync.acceptStatusEvent(event.payload),
+    ).then((stop) => {
+      if (disposed) stop();
+      else stopStatus = stop;
     }).catch(() => undefined);
     return () => {
       disposed = true;

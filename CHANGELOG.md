@@ -49,6 +49,12 @@
 
 ### Fixed
 
+- **Frontend native listener 수명 안정화** — Developer Toolbox·Log Lens·Run Manager·Devbox
+  Manager의 cold/hot AppLink 수신은 live listener 등록 뒤에만 one-shot 요청을 가져오며, 이미
+  정리된 React effect가 요청을 대신 소비하지 않는다. WSL Desktop terminal, Knowledge 문서
+  watcher, Code Pad LSP listener도 늦거나 부분적으로 성공한 등록을 정확히 해제해 StrictMode
+  재등록 뒤 중복 event와 listener 누수를 막는다.
+
 - **API Playground MCP 입력 초안 분리** — 같은 MCP 연결에서 여러 tool 또는 prompt를 번갈아
   편집해도 각 이름의 입력값을 독립적으로 유지한다. 다른 항목을 편집하는 순간 직전 항목의 값이
   사라지던 문제를 고쳤으며, 연결이 초기화되거나 끊기면 모든 초안은 그대로 폐기한다.

@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
@@ -321,6 +321,16 @@ const trustWorkspaceTaskSourceMock = vi.mocked(trustWorkspaceTaskSource);
 const trustWorkspaceTaskShellSourceMock = vi.mocked(trustWorkspaceTaskShellSource);
 const confirmMock = vi.fn<(message?: string) => boolean>();
 
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
+}
+
 function card(name: string): HTMLElement {
   const element = screen.getByRole("heading", { name }).closest("article");
   if (!(element instanceof HTMLElement)) throw new Error(`${name} card was not rendered`);
@@ -517,6 +527,23 @@ describe("Run Manager context menus", () => {
     await waitFor(() => expect(acceptWorkspaceTaskControlMock).toHaveBeenCalledWith(taskControlPreview.requestId));
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Workbench 요청 확인" })).toBeNull());
     expect(screen.getByText(/시작됨/)).toBeTruthy();
+  });
+
+  it("does not consume an AppLink slot after its listener effect is disposed", async () => {
+    const registration = deferred<() => void>();
+    onOpenRequestMock.mockReturnValueOnce(registration.promise);
+    const view = render(<App />);
+    await screen.findByRole("heading", { name: "백업" });
+    await waitFor(() => expect(onOpenRequestMock).toHaveBeenCalledTimes(1));
+    expect(takePendingOpenMock).not.toHaveBeenCalled();
+
+    view.unmount();
+    await act(async () => {
+      registration.reject(new Error("late listener failure"));
+      await Promise.resolve();
+    });
+
+    expect(takePendingOpenMock).not.toHaveBeenCalled();
   });
 
   it("requires explicit confirmation before a Launcher task mutates runtime state", async () => {

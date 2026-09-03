@@ -97,9 +97,11 @@ The handoff modal is also single-flight: while a preview, accept/discard
 action, or bounded recovery is active, only the newest opaque request is
 queued. Escape/Tab focus handling, opener restoration, unmount guards, and
 generation checks prevent a stale native response from mutating the source
-UI. The Run reader uses a decimal logical cursor, reports retention rotation
-or truncation, and fails closed on linked/reparse paths, malformed or
-overlapping segment ranges, and segment/count/output limits.
+UI. The AppLink wakeup listener is established before the cold one-shot slot
+is pulled; a disposed registration neither consumes that slot nor leaves a
+late listener active. The Run reader uses a decimal logical cursor, reports
+retention rotation or truncation, and fails closed on linked/reparse paths,
+malformed or overlapping segment ranges, and segment/count/output limits.
 
 Parser timestamps accept RFC3339, journal-style numeric offsets, fractional ISO
 forms, and timezone-less local forms on a best-effort basis. Browser fixtures
