@@ -23,9 +23,12 @@ devbox — Tauri 15개 데스크톱 앱 모노레포. 현재 v0.6.0 안정판 so
 - 현재 post-release 검증은 #518이 권위 있는 source다. #176은 닫힌 v0.5.1 historical checklist이고, 사용자 승인으로 남은 유일한 physical 항목은 설치된 WSL Desktop의 zellij/terminal reconnect다. RC1~RC3 tag/release는 삭제된 historical record이며 미래 RC는 사용자의 명시 요청 전에는 만들지 않는다.
 
 ## 명령
-- 프론트: `pnpm install` / `pnpm build` / `pnpm dev` — **pnpm이지 npm이 아님**
-- Rust(WSL 개발): `cargo test`(순수 로직) / `cargo check`(src-tauri 컴파일 검증)
-  - 새 셸에서 Rust 사용 전 `source ~/.cargo/env`
+- 기본 완료 검증: 루트에서 `pnpm verify:affected` — `origin/main` 이후 commit과 staged,
+  unstaged, untracked 파일을 합쳐 실제 영향 package와 역의존 소비자만 검증한다.
+- 명시적 전체 감사: `pnpm verify:all` — release 준비, CI 검증기 자체 변경, 수동 전체 감사에만 사용한다.
+- 집중 개발: 앱 디렉터리의 `pnpm build`·`pnpm test`, 또는 `cargo test -p <package>`·
+  `cargo check -p <package>`를 사용한다. 패키지 매니저는 **pnpm이지 npm이 아님**.
+- Rust(WSL 개발)는 새 셸에서 사용 전 `source ~/.cargo/env`
 - 실제 앱 실행·배포 빌드는 **Windows**에서만: `pnpm tauri dev` / `pnpm tauri build`
 - WSL에서 src-tauri 컴파일엔 Linux 라이브러리 필요:
   `libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
@@ -38,7 +41,8 @@ devbox — Tauri 15개 데스크톱 앱 모노레포. 현재 v0.6.0 안정판 so
   범위가 과도해지는 작업은 계속 분리한다. PR 본문에 포함 이슈와 묶음 근거를 명시한다.
 - **모든 PR은 GitHub Actions CI(`.github/workflows/ci.yml`) 통과 후에만 main으로 머지**
 - 커밋: Conventional Commits, 영어, 현재형 — `feat(port-manager): add netstat parser`
-- 코드 산출물의 완료 정의: `cargo test` + `cargo check` + `pnpm build` 통과
+- 코드 산출물의 완료 정의: 집중 테스트 + `pnpm verify:affected` + GitHub Actions CI 통과.
+  전체 workspace 검증은 affected resolver가 `all`을 선택하거나 release·명시적 감사일 때만 수행한다.
 - PR 머지 또는 작업 종료 시 같은 작업 안에서 전용 worktree가 clean이고 머지된 상태인지 확인한 뒤, 전용 worktree 제거 및 `git worktree prune`, 로컬 작업 브랜치 삭제, 원격 작업 브랜치 삭제를 순서대로 수행한다. 활성·잠김·미머지·dirty worktree는 삭제하지 말고 사용자에게 즉시 보고한다. 자동 생성 worktree나 호스트가 소유한 worktree는 무단으로 삭제하지 않는다.
 - `완료`를 보고하기 전에 `git worktree list`와 로컬·원격 브랜치 목록을 다시 확인해 작업 잔존 여부를 검증한다.
 

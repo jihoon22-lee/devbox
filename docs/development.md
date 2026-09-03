@@ -63,7 +63,12 @@ pnpm tauri dev              # Windows에서
 pnpm tauri build            # Windows에서 (배포)
 ```
 
-WSL에서는 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개발한다.
+WSL에서는 앱별 `cargo test`(core 로직) / `pnpm build`(프론트 검증)로 개발하고, 완료 전
+루트에서 `pnpm verify:affected`를 실행한다. 이 명령은 branch와 작업 트리의 변경 파일을
+pnpm/Cargo dependency graph에 투영해 변경 package와 실제 역의존 소비자만 build, test,
+Clippy, 추가 typecheck 대상으로 선택한다. `pnpm verify:all`은 release 준비나 명시적인 전체
+감사에만 사용한다. CI는 같은 resolver를 사용하고, 주 1회 전체 workspace 감사로 선택 검증을
+보완한다. 영향이 없는 compiler·dependency job은 runner를 할당하기 전에 skip한다.
 
 모든 release frontend는 `@devbox/tokens`와 `@devbox/a11y`를 사용하고 `lang="ko-KR"`,
 Vite manifest, 초기 shell axe smoke를 유지한다. CI의 frontend gate는 generated manifest의

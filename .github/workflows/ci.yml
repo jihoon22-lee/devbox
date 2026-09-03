@@ -8,6 +8,10 @@ on:
   # only duplicates the verified work. Manual runs remain available for an
   # explicit repository-wide audit.
   workflow_dispatch:
+  # Scoped PR checks are backed by one weekly repository-wide audit so lockfile
+  # and platform interactions are still exercised together between releases.
+  schedule:
+    - cron: "17 18 * * 0"
 
 concurrency:
   group: ci-${{ github.ref }}
@@ -17,36 +21,51 @@ jobs:
   dependencies:
     name: Dependency policy
     runs-on: ubuntu-latest
+    needs: scope
+    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.dependency_scope != 'none') }}
     steps:
+      - name: Require successful scope detection
+        if: ${{ needs.scope.result != 'success' }}
+        run: exit 1
+
       - uses: actions/checkout@v7
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
 
       - uses: actions/setup-node@v7
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         with:
           node-version: 22
 
       - name: Enable repository-pinned pnpm
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         run: corepack enable pnpm
 
       - id: pnpm-store
         name: Resolve pnpm store
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         shell: bash
         run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
 
       - uses: actions/cache@v6
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         with:
           path: ${{ steps.pnpm-store.outputs.path }}
           key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
           restore-keys: pnpm-${{ runner.os }}-
 
       - uses: dtolnay/rust-toolchain@stable
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
 
       - name: Install frontend dependencies
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         run: pnpm install --frozen-lockfile
 
       - name: Audit frontend dependencies
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         run: pnpm audit --audit-level moderate
 
       - name: Check pnpm policy and notices
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         run: |
           python3 .github/scripts/check-dependencies.py check
           python3 .github/scripts/test-check-dependencies.py
@@ -60,6 +79,7 @@ jobs:
           node .github/scripts/test-check-frontend-accessibility.mjs
 
       - name: Check Cargo licenses, advisories, bans, and sources
+        if: ${{ needs.scope.outputs.dependency_scope != 'none' }}
         uses: EmbarkStudios/cargo-deny-action@3c6349835b2b7b196a839186cb8b78e02f7b5f25 # v2, cargo-deny 0.20.2
         with:
           rust-version: "1.98.0"
@@ -79,13 +99,22 @@ jobs:
     runs-on: ubuntu-latest
     outputs:
       frontend_scope: ${{ steps.scope.outputs.frontend_scope }}
+      frontend_packages: ${{ steps.scope.outputs.frontend_packages }}
       frontend_apps: ${{ steps.scope.outputs.frontend_apps }}
       rust_scope: ${{ steps.scope.outputs.rust_scope }}
       rust_packages: ${{ steps.scope.outputs.rust_packages }}
+      dependency_scope: ${{ steps.scope.outputs.dependency_scope }}
+      changed_count: ${{ steps.scope.outputs.changed_count }}
+      scope_reason: ${{ steps.scope.outputs.scope_reason }}
     steps:
       - uses: actions/checkout@v7
         with:
           fetch-depth: 0
+
+      - name: Test scope resolver and runners
+        run: |
+          python3 .github/scripts/test-ci-scope.py
+          python3 .github/scripts/test-ci-scope-runners.py
 
       - id: scope
         name: Detect affected packages
@@ -101,17 +130,48 @@ jobs:
           fi
           bash .github/scripts/ci-scope.sh "$BASE_SHA" "$HEAD_SHA"
 
+      - name: Summarize affected scope
+        env:
+          FRONTEND_SCOPE: ${{ steps.scope.outputs.frontend_scope }}
+          FRONTEND_PACKAGES: ${{ steps.scope.outputs.frontend_packages }}
+          RUST_SCOPE: ${{ steps.scope.outputs.rust_scope }}
+          RUST_PACKAGES: ${{ steps.scope.outputs.rust_packages }}
+          DEPENDENCY_SCOPE: ${{ steps.scope.outputs.dependency_scope }}
+          CHANGED_COUNT: ${{ steps.scope.outputs.changed_count }}
+          SCOPE_REASON: ${{ steps.scope.outputs.scope_reason }}
+        run: |
+          case "$FRONTEND_SCOPE" in
+            all) frontend_detail="all workspace packages" ;;
+            none) frontend_detail="none" ;;
+            *) frontend_detail="$FRONTEND_PACKAGES" ;;
+          esac
+          case "$RUST_SCOPE" in
+            all) rust_detail="all workspace packages" ;;
+            none) rust_detail="none" ;;
+            *) rust_detail="$RUST_PACKAGES" ;;
+          esac
+          {
+            echo "### Affected verification scope"
+            echo
+            echo "- Changed paths: $CHANGED_COUNT"
+            echo "- Frontend: \`$FRONTEND_SCOPE\` ($frontend_detail)"
+            echo "- Rust: \`$RUST_SCOPE\` ($rust_detail)"
+            echo "- Dependency policy: \`$DEPENDENCY_SCOPE\`"
+            echo "- Reason: $SCOPE_REASON"
+          } | tee -a "$GITHUB_STEP_SUMMARY"
+
   frontend:
     name: Frontend (pnpm)
     runs-on: ubuntu-latest
     needs: scope
-    if: ${{ always() }}
+    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.frontend_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
       - uses: actions/checkout@v7
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
 
       - uses: actions/setup-node@v7
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
@@ -140,42 +200,46 @@ jobs:
         run: pnpm install --frozen-lockfile
 
       - name: Build frontends
-        run: bash .github/scripts/run-frontend-scope.sh build "$FRONTEND_SCOPE" "$FRONTEND_APPS"
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        run: bash .github/scripts/run-frontend-scope.sh build "$FRONTEND_SCOPE" "$FRONTEND_PACKAGES"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
-          FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}
+          FRONTEND_PACKAGES: ${{ needs.scope.outputs.frontend_packages }}
 
       - name: Check frontend bundle budgets
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
         run: node .github/scripts/check-frontend-bundles.mjs "$FRONTEND_SCOPE" "$FRONTEND_APPS"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
           FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}
 
       - name: Test frontends
-        run: bash .github/scripts/run-frontend-scope.sh test "$FRONTEND_SCOPE" "$FRONTEND_APPS"
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
+        run: bash .github/scripts/run-frontend-scope.sh test "$FRONTEND_SCOPE" "$FRONTEND_PACKAGES"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
-          FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}
+          FRONTEND_PACKAGES: ${{ needs.scope.outputs.frontend_packages }}
 
-      - name: Type check
-        if: ${{ hashFiles('apps/*/tsconfig.json', 'packages/*/tsconfig.json') != '' }}
-        run: bash .github/scripts/run-frontend-scope.sh typecheck "$FRONTEND_SCOPE" "$FRONTEND_APPS"
+      - name: Check TypeScript packages not covered by build
+        if: ${{ needs.scope.outputs.frontend_scope != 'none' && hashFiles('apps/*/tsconfig.json', 'packages/*/tsconfig.json') != '' }}
+        run: bash .github/scripts/run-frontend-scope.sh typecheck "$FRONTEND_SCOPE" "$FRONTEND_PACKAGES"
         env:
           FRONTEND_SCOPE: ${{ needs.scope.outputs.frontend_scope }}
-          FRONTEND_APPS: ${{ needs.scope.outputs.frontend_apps }}
+          FRONTEND_PACKAGES: ${{ needs.scope.outputs.frontend_packages }}
 
   rust:
     name: Rust (Cargo workspace)
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: scope
-    if: ${{ always() }}
+    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
       - uses: actions/checkout@v7
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
 
       - uses: dtolnay/rust-toolchain@stable
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
@@ -209,24 +273,28 @@ jobs:
             libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev
 
       - name: Check
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         run: bash .github/scripts/run-rust-scope.sh check "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Clippy
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         run: bash .github/scripts/run-rust-scope.sh clippy "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Format
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         run: bash .github/scripts/run-rust-scope.sh fmt "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Test
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         run: bash .github/scripts/run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
@@ -236,13 +304,14 @@ jobs:
     name: Rust (Windows compile check)
     runs-on: windows-latest
     needs: scope
-    if: ${{ always() }}
+    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
         run: exit 1
 
       - uses: actions/checkout@v7
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
 
       # devbox는 Windows 타깃 Tauri 앱 모노레포지만 위 rust 잡은 ubuntu에서만
       # 돈다. #[cfg(target_os = "windows")] 코드는 여기서만 실제로 컴파일된다.
@@ -261,6 +330,7 @@ jobs:
           shared-key: devbox-windows
 
       - name: Check
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         shell: bash
         run: bash .github/scripts/run-rust-scope.sh check "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
@@ -268,6 +338,7 @@ jobs:
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
       - name: Clippy
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         shell: bash
         run: bash .github/scripts/run-rust-scope.sh clippy "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
@@ -277,6 +348,7 @@ jobs:
       # fmt 검사는 위 rust(ubuntu) 잡이 이미 수행하므로 여기서는 생략한다.
 
       - name: Test
+        if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         shell: bash
         run: bash .github/scripts/run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"
         env:
