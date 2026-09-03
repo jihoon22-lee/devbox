@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import ServiceEditor from "./ServiceEditor";
+import type { Job } from "../types";
 
 afterEach(() => cleanup());
 
@@ -43,4 +44,60 @@ describe("ServiceEditor", () => {
     expect(await getByRole("alert")).toBeTruthy();
     expect(onSave).not.toHaveBeenCalled();
   });
+
+  it("keeps the edited draft when a service list refresh replaces the service object", () => {
+    const service = editableService();
+    const { getByLabelText, rerender } = render(
+      <ServiceEditor service={service} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+
+    fireEvent.change(getByLabelText("서비스 이름"), { target: { value: "renamed" } });
+    expect((getByLabelText("서비스 이름") as HTMLInputElement).value).toBe("renamed");
+
+    rerender(<ServiceEditor service={{ ...service }} onSave={vi.fn()} onCancel={vi.fn()} />);
+    expect((getByLabelText("서비스 이름") as HTMLInputElement).value).toBe("renamed");
+  });
+
+  it("still reloads the draft when a different service is opened", () => {
+    const service = editableService();
+    const { getByLabelText, rerender } = render(
+      <ServiceEditor service={service} onSave={vi.fn()} onCancel={vi.fn()} />,
+    );
+    fireEvent.change(getByLabelText("서비스 이름"), { target: { value: "renamed" } });
+
+    rerender(
+      <ServiceEditor
+        service={{ ...service, id: "service-other", name: "other" }}
+        onSave={vi.fn()}
+        onCancel={vi.fn()}
+      />,
+    );
+    expect((getByLabelText("서비스 이름") as HTMLInputElement).value).toBe("other");
+  });
 });
+
+function editableService(): Job {
+  return {
+    id: "service-editable",
+    kind: "service",
+    name: "web",
+    command: "npm start",
+    cwd: "C:\\work\\demo",
+    targetKind: "windows",
+    targetDistro: null,
+    envConfigured: false,
+    cronExpr: null,
+    enabled: true,
+    overlapPolicy: "skip",
+    catchUp: false,
+    lastEvaluatedAt: null,
+    nextQueueSequence: 0,
+    restartPolicy: "never",
+    autoStart: false,
+    healthTcpAddress: null,
+    healthTcpPort: null,
+    healthStartGraceMs: null,
+    createdAt: 1,
+    updatedAt: 1,
+  };
+}
