@@ -197,7 +197,9 @@ src/
   조립된 단일 후보로 packaged runtime·installer acceptance까지 통과시킨다. packaged runtime은
   assembly가 검증한 config 원본을 후보 evidence에서 그대로 사용한다. installer acceptance는 앱
   version이 바뀐 항목만 baseline→candidate update와 rollback을 수행하고, version이 같은 항목은
-  baseline과 candidate의 독립 fresh install/uninstall로 검증한다. 이후 같은 commit에
+  baseline과 candidate의 독립 fresh install/uninstall로 검증한다. Windows checkout은 생성된
+  notices를 LF로 유지하고, 앱별 NSIS build 전에는 저장소 내부의 고정 bundle staging만 비워
+  이전 release resource가 새 installer에 재사용되지 않게 한다. 이후 같은 commit에
   annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·workflow run·32개
   asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는 성공 후보가 없거나
   만료된 경우 공개 전에 fail-closed한다.

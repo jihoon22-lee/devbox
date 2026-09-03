@@ -24,8 +24,10 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   assembly 때 해시한 smoke config 원본까지 전달해 packaged runtime의 교차 OS checkout 차이를
   제거한다. disposable installer lifecycle은 app version이 달라진 앱에는 update/rollback을,
   version이 같은 앱에는 baseline/candidate별 fresh install/uninstall을 적용하는 pre-publication
-  gate다. stable
-  release는 같은 tag·commit의 성공한 비만료 candidate를 repository·workflow-run·asset digest까지
+  gate다. Generated notices는 모든 checkout에서 LF byte identity를 유지하며, Windows shard는
+  compiled dependency cache를 보존한 채 앱마다 exact `target/release/bundle` staging만 초기화해
+  이전 NSIS resource payload가 새 후보에 섞이지 않도록 한다. Stable release는 같은
+  tag·commit의 성공한 비만료 candidate를 repository·workflow-run·asset digest까지
   독립 검증한 뒤 승격하므로 동일 15개 앱을 다시 컴파일하지 않는다. candidate 자체는 여전히
   catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
 
