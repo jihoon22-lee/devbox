@@ -29,8 +29,8 @@ def main() -> None:
     assert set(config) == {"schemaVersion", "baseline", "apps"}
     assert config["schemaVersion"] == 1
     assert set(config["baseline"]) == {"tag", "commit"}
-    assert config["baseline"]["tag"] == "v0.5.1"
-    assert config["baseline"]["commit"] == "300cb158d1f0c23973857549a1aeddd9997c3f16"
+    assert config["baseline"]["tag"] == "v0.6.0"
+    assert config["baseline"]["commit"] == "d2fa25a0a1f087459838449daded00c0b09764b4"
 
     released = [app for app in catalog["apps"] if app["release"]]
     configured = config["apps"]

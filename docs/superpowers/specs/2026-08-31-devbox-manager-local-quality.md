@@ -3,7 +3,8 @@
 **Date:** 2026-08-31
 **Issue:** #491 (W10 PR B)
 **App:** `apps/devbox-manager`
-**Status:** implemented; local repository gates passed, CI and Windows acceptance pending
+**Status:** implemented; local/required CI and v0.6.0 #493 hosted Windows package gate passed;
+user-specific accessibility observations remain environment-dependent
 
 ## Goal and boundary
 
@@ -125,8 +126,9 @@ flag를 true로 표시한다. native는 JSON serialize 후 256 KiB를 초과하�
   pre-existing duplicate/yanked warnings remain release follow-up input rather than a new failure.
 - `git diff --check`: passed.
 
-GitHub Actions CI remains pending for the PR. Physical Windows screen reader, high-contrast, and
-packaged acceptance remain explicitly in #493; this spec does not claim those checks.
+The feature PR's required GitHub Actions CI and the later v0.6.0 #493 hosted package gate passed.
+Physical Windows screen reader and high-contrast behavior still depends on the installed user's
+environment; this source evidence does not claim every such configuration was observed.
 
 This PR makes no RC, tag, release, or app version bump. It only adds the existing workspace
 `integration` crate to the Manager dependency graph, so `Cargo.toml` and `Cargo.lock` record that

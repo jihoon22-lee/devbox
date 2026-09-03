@@ -1,4 +1,4 @@
-# api-playground — API Playground v0.4.0
+# api-playground — API Playground 0.5.1
 
 로컬 REST/WebSocket API 테스트 앱. 데스크톱 실행에서는 Rust backend가 HTTP와 WebSocket 클라이언트를
 담당해 **CORS 제약 없이** 요청한다.
@@ -84,8 +84,8 @@ compatible legacy SSE resumption/GET listener는 PR1에 포함하지 않는다.
 
 PR1의 source 검증은 focused MCP Rust tests 33 passed, API Playground Rust tests 133 passed,
 frontend 33 files/231 tests passed, `cargo check`, strict Clippy와 production build passed이다.
-이는 app/source evidence이며 full workspace CI나 Windows packaged acceptance 결과를 주장하지
-않는다.
+이 수치는 당시 app/source evidence다. 이후 v0.6.0 W04의 required CI와 #493 hosted Windows
+packaged gate가 통과했으며, 특정 사용자 PC의 모든 server/OAuth 조합을 관찰했다는 뜻은 아니다.
 
 ## MCP stdio + HTTP OAuth (`#485`, PR2)
 
@@ -200,10 +200,9 @@ evidence is **160 Rust tests passed**, strict Clippy with warnings denied passed
 tests across 33 files passed**; the API Playground production frontend build also passed.
 
 WSL cannot exercise Windows DPAPI sealing, native picker/process-tree Job Object behavior, system
-browser callback flow, or a packaged `.exe`. Therefore packaged Windows acceptance is still pending:
-no Windows stdio fixture, OAuth browser/discovery/restart/revoke run, child-process cleanup result,
-or MCP Inspector comparison is claimed here. Those checks must run on Windows before this feature
-is considered packaged-acceptance complete.
+browser callback flow, or a packaged `.exe`. The later v0.6.0 #493 hosted Windows gate passed W04 and
+the 15-app package lifecycle. That evidence does not claim every installed stdio server, OAuth
+provider/browser flow, or MCP Inspector comparison on an arbitrary user PC.
 
 ## Protocol Lab · gRPC (`#485`, v0.6.0)
 
@@ -287,9 +286,9 @@ bidirectional-streaming RPCs. `cargo check`, strict Clippy, scoped TypeScript ch
 `pnpm build`, dependency
 check/build-manifest/catalog, `pnpm audit`, and `cargo deny` passed; cargo-deny emitted only existing
 duplicate/yanked warnings, and its advisory/license/source gates passed under the existing time-bounded
-policy. Windows DPAPI,
-TLS/mTLS, native picker, and packaged acceptance are still pending and are not represented by these
-source checks.
+policy. Windows DPAPI, TLS/mTLS, and native picker are not represented by these source checks. The
+later v0.6.0 #493 hosted Windows W04/package gate passed; it remains distinct from a feature-specific
+installed-PC matrix across arbitrary gRPC servers and credentials.
 
 ## Binary response preview (`#348`)
 

@@ -2,6 +2,8 @@
 
 Tauri 15개 데스크톱 앱(기존 안정판 13개 + v0.5.0에서 추가된 Devbox Launcher·Log Lens)을 하나의
 모노레포로 관리하는 저장소. 각 앱은 **독립적으로 실행되고 독립적으로 `.exe`가 만들어집니다.**
+아래 앱 표는 현재 main source를 설명하며, 실제 설치 가능한 Latest와 준비 중 release의 경계는
+다운로드 섹션에 따로 명시합니다.
 
 ## 앱 소개
 
@@ -9,7 +11,7 @@ Tauri 15개 데스크톱 앱(기존 안정판 13개 + v0.5.0에서 추가된 Dev
 |---|---|
 | 🔥 **Port Manager** | 포트·프로세스 조회/종료, Run·Workbench binding correlation, session timeline과 Log Lens 이동 |
 | 🧰 **Developer Toolbox** | 개발용 소형 도구 13종, 탐지·pipeline·recent/favorite, API/Knowledge typed handoff |
-| 🐧 **WSL Desktop** | 임베디드 WSL 터미널, 분할·broadcast, distro-user tool 탐지, profile/runtime snapshot |
+| 🐧 **WSL Desktop** | 임베디드 WSL 터미널, 정확한 분할 복원, Bash/Zsh cwd 연동, tmux/zellij와 Quick Summon |
 | 🧪 **API Playground** | REST·GraphQL·SSE·WebSocket와 MCP HTTP/stdio/OAuth, dynamic gRPC/TLS/mTLS Protocol Lab |
 | 🔍 **Everything+** | FTS5 파일명/본문·문서 검색, 고급 filter/saved query, Windows와 WSL root reconcile |
 | 🗂 **Knowledge** | 마크다운 vault, 검색·template·quick capture·image·wikilink, WSL-native edit/watch |
@@ -32,13 +34,18 @@ https://github.com/jihoon22-lee/devbox/releases
 ```
 
 - **현재 공개 최신 안정판:** [`v0.6.0`](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)
+- **v0.7.0 stable 준비:** #521~#534의 WSL Desktop 사용성·복원·Quick Summon, #525/#526/#529/#530의
+  상태 수명 수정, #527의 영향 범위 CI, #535/#536의 candidate 승격·3-way Windows build를 묶는다.
+  변경 앱의 정확한 version과 gate는
+  [v0.7.0 릴리스 계획](./docs/superpowers/plans/2026-09-03-v0.7.0-release.md)에 고정한다. 전체 source
+  audit, exact-main candidate와 installer acceptance가 끝나기 전에는 v0.7.0 tag나 Release를 만들지 않는다.
 - **v0.6.0 stable source/bundle:** milestone #2의 W01~W11을 한 번에 포함한다. exact source
   `d2fa25a0a1f087459838449daded00c0b09764b4`의 private candidate
   [33384213398](https://github.com/jihoon22-lee/devbox/actions/runs/33384213398)과 annotated tag의
   release workflow [33390009009](https://github.com/jihoon22-lee/devbox/actions/runs/33390009009)가
   모두 통과했다. 공개 자산은 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이며
-  [post-release 체크리스트 #518](https://github.com/jihoon22-lee/devbox/issues/518)에는 설치된
-  WSL Desktop의 zellij/terminal reconnect만 physical observation으로 남아 있다.
+  [post-release 체크리스트 #518](https://github.com/jihoon22-lee/devbox/issues/518)의 설치된
+  WSL Desktop zellij/terminal reconnect도 2026-09-03 사용자 실기 PASS로 확인해 완료로 닫았다.
 - **v0.5.1 historical stable:** #470 Windows acceptance inventory, #473 Run reader,
   #477 release gate, #478 Manager 보강, #479/#474 Run Manager named sidecar 계약을 포함한다.
   정확한 tag commit·workflow 결과·release asset 수와 digest·Latest metadata는
@@ -51,8 +58,8 @@ https://github.com/jihoon22-lee/devbox/releases
   assets 독립 size·SHA-256 대조와 exact stable API Playground portable의 packaged
   H1-A~D·cleanup을 통과했다. [상세 release plan](./docs/superpowers/plans/2026-08-24-v0.4.2-release.md)에서
   RC1 historical failure, RC2 수정 검증과 stable evidence를 함께 확인할 수 있다.
-- **체크리스트 이력:** #176은 v0.5.1 historical checklist로 닫혔다. 현재 자동·package evidence와
-  사용자 환경 관찰은 #518에서 구분해 관리한다.
+- **체크리스트 이력:** #176은 v0.5.1 historical checklist로, #518은 v0.6.0 설치 환경의 마지막
+  zellij/terminal reconnect 관찰을 PASS로 기록한 완료 checklist로 닫혔다.
 - **RC 역사:** `v0.5.0-rc1`은 PR #464/CI `33173371194`, release workflow `33175165583`와
   32-asset 독립 검증을 남겼고 source audit에서 3/15 single-instance 누락으로 W4를 시작하지
   않았다. fix PR #465/CI `33178381902`는
@@ -73,10 +80,11 @@ https://github.com/jihoon22-lee/devbox/releases
 | [사용 가이드](./docs/windows-guide.md) | Windows 11에서 설치·사용·빌드·문제 해결 |
 | [개발자 가이드](./docs/development.md) | 구조, 시작하기, 개발 워크플로 |
 | [아키텍처](./docs/architecture.md) | 모노레포 구조, 레이어, 데이터 흐름 |
-| [로드맵](./docs/roadmap.md) | 진행 상황 / 과거 release history / v0.6.0 stable bundle |
+| [로드맵](./docs/roadmap.md) | 진행 상황 / 과거 release history / v0.6.0 stable과 v0.7.0 준비 |
 | [v0.5.0 네이티브 우선 계획](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) | P1·P2·선택 P3, 신규 앱, 앱 간 handoff, 테스트·릴리스 gate |
 | [v0.5.0 릴리스 계획](./docs/superpowers/plans/2026-08-28-v0.5.0-release.md) | 목표 version, RC asset, Windows W1~W4, stable 승격·정리 gate |
 | [v0.6.0 통합 릴리스 계획](./docs/superpowers/plans/2026-08-31-v0.6.0-release.md) | W01~W11, 앱별 version, 비공개 package checkpoint, Windows/WSL acceptance와 stable publication |
+| [v0.7.0 릴리스 계획](./docs/superpowers/plans/2026-09-03-v0.7.0-release.md) | WSL Desktop 중심 minor release, 앱별 version, exact candidate 승격과 publication gate |
 | [의존성·제3자 고지 정책](./docs/dependency-policy.md) | Cargo·pnpm allowlist, advisory 예외 만료, notices 생성·배포 규칙 |
 | [프로젝트 요약](./docs/projects.md) | 앱별 상세 요약 |
 | [UX 개선 설계](./docs/superpowers/specs/2026-08-15-ux-improvements-design.md) | v0.5.0 컨텍스트 메뉴·클립보드·도구 확장 |

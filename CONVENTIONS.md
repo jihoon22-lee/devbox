@@ -56,25 +56,33 @@ devbox/
 │  ├─ run-manager/         # 예약 실행·서비스 관리
 │  ├─ workbench/           # 프로젝트 기반 orchestration 셸
 │  ├─ webhook-lab/         # 로컬 웹훅/콜백 서버
-│  └─ repo-manager/        # git 저장소·worktree 관리
+│  ├─ repo-manager/        # git 저장소·worktree 관리
+│  ├─ devbox-launcher/     # catalog·snapshot 기반 빠른 실행
+│  └─ log-lens/            # bounded local/WSL/container 로그 검사
 │
 ├─ packages/               # React 공용
-│  ├─ tokens/              # 공용 CSS 커스텀 프로퍼티  (기존 앱 10곳 사용)
+│  ├─ tokens/              # 15개 release 앱의 공용 CSS 커스텀 프로퍼티
+│  ├─ a11y/                # keyboard·IME·dialog·axe 공통 계약
 │  ├─ editor/              # CodeMirror 공용 설정      (knowledge-base, code-pad)
 │  ├─ diff-view/           # diff 렌더 공용            (code-pad, run-manager)
-│  └─ ...
+│  ├─ context-menu/        # 위치·keyboard·focus·submenu 동작
+│  ├─ openapi/             # bounded OpenAPI JSON/YAML parsing
+│  └─ mermaid-renderer/    # 필요할 때만 불러오는 Markdown diagram renderer
 │
 ├─ crates/                 # Rust 공용
-│  ├─ applink/             # 앱 간 argv·single-instance 수신 계약 (v0.4.1)
+│  ├─ applink/             # 앱 간 one-time typed handoff와 single-instance 수신 계약
+│  ├─ catalog/             # build/runtime app catalog
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
-│  ├─ git/                 # Windows 안정 git subprocess 실행  (devbox-manager, life-log, repo-manager, workbench)
-│  ├─ launch/              # 설치된 앱 exe 해석·실행           (repo-manager, workbench)
+│  ├─ git/                 # Windows/WSL Git argv·identity 경계
+│  ├─ launch/              # catalog 기반 설치 앱 실행
 │  ├─ markdown/            # 마크다운 렌더          (knowledge-base, code-pad)
 │  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, run-manager)
 │  ├─ wsl/                 # WSL argv·경로 정규화    (wsl-desktop, run-manager, workbench, repo-manager)
 │  ├─ search/              # FTS5 쿼리 빌더          (everything-plus, knowledge-base)
 │  ├─ integration/         # 앱 간 snapshot 계약      (run-manager, workbench, knowledge-base)
-│  └─ secrets/             # DPAPI 비밀 보호          (api-playground, run-manager)
+│  ├─ secrets/             # DPAPI 비밀 보호          (api-playground, run-manager)
+│  ├─ window-state/        # monitor/DPI-safe 순수 geometry
+│  └─ window-state-tauri/  # persistent Tauri window adapter
 │
 ├─ docs/
 │  ├─ architecture.md
@@ -90,7 +98,10 @@ devbox/
 
 - 앱 이름은 **kebab-case** (`port-manager`) — 디렉터리·git 브랜치·crate 의존에 사용
 - 앱별 Rust 크레이트 이름은 `_` → `-` 변환 후 사용: `port-manager` → `port_manager`
-- 각 앱의 산출물: `PortManager.exe`, `DevToolbox.exe`, `WSLDesktop.exe`, `ApiPlayground.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `LifeLog.exe`, `DevboxManager.exe`, `CodePad.exe`, `RunManager.exe`, `Workbench.exe`, `WebhookLab.exe`, `RepoManager.exe`
+- 각 앱의 product 산출물: `PortManager.exe`, `DevToolbox.exe`, `WSLDesktop.exe`,
+  `ApiPlayground.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `LifeLog.exe`,
+  `DevboxManager.exe`, `Code Pad.exe`, `Run Manager.exe`, `Workbench.exe`, `WebhookLab.exe`,
+  `RepoManager.exe`, `DevboxLauncher.exe`, `LogLens.exe`
 
 ## 3. 공통 기술 스택
 

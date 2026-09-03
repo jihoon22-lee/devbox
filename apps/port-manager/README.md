@@ -76,8 +76,9 @@ refresh timeline은 session-only 메모리 상태다. 첫 성공 snapshot은 bas
 않으며, event는 최신 256개로 제한하고 저장하지 않는다. event에는 화면에 필요한 address,
 process name, owner label만 축약하고 command line·executable path·action key는 보관하지 않는다.
 
-이 cross-app correlation, owner navigation, Log Lens handoff의 Windows packaged 실기
-acceptance는 아직 pending이다. local test/build 결과가 installed Windows 검증 완료를 뜻하지 않는다.
+이 cross-app correlation, owner navigation, Log Lens handoff는 v0.6.0 W08의 #493 hosted
+Windows package gate를 통과했다. local/hosted 결과가 임의 사용자 PC의 모든 installed source
+조합을 관찰했다는 뜻은 아니다.
 
 ## Identity-safe 종료 계약
 

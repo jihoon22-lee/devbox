@@ -2,7 +2,8 @@
 
 **Date:** 2026-08-30
 **App:** `apps/devbox-manager`
-**Status:** implemented; local completion gates passed, Windows acceptance pending
+**Status:** implemented; local/required CI and v0.6.0 #493 hosted W02 package gate passed;
+organization-specific WinGet policy/source combinations remain environment-dependent
 
 ## Purpose and scope
 
@@ -191,12 +192,12 @@ catalog, and `cargo deny` gates passed locally. One unrelated intermittent Repo
 Manager stale-file fixture failure was isolated and recorded in #492; its exact
 test and a second full workspace run passed.
 
-Real Windows acceptance is still pending CI/manual testing. It must cover a
-real native picker, WinGet/App Installer availability, locally registered
-`winget` source behavior, UAC/reboot-risk messaging, package apply timeout and
-cancel cleanup, and no leaked path/process output. Package installers may
-change PATH, registry, or files and may request a reboot; the Manager never
-automates those changes or a reboot.
+The later v0.6.0 #493 hosted W02/package gate passed the Windows package flow. A real native picker,
+WinGet/App Installer availability, locally registered `winget` source behavior, UAC/reboot-risk
+messaging, package apply timeout/cancel cleanup and path/process redaction remain dependent on the
+installed organization's environment; hosted evidence does not certify every policy/source
+combination. Package installers may change PATH, registry, or files and may request a reboot; the
+Manager never automates those changes or a reboot.
 
 Reference documentation: [create a v3 configuration](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create-v3),
 [`winget configure`](https://learn.microsoft.com/en-us/windows/package-manager/winget/configure),

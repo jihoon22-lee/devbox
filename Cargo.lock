@@ -84,7 +84,7 @@ checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
 name = "api-playground"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -778,7 +778,7 @@ checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
 name = "code-pad"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -1275,7 +1275,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-manager"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "applink",
  "catalog",
@@ -1307,7 +1307,7 @@ dependencies = [
 
 [[package]]
 name = "developer-toolbox"
-version = "0.4.0"
+version = "0.4.1"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -2984,7 +2984,7 @@ dependencies = [
 
 [[package]]
 name = "knowledge-base"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -3171,7 +3171,7 @@ checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
 
 [[package]]
 name = "log-lens"
-version = "0.2.0"
+version = "0.2.1"
 dependencies = [
  "applink",
  "chrono",
@@ -4727,7 +4727,7 @@ dependencies = [
 
 [[package]]
 name = "run-manager"
-version = "0.5.0"
+version = "0.5.1"
 dependencies = [
  "applink",
  "chrono",
@@ -7891,7 +7891,7 @@ version = "0.1.0"
 
 [[package]]
 name = "wsl-desktop"
-version = "0.5.0"
+version = "0.6.0"
 dependencies = [
  "applink",
  "dirs",

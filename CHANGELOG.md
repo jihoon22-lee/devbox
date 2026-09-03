@@ -5,6 +5,12 @@
 
 ## [Unreleased]
 
+## [v0.7.0] - 2026-09-03
+
+v0.7.0은 WSL Desktop을 일상적인 주 터미널로 쓰는 흐름을 강화하고, 모노레포 검증과 stable
+배포에서 불필요한 전체 반복을 줄인 하위 호환 minor release다. 앱 수와 공개 asset 계약은
+15개 앱·32개 asset·31개 manifest-declared asset으로 유지한다.
+
 ### Added
 
 - **WSL Desktop 앱 내장 확인·입력 창** — 모든 확인과 이름 입력이 native `confirm`/`prompt`
@@ -34,13 +40,49 @@
   툴바는 자주 쓰는 조작만 남기고 나머지를 설정 창으로 옮겼으며, 중복되던 배포판 선택기를
   하나로 합치고 최근 경로를 12개까지 기억한다.
 
+- **안전한 Bash/Zsh 경로 추적 (#532)** — 설정에서 marker-owned OSC 7 integration을 진단하고
+  설치·복구·제거할 수 있다. 기존 shell hook과 종료 상태를 보존하고, symlink·비정상 파일·중복
+  marker·stale preview를 거부하며 원본 백업과 bounded atomic write를 사용한다. 각 팬은 실제 cwd
+  신호 수신 여부를 표시해 시작 경로와 정확히 복원 가능한 현재 경로를 구분한다.
+
+- **정확하고 점진적인 workspace 복원 (#533)** — 활성 팬을 먼저 열고 나머지를 최대 2개씩
+  복원해 첫 터미널을 빠르게 사용할 수 있다. 실패한 팬도 원래 탭·순서·레이아웃 자리에 재시도
+  가능한 slot으로 남기며, schema v2가 column/row split 비율을 last layout과 named profile에
+  저장한다.
+
+- **WSL Desktop Quick Summon (#534)** — 고정 allowlist 안에서 선택한 system-wide 단축키로 기존
+  단일 창을 표시·focus·숨길 수 있다. 선택적 tray mode에서는 닫기 버튼이 종료 대신 숨김으로
+  동작해 live PTY와 React 상태를 그대로 보존하고, tray에서 완전히 종료할 수 있다. shortcut
+  충돌이나 tray 초기화 실패는 기존 등록과 정상 종료 동작을 안전하게 유지한다.
+
 ### Changed
+
+- **Multiplexer 재검색과 preference 보존 (#531)** — WSL 새로고침과 설정의 다시 검색이 tmux·
+  zellij를 앱 재시작 없이 다시 확인한다. 일시적인 누락이나 probe 실패는 저장한 선호를 native로
+  덮어쓰지 않으며, 해당 launch에서만 backend가 안전하게 fallback한다.
 
 - **WSL Desktop snapshot gating** — 동시 입력과 Docker 상태 변경이 마지막 정상 snapshot이
   TTL 안에 있으면 새 collection이 진행 중이어도 계속 사용 가능하다. 이전에는 30초 주기 refresh가
   시작될 때마다 사용자가 켜 둔 동시 입력이 스스로 꺼지고 Docker 버튼이 비활성화됐다. 수집
   실패, TTL 초과, 대상 팬 구성 변경에서는 그대로 fail-closed하며 backend의 broadcast 대상
   검증도 변경하지 않는다.
+
+- **영향 범위 기반 검증 (#527)** — `pnpm verify:affected`와 PR CI가 pnpm/Cargo 역의존 graph로
+  실제 변경 package와 소비자만 build·test한다. 관련 작업이 없는 hosted job은 runner 할당 전에
+  skip하고, verifier·workspace root·lockfile처럼 영향 범위를 안전하게 좁힐 수 없는 변경과 수동·
+  주간·release 감사는 계속 전체 검증한다.
+
+- **candidate 승격과 분할 build (#535, #536)** — stable release는 exact-main candidate에서 이미
+  packaged runtime·installer lifecycle을 통과한 32개 파일을 provenance와 SHA-256으로 다시
+  검증해 그대로 승격하며 15개 앱을 다시 compile하지 않는다. 남은 candidate build는 5개 앱씩
+  3개 bounded Windows shard로 병렬화하고 별도 assembly가 기존 15-app/32-file 계약을 완성한 뒤
+  두 acceptance job에 전달한다.
+
+- **앱별 version** — WSL Desktop `0.6.0`; Developer Toolbox `0.4.1`; API Playground·Knowledge
+  Base·Devbox Manager·Code Pad·Run Manager `0.5.1`; Log Lens `0.2.1`이다. Port Manager `0.4.0`,
+  Everything+·Life Log `0.5.0`, Workbench·Webhook Lab·Repo Manager `0.3.0`, Devbox Launcher
+  `0.2.0`은 binary source가 바뀌지 않아 유지한다. 각 변경 앱의 Cargo, Tauri, frontend package
+  version과 packaged-smoke config가 일치한다.
 
 - v0.6.0을 current stable로 문서 전체에 동기화하고, 닫힌 #176 대신 #518을 post-release
   체크리스트로 연결했다. `glib 0.18.5` Dependabot 경고는 2026-09-01 공식 Tauri release/dev
@@ -59,11 +101,25 @@
   편집해도 각 이름의 입력값을 독립적으로 유지한다. 다른 항목을 편집하는 순간 직전 항목의 값이
   사라지던 문제를 고쳤으며, 연결이 초기화되거나 끊기면 모든 초안은 그대로 폐기한다.
 
+- **Run Manager 편집 초안 분리** — background refresh나 다른 job/service update가 열려 있는
+  editor의 입력을 저장값으로 되돌리지 않는다. 사용자가 대상을 전환하거나 명시적으로 reload할
+  때만 해당 정의에서 새 초안을 만든다.
+
 - **WSL Desktop 터미널 상호작용 안정성** — 동시 입력 확인 중 대상이나 무장 상태가 바뀌면
   이전 대상에 승인된 입력을 보내지 않고 대기 입력도 폐기한다. 앱 대화상자가 열린 동안은 뒤쪽
   터미널 단축키를 실행하지 않으며, 설치된 WSL 배포판이 0개면 `Ubuntu`를 추측해 시작하지 않는다.
   팬 구성·순서·레이아웃이 바뀌면 이전 크기 비율을 완전히 무효화하되 임시 팬 확대 전후에는 현재
   비율을 유지한다.
+
+### Verification
+
+- #521~#536의 기능·수정·효율화 PR은 각각 required GitHub Actions CI를 통과한 뒤 main에
+  병합됐다. stable publication은 release-preparation source의 전체 audit 뒤 exact current main을
+  3개 shard로 package하고, packaged runtime과 v0.6.0→v0.7.0 update/rollback lifecycle을 통과한
+  동일 candidate만 annotated tag release로 승격한다.
+- #518의 남은 실제 Windows/WSL 검증은 2026-09-03 사용자 확인으로 PASS했다. 사용자-local
+  zellij 탐색, 새 session과 기존 session attach, disconnect/reconnect, zellij·Codex session
+  유지와 terminal workspace 복원이 설치된 WSL Desktop에서 정상 동작했다.
 
 ## [v0.6.0] - 2026-08-31
 

@@ -3,7 +3,7 @@
 devbox 앱의 설치·업데이트·실행을 한 곳에서 관리하는 앱. GitHub Releases의 manifest를 단일 원본으로 신뢰한다.
 산출물: `DevboxManager.exe` (`apps/devbox-manager`).
 
-공개 Latest manifest는 v0.5.1 stable을 가리킨다. 정확한 tag commit·workflow·manifest·asset
+공개 Latest manifest는 v0.6.0 stable을 가리킨다. 정확한 tag commit·workflow·manifest·asset
 metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모드의 immutable fallback은
 아래 설명처럼 v0.5.0 manifest fixture를 의도적으로 유지한다.
 
@@ -40,8 +40,8 @@ metadata는 GitHub Release가 권위 있는 source다. 브라우저 개발 모�
   유지하고 `not-installed`로 추측하지 않는다. 설치 64개, snapshot 64개, issue 64개, snapshot당
   view 16개, 직렬화 결과 256 KiB 상한과 `invalid`/`unreadable`/`unsafe`/`limit-exceeded` enum을
   적용한다. frontend exact-key/관계 검증, `aria-busy`, last-good 보존, late/unmount 응답 폐기를
-  포함한다. 브라우저 mock은 UI 전용이며, Windows screen reader/high contrast/packaged acceptance는
-  #493에 남긴다.
+  포함한다. 브라우저 mock은 UI 전용이다. #493의 v0.6.0 hosted packaged gate는 통과했지만
+  screen reader/high contrast의 특정 사용자 환경 관찰을 source test가 대신하지는 않는다.
 - **Data Inspector (#354)** — Manager가 catalog에서 파생한 devbox SQLite만 read-only/query-only로
   발견·스키마 조회·bounded `SELECT`/`WITH`/`EXPLAIN` preview한다. arbitrary path와 write/attach/
   pragma 및 `pragma_*` table-valued function을 차단하고, 512 MiB DB·16 KiB SQL·64 columns·1,000
@@ -140,9 +140,10 @@ Job handle close가 process-tree kill fallback으로 동작한다. cancel은 coo
 #### 지원 범위와 acceptance
 
 실제 package apply는 Windows와 WinGet/App Installer 및 네트워크가 필요하다. WSL/non-Windows의
-브라우저 mock은 화면 흐름만 검증하며 native filesystem/WinGet 성공을 증명하지 않는다. 현재
-Windows 실제 import/export/apply/cancel acceptance는 CI/manual 검증 대기 중이다. 특히 `winget` source
-이름이 로컬에서 가리키는 repository의 내용·공식성은 이 기능의 검증 범위 밖이다.
+브라우저 mock은 화면 흐름만 검증하며 native filesystem/WinGet 성공을 증명하지 않는다.
+v0.6.0 #493 hosted Windows package gate는 W02를 PASS했지만, 회사별 policy/source가 다른 실제
+WinGet import/export/apply/cancel 조합 전체를 보증하지 않는다. 특히 `winget` source 이름이
+로컬에서 가리키는 repository의 내용·공식성은 이 기능의 검증 범위 밖이다.
 
 관련 공개 규격은 [WinGet Configuration v3 생성](https://learn.microsoft.com/en-us/windows/package-manager/configuration/create-v3),
 [`winget configure`](https://learn.microsoft.com/en-us/windows/package-manager/winget/configure),

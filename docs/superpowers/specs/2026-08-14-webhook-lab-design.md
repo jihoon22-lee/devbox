@@ -2,7 +2,8 @@
 
 - 상태: MVP 구현 및 v0.5.0 stable 반영 완료 — #314 captured fixture 저장·#315 Webhook→API
   handoff·#362 captured replay·#363 response sequence 완료. v0.5.1에서도 이 설계 기록과
-  구현을 유지한다.
+  구현을 유지한다. W08 Webhook→Log Lens와 service export를 포함한 v0.6.0 #493 hosted packaged
+  gate도 통과했으며, 현재 main은 v0.7.0 release를 준비한다.
 - 작성일: 2026-08-14
 - 근거: `docs/product-opportunities.md` §15.3, §17.9
 
@@ -203,4 +204,6 @@ export를 직렬화한다. 다운로드 JSON은 Run Manager schema v1의 disable
 한 건, loopback health check, opaque profile ID만 포함하며 response/rule/env/cwd/runtime identity를
 포함하지 않는다. service process는 정확한 `--service-profile <uuid>` argv에서만 profile을 읽고
 숨은 listener를 시작한다. profile은 64개·8 MiB, strict schema, no-link handle read/revalidation과
-atomic write 경계를 사용한다. Windows packaged 실행·종료는 release acceptance 전까지 pending이다.
+atomic write 경계를 사용한다. 이 문단 작성 당시 pending이던 Windows packaged 실행·종료는
+v0.6.0 #493 hosted release acceptance를 통과했다. 사용자별 service policy 차이는 별도 환경
+관찰 범위다.
