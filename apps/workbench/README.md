@@ -112,7 +112,7 @@ Workbench는 request id·task id·action이 일치하는 receipt만 표시하고
 구버전이면 자동 실행하지 않고 요청을 확인할 수 없는 상태로 남긴다.
 
 Dependency Packages와 Run Manager task-control 패널은 사용자 기능 추가이므로 Workbench의
-Cargo/package/Tauri 버전은 v0.3.0으로 함께 올린다.
+Cargo/package/Tauri 버전은 0.3.0으로 함께 올렸다.
 
 ### 프로젝트 환경 안전 계약 (#312, P2-14)
 
@@ -244,8 +244,9 @@ acceptance를 PR 직전에 최신 소스로 다시 수행해야 한다.
 WSL의 Windows GNU source check는 Tauri build script 단계에서 호스트에
 `x86_64-w64-mingw32-windres`가 없어 중단되었으므로, 이는 소스 오류가 아닌 toolchain
 환경 제약이며 Windows packaged acceptance를 별도로 통과해야 한다.
-Port Manager의 `snapshot:port-bindings/v1` correlation과 owner navigation에 대한 Windows
-packaged 실기 acceptance도 아직 pending이며, 이 문서의 source/test 결과만으로 완료를 뜻하지 않는다.
+Port Manager의 `snapshot:port-bindings/v1` correlation과 owner navigation은 v0.6.0 W08의
+#493 hosted Windows package gate를 통과했다. 이 문서의 source/test와 hosted 결과만으로 임의
+사용자 PC의 모든 installed topology를 관찰했다고 보지는 않는다.
 
 ## 개발
 

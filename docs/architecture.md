@@ -8,9 +8,13 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   milestone #2의 W01~W11, 15개 앱과 32개 public asset(31개 manifest-declared, mismatch 0)을
   peeled source `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate workflow `33384213398`,
   release workflow `33390009009`에서 검증했다.
+- v0.7.0 release preparation은 WSL Desktop의 in-app dialog·설정·탐색·pane/WebGL, marker-owned
+  Bash/Zsh cwd integration, 점진적 exact workspace restore와 Quick Summon을 하나의 minor release로
+  묶는다. frontend listener와 API/Run draft 수명 수정, 영향 범위 CI, candidate 승격과 3-way package
+  sharding도 포함한다. candidate/tag/release evidence 전에는 v0.6.0이 계속 Latest다.
 - 정확한 annotated tag object·workflow·asset digest·Latest metadata는 GitHub Release가 권위 있는
-  publication source다. #493은 완료된 release ledger이고, #518은 설치된 WSL Desktop의
-  zellij/terminal reconnect와 post-release 유지보수를 구분해 관리한다.
+  publication source다. #493은 완료된 v0.6.0 release ledger이고, #518도 설치된 WSL Desktop의
+  user-local zellij·terminal reconnect·session/workspace 유지가 사용자 실기에서 PASS해 닫혔다.
 - v0.5.0과 v0.5.1의 tag·workflow·acceptance는 historical evidence로 보존한다. #176은 닫힌
   v0.5.1 checklist이며, RC1~RC3 tag/release는 삭제된 historical evidence다. 미래 RC는 사용자가
   명시적으로 요청하기 전에는 만들지 않는다.
@@ -21,6 +25,23 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   release는 같은 tag·commit의 성공한 비만료 candidate를 repository·workflow-run·asset digest까지
   독립 검증한 뒤 승격하므로 동일 15개 앱을 다시 컴파일하지 않는다. candidate 자체는 여전히
   catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
+
+## v0.7.0 WSL Desktop state boundaries
+
+- **Live window state** — Quick Summon과 선택적 tray close는 새 process/window를 만들지 않고
+  single-instance `main`을 show·unminimize·focus·hide한다. 따라서 PTY, xterm buffer, transient zoom,
+  active tab/pane은 renderer와 backend가 살아 있는 같은 process에 남는다. 완전 종료만 PTY를 끝낸다.
+- **Persisted workspace state** — last layout과 named profile의 schema v2는 stable pane key, tab
+  topology와 split ratio를 저장한다. active pane을 먼저 시작하고 나머지는 worker 2개로 제한하며,
+  실패 slot도 topology 안에 남긴다. runtime session ID, buffer, selection, quick-summon visibility와
+  zoom은 저장하지 않는다.
+- **Shell-owned cwd signal** — renderer가 rc 파일을 직접 읽거나 쓰지 않는다. Rust command가
+  distro user의 Bash/Zsh rc를 bounded read하고 marker block, file identity, preview revision을
+  재검증해 같은 directory의 temporary file과 rename으로 갱신한다. OSC 7만 current cwd 신호로
+  받아 저장 가능한 path와 단순 initial cwd를 구분한다.
+- **Verification graph** — 일반 변경은 pnpm/Cargo 역의존 closure만 검증하고 미분류·root·lockfile·
+  verifier 변경은 full로 닫힌다. stable package는 3개 bounded Windows shard에서 한 번 만들고,
+  assembly·runtime·installer gate를 통과한 exact candidate 파일만 tag workflow가 승격한다.
 
 ## 핵심 원칙
 
@@ -51,7 +72,7 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
 └──────────────────────────────┘
 ```
 
-위 그림은 v0.5.0/v0.5.1 historical stable과 현재 v0.6.0 stable에 공통인 구조다.
+위 그림은 v0.5.0/v0.5.1 historical stable, 현재 v0.6.0 stable과 v0.7.0 준비 source에 공통인 구조다.
 구현 전인 항목은 현재 앱/크레이트 수에 포함하지 않는다. v0.5.1의 maintenance correction은
 v0.5.0 binary와 별도이며 v0.6.0에도 유지된다.
 
@@ -77,7 +98,8 @@ v0.5.0 binary와 별도이며 v0.6.0에도 유지된다.
   전달하고, bounded payload는 공용 data root 아래에서 atomic claim/ack/restore와 60초 lease로
   한 번만 소비한다. producer/consumer UI는 각 integration PR이 소유한다.
 - W07은 catalog revision 15에서 선택 텍스트 handoff와 일별 activity sidecar를 연결한다.
-  Windows 실기 acceptance는 아직 주장하지 않으며 release gate로 남긴다.
+  v0.6.0 #493 hosted Windows package gate를 통과했으며, 임의 사용자 PC의 모든 integration 조합을
+  관찰했다는 주장과는 구분한다.
 - W10은 release catalog의 15개 frontend 전체에 `ko-KR`, semantic token/a11y stylesheet,
   Vite manifest, 실제 shell axe smoke와 초기 static-import bundle budget을 fail-closed CI 계약으로
   적용한다. 색 대비와 Windows 고대비·screen reader 관찰은 #493의 packaged acceptance다.
@@ -199,7 +221,7 @@ workbench:        React → commands → ProjectProfile/read-only health + 다�
                    v0.4.1은 이 핫픽스를 포함한 안정판으로 배포됐다. 당시 남은 Windows
                    packaged-runtime acceptance는
                    [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에 기록됐고,
-                   현재 v0.6.0 post-release 관찰은 #518에서 관리한다.
+                   v0.6.0의 마지막 installed WSL 관찰은 #518에서 PASS로 완료됐다.
                    ./superpowers/specs/2026-08-17-app-interop-design.md)
 webhook-lab:      inbound HTTP → core/server → history·rule·fixture → React
 repo-manager:     React → commands → git crate → repository/worktree 탐색·생성
@@ -232,7 +254,8 @@ issue는 `invalid`/`unreadable`/`unsafe`/`limit-exceeded`로만 공개한다.
 Frontend는 exact-key와 count/truncation, registry/catalog/root/status 관계를 검증한 뒤 렌더링한다.
 검사 region의 `aria-busy`, last-good snapshot 보존, request-generation 및 mounted guard로 늦은
 응답을 격리한다. 브라우저 mock은 UI-only fixture이며, screen reader/high contrast와 packaged
-Windows acceptance는 #493에서 수행한다. 이 기능 PR은 RC/tag/release/version bump를 만들지 않는다.
+v0.6.0 hosted Windows acceptance는 #493에서 완료했다. 이 기능 PR 자체는
+RC/tag/release/version bump를 만들지 않았다.
 
 Repo Manager의 Git history·diff(#316)는 선택된 canonical repository에서만 실행되는 native
 read-only 흐름이다. repo_history, repo_commit_detail, repo_diff는 hexadecimal object ID와
@@ -942,8 +965,9 @@ Knowledge Base는 `snapshot:knowledge-base/activity/v1`와 함께 `handoff:knowl
 accept하며 `snapshot:daily-activity/v1`을 produce한다. Run Manager도 같은 daily snapshot을
 produce한다.
 Devbox Launcher는 확인된 selection을 `handoff:toolbox-text/v1`로 produce하고 Developer Toolbox로
-가는 static `transform-text` action을 제공한다. 이 W07 catalog 계약에 대한 Windows 실기
-acceptance는 아직 주장하지 않는다.
+가는 static `transform-text` action을 제공한다. 이 W07 catalog 계약은 v0.6.0 #493 hosted
+Windows package gate를 통과했으며, 임의 installed selection/clipboard 환경 전체를 관찰했다는
+뜻은 아니다.
 
 filename/content FTS projection은 filter 값을 모두 SQLite parameter로 결합한다. source는 임의
 경로가 아닌 등록 `roots.id`이며 중첩 root는 가장 깊은 root가 소유한다. root id는 삭제 뒤
@@ -1109,7 +1133,8 @@ bounded JSON/YAML parser를 API Playground와 공유하되 Webhook projection은
 listener는 backend-owned current executable과 app-local strict service profile로 disabled Run
 Manager schema v1 service를 명시적으로 export할 수 있다. export JSON은 backend가 검증한 현재
 Webhook Lab executable path를 고정 command에 포함하지만 rule/response/env/cwd/project·log path/
-runtime identity는 포함하지 않는다. Windows packaged service startup은 #493 acceptance까지 pending이다.
+runtime identity는 포함하지 않는다. Windows packaged service startup은 v0.6.0 #493 hosted
+acceptance를 통과했으며, 사용자별 service policy 차이는 별도 환경 관찰로 남는다.
 
 `apps/catalog.json` 변경은 CI의 catalog consistency gate를 항상 통과하고, compiler gate는
 build-time import/include 관계를 가진 frontend 앱과 `catalog` → `launch` Rust 역의존 closure만

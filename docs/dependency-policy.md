@@ -27,6 +27,11 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
   source의 비교값은 각각 `ebe22c7df176d95685cc9ff9c0eb3760ac08b95829498d7c5884f89dd10977c7`와
   `6cbc242562e62ac8892bc88e3ca8fcad5e1dd7911db2b46a200cb8d1786a26d9`이며 release별 evidence를
   혼용하지 않는다.
+- v0.7.0 release-preparation graph의 `Cargo.lock` SHA-256은
+  `aec85df4631d0f7ebb0d8d4b6f0e6b4ca38fb9eed3b4fa164525e7b085a5db3d`, generated
+  `THIRD_PARTY_NOTICES.md` SHA-256은
+  `e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4`다. 이는 tag/publication
+  evidence가 아니라 release source audit 비교값이며, v0.6.0 stable 값과 혼용하지 않는다.
 
 ## Enforced gates
 
@@ -35,7 +40,7 @@ devbox의 P1·P2 native 기능은 설치 뒤 오프라인에서 동작해야 한
 | Cargo graph | `Cargo.lock`, `deny.toml` | Windows/Linux target의 license, advisory, duplicate ban, registry/git source를 `--locked`로 검사 |
 | pnpm graph | `pnpm-lock.yaml`, `.github/dependency-policy.json` | frozen install 뒤 full transitive license와 audit를 검사; 미허용 표현·integrity 부재·미등록 `Unknown`을 거부 |
 | Exceptions | `.github/dependency-policy.json` | ID, package, exact locked version, detector, scope, reason, ISO date expiry를 모두 요구; 만료 당일부터 merge 불가 |
-| Notices | 두 lockfile + package metadata | 666 Rust package와 157 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
+| Notices | 두 lockfile + package metadata | 732 Rust package와 160 frontend runtime package의 version/license/source/digest를 결정적으로 재생성해 checked-in 파일과 byte 비교 |
 | Distribution | `tauri.conf.json`, release manifest | 모든 release 앱 installer에 notices resource를 넣고, release에는 notices와 그 size/SHA-256을 manifest-declared asset으로 게시 |
 
 v0.6.0 stable source의 `THIRD_PARTY_NOTICES.md`는 145,317 bytes이며 위 SHA-256과 함께
@@ -45,6 +50,11 @@ asset을 받을 수 있다. release manifest는 schemaVersion 1을 유지하고 
 추가하므로 기존 Devbox Manager parser와 호환된다. v0.5.0 stable evidence는 15개 앱 기준
 30 binaries + notices + manifest의 32 assets였고, v0.6.0 release workflow도 같은 contract를
 독립 검증했다.
+
+v0.7.0 release-preparation notices는 146,028 bytes다. WebGL addon과 Quick Summon의 공식 Tauri
+plugin graph를 포함하고, 이번 app version 동기화는 workspace package version과 lock hash만
+바꾸며 third-party inventory를 추가하지 않았다. generator read-back과 `cargo deny --locked check`를
+release source gate에서 다시 실행한다.
 
 ## Current decisions
 
@@ -130,6 +140,20 @@ renderer fallback.
 | Security | The addon renders the terminal buffer already held in the renderer; it opens no network, filesystem or IPC path and receives no new data. `pnpm audit --audit-level moderate` reports no known vulnerability. Failure to load the chunk, failure to obtain a WebGL context, and later context loss all fall back to the DOM renderer silently; the terminal, its PTY connection and its scrollback are unaffected in every case. |
 | Offline | The chunk is built into the installed app, so the renderer works with no network. There is no runtime download and no external GPU driver requirement beyond what WebView2 already provides; without a context the app simply keeps the DOM renderer. |
 | Maintenance | WSL Desktop maintainers own it and upgrade it together with `@xterm/xterm`, whose version it must match. Monitor the official xterm.js releases and npm advisories. The rollback boundary is one dynamic import in `TermPane`; removing it restores the DOM renderer without touching any other behaviour. |
+
+### WSL Desktop Quick Summon dependency decision (2026-09-03)
+
+| Field | Decision record |
+|---|---|
+| Purpose | `tauri-plugin-global-shortcut` provides maintained system-wide registration and event dispatch for the already-running WSL Desktop window. Tauri's existing `tray-icon` feature provides the optional tray without another package. Both paths preserve live PTYs in the same process and work offline. |
+| Alternatives | Hand-written Win32 `RegisterHotKey` code would add Windows-only unsafe FFI and message-loop ownership. Guest JavaScript registration would require broader webview permissions. AutoHotkey, PowerToys, shell scripts, or process restart would add an external dependency or lose live terminal state. |
+| Source | Official Tauri plugin documentation and `tauri-apps/plugins-workspace`; native adapter `tauri-apps/global-hotkey`; Linux-only keysym helper `notgull/xkeysym`. All resolved artifacts are crates.io registry packages, not git or downloaded binaries. |
+| Pin | Direct constraint `tauri-plugin-global-shortcut = "2.3.2"`; lock resolves plugin 2.3.2 (`b4dd9f4c5136c09cd962da0c86dc4accd4666db2ea591cf16e6597435843bd2b`), `global-hotkey` 0.8.0 (`8c386b0a4a70cb2d39fffd74480f985b6f0bfbcb934b6a6b6b7e630e448f242e`), and Linux-only `xkeysym` 0.2.1 (`b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56`). Existing Tauri 2.11.5 already resolved `tray-icon` 0.24.2. |
+| License | Plugin and `global-hotkey`: Apache-2.0 OR MIT. `xkeysym`: MIT OR Apache-2.0 OR Zlib. All expressions are allowed and exact source/checksum/license remains in generated notices. |
+| Size | Three new source trees measured 1,266,479 logical / 1,572,864 allocated bytes in the development cache; `xkeysym` is outside the Windows normal graph. No frontend package was added. Initial WSL Desktop JS changed +4,442 raw/+1,244 gzip and CSS +333 raw/+63 gzip, within repository budgets. Installer and Windows runtime memory are measured only by the Windows candidate, not inferred from source size. |
+| Security | Rust accepts only four fixed shortcut presets; the webview receives no arbitrary plugin registration permission. Changes are serialized, failed replacement restores the previous registration where possible, renderer errors are fixed enums, and tray failure cannot enable close interception. No new advisory exception was added. |
+| Offline | Shortcut registration, show/hide/focus, tray/menu actions, and settings migration are in-process. No network, runtime download, shell, WSL command, or external helper is used. |
+| Maintenance | Update with the Tauri/plugin family and re-run Linux/Windows compile, shortcut conflict/serialization/UI tests, dependency policy, notices, bundle and package measurements. Removing the module, one direct edge and tray feature restores the prior close behavior without changing terminal/session storage. |
 
 ### Manual review record
 

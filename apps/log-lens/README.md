@@ -1,6 +1,6 @@
 # Log Lens
 
-Log Lens 0.2.0 is a bounded, offline log viewer for explicitly selected local
+Log Lens 0.2.1 is a bounded, offline log viewer for explicitly selected local
 files/directories and fixed WSL, local-container, Run Manager, or one-time
 Webhook Lab capture adapters. It parses plain text, JSONL, and logfmt lines,
 merges them deterministically, and keeps only an in-memory ring (100,000 lines
@@ -120,23 +120,23 @@ source ~/.cargo/env
 CARGO_TARGET_DIR=/tmp/devbox-log-lens-target CARGO_INCREMENTAL=0 cargo test -p log-lens -j2
 ```
 
-The packaged Windows W3 smoke remains necessary for installed WSL and
-Docker/Podman availability, native file identity semantics, and download,
-clipboard, focus, and IME behavior.
+The v0.6.0 #493 hosted Windows package matrix passed. Installed WSL and
+Docker/Podman availability, native file identity semantics, and user-specific
+clipboard, focus, and IME behavior remain environment-dependent observations.
 
-The Port Manager correlation and owner/Log Lens handoff path still has pending
-packaged-Windows real acceptance; local tests and builds do not imply that
-installed cross-app validation is complete.
+The Port Manager correlation and owner/Log Lens handoff path passed the v0.6.0
+W08 hosted package gate. Local tests and that hosted evidence do not imply that
+every installed cross-app environment has been observed.
 
 W08 PR2 (#489) adds the `webhook-log/v1` Webhook Lab source, strict saved-view
 persistence, disconnected saved-view loading, and Korean UI. The catalog
-capability is revision 17 and the app target is Log Lens 0.2.0. Windows
-packaged acceptance for the saved-view/reconnect and Webhook Lab→Log Lens
-paths is still pending; this document does not claim a release or installed
-acceptance.
+capability is revision 17 and the v0.6.0 app target is Log Lens 0.2.0. The
+saved-view/reconnect and Webhook Lab→Log Lens paths passed the v0.6.0 W08
+hosted package gate; this does not claim every installed source environment.
 
 The Log Lens bootstrap is included in the published v0.5.0 assets. The Run
 reader was completed by #472/#473 after the v0.5.0 tag and is included in the
 v0.5.1 stable release; it does not rewrite or replace the historical v0.5.0
-assets. GitHub Release metadata is authoritative for the exact v0.5.1 tag,
-workflow result, and asset digests.
+assets. GitHub Release metadata is authoritative for each exact tag, workflow
+result, and asset digest; v0.6.0 is the current public stable baseline during
+v0.7.0 release preparation.

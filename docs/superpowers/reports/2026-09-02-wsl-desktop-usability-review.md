@@ -6,6 +6,14 @@ Scope: perceived usability of the shipped terminal — what a daily WSL user mee
 between opening the app and closing it. Read-only review. No shipped behavior,
 dependency, version, catalog or release artifact changes accompany it.
 
+> **Implementation follow-up (2026-09-03):** 아래 source citations와 “pending” 표현은
+> `e7862de` 시점의 historical review를 보존한다. 제안한 네 묶음은 각각 #521(snapshot/dialog),
+> #522(session/startup/settings), #523(navigation/orientation), #524(terminal surface)로 required CI 뒤
+> 병합됐다. 후속 #531~#534는 multiplexer 재검색, safe Bash/Zsh cwd integration, progressive exact
+> restore와 Quick Summon을 더했다. #518의 installed zellij/terminal reconnect도 사용자 실기 PASS로
+> 닫혔다. 현재 동작의 권위 있는 설명은 `apps/wsl-desktop/README.md`와 v0.7.0 CHANGELOG이며,
+> 아래 내용은 당시 finding이 왜 필요했는지를 설명하는 기록이다.
+
 ## Method and baseline
 
 Source read in full: `src/App.tsx`, `src/components/*`, `src/lib/*`,

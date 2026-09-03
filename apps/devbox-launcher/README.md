@@ -1,6 +1,6 @@
 # Devbox Launcher
 
-Devbox Launcher 0.1.1은 `Ctrl+Alt+Space`로 여는 일시적 검색 창이다. 설정에서
+Devbox Launcher 0.2.0은 `Ctrl+Alt+Space`로 여는 일시적 검색 창이다. 설정에서
 `Ctrl+Alt+L` 또는 `Ctrl+Alt+J`로 바꿀 수 있으며, 변경된 단축키는 저장 후 즉시 다시
 등록된다. 기본 키를 다른 프로그램이 점유했거나 현재 플랫폼에서 등록할 수 없으면 창을
 숨기지 않고 고정 상태와 대체 키를 안내한다.
@@ -48,6 +48,6 @@ Developer Toolbox로 `toolbox-text/v1` one-time masked handoff로 전달한다. 
 범용 file/web/Windows settings 검색, arbitrary shell, clipboard history, PowerToys plugin host는
 제공하지 않는다. `src-tauri/src/core/launcher.rs`가 mutation 없는 bounded index를 소유하고,
 `src-tauri/src/commands.rs`가 매 요청의 재검증과 launch 경계를 소유한다. 실제 Windows
-`RegisterHotKey`, focus-loss hide, cold/hot AppLink와 packaged installer 동작은 v0.5.0 W3/W4
-Windows checkpoint에서 검증한다. W07 Windows 실기/packaged acceptance 완료를 이 문서는
-주장하지 않는다.
+`RegisterHotKey`, focus-loss hide, cold/hot AppLink와 packaged installer의 초기 계약은 v0.5.0
+W3/W4에서 검증했다. v0.6.0 W06/W07과 #493 hosted packaged matrix도 통과했으며, 이 문서의
+source 결과만으로 임의 사용자 PC의 모든 shortcut 충돌·focus 환경을 검증했다고 보지는 않는다.

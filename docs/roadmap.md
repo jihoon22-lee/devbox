@@ -8,13 +8,16 @@
 
 - 공개 Latest stable은 [v0.6.0](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)이다.
   milestone #2의 W01~W11이 모두 main과 stable bundle에 포함됐다.
+- 현재 main은 #521~#536을 묶은 v0.7.0 stable release preparation 단계다. app version과
+  CHANGELOG를 확정하고 source 전체 audit → exact-main candidate → annotated tag 승격 순서로
+  진행하며, candidate/tag evidence 전에는 v0.6.0이 계속 Latest다.
 - annotated tag object `a974adf975862da3d5ada16c6c6efe704387ddd7`는 peeled source
   `d2fa25a0a1f087459838449daded00c0b09764b4`를 가리킨다. exact-main candidate workflow
   `33384213398`과 release workflow `33390009009`가 15 apps·32 public assets·31
   manifest-declared assets·missing/undeclared/failure 0을 각각 검증했다.
-- #492/#493은 완료된 W11 source/release ledger다. 현재 post-release checklist는 #518이며,
-  사용자 승인으로 남은 유일한 physical observation은 설치된 WSL Desktop의 zellij/terminal
-  reconnect다. 이 관찰은 공개 package의 asset/digest evidence와 구분한다.
+- #492/#493은 완료된 W11 source/release ledger다. #518의 설치된 WSL Desktop user-local
+  zellij 탐색·attach·disconnect/reconnect·session/workspace 유지도 2026-09-03 사용자 실기에서
+  PASS해 completed로 닫혔다. 이 관찰은 공개 package의 asset/digest evidence와 구분한다.
 - v0.5.0과 v0.5.1의 tag·workflow·acceptance는 historical evidence로 보존한다. #176은 닫힌
   v0.5.1 historical checklist다. RC1~RC3 tag/release는 삭제됐고 workflow/evidence만 보존하며,
   향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다.
@@ -22,9 +25,27 @@
   W10의 15-app semantic token·한국어 UI·keyboard/focus/IME·axe smoke·manifest/budget 계약도
   모두 v0.6.0에 포함됐다. 상세 실행 이력은
   [v0.6.0 통합 릴리스 계획](./superpowers/plans/2026-08-31-v0.6.0-release.md)과 #493에 보존한다.
-- 확정된 v0.7+ milestone이나 구현 roadmap은 없다. WSL 내부 LSP, Protocol/MCP Lab의 WSL
-  stdio, legacy MCP SSE/GET, OCR·semantic search는 실사용 근거와 우선순위가 정해지기 전까지
-  선택적 후보로만 유지한다.
+- 별도 v0.7 product milestone은 만들지 않았지만 완료된 WSL Desktop/CI/release-efficiency 변경은
+  하나의 v0.7.0 minor release로 확정했다. WSL 내부 LSP, Protocol/MCP Lab의 WSL stdio, legacy
+  MCP SSE/GET, OCR·semantic search는 실사용 근거와 우선순위가 정해지기 전까지 선택적 후보로만
+  유지한다.
+
+## v0.7.0 — WSL Desktop usability와 delivery 효율화 (release preparation) ✅
+
+- [x] **일상 터미널 UX (#521~#524)** — in-app dialog, persistent terminal settings, 화면 topology
+  기반 tab/pane navigation, resizable split, WebGL fallback, buffer/search command를 구현했다.
+- [x] **상태 안정성 (#525, #526, #528~#531)** — API/Run editor draft, terminal confirmation·layout,
+  7개 frontend native listener와 multiplexer refresh/preference 수명을 보강했다.
+- [x] **정확한 재시작·재호출 (#532~#534)** — marker-owned Bash/Zsh OSC 7 integration, active-first
+  bounded workspace restore/schema v2, global shortcut와 선택적 tray Quick Summon을 구현했다.
+- [x] **개발·배포 효율 (#527, #535, #536)** — dependency graph 기반 affected CI, verified
+  candidate의 byte-identical stable 승격, 3×5 bounded Windows package shard를 적용했다.
+- [x] **v0.6.0 설치 실기 (#518)** — user-local zellij 탐색, 새/기존 session attach,
+  disconnect/reconnect, Codex/zellij session과 terminal workspace 유지가 PASS했다. legacy identifier와
+  Life Log absorption migration은 v0.7.0 전체에서 유지하고 v0.7.x data read-back 뒤 재평가한다.
+- [ ] **stable publication** — [v0.7.0 릴리스 계획](./superpowers/plans/2026-09-03-v0.7.0-release.md)의
+  app version/전체 source audit, exact-main Windows candidate·v0.6.0 update/rollback, annotated tag,
+  15-app/32-public/31-declared/mismatch-0 Latest read-back을 완료해야 한다.
 
 ## Phase 1 — Tauri 기본기 ✅
 - [x] **port-manager** — IPC, Rust 기초, netstat 파싱, 포트/프로세스 관리
@@ -146,7 +167,7 @@ v0.4.1은 안정판 핫픽스로 배포됐다. 자동화된 migration 사례와 
 `tauri::Builder::default()` 이전 호출 위치는 검증했지만, 사용 가능한 Windows 장비에서 legacy path가
 이미 제거되어 Windows C1/C2를 안전하게 재현하지 못했다. 이는 packaged-runtime 검증이 아니며,
 당시 남은 Windows acceptance는 [issue #176](https://github.com/jihoon22-lee/devbox/issues/176)에
-historical record로 남아 있다. 현재 v0.6.0 post-release 관찰은 #518에서 관리한다.
+historical record로 남아 있다. v0.6.0의 마지막 installed WSL 관찰은 #518에서 PASS로 완료됐다.
 
 ### v0.4.2 — API Playground 보안 핫픽스 (안정판 배포 완료)
 
@@ -395,7 +416,8 @@ stable은 v0.6.0이다. 향후 RC는 사용자가 명시적으로 요청한 경�
    - schema v2 migration은 roots를 보존하고 files/content 파생 index만 재생성한다. `Cancel`
      중 이미 커밋된 부분 결과는 안전한 상태로 남고 `Re-index`로 수렴한다. Rust unit/
      integration fixture와 frontend stale-search·input bound·cancel/a11y fixture를
-     focused gate로 검증했으며, packaged Windows W2와 전체 release gate는 아직 남아 있다.
+     focused gate로 검증했다. 당시 남아 있던 packaged Windows W2와 전체 release gate는 후속
+     v0.5.0/v0.6.0 publication 과정에서 완료됐다.
    - 2026-08-27 `#298` PDF extractor 구현: MIT `lopdf`로 text object만 bounded offline
      추출하고 PDF 전용 `pdf-v1` metadata를 기록한다. 20 MiB file/16 MiB decompressed
      page/object stream/100,000 parsed objects/10,000 pages/2,000,000 character/10초 상한을
@@ -539,8 +561,8 @@ system-local exact civil-day를 기준으로 최대 366일을 담은 `daily-acti
 environment/log/ID 없이 bounded aggregate만 공개한다. Life Log export/digest schema v2는
 requested date/timezone/start/end가 exact match인 날짜만 join하고 partial/mismatch/open stale day는
 nullable로 둔다. latest/today fallback은 없으며 생성 시점 전에 이미 닫힌 exact historical day의
-stale sidecar는 provenance와 함께 사용할 수 있다. Windows 실기/packaged acceptance는 아직
-수행하지 않았다.
+stale sidecar는 provenance와 함께 사용할 수 있다. 이 구현 시점에는 Windows
+실기/packaged acceptance를 수행하지 않았고, 후속 v0.6.0 #493 hosted package gate에서 완료했다.
 
 **2026-08-28 #340–#343 grouped PR 후보.** Developer Toolbox의 Smart Workflows는 JSON/JWT/
 HTTP(S) URL/Base64/Base64URL/Hex를 1 MiB 안에서 로컬 감지하고 ambiguous 후보를 자동 적용하지
@@ -911,7 +933,8 @@ opaque preview revision과 filesystem identity를 재검증한 뒤 `branch --del
 `worktree remove`만 사용하며, blocked selection은 mutation 없이 result로 남긴다. force
 delete/`-D`, reset, clean, worktree prune과 자동 복구는 포함하지 않는다. bounded parser,
 real Git fixture, frontend preview/confirmation/cancel/redaction fixture는 전용 후보
-worktree에 추가했고, Windows packaged W3 smoke와 전체 CI gate는 아직 실행하지 않았다.
+worktree에 추가했다. 이 문단 작성 당시 미실행이던 Windows packaged W3 smoke와 전체 CI gate는
+후속 merge 및 v0.6.0 #493 hosted package gate에서 완료했다.
 
 **#316–#319 세부 계약 보강.** Native request는 read-only 조회와 mutation을 분리하며,
 `repo_stage`/`repo_unstage`/`repo_commit`은 `{ path, paths/message, operationId }`, remote

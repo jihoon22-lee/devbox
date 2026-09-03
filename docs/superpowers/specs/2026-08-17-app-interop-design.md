@@ -13,11 +13,14 @@
   local-adapter FIFO/UNC reader 위험은 잔여 범위다.
 - 2026-08-30: `snapshot:port-bindings/v1`의 Run Manager·Workbench 독립 producer와
   Port Manager correlation/owner 및 Run Log Lens identity handoff를 반영한다. source freshness,
-  confidence, session timeline과 Windows packaged acceptance pending 경계를 아래 계약에 기록한다.
+  confidence, session timeline과 당시 Windows packaged acceptance 경계를 아래 계약에 기록한다.
 - 2026-08-30: W08 PR2 (`#489`)의 Log Lens 0.2.0 strict app-local saved views와
   Webhook Lab 0.3.0 → Log Lens `webhook-log/v1` sanitized one-time capture handoff를
-  반영한다. catalog revision 17, Korean UI, disconnected reconnect, and Windows packaged
-  acceptance pending 경계를 아래 계약에 기록한다.
+  반영한다. catalog revision 17, Korean UI, disconnected reconnect와 당시 Windows packaged
+  acceptance 경계를 아래 계약에 기록한다.
+- 2026-09-03: 위 두 W08 packaged 경계는 v0.6.0 #493 hosted gate에서 완료됐다. #518의
+  installed WSL Desktop zellij/terminal reconnect도 사용자 실기 PASS로 닫혔으며, 임의 사용자
+  환경 전체를 관찰했다는 주장과는 구분한다. 현재 release 상태는 v0.7.0 준비 문서를 우선한다.
 - 작성일: 2026-08-17
 - 범위: 저장소 전체 — `crates/applink`, `crates/launch`, `crates/integration`, 신규
   `crates/catalog`, `apps/catalog.json`, 현재 15개 앱(Devbox Launcher·Log Lens 포함)
@@ -26,7 +29,8 @@
 
 > **Release boundary:** 공개 v0.5.0 stable은 15개 앱/32개 asset evidence를 보유한다. #470/#473/
 > #477/#478 및 #479로 닫힌 #474는 v0.5.0 tag 이후 반영된 v0.5.1 stable maintenance다.
-> 정확한 v0.5.1 tag/workflow/asset evidence는 GitHub Release에서 확인한다.
+> 정확한 release별 tag/workflow/asset evidence는 GitHub Release에서 확인한다. 공개 Latest는
+> v0.6.0이고 현재 main은 v0.7.0 stable release를 준비한다.
 
 > **2026-08-22 확장.** 이 문서의 v0.5.0 제안 범위는
 > [v0.5.0 네이티브 우선 계획](./2026-08-22-v0.5.0-native-first-plan.md)에서 확정됐다.
@@ -618,8 +622,8 @@ baseline으로만 삼아 event를 만들지 않고, 성공한 이후 snapshot에
 `closed`, `changed`, `owner-changed`를 기록한다. failed poll은 baseline/timeline을 변경하지 않으며, timeline은 최신
 256 event로 제한한다. 각 event에는 address, process name, owner label만 남기며 command line,
 executable path, action key는 보관하지 않는다. 이 cross-app correlation/owner/Log Lens 경로의 Windows packaged 실기
-acceptance는 아직 pending이며, local source/test/build 결과를 installed validation 완료로 해석하지
-않는다.
+acceptance는 이 문단 작성 당시 pending이었다. 후속 v0.6.0 #493 hosted package gate는 통과했지만,
+local/hosted 결과를 임의 사용자 환경 전체의 installed validation으로 해석하지 않는다.
 
 ### 4.2 자동 발견
 
@@ -740,9 +744,9 @@ W08 PR2는 v0.5.1 stable release에 소급해 포함시키지 않는 별도 inte
 그리고 `webhook-log/v1`의 sanitized one-time capture preview/ack/restore와 launch-failure
 exact cleanup이다. Saved view에는 reusable source configuration/filter만 남기고 WSL file 및
 ephemeral Webhook capture는 제외한다. Windows packaged cold/hot launch, installed catalog
-discovery, saved-view persistence/reconnect, and Webhook Lab→Log Lens acceptance는 아직
-pending이며 local tests/build evidence만으로 release 또는 installed acceptance를 주장하지
-않는다.
+discovery, saved-view persistence/reconnect와 Webhook Lab→Log Lens acceptance는 v0.6.0 #493
+hosted package gate를 통과했다. local/hosted evidence만으로 임의 사용자 PC의 모든 source 조합을
+관찰했다고 주장하지 않는다.
 
 ---
 
@@ -792,6 +796,6 @@ pending이며 local tests/build evidence만으로 release 또는 installed accep
 | 17 | Developer Toolbox → API Playground `api-request/v1` (P3 integration) | v0.5.0 |
 | 18 | Run Manager·WSL Desktop → Log Lens `log-source/v1` producer integration | v0.5.0 |
 | 19 | Run Manager·Workbench → Port Manager `snapshot:port-bindings/v1` correlation + Port → Log Lens routing | v0.6.0 |
-| 20 | W08 PR2 (#489): Log Lens 0.2.0 saved views/reconnect + Webhook Lab 0.3.0 `webhook-log/v1` sanitized handoff, catalog revision 17 | post-v0.5.1; Windows packaged acceptance pending |
+| 20 | W08 PR2 (#489): Log Lens 0.2.0 saved views/reconnect + Webhook Lab 0.3.0 `webhook-log/v1` sanitized handoff, catalog revision 17 | post-v0.5.1; v0.6.0 #493 hosted packaged acceptance 완료 |
 
 1과 2는 한 PR로 묶는다 — 계약과 첫 소비자를 분리하면 검증이 안 된다.

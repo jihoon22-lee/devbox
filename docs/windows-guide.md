@@ -1,20 +1,22 @@
 # Windows 11에서 devbox 앱 사용 가이드
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 현재 v0.6.0 stable의 15개 앱을 설치하거나
-source에서 빌드하고 실행**하는 방법을 설명한다.
+이 가이드는 **Windows 11 PC(예: 회사 PC)에서 공개 v0.6.0 stable의 15개 앱을 설치하거나,
+v0.7.0 준비 source를 빌드하고 실행**하는 방법을 설명한다.
 개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
 
 > 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
 > 앱별 산출물(제품명/설치 패키지 기준 표기 — 실제 빌드 실행 파일명은 `<package>.exe`, 7.3 참고):
 > `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
 > `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
-> `DevboxManager.exe` `CodePad.exe` `RunManager.exe`
+> `DevboxManager.exe` `Code Pad.exe` `Run Manager.exe`
 > `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
 
 > 현재 v0.6.0 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱과 milestone
 > #2의 W01~W11 보강이 들어 있다. 정확한 binary·workflow·asset digest·Latest metadata는
 > [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)에서 확인한다.
-> 설치된 WSL Desktop의 zellij/terminal reconnect만 #518의 physical observation으로 남아 있다.
+> 설치된 WSL Desktop의 zellij/terminal reconnect는 #518에서 2026-09-03 사용자 실기 PASS로
+> 완료했다. v0.7.0 source는 정확한 cwd 복원·Quick Summon과 검증/릴리스 효율화를 더하며,
+> exact-main candidate와 release가 끝날 때까지 공개 Latest는 v0.6.0이다.
 
 ---
 
@@ -35,7 +37,7 @@ source에서 빌드하고 실행**하는 방법을 설명한다.
 >    build되고 하나의 후보로 조립된다. 조립과 두 acceptance job이 모두 성공할 때까지 기다린다.
 >    중간 shard는 1일, 최종 private 후보는 14일 동안 보존된다.
 > 3. 같은 commit에 annotated tag를 만들고 push한다
->    (예: `git tag -a v0.6.1 <SHA> -m "devbox v0.6.1"` 후 `git push origin refs/tags/v0.6.1`).
+>    (예: `git tag -a v0.7.0 <SHA> -m "devbox v0.7.0"` 후 `git push origin refs/tags/v0.7.0`).
 >    tag push가 실패한 release를 재시도할 때는 GitHub → Actions → **Release** → **Run workflow**에서
 >    이미 존재하는 동일 tag를 입력할 수 있다.
 > 4. Release workflow는 성공한 후보의 tag·commit·workflow·32개 digest를 다시 검증하고,
@@ -220,7 +222,7 @@ C:\devbox\target\release\bundle\nsis\<ProductName>_<version>_x64-setup.exe      
 ```
 
 - 실행 파일 이름은 productName이 아니라 **Cargo 패키지명**(앱 디렉터리명, 예: `port-manager.exe`)이다.
-- 설치 패키지 이름은 **productName**(예: `PortManager_0.3.0_x64-setup.exe`)이다.
+- 설치 패키지 이름은 **productName**(예: `PortManager_0.4.0_x64-setup.exe`)이다.
 - 단, GitHub Releases 산출물은 휴대용 `<app-id>.exe` / 설치 `<app-id>_<version>_x64-setup.exe` 형태로 게시된다.
 
 ProductName 매핑:
@@ -244,7 +246,7 @@ ProductName 매핑:
 | log-lens | LogLens |
 
 Log Lens의 v0.5.0 bootstrap, v0.5.1 #473 Run reader와 v0.6.0 W08 보강은 current stable에
-포함됐다. post-release 사용자 환경 관찰은 #518에서 관리한다.
+포함됐다. 마지막 post-release WSL 사용자 환경 관찰은 #518에서 PASS로 완료됐다.
 
 ---
 
@@ -269,7 +271,7 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 | **EverythingPlus** | 첫 실행 시 `+`로 검색 루트 추가(예: `C:\`, `D:\`) → 자동 인덱싱. |
 | **Knowledge** | 기본 저장 위치: `Documents\Knowledge`. 우측에서 작성, Ctrl+S 저장. Daily note 버튼으로 오늘 메모. |
 | **LifeLog** | 설정 탭에서 **git 프로젝트 경로**를 등록해야 값이 채워짐 (활동 추적은 앱에 통합됨). |
-| **WSLDesktop** | 임베디드 WSL 터미널 + distro/Docker/프로젝트 상태 패널. WSL2 필요: `wsl --install` 후 재부팅. Docker 컨테이너 관리엔 Docker Desktop 필요. |
+| **WSLDesktop** | 분할 WSL 터미널 + distro/Docker 패널. v0.7 source는 Bash/Zsh cwd 연동, 정확한 workspace 복원, tmux/zellij 다시 검색과 Quick Summon을 제공한다. WSL2 필요: `wsl --install` 후 재부팅. |
 | **DevboxManager** | devbox 앱 설치·업데이트·실행을 한 곳에서 관리. |
 | **CodePad** | CodeMirror 6 기반 코드 에디터. `언어 서버` 패널에서 LSP 서버 설치·활성화 후 진단·이름 변경·포맷 사용. |
 | **RunManager** | 작업(cron)·서비스 정의, 실행 이력·로그 tail. 서비스는 시작/정지/재시작과 헬스체크·재시작 정책 지원. |
@@ -277,6 +279,20 @@ SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
 | **WebhookLab** | 포트 선택 후 서버 시작 → 외부 서비스의 웹훅/콜백을 로컬에서 수신해 검사. 응답 rule·지연·오류 재현, 수신 요청을 API Playground 요청으로 변환. |
 | **RepoManager** | 검색 root를 등록하면 그 아래 Git 저장소를 목록화. 브랜치/dirty/ahead-behind/worktree 상태 확인, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기. |
 | **DevboxLauncher** | `Ctrl+Alt+Space`로 transient 검색창을 열고 앱·사용 가능한 snapshot을 실행한다. source가 없거나 손상되어도 다른 검색은 계속되며, 설정에서 선택한 대체 단축키는 즉시 적용된다. |
+
+### WSL Desktop의 zellij·경로 복원
+
+- Cargo로 설치한 zellij가 `~/.cargo/bin/zellij`에 있어도 WSL Desktop은 선택 distro 사용자의
+  `HOME`·`PATH`와 고정 user-bin 후보를 함께 검사한다. 앱을 켠 뒤 설치했다면 WSL 새로고침 또는
+  `설정 → 세션 유지 방식 → 다시 검색`을 누른다. 일시적 probe 오류는 저장한 zellij 선호를
+  지우지 않으며 해당 terminal만 native로 fallback한다.
+- terminal별 현재 경로를 재시작 뒤 정확히 복원하려면 `설정 → Bash/Zsh cwd 연동`에서 표시된
+  marker block을 확인하고 설치한다. 연동 전에는 앱이 terminal 시작 경로만 알 수 있고, 연동 뒤
+  OSC 7을 받은 팬은 `cwd 추적`으로 표시된다. 기존 prompt hook을 보존하며 제거도 같은 설정에서
+  앱 소유 block만 대상으로 한다.
+- Quick Summon은 기본 `Ctrl+Alt+Space`로 실행 중인 같은 창을 숨기거나 다시 focus한다. `닫을 때
+  트레이에 유지`를 켰다면 X는 terminal을 종료하지 않고 숨기므로, 완전히 끝내려면 tray의
+  `완전히 종료`를 사용한다.
 
 ---
 
@@ -345,5 +361,5 @@ cd apps\port-manager
 pnpm tauri build
 
 # 4. 실행
-.\target\release\bundle\nsis\PortManager_0.3.0_x64-setup.exe
+.\target\release\bundle\nsis\PortManager_0.4.0_x64-setup.exe
 ```

@@ -3,6 +3,8 @@
 devbox는 현재 v0.6.0 안정판의 15개 Tauri 데스크톱 앱을 하나의 모노레포로 관리한다.
 v0.6.0은 milestone #2의 W01~W11을 포함하며, 정확한 tag commit·workflow·asset publication
 metadata는 [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.6.0)에서 확인한다.
+현재 main은 v0.7.0 release preparation 단계이며, source 전체 audit와 exact-main Windows
+candidate가 완료되기 전에는 v0.7.0을 stable로 간주하지 않는다.
 
 - **pnpm workspace** — `apps/*`, `packages/*`
 - **Cargo workspace** — 앱(src-tauri) + 공용 crates
@@ -26,11 +28,34 @@ apps/        독립 Tauri 앱 (각각 독립 .exe)
   webhook-lab         로컬 웹훅/콜백 서버
   repo-manager        Git worktree/저장소 관리
   devbox-launcher     catalog app·integration snapshot launcher와 explicit clipboard preview
-  log-lens            bounded local/WSL/container log viewer (v0.6.0 app version 0.2.0)
+  log-lens            bounded local/WSL/container log viewer (v0.7.0 app version 0.2.1)
 packages/    공용 frontend 패키지 (tokens·a11y·editor·diff-view·context-menu·openapi·mermaid-renderer)
 crates/      공용 Rust 크레이트 (applink·catalog·filesystem·git·integration·launch·markdown·process·search·secrets·window-state·window-state-tauri·wsl)
 docs/        architecture / roadmap / projects
 ```
+
+## v0.7.0 app version matrix
+
+Release tag는 15개 앱 묶음의 identity이고 각 app version은 installer/update identity다. v0.6.0 뒤
+source가 바뀐 8개 앱만 올리며, 세 manifest와 packaged-smoke config 및 `Cargo.lock`을 함께 맞춘다.
+
+| App | v0.7.0 app version | Change |
+|---|---:|---|
+| port-manager | 0.4.0 | 유지 |
+| developer-toolbox | 0.4.1 | patch |
+| wsl-desktop | 0.6.0 | minor |
+| api-playground | 0.5.1 | patch |
+| everything-plus | 0.5.0 | 유지 |
+| knowledge-base | 0.5.1 | patch |
+| life-log | 0.5.0 | 유지 |
+| devbox-manager | 0.5.1 | patch |
+| code-pad | 0.5.1 | patch |
+| run-manager | 0.5.1 | patch |
+| workbench | 0.3.0 | 유지 |
+| webhook-lab | 0.3.0 | 유지 |
+| repo-manager | 0.3.0 | 유지 |
+| devbox-launcher | 0.2.0 | 유지 |
+| log-lens | 0.2.1 | patch |
 
 ## 기능·의존성 판단
 
@@ -91,6 +116,7 @@ acceptance에서 확인한다.
 - [docs/architecture.md](./architecture.md) — 아키텍처
 - [docs/roadmap.md](./roadmap.md) — 로드맵 / 진행 상황
 - [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md) — P1·P2·선택 P3 상세 계획
+- [v0.7.0 릴리스 계획](./superpowers/plans/2026-09-03-v0.7.0-release.md) — exact version, source/candidate/publication gate
 - [docs/projects.md](./projects.md) — 앱별 요약
 - [docs/windows-guide.md](./windows-guide.md) — Windows 사용/빌드 가이드
 - `docs/superpowers/specs/` — 앱/기능 설계 문서 (workbench·webhook-lab·repo-manager 등)

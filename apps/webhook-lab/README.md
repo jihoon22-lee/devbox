@@ -339,7 +339,7 @@ ephemeral cursor일 뿐 fixture·설정 파일·handoff에 저장하지 않는�
 
 설계 문서: `docs/superpowers/specs/2026-08-14-webhook-lab-design.md`
 
-W08 PR2 (#489)의 Webhook Lab 0.3.0 → Log Lens 0.2.0 sanitized handoff와 catalog revision 17은
-현재 구현/문서 계약이다. Windows packaged cold/hot launch, installed capability discovery,
-exact pending cleanup, and saved-view exclusion의 실기 acceptance는 아직 pending이며,
-이 README는 release 또는 installed validation을 주장하지 않는다.
+W08 PR2 (#489)의 Webhook Lab 0.3.0 → v0.6.0 Log Lens 0.2.0 sanitized handoff와 catalog
+revision 17은 현재 구현/문서 계약이다. cold/hot launch, capability discovery, exact pending
+cleanup, saved-view exclusion은 v0.6.0 #493 hosted Windows package gate를 통과했다. 이 결과가
+임의 사용자 PC의 모든 installed webhook/source 조합을 관찰했다는 뜻은 아니다.

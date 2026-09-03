@@ -14,7 +14,7 @@
     {
       "id": "developer-toolbox",
       "additionalProcessNames": ["DevToolbox.exe"],
-      "version": "0.4.0",
+      "version": "0.4.1",
       "identifier": "com.devbox.developertoolbox",
       "legacyIdentifiers": ["com.workbench.developertoolbox"],
       "title": "Developer Toolbox",
@@ -24,7 +24,7 @@
     {
       "id": "api-playground",
       "additionalProcessNames": ["ApiPlayground.exe"],
-      "version": "0.5.0",
+      "version": "0.5.1",
       "identifier": "com.devbox.apiplayground",
       "legacyIdentifiers": ["com.workbench.apiplayground"],
       "title": "API Playground",
@@ -44,7 +44,7 @@
     {
       "id": "knowledge-base",
       "additionalProcessNames": ["Knowledge.exe"],
-      "version": "0.5.0",
+      "version": "0.5.1",
       "identifier": "com.devbox.knowledgebase",
       "legacyIdentifiers": ["com.workbench.knowledgebase"],
       "isolatedKnowledgeRoot": true,
@@ -58,7 +58,7 @@
     {
       "id": "devbox-manager",
       "additionalProcessNames": ["DevboxManager.exe"],
-      "version": "0.5.0",
+      "version": "0.5.1",
       "identifier": "com.devbox.devboxmanager",
       "legacyIdentifiers": ["com.workbench.devboxmanager"],
       "title": "Devbox Manager",
@@ -68,7 +68,7 @@
     {
       "id": "code-pad",
       "additionalProcessNames": ["Code Pad.exe"],
-      "version": "0.5.0",
+      "version": "0.5.1",
       "identifier": "com.devbox.codepad",
       "legacyIdentifiers": ["com.workbench.codepad"],
       "title": "Code Pad",
@@ -78,7 +78,7 @@
     {
       "id": "run-manager",
       "additionalProcessNames": ["Run Manager.exe"],
-      "version": "0.5.0",
+      "version": "0.5.1",
       "identifier": "com.devbox.runmanager",
       "legacyIdentifiers": ["com.workbench.runmanager"],
       "title": "Run Manager",
@@ -130,7 +130,7 @@
     {
       "id": "log-lens",
       "additionalProcessNames": ["LogLens.exe"],
-      "version": "0.2.0",
+      "version": "0.2.1",
       "identifier": "com.devbox.loglens",
       "legacyIdentifiers": [],
       "title": "Log Lens",
@@ -150,7 +150,7 @@
     {
       "id": "wsl-desktop",
       "additionalProcessNames": ["WSLDesktop.exe"],
-      "version": "0.5.0",
+      "version": "0.6.0",
       "identifier": "com.devbox.wsldesktop",
       "legacyIdentifiers": ["com.workbench.wsldesktop"],
       "title": "WSL Desktop",

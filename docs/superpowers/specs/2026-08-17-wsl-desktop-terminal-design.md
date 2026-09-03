@@ -8,6 +8,13 @@
 - 선행: [앱 간 연동 설계](./2026-08-17-app-interop-design.md) §1.2 (`Path` 수신은 v0.4.1,
   `Profile` 수신과 레이아웃 선택은 v0.5.0 §4.4에서 구현)
 
+> **2026-09-03 v0.7.0 구현 갱신.** 이 문서의 pre-fix line citation과 “제외/향후 acceptance”는
+> 당시 설계 경계를 보존한다. #521~#524가 dialog/settings/navigation/pane resize·WebGL·buffer
+> surface를, #531~#534가 multiplexer 재검색, marker-owned Bash/Zsh OSC 7, progressive exact
+> workspace restore/schema v2와 Quick Summon을 구현했다. 설치된 zellij/terminal reconnect는
+> #518 사용자 실기에서 PASS했다. 현재 사용·저장·보안 계약은 `apps/wsl-desktop/README.md`를
+> 우선하고, 이 문서는 PTY 정확성 설계와 historical rationale로 읽는다.
+
 > **2026-08-22 native-first 확인.** 탭·팬·profile·layout·action palette는 WSL Desktop이
 > 자체 제공하며 tmux/zellij 설치를 전제로 하지 않는다. 멀티플렉서는 앱 종료 뒤 process
 > 생존이 필요한 사용자를 위해 이미 설치된 session에 attach하는 optional adapter다. 앱이
