@@ -621,9 +621,34 @@ try {
 
   $runId = "$env:GITHUB_RUN_ID-$env:GITHUB_RUN_ATTEMPT"
   foreach ($app in $configuration.apps) {
-    $appResult = [ordered]@{ id = $app.id; baseline = [bool]$app.baseline; status = 'RUNNING'; phases = @(); markers = @(); failure = $null }
+    $baselineVersion = if ([bool]$app.baseline) {
+      [string]$baselineRelease.byId[$app.id].version
+    } else {
+      $null
+    }
+    $candidateVersion = [string]$candidateRelease.byId[$app.id].version
+    $versionChanged = [bool]$app.baseline -and $baselineVersion -cne $candidateVersion
+    $lifecycle = if (-not [bool]$app.baseline) {
+      'new-app'
+    } elseif ($versionChanged) {
+      'version-change'
+    } else {
+      'same-version'
+    }
+    $appResult = [ordered]@{
+      id = $app.id
+      baseline = [bool]$app.baseline
+      baselineVersion = $baselineVersion
+      candidateVersion = $candidateVersion
+      versionChanged = $versionChanged
+      lifecycle = $lifecycle
+      status = 'RUNNING'
+      phases = @()
+      markers = @()
+      failure = $null
+    }
     try {
-      if ([bool]$app.baseline) {
+      if ([bool]$app.baseline -and $versionChanged) {
         $baselineInstall = Install-App $app $baselineRelease $BaselineAssets 'install'
         $appResult.phases += $baselineInstall
         $baselineBinarySha256 = [string]$baselineInstall.binarySha256
@@ -645,6 +670,22 @@ try {
         $appResult.phases += Install-App $app $candidateRelease $CandidateAssets 'install' '' $candidateBinarySha256
         Assert-Markers $markers
         $appResult.phases += Install-App $app $baselineRelease $BaselineAssets 'update' '' $baselineBinarySha256
+        Assert-Markers $markers
+        $state = $script:ownedInstalls[$app.id]
+        $appResult.phases += Uninstall-App $app $state
+        Assert-Markers $markers
+      } elseif ([bool]$app.baseline) {
+        $baselineInstall = Install-App $app $baselineRelease $BaselineAssets 'install'
+        $appResult.phases += $baselineInstall
+        $markers = @(New-Markers $app $runId)
+        $allMarkers += $markers
+        $appResult.markers = @($markers | ForEach-Object { [ordered]@{ identifier = $_.Identifier; sha256 = $_.Sha256 } })
+        $state = $script:ownedInstalls[$app.id]
+        $appResult.phases += Uninstall-App $app $state
+        Assert-Markers $markers
+
+        $candidateInstall = Install-App $app $candidateRelease $CandidateAssets 'install'
+        $appResult.phases += $candidateInstall
         Assert-Markers $markers
         $state = $script:ownedInstalls[$app.id]
         $appResult.phases += Uninstall-App $app $state

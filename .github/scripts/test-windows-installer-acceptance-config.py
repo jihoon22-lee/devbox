@@ -115,6 +115,9 @@ def main() -> None:
     assert "$binarySha -ne $manifestApp.portable.sha256" not in script
     assert "installed executable digest is not reproducible for this installer release" in script
     assert "candidate update did not replace the baseline executable" in script
+    assert "$baselineVersion -cne $candidateVersion" in script
+    assert "lifecycle = $lifecycle" in script
+    assert "elseif ([bool]$app.baseline)" in script
     assert "Invoke-Owned-Process $State.Uninstaller '/S'" in script
     assert "_?=" not in script
 
@@ -128,7 +131,9 @@ def main() -> None:
     assert "if: ${{ always() }}" in workflow
     assert "status -cne 'PASS'" in workflow
     assert "schemaVersion -ne 1" in workflow
-    assert "baseline lifecycle evidence is incomplete" in workflow
+    assert "version-change lifecycle evidence is incomplete" in workflow
+    assert "same-version lifecycle evidence is incomplete" in workflow
+    assert "baseline lifecycle version classification is invalid" in workflow
     assert "[int]$evidence.releases.baseline.assets -ne 32" in workflow
     assert "$baselineApps.Count -ne 15 -or $newApps.Count -ne 0" in workflow
     assert "registryKeyResidue" in workflow

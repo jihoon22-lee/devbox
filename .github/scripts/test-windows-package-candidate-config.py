@@ -60,9 +60,12 @@ assert WORKFLOW.count("needs: assemble") == 2
 assert "name: Packaged app runtime acceptance" in WORKFLOW
 assert "windows-packaged-smoke.mjs" in WORKFLOW
 assert (
-    "Copy-Item -LiteralPath '.github/scripts/windows-packaged-smoke-config.json'"
+    "candidate/evidence/windows-packaged-smoke-config.json"
     in WORKFLOW
 )
+assert "install -d -m 0755 candidate/evidence" in WORKFLOW
+assert "install -m 0644" in WORKFLOW
+assert "Copy-Item -LiteralPath '.github/scripts/windows-packaged-smoke-config.json'" not in WORKFLOW
 assert (
     "--verification (Join-Path '${{ steps.paths.outputs.download }}' 'evidence/verification.json')"
     in WORKFLOW
