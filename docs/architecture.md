@@ -1099,7 +1099,9 @@ Manager schema v1 service를 명시적으로 export할 수 있다. export JSON�
 Webhook Lab executable path를 고정 command에 포함하지만 rule/response/env/cwd/project·log path/
 runtime identity는 포함하지 않는다. Windows packaged service startup은 #493 acceptance까지 pending이다.
 
-`apps/catalog.json` 변경은 CI scope에서 양쪽 게이트(frontend/rust)를 켠다.
+`apps/catalog.json` 변경은 CI의 catalog consistency gate를 항상 통과하고, compiler gate는
+build-time import/include 관계를 가진 frontend 앱과 `catalog` → `launch` Rust 역의존 closure만
+선택한다. release·수동·주간 감사에서는 15개 앱 전체 계약을 다시 검증한다.
 
 ## 통합 앱 (Workbench)
 

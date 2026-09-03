@@ -6,7 +6,9 @@
   "scripts": {
     "build": "pnpm -r build",
     "dev": "pnpm -r --parallel dev",
-    "test": "pnpm -r test"
+    "test": "pnpm -r test",
+    "verify:affected": "bash .github/scripts/verify-affected.sh",
+    "verify:all": "bash .github/scripts/verify-affected.sh --all"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",

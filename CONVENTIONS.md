@@ -196,7 +196,8 @@ src/
 | 단계 | 명령 | 위치 |
 |---|---|---|
 | 앱 로컬 로직 개발 | `cargo test` | `apps/<app>/src-tauri` |
-| 전체 Rust 컴파일 검증 | `cargo check` | 워크스페이스 루트 or 앱 |
+| 영향 범위 완료 검증 | `pnpm verify:affected` | 워크스페이스 루트 |
+| 명시적 전체 감사 | `pnpm verify:all` | 워크스페이스 루트 |
 | 프론트 UI 미리보기 | `pnpm dev` (mock 데이터) | `apps/<app>` |
 | 프론트 타입/빌드 검증 | `pnpm build` | `apps/<app>` |
 | 실제 앱 실행 | `pnpm tauri dev` | Windows PowerShell, `apps/<app>` |
@@ -206,6 +207,11 @@ src/
   `libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
 - 프론트는 `src/lib/isTauri.ts` 분기로 Tauri 없이 mock 데이터 표시
 - 9p 마운트 성능: cargo `target-dir`은 `.cargo/config.toml`로 Linux 네이티브 경로 지정
+- `verify:affected`는 `origin/main`과 현재 branch의 merge-base 이후 commit 및 staged,
+  unstaged, untracked 파일을 합친다. 앱 변경은 해당 앱만, 공용 package/crate 변경은
+  dependency graph의 역의존 closure만 검사한다. 미분류 경로·lockfile 단독 변경은 fail-safe로
+  전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip하며, release와 주간 CI 감사는
+  전체 검증을 유지한다.
 
 ## 6. 프로젝트 시작 절차 (앱 추가 시)
 
@@ -223,7 +229,7 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 
 이후 진행 순서:
 1. 앱 로컬 `core/` + 테스트 작성 (Rust 로직)
-2. `cargo check`(src-tauri) / `pnpm build`(프론트) 통과 확인
+2. 집중 `cargo check`(src-tauri) / `pnpm build`(프론트) 후 루트 `pnpm verify:affected` 통과 확인
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
@@ -284,7 +290,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 예: `feat(port-manager): add netstat parser with unit tests`
 - 예: `refactor(workspace): extract process crate from port-manager`
 - 1커밋 = 1논리적 단위. WIP 커밋 금지
-- 완료 정의(`cargo test`/`cargo check`/`pnpm build` 통과)를 커밋 전에 확인
+- 완료 정의(집중 테스트 + `pnpm verify:affected` + CI 통과)를 커밋 전에 확인
 
 ## 9. 기술 스택 정책
 
