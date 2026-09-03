@@ -522,7 +522,7 @@ describe("Protocol Lab", () => {
     expect(screen.queryByText("선택한 OAuth grant")).toBeNull();
   });
 
-  it("keeps a prompt argument typed right after the list loads and across prompt switches", async () => {
+  it("keeps independent prompt drafts when both selections are edited", async () => {
     mocks.connect.mockResolvedValueOnce({
       ...connection,
       server: { ...connection.server, capabilities: { prompts: {} } },
@@ -557,23 +557,30 @@ describe("Protocol Lab", () => {
     fireEvent.change(topic, { target: { value: "release" } });
     expect(topic.value).toBe("release");
 
-    // Switching away and back must not hand the typed value to a reset.
+    // Each prompt owns a separate connection-local draft. Editing the second prompt must not
+    // overwrite the first one, and either draft must still be available after another switch.
     const select = within(prompts).getByRole("combobox", { name: "MCP prompt" });
     fireEvent.change(select, { target: { value: "summary" } });
-    expect((within(prompts).getByLabelText(/scope/) as HTMLInputElement).value).toBe("");
+    const scope = within(prompts).getByLabelText(/scope/) as HTMLInputElement;
+    expect(scope.value).toBe("");
+    fireEvent.change(scope, { target: { value: "week" } });
+    expect(scope.value).toBe("week");
+
     fireEvent.change(select, { target: { value: "draft" } });
     expect((within(prompts).getByLabelText(/topic/) as HTMLInputElement).value).toBe("release");
+    fireEvent.change(select, { target: { value: "summary" } });
+    expect((within(prompts).getByLabelText(/scope/) as HTMLInputElement).value).toBe("week");
 
     fireEvent.click(within(prompts).getByRole("button", { name: "Prompt 가져오기" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
       connection.connectionId,
       expect.stringMatching(/^mcp-/),
       "prompts/get",
-      { name: "draft", arguments: { topic: "release" } },
+      { name: "summary", arguments: { scope: "week" } },
     ));
   });
 
-  it("keeps a tool argument typed right after the list loads and across tool switches", async () => {
+  it("keeps independent tool drafts when both selections are edited", async () => {
     mocks.invoke
       .mockResolvedValueOnce(invokeResult({
         resultType: "complete",
@@ -608,16 +615,55 @@ describe("Protocol Lab", () => {
 
     const select = screen.getByRole("combobox", { name: "MCP tool" });
     fireEvent.change(select, { target: { value: "ping" } });
-    expect((screen.getByLabelText("host string") as HTMLInputElement).value).toBe("");
+    const host = screen.getByLabelText("host string") as HTMLInputElement;
+    expect(host.value).toBe("");
+    fireEvent.change(host, { target: { value: "localhost" } });
+    expect(host.value).toBe("localhost");
+
     fireEvent.change(select, { target: { value: "echo" } });
     expect((screen.getByLabelText("message string") as HTMLInputElement).value).toBe("hello");
+    fireEvent.change(select, { target: { value: "ping" } });
+    expect((screen.getByLabelText("host string") as HTMLInputElement).value).toBe("localhost");
 
     fireEvent.click(screen.getByRole("button", { name: "선택 tool 호출" }));
     await waitFor(() => expect(mocks.invoke).toHaveBeenLastCalledWith(
       connection.connectionId,
       expect.stringMatching(/^mcp-/),
       "tools/call",
-      { name: "echo", arguments: { message: "hello" } },
+      { name: "ping", arguments: { host: "localhost" } },
     ));
+  });
+
+  it("discards all MCP drafts when the connection is reset", async () => {
+    mocks.connect.mockResolvedValue({
+      ...connection,
+      server: { ...connection.server, capabilities: { prompts: {} } },
+    });
+    const promptPage = invokeResult({
+      resultType: "complete",
+      prompts: [{ name: "draft", arguments: [{ name: "topic", required: true }] }],
+    });
+    mocks.invoke.mockResolvedValue(promptPage);
+
+    render(<ProtocolLab environment={[]} native />);
+    await connect();
+    const prompts = screen.getByRole("heading", { name: "Prompts" }).closest("section");
+    if (!prompts) throw new Error("prompts section missing");
+
+    fireEvent.click(within(prompts).getByRole("button", { name: "목록 조회" }));
+    const topic = await within(prompts).findByLabelText(/topic/) as HTMLInputElement;
+    fireEvent.change(topic, { target: { value: "private draft" } });
+    expect(topic.value).toBe("private draft");
+
+    fireEvent.click(screen.getByRole("button", { name: "연결 해제" }));
+    await waitFor(() => expect(mocks.disconnect).toHaveBeenCalledWith(connection.connectionId));
+    await screen.findByRole("button", { name: "연결" });
+    await connect();
+    const reconnectedPrompts = screen.getByRole("heading", { name: "Prompts" }).closest("section");
+    if (!reconnectedPrompts) throw new Error("prompts section missing after reconnect");
+    fireEvent.click(within(reconnectedPrompts).getByRole("button", { name: "목록 조회" }));
+
+    expect((await within(reconnectedPrompts).findByLabelText(/topic/) as HTMLInputElement).value)
+      .toBe("");
   });
 });
