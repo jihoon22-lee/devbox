@@ -1943,6 +1943,9 @@ export default function App() {
         }}
         fontSize={terminalFontSize}
         onFontSizeChange={updateTerminalFontSize}
+        distro={selected}
+        ask={ask}
+        onError={setError}
       />
       <AppDialog pending={pendingDialog} onAnswer={answerDialog} />
     </div>

@@ -10,6 +10,9 @@ import type {
   MultiplexerAvailability,
   MultiplexerKind,
   OpenRequest,
+  ShellIntegrationMutation,
+  ShellIntegrationReport,
+  ShellKind,
   WorkspaceProfile,
 } from "./types";
 
@@ -126,6 +129,45 @@ export async function detectMultiplexers(distro: string): Promise<MultiplexerAva
     { kind: "zellij", status: "missing", version: null, source: null },
   ];
   return invoke<MultiplexerAvailability[]>("detect_multiplexers", { distro });
+}
+
+export async function inspectShellIntegration(distro: string): Promise<ShellIntegrationReport> {
+  if (!isTauri()) return {
+    distro,
+    shells: (["bash", "zsh"] as const).map((shell) => ({
+      shell,
+      rcFile: `~/.${shell}rc`,
+      status: "missing",
+      revision: `mock-${shell}`,
+      blockPreview: "# >>> devbox WSL Desktop shell integration >>>\n# preview in desktop app\n# <<< devbox WSL Desktop shell integration <<<\n",
+      defaultShell: shell === "bash",
+    })),
+  };
+  return invoke<ShellIntegrationReport>("inspect_shell_integration", { distro });
+}
+
+export async function updateShellIntegration(
+  distro: string,
+  shell: ShellKind,
+  action: "install" | "remove",
+  expectedRevision: string,
+): Promise<ShellIntegrationMutation> {
+  if (!isTauri()) {
+    const report = await inspectShellIntegration(distro);
+    const integration = report.shells.find((item) => item.shell === shell);
+    if (!integration) throw new Error("shell integration unavailable");
+    return {
+      changed: true,
+      backupFile: action === "install" ? integration.rcFile : null,
+      integration: { ...integration, status: action === "install" ? "current" : "missing" },
+    };
+  }
+  return invoke<ShellIntegrationMutation>("update_shell_integration", {
+    distro,
+    shell,
+    action,
+    expectedRevision,
+  });
 }
 
 let mockProfiles: WorkspaceProfile[] = [];

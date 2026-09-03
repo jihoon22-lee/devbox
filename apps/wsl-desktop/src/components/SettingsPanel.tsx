@@ -7,6 +7,8 @@ import {
   clampTerminalFontSize,
 } from "../lib/terminalUx";
 import type { MultiplexerAvailability } from "../types";
+import type { AskDialog } from "./AppDialog";
+import ShellIntegrationSettings from "./ShellIntegrationSettings";
 import {
   CURSOR_LABELS,
   FONT_CHOICES,
@@ -31,6 +33,9 @@ interface SettingsPanelProps {
   onCopyOnSelectChange: (enabled: boolean) => void;
   fontSize: number;
   onFontSizeChange: (fontSize: number) => void;
+  distro: string;
+  ask: AskDialog;
+  onError: (message: string) => void;
 }
 
 const MULTIPLEXER_STATUS_SUFFIX: Readonly<Record<MultiplexerAvailability["status"], string>> = {
@@ -51,6 +56,9 @@ export default function SettingsPanel({
   onCopyOnSelectChange,
   fontSize,
   onFontSizeChange,
+  distro,
+  ask,
+  onError,
 }: SettingsPanelProps) {
   const dialogRef = useRef<HTMLElement>(null);
   const openerRef = useRef<HTMLElement | null>(null);
@@ -115,6 +123,8 @@ export default function SettingsPanel({
             </span>
           </label>
         </fieldset>
+
+        <ShellIntegrationSettings distro={distro} ask={ask} onError={onError} />
 
         <fieldset className="settings-group">
           <legend>세션</legend>

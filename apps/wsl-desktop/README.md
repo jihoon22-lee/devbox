@@ -96,6 +96,15 @@
   실행 경로는 renderer, 로그, 프로필에 노출하지 않는다. WSL 상태 새로고침과 설정의
   `다시 검색`은 멀티플렉서도 즉시 재탐색한다. 일시적인 부재·확인 오류는 사용자의 선호
   방식을 변경하지 않으며, 해당 시작 요청에서만 backend가 native로 낮춘다.
+- **Bash/Zsh cwd 연동** — 각 팬은 OSC 7 수신 전 `cwd 미확인`, 수신 뒤 `cwd 추적`을
+  명시한다. 설정에서 선택한 distro의 `~/.bashrc`·`~/.zshrc` 상태와 기본 셸을 확인하고,
+  사용자가 최종 marker block을 확인한 경우에만 설치·복구·제거한다. 앱 소유 marker가
+  없으면 기존 내용 뒤에 추가하고, marker가 하나면 그 범위만 교체하며, 중복·미완성 marker,
+  symbolic link·일반 파일이 아닌 rc, 1MiB 초과·비 UTF-8 파일은 fail-closed한다. 변경 전에
+  timestamp/nonce가 붙은 보존 백업을 만들고, preview revision이 달라졌거나 적용 도중 파일이
+  바뀌면 임시 파일을 제거하고 원본을 덮어쓰지 않는다. 적용은 같은 디렉터리의 bounded temp를
+  거친 rename이며 renderer에는 rc 원문·실제 home 경로를 반환하지 않는다. Bash/Zsh block은
+  경로를 UTF-8 byte 단위로 percent-encode하고 기존 prompt hook 및 명령 종료 상태를 보존한다.
 - **상태 패널** — WSL 배포판과 선택 distro의 Docker 컨테이너를 표시한다. 260px의 좁은
   패널에서도 이름·정규화 상태·축약 port mapping을 먼저 보여 주고, 컨테이너를 펼치면 Docker가
   반환한 ID·image·status·ports 원문을 확인하고 start/stop/restart할 수 있다. Docker가 없으면

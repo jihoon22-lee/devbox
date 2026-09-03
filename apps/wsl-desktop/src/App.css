@@ -1011,6 +1011,15 @@ select {
   color: var(--accent);
 }
 
+.pane-badge.cwd-tracked {
+  border-color: #3fb950;
+  color: #3fb950;
+}
+
+.pane-badge.cwd-untracked {
+  border-style: dashed;
+}
+
 /* ── 설정 ─────────────────────────────────────────────────────── */
 
 .settings-panel {
@@ -1075,6 +1084,54 @@ select {
   border-radius: 6px;
   background: var(--bg);
   color: var(--text);
+}
+
+.shell-integration-row {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.shell-integration-summary,
+.shell-integration-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+}
+
+.shell-integration-summary small {
+  margin-left: auto;
+  color: var(--dim);
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.shell-integration-status {
+  font-size: 11px;
+  color: var(--dim);
+}
+
+.shell-integration-status.current {
+  color: #3fb950;
+}
+
+.shell-integration-status.outdated,
+.shell-integration-status.conflict,
+.shell-integration-status.blocked,
+.shell-integration-warning {
+  color: #d29922;
+}
+
+.shell-integration-actions {
+  justify-content: flex-end;
+}
+
+.shell-integration-notice {
+  margin: 0;
 }
 
 .tab-list {

@@ -1,5 +1,27 @@
 export type Layout = "grid" | "cols" | "rows";
 export type MultiplexerKind = "native" | "tmux" | "zellij";
+export type ShellKind = "bash" | "zsh";
+export type ShellIntegrationStatus = "missing" | "current" | "outdated" | "conflict" | "blocked";
+
+export interface ShellIntegrationInfo {
+  shell: ShellKind;
+  rcFile: string;
+  status: ShellIntegrationStatus;
+  revision: string;
+  blockPreview: string;
+  defaultShell: boolean;
+}
+
+export interface ShellIntegrationReport {
+  distro: string;
+  shells: ShellIntegrationInfo[];
+}
+
+export interface ShellIntegrationMutation {
+  changed: boolean;
+  backupFile: string | null;
+  integration: ShellIntegrationInfo;
+}
 
 /** 세션 하나. 소속 탭 정보는 갖지 않는다 — Tab.paneIds가 소속의 단일 진실 소스다.
  *
