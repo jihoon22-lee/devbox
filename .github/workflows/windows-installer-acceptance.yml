@@ -323,13 +323,32 @@ jobs:
           }
           foreach ($app in $baselineApps) {
             $phases = @($app.phases | ForEach-Object { [string]$_.phase })
-            if (($phases -join ',') -cne 'install,update,uninstall,install,update,uninstall') {
-              throw "baseline lifecycle evidence is incomplete for $($app.id)"
+            if (
+              [string]::IsNullOrWhiteSpace([string]$app.baselineVersion) -or
+              [string]::IsNullOrWhiteSpace([string]$app.candidateVersion)
+            ) {
+              throw "baseline lifecycle version evidence is incomplete for $($app.id)"
+            }
+            $expectedVersionChanged = [string]$app.baselineVersion -cne [string]$app.candidateVersion
+            if ([bool]$app.versionChanged -ne $expectedVersionChanged) {
+              throw "baseline lifecycle version classification is invalid for $($app.id)"
+            }
+            if ($expectedVersionChanged) {
+              if ([string]$app.lifecycle -cne 'version-change' -or ($phases -join ',') -cne 'install,update,uninstall,install,update,uninstall') {
+                throw "version-change lifecycle evidence is incomplete for $($app.id)"
+              }
+            } elseif ([string]$app.lifecycle -cne 'same-version' -or ($phases -join ',') -cne 'install,uninstall,install,uninstall') {
+              throw "same-version lifecycle evidence is incomplete for $($app.id)"
             }
           }
           foreach ($app in $newApps) {
             $phases = @($app.phases | ForEach-Object { [string]$_.phase })
-            if (($phases -join ',') -cne 'custom,uninstall,install,uninstall') {
+            if (
+              $null -ne $app.baselineVersion -or
+              [bool]$app.versionChanged -or
+              [string]$app.lifecycle -cne 'new-app' -or
+              ($phases -join ',') -cne 'custom,uninstall,install,uninstall'
+            ) {
               throw "new-app lifecycle evidence is incomplete for $($app.id)"
             }
           }

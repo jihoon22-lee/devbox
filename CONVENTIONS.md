@@ -194,7 +194,10 @@ src/
 - 안정판을 만들기 전에 exact current `main` commit과 예정 `vX.Y.Z`를 입력해
   `Windows package candidate`를 실행한다. 카탈로그 순서로 균등 분할한 3개 Windows shard가
   각각 5개 앱만 빌드하고, Linux assembly가 누락·중복 없이 15개 앱·32개 파일인지 다시 검증한다.
-  조립된 단일 후보로 packaged runtime·installer acceptance까지 통과시킨다. 이후 같은 commit에
+  조립된 단일 후보로 packaged runtime·installer acceptance까지 통과시킨다. packaged runtime은
+  assembly가 검증한 config 원본을 후보 evidence에서 그대로 사용한다. installer acceptance는 앱
+  version이 바뀐 항목만 baseline→candidate update와 rollback을 수행하고, version이 같은 항목은
+  baseline과 candidate의 독립 fresh install/uninstall로 검증한다. 이후 같은 commit에
   annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·workflow run·32개
   asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는 성공 후보가 없거나
   만료된 경우 공개 전에 fail-closed한다.

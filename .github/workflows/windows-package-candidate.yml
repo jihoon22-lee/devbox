@@ -204,6 +204,10 @@ jobs:
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
         run: |
           set -euo pipefail
+          install -d -m 0755 candidate/evidence
+          install -m 0644 \
+            .github/scripts/windows-packaged-smoke-config.json \
+            candidate/evidence/windows-packaged-smoke-config.json
           python3 .github/scripts/build-candidate-metadata.py \
             --assets candidate/assets \
             --tag "$CANDIDATE_TAG" \
@@ -215,7 +219,7 @@ jobs:
             --artifact-kind candidate \
             --assets candidate/assets \
             --release candidate/evidence/candidate-metadata.json \
-            --config .github/scripts/windows-packaged-smoke-config.json \
+            --config candidate/evidence/windows-packaged-smoke-config.json \
             --tag "$CANDIDATE_TAG" \
             --commit "$CANDIDATE_COMMIT" \
             --repository "$GITHUB_REPOSITORY" \
@@ -272,11 +276,10 @@ jobs:
           $download = Join-Path $root 'download'
           $evidenceDirectory = Join-Path $root 'evidence'
           $runtimeParent = Join-Path $root 'runtime'
-          $config = Join-Path $root 'windows-packaged-smoke-config.json'
+          $config = Join-Path $download 'evidence/windows-packaged-smoke-config.json'
           $output = Join-Path $evidenceDirectory 'packaged-smoke.json'
           $runtime = Join-Path $runtimeParent 'packaged'
           New-Item -ItemType Directory -Path $root, $download, $evidenceDirectory, $runtimeParent | Out-Null
-          Copy-Item -LiteralPath '.github/scripts/windows-packaged-smoke-config.json' -Destination $config
           @(
             "config=$config"
             "download=$download"
