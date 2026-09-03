@@ -73,6 +73,8 @@ jobs:
           python3 .github/scripts/test-build-candidate-metadata.py
           python3 .github/scripts/test-validate-release-input.py
           python3 .github/scripts/test-windows-package-candidate-config.py
+          python3 .github/scripts/test-resolve-release-candidate.py
+          python3 .github/scripts/test-release-candidate-promotion-config.py
           python3 .github/scripts/test-github-actions-runtime.py
           node .github/scripts/windows-packaged-smoke.mjs --self-test
           node .github/scripts/test-check-frontend-bundles.mjs

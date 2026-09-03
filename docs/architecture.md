@@ -16,7 +16,9 @@ devbox는 **모노레포 + 다중 독립 앱** 구조를 취한다.
   명시적으로 요청하기 전에는 만들지 않는다.
 - `Windows package candidate`는 앞으로도 exact current main의 portable·NSIS·notices·manifest를
   private Actions artifact로만 만들고 disposable installer lifecycle을 실행하는 pre-publication
-  gate다. candidate는 catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
+  gate다. stable release는 같은 tag·commit의 성공한 비만료 candidate를 repository·workflow-run·
+  asset digest까지 독립 검증한 뒤 승격하므로 동일 15개 앱을 다시 컴파일하지 않는다. candidate
+  자체는 여전히 catalog/runtime source, public release, RC 또는 Latest 상태가 아니다.
 
 ## 핵심 원칙
 

@@ -180,6 +180,11 @@ src/
 
 ### 릴리스 트리거와 prerelease 보호
 
+- 안정판을 만들기 전에 exact current `main` commit과 예정 `vX.Y.Z`를 입력해
+  `Windows package candidate`를 실행하고 packaged runtime·installer acceptance까지 통과시킨다.
+  이후 같은 commit에 annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·
+  workflow run·32개 asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는
+  성공 후보가 없거나 만료된 경우 공개 전에 fail-closed한다.
 - `.github/workflows/release.yml`의 안정판 경로는 정확한 `vX.Y.Z` annotated tag push 또는
   명시적인 `workflow_dispatch`로 유지한다. `workflow_dispatch`의 `version`은 기본값 없이
   매번 전체 tag를 입력한다.
@@ -189,6 +194,7 @@ src/
 - prerelease는 향후 필요할 때만 `workflow_dispatch`에서 전체 버전을 정확히 입력하고,
   의도적으로 이름 붙인 boolean 입력 `allow_prerelease: true`를 함께 지정해 실행한다. 이
   입력의 기본값은 `false`이며, gate 없는 수동 version 입력은 prerelease를 열지 않는다.
+  stable-only candidate와 별개인 이 명시적 경로는 기존 Windows package build를 유지한다.
 - 위 정책의 입력·상태 출력은 해당 Python 스크립트와 단위 테스트를 단일 원본으로 삼는다.
 
 ## 5. 개발 워크플로 (WSL-first)

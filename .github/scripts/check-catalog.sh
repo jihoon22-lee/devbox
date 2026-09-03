@@ -223,6 +223,8 @@ python3 .github/scripts/test-verify-downloaded-release.py
 python3 .github/scripts/test-windows-installer-acceptance-config.py
 python3 .github/scripts/test-build-candidate-metadata.py
 python3 .github/scripts/test-windows-package-candidate-config.py
+python3 .github/scripts/test-resolve-release-candidate.py
+python3 .github/scripts/test-release-candidate-promotion-config.py
 python3 .github/scripts/test-github-actions-runtime.py
 node --check .github/scripts/windows-packaged-smoke.mjs
 if command -v pwsh >/dev/null 2>&1; then

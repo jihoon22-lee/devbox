@@ -67,7 +67,7 @@ jobs:
             echo "candidate release already exists"
             exit 1
           fi
-          echo "artifact_name=windows-package-candidate-$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
 
       - uses: actions/setup-node@v7
         with:
@@ -130,6 +130,8 @@ jobs:
             --config .github/scripts/windows-packaged-smoke-config.json \
             --tag "$CANDIDATE_TAG" \
             --commit "$CANDIDATE_COMMIT" \
+            --repository "$GITHUB_REPOSITORY" \
+            --workflow-run "$GITHUB_RUN_ID" \
             > candidate/evidence/verification.json
 
       - name: Upload unpublished package candidate
@@ -141,7 +143,7 @@ jobs:
             candidate/assets
             candidate/evidence
           if-no-files-found: error
-          retention-days: 7
+          retention-days: 14
 
       - name: Record candidate artifact digest
         shell: bash

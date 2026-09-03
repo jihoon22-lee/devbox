@@ -26,6 +26,8 @@ assert "build-manifest.py" in WORKFLOW
 assert "flatten-windows-packages.ps1" in WORKFLOW
 assert "build-candidate-metadata.py" in WORKFLOW
 assert "--artifact-kind candidate" in WORKFLOW
+assert '--repository "$GITHUB_REPOSITORY"' in WORKFLOW
+assert '--workflow-run "$GITHUB_RUN_ID"' in WORKFLOW
 assert "packaged-smoke:" in WORKFLOW
 assert "name: Packaged app runtime acceptance" in WORKFLOW
 assert "windows-packaged-smoke.mjs" in WORKFLOW
@@ -40,7 +42,8 @@ assert "elevated WebView2 policy restoration accounting mismatch" in WORKFLOW
 assert '"- restored elevated CDP policy contracts: $restoredPolicyContracts"' in WORKFLOW
 assert "windows-installer-acceptance.ps1" in WORKFLOW
 assert "stable baseline annotated tag identity mismatch" in WORKFLOW
-assert "retention-days: 7" in WORKFLOW
+assert 'artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT' in WORKFLOW
+assert "retention-days: 14" in WORKFLOW
 assert "gh release create" not in WORKFLOW
 assert "gh release edit" not in WORKFLOW
 assert "gh release upload" not in WORKFLOW

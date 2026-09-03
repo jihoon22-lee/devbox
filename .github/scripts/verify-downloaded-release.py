@@ -36,9 +36,13 @@ def main() -> int:
     parser.add_argument("--config", required=True, type=pathlib.Path)
     parser.add_argument("--tag", required=True)
     parser.add_argument("--commit", required=True)
-    parser.add_argument("--artifact-kind", choices=("release", "candidate"), default="release")
+    parser.add_argument(
+        "--artifact-kind", choices=("release", "candidate"), default="release"
+    )
     parser.add_argument("--draft", choices=("true", "false"))
     parser.add_argument("--prerelease", choices=("true", "false"))
+    parser.add_argument("--repository")
+    parser.add_argument("--workflow-run", type=int)
     arguments = parser.parse_args()
 
     assets_directory = arguments.assets.resolve(strict=True)
@@ -61,15 +65,34 @@ def main() -> int:
     if arguments.artifact_kind == "release":
         if arguments.draft is None or arguments.prerelease is None:
             raise SystemExit("release verification requires --draft and --prerelease")
+        if arguments.repository is not None or arguments.workflow_run is not None:
+            raise SystemExit(
+                "release verification does not accept candidate provenance"
+            )
         expected_prerelease = arguments.prerelease == "true"
         expected_draft: bool | None = arguments.draft == "true"
         if release.get("artifactKind") not in (None, "release"):
             failures.append("release metadata artifact kind mismatch")
-        if release.get("isDraft") is not expected_draft or release.get("isPrerelease") is not expected_prerelease:
+        if (
+            release.get("isDraft") is not expected_draft
+            or release.get("isPrerelease") is not expected_prerelease
+        ):
             failures.append("release draft/prerelease state mismatch")
     else:
         if arguments.draft is not None or arguments.prerelease is not None:
-            raise SystemExit("candidate verification does not accept release publication flags")
+            raise SystemExit(
+                "candidate verification does not accept release publication flags"
+            )
+        if (
+            arguments.repository is None
+            or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", arguments.repository)
+            is None
+            or arguments.workflow_run is None
+            or arguments.workflow_run <= 0
+        ):
+            raise SystemExit(
+                "candidate verification requires an exact repository and positive workflow run"
+            )
         expected_prerelease = False
         expected_draft = None
         expected_candidate_fields = {
@@ -92,23 +115,35 @@ def main() -> int:
             or release.get("isPrerelease") is not False
             or re.fullmatch(r"v\d+\.\d+\.\d+", arguments.tag) is None
             or not isinstance(release.get("repository"), str)
-            or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", release["repository"]) is None
+            or re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", release["repository"])
+            is None
             or not isinstance(release.get("workflowRun"), int)
             or isinstance(release.get("workflowRun"), bool)
             or release["workflowRun"] <= 0
             or not isinstance(release.get("generatedAt"), str)
-            or re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", release["generatedAt"]) is None
+            or re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", release["generatedAt"]
+            )
+            is None
         ):
             failures.append("candidate metadata envelope mismatch")
+        if release.get("repository") != arguments.repository:
+            failures.append("candidate repository mismatch")
+        if release.get("workflowRun") != arguments.workflow_run:
+            failures.append("candidate workflow run mismatch")
     if release.get("targetCommit") != arguments.commit:
         failures.append("artifact target commit mismatch")
     if manifest.get("releaseTag") != arguments.tag:
         failures.append("manifest release tag mismatch")
     if (
-        set(manifest) != {"schemaVersion", "releaseTag", "generatedAt", "apps", "notices"}
+        set(manifest)
+        != {"schemaVersion", "releaseTag", "generatedAt", "apps", "notices"}
         or manifest.get("schemaVersion") != 1
         or not isinstance(manifest.get("generatedAt"), str)
-        or re.fullmatch(r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", manifest["generatedAt"]) is None
+        or re.fullmatch(
+            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", manifest["generatedAt"]
+        )
+        is None
     ):
         failures.append("manifest envelope or schema mismatch")
 
@@ -117,7 +152,9 @@ def main() -> int:
         failures.append("manifest applications must be an array")
         apps = []
     manifest_ids = [
-        app.get("id") for app in apps if isinstance(app, dict) and isinstance(app.get("id"), str)
+        app.get("id")
+        for app in apps
+        if isinstance(app, dict) and isinstance(app.get("id"), str)
     ]
     if len(apps) != 15 or len(manifest_ids) != 15 or len(set(manifest_ids)) != 15:
         failures.append("manifest application count or identity mismatch")
@@ -142,7 +179,9 @@ def main() -> int:
         or len(configured_versions) != 15
         or configured_versions != manifest_versions
     ):
-        failures.append("manifest application identities or versions differ from acceptance config")
+        failures.append(
+            "manifest application identities or versions differ from acceptance config"
+        )
 
     expected: dict[str, dict] = {}
     for app in apps:
@@ -153,8 +192,13 @@ def main() -> int:
             failures.append("manifest application shape mismatch")
         app_id = app.get("id", "")
         version = app.get("version", "")
-        valid_app_id = isinstance(app_id, str) and re.fullmatch(r"[a-z0-9-]+", app_id) is not None
-        valid_version = isinstance(version, str) and re.fullmatch(r"\d+\.\d+\.\d+", version) is not None
+        valid_app_id = (
+            isinstance(app_id, str) and re.fullmatch(r"[a-z0-9-]+", app_id) is not None
+        )
+        valid_version = (
+            isinstance(version, str)
+            and re.fullmatch(r"\d+\.\d+\.\d+", version) is not None
+        )
         if not valid_app_id:
             failures.append("invalid application id")
         if not valid_version:
@@ -174,7 +218,10 @@ def main() -> int:
             digest = item.get("sha256")
             if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
                 failures.append(f"invalid {kind} manifest asset size: {app_id}")
-            if not isinstance(digest, str) or re.fullmatch(r"[0-9a-f]{64}", digest) is None:
+            if (
+                not isinstance(digest, str)
+                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+            ):
                 failures.append(f"invalid {kind} manifest asset digest: {app_id}")
             if name in expected:
                 failures.append(f"duplicate manifest asset: {name}")
@@ -208,9 +255,16 @@ def main() -> int:
             expected[notices_name] = notices
     notices_size = notices.get("size")
     notices_digest = notices.get("sha256")
-    if not isinstance(notices_size, int) or isinstance(notices_size, bool) or notices_size <= 0:
+    if (
+        not isinstance(notices_size, int)
+        or isinstance(notices_size, bool)
+        or notices_size <= 0
+    ):
         failures.append("invalid notices manifest asset size")
-    if not isinstance(notices_digest, str) or re.fullmatch(r"[0-9a-f]{64}", notices_digest) is None:
+    if (
+        not isinstance(notices_digest, str)
+        or re.fullmatch(r"[0-9a-f]{64}", notices_digest) is None
+    ):
         failures.append("invalid notices manifest asset digest")
     if len(expected) != 31:
         failures.append("manifest-declared asset count mismatch")
@@ -219,7 +273,9 @@ def main() -> int:
     downloaded_names = {item.name for item in downloaded_files}
     linked_names = sorted(item.name for item in downloaded_files if item.is_symlink())
     if linked_names:
-        failures.append(f"downloaded assets contain symbolic links: {len(linked_names)}")
+        failures.append(
+            f"downloaded assets contain symbolic links: {len(linked_names)}"
+        )
     required_names = set(expected) | {"release-manifest.json"}
     missing = sorted(required_names - downloaded_names)
     undeclared = sorted(downloaded_names - required_names)
@@ -285,7 +341,9 @@ def main() -> int:
         "commit": arguments.commit,
         "draft": expected_draft,
         "prerelease": expected_prerelease,
-        "releaseAssets": len(remote_assets) if arguments.artifact_kind == "release" else 0,
+        "releaseAssets": len(remote_assets)
+        if arguments.artifact_kind == "release"
+        else 0,
         "metadataAssets": len(remote_assets),
         "downloadedAssets": len(downloaded_names),
         "manifestApps": len(apps),
