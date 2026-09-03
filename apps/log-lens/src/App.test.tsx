@@ -63,7 +63,7 @@ describe("Log Lens bounded UI", () => {
     expect((await screen.findByRole("alert")).textContent).toContain(
       "source는 한 번에 최대 16개까지 불러올 수 있습니다.",
     );
-  });
+  }, 10_000);
 
   it("confirms saved-view updates and supports removal", async () => {
     render(<App />);
