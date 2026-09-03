@@ -1,3 +1,5 @@
+import type { Layout, PaneSizing } from "../types";
+
 /** 팬 크기 비율. 합이 1이 되도록 정규화된 값만 저장·사용한다. */
 export const MIN_PANE_FRACTION = 0.1;
 
@@ -9,6 +11,14 @@ function clampFraction(value: number): number {
 export function evenFractions(count: number): number[] {
   if (count <= 0) return [];
   return Array.from({ length: count }, () => 1 / count);
+}
+
+export function paneTrackCounts(layout: Layout, paneCount: number): { columns: number; rows: number } {
+  const count = Math.max(1, paneCount);
+  if (layout === "cols") return { columns: count, rows: 1 };
+  if (layout === "rows") return { columns: 1, rows: count };
+  const columns = Math.max(1, Math.ceil(Math.sqrt(count)));
+  return { columns, rows: Math.max(1, Math.ceil(count / columns)) };
 }
 
 /**
@@ -23,6 +33,18 @@ export function normalizeFractions(fractions: readonly number[] | undefined, cou
   if (!Number.isFinite(total) || total <= 0) return evenFractions(count);
   const scaled = clamped.map((value) => value / total);
   return scaled.some((value) => value < MIN_PANE_FRACTION) ? evenFractions(count) : scaled;
+}
+
+export function normalizePaneSizing(
+  sizing: Partial<PaneSizing> | null | undefined,
+  layout: Layout,
+  paneCount: number,
+): PaneSizing {
+  const tracks = paneTrackCounts(layout, paneCount);
+  return {
+    columns: normalizeFractions(sizing?.columns, tracks.columns),
+    rows: normalizeFractions(sizing?.rows, tracks.rows),
+  };
 }
 
 /**

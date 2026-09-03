@@ -1020,6 +1020,69 @@ select {
   border-style: dashed;
 }
 
+.pane-badge.mux-fallback,
+.pane-badge.restore-connecting {
+  border-color: #d29922;
+  color: #d29922;
+}
+
+.pane-badge.restore-failed {
+  border-color: var(--red);
+  color: var(--red);
+}
+
+.restore-placeholder-body {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  color: var(--dim);
+}
+
+.restore-placeholder-body strong {
+  color: var(--text);
+  font-size: 13px;
+}
+
+.restore-placeholder.failed .restore-placeholder-body strong {
+  color: var(--red);
+}
+
+.restore-placeholder-body dl {
+  display: grid;
+  width: min(100%, 560px);
+  gap: 6px;
+  margin: 0;
+}
+
+.restore-placeholder-body dl > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 72px minmax(0, 1fr);
+  gap: 8px;
+}
+
+.restore-placeholder-body dt {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.restore-placeholder-body dd {
+  min-width: 0;
+  overflow: hidden;
+  margin: 0;
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
 /* ── 설정 ─────────────────────────────────────────────────────── */
 
 .settings-panel {

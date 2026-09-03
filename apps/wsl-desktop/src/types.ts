@@ -1,5 +1,11 @@
 export type Layout = "grid" | "cols" | "rows";
 export type MultiplexerKind = "native" | "tmux" | "zellij";
+export type PaneRestoreStatus = "connecting" | "failed";
+
+export interface PaneSizing {
+  columns: number[];
+  rows: number[];
+}
 export type ShellKind = "bash" | "zsh";
 export type ShellIntegrationStatus = "missing" | "current" | "outdated" | "conflict" | "blocked";
 
@@ -46,8 +52,14 @@ export interface Pane {
   initialCommand?: string;
   /** 실제로 시작된 모드. 요청한 외부 도구가 없으면 backend가 native로 낮춘다. */
   multiplexer: MultiplexerKind;
+  /** 시작할 때 요청한 모드. 실제 모드와 다르면 native fallback을 화면과 저장값에 보존한다. */
+  requestedMultiplexer?: MultiplexerKind;
   /** 이 팬이 기존 multiplexer 세션에 다시 붙었는지. 새 세션이면 false다. */
   resumed?: boolean;
+  /** workspace 복원 중 아직 연결 중이거나 실패해 stable 자리를 유지하는 상태. */
+  restoreStatus?: PaneRestoreStatus;
+  /** 복원 실패 카드에만 표시하는 고정된 안전 메시지. backend 원문은 담지 않는다. */
+  restoreError?: string;
 }
 
 /** 탭 하나. 항상 팬을 최소 1개 갖는다 (탭 생성은 첫 세션 시작 성공과 함께 일어나고,
@@ -58,7 +70,10 @@ export interface Tab {
   /** OSC 제목을 따라가는 기본 탭(false/undefined)인지 사용자가 직접 이름을 붙였는지. */
   customTitle?: boolean;
   layout: Layout;
+  /** 연결된 팬은 runtime session id, 복원 placeholder는 stable pane key를 사용한다. */
   paneIds: string[];
+  /** 현재 topology의 열/행 비율. 확대 상태는 여기에 포함하지 않는다. */
+  sizing: PaneSizing;
 }
 
 export interface DistroInfo {
@@ -133,6 +148,7 @@ export interface WorkspaceTabDefinition {
   customTitle: boolean;
   layout: Layout;
   paneKeys: string[];
+  sizing: PaneSizing;
 }
 
 export interface WorkspaceDefinition {

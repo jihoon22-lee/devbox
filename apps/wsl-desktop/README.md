@@ -9,7 +9,8 @@
 - **탭 + 분할** — 탭 안에 격자/가로/세로 분할, 팬 사이 구분선을 끌어 크기 조절(더블 클릭 또는
   `Home`으로 균등 복원, 방향키로 미세 조절), 활성 팬만 탭 전체에 보이는 확대 토글, 드래그로
   탭 이동·재배치, 단축키 전환. 팬 구성·순서·레이아웃이 바뀌면 이전 비율은 균등 분할로
-  무효화되고, 임시 확대만 켰다 끌 때는 그 전 비율을 그대로 복원한다.
+  무효화되고, 마지막 레이아웃과 이름 있는 프로필에는 현재 비율을 저장한다. 임시 확대만
+  켰다 끌 때는 그 전 비율을 그대로 복원하며 확대 여부 자체는 저장하지 않는다.
   탭 바는 `tablist`/`tab` 의미를 가지며 좌우·Home·End로 이동하고 활성 탭을 항상 시야 안으로
   스크롤한다. 가운데 클릭과 `Delete`로 닫고 더블 클릭으로 이름을 바꾼다. 눈에 보이는 ✕는
   마우스 전용 보조 수단이라 접근성 트리에서 감추며, 키보드·보조기술은 컨텍스트 메뉴·
@@ -54,12 +55,14 @@
   제공하지 않으면 조용히 native로 되돌린다. 등록된 배포판이 0개인 정상 snapshot에서도 이름을
   추측해 시작하지 않고 터미널 생성 UI를 비활성화한다.
 - **팬 상태 표시** — 팬 머리글에 실제로 시작된 유지 방식(native가 아닐 때)과 기존 세션에
-  다시 붙었을 때의 `재연결됨` 배지를 보여 준다. 요청한 방식이 backend에서 native로 낮춰졌는지
-  화면에서 바로 확인할 수 있다.
+  다시 붙었을 때의 `재연결됨` 배지를 보여 준다. 요청한 방식이 backend에서 native로 낮춰지면
+  `zellij → native`처럼 요청값과 실제 fallback을 함께 표시한다.
 - **워크스페이스·프로필** — stable pane key로 마지막 탭/팬/distro/cwd/layout/시작 명령을
-  복원하고, 현재 구성을 이름 있는 터미널 프로필로 저장한다. `OpenTarget::Profile` cold/hot
-  요청은 같은 전환 경로를 사용한다. 시작 명령은 실행 전에 최종 문자열을 확인하고 새 세션에
-  한 번만 보낸다.
+  복원하고, 현재 분할 비율까지 이름 있는 터미널 프로필로 저장한다. 복원할 때 활성 팬을 먼저
+  단독으로 시작한 뒤 나머지는 최대 2개만 병렬 시작한다. 시작 실패는 팬을 삭제하거나 주변
+  레이아웃을 당기지 않고 원래 자리에 배포판/cwd/요청 유지 방식과 함께 남겨 그 자리에서
+  재시도할 수 있다. `OpenTarget::Profile` cold/hot 요청은 같은 전환 경로를 사용한다. 시작 명령은
+  실행 전에 최종 문자열을 확인하고 새 세션에 한 번만 보낸다.
 - **Launcher profile snapshot producer (#487)** — 검증된 터미널 프로필의 opaque ID·안전한
   label·고정 detail·`{id}` target payload만 `wsl-desktop/v1/profiles.json` named view로
   발행한다. distro·cwd·시작 명령·pane 구성·경로·secret은 snapshot에 넣지 않으며, primary
@@ -174,8 +177,10 @@
 
 - 프로젝트·git 상태는 Workbench로 이관됨 (`com.devbox.workbench\project-profiles.json`)
 - `localStorage`: cwd 핀·최근 경로 5개, selection 자동 복사 여부, 터미널 글꼴 크기, version 1
-  설정(확인 동작·시작 동작·사이드 패널·유지 방식·글꼴 id·테마·커서·스크롤백), version 1
-  마지막 레이아웃. 팬 크기 비율과 확대 상태는 창이 살아 있는 동안만 유지하며 저장하지 않는다. 터미널 출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
+  설정(확인 동작·시작 동작·사이드 패널·유지 방식·글꼴 id·테마·커서·스크롤백), version 2
+  마지막 레이아웃. version 1 레이아웃은 균등 분할 비율을 채워 읽고 다음 저장에서 version 2로
+  바뀐다. 팬 크기 비율은 저장하지만 확대 상태는 창이 살아 있는 동안만 유지한다. 터미널
+  출력·selection·clipboard 내용과 runtime session id는 저장하지 않는다.
   링크 host의 "다시 묻지 않기" 선택은 process memory에만 두며 저장하지 않는다.
 - Docker 컨테이너 목록과 detail 원문은 runtime memory에만 두며 localStorage나 profile에 저장하지
   않는다.
@@ -270,7 +275,8 @@
   실패하지 않았을 때 사용할 수 있으며, error·만료·Docker/workspace action 진행 중에는
   fail-closed한다. 진행 중인 collection은 그 자체로 조작을 막지 않는다.
   snapshot 갱신 실패가 terminal I/O나 기존 read-only Docker panel display를 막지는 않는다.
-- `app_local_data_dir/terminal-profiles.json`: version 1 이름 있는 터미널 프로필. atomic replace,
+- `app_local_data_dir/terminal-profiles.json`: version 2 이름 있는 터미널 프로필. version 1은 각
+  탭에 균등 분할 비율을 채워 읽고 다음 profile mutation에서 version 2로 저장한다. atomic replace,
   탭 16개·팬 32개·한 줄 시작 명령 4,096자 제한, 참조 무결성·안전한 절대 cwd·명백한 평문
   credential 검증을 적용한다.
 - profile store가 corrupt/invalid이면 기존 바이트를 보존하고 profile mutation을 실패시킨다.

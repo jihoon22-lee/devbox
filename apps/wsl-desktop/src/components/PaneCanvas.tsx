@@ -9,9 +9,9 @@ import {
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import type { AskDialog } from "./AppDialog";
 import type { CursorStyle, TerminalTheme } from "../lib/settings";
-import { normalizeFractions, resizeAdjacent, toGridTemplate } from "../lib/paneSizing";
+import { normalizeFractions, normalizePaneSizing, resizeAdjacent, toGridTemplate } from "../lib/paneSizing";
 import TermPane, { type TerminalPaneHandle } from "./TermPane";
-import type { Pane, Tab } from "../types";
+import type { Pane, PaneSizing, Tab } from "../types";
 import type { ShortcutAction } from "../lib/shortcuts";
 
 interface PaneCanvasProps {
@@ -35,7 +35,9 @@ interface PaneCanvasProps {
   registerTerminalHandle: (id: string, handle: TerminalPaneHandle) => void;
   unregisterTerminalHandle: (id: string) => void;
   onClosePane: (id: string) => void;
+  onRetryPane: (key: string) => void;
   onFocusPane: (id: string) => void;
+  onSizingChange: (tabId: string, sizing: { columns: number[]; rows: number[] }) => void;
   onShortcut: (action: ShortcutAction) => void;
   onFontSizeChange: (fontSize: number) => void;
   onMetadataChange: (id: string, metadata: { title?: string; cwd?: string }) => void;
@@ -48,12 +50,6 @@ interface PaneCanvasProps {
   zoomedPaneId: string | null;
   ask: AskDialog;
   onConfirmLinkHost: (host: string) => Promise<boolean>;
-}
-
-interface PaneSizingState {
-  topology: string;
-  columns: number[];
-  rows: number[];
 }
 
 /**
@@ -92,7 +88,9 @@ export default function PaneCanvas({
   registerTerminalHandle,
   unregisterTerminalHandle,
   onClosePane,
+  onRetryPane,
   onFocusPane,
+  onSizingChange,
   onShortcut,
   onFontSizeChange,
   onMetadataChange,
@@ -123,60 +121,37 @@ export default function PaneCanvas({
     ? Math.max(1, activePaneIds.length)
     : layout === "cols" ? 1 : Math.max(1, gridRows);
 
-  const baseGridCols = allActivePaneIds.length === 0 ? 1 : Math.ceil(Math.sqrt(allActivePaneIds.length));
-  const baseGridRows = Math.ceil(allActivePaneIds.length / baseGridCols);
-  const baseColumnCount = baseLayout === "cols"
-    ? Math.max(1, allActivePaneIds.length)
-    : baseLayout === "rows" ? 1 : Math.max(1, baseGridCols);
-  const baseRowCount = baseLayout === "rows"
-    ? Math.max(1, allActivePaneIds.length)
-    : baseLayout === "cols" ? 1 : Math.max(1, baseGridRows);
-  // Include order as well as count: moving a pane changes which adjacent pair a divider sizes.
-  // Zoom is intentionally absent because it is temporary and must preserve the underlying split.
-  const topology = activeTab ? JSON.stringify([baseLayout, ...allActivePaneIds]) : "";
-
   const containerRef = useRef<HTMLDivElement>(null);
-  const [sizing, setSizing] = useState<Record<string, PaneSizingState>>({});
-  const currentSizing = sizing[activeTabId];
-  const sizingMatchesTopology = currentSizing?.topology === topology;
-  // A different pane order/layout renders evenly immediately. The effect below also replaces
-  // the stored generation so returning to an earlier pane count cannot resurrect an old split.
-  const columns = zoomed
-    ? [1]
-    : normalizeFractions(sizingMatchesTopology ? currentSizing.columns : undefined, columnCount);
-  const rows = zoomed
-    ? [1]
-    : normalizeFractions(sizingMatchesTopology ? currentSizing.rows : undefined, rowCount);
+  const placeholderRefs = useRef(new Map<string, HTMLElement>());
+  const storedSizing = normalizePaneSizing(activeTab?.sizing, baseLayout, allActivePaneIds.length);
+  const sizingSource = JSON.stringify([baseLayout, ...allActivePaneIds, storedSizing]);
+  const [previewSizing, setPreviewSizing] = useState<{
+    source: string;
+    sizing: PaneSizing;
+  } | null>(null);
+  const baseSizing = previewSizing?.source === sizingSource ? previewSizing.sizing : storedSizing;
+  useEffect(() => {
+    setPreviewSizing((current) => current?.source === sizingSource ? current : null);
+  }, [sizingSource]);
 
   useEffect(() => {
-    if (!activeTabId || !topology) return;
-    setSizing((previous) => {
-      if (previous[activeTabId]?.topology === topology) return previous;
-      return {
-        ...previous,
-        [activeTabId]: {
-          topology,
-          columns: normalizeFractions(undefined, baseColumnCount),
-          rows: normalizeFractions(undefined, baseRowCount),
-        },
-      };
-    });
-  }, [activeTabId, baseColumnCount, baseRowCount, topology]);
+    if (activePaneId && activePaneIds.includes(activePaneId)) {
+      placeholderRefs.current.get(activePaneId)?.focus();
+    }
+  }, [activePaneId, activePaneIds.join("|")]);
+  const columns = zoomed
+    ? [1]
+    : normalizeFractions(baseSizing.columns, columnCount);
+  const rows = zoomed
+    ? [1]
+    : normalizeFractions(baseSizing.rows, rowCount);
 
   const applySizing = useCallback((axis: "columns" | "rows", next: number[]) => {
-    if (!activeTabId || !topology) return;
-    setSizing((previous) => {
-      const stored = previous[activeTabId];
-      const current = stored?.topology === topology
-        ? stored
-        : {
-            topology,
-            columns: normalizeFractions(undefined, baseColumnCount),
-            rows: normalizeFractions(undefined, baseRowCount),
-          };
-      return { ...previous, [activeTabId]: { ...current, [axis]: next } };
-    });
-  }, [activeTabId, baseColumnCount, baseRowCount, topology]);
+    if (!activeTabId || !activeTab) return;
+    const nextSizing = { ...baseSizing, [axis]: next };
+    setPreviewSizing({ source: sizingSource, sizing: nextSizing });
+    onSizingChange(activeTabId, nextSizing);
+  }, [activeTab, activeTabId, baseSizing, onSizingChange, sizingSource]);
 
   const startDrag = (
     axis: "columns" | "rows",
@@ -265,14 +240,63 @@ export default function PaneCanvas({
       {!zoomed && dividers("columns")}
       {!zoomed && dividers("rows")}
       {panes.map((pane) => {
-        // 세션이 아직 붙지 않은 팬(sessionId === null)은 TermPane을 마운트할 것이 없다
-        // — 지금 이 릴리스에서는 startSession 성공 후에만 팬이 생기므로 실질적으로는
-        // 항상 non-null이지만, 타입이 허용하는 미래(레이아웃 복원)를 위해 가드해 둔다.
-        // panes 배열 자체는 건드리지 않으므로(그냥 렌더를 건너뜀) 순서 불변식은 유지된다.
-        if (pane.sessionId === null) return null;
-        const sessionId = pane.sessionId;
-        const order = activePaneIds.indexOf(sessionId);
+        const identity = pane.sessionId ?? pane.key;
+        const order = activePaneIds.indexOf(identity);
         const active = order !== -1;
+        const paneStyle: CSSProperties = active ? { order } : { display: "none" };
+        if (pane.sessionId === null) {
+          const connecting = pane.restoreStatus === "connecting";
+          return (
+            <section
+              key={pane.key}
+              className={`pane restore-placeholder ${connecting ? "connecting" : "failed"} ${identity === activePaneId ? "pane-focused" : ""}`}
+              style={paneStyle}
+              role="group"
+              tabIndex={-1}
+              ref={(node) => {
+                if (node) placeholderRefs.current.set(identity, node);
+                else placeholderRefs.current.delete(identity);
+              }}
+              data-pane-id={identity}
+              aria-label={`${pane.distro} 터미널 복원 ${connecting ? "중" : "실패"}`}
+              onMouseDownCapture={() => onFocusPane(identity)}
+            >
+              <div className="pane-head">
+                <span className="pane-title">{pane.distro}</span>
+                <span className={`pane-badge restore-${connecting ? "connecting" : "failed"}`} role="status">
+                  {connecting ? "연결 중" : "복원 실패"}
+                </span>
+                <button
+                  className="pane-close"
+                  title="복원 자리 닫기"
+                  disabled={actionsDisabled || connecting}
+                  onClick={() => onClosePane(identity)}
+                >
+                  ✕
+                </button>
+              </div>
+              <div className="restore-placeholder-body">
+                <strong>{connecting ? "터미널을 복원하고 있습니다" : (pane.restoreError ?? "터미널을 복원하지 못했습니다.")}</strong>
+                <dl>
+                  <div><dt>배포판</dt><dd>{pane.distro}</dd></div>
+                  <div><dt>경로</dt><dd title={pane.cwd}>{pane.cwd ?? "기본 경로"}</dd></div>
+                  <div><dt>요청 방식</dt><dd>{pane.requestedMultiplexer ?? pane.multiplexer}</dd></div>
+                </dl>
+                {!connecting && (
+                  <button
+                    type="button"
+                    className="btn compact"
+                    disabled={actionsDisabled}
+                    onClick={() => onRetryPane(pane.key)}
+                  >
+                    다시 시도
+                  </button>
+                )}
+              </div>
+            </section>
+          );
+        }
+        const sessionId = pane.sessionId;
         return (
           <TermPane
             key={pane.key}
@@ -292,6 +316,7 @@ export default function PaneCanvas({
             cursorBlink={cursorBlink}
             scrollbackLines={scrollbackLines}
             multiplexer={pane.multiplexer}
+            requestedMultiplexer={pane.requestedMultiplexer}
             resumed={pane.resumed === true}
             registerWrite={registerWrite}
             unregisterWrite={unregisterWrite}
@@ -311,7 +336,7 @@ export default function PaneCanvas({
             actionsDisabled={actionsDisabled}
             ask={ask}
             onConfirmLinkHost={onConfirmLinkHost}
-            style={active ? { order } : { display: "none" }}
+            style={paneStyle}
           />
         );
       })}

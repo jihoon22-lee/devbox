@@ -72,6 +72,8 @@ interface TermPaneProps {
   scrollbackLines: number;
   /** 실제로 시작된 유지 방식. 요청과 다를 수 있으므로 팬에 그대로 표시한다. */
   multiplexer: MultiplexerKind;
+  /** 요청한 유지 방식. 실제 값과 다르면 fallback을 명시한다. */
+  requestedMultiplexer?: MultiplexerKind;
   /** 기존 multiplexer 세션에 다시 붙었는지. */
   resumed: boolean;
   registerWrite: (id: string, fn: (data: string) => void) => void;
@@ -140,6 +142,7 @@ export default function TermPane({
   cursorBlink,
   scrollbackLines,
   multiplexer,
+  requestedMultiplexer,
   resumed,
   registerWrite,
   unregisterWrite,
@@ -763,7 +766,14 @@ export default function TermPane({
         }}
       >
         <span className="pane-title" title={title}>{title}</span>
-        {multiplexer !== "native" && (
+        {requestedMultiplexer && requestedMultiplexer !== multiplexer ? (
+          <span
+            className="pane-badge mux-fallback"
+            title={`${requestedMultiplexer}를 요청했지만 사용할 수 없어 ${multiplexer}로 실행 중입니다`}
+          >
+            {requestedMultiplexer} → {multiplexer}
+          </span>
+        ) : multiplexer !== "native" && (
           <span className="pane-badge" title={`이 팬은 ${multiplexer} 세션으로 실행 중입니다`}>
             {multiplexer}
           </span>
