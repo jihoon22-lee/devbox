@@ -57,6 +57,13 @@ function snapshot(capturedAtMs = Date.now()): DashboardSnapshot {
 }
 
 vi.mock("./api", () => ({
+  configureQuickSummon: vi.fn().mockResolvedValue({
+    shortcutRegistered: true,
+    activeShortcut: "Ctrl+Alt+Space",
+    trayEnabled: false,
+    closeBehavior: "exit",
+    issues: [],
+  }),
   getDashboardSnapshot: vi.fn(),
   dockerAction: vi.fn().mockResolvedValue(undefined),
   startSession: vi.fn(),

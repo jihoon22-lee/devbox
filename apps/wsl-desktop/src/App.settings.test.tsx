@@ -79,6 +79,7 @@ function snapshot(): DashboardSnapshot {
 }
 
 vi.mock("./api", () => ({
+  configureQuickSummon: vi.fn(),
   getDashboardSnapshot: vi.fn(),
   dockerAction: vi.fn().mockResolvedValue(undefined),
   startSession: vi.fn(),
@@ -104,6 +105,7 @@ const takePendingOpenMock = vi.mocked(takePendingOpen);
 const detectMock = vi.mocked((await import("./api")).detectMultiplexers);
 const inspectShellIntegrationMock = vi.mocked((await import("./api")).inspectShellIntegration);
 const updateShellIntegrationMock = vi.mocked((await import("./api")).updateShellIntegration);
+const configureQuickSummonMock = vi.mocked((await import("./api")).configureQuickSummon);
 
 function shellIntegrationReport(): ShellIntegrationReport {
   return {
@@ -145,6 +147,13 @@ beforeEach(() => {
   ]);
   inspectShellIntegrationMock.mockReset().mockImplementation(async () => shellIntegrationReport());
   updateShellIntegrationMock.mockReset();
+  configureQuickSummonMock.mockReset().mockImplementation(async (config) => ({
+    shortcutRegistered: config.shortcutEnabled,
+    activeShortcut: config.shortcutEnabled ? config.shortcut : null,
+    trayEnabled: config.keepInTray,
+    closeBehavior: config.keepInTray ? "hideToTray" : "exit",
+    issues: [],
+  }));
   startSessionMock.mockReset().mockImplementation(async (_distro, _cwd, _key, multiplexer) => ({
     sessionId: `session-${++mocks.nextSession}`,
     resumed: false,
@@ -194,6 +203,62 @@ describe("startup", () => {
 });
 
 describe("persisted settings", () => {
+  it("기존 설정을 유지한 채 빠른 호출 기본값을 native에 적용한다", async () => {
+    storedSettings({ openTerminalOnStart: false, theme: "light" });
+    render(<App />);
+
+    await waitFor(() => expect(configureQuickSummonMock).toHaveBeenCalledWith({
+      shortcutEnabled: true,
+      shortcut: "Ctrl+Alt+Space",
+      keepInTray: false,
+    }));
+    expect(loadSettings().theme).toBe("light");
+  });
+
+  it("빠른 호출 단축키와 트레이 닫기 동작을 저장하고 즉시 적용한다", async () => {
+    storedSettings({ openTerminalOnStart: false });
+    render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    const dialog = await screen.findByRole("dialog", { name: "WSL Desktop 설정" });
+
+    const shortcut = within(dialog).getByRole("combobox", { name: "빠른 호출 전역 단축키" });
+    fireEvent.change(shortcut, { target: { value: "Ctrl+Shift+Space" } });
+    await waitFor(() => expect(configureQuickSummonMock).toHaveBeenLastCalledWith({
+      shortcutEnabled: true,
+      shortcut: "Ctrl+Shift+Space",
+      keepInTray: false,
+    }));
+    expect(loadSettings().quickSummonShortcut).toBe("Ctrl+Shift+Space");
+
+    fireEvent.click(within(dialog).getByRole("checkbox", { name: /닫을 때 트레이에 유지/u }));
+    await waitFor(() => expect(configureQuickSummonMock).toHaveBeenLastCalledWith({
+      shortcutEnabled: true,
+      shortcut: "Ctrl+Shift+Space",
+      keepInTray: true,
+    }));
+    await within(dialog).findByText("현재 닫기 버튼: 창만 숨기고 터미널 상태 유지");
+    expect(loadSettings().keepInTray).toBe(true);
+  });
+
+  it("전역 단축키 충돌과 안전한 닫기 fallback을 설정에 명확히 표시한다", async () => {
+    configureQuickSummonMock.mockResolvedValue({
+      shortcutRegistered: false,
+      activeShortcut: null,
+      trayEnabled: false,
+      closeBehavior: "exit",
+      issues: ["shortcutUnavailable", "trayUnavailable"],
+    });
+    storedSettings({ openTerminalOnStart: false, keepInTray: true });
+    render(<App />);
+    await screen.findAllByRole("option", { name: /Ubuntu/u });
+    fireEvent.click(screen.getByRole("button", { name: "설정" }));
+    const dialog = await screen.findByRole("dialog", { name: "WSL Desktop 설정" });
+
+    expect(await within(dialog).findByText(/다른 앱이 사용 중이거나 Windows가 예약/u)).toBeInTheDocument();
+    expect(within(dialog).getByText(/안전을 위해 닫기 버튼은 앱을 종료/u)).toBeInTheDocument();
+  });
+
   it("사이드 패널 상태를 저장하고 다음 창에서 복원한다", async () => {
     storedSettings({ openTerminalOnStart: false, sidePanelOpen: true });
     const first = render(<App />);

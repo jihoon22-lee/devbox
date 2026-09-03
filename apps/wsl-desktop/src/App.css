@@ -1149,6 +1149,24 @@ select {
   color: var(--text);
 }
 
+.quick-summon-status,
+.quick-summon-close-behavior {
+  margin: 0;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.quick-summon-status.warning,
+.quick-summon-close-behavior.warning {
+  border-color: color-mix(in srgb, #d29922 55%, var(--border));
+  color: #d29922;
+}
+
 .shell-integration-row {
   display: flex;
   flex-direction: column;

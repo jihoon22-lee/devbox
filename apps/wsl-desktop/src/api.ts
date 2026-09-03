@@ -15,6 +15,29 @@ import type {
   ShellKind,
   WorkspaceProfile,
 } from "./types";
+import type { QuickSummonShortcut } from "./lib/settings";
+
+export type QuickSummonIssue =
+  | "invalidShortcut"
+  | "shortcutBackendUnavailable"
+  | "shortcutUnavailable"
+  | "shortcutRollbackFailed"
+  | "trayUnavailable"
+  | "backendUnavailable";
+
+export interface QuickSummonConfig {
+  shortcutEnabled: boolean;
+  shortcut: QuickSummonShortcut;
+  keepInTray: boolean;
+}
+
+export interface QuickSummonStatus {
+  shortcutRegistered: boolean;
+  activeShortcut: string | null;
+  trayEnabled: boolean;
+  closeBehavior: "exit" | "hideToTray";
+  issues: QuickSummonIssue[];
+}
 
 export interface SessionInfo {
   id: string;
@@ -168,6 +191,19 @@ export async function updateShellIntegration(
     action,
     expectedRevision,
   });
+}
+
+/** Apply the renderer-persisted summon preferences to native process state.
+ * Browser preview mirrors the successful state without reserving a system key. */
+export async function configureQuickSummon(config: QuickSummonConfig): Promise<QuickSummonStatus> {
+  if (!isTauri()) return {
+    shortcutRegistered: config.shortcutEnabled,
+    activeShortcut: config.shortcutEnabled ? config.shortcut : null,
+    trayEnabled: config.keepInTray,
+    closeBehavior: config.keepInTray ? "hideToTray" : "exit",
+    issues: [],
+  };
+  return invoke<QuickSummonStatus>("configure_quick_summon", { config });
 }
 
 let mockProfiles: WorkspaceProfile[] = [];

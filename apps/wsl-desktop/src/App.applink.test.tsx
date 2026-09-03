@@ -28,6 +28,13 @@ vi.mock("./components/PaneCanvas", () => ({
   },
 }));
 vi.mock("./api", () => ({
+  configureQuickSummon: vi.fn().mockResolvedValue({
+    shortcutRegistered: true,
+    activeShortcut: "Ctrl+Alt+Space",
+    trayEnabled: false,
+    closeBehavior: "exit",
+    issues: [],
+  }),
   getDashboardSnapshot: vi.fn().mockResolvedValue({
     revision: 1,
     capturedAtMs: Date.now(),

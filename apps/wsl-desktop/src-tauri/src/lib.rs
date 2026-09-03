@@ -3,6 +3,7 @@ mod commands;
 mod core;
 mod integration;
 mod log_lens;
+mod quick_summon;
 mod runtime_snapshot;
 
 use commands::shell_integration::ShellIntegrationState;
@@ -45,11 +46,7 @@ pub fn run() {
                 Ok(None) => {}
                 Err(e) => eprintln!("applink: {e}"),
             }
-            if let Some(window) = app.get_webview_window("main") {
-                let _ = window.show();
-                let _ = window.unminimize();
-                let _ = window.set_focus();
-            }
+            quick_summon::reveal_main_window(app);
         }))
         .plugin(tauri_plugin_clipboard_manager::init())
         .plugin(tauri_plugin_opener::init())
@@ -76,6 +73,7 @@ pub fn run() {
             commands::terminal::list_sessions,
             log_lens::open_wsl_file_in_log_lens,
             log_lens::open_wsl_journal_in_log_lens,
+            quick_summon::configure_quick_summon,
         ])
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
@@ -88,11 +86,31 @@ pub fn run() {
             let state = Arc::new(SessionState::new());
             app.manage(Arc::clone(&state));
             app.manage(ShellIntegrationState::default());
+            app.manage(quick_summon::QuickSummonState::default());
+            match app.handle().plugin(quick_summon::plugin()) {
+                Ok(()) => app
+                    .state::<quick_summon::QuickSummonState>()
+                    .set_shortcut_backend_available(true),
+                Err(error) => {
+                    // Quick Summon is optional: a platform hotkey initialization
+                    // failure must not prevent the terminal itself from starting.
+                    eprintln!("quick summon: global shortcut backend unavailable: {error}");
+                }
+            }
             runtime_snapshot::spawn_snapshot_writer(state);
             Ok(())
         })
         .on_window_event(|window, event| {
             devbox_window_state_tauri::handle_window_event(window, event);
+            if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                if window
+                    .state::<quick_summon::QuickSummonState>()
+                    .close_to_tray()
+                {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+            }
         })
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

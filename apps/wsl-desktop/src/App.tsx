@@ -7,6 +7,7 @@ import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   closeSession,
+  configureQuickSummon,
   deleteWorkspaceProfile,
   detectMultiplexers,
   dockerAction,
@@ -21,6 +22,7 @@ import {
   startSession,
   saveWorkspaceProfile,
   takePendingOpen,
+  type QuickSummonStatus,
 } from "./api";
 import AppDialog, { useAppDialog, type AskDialog } from "./components/AppDialog";
 import DistroPanel from "./components/DistroPanel";
@@ -123,6 +125,7 @@ export default function App() {
   const [settings, setSettings] = useState<TerminalSettings>(loadSettings);
   const panelOpen = settings.sidePanelOpen;
   const [settingsOpen, setSettingsOpen] = useState(false);
+  const [quickSummonStatus, setQuickSummonStatus] = useState<QuickSummonStatus | null>(null);
   const [shortcutsOpen, setShortcutsOpen] = useState(false);
   const [zoomedPaneId, setZoomedPaneId] = useState<string | null>(null);
   const [pinned, setPinned] = useState<boolean>(loadPinned);
@@ -208,6 +211,8 @@ export default function App() {
   const logLensBusyRef = useRef<string | null>(null);
   const dashboardOperationToken = useRef(0);
   const logLensOperationToken = useRef(0);
+  const quickSummonRequestSequence = useRef(0);
+  const quickSummonQueue = useRef<Promise<void>>(Promise.resolve());
 
   const setContextBusy = (value: boolean) => {
     contextActionBusyRef.current = value;
@@ -271,6 +276,45 @@ export default function App() {
       return next;
     });
   }, []);
+
+  useEffect(() => {
+    const sequence = ++quickSummonRequestSequence.current;
+    setQuickSummonStatus(null);
+    const config = {
+      shortcutEnabled: settings.quickSummonEnabled,
+      shortcut: settings.quickSummonShortcut,
+      keepInTray: settings.keepInTray,
+    };
+    const request = quickSummonQueue.current
+      .catch(() => undefined)
+      .then(() => configureQuickSummon(config));
+    // Keep native mutations in the same order as the user's setting changes.
+    // Only the latest response is rendered, but every queued configuration is
+    // applied before the one that supersedes it.
+    quickSummonQueue.current = request.then(() => undefined, () => undefined);
+    void request
+      .then((status) => {
+        if (mountedRef.current && quickSummonRequestSequence.current === sequence) {
+          setQuickSummonStatus(status);
+        }
+      })
+      .catch(() => {
+        if (mountedRef.current && quickSummonRequestSequence.current === sequence) {
+          setQuickSummonStatus({
+            shortcutRegistered: false,
+            activeShortcut: null,
+            trayEnabled: false,
+            closeBehavior: "exit",
+            issues: ["backendUnavailable"],
+          });
+        }
+      });
+    return () => {
+      if (quickSummonRequestSequence.current === sequence) {
+        quickSummonRequestSequence.current += 1;
+      }
+    };
+  }, [settings.keepInTray, settings.quickSummonEnabled, settings.quickSummonShortcut]);
 
   const updateTerminalFontSize = useCallback((value: number) => {
     const next = clampTerminalFontSize(value);
@@ -2118,6 +2162,7 @@ export default function App() {
       <SettingsPanel
         open={settingsOpen}
         settings={settings}
+        quickSummonStatus={quickSummonStatus}
         onChange={updateSettings}
         onClose={() => setSettingsOpen(false)}
         muxAvailability={muxAvailability}

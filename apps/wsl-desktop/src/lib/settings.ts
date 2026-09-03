@@ -62,6 +62,15 @@ export const MIN_SCROLLBACK_LINES = 1_000;
 export const MAX_SCROLLBACK_LINES = 100_000;
 export const DEFAULT_SCROLLBACK_LINES = 10_000;
 
+export const QUICK_SUMMON_SHORTCUTS = [
+  { value: "Ctrl+Alt+Space", label: "Ctrl + Alt + Space" },
+  { value: "Ctrl+Shift+Space", label: "Ctrl + Shift + Space" },
+  { value: "Alt+Shift+Space", label: "Alt + Shift + Space" },
+  { value: "Ctrl+Alt+F12", label: "Ctrl + Alt + F12" },
+] as const;
+
+export type QuickSummonShortcut = typeof QUICK_SUMMON_SHORTCUTS[number]["value"];
+
 export interface TerminalSettings {
   /** 팬 하나를 닫을 때 확인할지. 탭·다중 팬 닫기 확인은 이 설정과 무관하게 항상 묻는다. */
   confirmSinglePaneClose: boolean;
@@ -74,6 +83,11 @@ export interface TerminalSettings {
   cursorBlink: boolean;
   scrollbackLines: number;
   theme: TerminalThemeName;
+  /** 어느 앱에 있든 기존 WSL Desktop 창을 표시하거나 숨기는 시스템 전역 단축키. */
+  quickSummonEnabled: boolean;
+  quickSummonShortcut: QuickSummonShortcut;
+  /** 켜면 닫기 버튼은 프로세스를 끝내지 않고 창을 트레이로 숨긴다. */
+  keepInTray: boolean;
 }
 
 export const DEFAULT_SETTINGS: TerminalSettings = {
@@ -86,10 +100,14 @@ export const DEFAULT_SETTINGS: TerminalSettings = {
   cursorBlink: true,
   scrollbackLines: DEFAULT_SCROLLBACK_LINES,
   theme: "dark",
+  quickSummonEnabled: true,
+  quickSummonShortcut: QUICK_SUMMON_SHORTCUTS[0].value,
+  keepInTray: false,
 };
 
 const SETTINGS_KEY = "wsl-desktop:settings";
-const SETTINGS_VERSION = 1;
+const SETTINGS_VERSION = 2;
+const LEGACY_SETTINGS_VERSION = 1;
 
 export function clampScrollbackLines(value: number): number {
   if (!Number.isFinite(value)) return DEFAULT_SCROLLBACK_LINES;
@@ -115,6 +133,7 @@ export function normalizeSettings(value: unknown): TerminalSettings {
   const cursorStyle = value.cursorStyle;
   const theme = value.theme;
   const fontId = value.fontId;
+  const quickSummonShortcut = value.quickSummonShortcut;
   return {
     confirmSinglePaneClose: boolean(value.confirmSinglePaneClose, DEFAULT_SETTINGS.confirmSinglePaneClose),
     openTerminalOnStart: boolean(value.openTerminalOnStart, DEFAULT_SETTINGS.openTerminalOnStart),
@@ -135,13 +154,22 @@ export function normalizeSettings(value: unknown): TerminalSettings {
     theme: theme === "dark" || theme === "light" || theme === "highContrast"
       ? theme
       : DEFAULT_SETTINGS.theme,
+    quickSummonEnabled: boolean(value.quickSummonEnabled, DEFAULT_SETTINGS.quickSummonEnabled),
+    quickSummonShortcut: typeof quickSummonShortcut === "string"
+      && QUICK_SUMMON_SHORTCUTS.some((choice) => choice.value === quickSummonShortcut)
+      ? quickSummonShortcut as QuickSummonShortcut
+      : DEFAULT_SETTINGS.quickSummonShortcut,
+    keepInTray: boolean(value.keepInTray, DEFAULT_SETTINGS.keepInTray),
   };
 }
 
 export function loadSettings(): TerminalSettings {
   try {
     const raw: unknown = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null");
-    if (!isRecord(raw) || raw.version !== SETTINGS_VERSION) return { ...DEFAULT_SETTINGS };
+    if (
+      !isRecord(raw)
+      || (raw.version !== SETTINGS_VERSION && raw.version !== LEGACY_SETTINGS_VERSION)
+    ) return { ...DEFAULT_SETTINGS };
     return normalizeSettings(raw);
   } catch {
     return { ...DEFAULT_SETTINGS };
