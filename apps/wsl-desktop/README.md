@@ -93,7 +93,9 @@
   않고 부재/감지 실패 시 native로 폴백한다. 감지는 login shell이나 rc 파일을 실행하지 않고
   선택 distro 사용자의 `HOME`·`PATH`만 제한적으로 조회해 `~/.local/bin`, `~/.cargo/bin`과
   고정 system bin 후보를 검사한다. 결과는 사용 가능·없음·확인 오류를 구분하며 실제 절대
-  실행 경로는 renderer, 로그, 프로필에 노출하지 않는다.
+  실행 경로는 renderer, 로그, 프로필에 노출하지 않는다. WSL 상태 새로고침과 설정의
+  `다시 검색`은 멀티플렉서도 즉시 재탐색한다. 일시적인 부재·확인 오류는 사용자의 선호
+  방식을 변경하지 않으며, 해당 시작 요청에서만 backend가 native로 낮춘다.
 - **상태 패널** — WSL 배포판과 선택 distro의 Docker 컨테이너를 표시한다. 260px의 좁은
   패널에서도 이름·정규화 상태·축약 port mapping을 먼저 보여 주고, 컨테이너를 펼치면 Docker가
   반환한 ID·image·status·ports 원문을 확인하고 start/stop/restart할 수 있다. Docker가 없으면

@@ -131,6 +131,7 @@ export default function App() {
     { kind: "tmux", status: "missing", version: null, source: null },
     { kind: "zellij", status: "missing", version: null, source: null },
   ]);
+  const [muxScanning, setMuxScanning] = useState(false);
   const [profiles, setProfiles] = useState<WorkspaceProfile[]>([]);
   const [profilesLoaded, setProfilesLoaded] = useState(false);
   const [workspaceReady, setWorkspaceReady] = useState(false);
@@ -174,6 +175,7 @@ export default function App() {
   const dashboardRequestRef = useRef<Promise<void> | null>(null);
   const dashboardRefreshQueuedRef = useRef(false);
   const dashboardRequestSequence = useRef(0);
+  const muxRequestSequence = useRef(0);
   const dashboardClockRef = useRef<number>(Date.now());
   const dashboardSnapshotRef = useRef<DashboardSnapshot | null>(null);
   const dashboardMountedRef = useRef(true);
@@ -296,44 +298,32 @@ export default function App() {
     };
   }, []);
 
+  const refreshMultiplexers = useCallback(async (distro = selectedRef.current): Promise<void> => {
+    if (!distro) return;
+    const sequence = ++muxRequestSequence.current;
+    setMuxScanning(true);
+    try {
+      const availability = await detectMultiplexers(distro);
+      if (!mountedRef.current || sequence !== muxRequestSequence.current || selectedRef.current !== distro) return;
+      setMuxAvailability(availability);
+    } catch {
+      if (!mountedRef.current || sequence !== muxRequestSequence.current || selectedRef.current !== distro) return;
+      setMuxAvailability([
+        { kind: "native", status: "available", version: null, source: null },
+        { kind: "tmux", status: "error", version: null, source: null },
+        { kind: "zellij", status: "error", version: null, source: null },
+      ]);
+    } finally {
+      if (mountedRef.current && sequence === muxRequestSequence.current && selectedRef.current === distro) {
+        setMuxScanning(false);
+      }
+    }
+  }, []);
+
   useEffect(() => {
     if (!selected) return;
-    let disposed = false;
-    void detectMultiplexers(selected)
-      .then((availability) => {
-        if (disposed) return;
-        setMuxAvailability(availability);
-        // A stored choice is honoured only while the selected distro still reports it as
-        // available; otherwise this quietly falls back the same way the backend does.
-        setSettings((current) => {
-          if (availability.some((item) => item.kind === current.multiplexer && item.status === "available")) {
-            return current;
-          }
-          if (current.multiplexer === "native") return current;
-          const next: TerminalSettings = { ...current, multiplexer: "native" };
-          saveSettings(next);
-          return next;
-        });
-      })
-      .catch(() => {
-        if (!disposed) {
-          setMuxAvailability([
-            { kind: "native", status: "available", version: null, source: null },
-            { kind: "tmux", status: "error", version: null, source: null },
-            { kind: "zellij", status: "error", version: null, source: null },
-          ]);
-          setSettings((current) => {
-            if (current.multiplexer === "native") return current;
-            const next: TerminalSettings = { ...current, multiplexer: "native" };
-            saveSettings(next);
-            return next;
-          });
-        }
-      });
-    return () => {
-      disposed = true;
-    };
-  }, [selected]);
+    void refreshMultiplexers(selected);
+  }, [refreshMultiplexers, selected]);
 
   useEffect(() => {
     void getWindowsBuildNumber()
@@ -1645,9 +1635,12 @@ export default function App() {
     },
     {
       id: "refresh-snapshot",
-      label: "WSL snapshot 새로 고침",
+      label: "WSL 상태와 멀티플렉서 새로 고침",
       run: () => {
-        if (logLensBusyRef.current === null) void refreshDashboard(true).catch(() => undefined);
+        if (logLensBusyRef.current === null) {
+          void refreshDashboard(true).catch(() => undefined);
+          void refreshMultiplexers();
+        }
       },
     },
     {
@@ -1822,7 +1815,10 @@ export default function App() {
               logLensBusy={logLensBusy}
               onAction={onDockerAction}
               onRefresh={() => {
-                if (logLensBusyRef.current === null) void refreshDashboard().catch(() => undefined);
+                if (logLensBusyRef.current === null) {
+                  void refreshDashboard().catch(() => undefined);
+                  void refreshMultiplexers();
+                }
               }}
               dashboardDistros={dashboardSnapshot?.distros}
               snapshotState={dashboardState}
@@ -1938,6 +1934,8 @@ export default function App() {
         onChange={updateSettings}
         onClose={() => setSettingsOpen(false)}
         muxAvailability={muxAvailability}
+        muxScanning={muxScanning}
+        onRefreshMux={() => void refreshMultiplexers()}
         copyOnSelect={copyOnSelect}
         onCopyOnSelectChange={(enabled) => {
           setCopyOnSelect(enabled);
