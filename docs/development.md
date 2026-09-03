@@ -52,6 +52,11 @@ candidate`를 실행해 build·packaged runtime·installer lifecycle을 모두 �
 공개 전에 실패한다. prerelease/RC는 사용자의 명시 요청 없이는 만들지 않으며, 명시적으로 허용된
 prerelease는 stable-only candidate와 분리된 기존 Windows build 경로를 사용한다.
 
+Candidate package build는 카탈로그의 15개 release 앱을 결정론적으로 3개 shard(각 5개)로 나눠
+별도 Windows runner에서 병렬 실행한다. 각 shard는 할당된 앱만 stage하며, 이후 Linux assembly가
+모든 shard를 합쳐 notices와 manifest를 생성하고 exact 15-app/32-file 계약을 검증한다. 중간 shard
+artifact는 1일, acceptance 대상인 최종 candidate artifact는 14일 보존한다.
+
 ## 시작하기
 
 ```bash
