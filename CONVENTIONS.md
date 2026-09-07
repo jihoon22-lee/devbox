@@ -1,8 +1,12 @@
-# devbox — Tauri 15개 데스크톱 앱 모노레포 공통 규약
+# devbox — 공통 개발 규약
 
-15개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base,
+**현재 공개 v0.7.0 기준:** 15개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base,
 life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher, log-lens)을 하나의 저장소에서 관리하되,
 각각은 **독립적으로 실행되고 독립적으로 .exe가 만들어지는 Tauri 앱**이다. 소스 저장소와 공통 코드만 공유한다.
+
+v0.8.0은 Workspace / API Studio / Knowledge / Control Center 네 제품으로 전환한다.
+전환 중에는 v0.7 공개 topology를 유지하며, 신규 topology는 별도 검증한다.
+구현 상태와 목표를 혼동하지 않는다. v0.8 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
 
 ```
 devbox/
@@ -24,7 +28,7 @@ devbox/
 | 항목 | 값 |
 |---|---|
 | 타깃 OS | Windows 10/11 (WebView2 내장) |
-| 개발 OS | WSL2 Ubuntu + Windows (편집은 WSL, 빌드는 Windows) |
+| 개발 OS | WSL2 Ubuntu + Windows (편집·로컬 검증은 WSL, 앱 실행·패키징은 Windows) |
 | 소스 위치 | `/home/jihoon/projects/devbox/apps/<AppName>` (Windows: `\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox\apps\<AppName>`) |
 | 에디터 | 자유 (Rust-analyzer + ESLint + Prettier 권장) |
 | 프론트 패키지 매니저 | **pnpm** (workspace) |
@@ -35,8 +39,10 @@ devbox/
 - **배포 빌드**: Windows PowerShell에서 `pnpm tauri build`
 - Windows toolchain은 `\\wsl.localhost\Ubuntu\home\jihoon\projects\devbox` UNC source를 사용한다.
   VHD의 물리적 E: 저장 위치를 `E:\projects` source path로 오인하지 않는다.
-- WSL은 편집·git·React dev server 용도로만 사용
-- Rust 툴체인은 **Windows에 설치** (`winget install Rustlang.Rustup` → MSVC 기본 툴체인)
+- WSL은 편집·git·React dev server와 frontend build/test/typecheck, Rust test/check/clippy/fmt에 사용한다.
+  Rust 사용 전 새 셸에서 `source ~/.cargo/env`를 실행한다.
+- 실제 앱 실행·배포 빌드는 **Windows**에서 수행한다. Windows에는 Rust MSVC 툴체인을 설치한다
+  (`winget install Rustlang.Rustup`). WSL 컴파일 통과를 Windows 실행 PASS로 취급하지 않는다.
 - 크로스 컴파일(`cargo-xwin`)은 공식 지원하나 비권장 → 일상 빌드는 Windows 툴체인 고정
 
 ## 2. 저장소 구조
@@ -189,33 +195,13 @@ src/
 - 앱 버전은 release tag와 독립적이다. release tag는 배포 일괄 단위일 뿐 앱 버전이 아니다.
 - `package.json`의 버전이 `Cargo.toml`과 어긋난 상태로 커밋하지 않는다.
 
-### 릴리스 트리거와 prerelease 보호
+### 릴리스 검증 경계
 
-- 안정판을 만들기 전에 exact current `main` commit과 예정 `vX.Y.Z`를 입력해
-  `Windows package candidate`를 실행한다. 카탈로그 순서로 균등 분할한 3개 Windows shard가
-  각각 5개 앱만 빌드하고, Linux assembly가 누락·중복 없이 15개 앱·32개 파일인지 다시 검증한다.
-  조립된 단일 후보로 packaged runtime·installer acceptance까지 통과시킨다. packaged runtime은
-  assembly가 검증한 config 원본을 후보 evidence에서 그대로 사용한다. installer acceptance는 앱
-  version이 바뀐 항목만 baseline→candidate update와 rollback을 수행하고, version이 같은 항목은
-  baseline과 candidate의 독립 fresh install/uninstall로 검증한다. Windows checkout은 생성된
-  notices를 LF로 유지하고, 앱별 NSIS build 전에는 저장소 내부의 고정 bundle staging만 비워
-  이전 release resource가 새 installer에 재사용되지 않게 한다. 이후 같은 commit에
-  annotated tag를 만들면 release workflow는 그 후보의 commit·tag·repository·workflow run·32개
-  asset digest를 다시 확인한 뒤 바이너리를 재빌드하지 않고 승격한다. 일치하는 성공 후보가 없거나
-  만료된 경우 공개 전에 fail-closed한다. 안정판에서는 prerelease build job이 의도적으로 skip되므로,
-  최종 draft download verifier는 암묵적 `success()`에 의존하지 않고 `always()` 아래 preflight와
-  draft-stage job의 명시적 success를 요구한다.
-- `.github/workflows/release.yml`의 안정판 경로는 정확한 `vX.Y.Z` annotated tag push 또는
-  명시적인 `workflow_dispatch`로 유지한다. `workflow_dispatch`의 `version`은 기본값 없이
-  매번 전체 tag를 입력한다.
-- `vX.Y.Z-...` prerelease/RC tag push는 허용하지 않는다. 중앙
-  `.github/scripts/validate-release-input.py`가 build 전 preflight에서 fail-closed로 거부하므로
-  Windows build가 시작되지 않고 GitHub Release도 생성되지 않는다.
-- prerelease는 향후 필요할 때만 `workflow_dispatch`에서 전체 버전을 정확히 입력하고,
-  의도적으로 이름 붙인 boolean 입력 `allow_prerelease: true`를 함께 지정해 실행한다. 이
-  입력의 기본값은 `false`이며, gate 없는 수동 version 입력은 prerelease를 열지 않는다.
-  stable-only candidate와 별개인 이 명시적 경로는 기존 Windows package build를 유지한다.
-- 위 정책의 입력·상태 출력은 해당 Python 스크립트와 단위 테스트를 단일 원본으로 삼는다.
+- 현재 v0.7은 15개 앱·32개 public asset 계약을 유지한다. v0.8 목표는 구현 완료와 구분한다.
+- 안정판은 exact-main Windows candidate의 assembly·packaged runtime·installer acceptance 통과 후,
+  동일 commit의 annotated tag로 검증된 후보만 승격한다. 후보 부재·만료 시 새 build로 대체하지 않는다.
+- Stable verifier의 `always()` 및 preflight/draft-stage 명시적 success 조건을 유지한다.
+- 릴리스 작업 시 [릴리스 실행 정책](./docs/release-policy.md)을 읽는다. 명시 요청 없는 RC는 만들지 않는다.
 
 ## 5. 개발 워크플로 (WSL-first)
 
@@ -302,8 +288,28 @@ docs/<scope>           문서 작업   예: docs/roadmap
   작업, 선행 작업 없이는 검증할 수 없는 작업, 한 번에 리뷰하기 과도한 작업은 별도 PR로
   유지한다. 단순히 같은 앱이라는 이유만으로 묶지 않는다.
 - 여러 이슈를 묶은 PR은 본문에 모든 이슈 번호, 묶는 이유, 이슈별 acceptance와 검증 결과를
-  구분해 적고 `Closes #...`를 각각 선언한다. CI와 Windows 검증 gate는 최종 통합 상태에서
-  한 번 수행하되, 각 이슈의 집중 회귀 테스트를 생략하지 않는다.
+  구분해 적는다. 수용 기준 전체를 충족한 이슈만 `Closes #...`로 닫고, 일부 기여는 `Refs #...`로
+  연결한다. CI와 Windows 검증 gate는 최종 통합 상태에서 한 번 수행하되, 각 이슈의 집중 회귀
+  테스트를 생략하지 않는다.
+
+### v0.8 통합 PR 정책 (일반 PR 단위 규칙보다 우선)
+
+- 원장은 [#541](https://github.com/jihoon22-lee/devbox/issues/541), 수용 기준은
+  [#542](https://github.com/jihoon22-lee/devbox/issues/542), 실행 계획은 #543~#551이다.
+  작업 시작 시 최신 본문과 선행조건을 확인한다. 기본 검토 예산은 B01~B09의 9개 통합 묶음이며,
+  11개 이슈를 11개 PR로 만들지 않는다.
+- 같은 묶음의 UI·Rust·importer·fixture·문서를 하나의 PR에서 검토한다. 기계적 이동과 의미 변경은
+  commit으로 구분한다. 독립적인 데이터 손실·보안·복구 위험 또는 리뷰 불가능의 구조적 근거가
+  있을 때만 묶음을 재조정하고 원장에 근거와 매핑을 남긴다.
+- B01 기반 확정 후 B02/B03/B04를 독립 진행할 수 있다. 공용 파일의 writer는 한 묶음이 소유한다.
+  병렬 에이전트는 사용자가 요청하거나 적용 지침에서 허용할 때만 사용한다.
+- review packet에는 semantic 변경, pure moves, 데이터·authority 변경, 요구사항/legacy parity 매핑,
+  CI·실기 증거, 제한과 rollback을 담는다. 준비 전 반복적인 전체 리뷰·전체 package 검증을 피하되
+  필요한 위험 gate와 각 이슈의 집중 회귀 검증은 유지한다.
+- #541/#542는 구현 PR에서 자동으로 닫지 않는다. WP도 수용 기준 전체가 충족될 때만 닫는다.
+  문서 반영·결과 기록만을 위한 PR은 기본 계획에 추가하지 않는다. 사용자가 별도 준비 작업을
+  명시한 경우 그 범위만 독립 PR로 마무리하며 B01 구현 완료로 계산하지 않는다.
+- 이 정책은 PR 구성에 대한 예외다. CI·권한·원본 데이터 보존·릴리스 검증 조건은 완화하지 않는다.
 
 ### 커밋 규칙 (Conventional Commits, 영어)
 ```
@@ -316,7 +322,13 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 예: `feat(port-manager): add netstat parser with unit tests`
 - 예: `refactor(workspace): extract process crate from port-manager`
 - 1커밋 = 1논리적 단위. WIP 커밋 금지
-- 완료 정의(집중 테스트 + `pnpm verify:affected` + CI 통과)를 커밋 전에 확인
+- 커밋 전에는 변경에 맞는 집중 검증과 `pnpm verify:affected`를 통과시킨다.
+- PR 최종 변경에 대해 `.github/workflows/ci.yml` 통과를 확인한 뒤에만 main으로 머지한다.
+  코드 완료는 로컬 집중 검증 + affected 검증 + GitHub Actions CI 통과로 판단한다.
+- 머지/종료 시 직접 만든 전용 worktree가 clean이고 머지됐는지 확인한 뒤 worktree 제거,
+  `git worktree prune`, 로컬 작업 브랜치 삭제, 원격 작업 브랜치 삭제 순으로 정리한다.
+  활성·잠김·미머지·dirty 또는 호스트 소유 worktree는 삭제하지 않고 상황을 보고한다.
+  최종 보고 전 `git worktree list`, 로컬·원격 브랜치 목록을 다시 확인한다.
 
 ## 9. 기술 스택 정책
 
@@ -389,3 +401,29 @@ docs/<scope>           문서 작업   예: docs/roadmap
   Workbench-started provenance를 구분한다. preflight 실패는 environment read/child spawn을
   허용하지 않으며, service lifecycle/자동 복구는 여전히 Workbench 범위 밖이다.
 - 상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`
+
+## 11. Codex 지침·스킬·작업 기록
+
+- 루트 AGENTS는 필수 제약과 문서 탐색 경로를 담는다. 공통 규약은 이 문서가 원장이며,
+  상세 절차는 관련 문서를 필요할 때 읽는다. 과거 SHA·workflow·실기 기록은
+  [release evidence](./docs/release-evidence.md)에 보존한다.
+- 대상 디렉터리의 `AGENTS.md`/`AGENTS.override.md`를 변경 전에 확인한다. 루트 세션에서
+  모든 하위 지침이 자동 로드된다고 가정하지 않는다. 명세의 planned 상태를 구현된 동작으로 읽지 않는다.
+- 저장소 스킬은 `.agents/skills/`에서 관리한다. `devbox-change`는 변경·검증·PR 절차,
+  `devbox-migration-review`는 실제 migration/권한/복구 변경 검토에 사용한다.
+  `devbox-release`는 명시적으로 호출할 때 사용한다. 스킬 호출 자체가 게시 권한을 추가하지 않는다.
+- 스킬은 스택이나 승인 범위를 바꾸지 않는다. Next.js/ShadCN landing-page 절차를 devbox의
+  Tauri/React/Vite/순수 CSS 제품 UI에 적용하지 않는다. 플러그인 cache의 스킬을 직접 수정하지 않는다.
+- 모델·추론·컨텍스트·계정별 실험은 개인 `~/.codex/config.toml`에서 설정한다.
+  개인 인증·절대 경로·구독 의존 설정을 공용 프로젝트 config로 복사하지 않는다.
+  [호스트 설정과 확인 절차](./docs/codex-setup.md)를 참조한다.
+- GitHub 연결/`gh`는 이슈·PR·CI 조회에, 로컬 셸은 파일·git·pnpm·Cargo 작업에 사용한다.
+  OpenAI 기능은 공식 Docs MCP에서 확인하고, 연결 불가 시 공식 문서로 확인한다.
+  기존 도구가 충족하는 기능을 위해 MCP를 중복 설치하지 않는다.
+- 작업 기록은 PR 묶음당 `workthrough/YYYY-MM-DD-scope.md` 하나를 생성·갱신한다.
+  변경 목적·중요한 결정·영향 경로·실제 검증 결과·남은 제한을 간결하게 적는다.
+  전체 diff·성공 로그·회의 내용을 복제하지 않는다. CI run/commit/fixture 근거를 연결하고,
+  실패·미실행·수동 실기 필요 상태를 PASS와 구분한다.
+- 컨텍스트 전환 시 목표, 승인된 범위, WP/요구사항 ID, branch/worktree, 결정, 검증과 다음 작업을
+  짧게 남긴다. 재개 시 실제 git/CI 상태와 대조한다. 자동 노트·Memories는 참고 계층이며
+  필수 규칙·데이터 경계·완료 증거의 유일한 원장으로 사용하지 않는다.
