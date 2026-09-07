@@ -1,0 +1,15 @@
+.api-workspace { border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 12px; min-width: 0; }
+.api-workspace-toolbar, .api-workspace-delete { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.api-workspace-toolbar label, .api-workspace-editor > label { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.api-workspace select, .api-workspace input:not([type=checkbox]) { max-width: 100%; min-width: 0; }
+.api-workspace p { margin: 8px 0 0; overflow-wrap: anywhere; }
+.api-workspace-editor { margin-top: 12px; display: grid; gap: 12px; }
+.api-workspace-editor h2 { font-size: 15px; margin: 0; }
+.api-workspace-editor fieldset { min-width: 0; border: 1px solid var(--border); border-radius: 6px; padding: 8px; }
+.api-workspace-choices { max-height: 150px; overflow-y: auto; display: grid; gap: 6px; }
+.api-workspace-choices label { display: flex; align-items: flex-start; gap: 8px; overflow-wrap: anywhere; }
+.api-workspace-choices input { flex: 0 0 auto; margin-top: 3px; }
+.api-workspace-delete { margin-top: 8px; }
+.api-workspace select, .api-workspace input:not([type=checkbox]) { font: inherit; color: var(--text); background: var(--panel); border: 1px solid var(--border); border-radius: 5px; padding: 5px 7px; }
+.api-workspace pre { white-space: pre-wrap; overflow-wrap: anywhere; max-height: 240px; overflow: auto; }
+.api-workspace summary { cursor: pointer; font-weight: 600; }

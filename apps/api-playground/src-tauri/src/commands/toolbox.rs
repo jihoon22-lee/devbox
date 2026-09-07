@@ -22,6 +22,8 @@ pub struct ToolboxDispatch {
 /// Send only the explicit masked response selection.  Raw response headers,
 /// cookies, and binary vault bytes are not reachable through this command.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn send_selection_to_toolbox(text: String) -> Result<ToolboxDispatch, String> {
     let text = Zeroizing::new(text);
     let (payload, redacted) = ToolboxTextPayload::from_selected_text(SOURCE_APP, text.as_str())

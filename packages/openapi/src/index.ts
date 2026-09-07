@@ -1,15 +1,11 @@
+import { OPENAPI_DOCUMENT_LIMITS } from "./limits";
+export { OPENAPI_DOCUMENT_LIMITS } from "./limits";
 import { visit as visitJson, type ParseError } from "jsonc-parser";
 import { parseDocument } from "yaml";
 
 export type OpenApiDocumentFormat = "json" | "yaml";
 
-export const OPENAPI_DOCUMENT_LIMITS = Object.freeze({
-  maxBytes: 4 * 1024 * 1024,
-  maxDepth: 40,
-  maxNodes: 50_000,
-  maxStringLength: 16_384,
-  maxAliases: 50,
-});
+
 
 export type OpenApiDocumentErrorCode =
   | "EMPTY_SOURCE"

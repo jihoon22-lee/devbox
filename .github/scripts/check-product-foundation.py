@@ -1,10 +1,17 @@
 #!/usr/bin/env python3
-"""Check hidden product ownership, build identity and pending parity coverage."""
+"""Check hidden product ownership, build identity and evidenced parity coverage."""
 import json
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCTS = {"workspace", "api-studio", "knowledge", "control-center"}
+
+
+def has_verified_source(record):
+    commit = record.get("verifiedSourceCommit")
+    return (isinstance(commit, str) and len(commit) == 40
+            and all(character in "0123456789abcdef" for character in commit)
+            and bool(record.get("evidence")))
 
 
 def check(root=ROOT):
@@ -20,13 +27,24 @@ def check(root=ROOT):
     for app in parity["apps"]:
         review = app["baselineReview"]
         assert review["implementedGroups"] and review["authorityBoundary"]
-        assert review["newProductParity"] == "pending-owner-implementation"
+        assert review["newProductParity"] in {"pending-owner-implementation", "verified-product-internal"}
+        if review["newProductParity"] == "verified-product-internal":
+            features = [f for f in parity["features"] if f["legacyFeatureId"].startswith(app["legacyApp"] + ":")]
+            assert features and all(has_verified_source(f) for f in features)
+            assert all(f["status"] == "verified" or (
+                f.get("producerVerified") is True
+                and f.get("integrationOwnerIssue") in range(544, 551)
+                and f["integrationOwnerIssue"] != f["ownerIssue"]
+            ) for f in features), "unverified internal behavior cannot satisfy product acceptance"
         assert review["nativeRegisteredCommands"] == sum(
             f["kind"] == "native-command" and f["legacyFeatureId"].startswith(app["legacyApp"] + ":")
             for f in parity["features"])
         for evidence in review["evidence"]:
             assert (root / evidence).is_file()
         assert app["registration"]["singleInstance"] and app["registration"]["portable"]
+        if mapping := app.get("implementationReview"):
+            assert mapping["featureMappings"] == sum(f["legacyFeatureId"].startswith(app["legacyApp"] + ":") for f in parity["features"])
+            assert (root / mapping["evidence"]).is_file()
     assert data_inventory["schemaVersion"] == 1
     assert data_inventory["baselineCommit"] == parity["baselineCommit"]
     assert data_inventory["baselineRelease"] == parity["baselineRelease"]
@@ -34,7 +52,12 @@ def check(root=ROOT):
     for group in data_inventory["groups"]:
         assert group["classification"] in {"authoritative", "derived", "ephemeral", "mixed"}
         assert group["items"] and group["treatment"]
-        assert group["importerStatus"] == "pending", "domain importer acceptance requires a reviewed schema change"
+        assert group["importerStatus"] in {"pending", "verified"}
+        if group["importerStatus"] == "verified":
+            assert has_verified_source(group) and group.get("test")
+            for file in [group.get("implementationPath"), group.get("schemaMapping"), *group["test"]]:
+                assert isinstance(file, str) and not Path(file).is_absolute() and ".." not in Path(file).parts
+                assert (root / file).is_file()
         path = Path(group["sourcePath"])
         assert not path.is_absolute() and ".." not in path.parts
         assert (root / path).is_file()
@@ -53,7 +76,19 @@ def check(root=ROOT):
         capability = json.loads((root / entry["appDir"] / "src-tauri/capabilities/default.json").read_text())
         assert capability["windows"] == ["main"]
         assert "remote" not in capability
-        assert set(capability["permissions"]) == {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status"}
+        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status"}
+        if product["id"] == "api-studio":
+            expected_permissions.add("api-studio:allow-execute")
+        assert set(capability["permissions"]) == expected_permissions
+        capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
+        expected_files = {"default.json"}
+        if product["id"] == "api-studio":
+            expected_files.add("legacy-export.json")
+            exporter = json.loads((capability_dir / "legacy-export.json").read_text())
+            assert exporter["windows"] == ["legacy-api-export"]
+            assert "remote" not in exporter and not exporter.get("webviews")
+            assert exporter["permissions"] == ["api-studio:allow-legacy-export-message"]
+        assert {path.name for path in capability_dir.glob("*.json")} == expected_files
     ids = set()
     for feature in parity["features"]:
         assert feature["legacyFeatureId"] not in ids, feature["legacyFeatureId"]
@@ -65,9 +100,18 @@ def check(root=ROOT):
         assert any(f["owner"] == feature["product"] and f["route"] == feature["route"] for f in catalog["features"])
         assert feature["ownerIssue"] in range(544, 551)
         assert feature["status"] in {"pending", "verified"}
+        if feature.get("implementationPath"):
+            implementation = Path(feature["implementationPath"])
+            assert not implementation.is_absolute() and ".." not in implementation.parts
+            assert (root / implementation).is_file()
+        if feature.get("test") is not None:
+            assert isinstance(feature["test"], list) and feature["test"], "mapped tests must name actual files"
+            for test in feature["test"]:
+                test_path = Path(test)
+                assert not test_path.is_absolute() and ".." not in test_path.parts
+                assert (root / test_path).is_file(), test_path
         if feature["status"] == "verified":
-            assert feature["test"] and feature.get("implementationPath") and feature.get("evidence")
-            assert (root / feature["implementationPath"]).is_file()
+            assert feature["test"] and feature.get("implementationPath") and has_verified_source(feature)
     print(f"Product foundation metadata: 4 hidden products, {len(ids)} parity entries; "
           f"{sum(f['status'] == 'pending' for f in parity['features'])} still pending. This is not feature parity acceptance.")
 

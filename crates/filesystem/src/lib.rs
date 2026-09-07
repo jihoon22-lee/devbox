@@ -66,7 +66,7 @@ pub fn filesystem_identity(
     path: impl AsRef<Path>,
     directory: bool,
 ) -> io::Result<FilesystemIdentity> {
-    open_filesystem_object(path, directory).map(|(_handle, identity)| identity)
+    open_object(path.as_ref(), directory, false).map(|(_handle, identity)| identity)
 }
 
 /// Open the exact final filesystem object without following a final link and
@@ -79,8 +79,14 @@ pub fn open_filesystem_object(
     path: impl AsRef<Path>,
     directory: bool,
 ) -> io::Result<(File, FilesystemIdentity)> {
-    let path = path.as_ref();
+    open_object(path.as_ref(), directory, true)
+}
 
+fn open_object(
+    path: &Path,
+    directory: bool,
+    _read_contents: bool,
+) -> io::Result<(File, FilesystemIdentity)> {
     #[cfg(unix)]
     {
         use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
@@ -134,7 +140,14 @@ pub fn open_filesystem_object(
             } else {
                 Default::default()
             };
-        let desired_access = FILE_READ_ATTRIBUTES.0 | if directory { 0 } else { GENERIC_READ.0 };
+        // Identity queries need attributes only. Requesting GENERIC_READ here
+        // would conflict with an existing exclusive source-data handle.
+        let desired_access = FILE_READ_ATTRIBUTES.0
+            | if directory || !_read_contents {
+                0
+            } else {
+                GENERIC_READ.0
+            };
         let raw = unsafe {
             CreateFileW(
                 PCWSTR(wide.as_ptr()),

@@ -1,3 +1,4 @@
+import { createdUtcExpression, ownedDescendantsFromSnapshot, potentialDescendantsFromSnapshots } from "./windows-process-identity.mjs";
 import { spawn, spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
@@ -214,7 +215,7 @@ function isGitHubHostedWindowsAcceptanceHost(environment) {
   );
 }
 
-function windowsLocalAppData() {
+export function windowsLocalAppData() {
   const encoded = powershell(
     `$ErrorActionPreference='Stop'; ` +
       `$value=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData); ` +
@@ -224,11 +225,11 @@ function windowsLocalAppData() {
   return Buffer.from(encoded, "base64").toString("utf8");
 }
 
-function allWindowsProcesses() {
+export function allWindowsProcesses() {
   const output = powershell(
     `$ErrorActionPreference='Stop'; $items=@(Get-CimInstance Win32_Process -ErrorAction Stop); ` +
       `$items | ForEach-Object { [pscustomobject]@{Pid=[int]$_.ProcessId;ParentPid=[int]$_.ParentProcessId;` +
-      `Created=[string]$_.CreationDate;Name=[string]$_.Name;Path=[string]$_.ExecutablePath} } | ConvertTo-Json -Compress`,
+      `Created=${createdUtcExpression("$_")};Name=[string]$_.Name;Path=[string]$_.ExecutablePath} } | ConvertTo-Json -Compress`,
   );
   if (!output) fail("Windows process inventory was empty");
   const parsed = JSON.parse(output);
@@ -283,28 +284,7 @@ function matchingWindowsProcesses(imageNames) {
 
 function descendantIdentities(rootIdentity) {
   if (!rootIdentity) return [];
-  const all = allWindowsProcesses();
-  const root = all.find(
-    (item) =>
-      item.Pid === rootIdentity?.Pid &&
-      item.Created === rootIdentity.Created &&
-      item.Name === rootIdentity.Name &&
-      item.Path === rootIdentity.Path,
-  );
-  if (!root) return [];
-  const owned = new Set([root.Pid]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const item of all) {
-      if (!owned.has(item.Pid) && owned.has(item.ParentPid)) {
-        assertTrackableProcessIdentity(item);
-        owned.add(item.Pid);
-        changed = true;
-      }
-    }
-  }
-  return all.filter((item) => item.Pid !== root.Pid && owned.has(item.Pid));
+  return ownedDescendantsFromSnapshot(rootIdentity, allWindowsProcesses()).map(assertTrackableProcessIdentity);
 }
 
 // A child can outlive its root between the final 100 ms tracking sample and
@@ -313,25 +293,7 @@ function descendantIdentities(rootIdentity) {
 // they only make cleanup uncertain, preserve generated data, and block release.
 function potentialNewDescendants(rootIdentity, baseline) {
   if (!rootIdentity) return [];
-  const baselineIdentities = new Set(
-    baseline.map((item) => `${item.Pid}:${item.Created}:${item.Name}:${item.Path}`),
-  );
-  const candidates = allWindowsProcesses().filter(
-    (item) => !baselineIdentities.has(`${item.Pid}:${item.Created}:${item.Name}:${item.Path}`),
-  );
-  const potential = new Set([rootIdentity.Pid]);
-  let changed = true;
-  while (changed) {
-    changed = false;
-    for (const item of candidates) {
-      if (!potential.has(item.Pid) && potential.has(item.ParentPid)) {
-        assertTrackableProcessIdentity(item);
-        potential.add(item.Pid);
-        changed = true;
-      }
-    }
-  }
-  return candidates.filter((item) => item.Pid !== rootIdentity.Pid && potential.has(item.Pid));
+  return potentialDescendantsFromSnapshots(rootIdentity, allWindowsProcesses(), baseline).map(assertTrackableProcessIdentity);
 }
 
 function survivingIdentities(identities) {
@@ -560,7 +522,7 @@ function sanitizedWindowsEnvironment(overrides) {
   return environment;
 }
 
-async function unusedPort() {
+export async function unusedPort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.unref();
@@ -573,7 +535,7 @@ async function unusedPort() {
   });
 }
 
-async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
+export async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   let lastObservation = "no HTTP response";
   while (Date.now() < deadline) {
@@ -604,7 +566,7 @@ async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
   );
 }
 
-class Cdp {
+export class Cdp {
   constructor(url) {
     this.url = url;
     this.nextId = 1;
@@ -756,7 +718,7 @@ function terminateIdentity(identity, force) {
       `$expectedName=$decode.GetString([Convert]::FromBase64String('${expectedName}')); ` +
       `$expectedPath=$decode.GetString([Convert]::FromBase64String('${expectedPath}')); ` +
       `$item=Get-CimInstance Win32_Process -Filter 'ProcessId = ${Number(identity.Pid)}' -ErrorAction SilentlyContinue; ` +
-      `$acted=$false; if($item -and [string]$item.CreationDate -ceq $expectedCreated -and ` +
+      `$acted=$false; if($item -and (${createdUtcExpression("$item")}) -ceq $expectedCreated -and ` +
       `[string]$item.Name -ceq $expectedName -and [string]$item.ExecutablePath -ieq $expectedPath){${action}}; ` +
       `[bool]$acted | ConvertTo-Json -Compress`,
   );
@@ -1156,6 +1118,24 @@ function runVerificationContractSelfTest() {
   ) {
     fail("hosted window fallback self-test escaped its Windows runner scope");
   }
+  const processIdentity = (Pid, ParentPid, Created) => ({ Pid, ParentPid, Created, Name: `fixture-${Pid}.exe`, Path: `C:/fixture/${Pid}.exe` });
+  const root = processIdentity(10, 1, "2026-09-07T12:00:00.1234567Z");
+  const earlier = processIdentity(11, 10, "2026-09-07T12:00:00.1234566Z");
+  const unrelatedGrandchild = processIdentity(12, 11, "2026-09-07T12:00:01.0000000Z");
+  const child = processIdentity(13, 10, "2026-09-07T12:00:00.1234568Z");
+  const grandchild = processIdentity(14, 13, "2026-09-07T12:00:00.1234569Z");
+  const backwardGrandchild = processIdentity(15, 13, "2026-09-07T12:00:00.1234567Z");
+  const snapshot = [grandchild, unrelatedGrandchild, backwardGrandchild, earlier, child, root];
+  if (ownedDescendantsFromSnapshot(root, snapshot).map(item => item.Pid).sort().join(",") !== "13,14") {
+    fail("reused parent PID self-test claimed an older unrelated process");
+  }
+  if (ownedDescendantsFromSnapshot({ ...root, Created: "2026-09-07T12:00:00.1234560Z" }, snapshot).length) {
+    fail("recycled root identity self-test claimed current descendants");
+  }
+  if (potentialDescendantsFromSnapshots(root, snapshot.filter(item => item !== root), [earlier, unrelatedGrandchild]).map(item => item.Pid).sort().join(",") !== "13,14") {
+    fail("post-exit uncertainty self-test failed temporal lineage checks");
+  }
+  if (ownedDescendantsFromSnapshot({ Pid: 10 }, snapshot).length) fail("unobserved root received termination authority");
   const inaccessibleChild = { Pid: 7, ParentPid: 6, Created: "created", Name: "conhost.exe", Path: "" };
   assertTrackableProcessIdentity(inaccessibleChild);
   let incompleteRejected = false;

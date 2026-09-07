@@ -1,0 +1,175 @@
+{
+  "schemaVersion": 1,
+  "product": "api-studio",
+  "component": "api-studio.transforms",
+  "tools": [
+    {
+      "id": "json-format",
+      "commandId": "api-studio.transforms.json-format",
+      "group": "JSON",
+      "name": "포매터",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "json-minify",
+      "commandId": "api-studio.transforms.json-minify",
+      "group": "JSON",
+      "name": "최소화",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "json-yaml",
+      "commandId": "api-studio.transforms.json-yaml",
+      "group": "JSON",
+      "name": "JSON ↔ YAML",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "json-typescript",
+      "commandId": "api-studio.transforms.json-typescript",
+      "group": "JSON",
+      "name": "JSON → TypeScript",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "byte-codec",
+      "commandId": "api-studio.transforms.byte-codec",
+      "group": "인코딩",
+      "name": "UTF-8 / Base64 / Hex",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "radix",
+      "commandId": "api-studio.transforms.radix",
+      "group": "인코딩",
+      "name": "진법 변환기",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "html-entity-encode",
+      "commandId": "api-studio.transforms.html-entity-encode",
+      "group": "인코딩",
+      "name": "HTML 엔터티 인코딩",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "html-entity-decode",
+      "commandId": "api-studio.transforms.html-entity-decode",
+      "group": "인코딩",
+      "name": "HTML 엔터티 디코딩",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "url-encode",
+      "commandId": "api-studio.transforms.url-encode",
+      "group": "인코딩",
+      "name": "URL 컴포넌트 인코딩",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "url-decode",
+      "commandId": "api-studio.transforms.url-decode",
+      "group": "인코딩",
+      "name": "URL 컴포넌트 디코딩",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "qr",
+      "commandId": "api-studio.transforms.qr",
+      "group": "인코딩",
+      "name": "QR 생성기",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "timestamp",
+      "commandId": "api-studio.transforms.timestamp",
+      "group": "시간",
+      "name": "타임스탬프 변환기",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "case",
+      "commandId": "api-studio.transforms.case",
+      "group": "텍스트",
+      "name": "대소문자 변환기",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "lorem",
+      "commandId": "api-studio.transforms.lorem",
+      "group": "텍스트",
+      "name": "Lorem 생성기",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "markdown-table",
+      "commandId": "api-studio.transforms.markdown-table",
+      "group": "텍스트",
+      "name": "Markdown 표 포매터",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "hash",
+      "commandId": "api-studio.transforms.hash",
+      "group": "보안",
+      "name": "해시 (MD5/SHA)",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "hmac",
+      "commandId": "api-studio.transforms.hmac",
+      "group": "보안",
+      "name": "HMAC 생성 / 검증",
+      "route": "transforms",
+      "policy": "non-persistable"
+    },
+    {
+      "id": "uuid",
+      "commandId": "api-studio.transforms.uuid",
+      "group": "보안",
+      "name": "UUID / ULID 생성기",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "regex",
+      "commandId": "api-studio.transforms.regex",
+      "group": "정규식",
+      "name": "정규식 테스터",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "diff",
+      "commandId": "api-studio.transforms.diff",
+      "group": "차이",
+      "name": "텍스트 차이",
+      "route": "transforms",
+      "policy": "exportable"
+    },
+    {
+      "id": "jwt",
+      "commandId": "api-studio.transforms.jwt",
+      "group": "인증",
+      "name": "JWT 디코더",
+      "route": "transforms",
+      "policy": "sensitive"
+    }
+  ]
+}

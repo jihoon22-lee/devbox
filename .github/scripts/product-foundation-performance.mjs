@@ -1,3 +1,4 @@
+import { createdUtcExpression } from "./windows-process-identity.mjs";
 // Opt-in baseline measurements on disposable Windows only. The caller retains
 // the packaged harness's process identities, data transaction and cleanup.
 import assert from "node:assert/strict";
@@ -87,7 +88,7 @@ function sampleProcesses(identities) {
   assert.ok(identities.length > 0 && identities.length <= 64);
   for (const identity of identities) assert.ok(Number.isInteger(identity.Pid) && identity.Pid > 0);
   const encoded = Buffer.from(JSON.stringify(identities)).toString("base64");
-  const script = `$ErrorActionPreference='Stop'; $identities=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json; $rows=@(); foreach($identity in $identities) { $record=Get-CimInstance Win32_Process -Filter ('ProcessId='+$identity.Pid); if($null -eq $record) { continue }; $created=[string]$record.CreationDate; if($created -cne $identity.Created) { throw 'process identity changed during measurement' }; $item=Get-Process -Id $identity.Pid; $rows += @{pid=$identity.Pid; created=$created; cpuMs=$item.TotalProcessorTime.TotalMilliseconds; workingSetBytes=$item.WorkingSet64} }; ConvertTo-Json -InputObject $rows -Compress`;
+  const script = `$ErrorActionPreference='Stop'; $identities=[Text.Encoding]::UTF8.GetString([Convert]::FromBase64String('${encoded}')) | ConvertFrom-Json; $rows=@(); foreach($identity in $identities) { $record=Get-CimInstance Win32_Process -Filter ('ProcessId='+$identity.Pid); if($null -eq $record) { continue }; $created=${createdUtcExpression("$record")}; if($created -cne $identity.Created) { throw 'process identity changed during measurement' }; $item=Get-Process -Id $identity.Pid; $rows += @{pid=$identity.Pid; created=$created; cpuMs=$item.TotalProcessorTime.TotalMilliseconds; workingSetBytes=$item.WorkingSet64} }; ConvertTo-Json -InputObject $rows -Compress`;
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", timeout: 15000, windowsHide: true });
   assert.equal(result.status, 0, "owned process measurement failed");
   return JSON.parse(result.stdout.replace(/^\uFEFF/, ""));

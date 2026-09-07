@@ -1,5 +1,5 @@
-//! No process launch, secret, filesystem selection or migration mutation is
-//! exposed by this shell. Domain adapters require their own authority review.
+//! Product session and navigation boundary. Domain plugins separately declare
+//! their command allowlists and reuse this native session authorization.
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
@@ -77,9 +77,28 @@ fn route_status(
     state: State<'_, ShellState>,
     request: RouteRequest,
 ) -> Result<RouteStatus, Problem> {
+    let provenance = authorize(&window, &request, &format!("{}.shell", state.product))?;
+    Ok(RouteStatus {
+        route: request.route,
+        availability: "foundation".into(),
+        operation: Operation {
+            provenance,
+            outcome: OperationState::Succeeded {},
+        },
+    })
+}
+
+/// Validate native caller, owner, context, deadline and replay before a domain
+/// adapter touches data. The component is supplied by native code only.
+pub fn authorize(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+    component: &str,
+) -> Result<Provenance, Problem> {
+    let state = window.state::<ShellState>();
     let provenance = Provenance {
         product: state.product.clone(),
-        component: format!("{}.shell", state.product),
+        component: component.into(),
         request_id: if request.request_id.len() <= 64
             && request
                 .request_id
@@ -96,6 +115,14 @@ fn route_status(
         code,
         provenance: provenance.clone(),
     };
+    if !state
+        .catalog
+        .components
+        .iter()
+        .any(|entry| entry.id == component && entry.owner == state.product)
+    {
+        return Err(problem(ProblemCode::Unauthorized));
+    }
     let routes: Vec<&str> = state
         .catalog
         .features
@@ -108,20 +135,18 @@ fn route_status(
         .map_err(|_| problem(ProblemCode::Unavailable))?
         .as_millis();
     let now = u64::try_from(now).map_err(|_| problem(ProblemCode::Unavailable))?;
+    // WebView2 URL lookup can synchronously dispatch to the UI thread. A
+    // synchronous describe command on that thread also takes this mutex, so
+    // collect native caller information before entering the session lock.
+    let caller_window = window.label().to_string();
+    let local_origin = local_main(window);
     state
         .session
         .lock()
         .map_err(|_| problem(ProblemCode::Unavailable))?
-        .authorize(window.label(), local_main(&window), &request, now, &routes)
+        .authorize(&caller_window, local_origin, request, now, &routes)
         .map_err(problem)?;
-    Ok(RouteStatus {
-        route: request.route,
-        availability: "foundation".into(),
-        operation: Operation {
-            provenance,
-            outcome: OperationState::Succeeded {},
-        },
-    })
+    Ok(provenance)
 }
 
 pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
@@ -168,7 +193,15 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
 /// Hidden development installations use an executable-location namespace for
 /// data and single-instance identity. This does not claim suite registration or
 /// portable migration support; WP08 replaces it with verified install records.
-pub fn run(product: &'static str, mut context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
+pub fn run(product: &'static str, context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
+    run_with(product, context, |builder| builder)
+}
+
+pub fn run_with(
+    product: &'static str,
+    mut context: tauri::Context<tauri::Wry>,
+    configure: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>,
+) -> tauri::Result<()> {
     if cfg!(debug_assertions) {
         let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
         let routes: Vec<&str> = catalog
@@ -192,11 +225,18 @@ pub fn run(product: &'static str, mut context: tauri::Context<tauri::Wry>) -> ta
             window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
         }
     }
+    isolate_installation(&mut context)?;
+    configure(builder(product)).run(context)
+}
+
+/// Shared by the product UI and its explicitly owned import worker. This only
+/// selects this executable installation's namespace; it grants no IPC authority.
+pub fn isolate_installation(context: &mut tauri::Context<tauri::Wry>) -> tauri::Result<()> {
     let executable = std::env::current_exe()?.canonicalize()?;
     let suffix: String = Sha256::digest(executable.to_string_lossy().as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
     context.config_mut().identifier = format!("{}.i{}", context.config().identifier, suffix);
-    builder(product).run(context)
+    Ok(())
 }

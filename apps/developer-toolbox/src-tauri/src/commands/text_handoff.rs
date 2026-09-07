@@ -14,15 +14,35 @@ struct ClaimedToolboxText {
     payload: ToolboxTextPayload,
 }
 
-pub struct PendingToolboxText(Mutex<Option<ClaimedToolboxText>>);
+pub struct PendingToolboxText {
+    pending: Mutex<Option<ClaimedToolboxText>>,
+    store: Option<HandoffStore>,
+}
 
 impl PendingToolboxText {
+    fn has_claim(&self, id: &str) -> bool {
+        self.slot()
+            .as_ref()
+            .is_some_and(|current| current.claim.envelope.id == id)
+    }
+    pub fn with_store(store: HandoffStore) -> Self {
+        Self {
+            store: Some(store),
+            ..Self::new()
+        }
+    }
+    fn store(&self) -> HandoffStore {
+        self.store.clone().unwrap_or_else(store)
+    }
     pub fn new() -> Self {
-        Self(Mutex::new(None))
+        Self {
+            pending: Mutex::new(None),
+            store: None,
+        }
     }
 
     fn slot(&self) -> MutexGuard<'_, Option<ClaimedToolboxText>> {
-        self.0
+        self.pending
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }
@@ -62,7 +82,7 @@ pub fn preview_toolbox_text(
     if slot.is_some() {
         return Err(BUSY.to_string());
     }
-    let store = store();
+    let store = pending.store();
     let now = now_ms().ok_or_else(|| STORAGE.to_string())?;
     let claim = store
         .claim(
@@ -98,7 +118,7 @@ pub fn accept_toolbox_text(
     let mut slot = pending.slot();
     let current = exact_claim(&slot, &handoff_id)?;
     let text = current.payload.text.clone();
-    match store().ack(
+    match pending.store().ack(
         &current.claim,
         devbox_applink::TOOLBOX_TEXT_TARGET_APP,
         now_ms().ok_or_else(|| STORAGE.to_string())?,
@@ -123,7 +143,7 @@ pub fn discard_toolbox_text(
 ) -> Result<(), String> {
     let mut slot = pending.slot();
     let current = exact_claim(&slot, &handoff_id)?;
-    match store().restore(
+    match pending.store().restore(
         &current.claim,
         devbox_applink::TOOLBOX_TEXT_TARGET_APP,
         now_ms().ok_or_else(|| STORAGE.to_string())?,
@@ -148,7 +168,7 @@ pub fn renew_toolbox_text(
 ) -> Result<RenewToolboxTextResult, String> {
     let mut slot = pending.slot();
     let current = exact_claim(&slot, &handoff_id)?;
-    match store().renew(
+    match pending.store().renew(
         &current.claim,
         devbox_applink::TOOLBOX_TEXT_TARGET_APP,
         now_ms().ok_or_else(|| STORAGE.to_string())?,
@@ -231,6 +251,110 @@ fn map_error(error: HandoffError) -> String {
         | HandoffError::TokenMismatch
         | HandoffError::Corrupt => INVALID.to_string(),
     }
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_preview_toolbox_text(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = preview_toolbox_text(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<PendingToolboxText>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    let value = result?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_accept_toolbox_text(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = accept_toolbox_text(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<PendingToolboxText>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    let value = result?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_discard_toolbox_text(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = discard_toolbox_text(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<PendingToolboxText>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    result?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_renew_toolbox_text(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = renew_toolbox_text(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<PendingToolboxText>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    let value = result?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

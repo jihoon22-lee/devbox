@@ -16,8 +16,6 @@ use std::net::Ipv4Addr;
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-#[cfg(target_os = "windows")]
-use tauri::Manager;
 use tauri_plugin_opener::OpenerExt;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -961,10 +959,7 @@ fn grant_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let root = app
-            .path()
-            .app_local_data_dir()
-            .map_err(|_| STORAGE_FAILED.to_string())?;
+        let root = crate::component::data_root(app).map_err(|_| STORAGE_FAILED.to_string())?;
         Ok(root.join("oauth").join("mcp-grants.json"))
     }
 }
@@ -1137,6 +1132,124 @@ fn now_unix_ms() -> Result<u64, String> {
         .map_err(|_| STORAGE_FAILED.to_string())?
         .as_millis();
     u64::try_from(millis).map_err(|_| STORAGE_FAILED.to_string())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_authorize_mcp_http(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request_id: String,
+        endpoint: String,
+        issuer: Option<String>,
+        client_id: String,
+        scopes: Vec<String>,
+    }
+    let Input {
+        request_id,
+        endpoint,
+        issuer,
+        client_id,
+        scopes,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = authorize_mcp_http(
+        component_app.clone(),
+        component_app.state(),
+        request_id,
+        endpoint,
+        issuer,
+        client_id,
+        scopes,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_cancel_mcp_oauth(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request_id: String,
+    }
+    let Input { request_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = cancel_mcp_oauth(component_app.state(), request_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_list_mcp_oauth_grants(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_mcp_oauth_grants(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_revoke_mcp_oauth_grant(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        grant_id: String,
+        remove_local_on_remote_failure: bool,
+    }
+    let Input {
+        grant_id,
+        remove_local_on_remote_failure,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = revoke_mcp_oauth_grant(
+        component_app.clone(),
+        component_app.state(),
+        grant_id,
+        remove_local_on_remote_failure,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Import only grants whose existing DPAPI envelope is usable by this user.
+pub(crate) fn prepare_legacy_store(
+    bytes: &[u8],
+) -> Result<(serde_json::Value, Vec<String>), String> {
+    let mut store = decode_store(bytes)?;
+    let mut missing = Vec::new();
+    store.grants.retain(|grant| {
+        let usable = unseal_token(&grant.access_token).is_ok()
+            && grant
+                .refresh_token
+                .as_ref()
+                .is_none_or(|value| unseal_token(value).is_ok());
+        if !usable {
+            missing.push(grant.grant_id.clone());
+        }
+        usable
+    });
+    Ok((
+        serde_json::to_value(store).map_err(|_| STORAGE_FAILED.to_string())?,
+        missing,
+    ))
+}
+pub(crate) fn validate_migration_store(bytes: &[u8]) -> Result<(), String> {
+    decode_store(bytes).map(|_| ())
 }
 
 #[cfg(test)]

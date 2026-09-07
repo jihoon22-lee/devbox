@@ -1,0 +1,16 @@
+[package]
+name = "webhook-core"
+version = "0.1.0"
+publish = false
+edition = "2021"
+description = "Shared webhook-core validation and persistence codecs"
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+devbox-filesystem = { package = "filesystem", path = "../filesystem" }
+devbox-applink = { package = "applink", path = "../applink" }
+
+[dev-dependencies]
+tempfile = "3"

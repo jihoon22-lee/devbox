@@ -16,6 +16,21 @@ pub struct ArtifactReference {
     pub link: OpenRequest,
 }
 
+/// Durable producer-owned draft identity, distinct from a one-time handoff.
+/// Resolution requires the native owner's authority; metadata is never a grant.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnedArtifactReference {
+    pub provenance: Provenance,
+    pub id: String,
+    pub kind: OwnedArtifactKind,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+pub enum OwnedArtifactKind {
+    #[serde(rename = "knowledge-draft/v1")]
+    KnowledgeDraft,
+}
+
 /// Native API adapter for an explicit exportable selection. Callers must first
 /// apply their operation's export policy (e.g. Toolbox HMAC is non-exportable).
 /// The existing source allowlist, redaction and one-time storage remain intact.

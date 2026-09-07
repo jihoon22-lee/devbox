@@ -63,7 +63,19 @@ knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
 assert knowledge_features.frontend_apps == ["everything-plus", "knowledge-base", "life-log"]
 
 openapi = resolve("packages/openapi/src/index.ts")
-assert openapi.frontend_packages == ["apps/api-playground", "apps/webhook-lab", "packages/openapi"]
+assert openapi.frontend_packages == [
+    "apps/api-playground", "apps/devbox-api-studio", "apps/developer-toolbox",
+    "apps/webhook-lab", "packages/api-studio-features", "packages/openapi",
+]
+api_features = resolve("packages/api-studio-features/src/requests/api.ts")
+assert api_features.frontend_apps == ["api-playground", "devbox-api-studio", "developer-toolbox", "webhook-lab"]
+api_protocols = resolve("crates/api-protocols/src/core/grpc.rs")
+assert api_protocols.rust_packages == ["api-playground", "api-protocols", "devbox-api-studio"]
+for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "developer-toolbox"), ("data-migration", "devbox-control-center")]:
+    shared_domain = resolve(f"crates/{crate}/src/lib.rs")
+    assert shared_domain.rust_packages == sorted([crate, legacy, "devbox-api-studio"])
+api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
+assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
 
 a11y = resolve("packages/a11y/src/index.ts")
 assert len(a11y.frontend_apps) == 19

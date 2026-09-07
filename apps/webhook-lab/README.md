@@ -1,5 +1,9 @@
 # webhook-lab — Webhook Lab v0.3.0 (로컬 웹훅/콜백 서버)
 
+The frontend implementation and its tests are shared with the hidden v0.8 API
+Studio in [`packages/api-studio-features`](../../packages/api-studio-features/README.md).
+This app retains its legacy native entry point and data ownership.
+
 API Playground가 outbound HTTP 클라이언트라면, Webhook Lab은 **inbound HTTP 요청을 받고 검사·재현**하는 로컬 서버.
 산출물: `WebhookLab.exe` (`apps/webhook-lab`).
 

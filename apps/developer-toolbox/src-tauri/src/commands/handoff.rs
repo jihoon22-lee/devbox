@@ -40,6 +40,8 @@ pub struct KnowledgeDraftDispatch {
 /// written. Launch failure revokes an envelope that is still pending; there
 /// is no clipboard or alternate channel.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, String> {
     let output = zeroize::Zeroizing::new(output);
     let payload =
@@ -91,6 +93,8 @@ pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, 
 /// The consumer still previews and explicitly saves it; this command never
 /// writes a note or falls back to clipboard transport.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn create_knowledge_draft_handoff(output: String) -> Result<KnowledgeDraftDispatch, String> {
     let output = Zeroizing::new(output);
     let created_date = chrono::Local::now().format("%Y-%m-%d").to_string();
