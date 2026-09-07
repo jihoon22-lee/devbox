@@ -68,6 +68,8 @@ def main() -> None:
     assert len(baseline_ids) == 15
 
     script = SCRIPT_PATH.read_text(encoding="utf-8")
+    assert '. "$PSScriptRoot/windows-installer-helpers.ps1"' in script
+    script += (ROOT / ".github/scripts/windows-installer-helpers.ps1").read_text(encoding="utf-8")
     workflow = WORKFLOW_PATH.read_text(encoding="utf-8")
     for parameter in {
         "Config",
