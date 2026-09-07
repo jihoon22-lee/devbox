@@ -3,6 +3,9 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod context;
+pub use context::{ExecutionTarget, ProjectContext};
+
 pub const MAX_REQUEST_BYTES: usize = 4096;
 pub const MAX_DEADLINE_MS: u64 = 30_000;
 pub const MAX_PENDING_IDS: usize = 1024;
@@ -25,6 +28,8 @@ pub struct RouteRequest {
     pub request_id: String,
     pub deadline_ms: u64,
     pub route: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub context: Option<ProjectContext>,
 }
 
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -49,6 +54,7 @@ pub struct RouteStatus {
 pub struct SessionGuard {
     handshake: Handshake,
     seen: HashMap<String, u64>,
+    context: Option<ProjectContext>,
 }
 
 impl SessionGuard {
@@ -56,11 +62,26 @@ impl SessionGuard {
         Self {
             handshake,
             seen: HashMap::new(),
+            context: None,
         }
     }
 
     pub fn handshake(&self) -> &Handshake {
         &self.handshake
+    }
+
+    pub fn context(&self) -> Option<&ProjectContext> {
+        self.context.as_ref()
+    }
+
+    /// Called only by a native registry owner after resolving filesystem/distro
+    /// identity. This does not approve a renderer assertion or grant trust.
+    pub fn bind_context(&mut self, context: Option<ProjectContext>) -> Result<(), &'static str> {
+        if let Some(context) = &context {
+            context.validate()?;
+        }
+        self.context = context;
+        Ok(())
     }
 
     pub fn authorize(
@@ -73,6 +94,12 @@ impl SessionGuard {
     ) -> Result<(), &'static str> {
         if caller_window != "main" || !local_origin {
             return Err("unauthorized caller");
+        }
+        if let Some(context) = &request.context {
+            context.validate()?;
+        }
+        if request.context != self.context {
+            return Err("stale or unregistered project context");
         }
         if request.installation_id.len() > 128
             || request.session_id.len() > 128
@@ -199,5 +226,27 @@ mod tests {
         assert!(guard()
             .authorize("main", true, &r, 1000, &["overview"])
             .is_err());
+    }
+
+    #[test]
+    fn native_context_binding_rejects_other_worktrees_and_stale_revisions() {
+        let context: ProjectContext = serde_json::from_str(include_str!(
+            "../../../packages/product-shell/fixtures/project-context.json"
+        ))
+        .unwrap();
+        let mut g = guard();
+        let mut r = request();
+        r.context = Some(context.clone());
+        assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
+        g.bind_context(Some(context.clone())).unwrap();
+        g.authorize("main", true, &r, 1000, &["overview"]).unwrap();
+        let mut revised = context;
+        revised.revision += 1;
+        g.bind_context(Some(revised)).unwrap();
+        r.request_id = "fresh-request-stale-context".into();
+        assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
+        r.context = g.context().cloned();
+        r.context.as_mut().unwrap().worktree_id = "another-worktree".into();
+        assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
     }
 }

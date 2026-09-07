@@ -1,7 +1,9 @@
 //! No process launch, secret, filesystem selection or migration mutation is
 //! exposed by this shell. Domain adapters require their own authority review.
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
-use product_contract::{Handshake, Provenance, RouteRequest, RouteStatus, SessionGuard};
+use product_contract::{
+    Handshake, ProjectContext, Provenance, RouteRequest, RouteStatus, SessionGuard,
+};
 use serde::Serialize;
 use sha2::{Digest, Sha256};
 use std::sync::Mutex;
@@ -20,6 +22,7 @@ struct Description {
     handshake: Handshake,
     product: Product,
     features: Vec<Feature>,
+    context: Option<ProjectContext>,
 }
 
 fn local_main(window: &WebviewWindow) -> bool {
@@ -47,14 +50,15 @@ fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Descr
         .find(|p| p.id == state.product)
         .ok_or("제품을 찾을 수 없습니다.")?
         .clone();
-    let handshake = state
+    let session = state
         .session
         .lock()
-        .map_err(|_| "세션을 사용할 수 없습니다.")?
-        .handshake()
-        .clone();
+        .map_err(|_| "세션을 사용할 수 없습니다.")?;
+    let handshake = session.handshake().clone();
+    let context = session.context().cloned();
     Ok(Description {
         handshake,
+        context,
         product,
         features: state
             .catalog

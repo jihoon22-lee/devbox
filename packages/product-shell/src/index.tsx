@@ -36,7 +36,7 @@ function ReadyShell({ description }: { description: Description }) {
     <header><strong>{description.product.label}</strong><span className="shell-badge">{nativeMode ? "개발 빌드" : "브라우저 미리보기 · 모의 데이터"}</span></header>
     <aside><nav aria-label="제품 화면">{description.features.map((feature) => <button key={feature.id} aria-current={current === feature.route ? "page" : undefined} onClick={() => open(feature.route)}>{feature.label}</button>)}</nav></aside>
     <main id="product-content" ref={content} tabIndex={-1}>
-      <div className="shell-toolbar"><button aria-label="뒤로" disabled={history.cursor === 0} onClick={() => setHistory((h) => traverse(h, -1))}>←</button><button aria-label="앞으로" disabled={history.cursor === history.entries.length - 1} onClick={() => setHistory((h) => traverse(h, 1))}>→</button><span>프로젝트 선택 없이 사용</span></div>
+      <div className="shell-toolbar"><button aria-label="뒤로" disabled={history.cursor === 0} onClick={() => setHistory((h) => traverse(h, -1))}>←</button><button aria-label="앞으로" disabled={history.cursor === history.entries.length - 1} onClick={() => setHistory((h) => traverse(h, 1))}>→</button><span>{description.context ? "프로젝트 연결됨" : "프로젝트 선택 없이 사용"}</span></div>
       {!online && <p role="status">오프라인입니다. 로컬 화면은 계속 사용할 수 있습니다.</p>}
       {queryRoute && !description.features.some((f) => f.route === queryRoute) && <p role="status">요청한 화면이 없어 기본 화면을 열었습니다.</p>}
       {description.features.filter((f) => visited.has(f.route)).map((feature) => <div key={feature.id} hidden={feature.route !== current}><RouteBoundary><Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}><RouteView description={description} feature={feature}/></Suspense></RouteBoundary></div>)}

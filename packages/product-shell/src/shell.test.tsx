@@ -2,12 +2,22 @@ import { afterEach, describe, expect, it } from "vitest";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { ProductShell } from "./index";
-import { fixtureDescription, makeRequest, routeStatus } from "./api";
+import { fixtureDescription, isProjectContext, makeRequest, routeStatus } from "./api";
 import { navigate, traverse } from "./navigation";
 import requestFixture from "../fixtures/route-request.json";
+import contextFixture from "../fixtures/project-context.json";
 
 afterEach(cleanup);
 describe("product shell", () => {
+  it("accepts only bounded opaque native project context and preserves its revision", () => {
+    expect(isProjectContext(contextFixture)).toBe(true);
+    if (!isProjectContext(contextFixture)) throw new Error("invalid shared fixture");
+    const request = makeRequest(fixtureDescription("workspace").handshake, "overview", 1000, contextFixture);
+    expect(request.context).toEqual(contextFixture);
+    expect(isProjectContext({ ...contextFixture, revision: Number.MAX_SAFE_INTEGER + 1 })).toBe(false);
+    expect(isProjectContext({ ...contextFixture, worktreeId: "C:\\unverified-root" })).toBe(false);
+    expect(isProjectContext({ ...contextFixture, target: { ...contextFixture.target, path: "/unverified" } })).toBe(false);
+  });
   it("shares the native wire fixture and never places a path in route metadata", async () => {
     const description = fixtureDescription("workspace");
     const request = makeRequest(description.handshake, "overview", 1000);
