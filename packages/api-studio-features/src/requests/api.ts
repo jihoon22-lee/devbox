@@ -267,7 +267,7 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
 /** Registers the wake-up listener used by the native single-instance plugin. */
 export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise<UnlistenFn> {
   if (!isTauri()) return () => undefined;
-  return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
+  return listen<OpenRequest>(isProductHosted() ? "api-studio://api-open" : "devbox://open", (event) => cb(event.payload));
 }
 
 /** Claim and validate a pending `api-request/v1` handoff for preview. */

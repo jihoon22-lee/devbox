@@ -13,7 +13,10 @@ pub(crate) fn data_root(app: &tauri::AppHandle) -> tauri::Result<PathBuf> {
     app.path().app_local_data_dir()
 }
 
-pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
+pub fn initialize(
+    app: &tauri::AppHandle,
+    handoff_store: devbox_applink::HandoffStore,
+) -> Result<(), String> {
     let root = app
         .path()
         .app_local_data_dir()
@@ -68,7 +71,9 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     )) {
         return Err("component_state_conflict".into());
     }
-    if !app.manage(crate::commands::handoff::ApiHandoffState::default()) {
+    if !app.manage(crate::commands::handoff::ApiHandoffState::with_store(
+        handoff_store,
+    )) {
         return Err("component_state_conflict".into());
     }
     if !app.manage(crate::applink::PendingOpen::new()) {
@@ -78,6 +83,10 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
 }
 
 pub const COMMANDS: &[&str] = &[
+    "claim_api_request",
+    "renew_api_request",
+    "ack_api_request",
+    "restore_api_request",
     "take_pending_open",
     "fetch_openapi_source",
     "send_request",
@@ -135,6 +144,17 @@ pub async fn dispatch(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match method {
+        "claim_api_request" => {
+            crate::commands::handoff::__component_claim_api_request(app, args).await
+        }
+        "renew_api_request" => {
+            crate::commands::handoff::__component_renew_api_request(app, args).await
+        }
+        "ack_api_request" => crate::commands::handoff::__component_ack_api_request(app, args).await,
+        "restore_api_request" => {
+            crate::commands::handoff::__component_restore_api_request(app, args).await
+        }
+
         "take_pending_open" => crate::applink::__component_take_pending_open(app, args).await,
         "fetch_openapi_source" => {
             crate::commands::openapi::__component_fetch_openapi_source(app, args).await
@@ -251,4 +271,14 @@ pub async fn dispatch(
         }
         _ => Err("component_method_unavailable".into()),
     }
+}
+
+/// Native-only delivery. A pending user action cannot be overwritten.
+pub fn deliver(app: &tauri::AppHandle, request: devbox_applink::OpenRequest) -> Result<(), String> {
+    use tauri::Emitter as _;
+    app.state::<crate::applink::PendingOpen>()
+        .try_set(request)?;
+    // The slot owns the delivery. Wake-up failure leaves it for a cold pull.
+    let _ = app.emit_to("main", "api-studio://api-open", ());
+    Ok(())
 }

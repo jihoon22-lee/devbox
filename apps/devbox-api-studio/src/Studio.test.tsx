@@ -7,6 +7,8 @@ afterEach(() => { cleanup(); localStorage.clear(); });
 
 it("keeps the actual request draft through protocol and webhook navigation without starting native work", async () => {
   render(<Studio/>);
+  await screen.findByRole("navigation", { name: "제품 화면" });
+  // The async description must mount the feature before waiting for its imports.
   // Await the real lazy module graph, rather than making transformer speed
   // part of this draft-lifetime unit test. Runtime budgets are measured separately.
   await act(async () => { await vi.dynamicImportSettled(); });

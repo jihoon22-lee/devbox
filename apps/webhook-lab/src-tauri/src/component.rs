@@ -85,3 +85,12 @@ pub async fn dispatch(
         _ => Err("component_method_unavailable".into()),
     }
 }
+
+/// Called only by the product's authorized source-owner route.
+pub fn prepare_api_handoff(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+    saved: bool,
+) -> Result<serde_json::Value, String> {
+    crate::commands::prepare_api_handoff(app, args, saved)
+}

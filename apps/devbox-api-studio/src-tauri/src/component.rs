@@ -43,10 +43,12 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.api" => {
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
-                    || method == "pick_multipart_file")
+                    || matches!(method, "pick_multipart_file" | "send_selection_to_toolbox"))
         }
         "api-studio.webhooks" => {
-            route == "webhooks" && webhook_lab_lib::component::COMMANDS.contains(&method)
+            route == "webhooks"
+                && (webhook_lab_lib::component::COMMANDS.contains(&method)
+                    || matches!(method, "send_history_to_api" | "send_fixture_to_api"))
         }
         "api-studio.transforms" => {
             route == "transforms"
@@ -103,8 +105,15 @@ async fn execute(
     // reserved across dialogs/long awaits even after the replay cache expires.
     let _reservation = reserve(&active, &request.header.request_id).map_err(problem)?;
     let app = window.app_handle();
-    let value = if request.component == "api-studio.api" && request.method == "pick_multipart_file"
-    {
+    let value = if crate::handoff::is_send(&request.component, &request.method) {
+        crate::handoff::send(
+            app,
+            &request.component,
+            &request.method,
+            request.args,
+            provenance.clone(),
+        )
+    } else if request.component == "api-studio.api" && request.method == "pick_multipart_file" {
         use tauri_plugin_dialog::DialogExt;
         let handle = app.clone();
         tauri::async_runtime::spawn_blocking(move || {
@@ -161,9 +170,12 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("api-studio")
         .setup(|app, _| {
             app.manage(Active::default());
-            api_playground_lib::component::initialize(app).map_err(std::io::Error::other)?;
+            let store = crate::handoff::initialize(app).map_err(std::io::Error::other)?;
+            api_playground_lib::component::initialize(app, store.clone())
+                .map_err(std::io::Error::other)?;
             webhook_lab_lib::component::initialize(app).map_err(std::io::Error::other)?;
-            developer_toolbox_lib::component::initialize(app).map_err(std::io::Error::other)?;
+            developer_toolbox_lib::component::initialize(app, store)
+                .map_err(std::io::Error::other)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![execute])
@@ -179,7 +191,7 @@ mod tests {
         assert!(!allowed("api-studio.webhooks", "webhooks", "send_request"));
         assert!(!allowed("api-studio.api", "transforms", "send_request"));
         assert!(!allowed("workspace.runtime", "requests", "send_request"));
-        assert!(!allowed(
+        assert!(allowed(
             "api-studio.api",
             "requests",
             "send_selection_to_toolbox"

@@ -13,3 +13,10 @@ API Studio therefore embeds only its own frontend bundle. The three legacy apps
 still build and run with their default features. Native OAuth uses the initialized
 system-browser plugin through its validated API component; the renderer receives
 no additional opener capability.
+
+Internal Webhook history/fixture→Requests and selected response→Transforms use
+this installation's `handoff/v1` namespace. Transfers open a preview and require
+explicit apply. Raw webhook payloads and caller-supplied source records are not
+accepted. A busy recipient preserves its pending action and the new publication
+is revoked. Typed artifact provenance is metadata, not permission to read another
+component's data. Other cross-product delivery and migration remain in progress.

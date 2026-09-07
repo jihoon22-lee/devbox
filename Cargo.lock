@@ -1279,6 +1279,7 @@ name = "devbox-api-studio"
 version = "0.8.0"
 dependencies = [
  "api-playground",
+ "applink",
  "developer-toolbox",
  "product-contract",
  "product-shell-tauri",
@@ -1289,7 +1290,9 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
+ "tempfile",
  "webhook-lab",
+ "zeroize",
 ]
 
 [[package]]

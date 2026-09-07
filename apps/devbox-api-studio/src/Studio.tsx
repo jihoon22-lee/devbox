@@ -1,10 +1,22 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
+import { listen } from "@tauri-apps/api/event";
+import { nativeMode } from "@devbox/product-shell/api";
 const Requests = lazy(() => import("@devbox/api-studio-features/requests"));
 const Webhooks = lazy(() => import("@devbox/api-studio-features/webhooks"));
 const Transforms = lazy(() => import("@devbox/api-studio-features/transforms"));
 
-function Content({ route }: ShellContentProps) {
+function Content({ route, navigate }: ShellContentProps) {
+  useEffect(() => {
+    if (!nativeMode) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<unknown>("api-studio://navigate", ({ payload }) => {
+      // Navigation is presentation only; receivers pull native pending slots.
+      if (!disposed && (payload === "requests" || payload === "transforms")) navigate(payload);
+    }).then((stop) => { if (disposed) stop(); else unlisten = stop; }).catch(() => undefined);
+    return () => { disposed = true; unlisten?.(); };
+  }, [navigate]);
   const group = route === "webhooks" || route === "transforms" ? route : "requests";
   const [visited, setVisited] = useState(() => new Set([group]));
   const [apiSection, setApiSection] = useState<"requests" | "protocols" | "history">("requests");

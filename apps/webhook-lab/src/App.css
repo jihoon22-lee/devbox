@@ -1,0 +1,4 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
+body { margin: 0; }

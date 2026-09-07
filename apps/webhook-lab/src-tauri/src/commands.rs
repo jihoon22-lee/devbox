@@ -933,6 +933,55 @@ pub fn send_fixture_to_api(
     publish_api_handoff(fixture)
 }
 
+/// Product adapter obtains only a source-owned masked request by opaque ID.
+pub(crate) fn prepare_api_handoff(
+    app: &AppHandle,
+    args: serde_json::Value,
+    saved: bool,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    let state = app.state::<Arc<ServerState>>();
+    let fixture = if saved {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Input {
+            id: String,
+        }
+        let Input { id } =
+            serde_json::from_value(args).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+        let _guard = state
+            .fixture_lock
+            .lock()
+            .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+        load_document_with_raw(&fixture_path(app)?)
+            .map_err(fixture_error)?
+            .document
+            .fixtures
+            .into_iter()
+            .find(|fixture| fixture.id == id)
+            .ok_or_else(|| FixtureError::NotFound.message().to_string())?
+    } else {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Input {
+            history_id: u64,
+        }
+        let Input { history_id } =
+            serde_json::from_value(args).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+        let request = state
+            .history
+            .lock()
+            .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?
+            .masked_record(history_id)
+            .ok_or_else(|| "요청 기록을 찾을 수 없습니다".to_string())?;
+        fixture_from_request(format!("fixture-{history_id}"), &request)
+            .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?
+    };
+    let payload =
+        build_api_request_payload(&fixture).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    serde_json::to_value(payload).map_err(|_| HANDOFF_INPUT_ERROR.to_string())
+}
+
 fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {
     let target_available =
         devbox_launch::installed_targets(&format!("handoff:{API_REQUEST_HANDOFF_KIND}"))

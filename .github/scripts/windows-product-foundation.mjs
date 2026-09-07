@@ -58,6 +58,15 @@ async function connect(port, child) {
   throw new Error("renderer startup deadline exceeded");
 }
 
+async function waitForRenderer(cdp, expression, label) {
+  const deadline = performance.now() + 15_000;
+  while (performance.now() < deadline) {
+    if (await cdp.evaluate(expression)) return;
+    await delay(100);
+  }
+  throw new Error(label);
+}
+
 async function start(product, suffix) {
   const directory = path.join(root, `${product.id}-${suffix}`); mkdirSync(directory);
   // Elevated WebView2 reads per-image machine policy instead of the process
@@ -120,6 +129,27 @@ async function start(product, suffix) {
         return { replayRejected, ownerRejected, installationRejected, listenerRunning: status.value.running, hash: hash.value, component: hash.operation.provenance.component, state: hash.operation.outcome.state };
       })()`);
       assert.deepEqual(componentProbe, { replayRejected: true, ownerRejected: true, installationRejected: true, listenerRunning: false, hash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", component: "api-studio.transforms", state: "succeeded" });
+      const artifact = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "requests" };
+        const result = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.api", method: "send_selection_to_toolbox", args: { text: JSON.stringify({ token: "synthetic-fixture-secret", ok: true }) } } });
+        return { id: result.value.handoffId, redacted: result.value.redacted, owner: result.value.artifact.provenance.component };
+      })()`);
+      assert.equal(artifact.redacted, true);
+      assert.equal(artifact.owner, "api-studio.api");
+      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-transforms:not([hidden]) [role=dialog]")', "internal handoff preview did not open");
+      assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-transforms [role=dialog]")?.textContent ?? "").includes("synthetic-fixture-secret")'), false);
+      await cdp.evaluate('Array.from(document.querySelectorAll(".api-feature-transforms [role=dialog] button")).find(button => button.textContent.trim() === "적용").click()');
+      await waitForRenderer(cdp, "document.querySelector('textarea[aria-label=\"스마트 워크플로 입력\"]')?.value.includes(\"[REDACTED]\") && !document.querySelector(\".api-feature-transforms [role=dialog]\")", "internal handoff was not explicitly applied");
+      assert.equal(await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "transforms" };
+        try { await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } }); return false; } catch { return true; }
+      })()`), true);
+      componentProbe.internalHandoff = "redacted-preview-explicit-apply-one-time";
+
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);

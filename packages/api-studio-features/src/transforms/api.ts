@@ -272,7 +272,7 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
  */
 export async function onOpenRequest(handler: () => void): Promise<UnlistenFn> {
   if (!isTauri()) return () => undefined;
-  return listen<unknown>("devbox://open", () => handler());
+  return listen<unknown>(isProductHosted() ? "api-studio://transforms-open" : "devbox://open", () => handler());
 }
 
 function utf8ByteLength(value: string): number {

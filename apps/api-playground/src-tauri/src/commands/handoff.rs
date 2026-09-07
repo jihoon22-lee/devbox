@@ -47,9 +47,22 @@ const MAX_JSON_STRING_BYTES: usize = 1_024 * 1024;
 #[derive(Default)]
 pub struct ApiHandoffState {
     claims: Mutex<HashMap<String, HandoffClaim>>,
+    store: Option<HandoffStore>,
 }
 
 impl ApiHandoffState {
+    fn has_claim(&self, id: &str) -> bool {
+        self.claims().contains_key(id)
+    }
+    pub fn with_store(store: HandoffStore) -> Self {
+        Self {
+            store: Some(store),
+            ..Self::default()
+        }
+    }
+    fn store(&self) -> HandoffStore {
+        self.store.clone().unwrap_or_else(handoff_store)
+    }
     fn claims(&self) -> MutexGuard<'_, HashMap<String, HandoffClaim>> {
         self.claims
             .lock()
@@ -94,8 +107,6 @@ pub struct RenewApiRequestResult {
 /// raw credential and no claim token, so the renderer cannot acknowledge a
 /// different request by forging IPC arguments.
 #[tauri::command]
-// The standalone AppLink entry point is not registered by the product adapter.
-#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn claim_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -110,7 +121,7 @@ pub fn claim_api_request(
         }
     }
 
-    let store = handoff_store();
+    let store = state.store();
     let claim_now_ms = now_ms();
     let claim = store
         .claim(
@@ -158,14 +169,12 @@ fn claim_matches_route(claim: &HandoffClaim) -> bool {
 
 /// Renew the short preview lease without extending the envelope TTL.
 #[tauri::command]
-// The standalone AppLink entry point is not registered by the product adapter.
-#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn renew_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
 ) -> Result<RenewApiRequestResult, String> {
     let claim = get_claim(&state, &handoff_id)?;
-    match handoff_store().renew(
+    match state.store().renew(
         &claim,
         API_PLAYGROUND_APP_ID,
         now_ms(),
@@ -203,8 +212,6 @@ pub fn renew_api_request(
 /// Acknowledge a validated preview and return the editable request.  The
 /// shared claim is deleted only after token/lease validation succeeds.
 #[tauri::command]
-// The standalone AppLink entry point is not registered by the product adapter.
-#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn ack_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -217,7 +224,7 @@ pub fn ack_api_request(
             return Err(HANDOFF_INVALID_ERROR.to_string());
         }
     };
-    match handoff_store().ack(&claim, API_PLAYGROUND_APP_ID, now_ms()) {
+    match state.store().ack(&claim, API_PLAYGROUND_APP_ID, now_ms()) {
         Ok(()) => {
             remove_claim(&state, &handoff_id, &claim);
             Ok(request)
@@ -241,14 +248,15 @@ pub fn ack_api_request(
 /// Restore a preview after the user cancels.  Restore is idempotent for this
 /// claim and leaves the pending envelope available until its expiry.
 #[tauri::command]
-// The standalone AppLink entry point is not registered by the product adapter.
-#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn restore_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
 ) -> Result<(), String> {
     let claim = get_claim(&state, &handoff_id)?;
-    match handoff_store().restore(&claim, API_PLAYGROUND_APP_ID, now_ms()) {
+    match state
+        .store()
+        .restore(&claim, API_PLAYGROUND_APP_ID, now_ms())
+    {
         Ok(()) => {
             remove_claim(&state, &handoff_id, &claim);
             Ok(())
@@ -291,7 +299,10 @@ fn remove_claim(state: &ApiHandoffState, id: &str, claim: &HandoffClaim) {
 }
 
 fn restore_after_invalid(state: &ApiHandoffState, claim: &HandoffClaim) {
-    match handoff_store().restore(claim, API_PLAYGROUND_APP_ID, now_ms()) {
+    match state
+        .store()
+        .restore(claim, API_PLAYGROUND_APP_ID, now_ms())
+    {
         Ok(())
         | Err(
             HandoffError::Expired
@@ -760,6 +771,110 @@ fn now_ms() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(1)
         .max(1)
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_claim_api_request(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = claim_api_request(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<ApiHandoffState>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    let value = result?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_renew_api_request(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = renew_api_request(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<ApiHandoffState>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    let value = result?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_ack_api_request(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = ack_api_request(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<ApiHandoffState>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    let value = result?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product receiver; authorization remains with the native product router.
+pub(crate) async fn __component_restore_api_request(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        handoff_id: String,
+    }
+    let Input { handoff_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let result = restore_api_request(component_app.state(), handoff_id.clone());
+    if !component_app
+        .state::<ApiHandoffState>()
+        .has_claim(&handoff_id)
+    {
+        component_app
+            .state::<crate::applink::PendingOpen>()
+            .release(&handoff_id);
+    }
+    result?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]
