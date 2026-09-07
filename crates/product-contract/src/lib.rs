@@ -5,6 +5,7 @@ use std::collections::HashMap;
 
 pub mod context;
 pub mod operation;
+pub mod references;
 pub use context::{ExecutionTarget, ProjectContext};
 pub use operation::{Operation, OperationState, Problem, ProblemCode};
 

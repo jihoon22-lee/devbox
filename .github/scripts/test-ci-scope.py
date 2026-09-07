@@ -71,7 +71,11 @@ search = resolve("crates/search/src/lib.rs")
 assert search.rust_packages == ["everything-plus", "knowledge-base", "search"]
 
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == ["api-playground", "run-manager", "secrets", "workbench"]
+assert secrets.rust_packages == [
+    "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
+    "devbox-workspace", "product-contract", "product-shell-tauri", "run-manager",
+    "secrets", "workbench",
+]
 
 rust_graph = module.load_rust_graph(ROOT)
 wsl = resolve("crates/wsl/src/lib.rs")

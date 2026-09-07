@@ -1267,6 +1267,7 @@ dependencies = [
 name = "devbox-control-center"
 version = "0.8.0"
 dependencies = [
+ "filesystem",
  "product-shell-tauri",
  "rusqlite",
  "serde",
@@ -4328,8 +4329,11 @@ dependencies = [
 name = "product-contract"
 version = "0.1.0"
 dependencies = [
+ "applink",
+ "secrets",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

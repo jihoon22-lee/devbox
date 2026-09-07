@@ -63,6 +63,13 @@ pub fn acquire_snapshot(
     if cancelled.load(Ordering::Relaxed) {
         return Err("snapshot cancelled".into());
     }
+    devbox_filesystem::ensure_no_links(source).map_err(|_| "source links are forbidden")?;
+    devbox_filesystem::ensure_no_links(stage.parent().ok_or("stage parent is missing")?)
+        .map_err(|_| "stage links are forbidden")?;
+    let (_source_handle, source_identity) =
+        devbox_filesystem::open_filesystem_object(source, false)
+            .map_err(|_| "source identity is unavailable")?;
+    let source_path = source.to_owned();
     let metadata = fs::symlink_metadata(source).map_err(|_| "source is missing")?;
     if !metadata.is_file() || metadata.file_type().is_symlink() {
         return Err("source must be a regular database".into());
@@ -141,12 +148,24 @@ pub fn acquire_snapshot(
     drop(target);
     sql(source.execute_batch("ROLLBACK"))?;
     let (bytes, sha256) = digest(&path)?;
-    Ok(Snapshot {
+    if devbox_filesystem::filesystem_identity(&source_path, false)
+        .map_err(|_| "source identity is unavailable")?
+        != source_identity
+    {
+        return Err("source identity changed".into());
+    }
+    let snapshot = Snapshot {
         schema_version: schema,
         bytes,
         sha256,
         acquisition: "sqlite-online-backup/v1".into(),
-    })
+    };
+    devbox_filesystem::atomic_write(
+        stage.join("snapshot.json"),
+        &serde_json::to_vec(&snapshot).map_err(|_| "snapshot metadata encoding failed")?,
+    )
+    .map_err(|_| "snapshot metadata publication failed")?;
+    Ok(snapshot)
 }
 
 /// Record one import mapping in the same destination transaction as its write.
@@ -198,6 +217,7 @@ use rusqlite::OptionalExtension;
 
 pub fn verify_snapshot(stage: &Path, expected: &Snapshot) -> Result<PathBuf, String> {
     let path = stage.join("snapshot.db");
+    devbox_filesystem::ensure_no_links(&path).map_err(|_| "snapshot links are forbidden")?;
     if fs::symlink_metadata(&path)
         .map_err(|_| "snapshot is missing")?
         .file_type()
@@ -210,6 +230,29 @@ pub fn verify_snapshot(stage: &Path, expected: &Snapshot) -> Result<PathBuf, Str
         return Err("snapshot identity changed".into());
     }
     Ok(path)
+}
+
+/// Resume only a fully published snapshot, never a partially copied database.
+pub fn resume_snapshot(stage: &Path) -> Result<Snapshot, String> {
+    let path = stage.join("snapshot.json");
+    devbox_filesystem::ensure_no_links(&path)
+        .map_err(|_| "snapshot metadata links are forbidden")?;
+    let (file, _) = devbox_filesystem::open_filesystem_object(&path, false)
+        .map_err(|_| "snapshot metadata is missing")?;
+    let mut bytes = Vec::new();
+    file.take(16_385)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "snapshot metadata read failed")?;
+    if bytes.len() > 16_384 {
+        return Err("snapshot metadata exceeds limit".into());
+    }
+    let snapshot: Snapshot =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid snapshot metadata")?;
+    if snapshot.acquisition != "sqlite-online-backup/v1" || snapshot.schema_version < 0 {
+        return Err("unsupported snapshot metadata".into());
+    }
+    verify_snapshot(stage, &snapshot)?;
+    Ok(snapshot)
 }
 
 #[cfg(test)]
