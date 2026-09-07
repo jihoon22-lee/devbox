@@ -67,6 +67,7 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             ("api-studio.api", "request-network")
                 | ("api-studio.webhooks", "listener-network")
                 | ("api-studio.transforms", "transform-local")
+                | ("api-studio.migration", "legacy-import")
         )
 }
 

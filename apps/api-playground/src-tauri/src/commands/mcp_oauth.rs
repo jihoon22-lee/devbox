@@ -1226,6 +1226,32 @@ pub(crate) async fn __component_revoke_mcp_oauth_grant(
     serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
+/// Import only grants whose existing DPAPI envelope is usable by this user.
+pub(crate) fn prepare_legacy_store(
+    bytes: &[u8],
+) -> Result<(serde_json::Value, Vec<String>), String> {
+    let mut store = decode_store(bytes)?;
+    let mut missing = Vec::new();
+    store.grants.retain(|grant| {
+        let usable = unseal_token(&grant.access_token).is_ok()
+            && grant
+                .refresh_token
+                .as_ref()
+                .is_none_or(|value| unseal_token(value).is_ok());
+        if !usable {
+            missing.push(grant.grant_id.clone());
+        }
+        usable
+    });
+    Ok((
+        serde_json::to_value(store).map_err(|_| STORAGE_FAILED.to_string())?,
+        missing,
+    ))
+}
+pub(crate) fn validate_migration_store(bytes: &[u8]) -> Result<(), String> {
+    decode_store(bytes).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

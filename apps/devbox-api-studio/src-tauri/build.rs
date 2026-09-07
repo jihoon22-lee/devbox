@@ -7,7 +7,7 @@ fn main() {
             )
             .plugin(
                 "api-studio",
-                tauri_build::InlinedPlugin::new().commands(&["execute"]),
+                tauri_build::InlinedPlugin::new().commands(&["execute", "legacy_export_message"]),
             ),
     )
     .expect("failed to generate API Studio capabilities");

@@ -228,7 +228,7 @@ fn enforce_profile_count(directory: &Path) -> Result<(), String> {
     Ok(())
 }
 
-fn validate_profile(profile: &ServiceProfile) -> Result<(), String> {
+pub fn validate_profile(profile: &ServiceProfile) -> Result<(), String> {
     validate_profile_id(&profile.id)?;
     if profile.schema_version != SERVICE_PROFILE_SCHEMA_VERSION
         || !matches!(profile.bind.as_str(), "127.0.0.1" | "::1")

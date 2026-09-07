@@ -66,6 +66,9 @@ api_features = resolve("packages/api-studio-features/src/requests/api.ts")
 assert api_features.frontend_apps == ["api-playground", "devbox-api-studio", "developer-toolbox", "webhook-lab"]
 api_protocols = resolve("crates/api-protocols/src/core/grpc.rs")
 assert api_protocols.rust_packages == ["api-playground", "api-protocols", "devbox-api-studio"]
+for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "developer-toolbox"), ("data-migration", "devbox-control-center")]:
+    shared_domain = resolve(f"crates/{crate}/src/lib.rs")
+    assert shared_domain.rust_packages == sorted([crate, legacy, "devbox-api-studio"])
 api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
 assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
 

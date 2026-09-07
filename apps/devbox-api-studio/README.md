@@ -4,7 +4,7 @@ v0.8 B02 API Studio implementation in progress; persistent migration and integra
 
 `pnpm --filter devbox-api-studio dev` opens the explicitly labelled browser fixture. On Windows, `pnpm --filter devbox-api-studio tauri dev` runs the native shell. Browser `?route=requests` selects a preview route. The Windows debug executable accepts `--route=requests` and validates it against this product’s registered routes before creating its webview. Native requests are restricted to the local main webview and validated by `product-shell-tauri`; route selection does not grant domain authority.
 
-Uses a new `com.devbox.v08.apistudio` identity; no legacy data root is opened. Navigation retains mounted route drafts in memory, with bounded history. B01 Windows installation identity evidence is recorded in the foundation workthrough. B02 native feature/runtime parity requires its own Windows acceptance.
+Uses a new `com.devbox.v08.apistudio` identity; legacy data is accessed only by the explicit read-only importer. Navigation retains mounted route drafts in memory, with bounded history. B01 Windows installation identity evidence is recorded in the foundation workthrough. B02 native feature/runtime parity requires its own Windows acceptance.
 
 Requests/Protocols, Webhooks and Transforms consume the shared frontend feature package and native adapters. See the [B02 workthrough](../../workthrough/2026-09-07-v08-b02-api-studio.md) for actual checks and remaining work.
 
@@ -19,4 +19,29 @@ this installation's `handoff/v1` namespace. Transfers open a preview and require
 explicit apply. Raw webhook payloads and caller-supplied source records are not
 accepted. A busy recipient preserves its pending action and the new publication
 is revoked. Typed artifact provenance is metadata, not permission to read another
-component's data. Other cross-product delivery and migration remain in progress.
+component's data. Other cross-product delivery and migration acceptance remain in progress.
+
+The native startup gate offers an import review before any feature mounts. It
+reads the actual API browser keys, sealed environment/OAuth/TLS stores, Webhook
+fixtures and service profiles, and Toolbox workflow metadata. API Playground must
+be closed: the importer holds exclusive read handles on LevelDB files, copies
+only that store, and runs a hidden exporter in an owned process on the copy.
+The worker verifies its actual WebView2 data directory and cannot invoke product
+commands. Raw temporary copies are removed after acquisition/export; a new
+preview supersedes earlier plans and removes their staging directories.
+
+The destination journal records source fingerprints and store-qualified IDs.
+Conflicting IDs/names retain both records where the domain allows; existing OAuth
+bindings and history capacity retain the destination policy. Completed receipts
+make repeated imports preserve later product edits. Sealed values use the existing
+API owner and DPAPI bindings; unavailable secrets become reconnect requirements.
+Transient protocol sessions, raw header vaults, and HMAC inputs are excluded.
+
+Applying the SQLite journal, native files and browser storage is an explicit
+recoverable sequence. Startup remains blocked until native and browser values are
+verified. Restart can continue a partial activation or restore its recorded prior
+values; unexpected third-party edits stop restoration. A completed import cannot
+be rolled back through the startup importer. No request, listener or process is
+started by importing. `--import-legacy` or the in-app restart action opens another
+review. Portable recovery tests pass; actual Windows migration acceptance is
+pending the new [fixture](../../.github/scripts/windows-api-migration.mjs).

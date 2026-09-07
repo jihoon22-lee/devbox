@@ -24,7 +24,9 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     if (command !== "plugin:api-studio|execute" || !args) throw new Error(`unexpected fixture command ${command}`);
     const request = args.request;
     let value: unknown;
-    if (request.method === "peek_pending_navigation") value = navigation;
+    if (request.method === "migration_status") value = { busy: false, reviewNeeded: false, pending: null, sources: [] };
+    else if (request.method === "finish_startup") value = null;
+    else if (request.method === "peek_pending_navigation") value = navigation;
     else if (request.method === "ack_pending_navigation") { value = null; navigation = null; }
     else if (request.method === "take_pending_open") {
       value = request.component === "api-studio.transforms" ? pending : null;

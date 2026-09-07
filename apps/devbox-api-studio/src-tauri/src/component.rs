@@ -40,6 +40,9 @@ struct Response {
 
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     match component {
+        "api-studio.migration" => {
+            route == "requests" && crate::migration::COMMANDS.contains(&method)
+        }
         "api-studio.api" => {
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
@@ -106,6 +109,35 @@ async fn execute(
     // reserved across dialogs/long awaits even after the replay cache expires.
     let _reservation = reserve(&active, &request.header.request_id).map_err(problem)?;
     let app = window.app_handle();
+    if request.component != "api-studio.migration" {
+        crate::migration::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
+    }
+    if request.component == "api-studio.migration" {
+        return Ok(
+            match crate::migration::dispatch(app, &request.method, request.args).await {
+                Ok(value) => Response {
+                    operation: Operation {
+                        provenance,
+                        outcome: OperationState::Succeeded {},
+                    },
+                    value,
+                },
+                Err(error) => Response {
+                    operation: Operation {
+                        provenance,
+                        outcome: if crate::migration::issue(&error) == "cancelled" {
+                            OperationState::Cancelled {}
+                        } else {
+                            OperationState::Failed {
+                                code: ProblemCode::Unavailable,
+                            }
+                        },
+                    },
+                    value: serde_json::json!({ "issue": crate::migration::issue(&error) }),
+                },
+            },
+        );
+    }
     let value = if request.component == "api-studio.api"
         && crate::handoff::is_navigation(&request.method)
     {
@@ -175,6 +207,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("api-studio")
         .setup(|app, _| {
             app.manage(Active::default());
+            crate::migration::initialize(app).map_err(std::io::Error::other)?;
             let store = crate::handoff::initialize(app).map_err(std::io::Error::other)?;
             api_playground_lib::component::initialize(app, store.clone())
                 .map_err(std::io::Error::other)?;

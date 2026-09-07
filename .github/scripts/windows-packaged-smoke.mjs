@@ -560,7 +560,7 @@ function sanitizedWindowsEnvironment(overrides) {
   return environment;
 }
 
-async function unusedPort() {
+export async function unusedPort() {
   return new Promise((resolve, reject) => {
     const server = net.createServer();
     server.unref();
@@ -573,7 +573,7 @@ async function unusedPort() {
   });
 }
 
-async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
+export async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   let lastObservation = "no HTTP response";
   while (Date.now() < deadline) {
@@ -604,7 +604,7 @@ async function waitForCdp(port, expectedTitle, timeoutMilliseconds = 30_000) {
   );
 }
 
-class Cdp {
+export class Cdp {
   constructor(url) {
     this.url = url;
     this.nextId = 1;

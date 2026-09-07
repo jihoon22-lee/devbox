@@ -225,11 +225,18 @@ pub fn run_with(
             window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
         }
     }
+    isolate_installation(&mut context)?;
+    configure(builder(product)).run(context)
+}
+
+/// Shared by the product UI and its explicitly owned import worker. This only
+/// selects this executable installation's namespace; it grants no IPC authority.
+pub fn isolate_installation(context: &mut tauri::Context<tauri::Wry>) -> tauri::Result<()> {
     let executable = std::env::current_exe()?.canonicalize()?;
     let suffix: String = Sha256::digest(executable.to_string_lossy().as_bytes())
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect();
     context.config_mut().identifier = format!("{}.i{}", context.config().identifier, suffix);
-    configure(builder(product)).run(context)
+    Ok(())
 }

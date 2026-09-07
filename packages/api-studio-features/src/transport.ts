@@ -1,6 +1,6 @@
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 
-export type Component = "api-studio.api" | "api-studio.webhooks" | "api-studio.transforms";
+export type Component = "api-studio.api" | "api-studio.webhooks" | "api-studio.transforms" | "api-studio.migration";
 export type Transport = <T>(component: Component, method: string, args: Record<string, unknown>) => Promise<T>;
 let productTransport: Transport | undefined;
 

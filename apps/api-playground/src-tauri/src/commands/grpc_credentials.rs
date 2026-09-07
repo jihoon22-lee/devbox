@@ -851,6 +851,39 @@ pub(crate) async fn __component_delete_grpc_tls_credential(
     serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
+/// The distinct TLS DPAPI domain is checked without exporting PEM plaintext.
+pub(crate) fn prepare_legacy_store(
+    bytes: &[u8],
+) -> Result<(serde_json::Value, Vec<String>), String> {
+    let mut store = decode_store(bytes)?;
+    let mut missing = Vec::new();
+    store.credentials.retain(|credential| {
+        let usable = credential
+            .ca_pem
+            .as_ref()
+            .is_none_or(|value| unseal_pem(value, MAX_CA_BYTES).is_ok())
+            && credential
+                .client_certificate_pem
+                .as_ref()
+                .is_none_or(|value| unseal_pem(value, MAX_CLIENT_CERTIFICATE_BYTES).is_ok())
+            && credential
+                .client_key_pem
+                .as_ref()
+                .is_none_or(|value| unseal_pem(value, MAX_CLIENT_KEY_BYTES).is_ok());
+        if !usable {
+            missing.push(credential.credential_id.clone());
+        }
+        usable
+    });
+    Ok((
+        serde_json::to_value(store).map_err(|_| grpc::CREDENTIAL_STORAGE_FAILED.to_string())?,
+        missing,
+    ))
+}
+pub(crate) fn validate_migration_store(bytes: &[u8]) -> Result<(), String> {
+    decode_store(bytes).map(|_| ())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

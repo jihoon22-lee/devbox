@@ -4,3 +4,11 @@
 
 .api-feature-requests, .api-feature-webhooks, .api-feature-transforms { height: calc(100vh - 132px); min-height: 400px; }
 [hidden] { display: none !important; }
+
+.migration-start { max-width: 760px; padding: 24px; line-height: 1.6; }
+.migration-start fieldset { display: grid; gap: 10px; border: 1px solid var(--color-border, #404650); padding: 16px; }
+.migration-start label { display: flex; gap: 8px; align-items: center; }
+.migration-start button, .migration-reopen { padding: 8px 12px; cursor: pointer; }
+.migration-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
+.migration-review { margin-top: 18px; padding: 16px; border: 1px solid var(--color-border, #404650); }
+.migration-reopen { margin: 12px 0; }

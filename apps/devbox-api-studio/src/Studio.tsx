@@ -4,6 +4,7 @@ import { listen } from "@tauri-apps/api/event";
 import { nativeMode } from "@devbox/product-shell/api";
 import { componentInvoke } from "@devbox/api-studio-features/transport";
 const invokeNavigation = componentInvoke("api-studio.api");
+import { MigrationStartup } from "./migration/Startup";
 const Requests = lazy(() => import("@devbox/api-studio-features/requests"));
 const Webhooks = lazy(() => import("@devbox/api-studio-features/webhooks"));
 const Transforms = lazy(() => import("@devbox/api-studio-features/transforms"));
@@ -50,4 +51,4 @@ function Content({ route, navigate }: ShellContentProps) {
     </div>}
   </>;
 }
-export default function Studio() { return <ProductShell product="api-studio" renderContent={(props) => <Content {...props}/>}/>; }
+export default function Studio() { return <ProductShell product="api-studio" renderContent={(props) => <MigrationStartup><Content {...props}/></MigrationStartup>}/>; }

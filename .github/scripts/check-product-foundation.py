@@ -57,6 +57,15 @@ def check(root=ROOT):
         if product["id"] == "api-studio":
             expected_permissions.add("api-studio:allow-execute")
         assert set(capability["permissions"]) == expected_permissions
+        capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
+        expected_files = {"default.json"}
+        if product["id"] == "api-studio":
+            expected_files.add("legacy-export.json")
+            exporter = json.loads((capability_dir / "legacy-export.json").read_text())
+            assert exporter["windows"] == ["legacy-api-export"]
+            assert "remote" not in exporter and not exporter.get("webviews")
+            assert exporter["permissions"] == ["api-studio:allow-legacy-export-message"]
+        assert {path.name for path in capability_dir.glob("*.json")} == expected_files
     ids = set()
     for feature in parity["features"]:
         assert feature["legacyFeatureId"] not in ids, feature["legacyFeatureId"]

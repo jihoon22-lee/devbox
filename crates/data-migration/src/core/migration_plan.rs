@@ -97,6 +97,39 @@ impl MigrationWorkspace {
         Ok(connection)
     }
 
+    /// Domain readers see only this destination-owned database. The readonly
+    /// connection cannot alter import receipts or bypass revision checks.
+    pub fn inspect<T>(
+        &self,
+        inspect: impl FnOnce(&Connection) -> Result<T, String>,
+    ) -> Result<T, String> {
+        devbox_filesystem::ensure_no_links(self.root.join("destination.db"))
+            .map_err(|_| "destination database contains links")?;
+        let connection = sql(Connection::open_with_flags(
+            self.root.join("destination.db"),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ))?;
+        inspect(&connection)
+    }
+
+    /// Domain activation bookkeeping remains in the destination transaction;
+    /// this does not claim atomicity with browser storage or native files.
+    pub fn update<T>(
+        &self,
+        update: impl FnOnce(&Transaction<'_>) -> Result<T, String>,
+    ) -> Result<T, String> {
+        let mut connection = self.destination()?;
+        let transaction =
+            sql(connection.transaction_with_behavior(TransactionBehavior::Immediate))?;
+        let result = update(&transaction)?;
+        sql(transaction.execute(
+            "UPDATE migration_meta_v1 SET revision=revision+1 WHERE singleton=1",
+            [],
+        ))?;
+        sql(transaction.commit())?;
+        Ok(result)
+    }
+
     pub fn prepare(
         &self,
         stage: &Path,

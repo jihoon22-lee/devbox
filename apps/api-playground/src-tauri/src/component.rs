@@ -282,3 +282,43 @@ pub fn deliver(app: &tauri::AppHandle, request: devbox_applink::OpenRequest) -> 
     let _ = app.emit_to("main", "api-studio://api-open", ());
     Ok(())
 }
+
+/// Importer-only native API ownership; this is not a renderer command registry.
+pub fn prepare_legacy_environment(raw: &str) -> Result<(String, usize), String> {
+    crate::commands::migration::prepare_environment(raw)
+}
+pub fn sanitize_legacy_json(serialized: String, environment: &str) -> Result<String, String> {
+    crate::commands::migration::sanitize(serialized, environment)
+}
+
+/// Native product workers reuse the MCP stdio process-tree ownership primitive.
+/// Windows callers must create the root suspended before assignment.
+pub struct OwnedProcessTree(crate::commands::process_tree::ProcessTree);
+impl OwnedProcessTree {
+    pub fn assign(child: &tokio::process::Child) -> Result<Self, String> {
+        crate::commands::process_tree::ProcessTree::assign(child)
+            .map(Self)
+            .map_err(|_| "owned_worker_assignment_failed".into())
+    }
+    pub async fn terminate(&mut self, child: &mut tokio::process::Child) -> bool {
+        self.0.terminate(child).await
+    }
+}
+
+pub fn prepare_legacy_native_store(
+    kind: &str,
+    bytes: &[u8],
+) -> Result<(serde_json::Value, Vec<String>), String> {
+    match kind {
+        "oauth" => crate::commands::mcp_oauth::prepare_legacy_store(bytes),
+        "grpc-tls" => crate::commands::grpc_credentials::prepare_legacy_store(bytes),
+        _ => Err("legacy_api_store_invalid".into()),
+    }
+}
+pub fn validate_migration_native_store(kind: &str, bytes: &[u8]) -> Result<(), String> {
+    match kind {
+        "oauth" => crate::commands::mcp_oauth::validate_migration_store(bytes),
+        "grpc-tls" => crate::commands::grpc_credentials::validate_migration_store(bytes),
+        _ => Err("legacy_api_store_invalid".into()),
+    }
+}
