@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import catalogJson from "../../catalog.json";
+import catalogJson from "../../../../apps/catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type {
   ContentResult,

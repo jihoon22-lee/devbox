@@ -3003,7 +3003,7 @@
     },
     {
       "legacyFeatureId": "everything-plus:surface:App.tsx",
-      "sourcePath": "apps/everything-plus/src/App.tsx",
+      "sourcePath": "packages/knowledge-features/src/search/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -3013,7 +3013,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/everything-plus/src/App.tsx"
     },
     {
       "legacyFeatureId": "everything-plus:store:src-tauri/src/core/db.rs",
@@ -3619,7 +3620,7 @@
     },
     {
       "legacyFeatureId": "knowledge-base:surface:App.tsx",
-      "sourcePath": "apps/knowledge-base/src/App.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -3629,11 +3630,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/knowledge-base/src/App.tsx"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/MarkdownEditor.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/MarkdownEditor.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/MarkdownEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -3643,11 +3645,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/knowledge-base/src/components/MarkdownEditor.tsx"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/MarkdownPreview.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/MarkdownPreview.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/MarkdownPreview.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -3657,11 +3660,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/knowledge-base/src/components/MarkdownPreview.tsx"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/QuickCaptureDialog.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/QuickCaptureDialog.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/QuickCaptureDialog.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -3671,11 +3675,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/knowledge-base/src/components/QuickCaptureDialog.tsx"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/TemplateManager.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/TemplateManager.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/TemplateManager.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -3685,7 +3690,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/knowledge-base/src/components/TemplateManager.tsx"
     },
     {
       "legacyFeatureId": "knowledge-base:store:src-tauri/src/commands/docs.rs",
@@ -4095,7 +4101,7 @@
     },
     {
       "legacyFeatureId": "life-log:surface:App.tsx",
-      "sourcePath": "apps/life-log/src/App.tsx",
+      "sourcePath": "packages/knowledge-features/src/activity/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
@@ -4105,7 +4111,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/life-log/src/App.tsx"
     },
     {
       "legacyFeatureId": "life-log:store:src-tauri/src/commands/life.rs",

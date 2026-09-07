@@ -1,14 +1,16 @@
 {
-  "name": "knowledge-base",
+  "name": "@devbox/knowledge-features",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.5.1",
   "type": "module",
+  "exports": {
+    "./notes": "./src/notes/App.tsx",
+    "./activity": "./src/activity/App.tsx",
+    "./search": "./src/search/App.tsx"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "test": "vitest run --passWithNoTests",
-    "tauri": "tauri"
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@devbox/a11y": "workspace:*",
@@ -28,11 +30,9 @@
     "@codemirror/search": "^6.0.0",
     "@codemirror/state": "^6.0.0",
     "@codemirror/view": "^6.0.0",
-    "@devbox/editor": "workspace:*",
-    "@devbox/knowledge-features": "workspace:*"
+    "@devbox/editor": "workspace:*"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",
