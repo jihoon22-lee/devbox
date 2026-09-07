@@ -11,11 +11,23 @@ def check(root=ROOT):
     catalog = json.loads((root / "apps/products.json").read_text())
     legacy = json.loads((root / "apps/catalog.json").read_text())
     parity = json.loads((root / "apps/v0.8-feature-parity.json").read_text())
+    data_inventory = json.loads((root / "apps/v0.8-data-inventory.json").read_text())
     assert catalog["schemaVersion"] == 3 and catalog["channel"] == "development"
     assert {p["id"] for p in catalog["products"]} == PRODUCTS
     assert len(catalog["products"]) == 4
     assert len([p for p in legacy["apps"] if p["release"]]) == 15
     assert {p["legacyApp"] for p in parity["apps"]} == {p["id"] for p in legacy["apps"] if p["release"]}
+    assert data_inventory["schemaVersion"] == 1
+    assert data_inventory["baselineCommit"] == parity["baselineCommit"]
+    assert data_inventory["baselineRelease"] == parity["baselineRelease"]
+    assert {g["legacyApp"] for g in data_inventory["groups"]} == {p["legacyApp"] for p in parity["apps"]}
+    for group in data_inventory["groups"]:
+        assert group["classification"] in {"authoritative", "derived", "ephemeral", "mixed"}
+        assert group["items"] and group["treatment"]
+        assert group["importerStatus"] == "pending", "domain importer acceptance requires a reviewed schema change"
+        path = Path(group["sourcePath"])
+        assert not path.is_absolute() and ".." not in path.parts
+        assert (root / path).is_file()
     for product in catalog["products"]:
         app_id = "devbox-" + product["id"]
         entry = next(p for p in legacy["apps"] if p["id"] == app_id)

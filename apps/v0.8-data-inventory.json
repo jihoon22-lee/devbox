@@ -1,0 +1,410 @@
+{
+  "schemaVersion": 1,
+  "baselineCommit": "6f811df63da2653ad0f8decea7fc7b03df4be70f",
+  "baselineRelease": "v0.7.0",
+  "scope": "Reviewed preservation groups anchored in source. Domain importers must inventory actual keys/files/tables and reject unknown schemas before activation. This is not migration or parity acceptance.",
+  "groups": [
+    {
+      "legacyApp": "port-manager",
+      "classification": "authoritative",
+      "sourcePath": "apps/port-manager/src-tauri/src/core/preferences.rs",
+      "items": [
+        "port-manager-preferences-v1.json"
+      ],
+      "treatment": "Preserve interval and opaque endpoint/process favorites; do not infer process ownership from favorites.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "developer-toolbox",
+      "classification": "authoritative",
+      "sourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
+      "items": [
+        "smart-workflows.json"
+      ],
+      "treatment": "Preserve workflow metadata. Do not persist transient HMAC/JWT input or non-exportable results.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "wsl-desktop",
+      "classification": "authoritative",
+      "sourcePath": "apps/wsl-desktop/src/lib/storage.ts",
+      "items": [
+        "wsl-desktop:cwd-pinned",
+        "wsl-desktop:cwd-value",
+        "wsl-desktop:recent-paths",
+        "wsl-desktop:copy-on-select",
+        "wsl-desktop:font-size"
+      ],
+      "treatment": "Acquire bounded WebView2 localStorage through an owner export; SQLite backup alone is insufficient.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "wsl-desktop",
+      "classification": "authoritative",
+      "sourcePath": "apps/wsl-desktop/src/lib/settings.ts",
+      "items": [
+        "wsl-desktop:settings"
+      ],
+      "treatment": "Preserve settings; importing shortcut choices must not register competing global owners.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "wsl-desktop",
+      "classification": "authoritative",
+      "sourcePath": "apps/wsl-desktop/src/lib/workspace.ts",
+      "items": [
+        "wsl-desktop:last-layout"
+      ],
+      "treatment": "Preserve layout and explicit commands as inactive restoration metadata; never recreate PTYs or execute commands automatically.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "wsl-desktop",
+      "classification": "authoritative",
+      "sourcePath": "apps/wsl-desktop/src-tauri/src/commands/workspace.rs",
+      "items": [
+        "terminal-profiles.json"
+      ],
+      "treatment": "Preserve named profiles and reference mappings.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "api-playground",
+      "classification": "authoritative",
+      "sourcePath": "apps/api-playground/src/lib/persistence.ts",
+      "items": [
+        "apip-history",
+        "apip-history-v2",
+        "apip-history-v1-migrated"
+      ],
+      "treatment": "Acquire an owner-produced WebView2 export without invoking destructive legacy migration on the source. Apply existing sanitizer on destination.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "api-playground",
+      "classification": "authoritative",
+      "sourcePath": "apps/api-playground/src/lib/collections.ts",
+      "items": [
+        "apip-collections",
+        "apip-collections-v2",
+        "apip-collections-v1-migrated"
+      ],
+      "treatment": "Preserve collection labels/order/IDs with explicit mapping and conflicts; source keys remain untouched.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "api-playground",
+      "classification": "authoritative",
+      "sourcePath": "apps/api-playground/src/lib/environments.ts",
+      "items": [
+        "apip-environments"
+      ],
+      "treatment": "Preserve environment metadata and sealed references under the API owner. Plaintext must not pass through the migration renderer or journal.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "api-playground",
+      "classification": "authoritative",
+      "sourcePath": "apps/api-playground/src/lib/grpc.ts",
+      "items": [
+        "devbox.api-playground.grpc-history/v1"
+      ],
+      "treatment": "Preserve bounded sanitized gRPC history.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "api-playground",
+      "classification": "authoritative",
+      "sourcePath": "apps/api-playground/src-tauri/src/commands/grpc_credentials.rs",
+      "items": [
+        "tls-credentials.json"
+      ],
+      "treatment": "Keep gRPC TLS DPAPI ownership separate from ordinary environment secrets.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "api-playground",
+      "classification": "authoritative",
+      "sourcePath": "apps/api-playground/src-tauri/src/commands/mcp_oauth.rs",
+      "items": [
+        "mcp-grants.json"
+      ],
+      "treatment": "Preserve owner-scoped grant metadata; reauthorize expired or unusable grants without plaintext export.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "everything-plus",
+      "classification": "authoritative",
+      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "items": [
+        "roots",
+        "saved_queries"
+      ],
+      "treatment": "Preserve root identity, exclusions and saved query definitions; these are not search cache.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "everything-plus",
+      "classification": "mixed",
+      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "items": [
+        "meta"
+      ],
+      "treatment": "Inventory keys during domain dry-run; preserve unknown metadata and review version/rebuild markers separately.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "everything-plus",
+      "classification": "derived",
+      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "items": [
+        "files",
+        "files_fts",
+        "file_content",
+        "file_content_fts"
+      ],
+      "treatment": "Rebuild only after authoritative roots/settings are validated; retain original generation until cutover succeeds.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "knowledge-base",
+      "classification": "authoritative",
+      "sourcePath": "apps/knowledge-base/src-tauri/src/core/db.rs",
+      "items": [
+        "settings",
+        "note_templates"
+      ],
+      "treatment": "Preserve vault selection and user templates before rebuilding indexes.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "knowledge-base",
+      "classification": "authoritative",
+      "sourcePath": "apps/knowledge-base/README.md",
+      "items": [
+        "user-selected vault Markdown files",
+        "vault assets"
+      ],
+      "treatment": "Keep the user-selected vault in place; no automatic relocation or copying of source notes.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "knowledge-base",
+      "classification": "derived",
+      "sourcePath": "apps/knowledge-base/src-tauri/src/core/db.rs",
+      "items": [
+        "docs",
+        "docs_fts",
+        "doc_link_keys",
+        "wikilinks"
+      ],
+      "treatment": "Rebuild from the preserved vault; do not reset authoritative settings/templates with the index.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "life-log",
+      "classification": "authoritative",
+      "sourcePath": "apps/life-log/src-tauri/src/core/db.rs",
+      "items": [
+        "sessions",
+        "settings",
+        "knowledge_draft_history"
+      ],
+      "treatment": "Preserve activity/privacy/retention and handoff history; keep collection disabled until explicit cutover. The older activitytimeline DB is a separate legacy input.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "devbox-manager",
+      "classification": "authoritative",
+      "sourcePath": "apps/devbox-manager/src-tauri/src/core/runtime_metadata.rs",
+      "items": [
+        "install-roots/v1/registry.json"
+      ],
+      "treatment": "Preserve verified registration provenance; do not equate an executable path with authorized install ownership.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "devbox-manager",
+      "classification": "authoritative",
+      "sourcePath": "apps/devbox-manager/src-tauri/src/core/layout.rs",
+      "items": [
+        "current.json"
+      ],
+      "treatment": "Preserve installation generation pointers and rollback provenance; do not activate staged destinations by copying a pointer.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "code-pad",
+      "classification": "authoritative",
+      "sourcePath": "apps/code-pad/src-tauri/src/commands/session.rs",
+      "items": [
+        "session.json"
+      ],
+      "treatment": "Preserve tabs/splits/workspace context without starting LSP or executing tasks.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "code-pad",
+      "classification": "authoritative",
+      "sourcePath": "apps/code-pad/src-tauri/src/commands/recovery.rs",
+      "items": [
+        "recovery.json"
+      ],
+      "treatment": "Preserve dirty-buffer recovery independently of on-disk source files and session metadata.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "code-pad",
+      "classification": "authoritative",
+      "sourcePath": "apps/code-pad/src-tauri/src/lsp/config.rs",
+      "items": [
+        "config.json"
+      ],
+      "treatment": "Preserve configured LSP commands/trust metadata; imported configuration does not authorize execution.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "code-pad",
+      "classification": "mixed",
+      "sourcePath": "apps/code-pad/src-tauri/src/lsp/manager.rs",
+      "items": [
+        "journal.json",
+        "managed runtime state"
+      ],
+      "treatment": "Keep interrupted runtime-install recovery separate from disposable verified archive caches.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "run-manager",
+      "classification": "authoritative",
+      "sourcePath": "apps/run-manager/src-tauri/src/storage.rs",
+      "items": [
+        "jobs",
+        "runs",
+        "meta",
+        "notification_outbox",
+        "service_instances",
+        "workspace_task_sources",
+        "workspace_tasks",
+        "workspace_task_operations",
+        "workspace_task_operation_runs",
+        "workspace_task_control_receipts"
+      ],
+      "treatment": "Preserve schedules, sealed environments, occurrence/ownership history, task-source links and receipts. Imported jobs/services remain disabled; PID and old writer leases are not revived.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "run-manager",
+      "classification": "authoritative",
+      "sourcePath": "apps/run-manager/src-tauri/src/logs.rs",
+      "items": [
+        "run-owned stdout/stderr rotation segments and manifests"
+      ],
+      "treatment": "Preserve retained log history with run-ID mapping; do not invent paths from renderer input.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "workbench",
+      "classification": "authoritative",
+      "sourcePath": "apps/workbench/src-tauri/src/commands/workspace.rs",
+      "items": [
+        "project-profiles.json"
+      ],
+      "treatment": "Preserve project/target/profile identity and references; resolve aliases through the native project owner.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "workbench",
+      "classification": "authoritative",
+      "sourcePath": "apps/workbench/src-tauri/src/commands/templates.rs",
+      "items": [
+        "profile-templates.json"
+      ],
+      "treatment": "Preserve user-authored profile templates independently from derived integration snapshots.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "webhook-lab",
+      "classification": "authoritative",
+      "sourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
+      "items": [
+        "fixtures.json"
+      ],
+      "treatment": "Preserve masked fixtures and their ID mapping; no raw request-header vault import.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "webhook-lab",
+      "classification": "authoritative",
+      "sourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
+      "items": [
+        "service-profiles/*.json"
+      ],
+      "treatment": "Preserve exported listener profiles as inactive definitions; do not start a listener during import.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "webhook-lab",
+      "classification": "ephemeral",
+      "sourcePath": "apps/webhook-lab/src-tauri/src/commands.rs",
+      "items": [
+        "live listener",
+        "in-memory request history",
+        "raw header vault",
+        "unsaved rule state"
+      ],
+      "treatment": "Quiesce and explain transient state before cutover; do not turn raw capture memory into a persistent migration archive.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "repo-manager",
+      "classification": "authoritative",
+      "sourcePath": "apps/repo-manager/src-tauri/src/core/git.rs",
+      "items": [
+        "user repository/worktree files and Git metadata"
+      ],
+      "treatment": "Leave repositories/worktrees in place. Native Git identity and trust revalidation are required before any later mutation.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "repo-manager",
+      "classification": "derived",
+      "sourcePath": "apps/repo-manager/src-tauri/src/commands/dependency_enrichment.rs",
+      "items": [
+        "dependency-enrichment-v1.json"
+      ],
+      "treatment": "Treat opt-in enrichment cache separately from original lockfiles and repository registration.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "devbox-launcher",
+      "classification": "authoritative",
+      "sourcePath": "apps/devbox-launcher/src-tauri/src/core/preferences.rs",
+      "items": [
+        "launcher-preferences.json"
+      ],
+      "treatment": "Preserve opaque favorites/recent IDs through explicit target mappings; unknown targets remain unresolved.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "devbox-launcher",
+      "classification": "authoritative",
+      "sourcePath": "apps/devbox-launcher/src-tauri/src/hotkey.rs",
+      "items": [
+        "shortcut.json"
+      ],
+      "treatment": "Preserve the chosen accelerator; registration is a separate installation-scope lease, including WSL quick-summon collisions.",
+      "importerStatus": "pending"
+    },
+    {
+      "legacyApp": "log-lens",
+      "classification": "authoritative",
+      "sourcePath": "apps/log-lens/src-tauri/src/core/saved_views.rs",
+      "items": [
+        "saved-views.json"
+      ],
+      "treatment": "Preserve validated saved source/query definitions; do not archive the transient ring or persist webhook capture sources.",
+      "importerStatus": "pending"
+    }
+  ]
+}
