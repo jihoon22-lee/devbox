@@ -349,6 +349,44 @@ async function start(product, suffix) {
       assert.equal(await cdp.evaluate('!!document.querySelector(".knowledge-feature-notes:not([hidden]) .app")'), true);
       componentProbe.routesRemainMounted = await cdp.evaluate('document.querySelectorAll(".knowledge-feature-notes .app, .knowledge-feature-activity .app, .knowledge-feature-search .app").length === 3');
       assert.equal(componentProbe.routesRemainMounted, true);
+      componentProbe.daily = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const call = (component, route, method, args = {}) => invoke("plugin:knowledge|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route }, component, method, args } });
+        const notes = (method, args) => call("knowledge.notes", "daily", method, args);
+        const date = "2024-02-29", path = "Journal/2024-02-29.md";
+        const preview = await notes("preview_daily", { date });
+        const before = await notes("read_file", { rel: path });
+        await notes("discard_daily", { previewId: preview.value.previewId });
+        const cancelled = await notes("save_daily", { previewId: preview.value.previewId });
+        const next = await notes("preview_daily", { date });
+        const saved = await notes("save_daily", { previewId: next.value.previewId });
+        const repeated = await notes("save_daily", { previewId: next.value.previewId });
+        const existing = await notes("preview_daily", { date });
+        const content = await notes("read_file", { rel: path });
+        let legacyDailyRejected = false;
+        try { await notes("daily_note"); } catch { legacyDailyRejected = true; }
+        return { previewDoesNotWrite: before.operation.outcome.state === "failed", cancelPreventsWrite: cancelled.operation.outcome.state === "failed",
+          explicitSave: saved.operation.outcome.state === "succeeded", repeatRejected: repeated.operation.outcome.state === "failed",
+          existingOnlyOpens: existing.value.exists === true && existing.value.previewId === null,
+          civilDate: content.value.includes("# 2024-02-29"), legacyDailyRejected };
+      })()`);
+      assert.deepEqual(componentProbe.daily, { previewDoesNotWrite: true, cancelPreventsWrite: true, explicitSave: true, repeatRejected: true, existingOnlyOpens: true, civilDate: true, legacyDailyRejected: true });
+      componentProbe.closePolicy = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const call = (method, args = {}) => invoke("plugin:knowledge|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "activity" }, component: "knowledge.activity", method, args } });
+        const initial = await call("get_close_policy");
+        const enabled = await call("set_close_policy", { closeToTray: true });
+        const tracking = await call("is_tracking");
+        const reset = await call("set_close_policy", { closeToTray: false });
+        return { defaultQuits: initial.value.closeToTray === false, trayAvailable: initial.value.trayAvailable === true,
+          preferenceRoundtrip: enabled.value.closeToTray === true && reset.value.closeToTray === false,
+          doesNotEnableCollection: tracking.value === false };
+      })()`);
+      assert.deepEqual(componentProbe.closePolicy, { defaultQuits: true, trayAvailable: true, preferenceRoundtrip: true, doesNotEnableCollection: true });
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);

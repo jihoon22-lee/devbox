@@ -64,6 +64,7 @@ pub fn initialize(
     let shortcut_state = Arc::new(crate::platform::QuickCaptureShortcutState::default());
     app.manage(shortcut_state.clone());
     crate::platform::install(app.clone(), shortcut_state);
+    app.manage(Mutex::new(crate::commands::daily::DailyPreviews::default()));
     app.manage(state);
     app.manage(watcher);
     Ok(())
@@ -218,3 +219,8 @@ pub async fn dispatch(
         _ => Err("component_method_unavailable".into()),
     }
 }
+
+/// Product-only Daily owner; no extra commands are exposed by the legacy entry.
+pub use crate::commands::daily::{
+    dispatch as daily_dispatch, DailyPreviews, METHODS as DAILY_METHODS,
+};

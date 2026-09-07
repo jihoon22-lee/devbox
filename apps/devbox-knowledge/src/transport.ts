@@ -8,6 +8,10 @@ const routeFor: Record<Component, string> = {
   "knowledge.search-settings": "search", "knowledge.opener": "search", "knowledge.migration": "notes",
 };
 const messages: Record<string, string> = {
+  tray_unavailable: "트레이를 사용할 수 없어 설정을 변경하지 않았습니다.",
+  close_policy_save_failed: "종료 설정을 저장하지 못했습니다. 이전 설정을 유지했습니다.",
+  target_exists: "같은 경로의 파일이 이미 있습니다. 다시 확인해서 열어 주세요.",
+  vault_unavailable: "노트 저장소에 연결할 수 없습니다. 경로와 연결 상태를 확인해 주세요.",
   invalid_request: "요청을 확인해 주세요.", setup_required: "저장소를 먼저 준비해 주세요.",
   busy: "다른 작업을 마친 뒤 다시 시도해 주세요.", future_schema: "더 최신 버전의 저장소입니다. 원본을 유지했습니다.",
   store_invalid: "저장소 정보를 확인할 수 없습니다. 기존 데이터는 유지됩니다.",

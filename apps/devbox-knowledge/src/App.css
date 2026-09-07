@@ -10,3 +10,11 @@
 [hidden] { display: none !important; }
 .knowledge-startup { max-width: 760px; padding: 24px; line-height: 1.6; }
 .knowledge-startup button { padding: 8px 12px; }
+
+.knowledge-daily { flex: 1; overflow: auto; min-height: 0; padding: 20px 24px; line-height: 1.6; }
+.knowledge-daily-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.knowledge-daily button, .knowledge-daily input { padding: 8px 12px; font: inherit; color: var(--db-color-text); background: var(--db-color-surface); border: 1px solid var(--db-color-border); border-radius: 6px; }
+.knowledge-daily button:disabled { opacity: .5; cursor: default; }
+.knowledge-daily-preview { margin-top: 20px; max-width: 760px; }
+.knowledge-daily-preview pre { padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--db-color-border); }
+.knowledge-daily-preview button { margin-right: 8px; }

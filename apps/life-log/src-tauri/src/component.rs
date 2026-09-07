@@ -140,3 +140,63 @@ pub async fn dispatch(
         _ => Err("component_method_unavailable".into()),
     }
 }
+
+const CLOSE_TO_TRAY_KEY: &str = "devbox_knowledge_close_to_tray_v1";
+fn read_close_to_tray(connection: &rusqlite::Connection) -> Result<bool, String> {
+    use rusqlite::OptionalExtension;
+    let value: Option<String> = connection
+        .query_row(
+            "SELECT value FROM settings WHERE key=?1",
+            [CLOSE_TO_TRAY_KEY],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|_| "close_policy_unavailable")?;
+    // Unknown or malformed legacy values cannot opt in to background lifetime.
+    Ok(value.as_deref() == Some("true"))
+}
+fn persist_close_to_tray(connection: &rusqlite::Connection, enabled: bool) -> Result<(), String> {
+    connection.execute("INSERT INTO settings(key,value) VALUES (?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value",
+        [CLOSE_TO_TRAY_KEY, if enabled { "true" } else { "false" }]).map_err(|_| "close_policy_save_failed")?;
+    Ok(())
+}
+pub fn close_to_tray(app: &tauri::AppHandle) -> Result<bool, String> {
+    use tauri::Manager;
+    let state = app.state::<std::sync::Arc<crate::commands::tracking::AppState>>();
+    let connection = state.db.lock().map_err(|_| "close_policy_unavailable")?;
+    read_close_to_tray(&connection)
+}
+pub fn set_close_to_tray(app: &tauri::AppHandle, enabled: bool) -> Result<(), String> {
+    use tauri::Manager;
+    let state = app.state::<std::sync::Arc<crate::commands::tracking::AppState>>();
+    let connection = state.db.lock().map_err(|_| "close_policy_save_failed")?;
+    persist_close_to_tray(&connection, enabled)
+}
+#[cfg(test)]
+mod close_policy_tests {
+    use super::*;
+    #[test]
+    fn close_policy_is_explicit_persistent_and_does_not_enable_collection() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("data.db");
+        let connection = crate::core::db::init(&path).unwrap();
+        assert!(!read_close_to_tray(&connection).unwrap());
+        persist_close_to_tray(&connection, true).unwrap();
+        assert!(!crate::commands::tracking::product_consent(&connection));
+        drop(connection);
+        let connection = crate::core::db::init(&path).unwrap();
+        assert!(read_close_to_tray(&connection).unwrap());
+        connection
+            .execute(
+                "UPDATE settings SET value='1' WHERE key=?1",
+                [CLOSE_TO_TRAY_KEY],
+            )
+            .unwrap();
+        assert!(!read_close_to_tray(&connection).unwrap());
+        connection.pragma_update(None, "query_only", true).unwrap();
+        assert_eq!(
+            persist_close_to_tray(&connection, true).err().as_deref(),
+            Some("close_policy_save_failed")
+        );
+    }
+}

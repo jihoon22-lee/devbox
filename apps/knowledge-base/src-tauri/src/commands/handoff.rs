@@ -496,7 +496,7 @@ fn write_new_note_with_suffix(
 }
 
 #[derive(Debug)]
-enum NewNoteError {
+pub(crate) enum NewNoteError {
     Exists,
     Storage,
     Stale,
@@ -505,7 +505,7 @@ enum NewNoteError {
 /// Write a complete private file to a unique temporary sibling, then create
 /// the final name with an exclusive hard link. This preserves no-overwrite
 /// semantics even if two handoff saves race for the same date.
-fn write_new_note(
+pub(crate) fn write_new_note(
     vault: &VaultIdentity,
     path: &Path,
     contents: &[u8],

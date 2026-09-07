@@ -2,11 +2,13 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { EditorView } from "@codemirror/view";
 import {
   applyRename,
   createDirectory,
   createFile,
   deleteFile,
+  dailyNote,
   discardRenamePreview,
   entryPath,
   listTree,
@@ -426,4 +428,23 @@ describe("knowledge-base App — tree context menu", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "탐색기에서 열기" }));
     expect(await screen.findByText("표시 실패")).toBeInTheDocument();
   });
+});
+
+it("preserves a dirty note when Daily creation or a product open request is declined", async () => {
+  const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
+  vi.mocked(dailyNote).mockClear();
+  const { rerender } = render(<App/>);
+  fireEvent.click(await screen.findByText("note.md"));
+  await waitFor(() => expect(document.querySelector(".cm-content")?.textContent).toBe("# Hello"));
+  const content = document.querySelector<HTMLElement>(".cm-content")!;
+  const editor = EditorView.findFromDOM(content)!;
+  act(() => { editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: "# Unsaved note" } }); });
+  fireEvent.click(screen.getByRole("button", { name: "일일 노트" }));
+  expect(confirm).toHaveBeenCalledTimes(1);
+  expect(dailyNote).not.toHaveBeenCalled();
+  readFileMock.mockClear();
+  rerender(<App openRequest={{ id: 1, path: "Journal/2024-02-29.md" }}/>);
+  expect(confirm).toHaveBeenCalledTimes(2);
+  expect(readFileMock).not.toHaveBeenCalled();
+  expect(editor.state.doc.toString()).toBe("# Unsaved note");
 });

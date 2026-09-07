@@ -1,5 +1,6 @@
 mod component;
 mod core;
+mod lifecycle;
 mod startup;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

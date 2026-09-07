@@ -71,6 +71,7 @@ fn activate(app: &tauri::AppHandle, manifest: &stores::Manifest) -> Result<(), S
         Some(integration),
     )
     .map_err(|_| "component_initialization_failed")?;
+    crate::lifecycle::load(app)?;
     startup.active.store(true, Ordering::Release);
     Ok(())
 }

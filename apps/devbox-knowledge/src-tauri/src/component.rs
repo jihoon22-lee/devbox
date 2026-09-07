@@ -49,11 +49,15 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "knowledge.migration" => route == "notes" && crate::startup::COMMANDS.contains(&method),
         "knowledge.notes" => {
             matches!(route, "notes" | "daily")
+                && method != "daily_note"
                 && (knowledge_base_lib::component::COMMANDS.contains(&method)
+                    || knowledge_base_lib::component::DAILY_METHODS.contains(&method)
                     || matches!(method, "read_clipboard_text" | "open_external_url"))
         }
         "knowledge.activity" => {
-            route == "activity" && life_log_lib::component::COMMANDS.contains(&method)
+            route == "activity"
+                && (life_log_lib::component::COMMANDS.contains(&method)
+                    || crate::lifecycle::METHODS.contains(&method))
         }
         "knowledge.search" => {
             route == "search"
@@ -79,6 +83,11 @@ fn issue(error: &str) -> &'static str {
         "vault_binding_unavailable" => "vault_binding_unavailable",
         "component_initialization_failed" | "component_state_conflict" => "restart_required",
         "digest_cancelled" => "cancelled",
+        "daily_preview_stale" => "preview_stale",
+        "daily_target_exists" => "target_exists",
+        "daily_vault_unavailable" => "vault_unavailable",
+        "tray_unavailable" => "tray_unavailable",
+        "close_policy_save_failed" => "close_policy_save_failed",
         _ if error.contains("만료") => "preview_expired",
         _ if error.contains("미리보기") && error.contains("오래") => "preview_stale",
         _ => "operation_failed",
@@ -133,6 +142,11 @@ async fn execute(
     }
     let value = match request.component.as_str() {
         "knowledge.migration" => crate::startup::dispatch(app, &request.method, request.args),
+        "knowledge.notes"
+            if knowledge_base_lib::component::DAILY_METHODS.contains(&request.method.as_str()) =>
+        {
+            knowledge_base_lib::component::daily_dispatch(app, &request.method, request.args)
+        }
         "knowledge.notes" => match request.method.as_str() {
             "read_clipboard_text" => {
                 use tauri_plugin_clipboard_manager::ClipboardExt;
@@ -172,6 +186,9 @@ async fn execute(
             "open_in" => Err("provider_unavailable".into()),
             _ => knowledge_base_lib::component::dispatch(app, &request.method, request.args).await,
         },
+        "knowledge.activity" if crate::lifecycle::METHODS.contains(&request.method.as_str()) => {
+            crate::lifecycle::dispatch(app, &request.method, request.args)
+        }
         "knowledge.activity" if request.method == "send_digest_to_knowledge" => {
             Err("provider_unavailable".into())
         }
@@ -214,13 +231,10 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .invoke_handler(tauri::generate_handler![execute])
         .setup(|app, _| {
             app.manage(Active::default());
+            crate::lifecycle::initialize(app);
             crate::startup::initialize(app).map_err(Into::into)
         })
-        .on_event(|app, event| {
-            if matches!(event, tauri::RunEvent::ExitRequested { .. }) {
-                let _ = life_log_lib::component::shutdown(app);
-            }
-        })
+        .on_event(crate::lifecycle::on_event)
         .build()
 }
 #[cfg(test)]
@@ -246,6 +260,8 @@ mod tests {
         assert!(!allowed("knowledge.activity", "activity", "write_file"));
         assert!(!allowed("knowledge.notes", "activity", "write_file"));
         assert!(!allowed("api-studio.api", "notes", "write_file"));
+        assert!(!allowed("knowledge.notes", "daily", "daily_note"));
+        assert!(allowed("knowledge.notes", "daily", "preview_daily"));
     }
     #[test]
     fn error_responses_never_return_raw_paths_or_user_values() {

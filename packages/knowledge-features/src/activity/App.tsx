@@ -435,9 +435,17 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
   );
 }
 
-export default function App({ active = true }: { active?: boolean } = {}) {
+export default function App({ active = true, selectedDate, onDateChange, onDaily, lifecycleSettings }: {
+  active?: boolean;
+  selectedDate?: string;
+  onDateChange?: (date: string) => void;
+  onDaily?: () => void;
+  lifecycleSettings?: React.ReactNode;
+} = {}) {
   const activeRef = useRef(active); activeRef.current = active;
-  const [date, setDate] = useState(new Date());
+  const [localDate, setLocalDate] = useState(() => new Date());
+  const date = useMemo(() => selectedDate ? parseDateKey(selectedDate) ?? localDate : localDate, [selectedDate, localDate]);
+  const setDate = useCallback((next: Date) => { setLocalDate(next); onDateChange?.(toDateStr(next)); }, [onDateChange]);
   const dateStr = useMemo(() => toDateStr(date), [date]);
   const [view, setView] = useState<ViewTab>("day");
   const [day, setDay] = useState<DaySummary | null>(null);
@@ -527,7 +535,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     if (value === dateStr) return;
     invalidatePendingLoad();
     setDate(parsed);
-  }, [dateStr, invalidatePendingLoad]);
+  }, [dateStr, invalidatePendingLoad, setDate]);
   const dateContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareDateContext(target),
   });
@@ -1175,6 +1183,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
   return (
     <div className="app">
       <header className="toolbar">
+        {onDaily && <button type="button" className="btn" disabled={contextActionBusy} onClick={onDaily}>이 날짜의 일일 기록</button>}
         <button type="button" className="btn" aria-label="이전 날짜" onClick={() => shift(-1)} disabled={contextActionBusy}>
           ◀
         </button>
@@ -1232,6 +1241,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
 
       {view === "settings" ? (
         <div className="settings">
+          {lifecycleSettings}
           <section className="panel">
             <h2>데이터 소스</h2>
             {sources.length === 0 && <div className="dim">등록된 소스가 없습니다.</div>}
@@ -1314,7 +1324,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               </button>
             </div>
             <div className="dim">연결 확인은 중지된 WSL 배포판을 시작할 수 있습니다. 경로 저장만으로는 배포판을 시작하지 않습니다.</div>
-            <div className="dim">활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다.</div>
+            <div className="dim">{lifecycleSettings ? "활동 수집을 켜면 세션이 기록됩니다. 수집 중지는 활동 화면에서 선택할 수 있습니다." : "활동 추적은 Life Log에 통합되어 있으며, 세션은 자동으로 기록됩니다."}</div>
           </section>
 
           <section className="panel">

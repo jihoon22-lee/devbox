@@ -132,7 +132,12 @@ function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
   return error ? `${source} · ${error}` : source;
 }
 
-export default function App({ active = true, onActivate }: { active?: boolean; onActivate?: () => void } = {}) {
+export default function App({ active = true, onActivate, onDaily, openRequest }: {
+  active?: boolean;
+  onActivate?: () => void;
+  onDaily?: () => void;
+  openRequest?: { id: number; path: string };
+} = {}) {
   const activeRef = useRef(active); activeRef.current = active;
   const activateRef = useRef(onActivate); activateRef.current = onActivate;
   const [tree, setTree] = useState<TreeEntry[]>([]);
@@ -418,6 +423,14 @@ export default function App({ active = true, onActivate }: { active?: boolean; o
       setError(e instanceof Error ? e.message : String(e));
     }
   };
+
+  const productOpenRef = useRef(openFile); productOpenRef.current = openFile;
+  const handledProductOpen = useRef<number | null>(null);
+  useEffect(() => {
+    if (!active || !openRequest || handledProductOpen.current === openRequest.id) return;
+    handledProductOpen.current = openRequest.id;
+    void productOpenRef.current(openRequest.path);
+  }, [active, openRequest]);
 
   const openIndexedNoteAt = async (path: string, line = 1, column = 1) => {
     if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
@@ -739,6 +752,8 @@ export default function App({ active = true, onActivate }: { active?: boolean; o
   }, []);
 
   const openDaily = async () => {
+    if (onDaily) { onDaily(); return; }
+    if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
     setError(null);
     try {
       const [rel, text] = await dailyNote();
