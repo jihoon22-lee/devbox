@@ -18,6 +18,11 @@ const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products
 const root = mkdtempSync(path.join(tmpdir(), "devbox-product-fixture-"));
 const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", fixtureVersion: 1, products: [], result: "failed" };
 mkdirSync("product-foundation-evidence", { recursive: true });
+let currentProbe = null;
+function progress(product, suffix, stage) {
+  currentProbe = { product: product.id, suffix, stage };
+  writeFileSync("product-foundation-evidence/progress.json", JSON.stringify(currentProbe, null, 2));
+}
 const delay = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 
 async function freePort() {
@@ -33,17 +38,31 @@ async function connect(port, child) {
       const pages = await response.json(); const page = pages.find((p) => p.type === "page" && p.webSocketDebuggerUrl);
       if (page) {
         const socket = new WebSocket(page.webSocketDebuggerUrl); await once(socket, "open");
-        let id = 0; const pending = new Map();
+        let id = 0; const pending = new Map(); const diagnostics = [];
         socket.addEventListener("message", ({ data }) => {
           const response = JSON.parse(data); const entry = pending.get(response.id);
+          if (["Runtime.exceptionThrown", "Log.entryAdded", "Page.javascriptDialogOpening", "Inspector.targetCrashed"].includes(response.method)) {
+            diagnostics.push({ event: response.method, details: JSON.stringify(response.params).slice(0, 6000) });
+            if (diagnostics.length > 30) diagnostics.shift();
+            writeFileSync("product-foundation-evidence/renderer-events.json", JSON.stringify({ currentProbe, diagnostics }, null, 2));
+          }
           if (entry) { pending.delete(response.id); clearTimeout(entry.timer); response.error ? entry.reject(new Error("CDP request failed")) : entry.resolve(response.result); }
         });
+        const command = (method, params = {}) => {
+          const next = ++id;
+          return new Promise((resolve, reject) => {
+            const timer = setTimeout(() => { pending.delete(next); reject(new Error("CDP setup timeout")); }, 10_000);
+            pending.set(next, { resolve, reject, timer });
+            socket.send(JSON.stringify({ id: next, method, params }));
+          });
+        };
+        try { await command("Runtime.enable"); await command("Log.enable"); await command("Page.enable"); } catch (error) { socket.close(); throw error; }
         return {
           close: () => socket.close(),
           async evaluate(expression) {
             const next = ++id;
             const result = await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => { pending.delete(next); reject(new Error("CDP request timeout")); }, 10_000);
+              const timer = setTimeout(() => { pending.delete(next); writeFileSync("product-foundation-evidence/renderer-timeout.json", JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2)); reject(new Error(`CDP request timeout at ${currentProbe?.stage}`)); }, 10_000);
               pending.set(next, { resolve, reject, timer });
               socket.send(JSON.stringify({ id: next, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
             });
@@ -89,6 +108,7 @@ async function start(product, suffix) {
     child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: "ignore" });
     await once(child, "spawn");
     cdp = await connect(port, child);
+    progress(product, suffix, "renderer-connected");
     let ready = false, readinessError = "";
     const readinessDeadline = performance.now() + 30_000;
     while (performance.now() < readinessDeadline) {
@@ -104,8 +124,10 @@ async function start(product, suffix) {
     assert.ok(ready, `native route must render an accepted response: ${readinessError}`);
     const startupMs = Math.round(performance.now() - started);
     assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);
+    progress(product, suffix, "description");
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
     assert.equal(description.product.id, product.id);
+    progress(product, suffix, "shell-authority");
     const probe = await cdp.evaluate(`(async () => {
       const invoke = window.__TAURI_INTERNALS__.invoke;
       const d = await invoke("plugin:product-shell|describe");
@@ -119,6 +141,7 @@ async function start(product, suffix) {
     assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
     let componentProbe;
     if (product.id === "api-studio") {
+      progress(product, suffix, "component-authority");
       componentProbe = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
@@ -133,6 +156,7 @@ async function start(product, suffix) {
         return { replayRejected, ownerRejected, installationRejected, listenerRunning: status.value.running, hash: hash.value, component: hash.operation.provenance.component, state: hash.operation.outcome.state };
       })()`);
       assert.deepEqual(componentProbe, { replayRejected: true, ownerRejected: true, installationRejected: true, listenerRunning: false, hash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", component: "api-studio.transforms", state: "succeeded" });
+      progress(product, suffix, "publish-internal-handoff");
       const artifact = await cdp.evaluate(`(async () => {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
@@ -142,8 +166,10 @@ async function start(product, suffix) {
       })()`);
       assert.equal(artifact.redacted, true);
       assert.equal(artifact.owner, "api-studio.api");
+      progress(product, suffix, "wait-internal-preview");
       await waitForRenderer(cdp, '!!document.querySelector(".api-feature-transforms:not([hidden]) [role=dialog]")', "internal handoff preview did not open");
       assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-transforms [role=dialog]")?.textContent ?? "").includes("synthetic-fixture-secret")'), false);
+      progress(product, suffix, "apply-internal-preview");
       await cdp.evaluate('Array.from(document.querySelectorAll(".api-feature-transforms [role=dialog] button")).find(button => button.textContent.trim() === "적용").click()');
       await waitForRenderer(cdp, "document.querySelector('textarea[aria-label=\"스마트 워크플로 입력\"]')?.value.includes(\"[REDACTED]\") && !document.querySelector(\".api-feature-transforms [role=dialog]\")", "internal handoff was not explicitly applied");
       assert.equal(await cdp.evaluate(`(async () => {
@@ -152,6 +178,7 @@ async function start(product, suffix) {
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "transforms" };
         try { await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } }); return false; } catch { return true; }
       })()`), true);
+      progress(product, suffix, "internal-handoff-complete");
       componentProbe.internalHandoff = "redacted-preview-explicit-apply-one-time";
 
     }
