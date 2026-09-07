@@ -18,4 +18,13 @@ assert 'path.resolve("target/debug"' in probe
 assert 'process.env.RUNNER_ENVIRONMENT, "github-hosted"' in probe
 assert 'process.env.GITHUB_ACTIONS, "true"' in probe
 assert "contents: read" in workflow
+installer = (root / ".github/scripts/windows-product-installation.ps1").read_text()
+assert "$env:RUNNER_ENVIRONMENT -ne 'github-hosted'" in installer
+assert "$env:GITHUB_ACTIONS -ne 'true'" in installer
+assert "baseline manifest digest mismatch" in installer
+assert "baseline tag commit mismatch" in installer
+assert "product uninstall changed anchor installation or shortcut" in installer
+assert "window-state-v1.json" in installer
+assert '. "$PSScriptRoot/windows-installer-helpers.ps1"' in installer
+assert "windows-product-installation.ps1" in workflow
 print("Hidden product build/probe target and host boundary: PASS")

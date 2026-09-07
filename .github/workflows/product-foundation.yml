@@ -13,6 +13,9 @@ on:
       - 'packages/product-shell/**'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-packaged-smoke.mjs'
+      - '.github/scripts/windows-product-installation.ps1'
+      - '.github/scripts/windows-installer-helpers.ps1'
+      - '.github/scripts/product-foundation-baseline.json'
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
 
@@ -56,6 +59,11 @@ jobs:
         run: cargo test -p product-contract -p devbox-control-center -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
         run: node .github/scripts/windows-product-foundation.mjs
+      - name: Verify anchor and product installer coexistence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/windows-product-installation.ps1
       - name: Preserve private acceptance evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
