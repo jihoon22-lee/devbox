@@ -1534,7 +1534,7 @@ async function runApp(app, context) {
     }
     if (measured) {
       result.performance.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
-      result.performance.budget = evaluateBudgets(result.performance, context.performanceConfiguration);
+      result.performance.budget = evaluateBudgets(result.performance, context.performanceConfiguration, app.id);
       result.performance.stage = "measured";
     }
 
@@ -1938,6 +1938,14 @@ async function main() {
     unattempted: config.apps.length - report.apps.length,
     interrupted: requestedSignal,
   };
+  if (performanceConfiguration) {
+    const measurements = report.apps.filter((app) => performanceConfiguration.apps.includes(app.id));
+    report.performanceSummary = {
+      measuredBudgetsPassed: measurements.filter((app) => app.performance?.budget?.passed === true).length,
+      knownBaselineFailures: measurements.filter((app) => app.performance?.budget?.knownBaselineFailureObserved === true).map((app) => app.id),
+      r24Passed: false,
+    };
+  }
   try {
     rmdirSync(runtimeRoot);
     report.runtimeRootRemoved = true;
@@ -1950,7 +1958,11 @@ async function main() {
     report.summary.skipped > 0 ||
     report.summary.unattempted > 0 ||
     !report.runtimeRootRemoved ||
-    (performanceConfiguration && report.apps.some((app) => performanceConfiguration.apps.includes(app.id) && app.performance?.budget?.passed !== true)) ||
+    // The opt-in job records a pinned legacy failure as failed performance
+    // evidence. Every other budget and the existing runtime/cleanup contract
+    // must still pass; normal release acceptance has no such baseline fixture.
+    (performanceConfiguration && report.apps.some((app) => performanceConfiguration.apps.includes(app.id)
+      && app.performance?.budget?.passed !== true && app.performance?.budget?.knownBaselineFailureObserved !== true)) ||
     requestedSignal
   ) {
     process.exitCode = requestedSignal ? 130 : 2;

@@ -37,4 +37,18 @@ assert.equal(terminal.distributions.count, null);
 assert.match(terminal.livePtyRestore, /not-run/);
 await assert.rejects(measureWorkload({ id: 'run-manager' }, cdp(async () => { throw 'private path and token'; }), '/synthetic'),
   (error) => error.message === 'baseline native command failed: create_job (native-rejected)');
+const failedRun = await measureWorkload({ id: 'run-manager' }, cdp(async (command) => {
+  if (command === 'create_job') return { id: 'owned-fixture' };
+  if (command === 'run_job_now') throw 'run-execution-failed';
+  if (command === 'list_runs') return [{ jobId: 'owned-fixture', status: 'failed', endedAt: 123, failureCode: 'spawn-failed' }];
+  if (command === 'stop_active_run') return null;
+  assert.fail('unexpected command');
+}), '/synthetic');
+const recorded = evaluateBudgets({ ...measured, workload: failedRun }, config, 'run-manager');
+assert.equal(recorded.passed, false);
+assert.equal(recorded.knownBaselineFailureObserved, true);
+assert.equal(evaluateBudgets({ ...measured, workload: failedRun }, { ...config, baselineCommit: 'f'.repeat(40) }, 'run-manager').knownBaselineFailureObserved, false);
+assert.equal(evaluateBudgets({ ...measured, workload: failedRun }, config, 'workbench').knownBaselineFailureObserved, false);
+assert.equal(evaluateBudgets({ ...measured, idle: reused, workload: failedRun }, config, 'run-manager').knownBaselineFailureObserved, false);
+assert.equal(evaluateBudgets({ ...measured, workload: { ...failedRun, failure: { ...failedRun.failure, runFailureCode: 'storage-failed' } } }, config, 'run-manager').knownBaselineFailureObserved, false);
 console.log("Performance sampler rejects stale cohorts, invalid metrics and budget violations: PASS");

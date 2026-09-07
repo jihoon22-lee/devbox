@@ -20,13 +20,14 @@ export function loadPerformanceConfig(file, tag, commit, hosted) {
   assert.equal(config.baselineTag, tag);
   assert.equal(config.baselineCommit, commit);
   assert.equal(config.idleSampleMs, 5000);
+  assert.deepEqual(config.knownBaselineFailures, [{ app: "run-manager", command: "run_job_now", code: "run-execution-failed", runFailureCode: "spawn-failed", evidenceRun: 34099044832, trackingIssue: 547 }]);
   assert.deepEqual([...config.apps].sort(), ["workbench", "api-playground", "knowledge-base", "devbox-manager", "everything-plus", "run-manager", "wsl-desktop"].sort());
   for (const value of Object.values(config.budgets)) assert.ok(Number.isSafeInteger(value) && value > 0);
   assert.ok(Array.isArray(config.unmeasured) && config.unmeasured.length > 0);
   return config;
 }
 
-export function evaluateBudgets(measured, config) {
+export function evaluateBudgets(measured, config, appId = null) {
   const checks = {
     coldRendererReadyMs: measured.coldRendererReadyMs,
     firstKeyboardEventMs: measured.firstKeyboardEventMs,
@@ -42,7 +43,14 @@ export function evaluateBudgets(measured, config) {
   if (workload?.profileReadbackMs !== undefined) checks.profileReadbackMs = workload.profileReadbackMs;
   const violations = Object.entries(checks).filter(([name, value]) => !Number.isFinite(value) || value < 0 || !Number.isFinite(config.budgets[name]) || value > config.budgets[name]).map(([name]) => name);
   if (measured.idle.cohortChanged) violations.push("idle-process-cohort-changed");
-  return { passed: violations.length === 0, violations, r24: "not-complete; live PTY restore and integrated comparison remain unmeasured" };
+  if (workload?.result === "failed") violations.push("owned-task-failed");
+  const known = config.knownBaselineFailures?.find((entry) => entry.app === appId);
+  const knownBaselineFailureObserved = violations.length === 1 && violations[0] === "owned-task-failed"
+    && config.baselineTag === "v0.7.0" && config.baselineCommit === "3a23f49c85aa3c3d04b86f227e8aa184ef964085"
+    && known !== undefined && workload.failure?.command === known.command
+    && workload.failure?.code === known.code && workload.failure?.runFailureCode === known.runFailureCode;
+  return { passed: violations.length === 0, violations, knownBaselineFailureObserved,
+    r24: "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured" };
 }
 
 export function summarizeIdle(before, after, elapsedMs, logicalCpus) {
@@ -118,6 +126,8 @@ export async function measureWorkload(app, cdp, isolatedRoot, onStage = () => {}
       onStage(`workload:${command}:${result?.code ?? 'invalid-result'}`);
       const error = new Error(`baseline native command failed: ${command} (${result?.code ?? 'invalid-result'})`);
       error.name = 'AcceptanceError';
+      error.nativeCommand = command;
+      error.code = result?.code ?? 'invalid-result';
       throw error;
     }
     return result.value;
@@ -147,7 +157,20 @@ export async function measureWorkload(app, cdp, isolatedRoot, onStage = () => {}
     const job = await invoke("create_job", { input: { name: "Foundation fixture", command: "exit /b 0", cwd: isolatedRoot, targetKind: "windows", targetDistro: null, cronExpr: "0 0 0 1 1 *", enabled: false, overlapPolicy: "skip", catchUp: false } });
     const start = performance.now();
     try {
-      const started = await invoke("run_job_now", { id: job.id });
+      let started;
+      try {
+        started = await invoke("run_job_now", { id: job.id });
+      } catch (error) {
+        if (error.nativeCommand !== 'run_job_now' || error.code !== 'run-execution-failed') throw error;
+        // Characterize the immutable v0.7 binary's confirmed spawn failure.
+        // This remains a failed workload/budget, never a successful latency.
+        const runs = await invoke('list_runs', { jobId: job.id, limit: 10 });
+        assert.ok(runs.length === 1 && runs[0].jobId === job.id && runs[0].status === 'failed'
+          && runs[0].endedAt != null && runs[0].failureCode === 'spawn-failed', 'unexpected legacy execution failure');
+        return { kind: "disabled-windows-job-explicit-owned-execution", result: "failed",
+          observedFailureMs: Math.round(performance.now() - start),
+          failure: { command: error.nativeCommand, code: error.code, runFailureCode: runs[0].failureCode } };
+      }
       let run;
       while (performance.now() - start < 30000) {
         run = await invoke("get_run", { id: started.id });
