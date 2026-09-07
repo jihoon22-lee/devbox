@@ -1,0 +1,30 @@
+{
+  "name": "devbox-knowledge",
+  "private": true,
+  "version": "0.8.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "test": "vitest run --passWithNoTests",
+    "tauri": "tauri"
+  },
+  "dependencies": {
+    "@devbox/product-shell": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@devbox/a11y": "workspace:*",
+    "@devbox/tokens": "workspace:*"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4",
+    "vitest": "^4.1.10",
+    "jsdom": "^30.0.1"
+  }
+}

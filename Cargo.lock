@@ -1255,6 +1255,38 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-api-studio"
+version = "0.8.0"
+dependencies = [
+ "product-shell-tauri",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
+name = "devbox-control-center"
+version = "0.8.0"
+dependencies = [
+ "product-shell-tauri",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-build",
+ "uuid",
+]
+
+[[package]]
+name = "devbox-knowledge"
+version = "0.8.0"
+dependencies = [
+ "product-shell-tauri",
+ "tauri",
+ "tauri-build",
+]
+
+[[package]]
 name = "devbox-launcher"
 version = "0.2.0"
 dependencies = [
@@ -1303,6 +1335,15 @@ dependencies = [
  "windows 0.61.3",
  "wsl",
  "zeroize",
+]
+
+[[package]]
+name = "devbox-workspace"
+version = "0.8.0"
+dependencies = [
+ "product-shell-tauri",
+ "tauri",
+ "tauri-build",
 ]
 
 [[package]]
@@ -4281,6 +4322,28 @@ dependencies = [
  "serde",
  "serde_json",
  "sysinfo",
+]
+
+[[package]]
+name = "product-contract"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "product-shell-tauri"
+version = "0.1.0"
+dependencies = [
+ "catalog",
+ "product-contract",
+ "serde",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-plugin-single-instance",
+ "uuid",
+ "window-state-tauri",
 ]
 
 [[package]]

@@ -59,7 +59,8 @@ function releaseApps(root) {
 
   const apps = [];
   for (const entry of catalog.apps) {
-    if (!isRecord(entry) || entry.release !== true) continue;
+    // Hidden development products have the same accessibility gate as public apps.
+    if (!isRecord(entry)) continue;
     if (!APP_NAME_PATTERN.test(entry.id) || entry.appDir !== `apps/${entry.id}`) {
       fail("app catalog has an invalid release app entry");
     }

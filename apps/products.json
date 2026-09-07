@@ -1,0 +1,333 @@
+{
+  "schemaVersion": 3,
+  "catalogRevision": 1,
+  "channel": "development",
+  "products": [
+    {
+      "id": "workspace",
+      "label": "Devbox Workspace",
+      "identifier": "com.devbox.v08.workspace",
+      "defaultRoute": "overview"
+    },
+    {
+      "id": "api-studio",
+      "label": "Devbox API Studio",
+      "identifier": "com.devbox.v08.apistudio",
+      "defaultRoute": "requests"
+    },
+    {
+      "id": "knowledge",
+      "label": "Devbox Knowledge",
+      "identifier": "com.devbox.v08.knowledge",
+      "defaultRoute": "notes"
+    },
+    {
+      "id": "control-center",
+      "label": "Devbox Control Center",
+      "identifier": "com.devbox.v08.controlcenter",
+      "defaultRoute": "products"
+    }
+  ],
+  "components": [
+    {
+      "id": "workspace.shell",
+      "owner": "workspace",
+      "authority": "shell-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.shell",
+      "owner": "api-studio",
+      "authority": "shell-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.shell",
+      "owner": "knowledge",
+      "authority": "shell-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "control-center.shell",
+      "owner": "control-center",
+      "authority": "shell-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    }
+  ],
+  "features": [
+    {
+      "id": "workspace.overview",
+      "owner": "workspace",
+      "route": "overview",
+      "label": "개요",
+      "component": "workspace.shell",
+      "command": "workspace.open-overview",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.source",
+      "owner": "workspace",
+      "route": "source",
+      "label": "소스",
+      "component": "workspace.shell",
+      "command": "workspace.open-source",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.files",
+      "owner": "workspace",
+      "route": "files",
+      "label": "파일",
+      "component": "workspace.shell",
+      "command": "workspace.open-files",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.tasks",
+      "owner": "workspace",
+      "route": "tasks",
+      "label": "작업 및 서비스",
+      "component": "workspace.shell",
+      "command": "workspace.open-tasks",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.runtime",
+      "owner": "workspace",
+      "route": "runtime",
+      "label": "런타임",
+      "component": "workspace.shell",
+      "command": "workspace.open-runtime",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.logs",
+      "owner": "workspace",
+      "route": "logs",
+      "label": "로그",
+      "component": "workspace.shell",
+      "command": "workspace.open-logs",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.terminal",
+      "owner": "workspace",
+      "route": "terminal",
+      "label": "터미널",
+      "component": "workspace.shell",
+      "command": "workspace.open-terminal",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.problems",
+      "owner": "workspace",
+      "route": "problems",
+      "label": "문제",
+      "component": "workspace.shell",
+      "command": "workspace.open-problems",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "workspace.dependencies",
+      "owner": "workspace",
+      "route": "dependencies",
+      "label": "의존성",
+      "component": "workspace.shell",
+      "command": "workspace.open-dependencies",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "api-studio.requests",
+      "owner": "api-studio",
+      "route": "requests",
+      "label": "요청",
+      "component": "api-studio.shell",
+      "command": "api-studio.open-requests",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "api-studio.protocols",
+      "owner": "api-studio",
+      "route": "protocols",
+      "label": "프로토콜",
+      "component": "api-studio.shell",
+      "command": "api-studio.open-protocols",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "api-studio.webhooks",
+      "owner": "api-studio",
+      "route": "webhooks",
+      "label": "웹훅 및 모의 서버",
+      "component": "api-studio.shell",
+      "command": "api-studio.open-webhooks",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "api-studio.transforms",
+      "owner": "api-studio",
+      "route": "transforms",
+      "label": "변환",
+      "component": "api-studio.shell",
+      "command": "api-studio.open-transforms",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "api-studio.history",
+      "owner": "api-studio",
+      "route": "history",
+      "label": "기록 및 콘솔",
+      "component": "api-studio.shell",
+      "command": "api-studio.open-history",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "knowledge.notes",
+      "owner": "knowledge",
+      "route": "notes",
+      "label": "노트",
+      "component": "knowledge.shell",
+      "command": "knowledge.open-notes",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "knowledge.daily",
+      "owner": "knowledge",
+      "route": "daily",
+      "label": "일일 기록",
+      "component": "knowledge.shell",
+      "command": "knowledge.open-daily",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "knowledge.activity",
+      "owner": "knowledge",
+      "route": "activity",
+      "label": "활동",
+      "component": "knowledge.shell",
+      "command": "knowledge.open-activity",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "knowledge.search",
+      "owner": "knowledge",
+      "route": "search",
+      "label": "검색",
+      "component": "knowledge.shell",
+      "command": "knowledge.open-search",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.products",
+      "owner": "control-center",
+      "route": "products",
+      "label": "제품",
+      "component": "control-center.shell",
+      "command": "control-center.open-products",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.updates",
+      "owner": "control-center",
+      "route": "updates",
+      "label": "업데이트",
+      "component": "control-center.shell",
+      "command": "control-center.open-updates",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.components",
+      "owner": "control-center",
+      "route": "components",
+      "label": "구성요소",
+      "component": "control-center.shell",
+      "command": "control-center.open-components",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.migration",
+      "owner": "control-center",
+      "route": "migration",
+      "label": "이전 및 백업",
+      "component": "control-center.shell",
+      "command": "control-center.open-migration",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.environment",
+      "owner": "control-center",
+      "route": "environment",
+      "label": "환경",
+      "component": "control-center.shell",
+      "command": "control-center.open-environment",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.recovery",
+      "owner": "control-center",
+      "route": "recovery",
+      "label": "데이터 및 복구",
+      "component": "control-center.shell",
+      "command": "control-center.open-recovery",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.shortcuts",
+      "owner": "control-center",
+      "route": "shortcuts",
+      "label": "단축키",
+      "component": "control-center.shell",
+      "command": "control-center.open-shortcuts",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.diagnostics",
+      "owner": "control-center",
+      "route": "diagnostics",
+      "label": "진단",
+      "component": "control-center.shell",
+      "command": "control-center.open-diagnostics",
+      "authority": "shell-read",
+      "status": "foundation"
+    },
+    {
+      "id": "control-center.tools",
+      "owner": "control-center",
+      "route": "tools",
+      "label": "관련 도구",
+      "component": "control-center.shell",
+      "command": "control-center.open-tools",
+      "authority": "shell-read",
+      "status": "foundation"
+    }
+  ]
+}

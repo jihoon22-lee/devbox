@@ -1,0 +1,65 @@
+name: Product foundation acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/devbox-workspace/**'
+      - 'apps/devbox-api-studio/**'
+      - 'apps/devbox-knowledge/**'
+      - 'apps/devbox-control-center/**'
+      - 'apps/products.json'
+      - 'crates/product-*/**'
+      - 'packages/product-shell/**'
+      - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/workflows/product-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-foundation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Hidden products (Windows native)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: target
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Enable repository-pinned pnpm
+        run: corepack enable pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-product-foundation
+      - run: pnpm install --frozen-lockfile
+      - name: Build unpublished product installers
+        shell: pwsh
+        run: |
+          foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
+            pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
+            if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
+          }
+      - name: Run native authority and WAL fixtures on Windows
+        run: cargo test -p product-contract -p devbox-control-center -- --test-threads=2
+      - name: Exercise packaged shell and installation namespace isolation
+        run: node .github/scripts/windows-product-foundation.mjs
+      - name: Preserve private acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-foundation-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 7

@@ -8,6 +8,8 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashSet;
 use std::fmt;
 
+pub mod products;
+
 pub const SCHEMA_V1: u32 = 1;
 pub const SCHEMA_V2: u32 = 2;
 

@@ -75,6 +75,26 @@
       "dist": "apps/wsl-desktop/dist",
       "rawBytes": 755000,
       "gzipBytes": 220000
+    },
+    "devbox-workspace": {
+      "dist": "apps/devbox-workspace/dist",
+      "rawBytes": 280000,
+      "gzipBytes": 90000
+    },
+    "devbox-api-studio": {
+      "dist": "apps/devbox-api-studio/dist",
+      "rawBytes": 280000,
+      "gzipBytes": 90000
+    },
+    "devbox-knowledge": {
+      "dist": "apps/devbox-knowledge/dist",
+      "rawBytes": 280000,
+      "gzipBytes": 90000
+    },
+    "devbox-control-center": {
+      "dist": "apps/devbox-control-center/dist",
+      "rawBytes": 280000,
+      "gzipBytes": 90000
     }
   }
 }

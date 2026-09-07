@@ -64,8 +64,14 @@ fn repository_catalog_tracks_current_shipped_capabilities() {
     let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
-    assert_eq!(catalog.catalog_revision, Some(17));
-    assert_eq!(catalog.apps.len(), 15);
+    assert_eq!(catalog.catalog_revision, Some(18));
+    assert_eq!(catalog.apps.len(), 19);
+    assert_eq!(catalog.apps.iter().filter(|app| app.release).count(), 15);
+    assert!(catalog
+        .apps
+        .iter()
+        .filter(|app| !app.release)
+        .all(|app| !app.manager_visible && app.accepts.is_empty() && app.produces.is_empty()));
     assert_eq!(
         capable_targets(&catalog, "path")
             .into_iter()

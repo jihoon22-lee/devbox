@@ -3,6 +3,12 @@ resolver = "2"
 # 앱과 공용 크레이트가 생길 때마다 추가한다.
 # 예:
 members = [
+    "apps/devbox-workspace/src-tauri",
+    "apps/devbox-api-studio/src-tauri",
+    "apps/devbox-knowledge/src-tauri",
+    "apps/devbox-control-center/src-tauri",
+    "crates/product-shell-tauri",
+    "crates/product-contract",
     "apps/port-manager/src-tauri",
     "apps/developer-toolbox/src-tauri",
     "apps/api-playground/src-tauri",

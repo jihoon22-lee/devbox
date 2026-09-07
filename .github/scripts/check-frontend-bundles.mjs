@@ -156,7 +156,8 @@ function readReleaseCatalogApps(rootPath) {
 
   const releaseApps = [];
   for (const entry of catalog.apps) {
-    if (!isRecord(entry) || entry.release !== true) continue;
+    // Budget hidden product shells too; release selection remains in the catalog.
+    if (!isRecord(entry)) continue;
     if (!APP_NAME_PATTERN.test(entry.id) || entry.appDir !== `apps/${entry.id}`) {
       fail("app catalog has an invalid release app while validating frontend bundle coverage");
     }
