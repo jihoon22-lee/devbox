@@ -25,7 +25,7 @@ describe("product shell", () => {
     expect(request.deadlineMs).toBe(requestFixture.deadlineMs);
     await expect(routeStatus(description, "../../secret")).rejects.toThrow();
     const result = await routeStatus(description, "overview");
-    expect(result.provenance.product).toBe("workspace");
+    expect(result.operation.provenance.product).toBe("workspace");
   });
   it("bounds navigation and discards forward history when branching", () => {
     let state = { entries: ["overview"], cursor: 0 };

@@ -47,7 +47,7 @@ async function connect(port, child) {
               pending.set(next, { resolve, reject, timer });
               socket.send(JSON.stringify({ id: next, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
             });
-            if (result.exceptionDetails) throw new Error("renderer probe failed");
+            if (result.exceptionDetails) throw new Error(`renderer probe failed: ${String(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text).slice(0, 2000)}`);
             return result.result.value;
           },
         };
@@ -73,16 +73,22 @@ async function start(product, suffix) {
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
-    child = spawn(executable, [], { env, stdio: "ignore" });
+    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: "ignore" });
     await once(child, "spawn");
     cdp = await connect(port, child);
-    let ready = false;
-    for (let i = 0; i < 100; i++) {
-      ready = await cdp.evaluate('document.body.innerText.includes("기능 이전을 준비하고 있습니다")');
+    let ready = false, readinessError = "";
+    const readinessDeadline = performance.now() + 30_000;
+    while (performance.now() < readinessDeadline) {
+      // Native development route selection can replace the initial document.
+      // Retry only readiness; invocation and authority probes below fail once.
+      try {
+        ready = await cdp.evaluate('(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
+      } catch (error) { readinessError = error.message; }
       if (ready) break; await delay(100);
     }
-    assert.ok(ready, "native route must render an accepted response");
+    assert.ok(ready, `native route must render an accepted response: ${readinessError}`);
     const startupMs = Math.round(performance.now() - started);
+    assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
     assert.equal(description.product.id, product.id);
     const probe = await cdp.evaluate(`(async () => {
@@ -93,9 +99,9 @@ async function start(product, suffix) {
       let replayRejected = false, ownerRejected = false;
       try { await invoke("plugin:product-shell|route_status", { request: r }); } catch { replayRejected = true; }
       try { await invoke("plugin:product-shell|route_status", { request: { ...r, requestId: crypto.randomUUID(), installationId: "other-installation" } }); } catch { ownerRejected = true; }
-      return { replayRejected, ownerRejected, availability: result.availability };
+      return { replayRejected, ownerRejected, availability: result.availability, state: result.operation.outcome.state };
     })()`);
-    assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation" });
+    assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);

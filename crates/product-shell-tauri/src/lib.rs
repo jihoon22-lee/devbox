@@ -2,7 +2,8 @@
 //! exposed by this shell. Domain adapters require their own authority review.
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 use product_contract::{
-    Handshake, ProjectContext, Provenance, RouteRequest, RouteStatus, SessionGuard,
+    Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
+    RouteRequest, RouteStatus, SessionGuard,
 };
 use serde::Serialize;
 use sha2::{Digest, Sha256};
@@ -75,7 +76,26 @@ fn route_status(
     window: WebviewWindow,
     state: State<'_, ShellState>,
     request: RouteRequest,
-) -> Result<RouteStatus, String> {
+) -> Result<RouteStatus, Problem> {
+    let provenance = Provenance {
+        product: state.product.clone(),
+        component: format!("{}.shell", state.product),
+        request_id: if request.request_id.len() <= 64
+            && request
+                .request_id
+                .bytes()
+                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
+        {
+            request.request_id.clone()
+        } else {
+            "rejected".into()
+        },
+        revision: state.catalog.catalog_revision,
+    };
+    let problem = |code| Problem {
+        code,
+        provenance: provenance.clone(),
+    };
     let routes: Vec<&str> = state
         .catalog
         .features
@@ -85,23 +105,21 @@ fn route_status(
         .collect();
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_err(|_| "시계를 확인해 주세요.")?
+        .map_err(|_| problem(ProblemCode::Unavailable))?
         .as_millis();
-    let now = u64::try_from(now).map_err(|_| "시계를 확인해 주세요.")?;
+    let now = u64::try_from(now).map_err(|_| problem(ProblemCode::Unavailable))?;
     state
         .session
         .lock()
-        .map_err(|_| "세션을 사용할 수 없습니다.")?
+        .map_err(|_| problem(ProblemCode::Unavailable))?
         .authorize(window.label(), local_main(&window), &request, now, &routes)
-        .map_err(str::to_owned)?;
+        .map_err(problem)?;
     Ok(RouteStatus {
         route: request.route,
         availability: "foundation".into(),
-        provenance: Provenance {
-            product: state.product.clone(),
-            component: format!("{}.shell", state.product),
-            request_id: request.request_id,
-            revision: state.catalog.catalog_revision,
+        operation: Operation {
+            provenance,
+            outcome: OperationState::Succeeded {},
         },
     })
 }
@@ -151,6 +169,29 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
 /// data and single-instance identity. This does not claim suite registration or
 /// portable migration support; WP08 replaces it with verified install records.
 pub fn run(product: &'static str, mut context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
+    if cfg!(debug_assertions) {
+        let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
+        let routes: Vec<&str> = catalog
+            .features
+            .iter()
+            .filter(|f| f.owner == product)
+            .map(|f| f.route.as_str())
+            .collect();
+        if let Some(route) = product_contract::development_route(std::env::args().skip(1), &routes)
+            .map_err(std::io::Error::other)?
+        {
+            // Select the relative application URL before creating WebView2.
+            // Reading its current URL during setup can observe about:blank.
+            let window = context
+                .config_mut()
+                .app
+                .windows
+                .iter_mut()
+                .find(|window| window.label == "main")
+                .ok_or_else(|| std::io::Error::other("missing main window"))?;
+            window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
+        }
+    }
     let executable = std::env::current_exe()?.canonicalize()?;
     let suffix: String = Sha256::digest(executable.to_string_lossy().as_bytes())
         .iter()

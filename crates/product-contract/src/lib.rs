@@ -4,11 +4,33 @@ use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
 pub mod context;
+pub mod operation;
 pub use context::{ExecutionTarget, ProjectContext};
+pub use operation::{Operation, OperationState, Problem, ProblemCode};
 
 pub const MAX_REQUEST_BYTES: usize = 4096;
 pub const MAX_DEADLINE_MS: u64 = 30_000;
 pub const MAX_PENDING_IDS: usize = 1024;
+
+/// Development navigation accepts only registered route slugs, never a URL or
+/// a path. This selects a view and does not grant that view command authority.
+pub fn development_route(
+    args: impl IntoIterator<Item = String>,
+    allowed_routes: &[&str],
+) -> Result<Option<String>, &'static str> {
+    let mut route = None;
+    for argument in args {
+        if let Some(value) = argument.strip_prefix("--route=") {
+            if route.is_some() || !allowed_routes.contains(&value) {
+                return Err("invalid or repeated development route");
+            }
+            route = Some(value.to_owned());
+        } else if argument == "--route" {
+            return Err("development route requires --route=<registered-route>");
+        }
+    }
+    Ok(route)
+}
 
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -46,7 +68,7 @@ pub struct Provenance {
 pub struct RouteStatus {
     pub route: String,
     pub availability: String,
-    pub provenance: Provenance,
+    pub operation: Operation,
 }
 
 /// This is a per-native-session replay cache. Unexpired entries are never
@@ -91,33 +113,35 @@ impl SessionGuard {
         request: &RouteRequest,
         now_ms: u64,
         allowed_routes: &[&str],
-    ) -> Result<(), &'static str> {
+    ) -> Result<(), ProblemCode> {
         if caller_window != "main" || !local_origin {
-            return Err("unauthorized caller");
+            return Err(ProblemCode::Unauthorized);
         }
         if let Some(context) = &request.context {
-            context.validate()?;
+            context
+                .validate()
+                .map_err(|_| ProblemCode::InvalidRequest)?;
         }
         if request.context != self.context {
-            return Err("stale or unregistered project context");
+            return Err(ProblemCode::StaleContext);
         }
         if request.installation_id.len() > 128
             || request.session_id.len() > 128
             || request.route.len() > 96
             || request.request_id.len() > 64
         {
-            return Err("request exceeds limit");
+            return Err(ProblemCode::InvalidRequest);
         }
-        let bytes = serde_json::to_vec(request).map_err(|_| "invalid request")?;
+        let bytes = serde_json::to_vec(request).map_err(|_| ProblemCode::InvalidRequest)?;
         if bytes.len() > MAX_REQUEST_BYTES {
-            return Err("request exceeds limit");
+            return Err(ProblemCode::InvalidRequest);
         }
         if request.protocol_version != 1
             || request.protocol_version != self.handshake.protocol_version
             || request.session_id != self.handshake.session_id
             || request.installation_id != self.handshake.installation_id
         {
-            return Err("session or installation mismatch");
+            return Err(ProblemCode::Unauthorized);
         }
         if request.request_id.is_empty()
             || request.request_id.len() > 64
@@ -127,17 +151,17 @@ impl SessionGuard {
                 .all(|b| b.is_ascii_alphanumeric() || b == b'-')
             || !allowed_routes.contains(&request.route.as_str())
         {
-            return Err("invalid request identity or route");
+            return Err(ProblemCode::InvalidRequest);
         }
         if request.deadline_ms <= now_ms || request.deadline_ms - now_ms > MAX_DEADLINE_MS {
-            return Err("expired or excessive deadline");
+            return Err(ProblemCode::Expired);
         }
         self.seen.retain(|_, expiry| *expiry > now_ms);
         if self.seen.contains_key(&request.request_id) {
-            return Err("replayed request");
+            return Err(ProblemCode::Replayed);
         }
         if self.seen.len() >= MAX_PENDING_IDS {
-            return Err("request capacity reached");
+            return Err(ProblemCode::Overloaded);
         }
         self.seen
             .insert(request.request_id.clone(), request.deadline_ms);
@@ -148,6 +172,23 @@ impl SessionGuard {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn development_route_cannot_navigate_to_foreign_origins_or_unregistered_views() {
+        let parse = |args: &[&str]| {
+            development_route(args.iter().map(|s| s.to_string()), &["overview", "files"])
+        };
+        assert_eq!(parse(&["--route=files"]), Ok(Some("files".into())));
+        assert_eq!(parse(&[]), Ok(None));
+        for args in [
+            vec!["--route=https://remote"],
+            vec!["--route=../private"],
+            vec!["--route=notes"],
+            vec!["--route"],
+            vec!["--route=files", "--route=overview"],
+        ] {
+            assert!(parse(&args).is_err());
+        }
+    }
     fn guard() -> SessionGuard {
         SessionGuard::new(Handshake {
             protocol_version: 1,
@@ -170,7 +211,7 @@ mod tests {
             .is_ok());
         assert_eq!(
             g.authorize("main", true, &request(), 1001, &["overview"]),
-            Err("replayed request")
+            Err(ProblemCode::Replayed)
         );
         for i in 1..MAX_PENDING_IDS {
             let mut r = request();
@@ -181,7 +222,7 @@ mod tests {
         r.request_id = "overflow".into();
         assert_eq!(
             g.authorize("main", true, &r, 1001, &["overview"]),
-            Err("request capacity reached")
+            Err(ProblemCode::Overloaded)
         );
         r.deadline_ms = 7000;
         assert!(g.authorize("main", true, &r, 6000, &["overview"]).is_ok());

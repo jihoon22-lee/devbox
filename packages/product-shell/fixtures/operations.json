@@ -1,0 +1,70 @@
+[
+  {
+    "provenance": {
+      "product": "workspace",
+      "component": "workspace.shell",
+      "requestId": "fixture-request",
+      "revision": 1
+    },
+    "outcome": {
+      "state": "running"
+    }
+  },
+  {
+    "provenance": {
+      "product": "workspace",
+      "component": "workspace.shell",
+      "requestId": "fixture-request",
+      "revision": 1
+    },
+    "outcome": {
+      "state": "succeeded"
+    }
+  },
+  {
+    "provenance": {
+      "product": "workspace",
+      "component": "workspace.shell",
+      "requestId": "fixture-request",
+      "revision": 1
+    },
+    "outcome": {
+      "state": "cancelled"
+    }
+  },
+  {
+    "provenance": {
+      "product": "workspace",
+      "component": "workspace.shell",
+      "requestId": "fixture-request",
+      "revision": 1
+    },
+    "outcome": {
+      "state": "stale"
+    }
+  },
+  {
+    "provenance": {
+      "product": "workspace",
+      "component": "workspace.shell",
+      "requestId": "fixture-request",
+      "revision": 1
+    },
+    "outcome": {
+      "state": "failed",
+      "code": "expired"
+    }
+  },
+  {
+    "provenance": {
+      "product": "workspace",
+      "component": "workspace.shell",
+      "requestId": "fixture-request",
+      "revision": 1
+    },
+    "outcome": {
+      "state": "failed",
+      "code": "unavailable"
+    }
+  }
+]

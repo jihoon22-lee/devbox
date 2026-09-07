@@ -1,4 +1,5 @@
 import { invoke, isTauri } from "@tauri-apps/api/core";
+import { isOperation, operationMessage, problemMessage, type Operation } from "./operation";
 import catalog from "../../../apps/products.json";
 
 export type ProductId = "workspace" | "api-studio" | "knowledge" | "control-center";
@@ -12,7 +13,7 @@ export interface ProjectContext {
 export interface Handshake { protocolVersion: number; product: string; installationId: string; sessionId: string }
 export interface Description { handshake: Handshake; product: typeof catalog.products[number]; features: Feature[]; context: ProjectContext | null }
 export interface RouteRequest { protocolVersion: number; installationId: string; sessionId: string; requestId: string; deadlineMs: number; route: string; context?: ProjectContext }
-export interface RouteStatus { route: string; availability: string; provenance: { product: string; component: string; requestId: string; revision: number } }
+export interface RouteStatus { route: string; availability: string; operation: Operation }
 
 export const nativeMode = isTauri();
 
@@ -51,12 +52,18 @@ export function makeRequest(handshake: Handshake, route: string, now = Date.now(
 export async function routeStatus(description: Description, route: string): Promise<RouteStatus> {
   if (!description.features.some((f) => f.route === route)) throw new Error("지원하지 않는 화면입니다.");
   const request = makeRequest(description.handshake, route, Date.now(), description.context);
-  const response = nativeMode ? await invoke<RouteStatus>("plugin:product-shell|route_status", { request }) : {
-    route, availability: "foundation", provenance: { product: description.product.id, component: `${description.product.id}.shell`, requestId: request.requestId, revision: catalog.catalogRevision },
-  };
-  if (response.route !== route || response.provenance.product !== description.product.id || response.provenance.requestId !== request.requestId
-    || response.provenance.component !== `${description.product.id}.shell` || response.provenance.revision !== catalog.catalogRevision) {
+  const provenance = { product: description.product.id, component: `${description.product.id}.shell`, requestId: request.requestId, revision: catalog.catalogRevision };
+  let response: RouteStatus;
+  try {
+    response = nativeMode ? await invoke<RouteStatus>("plugin:product-shell|route_status", { request }) : {
+      route, availability: "foundation", operation: { provenance, outcome: { state: "succeeded" } },
+    };
+  } catch (problem) {
+    throw new Error(problemMessage(problem, provenance));
+  }
+  if (!response || response.route !== route || response.availability !== "foundation" || !isOperation(response.operation, provenance)) {
     throw new Error("화면 응답의 출처가 일치하지 않습니다.");
   }
+  if (response.operation.outcome.state !== "succeeded") throw new Error(operationMessage(response.operation));
   return response;
 }
