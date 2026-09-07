@@ -16,6 +16,11 @@ if [[ $scope == none ]]; then
   exit 0
 fi
 
+concurrency=()
+if [[ -n ${DEVBOX_VERIFY_WORKSPACE_CONCURRENCY:-} ]]; then
+  [[ $DEVBOX_VERIFY_WORKSPACE_CONCURRENCY =~ ^[1-9][0-9]*$ ]] || { echo "Invalid workspace concurrency" >&2; exit 2; }
+  concurrency=(--workspace-concurrency "$DEVBOX_VERIFY_WORKSPACE_CONCURRENCY")
+fi
 selected_directories=()
 filters=()
 if [[ $scope == apps ]]; then
@@ -61,8 +66,8 @@ if [[ $action == typecheck ]]; then
   done
   echo "Additional TypeScript checks completed for $checked package(s)."
 elif [[ $scope == all ]]; then
-  pnpm "$action"
+  pnpm -r "${concurrency[@]}" "$action"
 else
-  pnpm -r "${filters[@]}" "$action"
+  pnpm -r "${concurrency[@]}" "${filters[@]}" "$action"
   echo "Frontend $action completed for ${#selected_directories[@]} selected package(s)."
 fi

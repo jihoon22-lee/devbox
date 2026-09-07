@@ -27,6 +27,8 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 - 기본 완료 검증은 루트 `pnpm verify:affected`다. commit·staged·unstaged·untracked와
   역의존 소비자를 포함한다. resolver가 all을 선택하면 전체 검증한다.
   `pnpm verify:all`은 release 준비·CI 검증기 변경·명시적 전체 감사에 사용한다.
+- 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
+  제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
 - 사용자 데이터·secret을 fixture로 쓰지 않는다. v0.8 migration은 원본 보존·WAL consistent
   snapshot·destination namespace·재개/복구 경계를 검증한다. UI route 통합을 권한 통합으로 취급하지 않는다.
 

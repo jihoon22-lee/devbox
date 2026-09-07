@@ -28,6 +28,9 @@ Read the repository [AGENTS.md](../../../AGENTS.md) and relevant sections of
   Rust validation; distinguish Windows compile checks from actual Windows execution.
 - Run `pnpm verify:affected` from the root after the final local changes. Honor `all`
   if the resolver selects it. Use `verify:all` for the cases in CONVENTIONS §5.
+- Keep local verification within the shared resource budget and worktree lock in
+  [verification operations](../../../docs/verification.md). One full run satisfies
+  both all-scope affected verification and the explicit full audit; do not duplicate it.
 - Review failures and fix those attributable to the change. Record unrelated or
   environment failures accurately; never substitute a skipped check for a pass.
 

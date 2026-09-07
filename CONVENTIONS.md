@@ -224,6 +224,12 @@ src/
   dependency graph의 역의존 closure만 검사한다. 미분류 경로·lockfile 단독 변경은 fail-safe로
   전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip하며, release와 주간 CI 감사는
   전체 검증을 유지한다.
+- 로컬 `verify:affected/all`은 패키지 1개, Vitest worker 2개, Cargo job 2개, Rust test thread
+  2개로 제한한다. CPU 4개·nice +10을 적용하고, 지원 호스트에서는 메모리 high 6GiB/max 8GiB,
+  swap max 1GiB를 검증 process scope에 적용한다. worktree 간 검증은 한 번에 하나만 실행한다.
+  CI는 독립 runner의 기존 동시성을 유지한다. 조정·실패·측정은 [검증 운영](./docs/verification.md).
+- 검증기 변경에서 affected가 `all`이면 한 번의 전체 실행이 `verify:all`과 affected의 compiler/test
+  검증을 함께 충족한다. 명령 이름만 바꿔 같은 전체 검증을 반복하지 않는다.
 
 ## 6. 프로젝트 시작 절차 (앱 추가 시)
 

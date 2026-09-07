@@ -32,6 +32,12 @@ elif [[ $scope != all ]]; then
   exit 2
 fi
 
+test_threads=()
+if [[ -n ${DEVBOX_VERIFY_RUST_TEST_THREADS:-} ]]; then
+  [[ $DEVBOX_VERIFY_RUST_TEST_THREADS =~ ^[1-9][0-9]*$ ]] || { echo "Invalid test thread count" >&2; exit 2; }
+  test_threads=(-- "--test-threads=$DEVBOX_VERIFY_RUST_TEST_THREADS")
+fi
+
 case "$action" in
   check)
     if [[ $scope == all ]]; then cargo check --workspace; else cargo check "${package_args[@]}"; fi
@@ -47,6 +53,6 @@ case "$action" in
     cargo fmt --all --check
     ;;
   test)
-    if [[ $scope == all ]]; then cargo test --workspace; else cargo test "${package_args[@]}"; fi
+    if [[ $scope == all ]]; then cargo test --workspace "${test_threads[@]}"; else cargo test "${package_args[@]}" "${test_threads[@]}"; fi
     ;;
 esac
