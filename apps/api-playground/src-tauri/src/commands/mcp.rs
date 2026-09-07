@@ -1672,6 +1672,103 @@ fn elapsed_ms(started: Instant) -> u64 {
     started.elapsed().as_millis().min(u64::MAX as u128) as u64
 }
 
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_connect_mcp_http(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile: McpHttpProfile,
+        environment: Vec<EnvironmentVariable>,
+    }
+    let Input {
+        profile,
+        environment,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = connect_mcp_http(
+        component_app.clone(),
+        component_app.state(),
+        component_app.state(),
+        profile,
+        environment,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_invoke_mcp_http(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        connection_id: String,
+        request_id: String,
+        method: String,
+        params: Value,
+    }
+    let Input {
+        connection_id,
+        request_id,
+        method,
+        params,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = invoke_mcp_http(
+        component_app.clone(),
+        component_app.state(),
+        component_app.state(),
+        connection_id,
+        request_id,
+        method,
+        params,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_cancel_mcp_http(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        connection_id: String,
+        request_id: String,
+    }
+    let Input {
+        connection_id,
+        request_id,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = cancel_mcp_http(component_app.state(), connection_id, request_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_disconnect_mcp_http(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        connection_id: String,
+    }
+    let Input { connection_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    disconnect_mcp_http(component_app.state(), connection_id).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

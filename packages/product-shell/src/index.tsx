@@ -1,4 +1,4 @@
-import { Component, lazy, Suspense, useEffect, useRef, useState, type ReactNode } from "react";
+import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { isImeComposing } from "@devbox/a11y";
 import { describe, nativeMode, type Description, type ProductId } from "./api";
 import { navigate, traverse, type Navigation } from "./navigation";
@@ -10,7 +10,9 @@ class RouteBoundary extends Component<{ children: ReactNode }, { error: boolean 
   render() { return this.state.error ? <p role="alert">화면을 불러오지 못했습니다. 앱을 다시 열어 주세요.</p> : this.props.children; }
 }
 
-function ReadyShell({ description }: { description: Description }) {
+export interface ShellContentProps { description: Description; route: string; navigate: (route: string) => void }
+export type ShellContent = (props: ShellContentProps) => ReactNode;
+function ReadyShell({ description, renderContent }: { description: Description; renderContent?: ShellContent }) {
   const queryRoute = new URLSearchParams(location.search).get("route");
   const initial = description.features.some((f) => f.route === queryRoute) ? queryRoute! : description.product.defaultRoute;
   const [history, setHistory] = useState<Navigation>({ entries: [initial], cursor: 0 });
@@ -23,9 +25,10 @@ function ReadyShell({ description }: { description: Description }) {
     window.addEventListener("online", update); window.addEventListener("offline", update);
     return () => { window.removeEventListener("online", update); window.removeEventListener("offline", update); };
   }, []);
-  function open(route: string) {
+  const open = useCallback((route: string) => {
+    if (!description.features.some((feature) => feature.route === route)) return;
     setVisited((v) => new Set([...v, route])); setHistory((h) => navigate(h, route));
-  }
+  }, [description]);
   return <div className="product-shell" onKeyDown={(event) => {
     if (isImeComposing(event)) return;
     if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
@@ -39,12 +42,12 @@ function ReadyShell({ description }: { description: Description }) {
       <div className="shell-toolbar"><button aria-label="뒤로" disabled={history.cursor === 0} onClick={() => setHistory((h) => traverse(h, -1))}>←</button><button aria-label="앞으로" disabled={history.cursor === history.entries.length - 1} onClick={() => setHistory((h) => traverse(h, 1))}>→</button><span>{description.context ? "프로젝트 연결됨" : "프로젝트 선택 없이 사용"}</span></div>
       {!online && <p role="status">오프라인입니다. 로컬 화면은 계속 사용할 수 있습니다.</p>}
       {queryRoute && !description.features.some((f) => f.route === queryRoute) && <p role="status">요청한 화면이 없어 기본 화면을 열었습니다.</p>}
-      {description.features.filter((f) => visited.has(f.route)).map((feature) => <div key={feature.id} hidden={feature.route !== current}><RouteBoundary><Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}><RouteView description={description} feature={feature}/></Suspense></RouteBoundary></div>)}
+      {renderContent ? renderContent({ description, route: current, navigate: open }) : description.features.filter((f) => visited.has(f.route)).map((feature) => <div key={feature.id} hidden={feature.route !== current}><RouteBoundary><Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}><RouteView description={description} feature={feature}/></Suspense></RouteBoundary></div>)}
     </main>
   </div>;
 }
 
-export function ProductShell({ product }: { product: ProductId }) {
+export function ProductShell({ product, renderContent }: { product: ProductId; renderContent?: ShellContent }) {
   const [description, setDescription] = useState<Description | null>(null);
   const [error, setError] = useState(false);
   const [attempt, setAttempt] = useState(0);
@@ -56,5 +59,5 @@ export function ProductShell({ product }: { product: ProductId }) {
   }, [product, attempt]);
   if (error) return <main role="alert"><h1>제품 연결을 확인할 수 없습니다</h1><button onClick={() => setAttempt((v) => v + 1)}>다시 시도</button></main>;
   if (!description || description.product.id !== product) return <main><p role="status">제품을 열고 있습니다…</p></main>;
-  return <ReadyShell key={product} description={description}/>;
+  return <ReadyShell key={product} description={description} renderContent={renderContent}/>;
 }

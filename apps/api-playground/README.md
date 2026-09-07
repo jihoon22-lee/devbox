@@ -1,5 +1,9 @@
 # api-playground — API Playground 0.5.1
 
+The frontend implementation and its tests are shared with the hidden v0.8 API
+Studio in [`packages/api-studio-features`](../../packages/api-studio-features/README.md).
+This app retains its legacy native entry point and data ownership.
+
 로컬 REST/WebSocket API 테스트 앱. 데스크톱 실행에서는 Rust backend가 HTTP와 WebSocket 클라이언트를
 담당해 **CORS 제약 없이** 요청한다.
 산출물: `ApiPlayground.exe` (`apps/api-playground`).

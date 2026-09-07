@@ -7,7 +7,9 @@
   "types": "src/index.tsx",
   "exports": {
     ".": "./src/index.tsx",
-    "./styles.css": "./src/styles.css"
+    "./styles.css": "./src/styles.css",
+    "./api": "./src/api.ts",
+    "./operation": "./src/operation.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

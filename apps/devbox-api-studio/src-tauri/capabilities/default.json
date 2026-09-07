@@ -1,12 +1,13 @@
 {
   "identifier": "main",
-  "description": "Local product shell window; domain mutations are not granted.",
+  "description": "Local API Studio main window with native session and component authorization.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "product-shell:allow-describe",
-    "product-shell:allow-route-status"
+    "product-shell:allow-route-status",
+    "api-studio:allow-execute"
   ]
 }

@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 1,
+  "catalogRevision": 3,
   "channel": "development",
   "products": [
     {
@@ -54,6 +54,34 @@
       "id": "control-center.shell",
       "owner": "control-center",
       "authority": "shell-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.api",
+      "owner": "api-studio",
+      "authority": "request-network",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.webhooks",
+      "owner": "api-studio",
+      "authority": "listener-network",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.transforms",
+      "owner": "api-studio",
+      "authority": "transform-local",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.migration",
+      "owner": "api-studio",
+      "authority": "legacy-import",
       "lifecycle": "product",
       "protocolVersion": 1
     }

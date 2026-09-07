@@ -1,0 +1,3192 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
+.api-feature-requests {
+  --bg: var(--db-color-bg);
+  --panel: var(--db-color-surface);
+  --border: var(--db-color-border);
+  --text: var(--db-color-text);
+  --dim: var(--db-color-text-muted);
+  --accent: var(--db-color-accent);
+  --green: var(--db-color-ok);
+  --red: var(--db-color-danger);
+  --amber: var(--db-color-warn);
+  --get: var(--db-color-ok);
+  --post: var(--db-color-warn);
+  --put: var(--db-color-accent);
+  --delete: var(--db-color-danger);
+  --patch: #a371f7;
+}
+
+.api-feature-requests * {
+  box-sizing: border-box;
+}
+
+.api-feature-requests,
+.api-feature-requests,
+.api-feature-requests {
+  height: 100%;
+  margin: 0;
+}
+
+.api-feature-requests {
+  background: var(--bg);
+  color: var(--text);
+  font-family: "Segoe UI", system-ui, sans-serif;
+  font-size: 13px;
+}
+
+.api-feature-requests .app {
+  display: flex;
+  height: 100%;
+}
+
+.api-feature-requests .sidebar {
+  width: 240px;
+  flex-shrink: 0;
+  border-right: 1px solid var(--border);
+  background: var(--panel);
+  overflow-y: auto;
+  padding: 12px;
+}
+
+.api-feature-requests .app-title {
+  font-size: 14px;
+  font-weight: 600;
+  margin: 0 0 14px;
+}
+
+.api-feature-requests .group-name {
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--dim);
+  padding: 6px 0;
+}
+
+.api-feature-requests .transfer-input {
+  display: none;
+}
+
+.api-feature-requests .history-toolbar {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 0 0 6px;
+}
+
+.api-feature-requests .history-search {
+  width: 100%;
+}
+
+.api-feature-requests .history-filter-row {
+  display: flex;
+  gap: 4px;
+}
+
+.api-feature-requests .history-filter-row .coll-filter {
+  flex: 1;
+  min-width: 0;
+  margin: 0;
+}
+
+.api-feature-requests .history-search:focus,
+.api-feature-requests .history-filter-row .coll-filter:focus,
+.api-feature-requests .transfer-actions .btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 1px;
+}
+
+.api-feature-requests .history-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: transparent;
+  border: none;
+  color: var(--text);
+  padding: 6px 4px;
+  border-radius: 6px;
+  cursor: pointer;
+  text-align: left;
+}
+
+.api-feature-requests .history-item:hover {
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.api-feature-requests .history-item.selected {
+  background: color-mix(in srgb, var(--accent) 14%, transparent);
+  outline: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+}
+
+.api-feature-requests .method {
+  font-weight: 700;
+  font-size: 11px;
+  min-width: 42px;
+}
+
+.api-feature-requests .method.get { color: var(--get); }
+.api-feature-requests .method.post { color: var(--post); }
+.api-feature-requests .method.put { color: var(--put); }
+.api-feature-requests .method.delete { color: var(--delete); }
+.api-feature-requests .method.patch { color: var(--patch); }
+
+.api-feature-requests .history-url {
+  color: var(--dim);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-feature-requests .content {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.api-feature-requests .workspace-tabs {
+  display: flex;
+  flex: none;
+  min-width: 0;
+  gap: 2px;
+  padding: 6px 12px 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.api-feature-requests .workspace-tabs button {
+  min-width: 0;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--dim);
+  padding: 7px 10px 8px;
+  font: inherit;
+  cursor: pointer;
+}
+
+.api-feature-requests .workspace-tabs button:hover {
+  color: var(--text);
+}
+
+.api-feature-requests .workspace-tabs button.active {
+  border-bottom-color: var(--accent);
+  color: var(--text);
+}
+
+.api-feature-requests .workspace-tabs button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.api-feature-requests .migration-notice,
+.api-feature-requests .persistence-warning {
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.api-feature-requests .migration-notice {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 8%, transparent);
+}
+
+.api-feature-requests .persistence-warning {
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+}
+
+.api-feature-requests .request-bar {
+  display: flex;
+  gap: 8px;
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .method-select {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  font-weight: 700;
+}
+
+.api-feature-requests .url-input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 10px;
+  outline: none;
+}
+
+.api-feature-requests .url-input:focus {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .btn {
+  background: var(--panel);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 12px;
+  cursor: pointer;
+  font-size: 12px;
+}
+
+.api-feature-requests .btn:hover:not(:disabled) {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.api-feature-requests .btn.send {
+  border-color: var(--accent);
+  min-width: 70px;
+}
+
+.api-feature-requests .tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+}
+
+.api-feature-requests .tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.api-feature-requests .tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.api-feature-requests .tab-body {
+  padding: 10px 14px;
+  min-height: 80px;
+  max-height: 40vh;
+  overflow-y: auto;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .kv-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.api-feature-requests .kv-row {
+  display: flex;
+  gap: 6px;
+}
+
+.api-feature-requests .kv-row input {
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+  outline: none;
+}
+
+.api-feature-requests .kv-row input:focus {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .kv-del {
+  background: transparent;
+  border: none;
+  color: var(--dim);
+  cursor: pointer;
+}
+
+.api-feature-requests .kv-del:hover {
+  color: var(--red);
+}
+
+.api-feature-requests .kv-add {
+  align-self: flex-start;
+}
+
+.api-feature-requests .header-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.api-feature-requests .header-summary {
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .header-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.api-feature-requests .header-row {
+  display: grid;
+  grid-template-columns: 66px minmax(150px, 0.8fr) minmax(220px, 1.4fr) 130px auto 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 790px;
+}
+
+.api-feature-requests .header-row.disabled > :not(.header-enabled) {
+  opacity: 0.55;
+}
+
+.api-feature-requests .header-enabled {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  font-size: 11px;
+  white-space: nowrap;
+}
+
+.api-feature-requests .header-row > input,
+.api-feature-requests .header-row > select {
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.api-feature-requests .header-row > input:focus,
+.api-feature-requests .header-row > select:focus {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .header-row-action {
+  height: 30px;
+  padding: 5px 9px;
+}
+
+.api-feature-requests .header-notice {
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-feature-requests .cookie-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.api-feature-requests .cookie-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.api-feature-requests .cookie-row {
+  display: grid;
+  grid-template-columns: 66px minmax(140px, 0.7fr) minmax(210px, 1.2fr) auto 130px auto 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 850px;
+}
+
+.api-feature-requests .cookie-row.disabled > :not(.header-enabled),
+.api-feature-requests .cookie-row.invalid.disabled > :not(.header-enabled) {
+  opacity: 0.55;
+}
+
+.api-feature-requests .cookie-row > input,
+.api-feature-requests .cookie-row > select {
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.api-feature-requests .cookie-row > input:focus,
+.api-feature-requests .cookie-row > select:focus {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .cookie-row.invalid > input {
+  border-color: var(--red);
+}
+
+.api-feature-requests .cookie-row-error {
+  grid-column: 2 / -1;
+  color: var(--red);
+  font-size: 11px;
+}
+
+.api-feature-requests .cookie-conflict {
+  padding: 8px 10px;
+  border: 1px solid var(--red);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  color: var(--red);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-feature-requests .multipart-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+
+.api-feature-requests .multipart-table {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  overflow-x: auto;
+}
+
+.api-feature-requests .multipart-row {
+  display: grid;
+  grid-template-columns: 66px 74px minmax(130px, 0.65fr) minmax(180px, 1fr) minmax(150px, 0.7fr) 126px auto 28px;
+  align-items: center;
+  gap: 6px;
+  min-width: 1020px;
+}
+
+.api-feature-requests .multipart-row.disabled > :not(.header-enabled) {
+  opacity: 0.55;
+}
+
+.api-feature-requests .multipart-row > input,
+.api-feature-requests .multipart-row > select {
+  min-width: 0;
+  height: 30px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  outline: none;
+}
+
+.api-feature-requests .multipart-row.invalid > input {
+  border-color: var(--red);
+}
+
+.api-feature-requests .multipart-file {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.api-feature-requests .multipart-row-error {
+  grid-column: 2 / -1;
+  color: var(--red);
+  font-size: 11px;
+}
+
+.api-feature-requests .multipart-add-actions {
+  display: flex;
+  gap: 6px;
+}
+
+.api-feature-requests .select-sm {
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 8px;
+  margin-bottom: 8px;
+}
+
+.api-feature-requests .body-input {
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  resize: vertical;
+  outline: none;
+}
+
+.api-feature-requests .auth-body .kv-row {
+  margin-bottom: 6px;
+}
+
+.api-feature-requests .error {
+  background: rgba(248, 81, 73, 0.12);
+  border-bottom: 1px solid var(--red);
+  color: var(--red);
+  padding: 8px 14px;
+}
+
+.api-feature-requests .response {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.api-feature-requests .response-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .spacer {
+  flex: 1;
+}
+
+.api-feature-requests .status-badge {
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.api-feature-requests .status-2xx { color: var(--green); }
+.api-feature-requests .status-4xx { color: var(--red); }
+.api-feature-requests .status-other { color: var(--amber); }
+
+.api-feature-requests .response-tabs {
+  display: flex;
+  border-bottom: 1px solid var(--border);
+  padding: 0 14px;
+}
+
+.api-feature-requests .response-tab {
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--dim);
+  padding: 8px 12px;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+}
+
+.api-feature-requests .response-tab.active {
+  color: var(--text);
+  border-bottom-color: var(--accent);
+}
+
+.api-feature-requests .response-panel {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.api-feature-requests .response-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .response-warning {
+  padding: 7px 14px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.api-feature-requests .response-feedback {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  font-size: 11px;
+}
+
+.api-feature-requests .response-feedback.success {
+  color: var(--green);
+  background: color-mix(in srgb, var(--green) 9%, transparent);
+}
+
+.api-feature-requests .response-feedback.error {
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+
+.api-feature-requests .response-table-wrap {
+  flex: 1;
+  overflow: auto;
+}
+
+.api-feature-requests .response-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 12px;
+}
+
+.api-feature-requests .response-table th,
+.api-feature-requests .response-table td {
+  padding: 7px 14px;
+  border-bottom: 1px solid var(--border);
+  text-align: left;
+  vertical-align: top;
+}
+
+.api-feature-requests .response-table th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--panel);
+  color: var(--dim);
+  font-size: 10px;
+  letter-spacing: 0.05em;
+}
+
+.api-feature-requests .response-table td:first-child {
+  width: 28%;
+  color: var(--dim);
+  word-break: break-word;
+}
+
+.api-feature-requests .response-table .mono {
+  font-family: "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.api-feature-requests .response-empty {
+  padding: 20px 14px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.api-feature-requests .btn.danger-outline {
+  border-color: color-mix(in srgb, var(--red) 65%, var(--border));
+  color: var(--red);
+}
+
+.api-feature-requests .resp-body {
+  flex: 1;
+  margin: 0;
+  padding: 14px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow: auto;
+}
+
+.api-feature-requests .curl-panel {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 14px;
+}
+
+.api-feature-requests .curl-panel .io-label {
+  margin-bottom: 4px;
+}
+
+.api-feature-requests .curl-text {
+  margin: 0;
+  background: var(--bg);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 8px;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow: auto;
+}
+
+.api-feature-requests .btn.active {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
+.api-feature-requests .copy-btn {
+  margin-left: auto;
+  background: transparent;
+  border: 1px solid var(--border);
+  color: var(--dim);
+  border-radius: 6px;
+  padding: 2px 10px;
+  cursor: pointer;
+  font-size: 11px;
+}
+
+.api-feature-requests .copy-btn:hover {
+  color: var(--text);
+  border-color: var(--accent);
+}
+
+.api-feature-requests .toggle {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 12px;
+}
+
+.api-feature-requests .dim {
+  color: var(--dim);
+}
+
+.api-feature-requests .handoff-backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.64);
+}
+
+.api-feature-requests .handoff-dialog {
+  width: min(720px, 100%);
+  max-height: min(760px, 100%);
+  overflow: auto;
+  padding: 18px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.44);
+}
+
+.api-feature-requests .handoff-dialog-head,
+.api-feature-requests .handoff-dialog-actions,
+.api-feature-requests .handoff-request-line,
+.api-feature-requests .handoff-header-line {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-feature-requests .handoff-dialog-head {
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 18px;
+}
+
+.api-feature-requests .handoff-dialog h2 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.api-feature-requests .handoff-subtitle {
+  margin: 6px 0 0;
+  color: var(--dim);
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.api-feature-requests .handoff-kind {
+  flex: none;
+  color: var(--accent);
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.api-feature-requests .handoff-meta {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px 18px;
+  margin: 16px 0;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.api-feature-requests .handoff-meta div {
+  min-width: 0;
+}
+
+.api-feature-requests .handoff-meta dt {
+  color: var(--dim);
+  font-size: 10px;
+  text-transform: uppercase;
+}
+
+.api-feature-requests .handoff-meta dd {
+  margin: 2px 0 0;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .handoff-request-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding: 12px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, var(--border));
+  border-radius: 7px;
+  background: var(--bg);
+}
+
+.api-feature-requests .handoff-request-line {
+  min-width: 0;
+}
+
+.api-feature-requests .handoff-request-line code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .handoff-header-preview {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+}
+
+.api-feature-requests .handoff-header-line {
+  align-items: flex-start;
+  font-size: 12px;
+}
+
+.api-feature-requests .handoff-header-line span {
+  flex: 0 0 150px;
+  color: var(--dim);
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .handoff-header-line code {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .handoff-body-preview {
+  max-height: 180px;
+  overflow: auto;
+  margin: 0;
+  padding: 8px;
+  border-top: 1px solid var(--border);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 11px;
+}
+
+.api-feature-requests .handoff-dialog-actions {
+  justify-content: flex-end;
+  margin-top: 16px;
+}
+
+.api-feature-requests .coll-save-row {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--db-color-border, #262c36);
+}
+
+.api-feature-requests .transfer-actions {
+  display: flex;
+  gap: 4px;
+  padding: 0 8px 4px;
+}
+
+.api-feature-requests .transfer-actions .btn {
+  flex: 1;
+  min-width: 0;
+}
+
+.api-feature-requests .coll-input {
+  background: var(--db-color-bg, #111418);
+  color: var(--db-color-text, #e6e9ef);
+  border: 1px solid var(--db-color-border, #262c36);
+  border-radius: 6px;
+  padding: 4px 8px;
+  font-size: 12px;
+}
+
+.api-feature-requests .coll-filter {
+  width: 100%;
+  background: var(--db-color-bg, #111418);
+  color: var(--db-color-text, #e6e9ef);
+  border: 1px solid var(--db-color-border, #262c36);
+  border-radius: 6px;
+  padding: 3px 6px;
+  margin: 4px 8px;
+  font-size: 11px;
+}
+
+.api-feature-requests .coll-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.api-feature-requests .coll-open {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: transparent;
+  border: none;
+  color: inherit;
+  text-align: left;
+  cursor: pointer;
+  min-width: 0;
+  padding: 4px 0;
+}
+
+.api-feature-requests .coll-del {
+  background: transparent;
+  border: none;
+  color: var(--db-color-text-muted, #8b93a1);
+  cursor: pointer;
+}
+
+.api-feature-requests .coll-del:hover {
+  color: var(--db-color-danger, #f85149);
+}
+
+.api-feature-requests .env-item {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+}
+
+.api-feature-requests .env-item.active .env-name {
+  color: var(--db-color-accent, #4f8cff);
+}
+
+.api-feature-requests .env-name {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--db-color-text, #e6e9ef);
+  text-align: left;
+  cursor: pointer;
+  padding: 4px 0;
+  font-size: 12px;
+}
+
+.api-feature-requests .env-vars {
+  padding: 4px 8px 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border-bottom: 1px solid var(--db-color-border, #262c36);
+}
+
+.api-feature-requests .env-var-row {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+}
+
+.api-feature-requests .env-var-key {
+  min-width: 70px;
+  font-family: var(--db-font-mono, monospace);
+  font-size: 11px;
+  color: var(--db-color-text-muted, #8b93a1);
+}
+
+.api-feature-requests .env-add-var {
+  margin-top: 2px;
+}
+
+.api-feature-requests .openapi-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 20;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(0, 0, 0, 0.58);
+}
+
+.api-feature-requests .openapi-dialog {
+  display: flex;
+  flex-direction: column;
+  width: min(860px, 100%);
+  max-height: min(760px, 100%);
+  overflow: hidden;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel);
+  box-shadow: 0 18px 60px rgba(0, 0, 0, 0.4);
+}
+
+.api-feature-requests .openapi-dialog-head,
+.api-feature-requests .openapi-dialog-actions,
+.api-feature-requests .openapi-source-row,
+.api-feature-requests .openapi-server-row,
+.api-feature-requests .openapi-summary {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.api-feature-requests .openapi-dialog-head {
+  justify-content: space-between;
+  padding: 16px 18px 12px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .openapi-dialog-head h2 {
+  margin: 0;
+  font-size: 15px;
+}
+
+.api-feature-requests .openapi-dialog-head p {
+  margin: 5px 0 0;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .openapi-source-row {
+  padding: 12px 18px 8px;
+}
+
+.api-feature-requests .openapi-url-row {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 8px;
+  padding: 0 18px 8px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .openapi-url-row input {
+  min-width: 0;
+}
+
+.api-feature-requests .openapi-file-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  clip-path: inset(50%);
+  white-space: nowrap;
+}
+
+.api-feature-requests .openapi-file-input:focus-visible + .openapi-file-label,
+.api-feature-requests .openapi-file-label:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.api-feature-requests .openapi-offline-note {
+  margin: 0 18px 10px;
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 6px;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-feature-requests .openapi-status,
+.api-feature-requests .openapi-document-warnings {
+  margin: 0 18px 8px;
+  padding: 8px 10px;
+  border-radius: 6px;
+  color: var(--amber);
+  background: color-mix(in srgb, var(--amber) 9%, transparent);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-feature-requests .openapi-summary {
+  flex-wrap: wrap;
+  padding: 8px 18px;
+  border-top: 1px solid var(--border);
+  border-bottom: 1px solid var(--border);
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .openapi-summary span:first-child {
+  color: var(--text);
+  font-weight: 600;
+}
+
+.api-feature-requests .openapi-server-row {
+  padding: 10px 18px;
+  font-size: 11px;
+}
+
+.api-feature-requests .openapi-server-row span {
+  flex: 0 0 52px;
+  color: var(--dim);
+}
+
+.api-feature-requests .openapi-server-row select {
+  min-width: 0;
+  flex: 1;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 6px 8px;
+}
+
+.api-feature-requests .openapi-operations {
+  min-height: 100px;
+  overflow: auto;
+  padding: 0 18px 12px;
+}
+
+.api-feature-requests .openapi-operation {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 9px 8px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+  cursor: pointer;
+}
+
+.api-feature-requests .openapi-operation:hover {
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.api-feature-requests .openapi-operation.is-invalid {
+  cursor: default;
+  opacity: 0.68;
+}
+
+.api-feature-requests .openapi-operation > input {
+  margin-top: 3px;
+}
+
+.api-feature-requests .openapi-operation > .method {
+  flex: 0 0 46px;
+  margin-top: 2px;
+}
+
+.api-feature-requests .openapi-operation-main {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.api-feature-requests .openapi-operation-label {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.api-feature-requests .openapi-operation-meta,
+.api-feature-requests .openapi-operation-detail,
+.api-feature-requests .openapi-operation-issue {
+  color: var(--dim);
+  font-size: 10px;
+}
+
+.api-feature-requests .openapi-operation-detail {
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.api-feature-requests .openapi-operation-issue {
+  color: var(--amber);
+}
+
+.api-feature-requests .openapi-dialog-actions {
+  justify-content: space-between;
+  align-items: flex-end;
+  padding: 12px 18px;
+  border-top: 1px solid var(--border);
+  font-size: 10px;
+}
+
+.api-feature-requests .openapi-action-buttons {
+  display: flex;
+  flex-shrink: 0;
+  gap: 6px;
+}
+
+@media (max-width: 680px) {
+  .api-feature-requests .openapi-overlay {
+    padding: 10px;
+  }
+
+  .api-feature-requests .openapi-dialog-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .api-feature-requests .openapi-action-buttons {
+    justify-content: flex-end;
+  }
+
+  .api-feature-requests .openapi-url-row {
+    grid-template-columns: 1fr auto;
+  }
+
+  .api-feature-requests .openapi-url-row label {
+    grid-column: 1 / -1;
+  }
+}
+
+.api-feature-requests .env-var-secret {
+  flex: 1;
+  color: var(--db-color-text-muted, #8b93a1);
+  font-family: var(--db-font-mono, monospace);
+  font-size: 12px;
+  letter-spacing: 2px;
+}
+
+.api-feature-requests .env-var-secret.unconfigured {
+  color: var(--amber);
+  letter-spacing: 0;
+}
+
+.api-feature-requests .binary-response-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 12px 14px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: color-mix(in srgb, var(--panel) 78%, var(--bg));
+}
+
+.api-feature-requests .binary-response-meta {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.api-feature-requests .binary-response-field {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  min-width: 0;
+}
+
+.api-feature-requests .binary-response-label {
+  flex: 0 0 100px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .binary-response-field code {
+  min-width: 0;
+  max-height: 120px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.api-feature-requests .graphql-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-top: 10px;
+}
+
+.api-feature-requests .graphql-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--db-color-text-muted, #8b93a1);
+  font-size: 12px;
+}
+
+.api-feature-requests .graphql-query,
+.api-feature-requests .graphql-variables {
+  width: 100%;
+  box-sizing: border-box;
+  resize: vertical;
+}
+
+.api-feature-requests .graphql-operation-name input,
+.api-feature-requests .graphql-operation-name > input {
+  max-width: 360px;
+}
+
+.api-feature-requests .graphql-hint {
+  color: var(--db-color-text-muted, #8b93a1);
+  font-size: 11px;
+  line-height: 1.5;
+  margin: 0;
+}
+
+.api-feature-requests .graphql-response-summary {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  margin-bottom: 10px;
+  padding: 10px;
+  border: 1px solid var(--db-color-border, #262c36);
+  border-radius: 6px;
+}
+
+.api-feature-requests .graphql-response-state,
+.api-feature-requests .graphql-error-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.api-feature-requests .graphql-http-error {
+  color: var(--db-color-danger, #f85149);
+}
+
+.api-feature-requests .graphql-http-ok {
+  color: var(--db-color-success, #3fb950);
+}
+
+.api-feature-requests .graphql-section-label {
+  color: var(--db-color-text-muted, #8b93a1);
+  font-size: 11px;
+  text-transform: uppercase;
+}
+
+.api-feature-requests .graphql-errors {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: var(--db-color-danger, #f85149);
+}
+
+.api-feature-requests .graphql-error-item {
+  padding: 6px 8px;
+  border-left: 2px solid var(--db-color-danger, #f85149);
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .graphql-data-body {
+  max-height: 240px;
+  overflow: auto;
+}
+
+.api-feature-requests .sse-controls {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+}
+
+.api-feature-requests .sse-control-actions,
+.api-feature-requests .sse-control-options {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.api-feature-requests .sse-status {
+  color: var(--dim);
+  font-size: 11px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.api-feature-requests .sse-status-connected { color: var(--green); }
+.api-feature-requests .sse-status-connecting { color: var(--amber); }
+.api-feature-requests .sse-status-error { color: var(--red); }
+
+.api-feature-requests .sse-number-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .websocket-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  min-height: 240px;
+  max-height: 52vh;
+  overflow: hidden;
+  padding: 10px 14px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .websocket-header,
+.api-feature-requests .websocket-log-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.api-feature-requests .websocket-header h2 {
+  margin: 0;
+  font-size: 13px;
+}
+
+.api-feature-requests .websocket-state {
+  border-radius: 999px;
+  padding: 2px 8px;
+  background: color-mix(in srgb, var(--dim) 15%, transparent);
+  color: var(--dim);
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.api-feature-requests .websocket-state-open {
+  background: color-mix(in srgb, var(--green) 18%, transparent);
+  color: var(--green);
+}
+
+.api-feature-requests .websocket-state-error {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--red);
+}
+
+.api-feature-requests .websocket-state-connecting,
+.api-feature-requests .websocket-state-closing {
+  background: color-mix(in srgb, var(--amber) 18%, transparent);
+  color: var(--amber);
+}
+
+.api-feature-requests .websocket-hint {
+  margin: 0;
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.5;
+}
+
+.api-feature-requests .websocket-controls {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.api-feature-requests .websocket-controls fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+}
+
+.api-feature-requests .websocket-controls legend {
+  padding: 0 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .websocket-controls label {
+  display: flex;
+  min-width: 0;
+  flex: 1;
+  flex-direction: column;
+  gap: 4px;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+.api-feature-requests .sse-number-field input {
+  width: 86px;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  padding: 4px 5px;
+  font-size: 11px;
+}
+
+.api-feature-requests .sse-policy-note {
+  color: var(--dim);
+  font-size: 11px;
+  line-height: 1.4;
+}
+
+.api-feature-requests .sse-viewer {
+  min-height: 120px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.api-feature-requests .sse-viewer-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .sse-event-list {
+  max-height: 42vh;
+  overflow: auto;
+  padding: 8px 14px;
+}
+
+.api-feature-requests .sse-event-row {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  margin-bottom: 7px;
+  overflow: hidden;
+}
+
+.api-feature-requests .sse-event-meta {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+  padding: 5px 8px;
+  background: color-mix(in srgb, var(--panel) 80%, var(--accent));
+  font-size: 11px;
+}
+
+.api-feature-requests .sse-event-name {
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.api-feature-requests .sse-event-data {
+  margin: 0;
+  padding: 8px;
+  max-height: 220px;
+  overflow: auto;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-family: "Cascadia Code", Consolas, monospace;
+  font-size: 12px;
+}
+
+.api-feature-requests .websocket-controls input,
+.api-feature-requests .websocket-controls select,
+.api-feature-requests .websocket-controls textarea {
+  min-width: 0;
+  width: 100%;
+  background: var(--bg);
+  color: var(--text);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 5px 7px;
+  font: inherit;
+  outline: none;
+}
+
+.api-feature-requests .websocket-controls textarea {
+  min-height: 58px;
+  resize: vertical;
+  font-family: "Cascadia Code", Consolas, monospace;
+}
+
+.api-feature-requests .websocket-controls input:focus,
+.api-feature-requests .websocket-controls select:focus,
+.api-feature-requests .websocket-controls textarea:focus {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .websocket-field-row {
+  display: flex;
+  gap: 6px;
+  margin-bottom: 7px;
+}
+
+.api-feature-requests .websocket-grow-field {
+  flex: 1.5 !important;
+}
+
+.api-feature-requests .websocket-wide-field {
+  margin-bottom: 7px;
+}
+
+.api-feature-requests .websocket-log-header {
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.api-feature-requests .websocket-log {
+  display: flex;
+  flex: 1;
+  min-height: 40px;
+  flex-direction: column;
+  gap: 5px;
+  margin: 0;
+  padding: 0 3px 0 20px;
+  overflow: auto;
+}
+
+.api-feature-requests .websocket-message {
+  display: flex;
+  align-items: baseline;
+  gap: 7px;
+  min-width: 0;
+  padding: 4px 5px;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 65%, transparent);
+  font-size: 11px;
+}
+
+.api-feature-requests .websocket-direction {
+  flex: 0 0 58px;
+  font-weight: 700;
+}
+
+.api-feature-requests .websocket-direction-sent {
+  color: var(--accent);
+}
+
+.api-feature-requests .websocket-direction-received {
+  color: var(--green);
+}
+
+.api-feature-requests .websocket-message-kind {
+  flex: 0 0 45px;
+  color: var(--dim);
+  text-transform: uppercase;
+}
+
+.api-feature-requests .websocket-payload {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .websocket-binary-payload {
+  display: inline-flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.api-feature-requests .websocket-payload code {
+  max-width: 100%;
+  color: var(--text);
+  font-family: "Cascadia Code", Consolas, monospace;
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .websocket-empty {
+  padding: 8px 0;
+  color: var(--dim);
+  font-size: 11px;
+}
+
+@media (max-width: 900px) {
+  .api-feature-requests .websocket-controls {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Protocol Lab */
+.api-feature-requests .protocol-lab {
+  flex: 1 1 auto;
+  min-width: 0;
+  min-height: 0;
+  overflow-x: hidden;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-gutter: stable;
+  padding: var(--db-space-4, 16px);
+}
+
+.api-feature-requests .protocol-lab-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--db-space-4, 16px);
+  min-width: 0;
+  padding-bottom: var(--db-space-3, 12px);
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .protocol-lab-head > div {
+  min-width: 0;
+}
+
+.api-feature-requests .protocol-lab-head h2 {
+  margin: 0;
+  font-size: var(--db-text-lg, 15px);
+  line-height: 1.3;
+}
+
+.api-feature-requests .protocol-lab-head p {
+  max-width: 760px;
+  margin: 6px 0 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .mcp-memory-badge {
+  flex: none;
+  padding: 4px 8px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--accent) 8%, transparent);
+  color: var(--accent);
+  font-size: var(--db-text-sm, 11px);
+  white-space: nowrap;
+}
+
+.api-feature-requests .mcp-notice,
+.api-feature-requests .mcp-error {
+  margin-top: var(--db-space-3, 12px);
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .mcp-notice {
+  padding: 8px 10px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-profile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 180px 150px auto;
+  align-items: end;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  padding: var(--db-space-3, 12px) 0;
+  border-bottom: 1px solid var(--border);
+}
+
+.api-feature-requests .mcp-profile > label,
+.api-feature-requests .mcp-explorer-section > label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-profile input,
+.api-feature-requests .mcp-profile select,
+.api-feature-requests .mcp-explorer-section > input,
+.api-feature-requests .mcp-explorer-section > select,
+.api-feature-requests .mcp-explorer-section > label > input,
+.api-feature-requests .mcp-explorer-section > label > select,
+.api-feature-requests .mcp-schema-field input:not([type="checkbox"]),
+.api-feature-requests .mcp-schema-field select {
+  min-width: 0;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 5px 8px;
+  font: inherit;
+  outline: none;
+}
+
+.api-feature-requests .mcp-profile input[type="number"],
+.api-feature-requests .mcp-profile select {
+  width: 100%;
+}
+
+.api-feature-requests .mcp-profile-actions {
+  display: flex;
+  align-items: flex-end;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.api-feature-requests .mcp-profile-actions .btn {
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.api-feature-requests .mcp-stdio-profile {
+  grid-column: 1 / -1;
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-3, 12px);
+  padding-top: var(--db-space-1, 4px);
+}
+
+.api-feature-requests .mcp-stdio-warning {
+  margin-top: 0;
+  border-color: color-mix(in srgb, var(--amber) 35%, var(--border));
+  background: color-mix(in srgb, var(--amber) 7%, transparent);
+}
+
+.api-feature-requests .mcp-stdio-selection-row {
+  display: grid;
+  grid-template-areas: "label choose status clear";
+  grid-template-columns: max-content auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+}
+
+.api-feature-requests .mcp-stdio-selection-row > span:first-child {
+  grid-area: label;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+  white-space: nowrap;
+}
+
+.api-feature-requests .mcp-stdio-selection-row > span[role="status"] {
+  grid-area: status;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .mcp-stdio-selection-row > button[aria-label^="Choose"] {
+  grid-area: choose;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.api-feature-requests .mcp-stdio-selection-row > button[aria-label="Clear cwd"] {
+  grid-area: clear;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.api-feature-requests .mcp-stdio-profile fieldset,
+.api-feature-requests .mcp-oauth-panel fieldset {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: var(--db-space-3, 12px);
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.api-feature-requests .mcp-stdio-profile fieldset:disabled,
+.api-feature-requests .mcp-oauth-panel fieldset:disabled {
+  opacity: 0.68;
+}
+
+.api-feature-requests .mcp-stdio-profile fieldset legend,
+.api-feature-requests .mcp-oauth-panel fieldset legend {
+  max-width: 100%;
+  padding: 0 6px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-stdio-row,
+.api-feature-requests .mcp-oauth-scope-row {
+  display: flex;
+  align-items: flex-end;
+  flex-wrap: wrap;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.api-feature-requests .mcp-stdio-row > label,
+.api-feature-requests .mcp-oauth-scope-row > label,
+.api-feature-requests .mcp-oauth-inputs > label,
+.api-feature-requests .mcp-oauth-panel > label {
+  display: flex;
+  min-width: 0;
+  flex: 1 1 220px;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-stdio-row > .btn,
+.api-feature-requests .mcp-oauth-scope-row > .btn,
+.api-feature-requests .mcp-stdio-profile fieldset > .btn,
+.api-feature-requests .mcp-oauth-panel fieldset > .btn {
+  min-height: 30px;
+  flex: none;
+  align-self: flex-end;
+  white-space: nowrap;
+}
+
+.api-feature-requests .mcp-stdio-row input,
+.api-feature-requests .mcp-oauth-panel :is(input, select) {
+  min-width: 0;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 5px 8px;
+  font: inherit;
+  outline: none;
+}
+
+.api-feature-requests .mcp-oauth-panel {
+  display: flex;
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: var(--db-space-3, 12px);
+  flex-direction: column;
+  gap: var(--db-space-3, 12px);
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.api-feature-requests .mcp-oauth-panel h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.api-feature-requests .mcp-oauth-panel > p {
+  max-width: 760px;
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.api-feature-requests .mcp-oauth-inputs {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.api-feature-requests .mcp-oauth-grant {
+  display: flex;
+  min-width: 0;
+  padding: 10px;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--green) 6%, var(--panel));
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-oauth-grant > strong,
+.api-feature-requests .mcp-oauth-grant > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .mcp-oauth-grant > strong {
+  color: var(--text);
+}
+
+.api-feature-requests .mcp-oauth-grant > span {
+  color: var(--dim);
+}
+
+.api-feature-requests .mcp-oauth-grant .mcp-inline-actions {
+  margin-top: var(--db-space-1, 4px);
+}
+
+.api-feature-requests .protocol-lab :is(button, input, select, textarea, summary):focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+.api-feature-requests .protocol-lab :is(input, select, textarea):focus-visible, .api-feature-requests .protocol-lab .mcp-profile :is(input, select):focus-visible, .api-feature-requests .protocol-lab .mcp-schema-field :is(input, select, textarea):focus-visible {
+  border-color: var(--accent);
+}
+
+.api-feature-requests .protocol-lab :disabled {
+  cursor: not-allowed;
+}
+
+.api-feature-requests .protocol-lab :is(input, select, textarea):disabled {
+  border-color: color-mix(in srgb, var(--border) 75%, var(--bg));
+  background: color-mix(in srgb, var(--panel) 78%, var(--bg));
+  color: var(--dim);
+}
+
+.api-feature-requests .mcp-custom-headers {
+  min-width: 0;
+  margin-top: var(--db-space-2, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+}
+
+.api-feature-requests .mcp-custom-headers summary {
+  padding: 8px 10px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: var(--db-text-sm, 11px);
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .mcp-custom-headers summary:hover {
+  color: var(--text);
+}
+
+.api-feature-requests .mcp-custom-headers fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: 0 10px 10px;
+  border: 0;
+}
+
+.api-feature-requests .mcp-custom-headers fieldset:disabled {
+  opacity: 0.65;
+}
+
+.api-feature-requests .mcp-server-card {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 6px 12px;
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--green) 6%, var(--panel));
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-server-card > strong,
+.api-feature-requests .mcp-server-card > span,
+.api-feature-requests .mcp-server-card > code {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .mcp-server-card > strong {
+  color: var(--text);
+}
+
+.api-feature-requests .mcp-server-card > span,
+.api-feature-requests .mcp-server-card > code {
+  color: var(--dim);
+}
+
+.api-feature-requests .mcp-explorer-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  align-items: start;
+  gap: var(--db-space-3, 12px);
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+}
+
+.api-feature-requests .mcp-explorer-section {
+  display: flex;
+  min-width: 0;
+  min-height: 210px;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.api-feature-requests .mcp-explorer-section h3 {
+  min-width: 0;
+  margin: 0;
+  color: var(--text);
+  font-size: 12px;
+}
+
+.api-feature-requests .mcp-explorer-section.disabled {
+  border-color: color-mix(in srgb, var(--border) 75%, var(--bg));
+  background: color-mix(in srgb, var(--panel) 65%, var(--bg));
+  opacity: 0.68;
+}
+
+.api-feature-requests .mcp-explorer-section.disabled h3 {
+  color: var(--dim);
+}
+
+.api-feature-requests .mcp-explorer-section > p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.api-feature-requests .mcp-explorer-section > select,
+.api-feature-requests .mcp-explorer-section > input,
+.api-feature-requests .mcp-explorer-section > label > input {
+  flex: none;
+}
+
+.api-feature-requests .mcp-inline-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.api-feature-requests .mcp-inline-actions .btn {
+  min-width: 0;
+}
+
+.api-feature-requests .mcp-untrusted-text {
+  max-height: 132px;
+  margin: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-sm, 4px);
+  background: var(--bg);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.api-feature-requests .mcp-schema-editor {
+  min-width: 0;
+  max-height: min(42vh, 480px);
+  overflow: auto;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  overscroll-behavior: contain;
+}
+
+.api-feature-requests .mcp-schema-fields {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+}
+
+.api-feature-requests .mcp-schema-field {
+  min-width: 0;
+  margin: 0;
+  padding: 8px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--accent));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg));
+}
+
+.api-feature-requests .mcp-schema-field:disabled {
+  opacity: 0.62;
+}
+
+.api-feature-requests .mcp-schema-field legend {
+  max-width: 100%;
+  padding: 0 4px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-schema-field legend code {
+  display: inline-block;
+  max-width: 100%;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .mcp-required {
+  display: inline-block;
+  margin-left: 6px;
+  color: var(--amber);
+  font-size: 10px;
+}
+
+.api-feature-requests .mcp-optional-toggle,
+.api-feature-requests .mcp-boolean-field {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-optional-toggle {
+  margin-left: 6px;
+}
+
+.api-feature-requests .mcp-schema-description {
+  max-height: 88px;
+  margin: 0 0 7px;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  line-height: 1.45;
+}
+
+.api-feature-requests .mcp-schema-field > .mcp-schema-fields {
+  margin-top: 2px;
+}
+
+.api-feature-requests .mcp-array-field {
+  min-width: 0;
+}
+
+.api-feature-requests .mcp-array-field textarea {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 82px;
+  max-height: 280px;
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 7px 8px;
+  font: 12px/1.45 var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.api-feature-requests .mcp-inline-error {
+  margin-top: 5px;
+  overflow-wrap: anywhere;
+  line-height: 1.4;
+}
+
+.api-feature-requests .mcp-schema-fallback {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+}
+
+.api-feature-requests .mcp-schema-fallback p {
+  margin: 0;
+  overflow-wrap: anywhere;
+  line-height: 1.5;
+}
+
+.api-feature-requests .mcp-schema-fallback pre,
+.api-feature-requests .mcp-result pre,
+.api-feature-requests .mcp-timeline pre {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(44vh, 420px);
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.45 var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overscroll-behavior: contain;
+}
+
+.api-feature-requests .mcp-validation-list {
+  max-height: 110px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  color: var(--red);
+  overflow: auto;
+  overflow-wrap: anywhere;
+  line-height: 1.45;
+}
+
+.api-feature-requests .mcp-identity-list {
+  max-height: 150px;
+  margin: 0;
+  padding: 0 0 0 18px;
+  overflow: auto;
+}
+
+.api-feature-requests .mcp-identity-list li {
+  min-width: 0;
+  margin: 4px 0;
+}
+
+.api-feature-requests .mcp-identity-list code {
+  display: block;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .mcp-active-request {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: 8px 10px;
+  border: 1px solid color-mix(in srgb, var(--amber) 45%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--amber) 8%, transparent);
+  color: var(--amber);
+}
+
+.api-feature-requests .mcp-active-request > span {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .mcp-error {
+  padding: 8px 10px;
+  color: var(--red);
+  background: color-mix(in srgb, var(--red) 9%, transparent);
+}
+
+.api-feature-requests .mcp-error code {
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .mcp-result,
+.api-feature-requests .mcp-timeline {
+  min-width: 0;
+  margin-top: var(--db-space-3, 12px);
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.api-feature-requests .mcp-result h3,
+.api-feature-requests .mcp-timeline h3 {
+  margin: 0 0 var(--db-space-2, 8px);
+  font-size: 12px;
+}
+
+.api-feature-requests .mcp-timeline ol {
+  display: flex;
+  max-height: min(48vh, 500px);
+  min-width: 0;
+  flex-direction: column;
+  gap: 7px;
+  margin: 0;
+  padding: 0 0 0 22px;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.api-feature-requests .mcp-timeline li {
+  min-width: 0;
+  padding: 6px 0;
+  border-bottom: 1px solid color-mix(in srgb, var(--border) 75%, transparent);
+}
+
+.api-feature-requests .mcp-timeline li:last-child {
+  border-bottom: 0;
+}
+
+.api-feature-requests .mcp-timeline li > div {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 5px 8px;
+  min-width: 0;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .mcp-timeline li strong {
+  color: var(--text);
+}
+
+.api-feature-requests .mcp-timeline li code {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+@media (max-width: 900px) {
+  .api-feature-requests .mcp-profile {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .api-feature-requests .mcp-profile-actions {
+    grid-column: 1 / -1;
+    justify-content: flex-end;
+  }
+
+  .api-feature-requests .mcp-explorer-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .api-feature-requests .mcp-explorer-section {
+    min-height: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .api-feature-requests .protocol-lab {
+    padding: var(--db-space-3, 12px);
+  }
+
+  .api-feature-requests .protocol-lab-head {
+    flex-direction: column;
+    gap: var(--db-space-2, 8px);
+  }
+
+  .api-feature-requests .mcp-memory-badge {
+    align-self: flex-start;
+  }
+
+  .api-feature-requests .mcp-profile {
+    grid-template-columns: 1fr;
+  }
+
+  .api-feature-requests .mcp-profile-actions {
+    grid-column: auto;
+    justify-content: stretch;
+  }
+
+  .api-feature-requests .mcp-profile-actions .btn {
+    flex: 1;
+  }
+
+  .api-feature-requests .mcp-inline-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .api-feature-requests .mcp-inline-actions .btn {
+    width: 100%;
+  }
+
+  .api-feature-requests .mcp-stdio-selection-row {
+    grid-template-areas:
+      "label label"
+      "status status"
+      "choose clear";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .api-feature-requests .mcp-stdio-row > label,
+  .api-feature-requests .mcp-oauth-scope-row > label {
+    flex-basis: 100%;
+  }
+
+  .api-feature-requests .mcp-stdio-row > .btn,
+  .api-feature-requests .mcp-oauth-scope-row > .btn,
+  .api-feature-requests .mcp-stdio-profile fieldset > .btn,
+  .api-feature-requests .mcp-oauth-panel fieldset > .btn {
+    align-self: flex-start;
+  }
+
+  .api-feature-requests .mcp-oauth-inputs {
+    grid-template-columns: 1fr;
+  }
+
+  .api-feature-requests .mcp-active-request {
+    align-items: stretch;
+    flex-direction: column;
+  }
+}
+
+/* gRPC Lab */
+.api-feature-requests .protocol-workspace {
+  display: flex;
+  min-width: 0;
+  min-height: 0;
+  flex: 1 1 auto;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--bg);
+}
+
+.api-feature-requests .protocol-kind-tabs {
+  display: flex;
+  flex: none;
+  align-items: flex-end;
+  gap: var(--db-space-1, 4px);
+  min-width: 0;
+  padding: var(--db-space-2, 8px) var(--db-space-4, 16px) 0;
+  border-bottom: 1px solid var(--border);
+  background: var(--panel);
+}
+
+.api-feature-requests .protocol-kind-tabs .btn {
+  min-width: 82px;
+  border-color: transparent;
+  border-bottom: 2px solid transparent;
+  border-radius: var(--db-radius-md, 6px) var(--db-radius-md, 6px) 0 0;
+  color: var(--dim);
+  background: transparent;
+  white-space: nowrap;
+}
+
+.api-feature-requests .protocol-kind-tabs .btn:hover:not(:disabled) {
+  border-color: color-mix(in srgb, var(--border) 70%, var(--accent));
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 5%, transparent);
+}
+
+.api-feature-requests .protocol-kind-tabs .btn.active {
+  border-color: color-mix(in srgb, var(--accent) 48%, var(--border));
+  border-bottom-color: var(--accent);
+  color: var(--text);
+  background: color-mix(in srgb, var(--accent) 9%, transparent);
+}
+
+.api-feature-requests .protocol-kind-tabs .btn:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.api-feature-requests .grpc-lab {
+  display: flex;
+  flex-direction: column;
+  gap: var(--db-space-3, 12px);
+}
+
+.api-feature-requests .grpc-lab > .mcp-storage-disclosure,
+.api-feature-requests .grpc-lab > .mcp-notice,
+.api-feature-requests .grpc-lab > .mcp-error {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.api-feature-requests .grpc-lab > .mcp-storage-disclosure {
+  padding: var(--db-space-2, 8px) 0 0;
+  line-height: 1.5;
+}
+
+.api-feature-requests .grpc-panel {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: var(--db-space-4, 16px);
+  flex-direction: column;
+  gap: var(--db-space-3, 12px);
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+  overflow: hidden;
+}
+
+.api-feature-requests .grpc-panel > h3,
+.api-feature-requests .grpc-panel > .grpc-history-head h3 {
+  margin: 0;
+  color: var(--text);
+  font-size: var(--db-text-lg, 15px);
+  line-height: 1.3;
+}
+
+.api-feature-requests .grpc-panel > p {
+  margin: 0;
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .grpc-profile-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--db-space-3, 12px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-profile-grid > label,
+.api-feature-requests .grpc-credential-import > label,
+.api-feature-requests .grpc-method-controls > label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+  line-height: 1.35;
+}
+
+.api-feature-requests .grpc-profile-grid :is(input, select), .api-feature-requests .grpc-credential-import > label > input, .api-feature-requests .grpc-method-controls :is(input, select) {
+  min-width: 0;
+  width: 100%;
+  height: 30px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 5px 8px;
+  font: inherit;
+  outline: none;
+}
+
+.api-feature-requests .grpc-profile-grid input[type="number"] {
+  font-variant-numeric: tabular-nums;
+}
+
+.api-feature-requests .grpc-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-selection-row {
+  display: grid;
+  grid-template-areas: "label choose status clear";
+  grid-template-columns: max-content auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+}
+
+.api-feature-requests .grpc-selection-row > span:first-child {
+  grid-area: label;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+  white-space: nowrap;
+}
+
+.api-feature-requests .grpc-selection-row > span[role="status"] {
+  grid-area: status;
+  min-width: 0;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .grpc-selection-row > button:nth-of-type(1) {
+  grid-area: choose;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.api-feature-requests .grpc-selection-row > button:nth-of-type(2) {
+  grid-area: clear;
+  min-height: 30px;
+  white-space: nowrap;
+}
+
+.api-feature-requests .grpc-inline-note {
+  margin: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--accent) 6%, transparent);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .grpc-tls-panel {
+  min-width: 0;
+  border: 1px solid color-mix(in srgb, var(--accent) 30%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 82%, var(--bg));
+  overflow: hidden;
+}
+
+.api-feature-requests .grpc-tls-panel summary,
+.api-feature-requests .grpc-credential-panel > summary {
+  padding: var(--db-space-2, 8px) 10px;
+  color: var(--dim);
+  cursor: pointer;
+  font-size: var(--db-text-sm, 11px);
+  font-weight: 600;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .grpc-tls-panel summary:hover,
+.api-feature-requests .grpc-credential-panel > summary:hover {
+  color: var(--text);
+}
+
+.api-feature-requests .grpc-tls-panel[open] > summary,
+.api-feature-requests .grpc-credential-panel[open] > summary {
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+}
+
+.api-feature-requests .grpc-tls-panel fieldset {
+  min-width: 0;
+  margin: 0;
+  padding: var(--db-space-3, 12px);
+  border: 0;
+}
+
+.api-feature-requests .grpc-tls-panel fieldset:disabled {
+  opacity: 0.68;
+}
+
+.api-feature-requests .grpc-tls-panel > p {
+  margin: 0;
+  padding: 0 var(--db-space-3, 12px) var(--db-space-3, 12px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .grpc-validation {
+  margin: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid color-mix(in srgb, var(--red) 52%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--red) 8%, transparent);
+  color: var(--red);
+  font-size: var(--db-text-sm, 11px);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .grpc-credential-panel {
+  gap: var(--db-space-3, 12px);
+}
+
+.api-feature-requests .grpc-credential-panel > p {
+  color: var(--dim);
+}
+
+.api-feature-requests .grpc-credential-import {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--db-space-2, 8px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-credential-import > .grpc-selection-row,
+.api-feature-requests .grpc-credential-import > .mcp-inline-actions {
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-credential-import > .mcp-inline-actions {
+  grid-column: 1 / -1;
+}
+
+.api-feature-requests .grpc-credential-list {
+  display: flex;
+  min-width: 0;
+  max-height: min(32vh, 300px);
+  margin: 0;
+  padding: 0;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  list-style: none;
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.api-feature-requests .grpc-credential-list li {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: var(--db-space-1, 4px) var(--db-space-3, 12px);
+  min-width: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--accent));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg));
+}
+
+.api-feature-requests .grpc-credential-list li > strong {
+  min-width: 150px;
+  flex: 1 1 180px;
+  color: var(--text);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .grpc-credential-list li > span,
+.api-feature-requests .grpc-credential-list li > time {
+  min-width: 0;
+  flex: 1 1 120px;
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .grpc-credential-list li > time {
+  flex-basis: 160px;
+}
+
+.api-feature-requests .grpc-credential-list li > .btn {
+  flex: none;
+  margin-left: auto;
+}
+
+.api-feature-requests .grpc-credential-list li.dim {
+  display: block;
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+}
+
+.api-feature-requests .grpc-connection-card {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--db-space-1, 4px) var(--db-space-3, 12px);
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--green) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--green) 6%, var(--panel));
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .grpc-connection-card > strong,
+.api-feature-requests .grpc-connection-card > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .grpc-connection-card > strong {
+  color: var(--text);
+}
+
+.api-feature-requests .grpc-connection-card > span {
+  color: var(--dim);
+}
+
+.api-feature-requests .grpc-method-controls {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--db-space-3, 12px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-method-card {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--db-space-1, 4px) var(--db-space-3, 12px);
+  min-width: 0;
+  padding: 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--accent) 6%, var(--panel));
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .grpc-method-card > code,
+.api-feature-requests .grpc-method-card > span {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .grpc-method-card > code {
+  color: var(--accent);
+  font-family: var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+}
+
+.api-feature-requests .grpc-method-card > span {
+  color: var(--dim);
+}
+
+.api-feature-requests .grpc-editor-label {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: var(--db-space-1, 4px);
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+  line-height: 1.35;
+}
+
+.api-feature-requests .grpc-editor {
+  display: block;
+  width: 100%;
+  min-width: 0;
+  min-height: 180px;
+  max-height: min(44vh, 480px);
+  resize: vertical;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  padding: 10px;
+  font: 12px/1.5 var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+  tab-size: 2;
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  outline: none;
+}
+
+.api-feature-requests .grpc-result {
+  display: flex;
+  min-width: 0;
+  margin: 0;
+  padding: 10px;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-lg, 8px);
+  background: color-mix(in srgb, var(--panel) 88%, var(--bg));
+}
+
+.api-feature-requests .grpc-result > div:first-child {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: var(--db-space-1, 4px) var(--db-space-3, 12px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-result h3 {
+  margin: 0;
+  font-size: 12px;
+}
+
+.api-feature-requests .grpc-result > div:first-child > span:not(.grpc-status-ok):not(.grpc-status-error) {
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .grpc-status-ok,
+.api-feature-requests .grpc-status-error {
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: var(--db-text-sm, 11px);
+  font-weight: 700;
+}
+
+.api-feature-requests .grpc-status-ok {
+  background: color-mix(in srgb, var(--green) 16%, transparent);
+  color: var(--green);
+}
+
+.api-feature-requests .grpc-status-error {
+  background: color-mix(in srgb, var(--red) 16%, transparent);
+  color: var(--red);
+}
+
+.api-feature-requests .grpc-result pre {
+  min-width: 0;
+  max-width: 100%;
+  max-height: min(44vh, 420px);
+  margin: 0;
+  padding: 8px;
+  border: 1px solid var(--border);
+  border-radius: var(--db-radius-md, 6px);
+  background: var(--bg);
+  color: var(--text);
+  font: 12px/1.45 var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+  white-space: pre-wrap;
+  overflow: auto;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+  overscroll-behavior: contain;
+}
+
+.api-feature-requests .grpc-history-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--db-space-3, 12px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-history-head > div {
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-history-head p {
+  margin: var(--db-space-1, 4px) 0 0;
+  line-height: 1.45;
+  overflow-wrap: anywhere;
+}
+
+.api-feature-requests .grpc-history-head > .btn {
+  flex: none;
+}
+
+.api-feature-requests .grpc-history-list {
+  display: flex;
+  max-height: min(48vh, 500px);
+  min-width: 0;
+  margin: 0;
+  padding: 0 0 0 22px;
+  flex-direction: column;
+  gap: var(--db-space-2, 8px);
+  overflow: auto;
+  overscroll-behavior: contain;
+}
+
+.api-feature-requests .grpc-history-list li {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--db-space-3, 12px);
+  min-width: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid color-mix(in srgb, var(--border) 88%, var(--accent));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--panel) 72%, var(--bg));
+}
+
+.api-feature-requests .grpc-history-list li > div {
+  display: flex;
+  align-items: baseline;
+  flex: 1 1 auto;
+  flex-wrap: wrap;
+  gap: var(--db-space-1, 4px) var(--db-space-3, 12px);
+  min-width: 0;
+}
+
+.api-feature-requests .grpc-history-list li > div > strong,
+.api-feature-requests .grpc-history-list li > div > code,
+.api-feature-requests .grpc-history-list li > div > span,
+.api-feature-requests .grpc-history-list li > div > time {
+  min-width: 0;
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  word-break: break-word;
+}
+
+.api-feature-requests .grpc-history-list li > div > strong {
+  color: var(--text);
+}
+
+.api-feature-requests .grpc-history-list li > div > code,
+.api-feature-requests .grpc-history-list li > div > span,
+.api-feature-requests .grpc-history-list li > div > time {
+  color: var(--dim);
+  font-size: var(--db-text-sm, 11px);
+}
+
+.api-feature-requests .grpc-history-list li > div > code {
+  color: var(--accent);
+  font-family: var(--db-font-mono, "Cascadia Code", Consolas, monospace);
+}
+
+.api-feature-requests .grpc-history-list li > .btn {
+  flex: none;
+}
+
+.api-feature-requests .grpc-history-list li.dim {
+  display: block;
+  border-color: transparent;
+  background: transparent;
+  color: var(--dim);
+}
+
+.api-feature-requests .grpc-notice {
+  margin: 0;
+  padding: var(--db-space-2, 8px) 10px;
+  border: 1px solid color-mix(in srgb, var(--accent) 35%, var(--border));
+  border-radius: var(--db-radius-md, 6px);
+  background: color-mix(in srgb, var(--accent) 7%, transparent);
+  color: var(--dim);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 900px) {
+  .api-feature-requests .grpc-profile-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .api-feature-requests .grpc-credential-list li > .btn {
+    margin-left: 0;
+  }
+}
+
+@media (max-width: 620px) {
+  .api-feature-requests .protocol-kind-tabs {
+    padding-right: var(--db-space-3, 12px);
+    padding-left: var(--db-space-3, 12px);
+  }
+
+  .api-feature-requests .protocol-kind-tabs .btn {
+    flex: 1;
+  }
+
+  .api-feature-requests .grpc-panel {
+    padding: var(--db-space-3, 12px);
+  }
+
+  .api-feature-requests .grpc-profile-grid,
+  .api-feature-requests .grpc-selection-grid,
+  .api-feature-requests .grpc-credential-import,
+  .api-feature-requests .grpc-method-controls {
+    grid-template-columns: 1fr;
+  }
+
+  .api-feature-requests .grpc-selection-row {
+    grid-template-areas:
+      "label label"
+      "status status"
+      "choose clear";
+    grid-template-columns: minmax(0, 1fr) auto;
+  }
+
+  .api-feature-requests .grpc-credential-import > .mcp-inline-actions {
+    grid-column: auto;
+  }
+
+  .api-feature-requests .grpc-credential-list li {
+    align-items: flex-start;
+    flex-direction: column;
+    gap: var(--db-space-1, 4px);
+  }
+
+  .api-feature-requests .grpc-credential-list li > strong,
+  .api-feature-requests .grpc-credential-list li > span,
+  .api-feature-requests .grpc-credential-list li > time {
+    flex: none;
+    min-width: 0;
+    width: 100%;
+  }
+
+  .api-feature-requests .grpc-credential-list li > .btn {
+    align-self: flex-start;
+  }
+
+  .api-feature-requests .grpc-history-head {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .api-feature-requests .grpc-history-head > .btn {
+    align-self: flex-start;
+  }
+
+  .api-feature-requests .grpc-history-list li {
+    flex-direction: column;
+    gap: var(--db-space-2, 8px);
+  }
+
+  .api-feature-requests .grpc-history-list li > .btn {
+    align-self: flex-start;
+  }
+}

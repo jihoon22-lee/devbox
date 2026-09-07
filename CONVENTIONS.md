@@ -73,10 +73,15 @@ devbox/
 │  ├─ diff-view/           # diff 렌더 공용            (code-pad, run-manager)
 │  ├─ context-menu/        # 위치·keyboard·focus·submenu 동작
 │  ├─ openapi/             # bounded OpenAPI JSON/YAML parsing
+│  ├─ api-studio-features/ # API·Webhook·Transforms UI (legacy 앱, API Studio)
 │  └─ mermaid-renderer/    # 필요할 때만 불러오는 Markdown diagram renderer
 │
 ├─ crates/                 # Rust 공용
 │  ├─ applink/             # 앱 간 one-time typed handoff와 single-instance 수신 계약
+│  ├─ api-protocols/       # API 프로토콜 validation/codec (API Playground, API Studio)
+│  ├─ webhook-core/        # Webhook fixture/rule/replay (Webhook Lab, API Studio)
+│  ├─ transforms-core/     # Transform codec/workflow (Toolbox, API Studio)
+│  ├─ data-migration/      # consistent snapshot/transaction (Control Center, API Studio)
 │  ├─ catalog/             # build/runtime app catalog
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
 │  ├─ git/                 # Windows/WSL Git argv·identity 경계

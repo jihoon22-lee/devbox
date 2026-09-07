@@ -1,0 +1,22 @@
+.studio-history { min-width: 0; display: grid; gap: 20px; padding: 20px; overflow: auto; }
+.studio-history h1 { font-size: 22px; margin: 0 0 8px; }
+.studio-history h2 { font-size: 15px; margin: 0 0 12px; }
+.studio-history p { color: var(--dim); font-size: 12px; line-height: 1.6; }
+.studio-console, .studio-history-columns > section { border: 1px solid var(--border); border-radius: 8px; padding: 16px; min-width: 0; }
+.studio-console dl { display: flex; flex-wrap: wrap; gap: 12px 36px; margin: 0; }
+.studio-console dt { font-size: 12px; font-weight: 600; }
+.studio-console dd { font-size: 12px; margin: 6px 0 0; }
+.studio-history-columns { display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 1.3fr); gap: 16px; }
+.studio-history input { box-sizing: border-box; width: 100%; margin-bottom: 12px; }
+.studio-history-list { display: grid; gap: 6px; max-height: 360px; overflow: auto; }
+.studio-history-list button { text-align: left; display: grid; grid-template-columns: 55px minmax(0, 1fr) auto; gap: 8px; padding: 10px; }
+.studio-history-list button[aria-pressed="true"] { border-color: var(--accent); }
+.studio-history-list span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.studio-history pre { max-height: 320px; padding: 12px; white-space: pre-wrap; overflow: auto; overflow-wrap: anywhere; font-size: 12px; background: var(--bg); }
+.studio-history-table { overflow: auto; }
+.studio-history table { width: 100%; border-collapse: collapse; font-size: 12px; }
+.studio-history th, .studio-history td { text-align: left; padding: 9px 12px; border-bottom: 1px solid var(--border); overflow-wrap: anywhere; }
+@media (max-width: 1000px) { .studio-history-columns { grid-template-columns: minmax(0, 1fr); } }
+.studio-history > header { display: block; padding: 0; border: 0; background: transparent; }
+.studio-history input { padding: 9px 12px; border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; }
+.studio-history-list button { border: 1px solid var(--border); border-radius: 6px; background: var(--panel); color: var(--text); font: inherit; cursor: pointer; }

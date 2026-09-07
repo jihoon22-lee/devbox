@@ -383,7 +383,7 @@ pub fn diff(a: String, b: String) -> Vec<DiffHunk> {
     text_diff
         .ops()
         .iter()
-        .map(|op| {
+        .flat_map(|op| {
             use similar::DiffOp;
             let (kind, old_start, old_end, new_start, new_end) = match op {
                 DiffOp::Equal {
@@ -404,23 +404,164 @@ pub fn diff(a: String, b: String) -> Vec<DiffHunk> {
                     old_len,
                     new_index,
                     new_len,
-                } => (
-                    2,
-                    *old_index,
-                    old_index + old_len,
-                    *new_index,
-                    new_index + new_len,
-                ),
+                } => {
+                    // The wire format has equal/insert/delete only. A replacement
+                    // must include both sides so the new column does not disappear.
+                    return vec![
+                        DiffHunk {
+                            kind: 2,
+                            old_start: *old_index,
+                            old_end: old_index + old_len,
+                            new_start: *new_index,
+                            new_end: *new_index,
+                        },
+                        DiffHunk {
+                            kind: 1,
+                            old_start: *old_index,
+                            old_end: *old_index,
+                            new_start: *new_index,
+                            new_end: new_index + new_len,
+                        },
+                    ];
+                }
             };
-            DiffHunk {
+            vec![DiffHunk {
                 kind,
                 old_start,
                 old_end,
                 new_start,
                 new_end,
-            }
+            }]
         })
         .collect()
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_hash(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        data: String,
+        algorithm: String,
+    }
+    let Input { data, algorithm } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = hash(data, algorithm)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_hmac_generate(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: HmacRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = hmac_generate(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_hmac_verify(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: HmacVerifyRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = hmac_verify(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_generate_uuid(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = generate_uuid()?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_generate_ids(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: GenerateIdsRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = generate_ids(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_regex_test(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        pattern: String,
+        text: String,
+    }
+    let Input { pattern, text } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = regex_test(pattern, text)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_diff(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        a: String,
+        b: String,
+    }
+    let Input { a, b } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = diff(a, b);
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_jwt_verify(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: JwtVerifyRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = jwt_verify(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]
@@ -632,5 +773,32 @@ mod tests {
     fn diff_identical_text_has_no_changes() {
         let hunks = diff("same\n".into(), "same\n".into());
         assert!(hunks.iter().all(|h| h.kind == 0));
+    }
+
+    #[test]
+    fn diff_replacement_preserves_old_and_new_lines_between_equal_context() {
+        let old = "prefix\nold\nsuffix\n";
+        let new = "prefix\nnew\nextra\nsuffix\n";
+        let hunks = diff(old.into(), new.into());
+        let old_lines: Vec<_> = old.lines().collect();
+        let new_lines: Vec<_> = new.lines().collect();
+        let removed: Vec<_> = hunks
+            .iter()
+            .filter(|h| h.kind == 2)
+            .flat_map(|h| old_lines[h.old_start..h.old_end].iter().copied())
+            .collect();
+        let inserted: Vec<_> = hunks
+            .iter()
+            .filter(|h| h.kind == 1)
+            .flat_map(|h| new_lines[h.new_start..h.new_end].iter().copied())
+            .collect();
+        assert_eq!(removed, ["old"]);
+        assert_eq!(inserted, ["new", "extra"]);
+        let reconstructed: Vec<_> = hunks
+            .iter()
+            .filter(|h| h.kind != 2)
+            .flat_map(|h| new_lines[h.new_start..h.new_end].iter().copied())
+            .collect();
+        assert_eq!(reconstructed, new_lines);
     }
 }

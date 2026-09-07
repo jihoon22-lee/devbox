@@ -15,10 +15,22 @@ edition = "2021"
 name = "webhook_lab_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# A product component links the native implementation without embedding the
+# legacy executable's frontend bundle or invoking its bootstrap.
+[features]
+default = ["standalone"]
+standalone = []
+
+[[bin]]
+name = "webhook-lab"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+webhook-core = { path = "../../../crates/webhook-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"

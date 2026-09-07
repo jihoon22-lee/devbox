@@ -1,5 +1,9 @@
 # developer-toolbox — Developer Toolbox
 
+The frontend implementation and its tests are shared with the hidden v0.8 API
+Studio in [`packages/api-studio-features`](../../packages/api-studio-features/README.md).
+This app retains its legacy native entry point and data ownership.
+
 개발용 소형 도구를 한 앱에 모은 컬렉션. 도구마다 기능이 작아 지속 확장하기 좋다.
 산출물: `DevToolbox.exe` (`apps/developer-toolbox`).
 

@@ -1,0 +1,6 @@
+{
+  "identifier": "legacy-export",
+  "description": "Only the isolated owned-copy export worker can use its nonce-bound callback.",
+  "windows": ["legacy-api-export"],
+  "permissions": ["api-studio:allow-legacy-export-message"]
+}

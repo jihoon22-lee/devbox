@@ -14,5 +14,33 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+dirs = "6.0.0"
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+uuid = { version = "1", features = ["v4"] }
+tokio = { version = "1", features = ["process", "time", "rt"] }
+sha2 = "0.11.0"
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+data-migration = { path = "../../../crates/data-migration" }
+webhook-core = { path = "../../../crates/webhook-core" }
+transforms-core = { path = "../../../crates/transforms-core" }
 tauri = { version = "2", features = [] }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
+product-contract = { path = "../../../crates/product-contract" }
+api-playground = { path = "../../api-playground/src-tauri", default-features = false }
+webhook-lab = { path = "../../webhook-lab/src-tauri", default-features = false }
+developer-toolbox = { path = "../../developer-toolbox/src-tauri", default-features = false }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+tauri-plugin-clipboard-manager = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-opener = "2"
+applink = { path = "../../../crates/applink" }
+zeroize = "1"
+
+[dev-dependencies]
+tempfile = "3"
+
+[target.'cfg(windows)'.dependencies]
+tauri = { version = "2", features = ["tray-icon"] }
+windows = { version = "0.61", features = ["Win32_System_Com", "Win32_System_Console"] }
+webview2-com = "0.38.2"
