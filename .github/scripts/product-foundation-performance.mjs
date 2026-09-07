@@ -107,8 +107,21 @@ export async function measureIdle(getIdentities, sampleMs) {
   return summarizeIdle(before, after, performance.now() - start, cpus().length);
 }
 
-export async function measureWorkload(app, cdp, isolatedRoot) {
-  const invoke = (command, args = {}) => cdp.evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)})`);
+export async function measureWorkload(app, cdp, isolatedRoot, onStage = () => {}) {
+  const invoke = async (command, args = {}) => {
+    onStage(`workload:${command}`);
+    const result = await cdp.evaluate(`(async () => {
+      try { return { ok: true, value: await window.__TAURI_INTERNALS__.invoke(${JSON.stringify(command)}, ${JSON.stringify(args)}) }; }
+      catch (error) { return { ok: false, code: ['run-execution-failed', 'run-storage-failed', 'job-schedule-invalid', 'scheduler-unavailable'].includes(error) ? error : 'native-rejected' }; }
+    })()`);
+    if (result?.ok !== true) {
+      onStage(`workload:${command}:${result?.code ?? 'invalid-result'}`);
+      const error = new Error(`baseline native command failed: ${command} (${result?.code ?? 'invalid-result'})`);
+      error.name = 'AcceptanceError';
+      throw error;
+    }
+    return result.value;
+  };
   if (app.id === "everything-plus") {
     const root = path.join(isolatedRoot, "search-performance-fixture"); mkdirSync(root);
     for (let i = 0; i < 500; i++) writeFileSync(path.join(root, `fixture-${String(i).padStart(4, "0")}.txt`), `synthetic foundation record ${i}\n`.repeat(20), { flag: "wx" });
@@ -157,8 +170,14 @@ export async function measureWorkload(app, cdp, isolatedRoot) {
     const profileReadbackMs = Math.round(performance.now() - start);
     const sessions = await invoke("list_sessions");
     assert.deepEqual(sessions.map((s) => s.id).sort(), existingSessions.map((s) => s.id).sort(), "profile restoration must not create a PTY");
-    const distros = await invoke("list_distros");
-    return { kind: "saved-terminal-profile-readback-without-execution", result: "measured", profileReadbackMs, distributionCount: distros.length, livePtyRestore: "not-run; this fixture measures persisted metadata only" };
+    // Availability is separate from persisted-profile correctness. Hosted
+    // Windows may lack a working WSL installation; never report that as zero
+    // installed distributions or as a completed live PTY restoration.
+    const distributions = await cdp.evaluate(`(async () => {
+      try { const values = await window.__TAURI_INTERNALS__.invoke('list_distros'); return { status: 'available', count: values.length }; }
+      catch { return { status: 'unavailable', count: null }; }
+    })()`);
+    return { kind: "saved-terminal-profile-readback-without-execution", result: "measured", profileReadbackMs, distributions, livePtyRestore: "not-run; this fixture measures persisted metadata only" };
   }
   return null;
 }

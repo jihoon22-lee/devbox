@@ -1456,7 +1456,7 @@ async function runApp(app, context) {
       result.performance.stage = "idle";
       result.performance.idle = await measureIdle(() => [childIdentity, ...descendantIdentities(childIdentity)], context.performanceConfiguration.idleSampleMs);
       result.performance.stage = "workload";
-      result.performance.workload = await measureWorkload(app, cdp, isolatedRoot);
+      result.performance.workload = await measureWorkload(app, cdp, isolatedRoot, (stage) => { result.performance.stage = stage; });
     }
 
     result.focusDisplacement = await displaceOwnedWindow(

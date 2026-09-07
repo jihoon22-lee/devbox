@@ -100,6 +100,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: .github/scripts/windows-product-performance.ps1
       - name: Build baseline route bundles
+        id: baseline-bundles
+        if: ${{ !cancelled() }}
         shell: pwsh
         working-directory: baseline-source
         run: |
@@ -111,6 +113,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Baseline bundle build failed: $app" }
           }
       - name: Measure pinned initial bundle closures
+        if: ${{ !cancelled() && steps.baseline-bundles.outcome == 'success' }}
         run: node .github/scripts/measure-baseline-bundles.mjs baseline-source performance-baseline/bundles.json
       - name: Preserve private baseline evidence
         if: ${{ always() }}
