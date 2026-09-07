@@ -50,7 +50,12 @@ async function wait(cdp, expression, label, timeout = 90_000) {
   while (Date.now() < deadline) { if (await cdp.evaluate(expression)) return; await delay(150); }
   evidence.ui = await cdp.evaluate('(document.body?.innerText ?? "").slice(0, 10000)'); throw new Error(label);
 }
-async function click(cdp, label) { return cdp.evaluate(`(() => { const button = Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === ${JSON.stringify(label)}); if (!button || button.disabled) throw new Error("fixture control unavailable"); button.click(); return true; })()`); }
+async function click(cdp, label) {
+  // Initial startup markup precedes its async source discovery. Wait for an
+  // actionable control, not just the button's label in that loading markup.
+  await wait(cdp, `(() => { const button = Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === ${JSON.stringify(label)}); return !!button && !button.disabled; })()`, `fixture control is not ready: ${label}`);
+  return cdp.evaluate(`(() => { const button = Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === ${JSON.stringify(label)}); if (!button || button.disabled) throw new Error("fixture control unavailable"); button.click(); return true; })()`);
+}
 async function command(cdp, component, method, args = {}) {
   const route = component === "api-studio.webhooks" ? "webhooks" : component === "api-studio.transforms" ? "transforms" : "requests";
   return cdp.evaluate(`(async () => { const invoke=window.__TAURI_INTERNALS__.invoke; const d=await invoke("plugin:product-shell|describe"); const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}}; return invoke("plugin:api-studio|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
