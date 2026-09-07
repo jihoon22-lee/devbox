@@ -40,6 +40,7 @@ const LEGACY: [LegacyApp; 3] = [
 ];
 #[derive(Default)]
 struct Work {
+    stage: &'static str,
     current: Option<(String, Arc<AtomicBool>)>,
     cancelled: VecDeque<(String, Instant)>,
 }
@@ -55,6 +56,15 @@ struct WorkGuard {
     work: Arc<Mutex<Work>>,
     id: String,
     cancelled: Arc<AtomicBool>,
+}
+impl WorkGuard {
+    fn stage(&self, stage: &'static str) {
+        if let Ok(mut work) = self.work.lock() {
+            if work.current.as_ref().is_some_and(|(id, _)| id == &self.id) {
+                work.stage = stage;
+            }
+        }
+    }
 }
 impl Drop for WorkGuard {
     fn drop(&mut self) {
@@ -195,6 +205,7 @@ impl MigrationState {
         }
         let cancelled = Arc::new(AtomicBool::new(false));
         work.current = Some((id.clone(), Arc::clone(&cancelled)));
+        work.stage = "starting";
         Ok(WorkGuard {
             work: Arc::clone(&self.work),
             id,
@@ -435,7 +446,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
             let work = state.work.lock().map_err(|_| io_error())?;
             if work.current.is_some() {
                 return Ok(
-                    json!({ "busy": true, "operationId": work.current.as_ref().map(|(id, _)| id) }),
+                    json!({ "busy": true, "stage": work.stage, "operationId": work.current.as_ref().map(|(id, _)| id) }),
                 );
             }
             let config = flags(&state.root)?;
@@ -446,7 +457,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                 || config.request_import
                 || (!config.setup_done && sources.iter().any(|source| source.present));
             Ok(
-                json!({ "busy": false, "active": state.active.load(Ordering::Acquire), "reviewNeeded": review_needed, "pending": pending, "sources": sources, "profiles": profile_choices(&state.legacy_root)? }),
+                json!({ "busy": false, "stage": work.stage, "active": state.active.load(Ordering::Acquire), "reviewNeeded": review_needed, "pending": pending, "sources": sources, "profiles": profile_choices(&state.legacy_root)? }),
             )
         }
         "prepare_migration" => {
@@ -478,6 +489,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
             let (id, stage) = repo.new_stage()?;
             let result = async {
                 let repo = &mut repo;
+                guard.stage("native-stores");
                 let source_root = state.legacy_root.clone();
                 let selected = input.sources.clone();
                 let profiles = input.profile_ids.clone();
@@ -497,6 +509,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                     .iter()
                     .any(|relative| source.join(relative).exists())
                     {
+                        guard.stage("api-snapshot");
                         let copy_stage = stage.clone();
                         let cancelled = Arc::clone(&guard.cancelled);
                         let (_, receipt) = tauri::async_runtime::spawn_blocking(move || {
@@ -516,6 +529,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                         .map_err(|_| io_error())?;
                         let nonce = uuid::Uuid::new_v4().simple().to_string();
                         crate::migration_export::write_ticket(&stage, &nonce)?;
+                        guard.stage("api-export");
                         let exported = crate::platform::legacy_profile::run_export_worker(
                             &stage,
                             &id,
@@ -548,6 +562,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                 if documents.is_empty() && issues.is_empty() {
                     return Err("migration_no_sources".into());
                 }
+                guard.stage("merge-plan");
                 let review =
                     repo.prepare(&id, &documents, input.browser, &guard.cancelled, api_owner)?;
                 Ok(json!({ "review": review, "issues": issues }))
@@ -697,5 +712,44 @@ mod tests {
         drop(next);
         state.active.store(true, Ordering::Release);
         assert!(state.begin(uuid::Uuid::new_v4().to_string()).is_err());
+    }
+    #[test]
+    fn windows_native_source_fixture_obeys_the_real_domain_codecs() {
+        let root = tempfile::tempdir().unwrap();
+        let fixtures: Value =
+            serde_json::from_str(include_str!("../fixtures/legacy-native.json")).unwrap();
+        let webhook = root.path().join(LegacyApp::WebhookLab.identifier());
+        let toolbox = root.path().join(LegacyApp::DeveloperToolbox.identifier());
+        fs::create_dir_all(webhook.join("service-profiles")).unwrap();
+        fs::create_dir_all(&toolbox).unwrap();
+        fs::write(
+            webhook.join("fixtures.json"),
+            serde_json::to_vec(&fixtures["fixtures"]).unwrap(),
+        )
+        .unwrap();
+        let profile = &fixtures["profile"];
+        fs::write(
+            webhook
+                .join("service-profiles")
+                .join(format!("{}.json", profile["id"].as_str().unwrap())),
+            serde_json::to_vec(profile).unwrap(),
+        )
+        .unwrap();
+        let workflow_path = toolbox.join("smart-workflows.json");
+        let original = serde_json::to_vec(&fixtures["workflows"]).unwrap();
+        fs::write(&workflow_path, &original).unwrap();
+        let (documents, issues) = native_sources(
+            root.path(),
+            &[LegacyApp::WebhookLab, LegacyApp::DeveloperToolbox],
+            &None,
+        )
+        .unwrap();
+        assert_eq!(documents.len(), 3);
+        assert!(issues.is_empty());
+        assert_eq!(fs::read(&workflow_path).unwrap(), original);
+        let mut invalid = fixtures["workflows"].clone();
+        invalid["pipelines"][0]["inputType"] = json!("text");
+        fs::write(&workflow_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
+        assert!(native_sources(root.path(), &[LegacyApp::DeveloperToolbox], &None).is_err());
     }
 }

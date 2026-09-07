@@ -1,0 +1,21 @@
+{
+  "fixtures": {
+    "schemaVersion": 1,
+    "nextId": 8,
+    "fixtures": [{ "id": "fixture-7", "method": "POST", "url": "/fixture", "headers": [], "body": "fixture body", "receivedAtMs": 1000 }]
+  },
+  "profile": {
+    "schemaVersion": 1,
+    "id": "15df3478-7e88-4cb0-a1d6-fd82f2b96b11",
+    "bind": "127.0.0.1",
+    "port": 19191,
+    "rules": [],
+    "createdAtMs": 1000
+  },
+  "workflows": {
+    "schemaVersion": 1,
+    "recentTools": [{ "toolId": "hash", "usedAt": 1000 }],
+    "favoriteTools": ["hash"],
+    "pipelines": [{ "id": "fixture-pipeline", "inputType": "json", "steps": [{ "transformerId": "json-format" }], "updatedAt": 1000 }]
+  }
+}

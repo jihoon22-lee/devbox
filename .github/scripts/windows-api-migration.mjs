@@ -69,7 +69,8 @@ function sourceHashes() {
   for (const relative of ["com.devbox.webhooklab/fixtures.json", "com.devbox.developertoolbox/smart-workflows.json", `com.devbox.webhooklab/service-profiles/${profileId}.json`]) hashes[relative] = digest(path.join(directory, relative));
   return hashes;
 }
-const profileId = "15df3478-7e88-4cb0-a1d6-fd82f2b96b11";
+const nativeFixture = JSON.parse(readFileSync("apps/devbox-api-studio/src-tauri/fixtures/legacy-native.json", "utf8"));
+const profileId = nativeFixture.profile.id;
 let hits = 0; const server = createServer((_, response) => { hits++; response.setHeader("Content-Type", "application/json"); response.end('{"fixture":true}'); });
 server.listen(0, "127.0.0.1"); await once(server, "listening"); const fixtureUrl = `http://127.0.0.1:${server.address().port}/imported`;
 try {
@@ -99,9 +100,9 @@ try {
   })()`), 1);
   await delay(500); await stop(old); await delay(500);
   mkdirSync(path.join(directory, "com.devbox.webhooklab/service-profiles"), { recursive: true }); mkdirSync(path.join(directory, "com.devbox.developertoolbox"));
-  writeFileSync(path.join(directory, "com.devbox.webhooklab/fixtures.json"), JSON.stringify({schemaVersion:1,nextId:8,fixtures:[{id:"fixture-7",method:"POST",url:"/fixture",headers:[],body:"fixture body",receivedAtMs:1000}]}), {flag:"wx"});
-  writeFileSync(path.join(directory, `com.devbox.webhooklab/service-profiles/${profileId}.json`), JSON.stringify({schemaVersion:1,id:profileId,bind:"127.0.0.1",port:19191,rules:[],createdAtMs:1000}), {flag:"wx"});
-  writeFileSync(path.join(directory, "com.devbox.developertoolbox/smart-workflows.json"), JSON.stringify({schemaVersion:1,recentTools:[{toolId:"hash",usedAt:1000}],favoriteTools:["hash"],pipelines:[{id:"fixture-pipeline",inputType:"text",steps:[{transformerId:"json-format"}],updatedAt:1000}]}), {flag:"wx"});
+  writeFileSync(path.join(directory, "com.devbox.webhooklab/fixtures.json"), JSON.stringify(nativeFixture.fixtures), {flag:"wx"});
+  writeFileSync(path.join(directory, `com.devbox.webhooklab/service-profiles/${profileId}.json`), JSON.stringify(nativeFixture.profile), {flag:"wx"});
+  writeFileSync(path.join(directory, "com.devbox.developertoolbox/smart-workflows.json"), JSON.stringify(nativeFixture.workflows), {flag:"wx"});
   const frozen = sourceHashes(); progress("legacy-seeded");
   const productExe = path.join(directory, `api-product-${randomUUID()}.exe`); copyFileSync(path.resolve("target/debug/devbox-api-studio.exe"), productExe);
   const beforeRoots = new Set(readdirSync(process.env.LOCALAPPDATA).filter(name => name.startsWith("com.devbox.v08.apistudio.i")));
@@ -140,5 +141,12 @@ try {
   const mapping = db.prepare("SELECT source_id,destination_id FROM studio_import_receipts_v1 WHERE source_store='fixtures'").all();
   assert.deepEqual(mapping.map(row=>({...row})), [{source_id:"fixture-7",destination_id:"fixture-1"}]); db.close();
   evidence.originalPreserved = true; evidence.repeatNoDuplicates = true; evidence.productEditPreserved = true; evidence.dpapiReused = true; evidence.missingSecretRequiresReconnect = true; evidence.noAutomaticRequests = true; evidence.result = "pass"; progress("complete");
-} catch (error) { evidence.error = error.message; throw error; }
+} catch (error) {
+  evidence.error = error.message;
+  const current = Array.from(live).at(-1);
+  if (current?.cdp) {
+    try { const status = await command(current.cdp, "api-studio.migration", "migration_status"); evidence.migrationStage = status.value?.stage ?? "unavailable"; } catch { /* Preserve the original failure. */ }
+  }
+  throw error;
+}
 finally { for (const item of live) { try { await stop(item); } catch { item.child?.kill(); if(item.policy)restoreElevatedCdpPolicy(item.policy); } } await new Promise(resolve=>server.close(resolve)); writeFileSync(report, JSON.stringify(evidence,null,2)); }
