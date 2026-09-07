@@ -17,12 +17,13 @@
     {
       "legacyApp": "developer-toolbox",
       "classification": "authoritative",
-      "sourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
+      "sourcePath": "crates/transforms-core/src/core/workflows.rs",
       "items": [
         "smart-workflows.json"
       ],
       "treatment": "Preserve workflow metadata. Do not persist transient HMAC/JWT input or non-exportable results.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs"
     },
     {
       "legacyApp": "wsl-desktop",
@@ -330,22 +331,24 @@
     {
       "legacyApp": "webhook-lab",
       "classification": "authoritative",
-      "sourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
+      "sourcePath": "crates/webhook-core/src/core/fixtures.rs",
       "items": [
         "fixtures.json"
       ],
       "treatment": "Preserve masked fixtures and their ID mapping; no raw request-header vault import.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs"
     },
     {
       "legacyApp": "webhook-lab",
       "classification": "authoritative",
-      "sourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
+      "sourcePath": "crates/webhook-core/src/core/service_profile.rs",
       "items": [
         "service-profiles/*.json"
       ],
       "treatment": "Preserve exported listener profiles as inactive definitions; do not start a listener during import.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs"
     },
     {
       "legacyApp": "webhook-lab",

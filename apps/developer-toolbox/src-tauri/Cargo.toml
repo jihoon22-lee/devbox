@@ -30,6 +30,7 @@ required-features = ["standalone"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+transforms-core = { path = "../../../crates/transforms-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"

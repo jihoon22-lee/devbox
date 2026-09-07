@@ -1272,7 +1272,7 @@
     },
     {
       "legacyFeatureId": "developer-toolbox:store:src-tauri/src/core/workflows.rs",
-      "sourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
+      "sourcePath": "crates/transforms-core/src/core/workflows.rs",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "api-studio",
@@ -1282,7 +1282,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs"
     },
     {
       "legacyFeatureId": "wsl-desktop:command:configure_quick_summon",
@@ -7586,7 +7587,7 @@
     },
     {
       "legacyFeatureId": "webhook-lab:store:src-tauri/src/core/fixtures.rs",
-      "sourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
+      "sourcePath": "crates/webhook-core/src/core/fixtures.rs",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "api-studio",
@@ -7596,11 +7597,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs"
     },
     {
       "legacyFeatureId": "webhook-lab:store:src-tauri/src/core/service_profile.rs",
-      "sourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
+      "sourcePath": "crates/webhook-core/src/core/service_profile.rs",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "api-studio",
@@ -7610,7 +7612,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs"
     },
     {
       "legacyFeatureId": "repo-manager:command:scan_root",

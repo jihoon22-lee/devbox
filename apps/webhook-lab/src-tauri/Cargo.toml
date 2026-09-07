@@ -30,6 +30,7 @@ required-features = ["standalone"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+webhook-core = { path = "../../../crates/webhook-core" }
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
 tauri-plugin-single-instance = "2"

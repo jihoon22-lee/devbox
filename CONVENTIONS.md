@@ -79,6 +79,9 @@ devbox/
 ├─ crates/                 # Rust 공용
 │  ├─ applink/             # 앱 간 one-time typed handoff와 single-instance 수신 계약
 │  ├─ api-protocols/       # API 프로토콜 validation/codec (API Playground, API Studio)
+│  ├─ webhook-core/        # Webhook fixture/rule/replay (Webhook Lab, API Studio)
+│  ├─ transforms-core/     # Transform codec/workflow (Toolbox, API Studio)
+│  ├─ data-migration/      # consistent snapshot/transaction (Control Center, API Studio)
 │  ├─ catalog/             # build/runtime app catalog
 │  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
 │  ├─ git/                 # Windows/WSL Git argv·identity 경계

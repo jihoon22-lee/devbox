@@ -1166,6 +1166,18 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4583a4551df46e2792f82ceeac45e850d2e2d5debba0b91f102385cda5b11f06"
 
 [[package]]
+name = "data-migration"
+version = "0.1.0"
+dependencies = [
+ "filesystem",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "uuid",
+]
+
+[[package]]
 name = "dbus"
 version = "0.9.12"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1299,6 +1311,7 @@ dependencies = [
 name = "devbox-control-center"
 version = "0.8.0"
 dependencies = [
+ "data-migration",
  "filesystem",
  "product-shell-tauri",
  "rusqlite",
@@ -1406,6 +1419,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
  "tempfile",
+ "transforms-core",
  "uuid",
  "window-state-tauri",
  "zeroize",
@@ -6594,6 +6608,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "transforms-core"
+version = "0.1.0"
+dependencies = [
+ "applink",
+ "base64 0.22.1",
+ "chrono",
+ "filesystem",
+ "hmac",
+ "png 0.18.1",
+ "qrcode",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+]
+
+[[package]]
 name = "tray-icon"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -7069,6 +7100,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "webhook-core"
+version = "0.1.0"
+dependencies = [
+ "applink",
+ "filesystem",
+ "serde",
+ "serde_json",
+ "tempfile",
+ "uuid",
+]
+
+[[package]]
 name = "webhook-lab"
 version = "0.3.0"
 dependencies = [
@@ -7084,6 +7127,7 @@ dependencies = [
  "tauri-plugin-single-instance",
  "tempfile",
  "uuid",
+ "webhook-core",
  "window-state-tauri",
 ]
 

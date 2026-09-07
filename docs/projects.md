@@ -15,7 +15,9 @@ in `apps/products.json`. See the [foundation contract](architecture/v0.8-foundat
 for authority, data isolation, verification and outstanding acceptance.
 
 B02 additionally shares Requests/Protocols, Webhooks and Transforms through
-`packages/api-studio-features` and the pure API engine through `crates/api-protocols`.
+`packages/api-studio-features` and pure domain engines through `crates/api-protocols`,
+`crates/webhook-core` and `crates/transforms-core`. API Studio and Control Center
+share consistent SQLite snapshots and destination transactions in `crates/data-migration`.
 API Studio consumes native adapters in the three legacy apps without starting their
 legacy entry points. Migration and integrated handoff acceptance remain in progress.
 
