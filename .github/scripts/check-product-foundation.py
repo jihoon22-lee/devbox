@@ -17,6 +17,16 @@ def check(root=ROOT):
     assert len(catalog["products"]) == 4
     assert len([p for p in legacy["apps"] if p["release"]]) == 15
     assert {p["legacyApp"] for p in parity["apps"]} == {p["id"] for p in legacy["apps"] if p["release"]}
+    for app in parity["apps"]:
+        review = app["baselineReview"]
+        assert review["implementedGroups"] and review["authorityBoundary"]
+        assert review["newProductParity"] == "pending-owner-implementation"
+        assert review["nativeRegisteredCommands"] == sum(
+            f["kind"] == "native-command" and f["legacyFeatureId"].startswith(app["legacyApp"] + ":")
+            for f in parity["features"])
+        for evidence in review["evidence"]:
+            assert (root / evidence).is_file()
+        assert app["registration"]["singleInstance"] and app["registration"]["portable"]
     assert data_inventory["schemaVersion"] == 1
     assert data_inventory["baselineCommit"] == parity["baselineCommit"]
     assert data_inventory["baselineRelease"] == parity["baselineRelease"]

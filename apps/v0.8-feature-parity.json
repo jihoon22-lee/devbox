@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "baselineCommit": "6f811df63da2653ad0f8decea7fc7b03df4be70f",
   "baselineRelease": "v0.7.0",
-  "inventoryMethod": "Native command declarations, frontend surfaces and storage source scan; semantic parity and migration classification remain owner-reviewed. Pending entries never satisfy release acceptance.",
+  "inventoryMethod": "15 README/native registries/source contracts reviewed by preservation groups; every inventoried native command occurs in a generate_handler registration. Fine-grained v0.8 semantic parity and importer tests remain owned by downstream WPs. Pending entries never satisfy release acceptance.",
   "apps": [
     {
       "legacyApp": "port-manager",
@@ -14,7 +14,32 @@
       "ownerIssue": 547,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "TCP/UDP listeners, PID details, process and browser actions",
+          "Explicit external-process termination and container-owner handoff",
+          "Persisted filters and cross-app ownership observations"
+        ],
+        "authorityBoundary": "External-process actions revalidate selection; Runtime ownership is a separate authority.",
+        "evidence": [
+          "apps/port-manager/README.md",
+          "apps/port-manager/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 11,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "developer-toolbox",
@@ -26,7 +51,32 @@
       "ownerIssue": 544,
       "targetProduct": "api-studio",
       "targetNamespace": "com.devbox.v08.apistudio",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Text/byte encoders, strict formatters, diff/regex and time/number tools",
+          "UUID/ULID, QR, hash, HMAC and JWT verification",
+          "Bounded transform workflows and typed API/Knowledge/text handoffs"
+        ],
+        "authorityBoundary": "HMAC/JWT inputs and results stay transient; workflow and handoff eligibility is tool-specific.",
+        "evidence": [
+          "apps/developer-toolbox/README.md",
+          "apps/developer-toolbox/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 18,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "wsl-desktop",
@@ -38,7 +88,32 @@
       "ownerIssue": 548,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "WSL distro/dashboard, explicit commands and Docker observations/actions",
+          "PTY sessions, attach/write/broadcast/resize/close and optional multiplexers",
+          "Named layouts/profiles, shell integration, Log Lens handoff and Quick Summon"
+        ],
+        "authorityBoundary": "PTY lifetime is native-owned; restored layout does not authorize automatic command execution.",
+        "evidence": [
+          "apps/wsl-desktop/README.md",
+          "apps/wsl-desktop/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 23,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": true,
+        "autostart": "none in app",
+        "globalShortcut": "Optional Quick Summon allowlist; Ctrl+Alt+Space can collide with Launcher"
+      }
     },
     {
       "legacyApp": "api-playground",
@@ -50,7 +125,33 @@
       "ownerIssue": 544,
       "targetProduct": "api-studio",
       "targetNamespace": "com.devbox.v08.apistudio",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "HTTP requests, cancellation, OpenAPI, collections/environments/history and explicit binary/header export",
+          "SSE/WebSocket and gRPC including owner-bound TLS credentials",
+          "MCP HTTP/stdio with OAuth grants, explicit executable selection and tool invocation",
+          "Typed request handoff and redacted selected-text export"
+        ],
+        "authorityBoundary": "Request execution, transport workers, raw transient responses and secret stores have distinct lifetimes; renderer route changes grant none of these.",
+        "evidence": [
+          "apps/api-playground/README.md",
+          "apps/api-playground/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 53,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "everything-plus",
@@ -62,7 +163,32 @@
       "ownerIssue": 545,
       "targetProduct": "knowledge",
       "targetNamespace": "com.devbox.v08.knowledge",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Configured roots, bounded index jobs/cancellation and watcher status",
+          "Filename/content queries, filters and saved queries",
+          "Explicit file/reveal/open-in actions"
+        ],
+        "authorityBoundary": "Search reads derived indexes; configured roots/exclusions/saved queries are authoritative. Search does not grant write or process authority.",
+        "evidence": [
+          "apps/everything-plus/README.md",
+          "apps/everything-plus/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 17,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "knowledge-base",
@@ -74,7 +200,32 @@
       "ownerIssue": 545,
       "targetProduct": "knowledge",
       "targetNamespace": "com.devbox.v08.knowledge",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Vault file/directory CRUD, Markdown, tags and image assets",
+          "Daily notes, templates, quick capture and typed draft preview/save",
+          "Wikilinks/backlinks, rename preview/apply and source watching"
+        ],
+        "authorityBoundary": "Vault files and templates are authoritative; previews bind later writes and derived indexes may be rebuilt.",
+        "evidence": [
+          "apps/knowledge-base/README.md",
+          "apps/knowledge-base/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 41,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "Ctrl+Alt+K quick capture; registration failure is observable"
+      }
     },
     {
       "legacyApp": "life-log",
@@ -86,7 +237,33 @@
       "ownerIssue": 545,
       "targetProduct": "knowledge",
       "targetNamespace": "com.devbox.v08.knowledge",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Opt-in activity tracking, idle threshold, privacy rules and historical redaction",
+          "Timeline/range statistics, project attribution and integration observations",
+          "Digest generation/export and typed Knowledge draft history",
+          "Tray and explicit autostart registration"
+        ],
+        "authorityBoundary": "Activity owns a single writer and privacy/retention settings; diagnostic views do not imply tracking consent.",
+        "evidence": [
+          "apps/life-log/README.md",
+          "apps/life-log/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 26,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": true,
+        "autostart": "Explicit HKCU Software/Microsoft/Windows/CurrentVersion/Run value LifeLog",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "devbox-manager",
@@ -98,7 +275,32 @@
       "ownerIssue": 550,
       "targetProduct": "control-center",
       "targetNamespace": "com.devbox.v08.controlcenter",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Catalog, available/current installations, download/install, launch, rollback and reviewed portable removal",
+          "Install-root registration, developer setup preview/apply/cancel and related tool actions",
+          "Read-only database diagnostics, local quality and support bundle preview/export"
+        ],
+        "authorityBoundary": "Installer mutation is native-reviewed; portable ownership records and support-data export boundaries remain separate.",
+        "evidence": [
+          "apps/devbox-manager/README.md",
+          "apps/devbox-manager/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 33,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "code-pad",
@@ -110,7 +312,33 @@
       "ownerIssue": 546,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Text encoding, file/folder operations, file watching and bounded preview",
+          "Session/dirty-buffer recovery with explicit application",
+          "Language server config/lifecycle, document sync, diagnostics and editor requests",
+          "Reviewed LSP rename/format and managed server installation/recovery"
+        ],
+        "authorityBoundary": "Editor writes and LSP installation require native ownership/trust checks; recovered buffers do not silently overwrite files.",
+        "evidence": [
+          "apps/code-pad/README.md",
+          "apps/code-pad/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 48,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "run-manager",
@@ -122,7 +350,33 @@
       "ownerIssue": 547,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Jobs/cron, occurrence claims, services/restart/health and native execution adapters",
+          "Run history, owned process cancellation, rotated log tail/search/export and notifications",
+          "Reviewed project/task import, trusted task DAG operations and diagnostic navigation",
+          "One-time Workbench task control receipts, tray and startup shortcut"
+        ],
+        "authorityBoundary": "Only Runtime-owned processes are controlled; DPAPI environments and run/occurrence ownership history must be preserved.",
+        "evidence": [
+          "apps/run-manager/README.md",
+          "apps/run-manager/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 56,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": true,
+        "autostart": "Explicit per-user Startup/Run Manager.lnk; independent of NSIS shortcut",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "workbench",
@@ -134,7 +388,32 @@
       "ownerIssue": 546,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Project profiles/templates, target selection and environment preview",
+          "Preflight/dependency health and cancellable workspace start/retry/stop",
+          "Git summaries, runtime suggestions and one-time task control receipts"
+        ],
+        "authorityBoundary": "A project profile is not arbitrary filesystem/process authority; task execution and execution-time secrets remain Runtime-owned.",
+        "evidence": [
+          "apps/workbench/README.md",
+          "apps/workbench/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 32,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "webhook-lab",
@@ -146,7 +425,32 @@
       "ownerIssue": 544,
       "targetProduct": "api-studio",
       "targetNamespace": "com.devbox.v08.apistudio",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Local listener lifecycle, bounded history and explicit raw/masked views",
+          "Mock rules/conflict previews/sequences and replayable fixtures",
+          "Replay and typed API/Log Lens handoffs plus inactive Run service definition export"
+        ],
+        "authorityBoundary": "Listener lifetime is independent of UI; raw sensitive headers stay bounded in memory and persisted/exported views are sanitized.",
+        "evidence": [
+          "apps/webhook-lab/README.md",
+          "apps/webhook-lab/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 26,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "repo-manager",
@@ -158,7 +462,33 @@
       "ownerIssue": 546,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Repository scan/status/preflight, worktree creation and reviewed cleanup",
+          "History/diff/changes, stage/unstage/commit and explicit remote fetch/pull/push/cancel",
+          "Local dependency inventory and opt-in remote enrichment",
+          "Typed repository opening and path actions"
+        ],
+        "authorityBoundary": "Git mutations and remote access require explicit repository/operation boundaries; cleanup is previewed and cancellation-aware.",
+        "evidence": [
+          "apps/repo-manager/README.md",
+          "apps/repo-manager/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 31,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     },
     {
       "legacyApp": "devbox-launcher",
@@ -170,7 +500,31 @@
       "ownerIssue": 549,
       "targetProduct": "control-center",
       "targetNamespace": "com.devbox.v08.controlcenter",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Bounded cross-app search, favorites/recents and catalog-backed result dispatch",
+          "Previewed text actions and registered global shortcut configuration"
+        ],
+        "authorityBoundary": "Only typed catalog results dispatch; search is not an arbitrary command launcher or secret resolver.",
+        "evidence": [
+          "apps/devbox-launcher/README.md",
+          "apps/devbox-launcher/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 8,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "Configured Ctrl+Alt+Space (default), Ctrl+Alt+L or Ctrl+Alt+J"
+      }
     },
     {
       "legacyApp": "log-lens",
@@ -182,7 +536,32 @@
       "ownerIssue": 547,
       "targetProduct": "workspace",
       "targetNamespace": "com.devbox.v08.workspace",
-      "installerProof": "pending-windows"
+      "installerProof": "pending-windows",
+      "baselineReview": {
+        "implementedGroups": [
+          "Bounded file/fixed-adapter reads, filters, cancellation and merged source summaries",
+          "Saved views and explicit redacted export",
+          "One-time run-log source preview/accept/restore and Toolbox selected-text handoff"
+        ],
+        "authorityBoundary": "Logs are source-owned read adapters; a log reference cannot grant task control or broad filesystem access.",
+        "evidence": [
+          "apps/log-lens/README.md",
+          "apps/log-lens/src-tauri/src/lib.rs"
+        ],
+        "nativeRegisteredCommands": 17,
+        "newProductParity": "pending-owner-implementation"
+      },
+      "registration": {
+        "singleInstance": "Tauri app identifier",
+        "installer": "NSIS current-user ARP and Start Menu/Desktop shortcuts; installer identity separate from app data",
+        "portable": "Standalone binary; Manager-owned portable installations use devbox registry/current.json and install-roots/v1/registry.json",
+        "fileAssociations": [],
+        "osUriProtocols": {},
+        "appLink": "Typed argv with one-time source-owned handoff; not an OS URI registration",
+        "tray": false,
+        "autostart": "none in app",
+        "globalShortcut": "none in app"
+      }
     }
   ],
   "features": [
@@ -8194,5 +8573,11 @@
       "ownerIssue": 547,
       "status": "pending"
     }
+  ],
+  "plannedExcluded": [
+    "Four-product feature migration and production activation",
+    "New project registry and product-owned worker authority",
+    "Cross-generation data/secret import and legacy decommissioning",
+    "Performance acceptance for the integrated products"
   ]
 }
