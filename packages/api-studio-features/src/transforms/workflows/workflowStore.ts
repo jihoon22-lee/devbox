@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke } from "../../transport";
+const invoke = componentInvoke("api-studio.transforms");
 import { isTauri } from "../lib/isTauri";
 import {
   PIPELINE_LIMITS,

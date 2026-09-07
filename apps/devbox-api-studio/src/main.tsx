@@ -1,5 +1,6 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ProductShell } from "@devbox/product-shell";
+import "./transport";
+import Studio from "./Studio";
 import "./App.css";
-ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><ProductShell product="api-studio" /></React.StrictMode>);
+ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><Studio /></React.StrictMode>);

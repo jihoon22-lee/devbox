@@ -57,6 +57,19 @@ fn slug(value: &str) -> bool {
         && !value.ends_with('-')
 }
 
+fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
+    if id == format!("{owner}.shell") {
+        return authority == "shell-read";
+    }
+    owner == "api-studio"
+        && matches!(
+            (id, authority),
+            ("api-studio.api", "request-network")
+                | ("api-studio.webhooks", "listener-network")
+                | ("api-studio.transforms", "transform-local")
+        )
+}
+
 impl ProductCatalog {
     pub fn parse(source: &str) -> Result<Self, &'static str> {
         if source.len() > 256 * 1024 {
@@ -89,9 +102,8 @@ impl ProductCatalog {
         let mut components = HashSet::new();
         for c in &catalog.components {
             if !products.contains(c.owner.as_str())
-                || c.id != format!("{}.shell", c.owner)
+                || !component_authority(&c.owner, &c.id, &c.authority)
                 || !components.insert(c.id.as_str())
-                || c.authority != "shell-read"
                 || c.lifecycle != "product"
                 || c.protocol_version != 1
             {

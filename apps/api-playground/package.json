@@ -20,7 +20,8 @@
     "@devbox/context-menu": "workspace:*",
     "@devbox/openapi": "workspace:*",
     "@devbox/tokens": "workspace:*",
-    "jsonc-parser": "3.3.1"
+    "jsonc-parser": "3.3.1",
+    "@devbox/api-studio-features": "workspace:*"
   },
   "devDependencies": {
     "@types/react": "^19.1.8",

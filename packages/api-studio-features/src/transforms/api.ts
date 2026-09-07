@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted } from "../transport";
+const invoke = componentInvoke("api-studio.transforms");
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
@@ -136,7 +137,7 @@ export async function diff(a: string, b: string): Promise<DiffHunk[]> {
  */
 export async function readClipboardText(): Promise<string> {
   if (!isTauri()) return navigator.clipboard.readText();
-  return readText();
+  return isProductHosted() ? invoke<string>("read_clipboard_text") : readText();
 }
 
 /** Publish only the explicit output currently shown by a tool. */

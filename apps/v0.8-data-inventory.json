@@ -71,46 +71,50 @@
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src/lib/persistence.ts",
+      "sourcePath": "packages/api-studio-features/src/requests/lib/persistence.ts",
       "items": [
         "apip-history",
         "apip-history-v2",
         "apip-history-v1-migrated"
       ],
       "treatment": "Acquire an owner-produced WebView2 export without invoking destructive legacy migration on the source. Apply existing sanitizer on destination.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/api-playground/src/lib/persistence.ts"
     },
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src/lib/collections.ts",
+      "sourcePath": "packages/api-studio-features/src/requests/lib/collections.ts",
       "items": [
         "apip-collections",
         "apip-collections-v2",
         "apip-collections-v1-migrated"
       ],
       "treatment": "Preserve collection labels/order/IDs with explicit mapping and conflicts; source keys remain untouched.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/api-playground/src/lib/collections.ts"
     },
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src/lib/environments.ts",
+      "sourcePath": "packages/api-studio-features/src/requests/lib/environments.ts",
       "items": [
         "apip-environments"
       ],
       "treatment": "Preserve environment metadata and sealed references under the API owner. Plaintext must not pass through the migration renderer or journal.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/api-playground/src/lib/environments.ts"
     },
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src/lib/grpc.ts",
+      "sourcePath": "packages/api-studio-features/src/requests/lib/grpc.ts",
       "items": [
         "devbox.api-playground.grpc-history/v1"
       ],
       "treatment": "Preserve bounded sanitized gRPC history.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "baselineSourcePath": "apps/api-playground/src/lib/grpc.ts"
     },
     {
       "legacyApp": "api-playground",

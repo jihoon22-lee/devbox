@@ -28,7 +28,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{mpsc, Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 pub const DEFAULT_BIND: &str = "127.0.0.1";
 pub const LAN_BIND_CONFIRMATION_ERROR: &str = "LAN 공개를 시작하려면 명시적인 확인이 필요합니다";
@@ -760,9 +760,7 @@ pub fn replay_fixture(
 }
 
 fn fixture_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_local_data_dir()
+    let directory = crate::component::data_root(app)
         .map_err(|_| crate::core::fixtures::FIXTURE_WRITE_ERROR.to_string())?;
     Ok(fixture_path_from_dir(&directory))
 }
@@ -1224,9 +1222,7 @@ pub fn export_run_service_definition(
         .cloned()
         .collect::<Vec<_>>();
     rules.sort_by(compare_rule_precedence);
-    let data_root = app
-        .path()
-        .app_local_data_dir()
+    let data_root = crate::component::data_root(&app)
         .map_err(|_| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
     let executable = std::env::current_exe()
         .map_err(|_| crate::core::service_profile::SERVICE_PROFILE_ERROR.to_string())?;
@@ -1263,6 +1259,350 @@ fn handoff_now_ms() -> Option<u64> {
         .ok()
         .and_then(|duration| u64::try_from(duration.as_millis()).ok())
         .filter(|now| *now > 0)
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_server_status(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = server_status(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_start_server(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        bind: Option<String>,
+        port: u16,
+        allow_lan: Option<bool>,
+    }
+    let Input {
+        bind,
+        port,
+        allow_lan,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = start_server(component_app.state(), bind, port, allow_lan)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_stop_server(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = stop_server(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_list_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_history(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_clear_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    clear_history(component_app.state())?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_copy_masked_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: u64,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = copy_masked_history(component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_copy_raw_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: u64,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = copy_raw_history(component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_copy_history_headers(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: u64,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = copy_history_headers(component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_delete_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: u64,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    delete_history(component_app.state(), id)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_replay_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        history_id: u64,
+    }
+    let Input { history_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = replay_history(component_app.state(), history_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_list_fixtures(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_fixtures(component_app.clone(), component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_save_fixture(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        history_id: u64,
+    }
+    let Input { history_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = save_fixture(component_app.clone(), component_app.state(), history_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_delete_fixture(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    delete_fixture(component_app.clone(), component_app.state(), id)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_clear_fixtures(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    clear_fixtures(component_app.clone(), component_app.state())?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_fixture_to_rule(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = fixture_to_rule(component_app.clone(), component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_replay_fixture(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = replay_fixture(component_app.clone(), component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_list_rules(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_rules(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_preview_rule_conflicts(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        rule: ResponseRule,
+    }
+    let Input { rule } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = preview_rule_conflicts(component_app.state(), rule)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_set_rule(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        rule: ResponseRule,
+        confirm_conflicts: bool,
+    }
+    let Input {
+        rule,
+        confirm_conflicts,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = set_rule(component_app.state(), rule, confirm_conflicts)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_delete_rule(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    delete_rule(component_app.state(), id)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_reset_rule_sequence(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    reset_rule_sequence(component_app.state(), id)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

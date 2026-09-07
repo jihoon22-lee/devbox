@@ -1,3 +1,4 @@
+pub mod component;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
 use commands::server_state;

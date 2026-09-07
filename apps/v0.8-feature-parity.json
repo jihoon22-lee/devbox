@@ -987,7 +987,7 @@
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:App.tsx",
-      "sourcePath": "apps/developer-toolbox/src/App.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -997,11 +997,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/App.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/ApiHandoffAction.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/ApiHandoffAction.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/ApiHandoffAction.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1011,11 +1012,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/ApiHandoffAction.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/ByteCodecTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/ByteCodecTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/ByteCodecTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1025,11 +1027,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/ByteCodecTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/HmacTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/HmacTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/HmacTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1039,11 +1042,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/HmacTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/JsonTypescriptTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/JsonTypescriptTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/JsonTypescriptTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1053,11 +1057,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/JsonTypescriptTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/JsonYamlTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/JsonYamlTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/JsonYamlTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1067,11 +1072,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/JsonYamlTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/JwtTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/JwtTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/JwtTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1081,11 +1087,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/JwtTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/KnowledgeDraftAction.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/KnowledgeDraftAction.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/KnowledgeDraftAction.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1095,11 +1102,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/KnowledgeDraftAction.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/LoremTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/LoremTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/LoremTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1109,11 +1117,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/LoremTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/MarkdownTableTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/MarkdownTableTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/MarkdownTableTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1123,11 +1132,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/MarkdownTableTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/QrTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/QrTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/QrTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1137,11 +1147,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/QrTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/RadixTool.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/RadixTool.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/RadixTool.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1151,11 +1162,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/RadixTool.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/common.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/common.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/common.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1165,11 +1177,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/common.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/diff.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/diff.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/diff.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1179,11 +1192,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/diff.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/index.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/index.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/index.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1193,11 +1207,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/index.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/regex.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/regex.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/regex.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1207,11 +1222,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/regex.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/security.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/security.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/security.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1221,11 +1237,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/security.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/transformers.tsx",
-      "sourcePath": "apps/developer-toolbox/src/tools/transformers.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/tools/transformers.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1235,11 +1252,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/tools/transformers.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:workflows/SmartWorkflowPanel.tsx",
-      "sourcePath": "apps/developer-toolbox/src/workflows/SmartWorkflowPanel.tsx",
+      "sourcePath": "packages/api-studio-features/src/transforms/workflows/SmartWorkflowPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -1249,7 +1267,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/developer-toolbox/src/workflows/SmartWorkflowPanel.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:store:src-tauri/src/core/workflows.rs",
@@ -2527,7 +2546,7 @@
     },
     {
       "legacyFeatureId": "api-playground:surface:App.tsx",
-      "sourcePath": "apps/api-playground/src/App.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2537,11 +2556,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/App.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:CookieEditor.tsx",
-      "sourcePath": "apps/api-playground/src/CookieEditor.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/CookieEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2551,11 +2571,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/CookieEditor.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:GraphqlEditor.tsx",
-      "sourcePath": "apps/api-playground/src/GraphqlEditor.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/GraphqlEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2565,11 +2586,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/GraphqlEditor.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:GrpcLab.tsx",
-      "sourcePath": "apps/api-playground/src/GrpcLab.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/GrpcLab.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2579,11 +2601,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/GrpcLab.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:HeaderTable.tsx",
-      "sourcePath": "apps/api-playground/src/HeaderTable.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/HeaderTable.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2593,11 +2616,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/HeaderTable.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:McpSchemaEditor.tsx",
-      "sourcePath": "apps/api-playground/src/McpSchemaEditor.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/McpSchemaEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2607,11 +2631,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/McpSchemaEditor.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:MultipartEditor.tsx",
-      "sourcePath": "apps/api-playground/src/MultipartEditor.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/MultipartEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2621,11 +2646,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/MultipartEditor.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:OpenApiImport.tsx",
-      "sourcePath": "apps/api-playground/src/OpenApiImport.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/OpenApiImport.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2635,11 +2661,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/OpenApiImport.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:ProtocolLab.tsx",
-      "sourcePath": "apps/api-playground/src/ProtocolLab.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/ProtocolLab.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2649,11 +2676,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/ProtocolLab.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:ResponseViewer.tsx",
-      "sourcePath": "apps/api-playground/src/ResponseViewer.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/ResponseViewer.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2663,11 +2691,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/ResponseViewer.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:SseEventViewer.tsx",
-      "sourcePath": "apps/api-playground/src/SseEventViewer.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/SseEventViewer.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2677,11 +2706,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/SseEventViewer.tsx"
     },
     {
       "legacyFeatureId": "api-playground:surface:WebSocketPanel.tsx",
-      "sourcePath": "apps/api-playground/src/WebSocketPanel.tsx",
+      "sourcePath": "packages/api-studio-features/src/requests/WebSocketPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -2691,11 +2721,12 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/WebSocketPanel.tsx"
     },
     {
       "legacyFeatureId": "api-playground:store:src/lib/environments.ts",
-      "sourcePath": "apps/api-playground/src/lib/environments.ts",
+      "sourcePath": "packages/api-studio-features/src/requests/lib/environments.ts",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "api-studio",
@@ -2705,7 +2736,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/api-playground/src/lib/environments.ts"
     },
     {
       "legacyFeatureId": "api-playground:store:src-tauri/src/commands/grpc.rs",
@@ -7539,7 +7571,7 @@
     },
     {
       "legacyFeatureId": "webhook-lab:surface:App.tsx",
-      "sourcePath": "apps/webhook-lab/src/App.tsx",
+      "sourcePath": "packages/api-studio-features/src/webhooks/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "api-studio",
@@ -7549,7 +7581,8 @@
       "migration": "owner-review-required",
       "test": null,
       "ownerIssue": 544,
-      "status": "pending"
+      "status": "pending",
+      "baselineSourcePath": "apps/webhook-lab/src/App.tsx"
     },
     {
       "legacyFeatureId": "webhook-lab:store:src-tauri/src/core/fixtures.rs",

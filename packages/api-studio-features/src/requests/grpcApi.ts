@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke } from "../transport";
+const invoke = componentInvoke("api-studio.api");
 import { isTauri } from "./lib/isTauri";
 
 export type GrpcSelectionKind = "proto" | "import-root" | "ca" | "client-cert" | "client-key";

@@ -14,6 +14,11 @@ feature migration. Their shared UI/native adapters are `packages/product-shell`,
 in `apps/products.json`. See the [foundation contract](architecture/v0.8-foundation.md)
 for authority, data isolation, verification and outstanding acceptance.
 
+B02 additionally shares Requests/Protocols, Webhooks and Transforms through
+`packages/api-studio-features` and the pure API engine through `crates/api-protocols`.
+API Studio consumes native adapters in the three legacy apps without starting their
+legacy entry points. Migration and integrated handoff acceptance remain in progress.
+
 ## W08 PR2 (#489) 문서 계약
 
 W08 PR2는 v0.6.0 stable에 포함된 integration 작업이다. Log Lens 0.2.0은

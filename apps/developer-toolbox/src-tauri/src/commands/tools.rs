@@ -423,6 +423,134 @@ pub fn diff(a: String, b: String) -> Vec<DiffHunk> {
         .collect()
 }
 
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_hash(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        data: String,
+        algorithm: String,
+    }
+    let Input { data, algorithm } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = hash(data, algorithm)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_hmac_generate(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: HmacRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = hmac_generate(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_hmac_verify(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: HmacVerifyRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = hmac_verify(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_generate_uuid(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = generate_uuid()?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_generate_ids(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: GenerateIdsRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = generate_ids(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_regex_test(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        pattern: String,
+        text: String,
+    }
+    let Input { pattern, text } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = regex_test(pattern, text)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_diff(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        a: String,
+        b: String,
+    }
+    let Input { a, b } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = diff(a, b);
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_jwt_verify(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: JwtVerifyRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = jwt_verify(request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

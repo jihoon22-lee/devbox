@@ -538,9 +538,7 @@ fn credential_store_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     }
     #[cfg(target_os = "windows")]
     {
-        let root = app
-            .path()
-            .app_local_data_dir()
+        let root = crate::component::data_root(app)
             .map_err(|_| grpc::CREDENTIAL_STORAGE_FAILED.to_string())?;
         Ok(root.join("grpc").join("tls-credentials.json"))
     }
@@ -745,6 +743,114 @@ fn now_unix_ms() -> Result<u64, String> {
         .and_then(|value| u64::try_from(value.as_millis()).ok())
         .filter(|value| *value > 0)
         .ok_or_else(|| grpc::CREDENTIAL_STORAGE_FAILED.to_string())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_pick_grpc_ca(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = pick_grpc_ca(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_pick_grpc_client_certificate(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = pick_grpc_client_certificate(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_pick_grpc_client_key(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = pick_grpc_client_key(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_import_grpc_tls_credential(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        label: String,
+        ca_selection_id: Option<String>,
+        client_certificate_selection_id: Option<String>,
+        client_key_selection_id: Option<String>,
+    }
+    let Input {
+        label,
+        ca_selection_id,
+        client_certificate_selection_id,
+        client_key_selection_id,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = import_grpc_tls_credential(
+        component_app.clone(),
+        component_app.state(),
+        component_app.state(),
+        label,
+        ca_selection_id,
+        client_certificate_selection_id,
+        client_key_selection_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_list_grpc_tls_credentials(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_grpc_tls_credentials(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_delete_grpc_tls_credential(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        credential_id: String,
+    }
+    let Input { credential_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value =
+        delete_grpc_tls_credential(component_app.clone(), component_app.state(), credential_id)
+            .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

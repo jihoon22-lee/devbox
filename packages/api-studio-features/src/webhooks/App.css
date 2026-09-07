@@ -1,7 +1,7 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 
-:root {
+.api-feature-webhooks {
   --bg: var(--db-color-bg);
   --panel: var(--db-color-surface);
   --border: var(--db-color-border);
@@ -13,31 +13,31 @@
   --warn: var(--db-color-warn);
 }
 
-* {
+.api-feature-webhooks * {
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+.api-feature-webhooks,
+.api-feature-webhooks,
+.api-feature-webhooks {
   height: 100%;
   margin: 0;
 }
 
-body {
+.api-feature-webhooks {
   background: var(--bg);
   color: var(--text);
   font-family: var(--db-font-sans);
   font-size: 13px;
 }
 
-.app {
+.api-feature-webhooks .app {
   height: 100%;
   display: flex;
   flex-direction: column;
 }
 
-.toolbar {
+.api-feature-webhooks .toolbar {
   display: flex;
   align-items: center;
   gap: 10px;
@@ -46,24 +46,24 @@ body {
   background: var(--panel);
 }
 
-.title {
+.api-feature-webhooks .title {
   font-size: 15px;
   margin: 0;
 }
 
-.spacer {
+.api-feature-webhooks .spacer {
   flex: 1;
 }
 
-.status.ok {
+.api-feature-webhooks .status.ok {
   color: var(--ok);
 }
 
-.status.off {
+.api-feature-webhooks .status.off {
   color: var(--dim);
 }
 
-.btn {
+.api-feature-webhooks .btn {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -73,24 +73,24 @@ body {
   font-size: 12px;
 }
 
-.btn.primary {
+.api-feature-webhooks .btn.primary {
   border-color: var(--accent);
   color: var(--accent);
 }
 
-.btn.danger {
+.api-feature-webhooks .btn.danger {
   border-color: var(--danger);
   color: var(--danger);
 }
 
-.field-inline {
+.api-feature-webhooks .field-inline {
   display: flex;
   align-items: center;
   gap: 6px;
   color: var(--dim);
 }
 
-.field-inline input {
+.api-feature-webhooks .field-inline input {
   width: 80px;
   background: var(--bg);
   color: var(--text);
@@ -99,7 +99,7 @@ body {
   padding: 4px 6px;
 }
 
-.toggle {
+.api-feature-webhooks .toggle {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -107,21 +107,21 @@ body {
   font-size: 12px;
 }
 
-.warn {
+.api-feature-webhooks .warn {
   background: rgba(210, 153, 34, 0.12);
   border-bottom: 1px solid var(--warn);
   color: var(--warn);
   padding: 8px 14px;
 }
 
-.error {
+.api-feature-webhooks .error {
   background: rgba(248, 81, 73, 0.12);
   border-bottom: 1px solid var(--danger);
   color: var(--danger);
   padding: 8px 14px;
 }
 
-.handoff-notice {
+.api-feature-webhooks .handoff-notice {
   background: rgba(79, 140, 255, 0.12);
   border-bottom: 1px solid var(--accent);
   color: var(--text);
@@ -129,7 +129,7 @@ body {
   font-size: 12px;
 }
 
-.main {
+.api-feature-webhooks .main {
   flex: 1;
   display: grid;
   grid-template-columns: 380px 1fr;
@@ -138,7 +138,7 @@ body {
   overflow: hidden;
 }
 
-.panel {
+.api-feature-webhooks .panel {
   background: var(--panel);
   border: 1px solid var(--border);
   border-radius: 8px;
@@ -146,23 +146,23 @@ body {
   overflow-y: auto;
 }
 
-.panel h2 {
+.api-feature-webhooks .panel h2 {
   font-size: 13px;
   margin: 0 0 10px;
 }
 
-.precedence-help {
+.api-feature-webhooks .precedence-help {
   margin: -4px 0 10px;
 }
 
-.rule-editor {
+.api-feature-webhooks .rule-editor {
   display: flex;
   flex-direction: column;
   gap: 10px;
   margin-bottom: 10px;
 }
 
-.openapi-section {
+.api-feature-webhooks .openapi-section {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -172,20 +172,20 @@ body {
   border-radius: 6px;
 }
 
-.openapi-heading,
-.openapi-file-actions {
+.api-feature-webhooks .openapi-heading,
+.api-feature-webhooks .openapi-file-actions {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
-.openapi-heading h3 {
+.api-feature-webhooks .openapi-heading h3 {
   margin: 0 0 3px;
   font-size: 12px;
 }
 
-.openapi-operations {
+.api-feature-webhooks .openapi-operations {
   display: flex;
   flex-direction: column;
   gap: 5px;
@@ -193,7 +193,7 @@ body {
   overflow-y: auto;
 }
 
-.openapi-operation {
+.api-feature-webhooks .openapi-operation {
   display: flex;
   align-items: baseline;
   gap: 6px;
@@ -201,27 +201,27 @@ body {
   min-width: 0;
 }
 
-.openapi-operation .mono {
+.api-feature-webhooks .openapi-operation .mono {
   overflow-wrap: anywhere;
 }
 
-.openapi-operation.unavailable {
+.api-feature-webhooks .openapi-operation.unavailable {
   opacity: 0.7;
 }
 
-.openapi-operation .field-error {
+.api-feature-webhooks .openapi-operation .field-error {
   margin-left: auto;
   text-align: right;
 }
 
-.openapi-preview > .mini {
+.api-feature-webhooks .openapi-preview > .mini {
   align-self: flex-start;
   border: 1px solid var(--border);
   border-radius: 4px;
   padding: 4px 7px;
 }
 
-.visually-hidden {
+.api-feature-webhooks .visually-hidden {
   position: absolute;
   width: 1px;
   height: 1px;
@@ -233,13 +233,13 @@ body {
   border: 0;
 }
 
-.rule-field {
+.api-feature-webhooks .rule-field {
   display: flex;
   flex-direction: column;
   gap: 4px;
 }
 
-.sequence-editor {
+.api-feature-webhooks .sequence-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -248,24 +248,24 @@ body {
   padding: 8px;
 }
 
-.sequence-editor[aria-invalid="true"] {
+.api-feature-webhooks .sequence-editor[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
-.sequence-heading,
-.sequence-step-heading {
+.api-feature-webhooks .sequence-heading,
+.api-feature-webhooks .sequence-step-heading {
   display: flex;
   align-items: flex-start;
   justify-content: space-between;
   gap: 8px;
 }
 
-.sequence-heading h3 {
+.api-feature-webhooks .sequence-heading h3 {
   margin: 0 0 3px;
   font-size: 12px;
 }
 
-.sequence-step {
+.api-feature-webhooks .sequence-step {
   display: flex;
   flex-direction: column;
   gap: 6px;
@@ -273,14 +273,14 @@ body {
   padding-top: 8px;
 }
 
-.sequence-step-grid {
+.api-feature-webhooks .sequence-step-grid {
   display: grid;
   grid-template-columns: 1fr 1fr;
   gap: 8px;
 }
 
-.sequence-step-grid label,
-.sequence-step > label {
+.api-feature-webhooks .sequence-step-grid label,
+.api-feature-webhooks .sequence-step > label {
   display: flex;
   flex-direction: column;
   gap: 4px;
@@ -288,28 +288,28 @@ body {
   font-size: 11px;
 }
 
-.sequence-badge {
+.api-feature-webhooks .sequence-badge {
   color: var(--accent);
   font-size: 11px;
   margin-left: 8px;
   white-space: nowrap;
 }
 
-.priority-badge {
+.api-feature-webhooks .priority-badge {
   color: var(--warn);
   font-size: 11px;
   margin-left: 8px;
   white-space: nowrap;
 }
 
-.rule-field label {
+.api-feature-webhooks .rule-field label {
   color: var(--text);
   font-size: 12px;
   font-weight: 600;
 }
 
-.rule-editor input,
-.rule-editor textarea {
+.api-feature-webhooks .rule-editor input,
+.api-feature-webhooks .rule-editor textarea {
   background: var(--bg);
   color: var(--text);
   border: 1px solid var(--border);
@@ -318,31 +318,31 @@ body {
   font-size: 12px;
 }
 
-.rule-editor textarea {
+.api-feature-webhooks .rule-editor textarea {
   min-height: 60px;
   font-family: monospace;
 }
 
-.rule-editor input[aria-invalid="true"],
-.rule-editor textarea[aria-invalid="true"] {
+.api-feature-webhooks .rule-editor input[aria-invalid="true"],
+.api-feature-webhooks .rule-editor textarea[aria-invalid="true"] {
   border-color: var(--danger);
 }
 
-.field-help {
+.api-feature-webhooks .field-help {
   margin: 0;
   color: var(--dim);
   font-size: 11px;
   line-height: 1.4;
 }
 
-.field-error {
+.api-feature-webhooks .field-error {
   margin: 0;
   color: var(--danger);
   font-size: 11px;
   line-height: 1.4;
 }
 
-.rule-row {
+.api-feature-webhooks .rule-row {
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -350,123 +350,123 @@ body {
   border-bottom: 1px solid var(--border);
 }
 
-.rule-row.selected,
-.request-row.selected {
+.api-feature-webhooks .rule-row.selected,
+.api-feature-webhooks .request-row.selected {
   background: rgba(79, 140, 255, 0.1);
   outline: 1px solid rgba(79, 140, 255, 0.45);
   outline-offset: -1px;
 }
 
-.rule-row:focus-visible,
-.request-row:focus-visible {
+.api-feature-webhooks .rule-row:focus-visible,
+.api-feature-webhooks .request-row:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: -2px;
 }
 
-.mono {
+.api-feature-webhooks .mono {
   font-family: "Cascadia Code", Consolas, monospace;
 }
 
-.mini {
+.api-feature-webhooks .mini {
   background: transparent;
   border: none;
   color: var(--dim);
   cursor: pointer;
 }
 
-.mini:disabled,
-.btn:disabled {
+.api-feature-webhooks .mini:disabled,
+.api-feature-webhooks .btn:disabled {
   cursor: not-allowed;
   opacity: 0.55;
 }
 
-.history-head {
+.api-feature-webhooks .history-head {
   text-align: right;
   margin-bottom: 6px;
 }
 
-.fixture-section {
+.api-feature-webhooks .fixture-section {
   margin-top: 18px;
   padding-top: 12px;
   border-top: 1px solid var(--border);
 }
 
-.fixture-heading {
+.api-feature-webhooks .fixture-heading {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
 }
 
-.fixture-heading h3 {
+.api-feature-webhooks .fixture-heading h3 {
   font-size: 12px;
   margin: 0;
 }
 
-.fixture-help {
+.api-feature-webhooks .fixture-help {
   margin: 6px 0 8px;
 }
 
-.fixture-row {
+.api-feature-webhooks .fixture-row {
   padding: 7px 0;
   border-bottom: 1px solid var(--border);
 }
 
-.fixture-summary {
+.api-feature-webhooks .fixture-summary {
   display: flex;
   align-items: baseline;
   gap: 8px;
   min-width: 0;
 }
 
-.fixture-summary .mono {
+.api-feature-webhooks .fixture-summary .mono {
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.fixture-actions {
+.api-feature-webhooks .fixture-actions {
   display: flex;
   gap: 8px;
   margin-top: 5px;
 }
 
-.fixture-save {
+.api-feature-webhooks .fixture-save {
   float: right;
   margin-left: 8px;
 }
 
-.danger-text {
+.api-feature-webhooks .danger-text {
   color: var(--danger);
 }
 
-.request-row {
+.api-feature-webhooks .request-row {
   padding: 6px 0;
   border-bottom: 1px solid var(--border);
 }
 
-.method {
+.api-feature-webhooks .method {
   font-weight: 600;
   margin-right: 8px;
 }
 
-.method.post {
+.api-feature-webhooks .method.post {
   color: var(--warn);
 }
 
-.method.get {
+.api-feature-webhooks .method.get {
   color: var(--ok);
 }
 
-.method.delete {
+.api-feature-webhooks .method.delete {
   color: var(--danger);
 }
 
-.url {
+.api-feature-webhooks .url {
   color: var(--dim);
 }
 
-.body {
+.api-feature-webhooks .body {
   margin: 4px 0 0;
   background: var(--bg);
   border-radius: 4px;
@@ -476,12 +476,12 @@ body {
   overflow: auto;
 }
 
-.masked {
+.api-feature-webhooks .masked {
   color: var(--warn);
   font-size: 11px;
   margin-left: 8px;
 }
 
-.dim {
+.api-feature-webhooks .dim {
   color: var(--dim);
 }

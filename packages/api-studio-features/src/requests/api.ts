@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted } from "../transport";
+const invoke = componentInvoke("api-studio.api");
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { open } from "@tauri-apps/plugin-dialog";
 import { isTauri } from "./lib/isTauri";
@@ -248,7 +249,7 @@ export async function saveJsonFile(content: string, defaultName: string): Promis
 /** 데스크톱 file picker의 사용자 선택 결과만 runtime multipart 경로로 반환한다. */
 export async function pickMultipartFile(): Promise<PickedMultipartFile | null> {
   if (!isTauri()) throw new Error("파일 선택은 데스크톱 앱에서만 사용할 수 있습니다");
-  const selected = await open({
+  const selected = isProductHosted() ? await invoke<string | null>("pick_multipart_file") : await open({
     directory: false,
     multiple: false,
     title: "multipart 파일 선택",

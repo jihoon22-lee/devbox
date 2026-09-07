@@ -2664,6 +2664,154 @@ fn curl_form_quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
 }
 
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_send_request(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        req: RequestTemplate,
+        environment: Vec<EnvironmentVariable>,
+        request_id: String,
+    }
+    let Input {
+        req,
+        environment,
+        request_id,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = send_request(
+        req,
+        environment,
+        request_id,
+        component_app.state(),
+        component_app.state(),
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_cancel_request(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request_id: String,
+    }
+    let Input { request_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    cancel_request(component_app.state(), request_id);
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_discard_current_response(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    discard_current_response(component_app.state())?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_build_revealed_curl(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        req: RequestTemplate,
+        environment: Vec<EnvironmentVariable>,
+    }
+    let Input { req, environment } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = build_revealed_curl(req, environment)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_copy_raw_response_headers(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        response_id: String,
+    }
+    let Input { response_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = copy_raw_response_headers(component_app.state(), response_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_copy_raw_response_cookies(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        response_id: String,
+    }
+    let Input { response_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = copy_raw_response_cookies(component_app.state(), response_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_save_response_binary(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        response_id: String,
+    }
+    let Input { response_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value =
+        save_response_binary(component_app.clone(), component_app.state(), response_id).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_sanitize_persisted_json(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        serialized: String,
+        environment: Vec<EnvironmentVariable>,
+    }
+    let Input {
+        serialized,
+        environment,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = sanitize_persisted_json(serialized, environment)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

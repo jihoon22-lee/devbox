@@ -82,7 +82,9 @@ async function start(product, suffix) {
       // Native development route selection can replace the initial document.
       // Retry only readiness; invocation and authority probes below fail once.
       try {
-        ready = await cdp.evaluate('(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
+        ready = await cdp.evaluate(product.id === "api-studio"
+          ? '!!document.querySelector(".api-feature-requests .url-input")'
+          : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
       } catch (error) { readinessError = error.message; }
       if (ready) break; await delay(100);
     }
@@ -102,10 +104,27 @@ async function start(product, suffix) {
       return { replayRejected, ownerRejected, availability: result.availability, state: result.operation.outcome.state };
     })()`);
     assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
+    let componentProbe;
+    if (product.id === "api-studio") {
+      componentProbe = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route });
+        const request = { header: header("webhooks"), component: "api-studio.webhooks", method: "server_status", args: {} };
+        const status = await invoke("plugin:api-studio|execute", { request });
+        let replayRejected = false, ownerRejected = false, installationRejected = false;
+        try { await invoke("plugin:api-studio|execute", { request }); } catch { replayRejected = true; }
+        try { await invoke("plugin:api-studio|execute", { request: { ...request, header: header("webhooks"), method: "send_request" } }); } catch { ownerRejected = true; }
+        try { await invoke("plugin:api-studio|execute", { request: { ...request, header: { ...header("webhooks"), installationId: "other-installation" } } }); } catch { installationRejected = true; }
+        const hash = await invoke("plugin:api-studio|execute", { request: { header: header("transforms"), component: "api-studio.transforms", method: "hash", args: { data: "abc", algorithm: "sha256" } } });
+        return { replayRejected, ownerRejected, installationRejected, listenerRunning: status.value.running, hash: hash.value, component: hash.operation.provenance.component, state: hash.operation.outcome.state };
+      })()`);
+      assert.deepEqual(componentProbe, { replayRejected: true, ownerRejected: true, installationRejected: true, listenerRunning: false, hash: "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad", component: "api-studio.transforms", state: "succeeded" });
+    }
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
-    return { child, cdp, policy, handshake: description.handshake, startupMs };
+    return { child, cdp, policy, handshake: description.handshake, startupMs, componentProbe };
   } catch (error) { stop({ child, cdp, policy }); throw error; }
 }
 
@@ -126,7 +145,7 @@ try {
       assert.notEqual(first.handshake.installationId, second.handshake.installationId);
       assert.notEqual(first.handshake.sessionId, second.handshake.sessionId);
       assert.equal(first.child.exitCode, null);
-      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs] });
+      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs], ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}) });
     } finally { try { stop(second); } finally { stop(first); } }
   }
   evidence.result = "pass";

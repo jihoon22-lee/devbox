@@ -1,5 +1,6 @@
 mod applink;
 mod commands;
+pub mod component;
 mod core;
 
 use tauri::{Emitter, Manager};

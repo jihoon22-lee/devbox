@@ -1,0 +1,39 @@
+{
+  "name": "@devbox/api-studio-features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./requests": "./src/requests/App.tsx",
+    "./webhooks": "./src/webhooks/App.tsx",
+    "./transforms": "./src/transforms/App.tsx",
+    "./transport": "./src/transport.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@devbox/a11y": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@devbox/context-menu": "workspace:*",
+    "@devbox/openapi": "workspace:*",
+    "@devbox/tokens": "workspace:*",
+    "jsonc-parser": "3.3.1",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "entities": "8.0.0",
+    "qrcode-generator": "2.0.4",
+    "yaml": "2.9.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

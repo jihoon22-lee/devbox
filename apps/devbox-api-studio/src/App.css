@@ -1,3 +1,6 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 @import "@devbox/product-shell/styles.css";
+
+.api-feature-requests, .api-feature-webhooks, .api-feature-transforms { height: calc(100vh - 132px); min-height: 400px; }
+[hidden] { display: none !important; }

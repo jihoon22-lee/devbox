@@ -1218,6 +1218,142 @@ fn elapsed_ms(started: Instant) -> u64 {
         .min(MAX_JS_SAFE_INTEGER)
 }
 
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_pick_grpc_proto(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = pick_grpc_proto(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_pick_grpc_import_root(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = pick_grpc_import_root(component_app.clone(), component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_connect_grpc(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile: GrpcConnectProfile,
+    }
+    let Input { profile } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = connect_grpc(
+        component_app.clone(),
+        component_app.state(),
+        component_app.state(),
+        component_app.state(),
+        profile,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_invoke_grpc(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        connection_id: String,
+        request_id: String,
+        method: String,
+        messages: Vec<String>,
+    }
+    let Input {
+        connection_id,
+        request_id,
+        method,
+        messages,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = invoke_grpc(
+        component_app.state(),
+        connection_id,
+        request_id,
+        method,
+        messages,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_cancel_grpc(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        connection_id: String,
+        request_id: String,
+    }
+    let Input {
+        connection_id,
+        request_id,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = cancel_grpc(component_app.state(), connection_id, request_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_disconnect_grpc(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        connection_id: String,
+    }
+    let Input { connection_id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    disconnect_grpc(component_app.state(), connection_id)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller owns component/session authorization.
+pub(crate) async fn __component_export_grpc_summary(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        summary: GrpcExchangeSummary,
+    }
+    let Input { summary } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = export_grpc_summary(component_app.clone(), summary).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

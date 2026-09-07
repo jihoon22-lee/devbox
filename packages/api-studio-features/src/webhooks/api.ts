@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke } from "../transport";
+const invoke = componentInvoke("api-studio.webhooks");
 import { isTauri } from "./lib/isTauri";
 
 export interface ServerStatus {
