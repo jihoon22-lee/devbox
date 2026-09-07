@@ -1,0 +1,125 @@
+name: Product foundation acceptance
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - 'apps/devbox-workspace/**'
+      - 'apps/devbox-api-studio/**'
+      - 'apps/devbox-knowledge/**'
+      - 'apps/devbox-control-center/**'
+      - 'apps/products.json'
+      - 'crates/product-*/**'
+      - 'packages/product-shell/**'
+      - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/scripts/windows-packaged-smoke.mjs'
+      - '.github/scripts/windows-product-installation.ps1'
+      - '.github/scripts/windows-installer-helpers.ps1'
+      - '.github/scripts/product-foundation-baseline.json'
+      - '.github/scripts/product-foundation-performance.*'
+      - '.github/scripts/windows-product-performance.ps1'
+      - '.github/scripts/measure-baseline-bundles.mjs'
+      - '.github/workflows/product-foundation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: product-foundation-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  windows:
+    name: Hidden products (Windows native)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Enable repository-pinned pnpm
+        run: corepack enable pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-product-foundation
+      - run: pnpm install --frozen-lockfile
+      - name: Build unpublished product installers
+        shell: pwsh
+        run: |
+          foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
+            pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
+            if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
+          }
+      - name: Run native authority and WAL fixtures on Windows
+        run: cargo test -p product-contract -p devbox-control-center -- --test-threads=2
+      - name: Exercise packaged shell and installation namespace isolation
+        run: node .github/scripts/windows-product-foundation.mjs
+      - name: Verify anchor and product installer coexistence
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/windows-product-installation.ps1
+      - name: Preserve private acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-foundation-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 7
+
+  baseline-performance:
+    name: Legacy performance baseline (Windows)
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/checkout@v7
+        with:
+          ref: 3a23f49c85aa3c3d04b86f227e8aa184ef964085
+          path: baseline-source
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Enable repository-pinned pnpm
+        run: corepack enable pnpm
+      - name: Measure pinned native baseline with synthetic fixtures
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/windows-product-performance.ps1
+      - name: Build baseline route bundles
+        id: baseline-bundles
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        working-directory: baseline-source
+        run: |
+          pnpm install --frozen-lockfile
+          if ($LASTEXITCODE -ne 0) { throw 'Baseline dependency installation failed' }
+          $config = Get-Content ../.github/scripts/product-foundation-performance.json -Raw | ConvertFrom-Json
+          foreach ($app in $config.apps) {
+            pnpm --filter $app build
+            if ($LASTEXITCODE -ne 0) { throw "Baseline bundle build failed: $app" }
+          }
+      - name: Measure pinned initial bundle closures
+        if: ${{ !cancelled() && steps.baseline-bundles.outcome == 'success' }}
+        run: node .github/scripts/measure-baseline-bundles.mjs baseline-source performance-baseline/bundles.json
+      - name: Preserve private baseline evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-foundation-performance-${{ github.run_id }}
+          path: performance-baseline/*.json
+          if-no-files-found: error
+          retention-days: 7

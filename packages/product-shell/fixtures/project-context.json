@@ -1,0 +1,6 @@
+{
+  "projectId": "fixture-project",
+  "worktreeId": "fixture-worktree",
+  "target": { "kind": "wsl", "distroId": "fixture-distro" },
+  "revision": 1
+}

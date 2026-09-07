@@ -1,0 +1,8 @@
+{
+  "protocolVersion": 1,
+  "installationId": "fixture-install",
+  "sessionId": "fixture-session",
+  "requestId": "fixture-request",
+  "deadlineMs": 6000,
+  "route": "overview"
+}

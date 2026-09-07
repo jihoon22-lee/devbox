@@ -427,6 +427,10 @@ mod tests {
     fn writes_profiles_to_atomic_named_snapshot_filename() {
         let root = test_root("atomic");
         let store = store(vec![profile("profile-1", "Profile", "C:/project")]);
+        let before = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
         write_profiles_in(&root, &store).unwrap();
 
         let expected =
@@ -441,7 +445,18 @@ mod tests {
         let read = read_named_view_snapshot_in(&root, PRODUCER_ID, 1, PROFILES_VIEW_KIND)
             .unwrap()
             .unwrap();
-        assert_eq!(read, build_profiles_envelope(&store).unwrap());
+        let after = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let generated =
+            devbox_integration::generated_at_epoch_ms(&read.generated_at).unwrap() / 1000;
+        assert!((before..=after).contains(&generated));
+        // A second projection can cross a wall-clock second. Compare its data
+        // and identity against the persisted frame while checking time above.
+        let mut expected_envelope = build_profiles_envelope(&store).unwrap();
+        expected_envelope.generated_at = read.generated_at.clone();
+        assert_eq!(read, expected_envelope);
         let port_bindings = read_named_view_snapshot_in(
             &root,
             PRODUCER_ID,

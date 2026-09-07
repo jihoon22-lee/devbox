@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "entries": [
+    {
+      "featureId": "control-center.migration",
+      "fixture": "packages/product-shell/fixtures/features/control-center.migration.json",
+      "document": "docs/features/control-center.migration.md"
+    }
+  ]
+}

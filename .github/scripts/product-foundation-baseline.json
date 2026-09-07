@@ -1,0 +1,12 @@
+{
+  "schemaVersion": 1,
+  "tag": "v0.7.0",
+  "commit": "3a23f49c85aa3c3d04b86f227e8aa184ef964085",
+  "manifestSha256": "e92dda897d40de1891d8a204d20f28524674c0b336f09923d52381fd764217ab",
+  "anchors": {
+    "workspace": "workbench",
+    "api-studio": "api-playground",
+    "knowledge": "knowledge-base",
+    "control-center": "devbox-manager"
+  }
+}

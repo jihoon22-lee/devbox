@@ -1,0 +1,18 @@
+[package]
+name = "devbox-api-studio"
+version = "0.8.0"
+publish = false
+edition = "2021"
+authors = ["jihoon22.lee"]
+description = "Devbox API Studio development product shell"
+
+[lib]
+name = "devbox_api_studio_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+product-shell-tauri = { path = "../../../crates/product-shell-tauri" }

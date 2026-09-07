@@ -1,6 +1,6 @@
 {
   "schemaVersion": 2,
-  "catalogRevision": 17,
+  "catalogRevision": 18,
   "apps": [
     {
       "id": "port-manager",
@@ -13,7 +13,9 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": ["handoff:log-source/v1"],
+      "produces": [
+        "handoff:log-source/v1"
+      ],
       "actions": [
         {
           "actionId": "open-listener-log",
@@ -34,8 +36,13 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["handoff:toolbox-text/v1"],
-      "produces": ["handoff:api-request/v1", "handoff:knowledge-draft/v2"],
+      "accepts": [
+        "handoff:toolbox-text/v1"
+      ],
+      "produces": [
+        "handoff:api-request/v1",
+        "handoff:knowledge-draft/v2"
+      ],
       "actions": [
         {
           "actionId": "send-output-to-api",
@@ -63,7 +70,10 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path", "profile"],
+      "accepts": [
+        "path",
+        "profile"
+      ],
       "produces": [
         "snapshot:wsl-desktop/runtime/v1",
         "snapshot:wsl-desktop/profiles/v1",
@@ -81,8 +91,12 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["handoff:api-request/v1"],
-      "produces": ["handoff:toolbox-text/v1"],
+      "accepts": [
+        "handoff:api-request/v1"
+      ],
+      "produces": [
+        "handoff:toolbox-text/v1"
+      ],
       "actions": [
         {
           "actionId": "transform-response-text",
@@ -103,8 +117,12 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["query"],
-      "produces": ["snapshot:everything-plus/saved-queries/v1"],
+      "accepts": [
+        "query"
+      ],
+      "produces": [
+        "snapshot:everything-plus/saved-queries/v1"
+      ],
       "actions": []
     },
     {
@@ -140,7 +158,10 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": ["snapshot:life-log/projects/v1", "handoff:knowledge-draft/v1"],
+      "produces": [
+        "snapshot:life-log/projects/v1",
+        "handoff:knowledge-draft/v1"
+      ],
       "actions": [
         {
           "actionId": "capture-knowledge-draft",
@@ -175,7 +196,10 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path", "workspace"],
+      "accepts": [
+        "path",
+        "workspace"
+      ],
       "produces": [],
       "actions": []
     },
@@ -189,7 +213,10 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["task", "handoff:task-control/v1"],
+      "accepts": [
+        "task",
+        "handoff:task-control/v1"
+      ],
       "produces": [
         "snapshot:run-manager/status/v1",
         "snapshot:run-manager/jobs-services/v1",
@@ -211,7 +238,10 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path", "profile"],
+      "accepts": [
+        "path",
+        "profile"
+      ],
       "produces": [
         "snapshot:workbench/profiles/v1",
         "handoff:task-control/v1",
@@ -238,7 +268,10 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": ["handoff:api-request/v1", "handoff:webhook-log/v1"],
+      "produces": [
+        "handoff:api-request/v1",
+        "handoff:webhook-log/v1"
+      ],
       "actions": [
         {
           "actionId": "inspect-capture-logs",
@@ -259,7 +292,9 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["path"],
+      "accepts": [
+        "path"
+      ],
       "produces": [
         "snapshot:repo-manager/dependency-summary/v1",
         "snapshot:repo-manager/repositories/v1"
@@ -277,7 +312,9 @@
       "managerVisible": true,
       "selfManaged": false,
       "accepts": [],
-      "produces": ["handoff:toolbox-text/v1"],
+      "produces": [
+        "handoff:toolbox-text/v1"
+      ],
       "actions": [
         {
           "actionId": "transform-text",
@@ -298,8 +335,13 @@
       "release": true,
       "managerVisible": true,
       "selfManaged": false,
-      "accepts": ["handoff:log-source/v1", "handoff:webhook-log/v1"],
-      "produces": ["handoff:toolbox-text/v1"],
+      "accepts": [
+        "handoff:log-source/v1",
+        "handoff:webhook-log/v1"
+      ],
+      "produces": [
+        "handoff:toolbox-text/v1"
+      ],
       "actions": [
         {
           "actionId": "transform-selected-logs",
@@ -309,6 +351,62 @@
           "payloadKind": "handoff:toolbox-text/v1"
         }
       ]
+    },
+    {
+      "id": "devbox-workspace",
+      "displayName": "Devbox Workspace",
+      "productName": "Devbox Workspace",
+      "identifier": "com.devbox.v08.workspace",
+      "cargoPackage": "devbox-workspace",
+      "appDir": "apps/devbox-workspace",
+      "release": false,
+      "managerVisible": false,
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
+    },
+    {
+      "id": "devbox-api-studio",
+      "displayName": "Devbox API Studio",
+      "productName": "Devbox API Studio",
+      "identifier": "com.devbox.v08.apistudio",
+      "cargoPackage": "devbox-api-studio",
+      "appDir": "apps/devbox-api-studio",
+      "release": false,
+      "managerVisible": false,
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
+    },
+    {
+      "id": "devbox-knowledge",
+      "displayName": "Devbox Knowledge",
+      "productName": "Devbox Knowledge",
+      "identifier": "com.devbox.v08.knowledge",
+      "cargoPackage": "devbox-knowledge",
+      "appDir": "apps/devbox-knowledge",
+      "release": false,
+      "managerVisible": false,
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
+    },
+    {
+      "id": "devbox-control-center",
+      "displayName": "Devbox Control Center",
+      "productName": "Devbox Control Center",
+      "identifier": "com.devbox.v08.controlcenter",
+      "cargoPackage": "devbox-control-center",
+      "appDir": "apps/devbox-control-center",
+      "release": false,
+      "managerVisible": false,
+      "selfManaged": false,
+      "accepts": [],
+      "produces": [],
+      "actions": []
     }
   ]
 }

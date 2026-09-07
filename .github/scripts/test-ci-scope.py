@@ -61,7 +61,7 @@ openapi = resolve("packages/openapi/src/index.ts")
 assert openapi.frontend_packages == ["apps/api-playground", "apps/webhook-lab", "packages/openapi"]
 
 a11y = resolve("packages/a11y/src/index.ts")
-assert len(a11y.frontend_apps) == 15
+assert len(a11y.frontend_apps) == 19
 assert "packages/a11y" in a11y.frontend_packages
 
 process = resolve("crates/process/src/lib.rs")
@@ -71,11 +71,15 @@ search = resolve("crates/search/src/lib.rs")
 assert search.rust_packages == ["everything-plus", "knowledge-base", "search"]
 
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == ["api-playground", "run-manager", "secrets", "workbench"]
+assert secrets.rust_packages == [
+    "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
+    "devbox-workspace", "product-contract", "product-shell-tauri", "run-manager",
+    "secrets", "workbench",
+]
 
 rust_graph = module.load_rust_graph(ROOT)
 wsl = resolve("crates/wsl/src/lib.rs")
-assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 15
+assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
 assert catalog.frontend_apps == ["devbox-launcher", "devbox-manager", "everything-plus", "repo-manager"]
@@ -163,3 +167,11 @@ for path in (".github/scripts/verify-resources.py", ".github/scripts/check-agent
     assert driver.frontend_scope == driver.rust_scope == "all"
 
 print("CI scope regression tests passed")
+
+for path in ("apps/products.json", "packages/product-shell/fixtures/route-request.json"):
+    products = resolve(path)
+    assert products.frontend_scope == "apps"
+    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
+    assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
+parity = resolve("apps/v0.8-feature-parity.json")
+assert parity.frontend_scope == parity.rust_scope == "all"

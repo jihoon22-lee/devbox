@@ -1,0 +1,16 @@
+[package]
+name = "product-shell-tauri"
+version = "0.1.0"
+publish = false
+edition = "2021"
+description = "Native read-only product shell adapter"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-single-instance = "2"
+catalog = { path = "../catalog" }
+product-contract = { path = "../product-contract" }
+window-state-tauri = { path = "../window-state-tauri" }
+serde = { version = "1", features = ["derive"] }
+sha2 = "0.11.0"
+uuid = { version = "1", features = ["v4"] }

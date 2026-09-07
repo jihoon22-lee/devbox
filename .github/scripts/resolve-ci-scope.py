@@ -16,6 +16,8 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 AGENT_POLICY_PATH = ".agents/skills/devbox-release/agents/openai.yaml"
 SCOPE_DRIVER_PATHS = {
+    "apps/v0.8-feature-parity.json",
+    ".github/scripts/check-product-foundation.py",
     ".github/scripts/verify-resources.py",
     ".github/scripts/test-verification-resources.py",
     ".github/scripts/check-agent-metadata.py",
@@ -342,6 +344,14 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
                     break
                 rust_seeds.add(node_name)
             reasons.append("catalog consumers selected")
+            continue
+
+        if path == "apps/products.json" or path.startswith("packages/product-shell/fixtures/"):
+            # These fixtures and static manifests are consumed directly by TS
+            # and Rust; workspace dependency declarations cannot express them.
+            frontend_seeds.add("@devbox/product-shell")
+            rust_seeds.add("catalog" if path == "apps/products.json" else "product-contract")
+            reasons.append("product catalog or cross-language contract consumers selected")
             continue
 
         parts = PurePosixPath(path).parts

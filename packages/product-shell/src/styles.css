@@ -1,0 +1,27 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--db-color-bg); color: var(--db-color-text); font: var(--db-text-base)/1.6 var(--db-font-sans); }
+button { font: inherit; color: inherit; background: var(--db-color-surface); border: 1px solid var(--db-color-border); border-radius: var(--db-radius-md); padding: 8px 12px; cursor: pointer; }
+button:disabled { opacity: .45; cursor: default; }
+button:focus-visible, a:focus-visible, main:focus-visible { outline: 2px solid var(--db-color-accent); outline-offset: 3px; }
+.product-shell { display: grid; grid-template-columns: 200px minmax(0, 1fr); grid-template-rows: 64px 1fr; min-height: 100dvh; }
+.product-shell header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; gap: 16px; padding: 16px 24px; border-bottom: 1px solid var(--db-color-border); }
+.product-shell header strong { font-size: 17px; }
+.shell-badge { color: var(--db-color-text-muted); font-size: 12px; }
+.product-shell aside { padding: 16px 12px; border-right: 1px solid var(--db-color-border); }
+.product-shell nav { display: flex; flex-direction: column; gap: 6px; }
+.product-shell nav button { text-align: left; background: transparent; border-color: transparent; }
+.product-shell nav button[aria-current] { background: var(--db-color-surface); border-color: var(--db-color-border); color: var(--db-color-accent); }
+.product-shell main { padding: 20px 28px; min-width: 0; }
+.shell-toolbar { display: flex; align-items: center; gap: 8px; color: var(--db-color-text-muted); }
+.shell-toolbar span { margin-left: 8px; }
+.product-shell h1 { margin: 28px 0 20px; font-size: 24px; }
+.shell-empty { max-width: 680px; padding: 24px; border: 1px solid var(--db-color-border); border-radius: var(--db-radius-lg); }
+.shell-empty h2 { font-size: 16px; font-weight: 500; }
+.shell-empty p { color: var(--db-color-text-muted); }
+.shell-skip { position: fixed; left: 12px; top: -100px; padding: 12px; background: var(--db-color-surface); color: var(--db-color-text); z-index: 10; }
+.shell-skip:focus { top: 12px; }
+@media (max-width: 760px) { .product-shell { grid-template-columns: 155px minmax(0, 1fr); } .product-shell main { padding: 16px; } }
+@media (forced-colors: active) { .product-shell nav button[aria-current] { border-color: Highlight; } }

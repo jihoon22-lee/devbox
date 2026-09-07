@@ -1,0 +1,12 @@
+{
+  "artifact": {
+    "provenance": { "product": "api-studio", "component": "api-studio.api", "requestId": "reference-fixture", "revision": 1 },
+    "recipient": "developer-toolbox",
+    "link": { "target": { "kind": "handoff", "handoffKind": "toolbox-text/v1", "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" }, "from": "api-playground" }
+  },
+  "secret": {
+    "provenance": { "product": "api-studio", "component": "api-studio.api", "requestId": "reference-fixture", "revision": 1 },
+    "owner": "api-environment",
+    "reference": { "kind": "secret-ref/v1", "name": "API_TOKEN" }
+  }
+}

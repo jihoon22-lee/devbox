@@ -1,0 +1,12 @@
+{
+  "identifier": "main",
+  "description": "Local product shell window; domain mutations are not granted.",
+  "windows": [
+    "main"
+  ],
+  "permissions": [
+    "core:default",
+    "product-shell:allow-describe",
+    "product-shell:allow-route-status"
+  ]
+}

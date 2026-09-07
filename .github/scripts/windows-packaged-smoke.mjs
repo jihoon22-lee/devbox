@@ -15,11 +15,19 @@ import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+import { loadPerformanceConfig, measureInput, measureIdle, measureWorkload, evaluateBudgets, performanceHost } from "./product-foundation-performance.mjs";
+
+const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const modulePath = fileURLToPath(import.meta.url);
+const isMain = process.platform === "win32"
+  ? entryPath.toLowerCase() === modulePath.toLowerCase()
+  : entryPath === modulePath;
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 let requestedSignal = null;
 let activeAcceptanceLock = null;
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of isMain ? ["SIGINT", "SIGTERM"] : []) {
   process.on(signal, () => {
     requestedSignal ??= signal;
   });
@@ -125,7 +133,7 @@ function powershellUtf8(value) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
-function windowsProcessIsElevated() {
+export function windowsProcessIsElevated() {
   return powershell(
     `$identity=[Security.Principal.WindowsIdentity]::GetCurrent(); ` +
       `$principal=[Security.Principal.WindowsPrincipal]::new($identity); ` +
@@ -133,7 +141,7 @@ function windowsProcessIsElevated() {
   ) === "true";
 }
 
-function inspectElevatedCdpPolicy(imageName, port) {
+export function inspectElevatedCdpPolicy(imageName, port) {
   const policy = {
     imageName,
     arguments: `--remote-debugging-port=${port}`,
@@ -156,7 +164,7 @@ function inspectElevatedCdpPolicy(imageName, port) {
   return policy;
 }
 
-function installElevatedCdpPolicy(policy) {
+export function installElevatedCdpPolicy(policy) {
   const name = powershellUtf8(policy.imageName);
   const value = powershellUtf8(policy.arguments);
   policy.mutationAttempted = true;
@@ -173,7 +181,7 @@ function installElevatedCdpPolicy(policy) {
   );
 }
 
-function restoreElevatedCdpPolicy(policy) {
+export function restoreElevatedCdpPolicy(policy) {
   if (!policy.mutationAttempted) return;
   const name = powershellUtf8(policy.imageName);
   const value = powershellUtf8(policy.arguments);
@@ -1208,6 +1216,8 @@ function writeTransactionJournal(file, appId, runId, phase, records) {
 }
 
 async function runApp(app, context) {
+  const measured = context.performanceConfiguration?.apps.includes(app.id) === true;
+  let coldStarted = 0;
   const executable = path.join(context.assetsDirectory, `${app.id}.exe`);
   const imageName = `${app.id}.exe`;
   const result = {
@@ -1334,6 +1344,7 @@ async function runApp(app, context) {
     });
     const startedAt = new Date().toISOString();
     processesBeforePrimary = allWindowsProcesses();
+    if (measured) { coldStarted = performance.now(); result.performance = { stage: "startup" }; }
     child = spawn(executable, [], { env: environment, windowsHide: false, stdio: ["ignore", "pipe", "pipe"] });
     child.on("error", () => {});
     if (!child.pid) fail("packaged process did not start");
@@ -1414,6 +1425,11 @@ async function runApp(app, context) {
       }
     }
 
+    if (measured) {
+      result.performance.coldRendererReadyMs = Math.round(performance.now() - coldStarted);
+      result.performance.firstKeyboardEventMs = await measureInput(cdp);
+      result.performance.firstInputObservedMs = Math.round(performance.now() - coldStarted);
+    }
     const elapsed = Date.now() - Date.parse(startedAt);
     if (elapsed < 10_000) await sleep(10_000 - elapsed);
     const firstState = processState(child.pid);
@@ -1436,6 +1452,12 @@ async function runApp(app, context) {
       survivedTenSeconds: child.exitCode === null,
     };
     if (!firstContract.healthy) fail("packaged parent was not healthy after ten seconds");
+    if (measured) {
+      result.performance.stage = "idle";
+      result.performance.idle = await measureIdle(() => [childIdentity, ...descendantIdentities(childIdentity)], context.performanceConfiguration.idleSampleMs);
+      result.performance.stage = "workload";
+      result.performance.workload = await measureWorkload(app, cdp, isolatedRoot, (stage) => { result.performance.stage = stage; });
+    }
 
     result.focusDisplacement = await displaceOwnedWindow(
       child.pid,
@@ -1444,6 +1466,7 @@ async function runApp(app, context) {
       context.hostedWindowFallback,
     );
     processesBeforeSecond = allWindowsProcesses();
+    const warmStarted = measured ? performance.now() : 0;
     secondChild = spawn(executable, [], { env: environment, windowsHide: false, stdio: ["ignore", "pipe", "pipe"] });
     secondChild.on("error", () => {});
     if (!secondChild.pid) fail("second packaged process did not start");
@@ -1508,6 +1531,11 @@ async function runApp(app, context) {
       result.secondInstance.stderr.bytes !== 0
     ) {
       fail("single-instance packaged contract failed");
+    }
+    if (measured) {
+      result.performance.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
+      result.performance.budget = evaluateBudgets(result.performance, context.performanceConfiguration, app.id);
+      result.performance.stage = "measured";
     }
 
     result.runtime = {
@@ -1808,6 +1836,9 @@ async function main() {
   const expectedCommit = args.get("commit") ?? fail("missing --commit");
   if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(expectedTag)) fail("invalid --tag");
   if (!/^[0-9a-f]{40}$/.test(expectedCommit)) fail("invalid --commit");
+  const performanceConfiguration = args.has("performance")
+    ? loadPerformanceConfig(path.resolve(args.get("performance")), expectedTag, expectedCommit, isGitHubHostedWindowsAcceptanceHost(process.env))
+    : null;
   const config = JSON.parse(readFileSync(configFile, "utf8"));
   const verification = JSON.parse(readFileSync(verificationFile, "utf8"));
   const manifest = JSON.parse(readFileSync(path.join(assetsDirectory, "release-manifest.json"), "utf8"));
@@ -1861,6 +1892,7 @@ async function main() {
   const elevated = windowsProcessIsElevated();
   const githubHosted = isGitHubHostedWindowsAcceptanceHost(process.env);
   const context = {
+    performanceConfiguration,
     assetsDirectory,
     runtimeRoot,
     manifest,
@@ -1888,6 +1920,10 @@ async function main() {
     },
     apps: [],
   };
+  if (performanceConfiguration) {
+    report.performanceConfiguration = performanceConfiguration;
+    report.performanceHost = performanceHost();
+  }
   for (const app of config.apps) {
     const result = await runApp(app, context);
     report.apps.push(result);
@@ -1902,6 +1938,14 @@ async function main() {
     unattempted: config.apps.length - report.apps.length,
     interrupted: requestedSignal,
   };
+  if (performanceConfiguration) {
+    const measurements = report.apps.filter((app) => performanceConfiguration.apps.includes(app.id));
+    report.performanceSummary = {
+      measuredBudgetsPassed: measurements.filter((app) => app.performance?.budget?.passed === true).length,
+      knownBaselineFailures: measurements.filter((app) => app.performance?.budget?.knownBaselineFailureObserved === true).map((app) => app.id),
+      r24Passed: false,
+    };
+  }
   try {
     rmdirSync(runtimeRoot);
     report.runtimeRootRemoved = true;
@@ -1914,16 +1958,21 @@ async function main() {
     report.summary.skipped > 0 ||
     report.summary.unattempted > 0 ||
     !report.runtimeRootRemoved ||
+    // The opt-in job records a pinned legacy failure as failed performance
+    // evidence. Every other budget and the existing runtime/cleanup contract
+    // must still pass; normal release acceptance has no such baseline fixture.
+    (performanceConfiguration && report.apps.some((app) => performanceConfiguration.apps.includes(app.id)
+      && app.performance?.budget?.passed !== true && app.performance?.budget?.knownBaselineFailureObserved !== true)) ||
     requestedSignal
   ) {
     process.exitCode = requestedSignal ? 130 : 2;
   }
 }
 
-if (process.argv.length === 3 && process.argv[2] === "--self-test") {
+if (isMain && process.argv.length === 3 && process.argv[2] === "--self-test") {
   runVerificationContractSelfTest();
   console.log("packaged smoke artifact verification self-test: PASS");
-} else {
+} else if (isMain) {
   try {
     await main();
   } finally {

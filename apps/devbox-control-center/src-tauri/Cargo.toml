@@ -1,0 +1,26 @@
+[package]
+name = "devbox-control-center"
+version = "0.8.0"
+publish = false
+edition = "2021"
+authors = ["jihoon22.lee"]
+description = "Devbox Control Center development product shell"
+
+[lib]
+name = "devbox_control_center_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
+rusqlite = { version = "0.32", features = ["bundled", "backup"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.11.0"
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
+
+[dev-dependencies]
+uuid = { version = "1", features = ["v4"] }

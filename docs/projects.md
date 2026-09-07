@@ -4,6 +4,16 @@
 15개 앱 bundle이다. 상세 소개는 각
 `apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
 
+## v0.8 development products
+
+The four B01 shells in `apps/devbox-workspace`, `apps/devbox-api-studio`,
+`apps/devbox-knowledge` and `apps/devbox-control-center` are hidden development
+targets. They do not replace the public apps listed below or claim completed
+feature migration. Their shared UI/native adapters are `packages/product-shell`,
+`crates/product-shell-tauri` and `crates/product-contract`; product metadata lives
+in `apps/products.json`. See the [foundation contract](architecture/v0.8-foundation.md)
+for authority, data isolation, verification and outstanding acceptance.
+
 ## W08 PR2 (#489) 문서 계약
 
 W08 PR2는 v0.6.0 stable에 포함된 integration 작업이다. Log Lens 0.2.0은

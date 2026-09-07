@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { readClipboardText } from "../api";
 import { MarkdownTableTool } from "./MarkdownTableTool";
@@ -34,6 +34,7 @@ beforeEach(() => {
 
 afterEach(() => {
   cleanup();
+  vi.useRealTimers();
   vi.restoreAllMocks();
 });
 
@@ -86,10 +87,14 @@ describe("MarkdownTableTool", () => {
   });
 
   it("uses fixed messages for direct, context-menu, and input paste failures", async () => {
+    vi.useFakeTimers();
     render(<MarkdownTableTool />);
     fireEvent.change(input(), { target: { value: "| value |\n| --- |\n| safe |" } });
+    // Complete the deferred formatter and its effects before testing actions.
+    await act(async () => { await vi.runOnlyPendingTimersAsync(); });
+    vi.useRealTimers();
     const output = screen.getByLabelText("Markdown 표 출력");
-    await waitFor(() => expect(output.textContent).toContain("safe"));
+    expect(output.textContent).toContain("safe");
 
     writeTextMock.mockRejectedValueOnce(new Error("C:\\secret\\token"));
     fireEvent.click(screen.getByRole("button", { name: "복사" }));

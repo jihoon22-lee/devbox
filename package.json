@@ -8,7 +8,8 @@
     "dev": "pnpm -r --parallel dev",
     "test": "pnpm -r test",
     "verify:affected": "bash .github/scripts/verify-affected.sh",
-    "verify:all": "bash .github/scripts/verify-affected.sh --all"
+    "verify:all": "bash .github/scripts/verify-affected.sh --all",
+    "feature:scaffold": "python3 .github/scripts/scaffold-product-feature.py"
   },
   "devDependencies": {
     "@testing-library/jest-dom": "^7.0.1",
