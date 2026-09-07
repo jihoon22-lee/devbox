@@ -135,11 +135,16 @@ pub fn authorize(
         .map_err(|_| problem(ProblemCode::Unavailable))?
         .as_millis();
     let now = u64::try_from(now).map_err(|_| problem(ProblemCode::Unavailable))?;
+    // WebView2 URL lookup can synchronously dispatch to the UI thread. A
+    // synchronous describe command on that thread also takes this mutex, so
+    // collect native caller information before entering the session lock.
+    let caller_window = window.label().to_string();
+    let local_origin = local_main(window);
     state
         .session
         .lock()
         .map_err(|_| problem(ProblemCode::Unavailable))?
-        .authorize(window.label(), local_main(window), request, now, &routes)
+        .authorize(&caller_window, local_origin, request, now, &routes)
         .map_err(problem)?;
     Ok(provenance)
 }
