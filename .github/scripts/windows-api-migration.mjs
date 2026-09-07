@@ -1,7 +1,7 @@
 // Disposable Windows-only migration acceptance using the actual pinned v0.7 API
 // executable. All data, profiles, ports and new product identities are synthetic.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync, lstatSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync, lstatSync, opendirSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
@@ -69,9 +69,35 @@ function sourceHashes() {
   for (const relative of ["com.devbox.webhooklab/fixtures.json", "com.devbox.developertoolbox/smart-workflows.json", `com.devbox.webhooklab/service-profiles/${profileId}.json`]) hashes[relative] = digest(path.join(directory, relative));
   return hashes;
 }
+// Metadata only, inside this run's newly created product root. Never read copy
+// contents or follow a link, and never include an absolute path in evidence.
+function inspectOwnedStaging(dataRoot) {
+  const base = path.join(dataRoot, "imports/staging");
+  const result = { entries: 0, files: 0, directories: 0, links: [], errors: [], longestRelativePath: 0, bounded: true };
+  const pending = [base];
+  while (pending.length && result.entries < 20000) {
+    const current = pending.pop(); const relative = path.relative(base, current);
+    try {
+      const entry = lstatSync(current); result.entries++;
+      result.longestRelativePath = Math.max(result.longestRelativePath, relative.length);
+      if (entry.isSymbolicLink()) { if (result.links.length < 16) result.links.push(relative); continue; }
+      if (!entry.isDirectory()) { result.files++; continue; }
+      result.directories++; const directory = opendirSync(current);
+      try {
+        for (let child; (child = directory.readSync()) !== null;) {
+          if (pending.length + result.entries >= 20000) { result.bounded = false; break; }
+          pending.push(path.join(current, child.name));
+        }
+      } finally { directory.closeSync(); }
+    } catch (error) { if (result.errors.length < 16) result.errors.push({ relative, code: error.code ?? "unknown" }); }
+  }
+  if (pending.length) result.bounded = false;
+  return result;
+}
 const nativeFixture = JSON.parse(readFileSync("apps/devbox-api-studio/src-tauri/fixtures/legacy-native.json", "utf8"));
 const profileId = nativeFixture.profile.id;
 let hits = 0; const server = createServer((_, response) => { hits++; response.setHeader("Content-Type", "application/json"); response.end('{"fixture":true}'); });
+let ownedProductDataRoot = null;
 server.listen(0, "127.0.0.1"); await once(server, "listening"); const fixtureUrl = `http://127.0.0.1:${server.address().port}/imported`;
 try {
   let object = json(["api", `repos/jihoon22-lee/devbox/git/ref/tags/${baseline.tag}`]).object;
@@ -109,6 +135,8 @@ try {
   const profile = path.join(directory, "product-webview"); const env = { DEVBOX_API_MIGRATION_FIXTURE_ROOT: directory };
   let product = await start(productExe, "Devbox API Studio", profile, env);
   await wait(product.cdp, '(document.body?.innerText ?? "").includes("선택한 데이터 확인")', "migration startup gate did not open");
+  const roots = readdirSync(process.env.LOCALAPPDATA).filter(name => name.startsWith("com.devbox.v08.apistudio.i") && !beforeRoots.has(name)); assert.equal(roots.length, 1);
+  const dataRoot = path.join(process.env.LOCALAPPDATA, roots[0]); ownedProductDataRoot = dataRoot;
   assert.equal(await product.cdp.evaluate('(async()=>{try{await window.__TAURI_INTERNALS__.invoke("plugin:api-studio|legacy_export_message",{request:{nonce:"a".repeat(32),action:{kind:"open"}}});return false}catch{return true}})()'), true);
   progress("first-preview"); await click(product.cdp, "선택한 데이터 확인");
   await wait(product.cdp, '!!document.querySelector("[data-migration-review]")', "real legacy export did not produce a plan");
@@ -123,8 +151,7 @@ try {
   assert.equal((await command(product.cdp, "api-studio.webhooks", "server_status")).value.running, false);
   assert.equal((await command(product.cdp, "api-studio.webhooks", "list_fixtures")).value.length, 1);
   assert.ok((await command(product.cdp, "api-studio.transforms", "load_workflow_metadata")).value.metadata.favoriteTools.includes("hash"));
-  const roots = readdirSync(process.env.LOCALAPPDATA).filter(name => name.startsWith("com.devbox.v08.apistudio.i") && !beforeRoots.has(name)); assert.equal(roots.length, 1);
-  const dataRoot = path.join(process.env.LOCALAPPDATA, roots[0]); assert.ok(existsSync(path.join(dataRoot, `webhooks/service-profiles/${profileId}.json`)));
+  assert.ok(existsSync(path.join(dataRoot, `webhooks/service-profiles/${profileId}.json`)));
   assert.equal(hits, 0, "import must not replay a request"); assert.deepEqual(sourceHashes(), frozen);
   await product.cdp.evaluate('(()=>{const store=JSON.parse(localStorage.getItem("apip-collections-v2"));store.collections[0].name="edited product collection";localStorage.setItem("apip-collections-v2",JSON.stringify(store));return true})()');
   await delay(200); await stop(product); progress("repeat-preview");
@@ -143,6 +170,7 @@ try {
   evidence.originalPreserved = true; evidence.repeatNoDuplicates = true; evidence.productEditPreserved = true; evidence.dpapiReused = true; evidence.missingSecretRequiresReconnect = true; evidence.noAutomaticRequests = true; evidence.result = "pass"; progress("complete");
 } catch (error) {
   evidence.error = error.message;
+  if (ownedProductDataRoot) evidence.ownedStaging = inspectOwnedStaging(ownedProductDataRoot);
   const current = Array.from(live).at(-1);
   if (current?.cdp) {
     try { const status = await command(current.cdp, "api-studio.migration", "migration_status"); evidence.migrationStage = status.value?.stage ?? "unavailable"; } catch { /* Preserve the original failure. */ }

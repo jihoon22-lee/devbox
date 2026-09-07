@@ -225,7 +225,7 @@ function windowsLocalAppData() {
   return Buffer.from(encoded, "base64").toString("utf8");
 }
 
-function allWindowsProcesses() {
+export function allWindowsProcesses() {
   const output = powershell(
     `$ErrorActionPreference='Stop'; $items=@(Get-CimInstance Win32_Process -ErrorAction Stop); ` +
       `$items | ForEach-Object { [pscustomobject]@{Pid=[int]$_.ProcessId;ParentPid=[int]$_.ParentProcessId;` +

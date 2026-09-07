@@ -163,8 +163,26 @@ fn remove_owned_directory_with(
         *remaining = remaining
             .checked_sub(1)
             .ok_or("migration_store_too_large")?;
-        devbox_filesystem::ensure_no_links(path).map_err(|_| "migration_path_invalid")?;
-        let metadata = fs::symlink_metadata(path).map_err(|_| "migration_storage_unavailable")?;
+        let metadata =
+            fs::symlink_metadata(path).map_err(|_| "migration_cleanup_entry_metadata")?;
+        let reparse_point = {
+            #[cfg(windows)]
+            {
+                use std::os::windows::fs::MetadataExt;
+                metadata.file_attributes() & 0x400 != 0
+            }
+            #[cfg(not(windows))]
+            {
+                false
+            }
+        };
+        // This is an owned scratch tree, not the legacy source. Links created
+        // inside it are leaves: never inspect their targets. std::remove_dir_all
+        // unlinks them without following them on supported Windows/Linux hosts.
+        if metadata.file_type().is_symlink() || reparse_point {
+            return Ok(false);
+        }
+        devbox_filesystem::ensure_no_links(path).map_err(|_| "migration_cleanup_child_path")?;
         let mut readonly = metadata.is_file() && metadata.permissions().readonly();
         if metadata.is_dir() {
             for entry in fs::read_dir(path).map_err(|_| "migration_storage_unavailable")? {
@@ -177,9 +195,11 @@ fn remove_owned_directory_with(
         Ok(readonly)
     }
     let identity = devbox_filesystem::filesystem_identity(directory, true)
-        .map_err(|_| "migration_path_invalid")?;
+        .map_err(|_| "migration_cleanup_root_identity")?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
+        // Root/ancestor links remain forbidden, including between retries.
+        devbox_filesystem::ensure_no_links(directory).map_err(|_| "migration_cleanup_root_path")?;
         if devbox_filesystem::filesystem_identity(directory, true)
             .map_err(|_| "migration_cleanup_changed")?
             != identity
@@ -203,7 +223,7 @@ fn remove_owned_directory_with(
                 }
                 // The worker Job is already empty. Antivirus/indexing can
                 // briefly retain a delete-incompatible handle to this owned copy.
-                // Never relax link/identity checks or alter source permissions.
+                // Never follow links, replace the root or alter source permissions.
                 std::thread::sleep(std::time::Duration::from_millis(50));
             }
         }
@@ -952,5 +972,40 @@ mod tests {
         assert_eq!(attempts, 2);
         assert!(!copy.exists());
         assert_eq!(fs::read(original).unwrap(), b"original");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn owned_copy_cleanup_unlinks_child_links_without_reading_or_removing_targets() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        let original = root.path().join("original");
+        fs::create_dir(&copy).unwrap();
+        fs::create_dir(&original).unwrap();
+        fs::write(original.join("preserved"), b"source").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&original, copy.join("outside")).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&original, copy.join("outside")).unwrap();
+        remove_owned_directory(&copy).unwrap();
+        assert!(!copy.exists());
+        assert_eq!(fs::read(original.join("preserved")).unwrap(), b"source");
+    }
+
+    #[cfg(any(unix, windows))]
+    #[test]
+    fn owned_copy_cleanup_rejects_a_linked_root_and_preserves_its_target() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        let original = root.path().join("original");
+        fs::create_dir(&original).unwrap();
+        fs::write(original.join("preserved"), b"source").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&original, &copy).unwrap();
+        #[cfg(windows)]
+        std::os::windows::fs::symlink_dir(&original, &copy).unwrap();
+        assert!(remove_owned_directory(&copy).is_err());
+        assert!(fs::symlink_metadata(copy).unwrap().file_type().is_symlink());
+        assert_eq!(fs::read(original.join("preserved")).unwrap(), b"source");
     }
 }
