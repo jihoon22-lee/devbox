@@ -1,4 +1,5 @@
 //! Runtime-managed mock server: explicit profile argv, no product UI/IPC/session.
+use tauri::Manager;
 pub fn argument(args: &[String]) -> Result<Option<String>, String> {
     let value = webhook_core::core::service_profile::parse_service_profile_argv(args)?;
     if value.is_none()
@@ -16,6 +17,11 @@ pub fn run(id: String, mut context: tauri::Context<tauri::Wry>) -> tauri::Result
     context.config_mut().app.windows.clear();
     let app = tauri::Builder::default()
         .setup(move |app| {
+            if !app.webview_windows().is_empty() {
+                return Err(
+                    std::io::Error::other("service worker must not create a webview").into(),
+                );
+            }
             // Same installation/profile namespace, independent process ownership.
             // No single-instance plugin, renderer, API state or global service owner.
             webhook_lab_lib::component::initialize(app.handle()).map_err(std::io::Error::other)?;

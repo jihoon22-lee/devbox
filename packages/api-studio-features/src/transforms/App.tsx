@@ -10,6 +10,7 @@ import {
   TOOLBOX_TEXT_HANDOFF_KIND,
 } from "./api";
 import { GROUPS, TOOLS } from "./tools";
+import { OutputSourceContext } from "./tools/outputPolicy";
 import {
   SmartWorkflowPanel,
   type SmartWorkflowIncomingText,
@@ -378,7 +379,9 @@ export default function App() {
           incomingText={incomingText}
         />
         <h2 className="tool-title">{active.name}</h2>
-        <ActiveComponent />
+        <OutputSourceContext value={{ kind: "tool", toolId: active.id }}>
+          <ActiveComponent />
+        </OutputSourceContext>
       </main>
       {handoffPreview ? (
         <div className="toolbox-handoff-backdrop">

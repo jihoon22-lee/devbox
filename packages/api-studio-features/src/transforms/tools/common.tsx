@@ -17,6 +17,8 @@ import {
 import { readClipboardText } from "../api";
 import { ApiHandoffAction } from "./ApiHandoffAction";
 import { KnowledgeDraftAction } from "./KnowledgeDraftAction";
+import { isProductHosted } from "../../transport";
+import { mayExport, useOutputSource } from "./outputPolicy";
 
 /** async 변환 결과를 입력 변경 시 자동 계산하는 훅 */
 export function useAsyncTransform(
@@ -414,6 +416,8 @@ interface ToolOutputProps {
   onBusyChange?: (busy: boolean) => void;
   /** Value sent by the explicit API Playground handoff action. */
   handoffValue?: string;
+  /** Sensitive tools may suppress handoffs even when rendered without context. */
+  allowHandoff?: boolean;
   asDiv?: boolean;
 }
 
@@ -430,8 +434,10 @@ export function ToolOutput({
   busy = false,
   onBusyChange,
   handoffValue,
+  allowHandoff = true,
   asDiv = false,
 }: ToolOutputProps) {
+  const source = useOutputSource();
   const outputRef = useRef<HTMLElement>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [actionBusy, setActionBusy] = useState(false);
@@ -524,12 +530,12 @@ export function ToolOutput({
     className,
   };
   const actionValue = handoffValue ?? value;
-  const handoffActions = (
+  const handoffActions = allowHandoff && (source ? mayExport(source) : !isProductHosted()) ? (
     <div className="tool-output-actions">
       <ApiHandoffAction value={actionValue} disabled={busy || actionBusy} />
       <KnowledgeDraftAction value={actionValue} disabled={busy || actionBusy} />
     </div>
-  );
+  ) : null;
 
   return (
     <>

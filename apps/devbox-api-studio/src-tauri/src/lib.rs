@@ -2,6 +2,7 @@ mod component;
 mod component_errors;
 mod core;
 mod handoff;
+mod knowledge;
 mod lifecycle;
 mod migration;
 mod migration_export;

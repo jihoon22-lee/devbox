@@ -66,6 +66,7 @@ pub fn is_send(component: &str, method: &str) -> bool {
     matches!(
         (component, method),
         ("api-studio.api", "send_selection_to_toolbox")
+            | ("api-studio.transforms", "create_api_request_handoff")
             | (
                 "api-studio.webhooks",
                 "send_history_to_api" | "send_fixture_to_api"
@@ -123,6 +124,19 @@ pub fn send(
         .ok_or("handoff_clock_invalid")?;
     let store = app.state::<Store>();
     let (create, route, redacted) = match (component, method) {
+        ("api-studio.transforms", "create_api_request_handoff") => {
+            let (payload, redacted) = prepare_transform_request(args)?;
+            (
+                CreateHandoff {
+                    kind: "api-request/v1".into(),
+                    source_app: "developer-toolbox".into(),
+                    target_app: Some("api-playground".into()),
+                    payload,
+                },
+                "requests",
+                redacted,
+            )
+        }
         ("api-studio.api", "send_selection_to_toolbox") => {
             #[derive(Deserialize)]
             #[serde(deny_unknown_fields)]
@@ -187,9 +201,51 @@ pub fn send(
     Ok(result)
 }
 
+fn prepare_transform_request(args: Value) -> Result<(Value, bool), String> {
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Input {
+        source: transforms_core::core::export_policy::OutputSource,
+        output: String,
+    }
+    let Input { source, output } =
+        serde_json::from_value(args).map_err(|_| "handoff_input_invalid")?;
+    let output = zeroize::Zeroizing::new(output);
+    source.require_exportable()?;
+    let masked = applink::redact_handoff_text(&output).map_err(|_| "handoff_input_invalid")?;
+    let payload = transforms_core::core::handoff::build_api_request_payload(&masked.text)
+        .map_err(|_| "handoff_input_invalid")?;
+    Ok((
+        serde_json::to_value(payload).map_err(|_| "handoff_input_invalid")?,
+        masked.redacted,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn transform_request_masks_before_publication_and_rejects_non_exportable_sources() {
+        let (payload, redacted) = prepare_transform_request(json!({
+            "source": { "kind": "tool", "toolId": "json-format" },
+            "output": "safe\nAuthorization: Bearer synthetic-value"
+        }))
+        .unwrap();
+        assert!(redacted);
+        assert_eq!(payload["url"], "/");
+        assert!(!payload.to_string().contains("synthetic-value"));
+        for source in [
+            json!({"kind":"tool","toolId":"hmac"}),
+            json!({"kind":"tool","toolId":"unknown"}),
+            json!({"kind":"tool","toolId":"hmac","exportable":true}),
+            Value::Null,
+        ] {
+            assert!(
+                prepare_transform_request(json!({"source":source,"output":"synthetic-tag"}))
+                    .is_err()
+            );
+        }
+    }
     fn provenance() -> Provenance {
         Provenance {
             product: "api-studio".into(),

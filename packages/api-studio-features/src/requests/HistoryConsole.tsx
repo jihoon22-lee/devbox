@@ -3,6 +3,7 @@ import type { HistoryItem } from "./types";
 import { filterHistory, historyDisplayLabel, historyMethod, projectHistoryForReplay } from "./lib/history";
 import { GRPC_HISTORY_KEY, parseGrpcHistory, type GrpcHistoryStore } from "./lib/grpc";
 import "./HistoryConsole.css";
+import { KnowledgeDraftShelf } from "../knowledge/KnowledgeDraftShelf";
 interface Props {
   history: HistoryItem[];
   activity: { sending: boolean; sse: string; sseEvents: number; websocket: string; websocketMessages: number };
@@ -66,5 +67,6 @@ export function HistoryConsole({ history, activity, canApply, onApply }: Props) 
       </tbody></table></div>}
       {!grpc?.entries.length && !grpcInvalid && <p>저장된 gRPC 실행 요약이 없습니다.</p>}
     </section>
+    <KnowledgeDraftShelf />
   </section>;
 }

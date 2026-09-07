@@ -42,7 +42,9 @@ it("opens a native-owned pending transform preview through the actual hosted tra
   render(<Studio />);
   await screen.findByRole("navigation", { name: "제품 화면" });
   await act(async () => { await vi.dynamicImportSettled(); });
-  await screen.findByPlaceholderText("https://api.example.com/users");
+  // CI transforms the real shared route on first import; the DOM library's
+  // one-second default can expire while that lazy chunk is still compiling.
+  await screen.findByPlaceholderText("https://api.example.com/users", {}, { timeout: 10_000 });
   await waitFor(() => expect(native.listeners.get("api-studio://navigate")?.size).toBe(1));
   navigation = { id, route: "transforms" };
   pending = { target: { kind: "handoff", handoffKind: "toolbox-text/v1", id }, from: "api-playground" };
@@ -50,7 +52,7 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     for (const callback of native.listeners.get("api-studio://navigate") ?? []) callback({ payload: "untrusted-event-is-not-a-route" });
   });
   await act(async () => { await vi.dynamicImportSettled(); });
-  await screen.findByRole("dialog", { name: "Toolbox 텍스트 미리보기" });
+  await screen.findByRole("dialog", { name: "Toolbox 텍스트 미리보기" }, { timeout: 10_000 });
   fireEvent.click(screen.getByRole("button", { name: "적용" }));
   await waitFor(() => expect((screen.getByRole("textbox", { name: "스마트 워크플로 입력" }) as HTMLTextAreaElement).value).toBe("fixture [REDACTED]"));
-});
+}, 30_000);

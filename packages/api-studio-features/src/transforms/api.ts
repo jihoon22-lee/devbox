@@ -141,9 +141,9 @@ export async function readClipboardText(): Promise<string> {
 }
 
 /** Publish only the explicit output currently shown by a tool. */
-export async function createApiRequestHandoff(output: string): Promise<ApiHandoffDispatch> {
+export async function createApiRequestHandoff(output: string, source?: import("./tools/outputPolicy").OutputSource): Promise<ApiHandoffDispatch> {
   if (!isTauri()) throw new Error(API_HANDOFF_BROWSER_ERROR);
-  return invoke<ApiHandoffDispatch>("create_api_request_handoff", { output });
+  return invoke<ApiHandoffDispatch>("create_api_request_handoff", isProductHosted() ? { output, source } : { output });
 }
 
 const KNOWLEDGE_DRAFT_ERROR_DISPLAY = new Map<string, string>([

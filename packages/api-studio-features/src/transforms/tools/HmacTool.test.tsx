@@ -43,6 +43,10 @@ describe("HmacTool", () => {
       outputEncoding: "hex",
     });
     expect(screen.getByRole("button", { name: "복사" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: /API Playground로 보내기|Requests로 보내기|Knowledge/ })).toBeNull();
+    fireEvent.contextMenu(screen.getByLabelText("HMAC 출력"));
+    expect(screen.getByRole("menuitem", { name: "결과 파일 저장" })).toBeTruthy();
+    fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     expect(screen.getByRole("status").textContent).toContain("생성했습니다");
   });
 

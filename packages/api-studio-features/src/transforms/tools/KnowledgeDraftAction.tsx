@@ -1,5 +1,8 @@
 import { useEffect, useRef, useState } from "react";
 import * as api from "../api";
+import { isProductHosted } from "../../transport";
+import { KnowledgeDraftAction as ProductKnowledgeDraftAction } from "../../knowledge/KnowledgeDraftAction";
+import { useOutputSource } from "./outputPolicy";
 
 export const KNOWLEDGE_DRAFT_MAX_CHARS = 256_000;
 export const KNOWLEDGE_DRAFT_MAX_BYTES = 512 * 1024;
@@ -80,7 +83,12 @@ function safeKnowledgeDraftError(cause: unknown): string {
 }
 
 /** Explicit local preview and publish action for a bounded ToolOutput. */
-export function KnowledgeDraftAction({ value, disabled = false }: KnowledgeDraftActionProps) {
+export function KnowledgeDraftAction(props: KnowledgeDraftActionProps) {
+  const source = useOutputSource();
+  return isProductHosted() ? <ProductKnowledgeDraftAction {...props} owner="api-studio.transforms" source={source} />
+    : <LegacyKnowledgeDraftAction {...props} />;
+}
+function LegacyKnowledgeDraftAction({ value, disabled = false }: KnowledgeDraftActionProps) {
   const [open, setOpen] = useState(false);
   const [preview, setPreview] = useState(value);
   const [busy, setBusy] = useState(false);

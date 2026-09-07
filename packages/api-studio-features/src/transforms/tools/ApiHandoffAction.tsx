@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { createApiRequestHandoff } from "../api";
+import { isProductHosted } from "../../transport";
+import { useOutputSource } from "./outputPolicy";
 
 export const API_HANDOFF_MAX_CHARS = 256_000;
 export const API_HANDOFF_MAX_BYTES = 1_024_000;
@@ -73,6 +75,8 @@ function safeHandoffError(cause: unknown): string {
 
 /** Preview/edit/manual handoff action for the currently visible result. */
 export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionProps) {
+  const source = useOutputSource();
+  const target = isProductHosted() ? "Requests" : "API Playground";
   const [open, setOpen] = useState(false);
   const [draft, setDraft] = useState(value);
   const [busy, setBusy] = useState(false);
@@ -170,10 +174,11 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
     setBusy(true);
     setError(null);
     try {
-      const dispatch = await createApiRequestHandoff(draft);
+      const dispatch = source ? await createApiRequestHandoff(draft, source) : await createApiRequestHandoff(draft);
       if (!mountedRef.current || revisionRef.current !== revision) return;
       setOpen(false);
-      setStatus(`API Playground 미리보기로 전달했습니다 (${dispatch.producerId} → ${dispatch.consumerId}).`);
+      setStatus(isProductHosted() ? "Requests 미리보기로 전달했습니다. 요청 전송은 별도로 확인하세요."
+        : `API Playground 미리보기로 전달했습니다 (${dispatch.producerId} → ${dispatch.consumerId}).`);
     } catch (cause) {
       if (!mountedRef.current || revisionRef.current !== revision) return;
       setError(safeHandoffError(cause));
@@ -188,11 +193,11 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
       <button
         type="button"
         className="copy-btn api-handoff-button"
-        aria-label="API Playground로 보내기"
+        aria-label={`${target}로 보내기`}
         onClick={openPreview}
         disabled={disabled || busy}
       >
-        API Playground로 보내기
+        {target}로 보내기
       </button>
       {status ? (
         <span className="api-handoff-status" role="status" aria-live="polite">
@@ -209,9 +214,9 @@ export function ApiHandoffAction({ value, disabled = false }: ApiHandoffActionPr
             aria-labelledby="api-handoff-dialog-title"
             aria-describedby="api-handoff-dialog-description"
           >
-            <h2 id="api-handoff-dialog-title">API Playground 요청 미리보기</h2>
+            <h2 id="api-handoff-dialog-title">{target} 요청 미리보기</h2>
             <p id="api-handoff-dialog-description">
-              현재 결과를 수정한 뒤 명시적으로 전달하세요. API Playground는 요청을 편집기에
+              현재 결과를 수정한 뒤 명시적으로 전달하세요. {target}는 요청을 편집기에
               넣기만 하며 자동으로 보내지 않습니다.
             </p>
             <dl className="api-handoff-meta">

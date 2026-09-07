@@ -1,5 +1,7 @@
 import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { isTauri } from "./lib/isTauri";
+import { isProductHosted } from "../transport";
+import { KnowledgeDraftAction } from "../knowledge/KnowledgeDraftAction";
 import type {
   ApiResponse,
   BinaryResponse,
@@ -438,6 +440,7 @@ export function ResponseViewer({
               </label>
             )}
             <span className="spacer" />
+            {isProductHosted() && !response.binary && <KnowledgeDraftAction owner="api-studio.api" value={responseText} />}
             <button
               type="button"
               className="btn"

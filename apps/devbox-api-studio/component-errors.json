@@ -95,6 +95,10 @@
       "handoff 요청이 다른 작업에서 사용 중입니다. 잠시 후 다시 시도하세요",
       "handoff 요청이 만료되었거나 더 이상 사용할 수 없습니다",
       "handoff 저장소를 사용할 수 없습니다",
+      "knowledge_draft_invalid",
+      "knowledge_owner_invalid",
+      "knowledge_storage_full",
+      "knowledge_storage_unavailable",
       "legacy_api_storage_invalid",
       "mcp_capability_unavailable",
       "mcp_connect_timeout",
@@ -214,6 +218,11 @@
       "Toolbox workflow metadata를 저장할 수 없습니다.",
       "Wi-Fi 설정이 올바르지 않습니다.",
       "component_unavailable",
+      "knowledge_draft_invalid",
+      "knowledge_owner_invalid",
+      "knowledge_storage_full",
+      "knowledge_storage_unavailable",
+      "transform_export_denied",
       "식별자 생성 순서를 유지할 수 없습니다.",
       "암호학적으로 안전한 난수를 사용할 수 없습니다."
     ]

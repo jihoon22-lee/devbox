@@ -176,10 +176,41 @@ async function start(product, suffix) {
         const invoke = window.__TAURI_INTERNALS__.invoke;
         const d = await invoke("plugin:product-shell|describe");
         const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "transforms" };
-        try { await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } }); return false; } catch { return true; }
+        const result = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.transforms", method: "preview_toolbox_text", args: { handoffId: ${JSON.stringify(artifact.id)} } } });
+        return result.operation.outcome.state === "failed";
       })()`), true);
       progress(product, suffix, "internal-handoff-complete");
       componentProbe.internalHandoff = "redacted-preview-explicit-apply-one-time";
+
+      progress(product, suffix, "transform-export-and-knowledge-fallback");
+      const outputPolicy = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const call = (component, method, args) => invoke("plugin:api-studio|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
+            requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: component === "api-studio.api" ? "requests" : "transforms" },
+          component, method, args
+        } });
+        const output = "safe-result\\npassword=synthetic-output-secret";
+        const source = { kind: "tool", toolId: "json-format" };
+        const hmac = await call("api-studio.transforms", "create_api_request_handoff", { source: { kind: "tool", toolId: "hmac" }, output });
+        const hmacDraft = await call("api-studio.transforms", "save_knowledge_draft", { source: { kind: "tool", toolId: "hmac" }, output });
+        const saved = await call("api-studio.transforms", "save_knowledge_draft", { source, output });
+        if (saved.operation.outcome.state !== "succeeded") throw new Error("Knowledge native save failed");
+        const id = saved.value.draft.artifact.id;
+        const read = await call("api-studio.transforms", "get_knowledge_draft", { id });
+        const foreign = await call("api-studio.api", "get_knowledge_draft", { id });
+        const list = await call("api-studio.transforms", "list_knowledge_drafts", {});
+        const sent = await call("api-studio.transforms", "create_api_request_handoff", { source, output });
+        return { hmacRequestDenied: hmac.operation.outcome.state === "failed", hmacDraftDenied: hmacDraft.operation.outcome.state === "failed",
+          unavailable: saved.value.delivery === "unavailable", masked: saved.value.draft.redacted && !read.value.body.includes("synthetic-output-secret"),
+          durable: list.value.some(value => value.artifact.id === id) && read.value.artifact.kind === "knowledge-draft/v1",
+          foreignDenied: foreign.operation.outcome.state === "failed", requestPreview: sent.operation.outcome.state === "succeeded" };
+      })()`);
+      assert.deepEqual(outputPolicy, { hmacRequestDenied: true, hmacDraftDenied: true, unavailable: true, masked: true, durable: true, foreignDenied: true, requestPreview: true });
+      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-requests:not([hidden]) [role=dialog]")', "transform request preview did not open");
+      assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-requests [role=dialog]")?.textContent ?? "").includes("synthetic-output-secret")'), false);
+      componentProbe.outputPolicy = outputPolicy;
 
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });

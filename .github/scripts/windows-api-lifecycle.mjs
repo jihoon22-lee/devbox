@@ -21,7 +21,9 @@ function environment(extra = {}) {
   for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
   return env;
 }
-async function child(args, env) { const value = spawn(executable, args, { env, stdio: "ignore" }); live.add(value); await once(value, "spawn"); return value; }
+// Debug executables use the console subsystem. Hide that inherited console so
+// MainWindowHandle measures an interactive product window, not a debug console.
+async function child(args, env) { const value = spawn(executable, args, { env, stdio: "ignore", windowsHide: true }); live.add(value); await once(value, "spawn"); return value; }
 async function until(check, label, timeout = 15000) {
   const deadline = Date.now() + timeout;
   while (Date.now() < deadline) { if (await check()) return; await delay(100); }

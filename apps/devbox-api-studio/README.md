@@ -62,3 +62,19 @@ window or API protocol bootstrap; its lifecycle belongs to the service runner.
 The UI's listener and that process cannot bind the same port simultaneously.
 Windows lifecycle acceptance is tracked by the
 [lifecycle fixture](../../.github/scripts/windows-api-lifecycle.mjs).
+
+The [transform command manifest](../api-studio-tools.json) lists the actual 21
+tools and their output policies for the later WP07 provider. HMAC stays outside
+handoff/pipeline publication; its existing explicit copy/file-save actions remain.
+JWT decoded output is sensitive and passes native redaction. Unknown tool IDs,
+renderer policy flags and invalid pipeline transitions cannot authorize exports.
+Eligible tool/pipeline outputs can open a one-time Requests preview, with an
+origin-form POST draft that requires explicit apply and a separately approved send.
+
+Requests and Transforms can explicitly preserve a masked Knowledge draft in their
+own `drafts/knowledge/v1/<owner>` directory. The UI accurately reports the receiver
+as unavailable until WP07 supplies a verified connection. History/Console can
+reopen, export or explicitly delete saved drafts after restart. Each owner keeps
+at most 50 drafts with 512 KiB text bounds; full stores require explicit deletion.
+Future/corrupt records and linked paths are preserved and rejected. Durable
+artifact IDs do not expire with handoff leases and grant no cross-owner access.

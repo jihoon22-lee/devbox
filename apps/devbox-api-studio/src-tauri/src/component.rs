@@ -46,6 +46,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.api" => {
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
+                    || crate::knowledge::is_command(component, method)
                     || matches!(method, "pick_multipart_file" | "send_selection_to_toolbox")
                     || crate::handoff::is_navigation(method))
         }
@@ -58,7 +59,9 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.transforms" => {
             route == "transforms"
                 && (developer_toolbox_lib::component::COMMANDS.contains(&method)
-                    || method == "read_clipboard_text")
+                    || crate::knowledge::is_command(component, method)
+                    || method == "read_clipboard_text"
+                    || crate::handoff::is_send(component, method))
         }
         _ => false,
     }
@@ -140,7 +143,16 @@ async fn execute(
         );
     }
     crate::lifecycle::require_open(app).map_err(|_| problem(ProblemCode::Unavailable))?;
-    let value = if request.component == "api-studio.webhooks"
+    let value = if crate::knowledge::is_command(&request.component, &request.method) {
+        crate::knowledge::dispatch(
+            app,
+            &request.component,
+            &request.method,
+            request.args,
+            provenance.clone(),
+        )
+        .await
+    } else if request.component == "api-studio.webhooks"
         && crate::lifecycle::COMMANDS.contains(&request.method.as_str())
     {
         crate::lifecycle::dispatch(app, &request.method, request.args)

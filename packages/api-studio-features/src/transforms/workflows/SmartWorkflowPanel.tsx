@@ -1,6 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { TOOLS } from "../tools";
 import { ToolOutput, ToolTextArea } from "../tools/common";
+import { OutputSourceContext } from "../tools/outputPolicy";
+import { isProductHosted } from "../../transport";
 import {
   detectSmartInput,
   FIXED_SENSITIVE_REASON,
@@ -96,8 +98,9 @@ export interface SmartWorkflowIncomingText {
 
 /**
  * One explicit local workflow: inspect a bounded draft, choose typed stages,
- * run them on demand, and persist only IDs/timestamps.  No input/output is
- * passed to the metadata store, clipboard, shell, network, or API handoff.
+ * run them on demand, and persist only IDs/timestamps. Input/output never enters
+ * the metadata store. Product outputs use a separate explicit export action;
+ * running a pipeline itself does not publish, copy, or send anything.
  */
 export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: SmartWorkflowPanelProps) {
   const persistence = useWorkflowPersistence();
@@ -447,13 +450,16 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
         ) : null}
         <div className="smart-workflow-output-label io-label">파이프라인 결과</div>
         <div aria-live="polite">
-          <ToolOutput
-            ariaLabel="파이프라인 결과"
-            className="io-output smart-workflow-output"
-            value={output}
-            actionErrorMessage="파이프라인 결과 작업을 완료하지 못했습니다."
-            downloadName="dev-toolbox-pipeline-result.txt"
-          />
+          <OutputSourceContext value={{ kind: "pipeline", inputType, steps }}>
+            <ToolOutput
+              ariaLabel="파이프라인 결과"
+              className="io-output smart-workflow-output"
+              value={output}
+              allowHandoff={isProductHosted() && !pipelineError}
+              actionErrorMessage="파이프라인 결과 작업을 완료하지 못했습니다."
+              downloadName="dev-toolbox-pipeline-result.txt"
+            />
+          </OutputSourceContext>
         </div>
       </section>
 
