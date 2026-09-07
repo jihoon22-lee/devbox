@@ -36,6 +36,8 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
     environment = os.environ.copy()
     environment["PATH"] = f"{binary_path}{os.pathsep}{environment['PATH']}"
     environment["COMMAND_LOG"] = str(log_path)
+    for key in ("DEVBOX_VERIFY_WORKSPACE_CONCURRENCY", "DEVBOX_VERIFY_RUST_TEST_THREADS"):
+        environment.pop(key, None)
 
     def run(*arguments: str, succeeds: bool = True) -> list[dict[str, object]]:
         log_path.write_text("", encoding="utf-8")
@@ -54,7 +56,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         return [json.loads(line) for line in log_path.read_text(encoding="utf-8").splitlines()]
 
     calls = run("bash", str(FRONTEND_RUNNER), "build", "all")
-    assert calls == [{"cwd": str(ROOT), "argv": ["build"]}]
+    assert calls == [{"cwd": str(ROOT), "argv": ["-r", "build"]}]
 
     calls = run(
         "bash",
@@ -132,5 +134,20 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
 
     assert run("bash", str(RUST_RUNNER), "check", "none") == []
     assert run("bash", str(RUST_RUNNER), "check", "packages", "", succeeds=False) == []
+
+    environment["DEVBOX_VERIFY_WORKSPACE_CONCURRENCY"] = "1"
+    assert run("bash", str(FRONTEND_RUNNER), "test", "all")[0]["argv"] == [
+        "-r", "--workspace-concurrency", "1", "test"]
+    assert run("bash", str(FRONTEND_RUNNER), "build", "apps", "apps/code-pad")[0]["argv"] == [
+        "-r", "--workspace-concurrency", "1", "--filter", "./apps/code-pad", "build"]
+    environment["DEVBOX_VERIFY_RUST_TEST_THREADS"] = "2"
+    assert run("bash", str(RUST_RUNNER), "test", "all")[0]["argv"] == [
+        "test", "--workspace", "--", "--test-threads=2"]
+    assert run("bash", str(RUST_RUNNER), "test", "packages", "process")[0]["argv"] == [
+        "test", "-p", "process", "--", "--test-threads=2"]
+    environment["DEVBOX_VERIFY_WORKSPACE_CONCURRENCY"] = "0"
+    assert run("bash", str(FRONTEND_RUNNER), "test", "all", succeeds=False) == []
+    environment["DEVBOX_VERIFY_RUST_TEST_THREADS"] = "bad"
+    assert run("bash", str(RUST_RUNNER), "test", "all", succeeds=False) == []
 
 print("CI scope runner regression tests passed")

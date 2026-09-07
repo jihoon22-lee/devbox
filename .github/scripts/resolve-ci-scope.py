@@ -14,7 +14,11 @@ from pathlib import Path, PurePosixPath
 
 ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
+AGENT_POLICY_PATH = ".agents/skills/devbox-release/agents/openai.yaml"
 SCOPE_DRIVER_PATHS = {
+    ".github/scripts/verify-resources.py",
+    ".github/scripts/test-verification-resources.py",
+    ".github/scripts/check-agent-metadata.py",
     ".github/scripts/ci-scope.sh",
     ".github/scripts/resolve-ci-scope.py",
     ".github/scripts/run-frontend-scope.sh",
@@ -270,6 +274,9 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
     for path in changed_paths:
         if path == "THIRD_PARTY_NOTICES.md":
             dependency_required = True
+            continue
+        if path == AGENT_POLICY_PATH:
+            reasons.append("agent invocation metadata validated separately")
             continue
         if _is_documentation(path):
             continue

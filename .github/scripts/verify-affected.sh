@@ -5,6 +5,14 @@ set -euo pipefail
 repo_root=$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)
 cd "$repo_root"
 
+if [[ ${1:-} != --resource-child ]]; then
+  exec python3 .github/scripts/verify-resources.py -- bash "$0" --resource-child "$@"
+fi
+shift
+
+python3 .github/scripts/check-agent-metadata.py
+python3 .github/scripts/test-verification-resources.py
+
 python3 .github/scripts/test-ci-scope.py
 python3 .github/scripts/test-ci-scope-runners.py
 

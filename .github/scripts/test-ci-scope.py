@@ -151,4 +151,15 @@ for unsafe_path in (" apps/run-manager/src/App.tsx", "apps\\run-manager\\src\\Ap
     else:
         raise AssertionError(f"unsafe path must fail closed: {unsafe_path!r}")
 
+
+agent_metadata = resolve(module.AGENT_POLICY_PATH)
+assert agent_metadata.frontend_scope == agent_metadata.rust_scope == "none"
+assert agent_metadata.dependency_scope == "none"
+for path in (".agents/skills/devbox-change/scripts/check.py", ".agents/skills/new/agents/openai.yaml"):
+    unknown_agent = resolve(path)
+    assert unknown_agent.frontend_scope == unknown_agent.rust_scope == "all"
+for path in (".github/scripts/verify-resources.py", ".github/scripts/check-agent-metadata.py"):
+    driver = resolve(path)
+    assert driver.frontend_scope == driver.rust_scope == "all"
+
 print("CI scope regression tests passed")

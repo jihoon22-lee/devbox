@@ -115,6 +115,8 @@ jobs:
 
       - name: Test scope resolver and runners
         run: |
+          python3 .github/scripts/check-agent-metadata.py
+          python3 .github/scripts/test-verification-resources.py
           python3 .github/scripts/test-ci-scope.py
           python3 .github/scripts/test-ci-scope-runners.py
 
