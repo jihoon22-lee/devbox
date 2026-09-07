@@ -435,7 +435,8 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
   );
 }
 
-export default function App() {
+export default function App({ active = true }: { active?: boolean } = {}) {
+  const activeRef = useRef(active); activeRef.current = active;
   const [date, setDate] = useState(new Date());
   const dateStr = useMemo(() => toDateStr(date), [date]);
   const [view, setView] = useState<ViewTab>("day");
@@ -781,7 +782,7 @@ export default function App() {
   // opened the dialog. The busy ref is used instead of a state dependency so
   // a progress update cannot tear down and recreate the focus trap.
   useEffect(() => {
-    if (!exportDialogOpen) return;
+    if (!active || !exportDialogOpen) return;
     exportRestoreFocusRef.current = document.activeElement instanceof HTMLElement
       ? document.activeElement
       : null;
@@ -819,10 +820,10 @@ export default function App() {
     return () => {
       window.clearTimeout(focusTask);
       document.removeEventListener("keydown", onKeyDown);
-      if (exportRestoreFocusRef.current?.isConnected) exportRestoreFocusRef.current.focus();
+      if (activeRef.current && exportRestoreFocusRef.current?.isConnected) exportRestoreFocusRef.current.focus();
       exportRestoreFocusRef.current = null;
     };
-  }, [exportDialogOpen]);
+  }, [active, exportDialogOpen]);
 
   const restoreDateContextFocus = (
     request: number,

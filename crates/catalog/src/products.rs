@@ -61,14 +61,24 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
     if id == format!("{owner}.shell") {
         return authority == "shell-read";
     }
-    owner == "api-studio"
+    (owner == "api-studio"
         && matches!(
             (id, authority),
             ("api-studio.api", "request-network")
                 | ("api-studio.webhooks", "listener-network")
                 | ("api-studio.transforms", "transform-local")
                 | ("api-studio.migration", "legacy-import")
-        )
+        ))
+        || (owner == "knowledge"
+            && matches!(
+                (id, authority),
+                ("knowledge.notes", "note-writer")
+                    | ("knowledge.activity", "activity-collector")
+                    | ("knowledge.search", "search-read")
+                    | ("knowledge.search-settings", "search-admin")
+                    | ("knowledge.opener", "result-open")
+                    | ("knowledge.migration", "legacy-import")
+            ))
 }
 
 impl ProductCatalog {

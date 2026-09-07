@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted } from "../transport";
+const invoke = componentInvoke("knowledge.notes");
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { isTauri } from "./lib/isTauri";
 import {
@@ -578,7 +579,7 @@ export async function openIn(appId: string, rel: string): Promise<void> {
 
 /** 편집기 메뉴에서 사용자가 Paste를 선택한 순간에만 plain text를 읽는다. */
 export async function readClipboardText(maxBytes?: number): Promise<string> {
-  const text = !isTauri() ? await navigator.clipboard.readText() : await readText();
+  const text = !isTauri() ? await navigator.clipboard.readText() : isProductHosted() ? await invoke<string>("read_clipboard_text") : await readText();
   if (maxBytes !== undefined && !isQuickCaptureUtf8Within(text, maxBytes)) {
     throw new Error("본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요");
   }
@@ -835,6 +836,7 @@ export async function openExternal(url: string): Promise<void> {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
+  if (isProductHosted()) { await invoke("open_external_url", { url }); return; }
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }

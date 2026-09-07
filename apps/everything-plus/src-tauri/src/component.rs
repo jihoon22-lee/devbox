@@ -92,6 +92,17 @@ pub fn initialize(
     Ok(())
 }
 
+/// Create only a new product-owned database; never initialize a legacy source.
+pub fn create_empty_store(path: &std::path::Path) -> Result<(), String> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| "component_store_exists")?;
+    crate::core::db::init(path).map_err(|_| "component_storage_unavailable")?;
+    Ok(())
+}
+
 pub const COMMANDS: &[&str] = &[
     "take_pending_open",
     "add_root",

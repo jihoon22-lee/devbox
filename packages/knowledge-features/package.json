@@ -6,7 +6,8 @@
   "exports": {
     "./notes": "./src/notes/App.tsx",
     "./activity": "./src/activity/App.tsx",
-    "./search": "./src/search/App.tsx"
+    "./search": "./src/search/App.tsx",
+    "./transport": "./src/transport.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

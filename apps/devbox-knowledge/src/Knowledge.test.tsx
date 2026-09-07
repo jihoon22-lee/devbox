@@ -1,0 +1,22 @@
+import { act, cleanup, fireEvent, render, screen, within } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+import Knowledge from "./Knowledge";
+vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => false, invoke: vi.fn(() => { throw new Error("native work in browser fixture"); }) }));
+afterEach(cleanup);
+it("retains the actual template draft and ignores background Escape across Activity and Search", async () => {
+  render(<Knowledge/>);
+  const nav = await screen.findByRole("navigation", { name: "제품 화면" });
+  await act(async () => { await vi.dynamicImportSettled(); });
+  fireEvent.click(await screen.findByRole("button", { name: "템플릿" }));
+  const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+  const body = within(dialog).getByRole("textbox", { name: "Markdown" }) as HTMLTextAreaElement;
+  fireEvent.change(body, { target: { value: "# Unsaved template across routes" } });
+  fireEvent.click(within(nav).getByRole("button", { name: "활동" }));
+  await act(async () => { await vi.dynamicImportSettled(); });
+  fireEvent.keyDown(window, { key: "Escape" });
+  fireEvent.click(within(nav).getByRole("button", { name: "검색" }));
+  await act(async () => { await vi.dynamicImportSettled(); });
+  fireEvent.keyDown(window, { key: "Escape" });
+  fireEvent.click(within(nav).getByRole("button", { name: "노트" }));
+  expect((within(await screen.findByRole("dialog", { name: "노트 템플릿" })).getByRole("textbox", { name: "Markdown" }) as HTMLTextAreaElement).value).toBe("# Unsaved template across routes");
+});

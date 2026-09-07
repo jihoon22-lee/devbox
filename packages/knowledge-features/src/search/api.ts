@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke } from "../transport";
+const invoke = componentInvoke("knowledge.search");
 import catalogJson from "../../../../apps/catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type {

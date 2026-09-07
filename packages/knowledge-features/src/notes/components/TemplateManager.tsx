@@ -14,6 +14,7 @@ import {
 } from "../api";
 
 interface TemplateManagerProps {
+  active?: boolean;
   onClose: () => void;
   onSaved?: (result: SaveTemplateResult) => void;
 }
@@ -25,7 +26,7 @@ const defaultDate = String(today.getFullYear()).padStart(4, "0") + "-"
 const defaultTime = String(today.getHours()).padStart(2, "0") + ":"
   + String(today.getMinutes()).padStart(2, "0");
 
-export default function TemplateManager({ onClose, onSaved }: TemplateManagerProps) {
+export default function TemplateManager({ active = true, onClose, onSaved }: TemplateManagerProps) {
   const [templates, setTemplates] = useState<NoteTemplate[]>([]);
   const [selectedId, setSelectedId] = useState<number | null>(null);
   const [name, setName] = useState("");
@@ -281,6 +282,7 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
   };
 
   useEffect(() => {
+    if (!active) return;
     const container = (preview ? previewDialogRef.current : dialogRef.current);
     if (!container) return undefined;
     const focusable = () => Array.from(container.querySelectorAll<HTMLElement>(
@@ -318,7 +320,7 @@ export default function TemplateManager({ onClose, onSaved }: TemplateManagerPro
       window.clearTimeout(focusTask);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [preview]);
+  }, [active, preview]);
 
   return (
     <div

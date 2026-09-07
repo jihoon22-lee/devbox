@@ -69,6 +69,23 @@ pub fn initialize(
     Ok(())
 }
 
+/// The product passes only its own new-user vault here, never an imported binding.
+pub fn create_private_vault(path: &std::path::Path) -> Result<(), String> {
+    crate::core::store::ensure_layout(path)
+}
+
+/// Create only a new product-owned database; never initialize a legacy source.
+pub fn create_empty_store(path: &std::path::Path, vault: &std::path::Path) -> Result<(), String> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| "component_store_exists")?;
+    let conn = crate::core::db::init(path).map_err(|_| "component_storage_unavailable")?;
+    crate::core::db::set_setting(&conn, "root", &vault.to_string_lossy())
+        .map_err(|_| "component_storage_unavailable".to_owned())
+}
+
 pub const COMMANDS: &[&str] = &[
     "save_image_asset",
     "take_pending_open",

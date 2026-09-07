@@ -166,6 +166,10 @@ pub fn stop_tracking(state: tauri::State<'_, Arc<AppState>>) -> Result<(), Strin
 }
 
 fn stop_tracking_inner(state: &AppState) -> Result<(), String> {
+    stop_tracking_runtime(state, true)
+}
+
+pub(crate) fn stop_tracking_runtime(state: &AppState, update_consent: bool) -> Result<(), String> {
     let _control = state
         .tracking_control
         .lock()
@@ -177,7 +181,7 @@ fn stop_tracking_inner(state: &AppState) -> Result<(), String> {
         .map_err(|_| "tracking_state_unavailable")?
         .finish(now_ms());
     let conn = state.db.lock().map_err(|_| "tracking_state_unavailable")?;
-    let persisted = if state.persist_tracking_consent {
+    let persisted = if update_consent && state.persist_tracking_consent {
         set_product_consent(&conn, false)
     } else {
         Ok(())
@@ -488,6 +492,32 @@ mod tests {
             "activity_consent_save_failed"
         );
         assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn product_exit_flushes_a_privacy_filtered_session_without_revoking_consent() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO settings VALUES ('privacy_rules', ?1)",
+            [r#"{"maskAllTitles":true}"#],
+        )
+        .unwrap();
+        let state = collector_state(conn);
+        super::start_tracking_inner(&state).unwrap();
+        state.sessionizer.lock().unwrap().observe(
+            "fixture.exe".into(),
+            "private synthetic title".into(),
+            super::now_ms() - 10,
+        );
+        super::stop_tracking_runtime(&state, false).unwrap();
+        assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+        let conn = state.db.lock().unwrap();
+        assert!(super::product_consent(&conn));
+        let title: String = conn
+            .query_row("SELECT title FROM sessions", [], |row| row.get(0))
+            .unwrap();
+        assert!(!title.contains("private synthetic title"));
     }
 
     #[test]

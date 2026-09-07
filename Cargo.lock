@@ -1338,9 +1338,20 @@ dependencies = [
 name = "devbox-knowledge"
 version = "0.8.0"
 dependencies = [
+ "everything-plus",
+ "filesystem",
+ "knowledge-base",
+ "life-log",
+ "product-contract",
  "product-shell-tauri",
+ "serde",
+ "serde_json",
  "tauri",
  "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-opener",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]

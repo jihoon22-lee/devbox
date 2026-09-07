@@ -1,3 +1,12 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 @import "@devbox/product-shell/styles.css";
+.product-shell { height: 100dvh; min-height: 0; grid-template-rows: 64px minmax(0, 1fr); overflow: hidden; }
+.product-shell > main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.shell-toolbar { flex: 0 0 auto; }
+.product-shell > main > .knowledge-feature-notes,
+.product-shell > main > .knowledge-feature-activity,
+.product-shell > main > .knowledge-feature-search { flex: 1; min-height: 0; height: auto; overflow: auto; }
+[hidden] { display: none !important; }
+.knowledge-startup { max-width: 760px; padding: 24px; line-height: 1.6; }
+.knowledge-startup button { padding: 8px 12px; }

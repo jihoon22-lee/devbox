@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 3,
+  "catalogRevision": 4,
   "channel": "development",
   "products": [
     {
@@ -81,6 +81,48 @@
     {
       "id": "api-studio.migration",
       "owner": "api-studio",
+      "authority": "legacy-import",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.notes",
+      "owner": "knowledge",
+      "authority": "note-writer",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.activity",
+      "owner": "knowledge",
+      "authority": "activity-collector",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.search",
+      "owner": "knowledge",
+      "authority": "search-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.search-settings",
+      "owner": "knowledge",
+      "authority": "search-admin",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.opener",
+      "owner": "knowledge",
+      "authority": "result-open",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.migration",
+      "owner": "knowledge",
       "authority": "legacy-import",
       "lifecycle": "product",
       "protocolVersion": 1

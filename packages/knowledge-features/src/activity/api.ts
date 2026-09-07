@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke } from "../transport";
+const invoke = componentInvoke("knowledge.activity");
 import { isTauri } from "./lib/isTauri";
 import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
 

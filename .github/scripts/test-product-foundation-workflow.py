@@ -57,6 +57,7 @@ assert "-p api-playground -p webhook-lab -p developer-toolbox" in workflow, "B02
 
 import subprocess
 subprocess.run(["node", str(root / ".github/scripts/check-api-studio-routes.mjs"), "--self-test"], check=True)
+subprocess.run(["node", str(root / ".github/scripts/check-knowledge-routes.mjs"), "--self-test"], check=True)
 
 # Acceptance is an explicit evidence-bearing state, not a synonym for a mapped
 # path. Mutate only in-memory metadata; source/capability files remain read-only.

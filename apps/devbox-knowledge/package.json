@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc && vite build",
+    "build": "tsc && vite build && node ../../.github/scripts/check-knowledge-routes.mjs",
     "preview": "vite preview",
     "test": "vitest run --passWithNoTests",
     "tauri": "tauri"
@@ -15,7 +15,9 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "@devbox/a11y": "workspace:*",
-    "@devbox/tokens": "workspace:*"
+    "@devbox/tokens": "workspace:*",
+    "@devbox/knowledge-features": "workspace:*",
+    "@tauri-apps/api": "^2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

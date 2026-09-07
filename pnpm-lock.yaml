@@ -282,12 +282,18 @@ importers:
       '@devbox/a11y':
         specifier: workspace:*
         version: link:../../packages/a11y
+      '@devbox/knowledge-features':
+        specifier: workspace:*
+        version: link:../../packages/knowledge-features
       '@devbox/product-shell':
         specifier: workspace:*
         version: link:../../packages/product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.11.1
       react:
         specifier: ^19.1.0
         version: 19.2.8

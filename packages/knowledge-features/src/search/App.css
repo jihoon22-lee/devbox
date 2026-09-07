@@ -1,7 +1,7 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 
-:root {
+.knowledge-feature-search {
   --bg: var(--db-color-bg);
   --panel: var(--db-color-surface);
   --border: var(--db-color-border);
@@ -11,31 +11,29 @@
   --red: var(--db-color-danger);
 }
 
-* {
+.knowledge-feature-search * {
   box-sizing: border-box;
 }
 
-html,
-body,
-#root {
+.knowledge-feature-search {
   height: 100%;
   margin: 0;
 }
 
-body {
+.knowledge-feature-search {
   background: var(--bg);
   color: var(--text);
   font-family: "Segoe UI", system-ui, sans-serif;
   font-size: 13px;
 }
 
-.app {
+.knowledge-feature-search .app {
   display: flex;
   flex-direction: column;
   height: 100%;
 }
 
-.toolbar {
+.knowledge-feature-search .toolbar {
   display: flex;
   align-items: center;
   gap: 12px;
@@ -44,14 +42,14 @@ body {
   background: var(--panel);
 }
 
-.title {
+.knowledge-feature-search .title {
   font-size: 15px;
   font-weight: 600;
   margin: 0;
   white-space: nowrap;
 }
 
-.search {
+.knowledge-feature-search .search {
   flex: 1;
   background: var(--bg);
   border: 1px solid var(--border);
@@ -62,30 +60,30 @@ body {
   outline: none;
 }
 
-.search:focus {
+.knowledge-feature-search .search:focus {
   border-color: var(--accent);
 }
 
-.status {
+.knowledge-feature-search .status {
   color: var(--dim);
   white-space: nowrap;
   font-size: 12px;
 }
 
-.content-status {
+.knowledge-feature-search .content-status {
   color: var(--dim);
   white-space: nowrap;
   font-size: 11px;
 }
 
-.mode-tabs {
+.knowledge-feature-search .mode-tabs {
   display: flex;
   border: 1px solid var(--border);
   border-radius: 6px;
   overflow: hidden;
 }
 
-.mode-tab {
+.knowledge-feature-search .mode-tab {
   background: transparent;
   border: none;
   color: var(--dim);
@@ -94,12 +92,12 @@ body {
   font-size: 12px;
 }
 
-.mode-tab.active {
+.knowledge-feature-search .mode-tab.active {
   background: rgba(79, 140, 255, 0.14);
   color: var(--accent);
 }
 
-.regex-toggle {
+.knowledge-feature-search .regex-toggle {
   display: flex;
   align-items: center;
   gap: 4px;
@@ -108,20 +106,20 @@ body {
   white-space: nowrap;
 }
 
-.progress {
+.knowledge-feature-search .progress {
   position: relative;
   height: 22px;
   background: var(--panel);
   border-bottom: 1px solid var(--border);
 }
 
-.progress-bar {
+.knowledge-feature-search .progress-bar {
   height: 100%;
   background: rgba(79, 140, 255, 0.25);
   transition: width 0.3s;
 }
 
-.progress-text {
+.knowledge-feature-search .progress-text {
   position: absolute;
   inset: 0;
   display: flex;
@@ -131,7 +129,7 @@ body {
   color: var(--text);
 }
 
-.root-tag {
+.knowledge-feature-search .root-tag {
   background: rgba(63, 185, 80, 0.18);
   border: 1px solid var(--border);
   border-radius: 4px;
@@ -140,7 +138,7 @@ body {
   color: var(--green);
 }
 
-.snippet {
+.knowledge-feature-search .snippet {
   color: var(--text);
   font-family: "Cascadia Code", Consolas, monospace;
   font-size: 12px;
@@ -150,7 +148,7 @@ body {
   text-overflow: ellipsis;
 }
 
-.btn {
+.knowledge-feature-search .btn {
   background: var(--panel);
   color: var(--text);
   border: 1px solid var(--border);
@@ -160,23 +158,23 @@ body {
   font-size: 12px;
 }
 
-.btn:hover:not(:disabled) {
+.knowledge-feature-search .btn:hover:not(:disabled) {
   border-color: var(--accent);
 }
 
-.btn:disabled {
+.knowledge-feature-search .btn:disabled {
   cursor: wait;
   opacity: 0.65;
 }
 
-.error {
+.knowledge-feature-search .error {
   background: rgba(248, 81, 73, 0.12);
   border-bottom: 1px solid var(--red);
   color: var(--red);
   padding: 8px 14px;
 }
 
-.query-tools {
+.knowledge-feature-search .query-tools {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -185,8 +183,8 @@ body {
   flex-wrap: wrap;
 }
 
-.saved-name-label,
-.filter-panel label {
+.knowledge-feature-search .saved-name-label,
+.knowledge-feature-search .filter-panel label {
   display: inline-flex;
   align-items: center;
   gap: 6px;
@@ -194,10 +192,10 @@ body {
   font-size: 12px;
 }
 
-.saved-name,
-.saved-select,
-.filter-panel input,
-.filter-panel select {
+.knowledge-feature-search .saved-name,
+.knowledge-feature-search .saved-select,
+.knowledge-feature-search .filter-panel input,
+.knowledge-feature-search .filter-panel select {
   min-width: 130px;
   background: var(--bg);
   color: var(--text);
@@ -207,20 +205,20 @@ body {
   outline: none;
 }
 
-.saved-name:focus,
-.saved-select:focus,
-.filter-panel input:focus,
-.filter-panel select:focus {
+.knowledge-feature-search .saved-name:focus,
+.knowledge-feature-search .saved-select:focus,
+.knowledge-feature-search .filter-panel input:focus,
+.knowledge-feature-search .filter-panel select:focus {
   border-color: var(--accent);
 }
 
-.saved-list {
+.knowledge-feature-search .saved-list {
   display: inline-flex;
   gap: 5px;
   flex-wrap: wrap;
 }
 
-.saved-chip {
+.knowledge-feature-search .saved-chip {
   display: inline-flex;
   align-items: center;
   border: 1px solid var(--border);
@@ -228,8 +226,8 @@ body {
   background: rgba(79, 140, 255, 0.08);
 }
 
-.saved-load,
-.saved-delete {
+.knowledge-feature-search .saved-load,
+.knowledge-feature-search .saved-delete {
   background: transparent;
   border: 0;
   color: var(--dim);
@@ -238,16 +236,16 @@ body {
   padding: 3px 5px;
 }
 
-.saved-load:hover,
-.saved-delete:hover {
+.knowledge-feature-search .saved-load:hover,
+.knowledge-feature-search .saved-delete:hover {
   color: var(--accent);
 }
 
-.saved-delete:hover {
+.knowledge-feature-search .saved-delete:hover {
   color: var(--red);
 }
 
-.filter-panel {
+.knowledge-feature-search .filter-panel {
   display: flex;
   align-items: end;
   gap: 10px;
@@ -257,29 +255,29 @@ body {
   flex-wrap: wrap;
 }
 
-.filter-panel label {
+.knowledge-feature-search .filter-panel label {
   align-items: flex-start;
   flex-direction: column;
 }
 
-.filter-panel input,
-.filter-panel select {
+.knowledge-feature-search .filter-panel input,
+.knowledge-feature-search .filter-panel select {
   min-width: 120px;
 }
 
-.filter-note {
+.knowledge-feature-search .filter-note {
   flex-basis: 100%;
   margin: 0;
   color: var(--dim);
   font-size: 11px;
 }
 
-.status-cell {
+.knowledge-feature-search .status-cell {
   color: var(--dim);
   font-size: 11px;
 }
 
-.roots {
+.knowledge-feature-search .roots {
   display: flex;
   align-items: center;
   gap: 8px;
@@ -288,7 +286,7 @@ body {
   flex-wrap: wrap;
 }
 
-.root-chip {
+.knowledge-feature-search .root-chip {
   display: inline-flex;
   align-items: center;
   gap: 4px;
@@ -300,18 +298,18 @@ body {
   font-size: 12px;
 }
 
-.root-del {
+.knowledge-feature-search .root-del {
   background: transparent;
   border: none;
   color: var(--dim);
   cursor: pointer;
 }
 
-.root-del:hover {
+.knowledge-feature-search .root-del:hover {
   color: var(--red);
 }
 
-.root-input {
+.knowledge-feature-search .root-input {
   flex: 1;
   min-width: 200px;
   background: var(--bg);
@@ -322,17 +320,17 @@ body {
   outline: none;
 }
 
-.table-wrap {
+.knowledge-feature-search .table-wrap {
   flex: 1;
   overflow: auto;
 }
 
-table {
+.knowledge-feature-search table {
   width: 100%;
   border-collapse: collapse;
 }
 
-th {
+.knowledge-feature-search th {
   text-align: left;
   color: var(--dim);
   font-weight: 500;
@@ -346,32 +344,32 @@ th {
   background: var(--bg);
 }
 
-td {
+.knowledge-feature-search td {
   padding: 7px 14px;
   border-bottom: 1px solid var(--border);
   white-space: nowrap;
 }
 
-.name {
+.knowledge-feature-search .name {
   font-weight: 600;
 }
 
-.mono {
+.knowledge-feature-search .mono {
   font-family: "Cascadia Code", Consolas, monospace;
 }
 
-.dim {
+.knowledge-feature-search .dim {
   color: var(--dim);
 }
 
-.empty {
+.knowledge-feature-search .empty {
   text-align: center;
   color: var(--dim);
   padding: 40px;
   white-space: normal;
 }
 
-.watch-state {
+.knowledge-feature-search .watch-state {
   font-size: 10px;
   color: var(--db-color-ok, #3fb950);
   border: 1px solid currentColor;
@@ -379,20 +377,20 @@ td {
   padding: 0 4px;
 }
 
-.watch-state.watch-error {
+.knowledge-feature-search .watch-state.watch-error {
   color: var(--db-color-danger, #f85149);
 }
 
-.active-row {
+.knowledge-feature-search .active-row {
   background: rgba(79, 140, 255, 0.08);
 }
 
-.row-actions {
+.knowledge-feature-search .row-actions {
   white-space: nowrap;
   text-align: right;
 }
 
-.row-actions .mini {
+.knowledge-feature-search .row-actions .mini {
   background: transparent;
   border: 1px solid var(--db-color-border, #262c36);
   border-radius: 4px;
@@ -403,7 +401,7 @@ td {
   padding: 2px 6px;
 }
 
-.row-actions .mini:hover {
+.knowledge-feature-search .row-actions .mini:hover {
   color: var(--db-color-accent, #4f8cff);
   border-color: var(--db-color-accent, #4f8cff);
 }

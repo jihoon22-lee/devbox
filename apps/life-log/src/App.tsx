@@ -1,2 +1,2 @@
-import "./App.css";
-export { default } from "@devbox/knowledge-features/activity";
+import Feature from "@devbox/knowledge-features/activity";
+export default function App() { return <div className="knowledge-feature-activity"><Feature/></div>; }

@@ -38,6 +38,26 @@ pub fn initialize(
     Ok(())
 }
 
+/// End the in-memory session on process exit without revoking saved consent.
+pub fn shutdown(app: &tauri::AppHandle) -> Result<(), String> {
+    use tauri::Manager;
+    if let Some(state) = app.try_state::<std::sync::Arc<crate::commands::tracking::AppState>>() {
+        crate::commands::tracking::stop_tracking_runtime(&state, false)?;
+    }
+    Ok(())
+}
+
+/// Create only a new product-owned database; never initialize a legacy source.
+pub fn create_empty_store(path: &std::path::Path) -> Result<(), String> {
+    std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(path)
+        .map_err(|_| "component_store_exists")?;
+    crate::core::db::init(path).map_err(|_| "component_storage_unavailable")?;
+    Ok(())
+}
+
 pub const COMMANDS: &[&str] = &[
     "get_digest",
     "cancel_digest",

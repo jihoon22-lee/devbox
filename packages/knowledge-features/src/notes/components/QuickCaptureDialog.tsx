@@ -24,6 +24,7 @@ import {
 } from "../lib/quickCapture";
 
 interface Props {
+  active?: boolean;
   open: boolean;
   onClose: () => void;
   onSaved: (saved: QuickCaptureSaved) => void;
@@ -65,10 +66,12 @@ function errorMessage(cause: unknown, fallback: string): string {
 
 export default function QuickCaptureDialog({
   open,
+  active = true,
   onClose,
   onSaved,
   restoreFocusRef,
 }: Props) {
+  const activeRef = useRef(active); activeRef.current = active;
   const dialogRef = useRef<HTMLElement>(null);
   const titleRef = useRef<HTMLInputElement>(null);
   const generationRef = useRef(0);
@@ -111,7 +114,7 @@ export default function QuickCaptureDialog({
     busyRef.current = false;
     busyOperationRef.current = null;
     setError(null);
-    const focusTimer = window.setTimeout(() => titleRef.current?.focus(), 0);
+    const focusTimer = window.setTimeout(() => { if (activeRef.current) titleRef.current?.focus(); }, 0);
     return () => {
       window.clearTimeout(focusTimer);
       const previewId = previewIdRef.current;
@@ -145,7 +148,7 @@ export default function QuickCaptureDialog({
     setBusyState(false);
     discardPreview();
     onClose();
-    window.setTimeout(() => restoreFocusRef?.current?.focus(), 0);
+    window.setTimeout(() => { if (activeRef.current) restoreFocusRef?.current?.focus(); }, 0);
   };
 
   const runPreview = async () => {
@@ -191,7 +194,7 @@ export default function QuickCaptureDialog({
       onSaved(saved);
       generationRef.current += 1;
       onClose();
-      window.setTimeout(() => restoreFocusRef?.current?.focus(), 0);
+      window.setTimeout(() => { if (activeRef.current) restoreFocusRef?.current?.focus(); }, 0);
     } catch (cause) {
       if (token === generationRef.current) {
         // Native approval IDs are one-shot even when the filesystem fails.
@@ -405,7 +408,7 @@ export default function QuickCaptureDialog({
                   discardPreview();
                   setPhase("edit");
                   setError(null);
-                  window.setTimeout(() => titleRef.current?.focus(), 0);
+                  window.setTimeout(() => { if (activeRef.current) titleRef.current?.focus(); }, 0);
                 }}
                 disabled={busy}
               >

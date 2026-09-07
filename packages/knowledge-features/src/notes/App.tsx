@@ -132,7 +132,9 @@ function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
   return error ? `${source} · ${error}` : source;
 }
 
-export default function App() {
+export default function App({ active = true, onActivate }: { active?: boolean; onActivate?: () => void } = {}) {
+  const activeRef = useRef(active); activeRef.current = active;
+  const activateRef = useRef(onActivate); activateRef.current = onActivate;
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
   const [selected, setSelected] = useState<string | null>(null);
@@ -365,7 +367,7 @@ export default function App() {
     let stopRequest: (() => void) | undefined;
     let stopStatus: (() => void) | undefined;
     void onQuickCaptureRequested(() => {
-      if (!disposed) setQuickCaptureOpen(true);
+      if (!disposed) { activateRef.current?.(); setQuickCaptureOpen(true); }
     }).then((stop) => {
       if (disposed) stop();
       else stopRequest = stop;
@@ -570,12 +572,13 @@ export default function App() {
   // inside it, make Escape equivalent to an explicit cancel, and restore the
   // invoking control after the claim is released.
   useEffect(() => {
+    if (!active) return;
     if (!draftPreview) {
       const opener = draftRestoreFocusRef.current;
       draftRestoreFocusRef.current = null;
       if (opener && document.contains(opener)) {
         window.setTimeout(() => {
-          if (draftMountedRef.current && document.contains(opener)) opener.focus();
+          if (activeRef.current && draftMountedRef.current && document.contains(opener)) opener.focus();
         }, 0);
       }
       return;
@@ -620,7 +623,7 @@ export default function App() {
       window.clearTimeout(focusTask);
       window.removeEventListener("keydown", onKeyDown);
     };
-  }, [cancelDraftPreview, draftPreview]);
+  }, [active, cancelDraftPreview, draftPreview]);
 
   // A preview may outlive the generic 60-second claim lease. Renewal never
   // extends the envelope TTL. Expiry/invalid claims close the preview with a
@@ -793,13 +796,13 @@ export default function App() {
 
   const renamePlanId = renamePreview?.planId ?? null;
   useLayoutEffect(() => {
-    if (!renamePlanId) return;
+    if (!active || !renamePlanId) return;
     const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
     if (renameDialogRef.current) focusFirst(renameDialogRef.current);
     return () => {
-      restoreFocus(opener);
+      if (activeRef.current) restoreFocus(opener);
     };
-  }, [renamePlanId]);
+  }, [active, renamePlanId]);
 
   const commitRename = async () => {
     if (!renamePreview || renameBusyRef.current) return;
@@ -952,6 +955,7 @@ export default function App() {
       {quickCaptureOpen && (
         <QuickCaptureDialog
           open={quickCaptureOpen}
+          active={active}
           onClose={() => setQuickCaptureOpen(false)}
           onSaved={() => {
             setQuickCaptureNotice("빠른 캡처를 Inbox에 저장했습니다");
@@ -962,6 +966,7 @@ export default function App() {
       )}
       {templateManagerOpen && (
         <TemplateManager
+          active={active}
           onClose={() => setTemplateManagerOpen(false)}
           onSaved={(result) => {
             setTemplateManagerOpen(false);

@@ -52,8 +52,33 @@ pub fn delete_file(path: &Path) -> Result<(), String> {
 
 /// KnowledgeRoot 기본 하위 폴더 구조를 만든다.
 pub fn ensure_layout(root: &Path) -> Result<(), String> {
-    for sub in ["Projects", "Notes", "Journal", "Reference", "Archive"] {
-        std::fs::create_dir_all(root.join(sub)).map_err(|e| e.to_string())?;
+    fn directory(path: &Path) -> Result<(), String> {
+        match std::fs::symlink_metadata(path) {
+            Ok(metadata) if metadata.is_dir() => devbox_filesystem::ensure_no_links(path)
+                .map_err(|_| "저장 위치에 링크를 사용할 수 없습니다".to_owned()),
+            Ok(_) => Err("저장 위치가 디렉터리가 아닙니다".into()),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                directory(path.parent().ok_or("저장 위치를 확인할 수 없습니다")?)?;
+                std::fs::create_dir(path).map_err(|_| "저장 위치를 만들 수 없습니다")?;
+                devbox_filesystem::ensure_no_links(path)
+                    .map_err(|_| "저장 위치에 링크를 사용할 수 없습니다".to_owned())
+            }
+            Err(_) => Err("저장 위치를 확인할 수 없습니다".into()),
+        }
+    }
+    directory(root)?;
+    let folders = ["Projects", "Notes", "Journal", "Reference", "Archive"];
+    // Inspect every existing child before creating any missing layout folder.
+    for sub in folders {
+        let path = root.join(sub);
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => directory(&path)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("저장 위치를 확인할 수 없습니다".into()),
+        }
+    }
+    for sub in folders {
+        directory(&root.join(sub))?;
     }
     Ok(())
 }
@@ -62,6 +87,23 @@ pub fn ensure_layout(root: &Path) -> Result<(), String> {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    #[cfg(unix)]
+    fn layout_rejects_linked_vault_or_child_before_creating_outside_folders() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let vault = root.path().join("vault");
+        std::os::unix::fs::symlink(outside.path(), &vault).unwrap();
+        assert!(ensure_layout(&vault).is_err());
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+        std::fs::remove_file(&vault).unwrap();
+        std::fs::create_dir(&vault).unwrap();
+        std::os::unix::fs::symlink(outside.path(), vault.join("Notes")).unwrap();
+        assert!(ensure_layout(&vault).is_err());
+        assert!(!vault.join("Projects").exists());
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
 
     #[test]
     fn tree_lists_files_and_dirs() {
