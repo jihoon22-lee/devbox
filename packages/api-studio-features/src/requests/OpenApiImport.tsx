@@ -1,6 +1,7 @@
+import { sanitizeRequestForPersistence } from "./lib/persistence";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { fetchOpenApiSource } from "./api";
-import { isProductHosted } from "../transport";
+import { componentInvoke, isProductHosted } from "../transport";
 import { MockDraftAction } from "../webhooks/MockDraftAction";
 import { previewOpenApiRules, type OpenApiRuleOperation } from "../webhooks/lib/openapiRules";
 import {
@@ -17,6 +18,8 @@ interface OpenApiImportProps {
   onClose: () => void;
   onApply: (operation: OpenApiOperationPreview) => void;
   onAddToCollection: (operations: OpenApiOperationPreview[]) => Promise<void>;
+  environment?: string;
+  onSavedDefinition?: () => void;
 }
 
 function issueText(operation: OpenApiOperationPreview): string {
@@ -24,7 +27,7 @@ function issueText(operation: OpenApiOperationPreview): string {
   return error?.message ?? "";
 }
 
-export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiImportProps) {
+export function OpenApiImport({ onClose, onApply, onAddToCollection, environment = '{"version":1,"environments":[]}', onSavedDefinition }: OpenApiImportProps) {
   const [mockOperations, setMockOperations] = useState<OpenApiRuleOperation[]>([]);
   const [preview, setPreview] = useState<OpenApiImportPreview | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
@@ -191,6 +194,21 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
     }
   };
 
+  const saveDefinition = async () => {
+    if (!displayedPreview || !selectedOperations.length || busyRef.current || applyingRef.current) return;
+    applyingRef.current = true; setApplying(true); setError(null);
+    try {
+      await componentInvoke("api-studio.api")("save_openapi_definition", {
+        name: displayedPreview.sourceName || `OpenAPI ${displayedPreview.version} 작업`, openApiVersion: displayedPreview.version, environment,
+        operations: selectedOperations.map(operation => ({ label: operation.label, method: operation.method, requestTarget: operation.path,
+          mockStatus: mockOperations.find(mock => mock.applyable && mock.method === operation.method && mock.path === operation.path)?.status ?? null,
+          request: sanitizeRequestForPersistence(operation.request) })),
+      });
+      if (mountedRef.current) { onSavedDefinition?.(); onClose(); }
+    } catch { if (mountedRef.current) setError("선택한 OpenAPI 작업을 보관하지 못했습니다. 저장 한도와 환경·인증 참조를 확인하세요."); }
+    finally { applyingRef.current = false; if (mountedRef.current) setApplying(false); }
+  };
+
   return (
     <div className="openapi-overlay">
       <div
@@ -326,6 +344,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
         <div className="openapi-dialog-actions">
           <span className="dim">체크한 operation은 새 항목으로만 추가되며 기존 컬렉션을 덮어쓰지 않습니다.</span>
           <div className="openapi-action-buttons">
+            {isProductHosted() && <button className="btn" type="button" disabled={!selectedOperations.length || busy || applying} onClick={() => void saveDefinition()}>선택한 작업 보관 ({selectedOperations.length})</button>}
             {isProductHosted() && selectedMock && <MockDraftAction value="" owner="api-studio.api" status={selectedMock.status}
               requestTarget={selectedMock.path} requestMethod={selectedMock.method} disabled={busy || applying}
               onSent={onClose} label="선택 operation을 Mock 초안으로" />}

@@ -155,6 +155,7 @@ pub async fn run_export_worker(
     stage_id: &str,
     nonce: &str,
     cancelled: &AtomicBool,
+    progress: impl Fn(&'static str),
 ) -> Result<crate::migration_export::LegacyApiExport, String> {
     use std::process::Stdio;
     use std::sync::atomic::Ordering;
@@ -188,6 +189,7 @@ pub async fn run_export_worker(
         .stderr(Stdio::null())
         .kill_on_drop(true)
         .creation_flags(0x0000_0004 | 0x0800_0000);
+    progress("api-export-launch");
     let mut child = command.spawn().map_err(|_| "legacy_worker_unavailable")?;
     let mut tree = match api_playground_lib::component::OwnedProcessTree::assign(&child) {
         Ok(tree) => tree,
@@ -199,6 +201,9 @@ pub async fn run_export_worker(
     };
     let started = Instant::now();
     let status = loop {
+        if let Some(stage_name) = crate::migration_export::worker_progress(stage) {
+            progress(stage_name);
+        }
         if cancelled.load(Ordering::Relaxed) {
             break Err("legacy_snapshot_cancelled".to_string());
         }
@@ -230,6 +235,7 @@ pub async fn run_export_worker(
     _: &str,
     _: &str,
     _: &AtomicBool,
+    _: impl Fn(&'static str),
 ) -> Result<crate::migration_export::LegacyApiExport, String> {
     Err("legacy_browser_export_requires_windows".into())
 }

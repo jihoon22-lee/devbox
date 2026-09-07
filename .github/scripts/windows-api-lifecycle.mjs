@@ -39,8 +39,8 @@ function powershell(value, action) {
 const handle = value => powershell(value, "$p.MainWindowHandle.ToInt64()");
 function windowDetails(value) {
   return JSON.parse(powershell(value, `
-Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public static class FixtureWindow { [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder name, int length); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); }';
-$h=$p.MainWindowHandle; $name=New-Object Text.StringBuilder 256; $null=[FixtureWindow]::GetClassName($h,$name,256); @{ handle=$h.ToInt64(); class=$name.ToString(); visible=[FixtureWindow]::IsWindowVisible($h) } | ConvertTo-Json -Compress`));
+Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public struct FixtureRect { public int Left, Top, Right, Bottom; } public static class FixtureWindow { [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out FixtureRect rect); [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder name, int length); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); }';
+$h=$p.MainWindowHandle; $name=New-Object Text.StringBuilder 256; $rect=New-Object FixtureRect; $null=[FixtureWindow]::GetClassName($h,$name,256); $null=[FixtureWindow]::GetWindowRect($h,[ref]$rect); @{ handle=$h.ToInt64(); class=$name.ToString(); visible=[FixtureWindow]::IsWindowVisible($h); width=($rect.Right-$rect.Left); height=($rect.Bottom-$rect.Top); extendedStyle=[FixtureWindow]::GetWindowLong($h,-20) } | ConvertTo-Json -Compress`));
 }
 const closeWindow = value => powershell(value, "$null=$p.CloseMainWindow()");
 async function startUi() {
@@ -79,7 +79,13 @@ try {
   const worker = await child(["--service-profile", service.id], environment());
   await until(() => responding(servicePort), "explicit service did not start");
   evidence.serviceWindow = windowDetails(worker);
-  assert.equal(handle(worker), "0", "service worker must have no interactive window");
+  // Tao uses a zero-size layered, non-activating tool window to deliver
+  // thread events. It is not shown to users; all actual WebViews are forbidden
+  // by the worker itself. Check every part of that fixed implementation shape.
+  const target = evidence.serviceWindow;
+  const internalStyles = 0x08000000 | 0x00000020 | 0x00080000 | 0x00000080;
+  assert.ok(target.handle === 0 || (target.class === "Tao Thread Event Target" && target.width === 0 && target.height === 0
+    && (target.extendedStyle & internalStyles) === internalStyles), "service worker must have no interactive window");
   ui = await startUi(); assert.equal((await success(ui, "server_status")).running, false);
   const refused = await command(ui, "start_server", { bind: "127.0.0.1", port: servicePort, allowLan: false }); assert.equal(refused.operation.outcome.state, "failed"); assert.equal(await responding(servicePort), true);
   const temporaryPort = await unusedPort(); await success(ui, "start_server", { bind: "127.0.0.1", port: temporaryPort, allowLan: false });
@@ -103,7 +109,7 @@ try {
   assert.equal(await responding(servicePort), true, "interactive exit stopped the Runtime-owned service");
   worker.kill(); await exited(worker);
   await until(async () => !await responding(servicePort), "service process exit retained its socket");
-  Object.assign(evidence, { defaultCloseStops: true, explicitHiddenListening: true, explicitFullQuit: true, trayAvailable: true, relaunchRestoresWindow: true, inactiveExport: true, serviceHasNoWindow: true, dualPortOwnerRejected: true, serviceOwnershipIndependent: true, allSocketsReleased: true, result: "pass" });
+  Object.assign(evidence, { defaultCloseStops: true, explicitHiddenListening: true, explicitFullQuit: true, trayAvailable: true, relaunchRestoresWindow: true, inactiveExport: true, serviceHasNoInteractiveWindow: true, dualPortOwnerRejected: true, serviceOwnershipIndependent: true, allSocketsReleased: true, result: "pass" });
   progress("complete");
 } catch (error) { evidence.error = error.message; throw error; }
 finally {

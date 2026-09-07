@@ -39,6 +39,18 @@ function setup() {
   return { onClose, onApply, onAddToCollection, rendered };
 }
 
+it("explicitly saves supported operation projections without applying requests or collections", async () => {
+  product.enabled = true; product.invoke.mockResolvedValue({});
+  const onApply = vi.fn(), onAddToCollection = vi.fn(), onClose = vi.fn(), onSavedDefinition = vi.fn();
+  render(<OpenApiImport onApply={onApply} onAddToCollection={onAddToCollection} onClose={onClose} onSavedDefinition={onSavedDefinition} />);
+  fireEvent.change(screen.getByLabelText("로컬 파일 선택"), { target: { files: [fileWithText(fixture({ "/users": { get: { responses: { "201": { description: "Created" } } } } }))] } });
+  const save = await screen.findByRole("button", { name: "선택한 작업 보관 (1)" });
+  expect(product.invoke).not.toHaveBeenCalled(); fireEvent.click(save);
+  await waitFor(() => expect(onSavedDefinition).toHaveBeenCalledTimes(1));
+  expect(product.invoke).toHaveBeenCalledWith("save_openapi_definition", expect.objectContaining({ openApiVersion: "3.0", operations: [expect.objectContaining({ method: "GET", requestTarget: "/users", mockStatus: 201 })] }));
+  expect(onApply).not.toHaveBeenCalled(); expect(onAddToCollection).not.toHaveBeenCalled(); expect(onClose).toHaveBeenCalledTimes(1);
+});
+
 describe("OpenApiImport", () => {
   it("hands a selected operation to the product Mock preview without applying or sending a request", async () => {
     product.enabled = true; product.invoke.mockResolvedValue(undefined);

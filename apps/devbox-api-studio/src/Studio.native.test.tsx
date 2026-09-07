@@ -25,6 +25,8 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     const request = args.request;
     let value: unknown;
     if (request.method === "migration_status") value = { busy: false, reviewNeeded: false, pending: null, sources: [] };
+    else if (request.method === "api_workspace_state") value = { document: {schemaVersion:1,revision:0,selectedId:null,workspaces:[]}, currentProjectId:null,mockProfiles:[] };
+    else if (request.method === "list_openapi_definitions") value = [];
     else if (request.method === "finish_startup") value = null;
     else if (request.method === "peek_pending_navigation") value = navigation;
     else if (request.method === "ack_pending_navigation") { value = null; navigation = null; }

@@ -1,3 +1,4 @@
+mod api_workspace;
 mod component;
 mod component_errors;
 mod core;

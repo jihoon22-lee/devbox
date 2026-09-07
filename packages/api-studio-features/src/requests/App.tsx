@@ -1,3 +1,5 @@
+import { OpenApiDefinitions, type DefinitionSummary } from "./OpenApiDefinitions";
+import { ApiWorkspacePanel, type ApiWorkspace } from "./ApiWorkspace";
 import {
   ContextMenu,
   useContextMenu,
@@ -301,6 +303,9 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
   const [historyMethod, setHistoryMethod] = useState("");
   const [historyStatus, setHistoryStatus] = useState<HistoryStatusFilter>("all");
   const [collections, setCollections] = useState(emptyCollectionStore);
+  const [apiWorkspace, setApiWorkspace] = useState<ApiWorkspace | null>(null);
+  const [openApiDefinitionRevision, setOpenApiDefinitionRevision] = useState(0);
+  const [openApiDefinitions, setOpenApiDefinitions] = useState<DefinitionSummary[]>([]);
   const [collName, setCollName] = useState("");
   const [collFolder, setCollFolder] = useState("");
   const [collFilter, setCollFilter] = useState("");
@@ -849,14 +854,16 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
     }
   };
 
-  const onOpenApiApply = (operation: OpenApiOperationPreview) => {
-    setReq(operation.request);
+  const applyOpenApiRequest = (request: RequestTemplate) => {
+    setReq(request);
     setRequestEditorRevision((revision) => revision + 1);
-    setTab(operation.request.body_kind !== "none" ? "body" : "params");
+    setTab(request.body_kind !== "none" ? "body" : "params");
     setResp(null);
     setError(null);
     setPersistenceWarning(null);
   };
+
+  const onOpenApiApply = (operation: OpenApiOperationPreview) => applyOpenApiRequest(operation.request);
 
   const onOpenApiAddToCollection = async (operations: OpenApiOperationPreview[]) => {
     if (openApiCollectionSavingRef.current) throw new Error("OpenAPI 컬렉션 저장이 이미 진행 중입니다");
@@ -1680,7 +1687,7 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
         </div>
       )}
       <aside className="sidebar" hidden={section === "history"}>
-        <h1 className="app-title">API Playground</h1>
+        <h1 className="app-title">{section ? "Requests" : "API Playground"}</h1>
         <div className="group-name">기록</div>
         <div className="history-toolbar" aria-label="기록 검색 및 필터">
           <input
@@ -1794,6 +1801,7 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
           </select>
         )}
         {collections.collections
+          .filter(item => !apiWorkspace || apiWorkspace.links.collectionIds.includes(item.id))
           .filter((c) => !collFilter || c.folder === collFilter)
           .map((c) => (
             <div
@@ -1844,7 +1852,7 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
               </button>
             </div>
           ))}
-        {collections.collections.length === 0 && <div className="dim">저장된 컬렉션이 없습니다</div>}
+        {collections.collections.filter(item => !apiWorkspace || apiWorkspace.links.collectionIds.includes(item.id)).length === 0 && <div className="dim">{apiWorkspace ? "이 Workspace에 연결한 컬렉션이 없습니다" : "저장된 컬렉션이 없습니다"}</div>}
 
         <div className="group-name">환경</div>
         <div className="transfer-actions" aria-label="환경 JSON 전송">
@@ -1876,7 +1884,7 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
             추가
           </button>
         </div>
-        {envStore.environments.map((env) => (
+        {envStore.environments.filter(env => !apiWorkspace || apiWorkspace.links.environmentIds.includes(env.id)).map((env) => (
           <div key={env.id} className={`env-item ${env.id === currentEnvId ? "active" : ""}`}>
             <button className="env-name" onClick={() => setCurrentEnvId(env.id)}>
               {env.name}
@@ -1954,6 +1962,9 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
       </aside>
 
       <main className="content">
+        {!!section && <ApiWorkspacePanel collections={collections.collections} environments={envStore.environments} definitions={openApiDefinitions} onChange={setApiWorkspace} />}
+        {!!section && <OpenApiDefinitions revision={openApiDefinitionRevision} linkedIds={apiWorkspace?.links.openApiDefinitionIds ?? null} onSummaries={setOpenApiDefinitions}
+          disabled={!persistenceReady || sending || sseActive || contextActionBusy || transferBusy} onApply={request => { applyOpenApiRequest(request); setPersistenceWarning("보관한 OpenAPI 초안입니다. 환경·인증을 다시 확인한 뒤 직접 전송하세요."); onNavigate?.("requests"); }} />}
         <nav hidden={!!section} className="workspace-tabs" aria-label="API Playground 작업 공간">
           <button
             type="button"
@@ -2292,6 +2303,8 @@ export default function App({ section, onNavigate }: { section?: "requests" | "p
           onClose={() => setShowOpenApiImport(false)}
           onApply={onOpenApiApply}
           onAddToCollection={onOpenApiAddToCollection}
+          environment={JSON.stringify(envStore)}
+          onSavedDefinition={() => setOpenApiDefinitionRevision(value => value + 1)}
         /></Suspense>
       )}
     </div>

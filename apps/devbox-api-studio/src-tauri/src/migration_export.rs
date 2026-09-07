@@ -90,6 +90,37 @@ fn read<T: serde::de::DeserializeOwned>(path: &Path) -> Result<T, String> {
     }
     serde_json::from_slice(&bytes).map_err(|_| "legacy_export_storage_invalid".into())
 }
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "kebab-case")]
+pub enum WorkerProgress {
+    Setup,
+    WebviewCreated,
+    ProfileVerified,
+    ProfileRejected,
+    Environment,
+    Sanitize,
+    Complete,
+}
+fn write_progress(stage: &Path, progress: WorkerProgress) {
+    if let Ok(bytes) = serde_json::to_vec(&progress) {
+        let _ = devbox_filesystem::atomic_write(stage.join("worker-progress.json"), &bytes);
+    }
+}
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn worker_progress(stage: &Path) -> Option<&'static str> {
+    let path = stage.join("worker-progress.json");
+    let raw = crate::core::import_repository::read_file(&path, 64).ok()??;
+    match serde_json::from_str::<WorkerProgress>(&raw).ok()? {
+        WorkerProgress::Setup => Some("api-export-setup"),
+        WorkerProgress::WebviewCreated => Some("api-export-webview"),
+        WorkerProgress::ProfileVerified => Some("api-export-profile-verified"),
+        WorkerProgress::ProfileRejected => Some("api-export-profile-rejected"),
+        WorkerProgress::Environment => Some("api-export-environment"),
+        WorkerProgress::Sanitize => Some("api-export-sanitize"),
+        WorkerProgress::Complete => Some("api-export-complete"),
+    }
+}
+
 pub fn write_ticket(stage: &Path, nonce: &str) -> Result<(), String> {
     if !nonce_valid(nonce) {
         return Err("legacy_export_ticket_invalid".into());
@@ -208,6 +239,7 @@ fn handle(window: &WebviewWindow, request: ExportRequest) -> Result<Value, Strin
     }
     match request.action {
         ExportAction::Environment { raw } if session.environment.is_none() => {
+            write_progress(&state.stage, WorkerProgress::Environment);
             let present = raw.is_some();
             let (safe, missing) = api_playground_lib::component::prepare_legacy_environment(
                 raw.as_deref().unwrap_or(EMPTY_ENVIRONMENT),
@@ -219,6 +251,7 @@ fn handle(window: &WebviewWindow, request: ExportRequest) -> Result<Value, Strin
             )
         }
         ExportAction::Sanitize { serialized } => {
+            write_progress(&state.stage, WorkerProgress::Sanitize);
             session.sanitized_bytes = session
                 .sanitized_bytes
                 .checked_add(serialized.len())
@@ -268,6 +301,7 @@ fn handle(window: &WebviewWindow, request: ExportRequest) -> Result<Value, Strin
             .map_err(|_| "legacy_export_result_invalid")?;
             devbox_filesystem::atomic_write(path, &bytes)
                 .map_err(|_| "legacy_export_storage_invalid")?;
+            write_progress(&state.stage, WorkerProgress::Complete);
             session.completed = true;
             drop(session);
             app.exit(0);
@@ -312,17 +346,20 @@ pub fn run_worker(stage_id: String, mut context: tauri::Context<tauri::Wry>) -> 
             let ticket: WorkerTicket = read(&stage.join("worker-ticket.json")).map_err(std::io::Error::other)?;
             if ticket.schema_version != 1 || !nonce_valid(&ticket.nonce) { return Err(std::io::Error::other("legacy_export_ticket_invalid").into()); }
             fs::OpenOptions::new().write(true).create_new(true).open(stage.join("worker-started"))?;
+            write_progress(&stage, WorkerProgress::Setup);
             let copy = stage.join("webview-copy");
             devbox_filesystem::ensure_no_links(&copy).map_err(|_| std::io::Error::other("legacy_export_storage_invalid"))?;
             let nonce = ticket.nonce;
             let script = format!("Object.defineProperty(window, '__DEVBOX_API_EXPORT__', {{ value: {}, writable: false }});", serde_json::to_string(&nonce)?);
-            app.manage(ExportState { stage, nonce, started: Instant::now(), session: Mutex::new(Session { verified_profile: false, completed: false, environment: None, environment_present: false, sanitized_bytes: 0 }) });
+            app.manage(ExportState { stage: stage.clone(), nonce, started: Instant::now(), session: Mutex::new(Session { verified_profile: false, completed: false, environment: None, environment_present: false, sanitized_bytes: 0 }) });
             let window = tauri::WebviewWindowBuilder::new(app, LABEL, tauri::WebviewUrl::App("migration-export.html".into()))
                 .data_directory(copy.clone()).visible(false).skip_taskbar(true).focused(false)
                 .initialization_script(script).on_navigation(local_export_url).build()?;
+            write_progress(&stage, WorkerProgress::WebviewCreated);
             let handle = app.handle().clone();
             crate::platform::legacy_profile::verify_profile(&window, copy, move |result| {
-                if result.is_err() { handle.exit(2); return; }
+                if result.is_err() { write_progress(&stage, WorkerProgress::ProfileRejected); handle.exit(2); return; }
+                write_progress(&stage, WorkerProgress::ProfileVerified);
                 if let Some(state) = handle.try_state::<ExportState>() {
                     if let Ok(mut session) = state.session.lock() { session.verified_profile = true; }
                 }

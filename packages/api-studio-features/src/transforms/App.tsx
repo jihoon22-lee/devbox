@@ -359,7 +359,7 @@ export default function App() {
   return (
     <div className="app">
       <aside className="sidebar">
-        <h1 className="app-title">Dev Toolbox</h1>
+        <h1 className="app-title">{isProductHosted() ? "Transforms" : "Dev Toolbox"}</h1>
         {GROUPS.map((group) => (
           <div key={group} className="group">
             <div className="group-name">{group}</div>

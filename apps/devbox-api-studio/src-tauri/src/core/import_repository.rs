@@ -261,7 +261,12 @@ impl Repository {
         if fs::symlink_metadata(&copy).is_ok() {
             remove_owned_directory(&copy)?;
         }
-        for name in ["worker-ticket.json", "worker-started", "worker-result.json"] {
+        for name in [
+            "worker-ticket.json",
+            "worker-started",
+            "worker-result.json",
+            "worker-progress.json",
+        ] {
             let file = stage.join(name);
             if fs::symlink_metadata(&file).is_ok() {
                 devbox_filesystem::ensure_no_links(&file).map_err(|_| "migration_path_invalid")?;

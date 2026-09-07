@@ -1016,7 +1016,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
         setHandoffNotice("전달한 결과를 규칙 초안에 적용했습니다. 경로·메서드를 확인한 뒤 규칙을 저장하세요.");
       }} />}
       <header className="toolbar">
-        <h1 className="title">Webhook Lab</h1>
+        <h1 className="title">{isProductHosted() ? "Webhooks & Mocks" : "Webhook Lab"}</h1>
         <span className={`status ${status.running ? "ok" : "off"}`}>
           ● {status.running ? `듣는 중 ${status.address}` : "중지"}
         </span>

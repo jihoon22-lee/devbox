@@ -535,6 +535,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                             &id,
                             &nonce,
                             &guard.cancelled,
+                            |stage| guard.stage(stage),
                         )
                         .await;
                         // The worker has closed its owned Job before returning.

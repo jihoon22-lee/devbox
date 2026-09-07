@@ -322,3 +322,42 @@ pub fn validate_migration_native_store(kind: &str, bytes: &[u8]) -> Result<(), S
         _ => Err("legacy_api_store_invalid".into()),
     }
 }
+
+/// Product-owned saved OpenAPI projections reuse the actual request wire type.
+/// This only normalizes a draft; it never resolves variables or sends a request.
+pub fn normalize_openapi_request(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    const ERROR: &str = "openapi_definition_invalid";
+    let request: crate::commands::request::RequestTemplate =
+        serde_json::from_value(value).map_err(|_| ERROR)?;
+    if !matches!(
+        request.method.as_str(),
+        "GET" | "POST" | "PUT" | "PATCH" | "DELETE" | "HEAD" | "OPTIONS" | "TRACE"
+    ) || request.url.len() > 16 * 1024
+        || request.url.chars().any(char::is_control)
+        || !(request.url.starts_with("http://") || request.url.starts_with("https://"))
+        || request.headers.len() > 100
+        || request.cookies.len() > 100
+        || request.params.len() > 100
+        || request.multipart.len() > 100
+        || request.body.len() > 512 * 1024
+        || request.timeout_ms == 0
+        || request.timeout_ms > 300_000
+        || request.graphql.is_some()
+        || !matches!(
+            request.body_kind.as_str(),
+            "none" | "json" | "raw" | "form" | "multipart"
+        )
+    {
+        return Err(ERROR.into());
+    }
+    crate::commands::request::validate_multipart_rows(&request).map_err(|_| ERROR)?;
+    let mut value = serde_json::to_value(request).map_err(|_| ERROR)?;
+    value["requiresSecretReview"] = true.into();
+    Ok(value)
+}
+
+pub fn sanitize_openapi_request(value: serde_json::Value) -> Result<serde_json::Value, String> {
+    let normalized = normalize_openapi_request(value)?;
+    let request = serde_json::from_value(normalized).map_err(|_| "openapi_definition_invalid")?;
+    crate::commands::request::sanitize_openapi_template(request)
+}

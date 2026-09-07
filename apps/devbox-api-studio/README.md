@@ -88,3 +88,23 @@ startup remain separate actions. A busy preview is retained and each accepted or
 cancelled publication is consumed once. Selected response text can also explicitly
 replace either side of a Transforms comparison; those two inputs survive product
 tool navigation without copying the text into metadata/history.
+
+API Workspace keeps named, bounded ID sets for Collections, environments, saved
+OpenAPI operation projections and persisted Mock service profiles. Selecting a
+Workspace filters lists while preserving the current request/environment and
+protocol connections. The API owner stores metadata with revisions, OS locks and
+atomic writes. Deletes remove only the Workspace's links. Standalone workspaces
+work immediately; Project association requires the current native-verified
+ProjectId. WP07 must supply the actual Project provider before that option is
+available. Renderer paths and arbitrary IDs never grant Project authority.
+
+Explicitly saved OpenAPI projections preserve supported request templates and
+Mock method/path/status, with the existing request type and native sanitizer.
+Duplicate header order/enabled values and exact secret references survive; literal
+credentials, including disabled headers and copied bearer tokens, are masked.
+The API owner stores up to 32 definitions of at most 4 MiB each. These records are
+not archives of the original OpenAPI document or unsupported schema semantics.
+Reopening previews a masked draft; applying to Requests or publishing a Mock is
+explicit and never sends or starts a listener. Full/future/corrupt stores preserve
+their records; deletion requires confirmation and leaves Workspace references
+visible as unavailable until the user edits them.

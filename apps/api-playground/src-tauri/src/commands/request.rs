@@ -1644,6 +1644,55 @@ fn collect_json_secrets(
     }
 }
 
+/// Data-only OpenAPI persistence uses the same request secret inventory and
+/// JSON sanitizer as native responses. Disabled credentials are also private.
+pub(crate) fn sanitize_openapi_template(
+    mut request: RequestTemplate,
+) -> Result<serde_json::Value, String> {
+    let mut snapshot = ResolvedRequest {
+        method: request.method.clone(),
+        url: request.url.clone(),
+        headers: request.headers.clone(),
+        cookies: request.cookies.clone(),
+        multipart: request.multipart.clone(),
+        params: request.params.clone(),
+        body_kind: request.body_kind.clone(),
+        body: request.body.clone(),
+        auth: request.auth.clone(),
+        timeout_ms: request.timeout_ms,
+        graphql: request.graphql.clone(),
+    };
+    for header in &mut snapshot.headers {
+        header.enabled = true;
+    }
+    for cookie in &mut snapshot.cookies {
+        cookie.enabled = true;
+    }
+    for part in &mut snapshot.multipart {
+        part.enabled = true;
+    }
+    let mut secrets = Vec::new();
+    collect_request_secrets(&snapshot, &mut secrets);
+    secrets.retain(|value| !is_exact_reference(value));
+    // The bearer prefix is framing, so remove copies of the token itself too.
+    let bearer_tokens = secrets
+        .iter()
+        .filter_map(|value| {
+            value
+                .strip_prefix("Bearer ")
+                .map(|token| Zeroizing::new(token.to_string()))
+        })
+        .filter(|value| !is_exact_reference(value))
+        .collect::<Vec<_>>();
+    secrets.extend(bearer_tokens);
+    let redactor = Redactor::from_secrets(secrets);
+    request.url = redactor.redact_url(&request.url);
+    let mut value = serde_json::to_value(request).map_err(|_| "openapi_definition_invalid")?;
+    sanitize_json_value(&mut value, "", &redactor.secrets);
+    value["requiresSecretReview"] = true.into();
+    Ok(value)
+}
+
 fn sanitize_persisted_json_with_sealer(
     serialized: &str,
     environment: &[EnvironmentVariable],

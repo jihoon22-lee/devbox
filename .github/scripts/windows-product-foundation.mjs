@@ -244,6 +244,41 @@ async function start(product, suffix) {
       assert.deepEqual(mockDraft, { editorOnly: true, listenerStopped: true, status: "201", redacted: true });
       componentProbe.mockDraft = mockDraft;
 
+      progress(product, suffix, "api-workspace");
+      const workspace = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke; const d = await invoke("plugin:product-shell|describe");
+        const call = (method, args = {}) => invoke("plugin:api-studio|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
+            requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "requests" }, component: "api-studio.api", method, args } });
+        const saved = await call("save_openapi_definition", { name: "Fixture operations", openApiVersion: "3.1", environment: JSON.stringify({version:1,environments:[]}),
+          operations: [{label:"GET /workspace",method:"GET",requestTarget:"/workspace",mockStatus:200,request:{method:"GET",url:"http://127.0.0.1/workspace",headers:[{key:"Authorization",value:"Bearer synthetic-workspace-secret",enabled:true}],params:[],body_kind:"none",body:"",auth:null,timeout_ms:30000}}] });
+        if (saved.operation.outcome.state !== "succeeded") throw new Error("definition save failed");
+        const reopened = await call("get_openapi_definition", { id: saved.value.id });
+        const state = (await call("api_workspace_state")).value;
+        const args = { expectedRevision: state.document.revision, id: null, name: "Fixture Workspace", association: "standalone",
+          links: {collectionIds:[],environmentIds:[],openApiDefinitionIds:[saved.value.id],mockProfileIds:[]} };
+        const created = await call("save_api_workspace", args);
+        if (created.operation.outcome.state !== "succeeded") throw new Error("workspace save failed");
+        const stale = await call("save_api_workspace", args);
+        const foreignProject = await call("save_api_workspace", {...args,expectedRevision:created.value.revision,association:"current-project"});
+        return { id: created.value.workspaces.at(-1).id, revision: created.value.revision, staleRejected: stale.operation.outcome.state === "failed",
+          unboundProjectRejected: foreignProject.operation.outcome.state === "failed", definitionMasked: !JSON.stringify(reopened.value).includes("synthetic-workspace-secret") && JSON.stringify(reopened.value).includes("[REDACTED]") };
+      })()`);
+      assert.equal(workspace.staleRejected, true); assert.equal(workspace.unboundProjectRejected, true); assert.equal(workspace.definitionMasked, true);
+      await cdp.evaluate('Array.from(document.querySelectorAll("nav button")).find(button => button.textContent.trim() === "요청").click()');
+      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-requests:not([hidden]) .url-input")', "Requests did not reopen for workspace selection");
+      await cdp.evaluate('Array.from(document.querySelectorAll(".api-feature-requests .handoff-dialog button")).find(button => button.textContent.trim() === "취소")?.click()');
+      await cdp.evaluate('Array.from(document.querySelectorAll(".api-workspace button")).find(button => button.textContent.trim() === "연결 목록 새로고침").click()');
+      await waitForRenderer(cdp, 'Array.from(document.querySelectorAll(".api-workspace select option")).some(option => option.textContent === "Fixture Workspace")', "saved Workspace did not reopen");
+      await cdp.evaluate(`(() => {
+        const input = document.querySelector(".url-input"); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"http://127.0.0.1/workspace-unsent"); input.dispatchEvent(new Event("input",{bubbles:true}));
+        const select = document.querySelector('select[aria-label="API Workspace 선택"]'); select.value = ${JSON.stringify(workspace.id)}; select.dispatchEvent(new Event("change",{bubbles:true}));
+      })()`);
+      await waitForRenderer(cdp, 'document.querySelector(".api-workspace").textContent.includes("독립 Workspace")', "Workspace selection did not finish");
+      assert.equal(await cdp.evaluate('document.querySelector(".url-input").value'), "http://127.0.0.1/workspace-unsent");
+      componentProbe.workspace = { staleRejected: workspace.staleRejected, unboundProjectRejected: workspace.unboundProjectRejected, definitionMasked: workspace.definitionMasked, explicitSelectionPreservesRequest: true };
+
+
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);

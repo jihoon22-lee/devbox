@@ -46,6 +46,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.api" => {
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
+                    || crate::api_workspace::COMMANDS.contains(&method)
                     || crate::handoff::is_send(component, method)
                     || crate::knowledge::is_command(component, method)
                     || matches!(method, "pick_multipart_file" | "send_selection_to_toolbox")
@@ -145,7 +146,17 @@ async fn execute(
         );
     }
     crate::lifecycle::require_open(app).map_err(|_| problem(ProblemCode::Unavailable))?;
-    let value = if crate::knowledge::is_command(&request.component, &request.method) {
+    let value = if request.component == "api-studio.api"
+        && crate::api_workspace::COMMANDS.contains(&request.method.as_str())
+    {
+        crate::api_workspace::dispatch(
+            app,
+            &request.method,
+            request.args,
+            request.header.context.clone(),
+        )
+        .await
+    } else if crate::knowledge::is_command(&request.component, &request.method) {
         crate::knowledge::dispatch(
             app,
             &request.component,
