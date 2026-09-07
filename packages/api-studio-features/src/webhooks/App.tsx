@@ -1,3 +1,4 @@
+import { isProductHosted } from "../transport";
 import {
   ContextMenu,
   useContextMenu,
@@ -475,7 +476,7 @@ export default function App() {
       objectUrl = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = objectUrl;
-      link.download = "webhook-lab-run-manager-definition.json";
+      link.download = isProductHosted() ? "api-studio-service-definition.json" : "webhook-lab-run-manager-definition.json";
       document.body.appendChild(link);
       try {
         link.click();

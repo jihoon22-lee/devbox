@@ -12,3 +12,11 @@
 .migration-actions { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 18px; }
 .migration-review { margin-top: 18px; padding: 16px; border: 1px solid var(--color-border, #404650); }
 .migration-reopen { margin: 12px 0; }
+
+.listener-controls { padding: 12px 16px; border-bottom: 1px solid var(--db-color-border); background: var(--db-color-surface); font-size: 12px; }
+.listener-controls label { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.listener-controls p { margin: 8px 0; line-height: 1.5; color: var(--db-color-text-muted); }
+.listener-controls button { margin-right: 8px; }
+
+.api-feature-webhooks.studio-webhooks { display: flex; flex-direction: column; height: calc(100vh - 132px); min-height: 500px; }
+.api-feature-webhooks.studio-webhooks > .app { flex: 1; min-height: 280px; height: auto; }

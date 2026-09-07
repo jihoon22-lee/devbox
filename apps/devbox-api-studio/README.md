@@ -45,3 +45,20 @@ be rolled back through the startup importer. No request, listener or process is
 started by importing. `--import-legacy` or the in-app restart action opens another
 review. Portable recovery tests pass; actual Windows migration acceptance is
 pending the new [fixture](../../.github/scripts/windows-api-migration.mjs).
+
+
+History/Console previews HTTP requests and gRPC summaries separately from live
+session payloads. Selecting a saved request preserves the current draft until
+explicit replacement. Fixed protocol cancellation/expiry/reconnect errors retain
+their original classifications across the product transport.
+
+Closing the window stops its temporary Webhook listener and quits by default.
+The Webhooks view can explicitly keep a running listener in the notification area;
+its menu opens the window, stops the temporary listener or fully quits. Minimizing
+or changing routes does not recreate/stop the listener. An unavailable tray falls
+back to ordinary close. Service JSON exports stay disabled and never autostart.
+Their `--service-profile <id>` entry point is a separate process with no interactive
+window or API protocol bootstrap; its lifecycle belongs to the service runner.
+The UI's listener and that process cannot bind the same port simultaneously.
+Windows lifecycle acceptance is tracked by the
+[lifecycle fixture](../../.github/scripts/windows-api-lifecycle.mjs).

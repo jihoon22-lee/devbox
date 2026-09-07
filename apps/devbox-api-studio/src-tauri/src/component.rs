@@ -52,7 +52,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.webhooks" => {
             route == "webhooks"
                 && (webhook_lab_lib::component::COMMANDS.contains(&method)
-                    || matches!(method, "send_history_to_api" | "send_fixture_to_api"))
+                    || matches!(method, "send_history_to_api" | "send_fixture_to_api")
+                    || crate::lifecycle::COMMANDS.contains(&method))
         }
         "api-studio.transforms" => {
             route == "transforms"
@@ -138,7 +139,12 @@ async fn execute(
             },
         );
     }
-    let value = if request.component == "api-studio.api"
+    crate::lifecycle::require_open(app).map_err(|_| problem(ProblemCode::Unavailable))?;
+    let value = if request.component == "api-studio.webhooks"
+        && crate::lifecycle::COMMANDS.contains(&request.method.as_str())
+    {
+        crate::lifecycle::dispatch(app, &request.method, request.args)
+    } else if request.component == "api-studio.api"
         && crate::handoff::is_navigation(&request.method)
     {
         crate::handoff::navigation(app, &request.method, request.args)
@@ -192,12 +198,25 @@ async fn execute(
             }
             _ => return Err(problem(ProblemCode::Unauthorized)),
         }
-    }
-    .map_err(|_| problem(ProblemCode::Unavailable))?;
+    };
+    let (outcome, value) = match value {
+        Ok(value) => (OperationState::Succeeded {}, value),
+        Err(error) => {
+            let issue = crate::component_errors::project(&request.component, &error);
+            let outcome = if issue.ends_with("_cancelled") {
+                OperationState::Cancelled {}
+            } else {
+                OperationState::Failed {
+                    code: ProblemCode::Unavailable,
+                }
+            };
+            (outcome, serde_json::json!({ "issue": issue }))
+        }
+    };
     Ok(Response {
         operation: Operation {
             provenance,
-            outcome: OperationState::Succeeded {},
+            outcome,
         },
         value,
     })

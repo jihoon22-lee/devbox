@@ -24,6 +24,7 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-api-migration.mjs'
+      - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-packaged-smoke.mjs'
       - '.github/scripts/windows-product-installation.ps1'
       - '.github/scripts/windows-installer-helpers.ps1'
@@ -64,6 +65,7 @@ jobs:
           shared-key: devbox-product-foundation
       - run: pnpm install --frozen-lockfile
       - name: Build unpublished product installers
+        id: product-build
         shell: pwsh
         run: |
           foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
@@ -78,6 +80,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-api-migration.mjs
+      - name: Verify temporary listener and service worker lifetimes
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        run: node .github/scripts/windows-api-lifecycle.mjs
       - name: Verify anchor and product installer coexistence
         shell: pwsh
         env:

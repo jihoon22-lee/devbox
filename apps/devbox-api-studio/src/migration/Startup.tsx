@@ -21,7 +21,7 @@ function NativeStartup({ children }: { children: ReactNode }) {
     async function load() {
       try {
         const value = await invoke<Status>("migration_status"); if (!alive) return;
-        setStatus(value); setProfiles((value.profiles ?? []).map((profile) => profile.id));
+        setStatus(value); setProfiles((value.profiles ?? []).slice(0, 64).map((profile) => profile.id));
         if (value.busy) { operation.current = value.operationId ?? null; timer = setTimeout(() => { void load(); }, 250); return; }
         if (!value.reviewNeeded && !value.pending) { await invoke("finish_startup"); if (alive) setReady(true); }
         else setSelected((value.sources ?? []).filter((source) => source.present && source.readable).map((source) => source.app));
@@ -81,9 +81,10 @@ function NativeStartup({ children }: { children: ReactNode }) {
         {labels[source.app]} {!source.present ? "· 저장된 데이터 없음" : !source.readable ? "· 저장 위치 확인 필요" : ""}
       </label>)}</fieldset>}
       {!!status?.profiles?.length && selected.includes("webhook-lab") && <details><summary>가져올 모의 서버 프로필 선택 ({profiles?.length ?? 0}개)</summary>
-        <p>프로필은 한 번에 20 MB까지 가져올 수 있습니다. 큰 저장소는 나누어 가져와 주세요.</p>
+        <p>프로필은 한 번에 64개, 20 MB까지 가져올 수 있습니다. 큰 저장소는 나누어 가져와 주세요.</p>
+        <button disabled={!!busy} onClick={() => setProfiles([])}>선택 해제</button>
         <fieldset disabled={!!busy}><legend>모의 서버 프로필</legend>{status.profiles.map((profile) => <label key={profile.id}>
-          <input type="checkbox" checked={profiles?.includes(profile.id) ?? false} onChange={(event) => setProfiles((old) => event.target.checked ? [...(old ?? []), profile.id] : (old ?? []).filter((id) => id !== profile.id))}/>
+          <input type="checkbox" disabled={!profiles?.includes(profile.id) && (profiles?.length ?? 0) >= 64} checked={profiles?.includes(profile.id) ?? false} onChange={(event) => setProfiles((old) => event.target.checked ? [...(old ?? []), profile.id] : (old ?? []).filter((id) => id !== profile.id))}/>
           {profile.id} · {(profile.bytes / 1024).toFixed(1)} KB
         </label>)}</fieldset>
       </details>}
@@ -97,7 +98,7 @@ function NativeStartup({ children }: { children: ReactNode }) {
       <div className="migration-actions">
         {!completed && <button disabled={!!busy || selected.length === 0 || status?.busy} onClick={() => void prepare()}>선택한 데이터 확인</button>}
         {busy === "preparing" || status?.busy ? <button onClick={() => void cancel()}>확인 취소</button> : null}
-        <button disabled={!!busy || status?.busy || !status} onClick={() => void open()}>{completed ? "API Studio 열기" : "가져오기 없이 계속"}</button>
+        <button disabled={!!busy || status?.busy || (!status && !error)} onClick={() => void open()}>{completed ? "API Studio 열기" : "가져오기 없이 계속"}</button>
       </div>
     </>}
     {busy && <p role="status">{busy === "preparing" ? "기존 데이터를 확인하고 있습니다… API Playground는 닫아 주세요." : "데이터 반영 상태를 기록하고 있습니다…"}</p>}

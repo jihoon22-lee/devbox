@@ -1250,8 +1250,6 @@ pub fn reset_rule_sequence(
 /// and return one disabled Run Manager definition. The renderer supplies no
 /// rule JSON, executable path, bind address, or command string.
 #[tauri::command]
-// The standalone AppLink entry point is not registered by the product adapter.
-#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn export_run_service_definition(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,

@@ -29,6 +29,8 @@ import {
   type WebSocketHandle,
   takePendingOpen,
 } from "./api";
+const HistoryConsole = lazy(() => import("./HistoryConsole").then(module => ({ default: module.HistoryConsole })));
+import { SavedRequestPreview } from "./SavedRequestPreview";
 import { CookieEditor } from "./CookieEditor";
 import { GraphqlEditor } from "./GraphqlEditor";
 import { HeaderTable } from "./HeaderTable";
@@ -269,7 +271,7 @@ function KeyValueEditor({
   );
 }
 
-export default function App({ section }: { section?: "requests" | "protocols" | "history" } = {}) {
+export default function App({ section, onNavigate }: { section?: "requests" | "protocols" | "history"; onNavigate?: (route: "requests") => void } = {}) {
   const [req, setReq] = useState<RequestTemplate>(emptyReq);
   const [resp, setResp] = useState<ApiResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -313,6 +315,7 @@ export default function App({ section }: { section?: "requests" | "protocols" | 
   const [browserImportKind, setBrowserImportKind] = useState<"collection" | "environment" | null>(null);
   const [environmentBusy, setEnvironmentBusy] = useState(false);
   const [contextActionBusy, setContextActionBusy] = useState(false);
+  const [savedPreview, setSavedPreview] = useState<{ kind: "history" | "collection"; id: string } | null>(null);
   const [selectedHistoryId, setSelectedHistoryId] = useState<string | null>(null);
   const [selectedCollectionId, setSelectedCollectionId] = useState<string | null>(null);
   const [requestEditorRevision, setRequestEditorRevision] = useState(0);
@@ -1578,8 +1581,26 @@ export default function App({ section }: { section?: "requests" | "protocols" | 
     else if (id === "copy-curl") copyMaskedCurl(item.request);
   };
 
+  const previewRecord = savedPreview?.kind === "collection"
+    ? collections.collections.find(item => item.id === savedPreview.id)
+    : history.find(item => item.id === savedPreview?.id);
+  const applySavedPreview = () => {
+    if (!previewRecord || !savedPreview || sending || !persistenceReady) return;
+    setReq(toRequestTemplate(previewRecord.request));
+    setRequestEditorRevision(revision => revision + 1); setResp(null);
+    if (savedPreview.kind === "collection") setSelectedCollectionId(savedPreview.id);
+    else setSelectedHistoryId(savedPreview.id);
+    setPersistenceWarning("저장된 요청입니다. 마스킹된 값과 필요한 환경·인증을 확인하고 직접 전송하세요.");
+    setSavedPreview(null);
+  };
+
   return (
     <div className="app">
+      {previewRecord && savedPreview && !handoffPreview && <SavedRequestPreview
+        title={"name" in previewRecord && previewRecord.name ? previewRecord.name : historyDisplayLabel(previewRecord)}
+        request={previewRecord.request} canApply={persistenceReady && !sending && !contextActionBusy && !transferBusy}
+        onClose={() => setSavedPreview(null)} onApply={applySavedPreview}
+      />}
       <input
         ref={browserImportInputRef}
         className="transfer-input"
@@ -1658,7 +1679,7 @@ export default function App({ section }: { section?: "requests" | "protocols" | 
           </section>
         </div>
       )}
-      <aside className="sidebar">
+      <aside className="sidebar" hidden={section === "history"}>
         <h1 className="app-title">API Playground</h1>
         <div className="group-name">기록</div>
         <div className="history-toolbar" aria-label="기록 검색 및 필터">
@@ -1701,6 +1722,7 @@ export default function App({ section }: { section?: "requests" | "protocols" | 
             aria-label={`기록 항목: ${historyDisplayLabel(h)}`}
             data-history-id={h.id}
             onClick={() => {
+              if (section) { setSavedPreview({ kind: "history", id: h.id }); return; }
               setSelectedHistoryId(h.id);
               setReq(toRequestTemplate(h.request));
               setRequestEditorRevision((revision) => revision + 1);
@@ -1797,7 +1819,9 @@ export default function App({ section }: { section?: "requests" | "protocols" | 
             >
               <button
                 className="coll-open"
+                aria-label={section ? `컬렉션 요청 미리보기: ${c.name}` : undefined}
                 onClick={() => {
+                  if (section) { setSavedPreview({ kind: "collection", id: c.id }); return; }
                   setSelectedCollectionId(c.id);
                   setReq(toRequestTemplate(c.request));
                   setRequestEditorRevision((revision) => revision + 1);
@@ -1948,10 +1972,20 @@ export default function App({ section }: { section?: "requests" | "protocols" | 
             Protocol Lab
           </button>
         </nav>
+        {section === "history" && <Suspense fallback={<p role="status">기록을 불러오고 있습니다…</p>}><HistoryConsole
+          history={history} activity={{ sending, sse: sseStateLabel(sseState), sseEvents: sseEvents.length, websocket: webSocketState, websocketMessages: webSocketMessages.length }}
+          canApply={persistenceReady && !sending && !contextActionBusy && !transferBusy}
+          onApply={(item) => {
+            setSelectedHistoryId(item.id); setReq(toRequestTemplate(item.request));
+            setRequestEditorRevision(revision => revision + 1); setResp(null);
+            setPersistenceWarning("마스킹된 기록입니다. 필요한 환경·인증을 확인하고 직접 전송하세요.");
+            onNavigate?.("requests");
+          }}
+        /></Suspense>}
         {(protocolVisited || workspace === "protocol") && <div hidden={workspace !== "protocol"}>
           <Suspense fallback={<p role="status">프로토콜 화면을 불러오고 있습니다…</p>}><ProtocolLab environment={currentEnv?.variables ?? []} native={isTauri()} /></Suspense>
         </div>}
-        {workspace !== "protocol" && (
+        {workspace !== "protocol" && section !== "history" && (
           <>
         {migrationNotice && <div className="migration-notice">{migrationNotice}</div>}
         {persistenceWarning && <div className="persistence-warning">{persistenceWarning}</div>}

@@ -3,6 +3,7 @@ import { configureProductTransport, type Component } from "@devbox/api-studio-fe
 import { describe, makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation, problemMessage, type Operation } from "@devbox/product-shell/operation";
 import { migrationFailure } from "./migration/protocol";
+import { componentFailure } from "./componentErrors";
 import catalog from "../../../apps/products.json";
 
 const routeFor: Record<Component, string> = {
@@ -22,6 +23,6 @@ configureProductTransport(async <T>(component: Component, method: string, args: 
     throw new Error("작업 응답의 출처를 확인할 수 없습니다.");
   }
   if (response.operation.outcome.state !== "succeeded" && component === "api-studio.migration") throw migrationFailure(response.value);
-  if (response.operation.outcome.state !== "succeeded") throw new Error("작업을 완료하지 못했습니다.");
+  if (response.operation.outcome.state !== "succeeded") throw componentFailure(component, response.value);
   return response.value;
 });

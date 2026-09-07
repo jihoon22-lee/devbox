@@ -28,6 +28,7 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
 
 pub const COMMANDS: &[&str] = &[
     "server_status",
+    "export_run_service_definition",
     "start_server",
     "stop_server",
     "list_history",
@@ -57,6 +58,18 @@ pub async fn dispatch(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     match method {
+        "export_run_service_definition" => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {}
+            let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            let mut definition =
+                crate::commands::export_run_service_definition(app.clone(), app.state())?;
+            for service in &mut definition.services {
+                service.name = service.name.replacen("Webhook Lab", "API Studio", 1);
+            }
+            serde_json::to_value(definition).map_err(|_| "component_response_invalid".into())
+        }
         "server_status" => crate::commands::__component_server_status(app, args).await,
         "start_server" => crate::commands::__component_start_server(app, args).await,
         "stop_server" => crate::commands::__component_stop_server(app, args).await,
@@ -93,4 +106,37 @@ pub fn prepare_api_handoff(
     saved: bool,
 ) -> Result<serde_json::Value, String> {
     crate::commands::prepare_api_handoff(app, args, saved)
+}
+
+/// Native product lifecycle owns only this process's temporary listener.
+pub fn listener_running(app: &tauri::AppHandle) -> bool {
+    app.try_state::<std::sync::Arc<crate::commands::ServerState>>()
+        .is_some_and(|state| crate::commands::server_status(state).running)
+}
+pub fn stop_owned_listener(app: &tauri::AppHandle) -> Result<(), String> {
+    crate::commands::stop_server(app.state()).map(|_| ())
+}
+/// A Runtime-owned process explicitly starts one validated profile. It does not
+/// initialize the interactive UI, a second listener or any API protocol session.
+pub fn start_owned_profile(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
+    let root = data_root(app).map_err(|_| "component_storage_unavailable")?;
+    let profile = crate::core::service_profile::load_profile(&root, id)?;
+    let state = app.state::<std::sync::Arc<crate::commands::ServerState>>();
+    *state
+        .rules
+        .lock()
+        .map_err(|_| "component_state_unavailable")? =
+        crate::core::service_profile::rules_map(&profile);
+    *state
+        .sequence_cursors
+        .lock()
+        .map_err(|_| "component_state_unavailable")? =
+        crate::core::rules::ResponseSequenceState::default();
+    crate::commands::start_server_inner(
+        state.inner(),
+        Some(profile.bind),
+        profile.port,
+        Some(false),
+    )
+    .map(|_| ())
 }
