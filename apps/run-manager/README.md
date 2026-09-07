@@ -18,7 +18,7 @@
 - **안전한 lifecycle action** — 작업 활성 실행과 서비스 정지는 모든 UI 진입점에서 확인하고, 활성 작업 삭제와 정지 중이거나 snapshot을 확인할 수 없는 서비스 lifecycle 변경은 fail-closed로 비활성화
 - **재시도 제어** — `retry_waiting` 서비스의 명시적 정지는 예약된 backoff를 취소하고, 재시작은 대기 시간을 건너뛰어 새 generation을 시작
 - **제한된 로그 저장** — backend가 run ID로 해석한 app-owned 회전 로그만 decimal cursor로 읽고, 현재 스트림을 최대 50MiB까지 저장. 파일명에는 bounded opaque run ID만 사용하며 명령·경로·환경변수를 넣지 않음
-- **실행 어댑터** — Windows(Job Object)·WSL(session/group), DPAPI 환경변수 보호
+- **실행 어댑터** — Windows(Job Object)·WSL(session/group), DPAPI 환경변수 보호. Windows shell은 OS가 반환한 system directory의 `cmd.exe`를 사용하며 작업 폴더·PATH·ComSpec에서 대체 shell을 선택하지 않는다.
 - **workspace task orchestration** — trusted VS Code task의 `dependsOn`을 parallel/sequence DAG로 실행하고, operation·child run 상태와 exact ownership을 저장. 중지·재시작 복구는 해당 operation이 만든 process tree만 대상으로 함
 - **problem matcher diagnostics** — 명시된 bounded matcher로 terminal child의 보존 로그를 검사하고, 안전한 project-relative file/line/column만 Code Pad로 열기
 - **Workbench task control** — Workbench의 start/stop은 typed one-time handoff와 Run Manager 확인 화면을 거치며, 처리 결과는 고정된 receipt로 남김

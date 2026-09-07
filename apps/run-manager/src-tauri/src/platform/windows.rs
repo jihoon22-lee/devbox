@@ -30,6 +30,7 @@ use windows::Win32::System::JobObjects::{
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows::Win32::System::Pipes::CreatePipe;
+use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 use windows::Win32::System::Threading::{
     CreateProcessW, DeleteProcThreadAttributeList, GetExitCodeProcess, GetProcessTimes,
     InitializeProcThreadAttributeList, OpenProcess, ResumeThread, TerminateProcess,
@@ -630,13 +631,34 @@ pub fn spawn(
     cwd: Option<&Path>,
     environment: &BTreeMap<String, String>,
 ) -> Result<WindowsChild, WindowsExecutionError> {
-    let shell_command = shell::build_windows_shell_command(command)?;
+    // A non-null lpApplicationName never searches PATH. Resolve the system
+    // shell natively so the launch also cannot select a caller-owned cmd.exe.
+    let application = system_shell()?;
+    let application = application.to_str().ok_or_else(|| {
+        WindowsExecutionError::Win32("system shell path could not be encoded".into())
+    })?;
+    let shell_command = shell::build_windows_shell_command_with_application(application, command)?;
     spawn_command_line(
         Some(&shell_command.application_name),
         &shell_command.command_line,
         cwd,
         environment,
     )
+}
+
+fn system_shell() -> Result<PathBuf, WindowsExecutionError> {
+    let mut buffer = vec![0u16; SHELL_STRING_CAPACITY];
+    let length = unsafe { GetSystemDirectoryW(Some(&mut buffer)) } as usize;
+    if length == 0 || length >= buffer.len() {
+        return Err(last_error("GetSystemDirectoryW"));
+    }
+    let directory = PathBuf::from(OsString::from_wide(&buffer[..length]));
+    if !directory.is_absolute() {
+        return Err(WindowsExecutionError::Win32(
+            "system directory is not absolute".into(),
+        ));
+    }
+    Ok(directory.join("cmd.exe"))
 }
 
 /// Spawn a process-mode workspace task without `cmd.exe`. The executable and
@@ -1015,6 +1037,34 @@ fn last_error(context: &'static str) -> WindowsExecutionError {
 #[cfg(test)]
 mod execution_tests {
     use super::*;
+    use std::io::Read;
+
+    #[test]
+    fn owned_shell_executes_from_an_unrelated_directory_with_a_local_cmd_decoy() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("synthetic task directory");
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("cmd.exe"), b"synthetic non-executable decoy").unwrap();
+        let application = system_shell().unwrap();
+        assert!(application.is_absolute());
+        assert_ne!(application.parent(), Some(directory.as_path()));
+        let mut child = spawn(
+            "echo foundation-fixture",
+            Some(&directory),
+            &BTreeMap::new(),
+        )
+        .unwrap();
+        let mut stdout = child.take_stdout_file().unwrap();
+        let mut stderr = child.take_stderr_file().unwrap();
+        assert_eq!(child.wait(Some(Duration::from_secs(10))).unwrap(), Some(0));
+        child.ensure_tree_gone(Duration::from_secs(5)).unwrap();
+        let mut output = String::new();
+        stdout.read_to_string(&mut output).unwrap();
+        assert_eq!(output.trim(), "foundation-fixture");
+        output.clear();
+        stderr.read_to_string(&mut output).unwrap();
+        assert!(output.is_empty());
+    }
 
     #[test]
     fn process_creation_contract_requires_suspended_hidden_extended_startup() {
