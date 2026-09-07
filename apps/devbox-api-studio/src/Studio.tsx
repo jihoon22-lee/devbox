@@ -2,6 +2,8 @@ import { lazy, Suspense, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 import { listen } from "@tauri-apps/api/event";
 import { nativeMode } from "@devbox/product-shell/api";
+import { componentInvoke } from "@devbox/api-studio-features/transport";
+const invokeNavigation = componentInvoke("api-studio.api");
 const Requests = lazy(() => import("@devbox/api-studio-features/requests"));
 const Webhooks = lazy(() => import("@devbox/api-studio-features/webhooks"));
 const Transforms = lazy(() => import("@devbox/api-studio-features/transforms"));
@@ -11,10 +13,22 @@ function Content({ route, navigate }: ShellContentProps) {
     if (!nativeMode) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
-    void listen<unknown>("api-studio://navigate", ({ payload }) => {
-      // Navigation is presentation only; receivers pull native pending slots.
-      if (!disposed && (payload === "requests" || payload === "transforms")) navigate(payload);
-    }).then((stop) => { if (disposed) stop(); else unlisten = stop; }).catch(() => undefined);
+    const consume = async () => {
+      if (disposed) return;
+      const pending = await invokeNavigation<unknown>("peek_pending_navigation");
+      if (disposed || !pending || typeof pending !== "object") return;
+      const value = pending as Record<string, unknown>;
+      if (typeof value.id !== "string" || !/^[a-f0-9]{32}$/.test(value.id)
+        || (value.route !== "requests" && value.route !== "transforms")) return;
+      navigate(value.route);
+      await invokeNavigation("ack_pending_navigation", { id: value.id });
+    };
+    const wake = () => { void consume().catch(() => undefined); };
+    // Events only wake the reader. Peek+ack retains a cold delivery until a
+    // mounted consumer handles it, including delayed listener registration.
+    void listen<unknown>("api-studio://navigate", wake).then((stop) => {
+      if (disposed) stop(); else { unlisten = stop; wake(); }
+    }).catch(wake);
     return () => { disposed = true; unlisten?.(); };
   }, [navigate]);
   const group = route === "webhooks" || route === "transforms" ? route : "requests";

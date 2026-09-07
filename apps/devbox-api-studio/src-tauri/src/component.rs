@@ -43,7 +43,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.api" => {
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
-                    || matches!(method, "pick_multipart_file" | "send_selection_to_toolbox"))
+                    || matches!(method, "pick_multipart_file" | "send_selection_to_toolbox")
+                    || crate::handoff::is_navigation(method))
         }
         "api-studio.webhooks" => {
             route == "webhooks"
@@ -105,7 +106,11 @@ async fn execute(
     // reserved across dialogs/long awaits even after the replay cache expires.
     let _reservation = reserve(&active, &request.header.request_id).map_err(problem)?;
     let app = window.app_handle();
-    let value = if crate::handoff::is_send(&request.component, &request.method) {
+    let value = if request.component == "api-studio.api"
+        && crate::handoff::is_navigation(&request.method)
+    {
+        crate::handoff::navigation(app, &request.method, request.args)
+    } else if crate::handoff::is_send(&request.component, &request.method) {
         crate::handoff::send(
             app,
             &request.component,

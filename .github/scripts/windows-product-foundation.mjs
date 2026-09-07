@@ -64,7 +64,11 @@ async function waitForRenderer(cdp, expression, label) {
     if (await cdp.evaluate(expression)) return;
     await delay(100);
   }
-  throw new Error(label);
+  // This runner contains only synthetic fixtures. Retain bounded UI state on
+  // failure so a delivery, route, IPC error and lazy-load failure are distinct.
+  const snapshot = await cdp.evaluate("({ route: document.querySelector('nav[aria-label=\"제품 화면\"] [aria-current=page]')?.textContent, dialogs: document.querySelectorAll(\"[role=dialog]\").length, text: (document.body?.innerText ?? \"\").slice(0, 12000) })");
+  writeFileSync(path.join("product-foundation-evidence", `renderer-failure-${Date.now()}.json`), JSON.stringify({ label, snapshot }, null, 2));
+  throw new Error(`${label}: route=${snapshot.route}, dialogs=${snapshot.dialogs}`);
 }
 
 async function start(product, suffix) {

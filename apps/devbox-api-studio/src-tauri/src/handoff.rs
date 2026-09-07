@@ -6,14 +6,57 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 
-struct Store(HandoffStore);
+struct Store {
+    handoffs: HandoffStore,
+    navigation: std::sync::Mutex<Option<Navigation>>,
+}
+#[derive(Clone, serde::Serialize)]
+struct Navigation {
+    id: String,
+    route: &'static str,
+}
+pub fn is_navigation(method: &str) -> bool {
+    matches!(method, "peek_pending_navigation" | "ack_pending_navigation")
+}
+pub fn navigation(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
+    let state = app.state::<Store>();
+    let mut pending = state
+        .navigation
+        .lock()
+        .map_err(|_| "handoff_navigation_unavailable")?;
+    match method {
+        "peek_pending_navigation" if args.as_object().is_some_and(|object| object.is_empty()) => {
+            serde_json::to_value(&*pending).map_err(|_| "handoff_navigation_unavailable".into())
+        }
+        "ack_pending_navigation" => {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {
+                id: String,
+            }
+            let Input { id } =
+                serde_json::from_value(args).map_err(|_| "handoff_navigation_invalid")?;
+            if id.len() != 32 {
+                return Err("handoff_navigation_invalid".into());
+            }
+            if pending.as_ref().is_some_and(|value| value.id == id) {
+                pending.take();
+            }
+            Ok(Value::Null)
+        }
+        _ => Err("handoff_navigation_invalid".into()),
+    }
+}
 pub fn initialize(app: &tauri::AppHandle) -> Result<HandoffStore, String> {
     let root = app
         .path()
         .app_local_data_dir()
         .map_err(|_| "handoff_storage_unavailable")?;
     let store = HandoffStore::new(root.join("handoff/v1"));
-    if !app.manage(Store(store.clone())) {
+    if !app.manage(Store {
+        handoffs: store.clone(),
+        navigation: std::sync::Mutex::new(None),
+    }) {
         return Err("handoff_state_conflict".into());
     }
     Ok(store)
@@ -122,7 +165,7 @@ pub fn send(
         }
         _ => return Err("handoff_route_invalid".into()),
     };
-    let mut result = publish(&store.0, create, provenance, now, |link| {
+    let mut result = publish(&store.handoffs, create, provenance, now, |link| {
         if route == "transforms" {
             developer_toolbox_lib::component::deliver(app, link)
         } else {
@@ -130,7 +173,17 @@ pub fn send(
         }
     })?;
     result["redacted"] = Value::Bool(redacted);
-    let _ = app.emit_to("main", "api-studio://navigate", route);
+    *store
+        .navigation
+        .lock()
+        .map_err(|_| "handoff_navigation_unavailable")? = Some(Navigation {
+        id: result["handoffId"]
+            .as_str()
+            .ok_or("handoff_navigation_invalid")?
+            .to_string(),
+        route,
+    });
+    let _ = app.emit_to("main", "api-studio://navigate", ());
     Ok(result)
 }
 
