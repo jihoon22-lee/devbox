@@ -25,6 +25,8 @@ assert "baseline manifest digest mismatch" in installer
 assert "baseline tag commit mismatch" in installer
 assert "product uninstall changed anchor installation or shortcut" in installer
 assert "window-state-v1.json" in installer
+assert "FindMainWindow($process.Id, $Title)" in installer
+assert "owner != processId || !IsWindowVisible(window)" in installer
 assert '. "$PSScriptRoot/windows-installer-helpers.ps1"' in installer
 assert "windows-product-installation.ps1" in workflow
 print("Hidden product build/probe target and host boundary: PASS")
