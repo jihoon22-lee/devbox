@@ -120,6 +120,8 @@ impl Drop for DigestOperationGuard {
 
 /// 앱 전역 상태: DB 커넥션 + 세션 병합기 + 추적 플래그
 pub struct AppState {
+    /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
+    pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
     pub sessionizer: Mutex<Sessionizer>,
     pub tracking: AtomicBool,
@@ -298,6 +300,79 @@ fn last_input_ms() -> Option<i64> {
 #[cfg(not(target_os = "windows"))]
 fn last_input_ms() -> Option<i64> {
     None
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_start_tracking(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = start_tracking(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_stop_tracking(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    stop_tracking(component_app.state())?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_is_tracking(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = is_tracking(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_set_idle_threshold(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        threshold_ms: i64,
+    }
+    let Input { threshold_ms } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    set_idle_threshold(component_app.state(), threshold_ms)?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_get_idle_threshold(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = get_idle_threshold(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

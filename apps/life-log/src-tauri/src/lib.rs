@@ -1,4 +1,5 @@
 mod commands;
+pub mod component;
 mod core;
 mod integration;
 
@@ -80,6 +81,7 @@ pub fn run() {
                 eprintln!("devbox: activity-timeline 흡수 실패, 다음 실행에서 재시도: {error}");
             }
             let state = Arc::new(AppState {
+                integration_root: None,
                 db: Mutex::new(conn),
                 sessionizer: Mutex::new(Sessionizer::new()),
                 tracking: AtomicBool::new(true),

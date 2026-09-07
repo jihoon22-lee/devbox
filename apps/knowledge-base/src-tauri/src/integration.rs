@@ -37,10 +37,12 @@ struct KnowledgeDailyActivityEntry {
 }
 
 /// Knowledge activity snapshot을 쓴다. 실패해도 앱 동작을 막지 않는다.
-pub fn write_snapshot(db: &Connection) -> Result<(), String> {
+pub fn write_snapshot(db: &Connection, integration_root: Option<&Path>) -> Result<(), String> {
     write_snapshot_in(
         db,
-        &devbox_integration::integration_root(),
+        &integration_root
+            .map(Path::to_path_buf)
+            .unwrap_or_else(devbox_integration::integration_root),
         current_epoch_ms(),
     )
 }

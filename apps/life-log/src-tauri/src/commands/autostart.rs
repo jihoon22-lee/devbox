@@ -114,3 +114,32 @@ fn delete_value() -> Result<(), String> {
         .delete_value(VALUE_NAME)
         .map_err(|e| e.to_string())
 }
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_autostart_status(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = autostart_status();
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_set_autostart(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        enabled: bool,
+    }
+    let Input { enabled } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = set_autostart(enabled)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}

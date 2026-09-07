@@ -1,5 +1,6 @@
 mod applink;
 mod commands;
+pub mod component;
 mod core;
 
 use commands::indexing::AppState;
@@ -82,6 +83,7 @@ pub fn run() {
             std::fs::create_dir_all(&dir)?;
             let (conn, index_cleared) = core::db::init(&dir.join("data.db"))?;
             let state = Arc::new(AppState {
+                integration_root: None,
                 db: Mutex::new(conn),
                 lifecycle: Mutex::new(()),
                 indexing: AtomicBool::new(false),

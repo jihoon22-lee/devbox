@@ -526,7 +526,13 @@ pub fn prepare_document(
     projects: &[String],
     input: &ExportInput,
 ) -> Result<PreparedExport, String> {
-    prepare_document_inner(conn, projects, input, None)
+    prepare_document_inner(
+        conn,
+        projects,
+        input,
+        None,
+        &devbox_integration::integration_root(),
+    )
 }
 
 /// Prepare an export using a caller-owned cancellation flag. DB progress is
@@ -537,7 +543,25 @@ pub fn prepare_document_with_cancel(
     input: &ExportInput,
     cancellation: Arc<AtomicBool>,
 ) -> Result<PreparedExport, String> {
-    prepare_document_inner(conn, projects, input, Some(cancellation))
+    prepare_document_inner(
+        conn,
+        projects,
+        input,
+        Some(cancellation),
+        &devbox_integration::integration_root(),
+    )
+}
+
+/// Product callers supply a native-owned snapshot namespace. An absent source
+/// stays unavailable; this never falls back to another installation's snapshots.
+pub fn prepare_document_in(
+    conn: &Connection,
+    projects: &[String],
+    input: &ExportInput,
+    cancellation: Option<Arc<AtomicBool>>,
+    integration_root: &Path,
+) -> Result<PreparedExport, String> {
+    prepare_document_inner(conn, projects, input, cancellation, integration_root)
 }
 
 fn prepare_document_inner(
@@ -545,6 +569,7 @@ fn prepare_document_inner(
     projects: &[String],
     input: &ExportInput,
     cancellation: Option<Arc<AtomicBool>>,
+    integration_root: &Path,
 ) -> Result<PreparedExport, String> {
     validate_project_settings(projects)?;
     let range = validate_range(input)?;
@@ -615,9 +640,9 @@ fn prepare_document_inner(
         .map(|path| path.into_string())
         .collect::<Vec<_>>();
     check_cancelled(cancellation.as_deref())?;
-    let run_source = read_run_daily_source(&range);
+    let run_source = read_run_daily_source_in(integration_root, &range);
     check_cancelled(cancellation.as_deref())?;
-    let knowledge_source = read_knowledge_daily_source(&range);
+    let knowledge_source = read_knowledge_daily_source_in(integration_root, &range);
     check_cancelled(cancellation.as_deref())?;
     Ok(PreparedExport {
         range,
@@ -2169,10 +2194,6 @@ struct KnowledgeDailySnapshot {
     last_modified_at_ms: Option<i64>,
 }
 
-fn read_run_daily_source(range: &ValidatedRange) -> DailySourceResult<RunDailyValue> {
-    read_run_daily_source_in(&devbox_integration::integration_root(), range)
-}
-
 fn read_run_daily_source_in(
     root: &Path,
     range: &ValidatedRange,
@@ -2202,10 +2223,6 @@ fn read_run_daily_source_in(
             },
         })
     })
-}
-
-fn read_knowledge_daily_source(range: &ValidatedRange) -> DailySourceResult<KnowledgeDailyValue> {
-    read_knowledge_daily_source_in(&devbox_integration::integration_root(), range)
 }
 
 fn read_knowledge_daily_source_in(
@@ -3000,6 +3017,47 @@ mod tests {
             "failed": 1,
             "lastRunAtMs": start_ms + 1,
         })
+    }
+
+    #[test]
+    fn product_export_uses_only_the_selected_snapshot_namespace() {
+        let first = SourceFixture::new();
+        let second = SourceFixture::new();
+        let empty = SourceFixture::new();
+        let connection = database();
+        let request = input(ExportFormat::Json);
+        for (root, count) in [(first.path(), 2), (second.path(), 40)] {
+            write_daily_sidecar(
+                root,
+                "run-manager",
+                vec![
+                    run_day("2024-01-01", 0, DAY_MS, count),
+                    run_day("2024-01-02", DAY_MS, DAY_MS * 2, count),
+                ],
+            );
+        }
+        let first_export =
+            prepare_document_in(&connection, &[], &request, None, first.path()).unwrap();
+        let second_export =
+            prepare_document_in(&connection, &[], &request, None, second.path()).unwrap();
+        assert_eq!(
+            complete_run_digest(&first_export.run_source)
+                .unwrap()
+                .unwrap()
+                .succeeded,
+            4
+        );
+        assert_eq!(
+            complete_run_digest(&second_export.run_source)
+                .unwrap()
+                .unwrap()
+                .succeeded,
+            80
+        );
+        let absent = prepare_document_in(&connection, &[], &request, None, empty.path()).unwrap();
+        assert!(!absent.run_source.metadata.available);
+        assert!(!absent.knowledge_source.metadata.available);
+        assert!(complete_run_digest(&absent.run_source).unwrap().is_none());
     }
 
     #[test]

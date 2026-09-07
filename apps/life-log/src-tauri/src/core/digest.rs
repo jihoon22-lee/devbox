@@ -415,6 +415,23 @@ pub fn prepare_with_cancel(
     export::prepare_document_with_cancel(conn, projects, &export_input(input), cancellation)
 }
 
+pub fn prepare_with_cancel_in(
+    conn: &Connection,
+    projects: &[String],
+    input: &DigestInput,
+    cancellation: Arc<AtomicBool>,
+    integration_root: &std::path::Path,
+) -> Result<export::PreparedExport, String> {
+    validate_input(input)?;
+    export::prepare_document_in(
+        conn,
+        projects,
+        &export_input(input),
+        Some(cancellation),
+        integration_root,
+    )
+}
+
 /// Build a small digest from the already bounded export snapshot.  No network,
 /// LLM, filesystem, or external process is introduced here; those boundaries
 /// are inherited from `core::export`.

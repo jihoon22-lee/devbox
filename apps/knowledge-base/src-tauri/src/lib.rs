@@ -1,5 +1,6 @@
 mod applink;
 mod commands;
+pub mod component;
 mod core;
 mod integration;
 mod platform;
@@ -117,6 +118,7 @@ pub fn run() {
                 }
             }
             let state = Arc::new(AppState {
+                integration_root: None,
                 db: Mutex::new(conn),
                 rename_plans: Mutex::new(core::rename::RenamePlanStore::default()),
                 quick_capture_previews: Mutex::new(
@@ -131,7 +133,10 @@ pub fn run() {
                 watcher.restore_root(&root);
             }
             // integration snapshot producer (두 번째, §10.1)
-            let _ = integration::write_snapshot(&state.db.lock().unwrap());
+            let _ = integration::write_snapshot(
+                &state.db.lock().unwrap(),
+                state.integration_root.as_deref(),
+            );
             let shortcut_state = Arc::new(platform::QuickCaptureShortcutState::default());
             app.manage(shortcut_state.clone());
             platform::install(app.handle().clone(), shortcut_state);

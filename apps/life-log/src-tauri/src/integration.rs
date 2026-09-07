@@ -50,7 +50,11 @@ fn write_snapshot(state: &AppState) -> Result<(), String> {
             .map_err(|_| "Life Log 데이터베이스를 잠글 수 없습니다".to_string())?;
         build_envelope(&connection, now_ms())?
     };
-    let directory = devbox_integration::snapshot_dir(PRODUCER_ID, 1);
+    let root = state
+        .integration_root
+        .clone()
+        .unwrap_or_else(devbox_integration::integration_root);
+    let directory = devbox_integration::snapshot_dir_in(&root, PRODUCER_ID, 1);
     devbox_integration::write_atomic(&envelope, &directory)
 }
 

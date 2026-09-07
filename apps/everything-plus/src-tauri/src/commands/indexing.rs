@@ -29,6 +29,8 @@ const INDEX_ERROR: &str = "인덱스를 처리할 수 없습니다.";
 
 /// 앱 전역 상태.
 pub struct AppState {
+    /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
+    pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
     /// Serializes the indexing worker lifecycle with queued restart/cancel
     /// transitions. Without this gate a root change could race the worker's
@@ -653,6 +655,104 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_add_root(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        index_content: bool,
+    }
+    let Input {
+        path,
+        index_content,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    add_root(
+        component_app.clone(),
+        component_app.state(),
+        path,
+        index_content,
+    )?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_remove_root(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let Input { path } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    remove_root(component_app.clone(), component_app.state(), path)?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_list_roots(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_roots(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_index_now(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    index_now(component_app.state())?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_cancel_index(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    cancel_index(component_app.state())?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_index_status(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = index_status(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -667,6 +767,7 @@ mod tests {
 
     fn state(conn: Connection) -> Arc<AppState> {
         Arc::new(AppState {
+            integration_root: None,
             db: Mutex::new(conn),
             lifecycle: Mutex::new(()),
             indexing: AtomicBool::new(false),
