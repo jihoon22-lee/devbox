@@ -37,6 +37,11 @@ function powershell(value, action) {
   if (result.status !== 0) throw new Error("owned process window query failed"); return result.stdout.trim();
 }
 const handle = value => powershell(value, "$p.MainWindowHandle.ToInt64()");
+function windowDetails(value) {
+  return JSON.parse(powershell(value, `
+Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public static class FixtureWindow { [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder name, int length); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); }';
+$h=$p.MainWindowHandle; $name=New-Object Text.StringBuilder 256; $null=[FixtureWindow]::GetClassName($h,$name,256); @{ handle=$h.ToInt64(); class=$name.ToString(); visible=[FixtureWindow]::IsWindowVisible($h) } | ConvertTo-Json -Compress`));
+}
 const closeWindow = value => powershell(value, "$null=$p.CloseMainWindow()");
 async function startUi() {
   const port = await unusedPort();
@@ -72,7 +77,9 @@ try {
   await until(async () => !await responding(servicePort), "default close left the temporary listener running");
   progress("owned-service");
   const worker = await child(["--service-profile", service.id], environment());
-  await until(() => responding(servicePort), "explicit service did not start"); assert.equal(handle(worker), "0", "service worker must have no interactive window");
+  await until(() => responding(servicePort), "explicit service did not start");
+  evidence.serviceWindow = windowDetails(worker);
+  assert.equal(handle(worker), "0", "service worker must have no interactive window");
   ui = await startUi(); assert.equal((await success(ui, "server_status")).running, false);
   const refused = await command(ui, "start_server", { bind: "127.0.0.1", port: servicePort, allowLan: false }); assert.equal(refused.operation.outcome.state, "failed"); assert.equal(await responding(servicePort), true);
   const temporaryPort = await unusedPort(); await success(ui, "start_server", { bind: "127.0.0.1", port: temporaryPort, allowLan: false });

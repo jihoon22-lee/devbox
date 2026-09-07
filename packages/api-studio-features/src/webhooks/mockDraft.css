@@ -1,0 +1,10 @@
+.mock-draft-action { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 8px; }
+.mock-draft-action [role="status"] { font-size: 12px; }
+.mock-draft-backdrop { position: fixed; inset: 0; z-index: 1200; padding: 24px; background: #0009; display: grid; place-items: center; }
+.mock-draft-dialog { width: min(680px, 100%); padding: 24px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); max-height: 85vh; overflow: auto; }
+.mock-draft-dialog h2 { margin: 0 0 12px; font-size: 18px; }
+.mock-draft-dialog p { font-size: 12px; line-height: 1.6; }
+.mock-draft-dialog pre { padding: 12px; max-height: 300px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 12px; background: var(--bg); }
+.mock-draft-dialog dl { font-size: 12px; display: flex; flex-wrap: wrap; gap: 16px; }
+.mock-draft-dialog dd { margin: 6px 0; }
+.mock-draft-dialog .btn { margin-right: 8px; }

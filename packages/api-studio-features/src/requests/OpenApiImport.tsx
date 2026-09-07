@@ -1,5 +1,8 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
 import { fetchOpenApiSource } from "./api";
+import { isProductHosted } from "../transport";
+import { MockDraftAction } from "../webhooks/MockDraftAction";
+import { previewOpenApiRules, type OpenApiRuleOperation } from "../webhooks/lib/openapiRules";
 import {
   displayOpenApiFileName,
   OPENAPI_LIMITS,
@@ -7,6 +10,7 @@ import {
   selectOpenApiServer,
   type OpenApiImportPreview,
   type OpenApiOperationPreview,
+  type OpenApiSource,
 } from "./lib/openapi";
 
 interface OpenApiImportProps {
@@ -21,6 +25,7 @@ function issueText(operation: OpenApiOperationPreview): string {
 }
 
 export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiImportProps) {
+  const [mockOperations, setMockOperations] = useState<OpenApiRuleOperation[]>([]);
   const [preview, setPreview] = useState<OpenApiImportPreview | null>(null);
   const [selected, setSelected] = useState<Record<string, boolean>>({});
   const [serverIndex, setServerIndex] = useState<number | null>(null);
@@ -53,9 +58,17 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
 
   const selectedOperations = displayedPreview?.operations.filter((operation) => selected[operation.id] && operation.applyable) ?? [];
   const selectedApplyable = selectedOperations.length === 1 ? selectedOperations[0] : null;
+  const selectedMock = selectedApplyable && mockOperations.find(operation => operation.applyable
+    && operation.method === selectedApplyable.method && operation.path === selectedApplyable.path);
+  const parseSource = (source: OpenApiSource) => {
+    const result = parseOpenApiSource(source);
+    const mock = isProductHosted() && result.ok
+      ? previewOpenApiRules(source.text, result.preview.format, "OpenAPI") : null;
+    return { ...result, mockOperations: mock?.ok ? mock.preview.operations : [] };
+  };
 
   const loadPreview = async (
-    loader: () => Promise<ReturnType<typeof parseOpenApiSource>>,
+    loader: () => Promise<ReturnType<typeof parseSource>>,
     failureMessage: string,
   ) => {
     if (busyRef.current || applyingRef.current) return;
@@ -64,6 +77,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
     setBusy(true);
     setError(null);
     setPreview(null);
+    setMockOperations([]);
     setSelected({});
     setServerIndex(null);
     try {
@@ -75,6 +89,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
       }
       const firstServer = result.preview.servers[0]?.index ?? null;
       setPreview(result.preview);
+      setMockOperations(result.mockOperations);
       setServerIndex(firstServer);
       setSelected(Object.fromEntries(
         result.preview.operations.map((operation) => [operation.id, operation.applyable]),
@@ -104,7 +119,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
     }
     await loadPreview(async () => {
       const text = await file.text();
-      return parseOpenApiSource({ kind: "file", name: file.name, text });
+      return parseSource({ kind: "file", name: file.name, text });
     }, "OpenAPI 파일을 안전하게 읽지 못했습니다.");
   };
 
@@ -117,7 +132,7 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
     }
     await loadPreview(async () => {
       const source = await fetchOpenApiSource(url);
-      return parseOpenApiSource({ kind: "url", format: source.format, text: source.text });
+      return parseSource({ kind: "url", format: source.format, text: source.text });
     }, "OpenAPI URL을 안전하게 가져오지 못했습니다.");
   };
 
@@ -311,6 +326,9 @@ export function OpenApiImport({ onClose, onApply, onAddToCollection }: OpenApiIm
         <div className="openapi-dialog-actions">
           <span className="dim">체크한 operation은 새 항목으로만 추가되며 기존 컬렉션을 덮어쓰지 않습니다.</span>
           <div className="openapi-action-buttons">
+            {isProductHosted() && selectedMock && <MockDraftAction value="" owner="api-studio.api" status={selectedMock.status}
+              requestTarget={selectedMock.path} requestMethod={selectedMock.method} disabled={busy || applying}
+              onSent={onClose} label="선택 operation을 Mock 초안으로" />}
             <button className="btn" type="button" onClick={applyCurrent} disabled={!selectedApplyable || busy || applying}>
               현재 초안에 적용
             </button>

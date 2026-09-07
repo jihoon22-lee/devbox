@@ -6,6 +6,7 @@ mod knowledge;
 mod lifecycle;
 mod migration;
 mod migration_export;
+mod mock_draft;
 mod platform;
 mod service_worker;
 

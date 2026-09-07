@@ -1,14 +1,20 @@
-import { useEffect, useState } from "react";
+import { createContext, useContext, useEffect, useState } from "react";
 import { diff } from "../api";
 import type { DiffHunk } from "../types";
 import { ToolOutput, ToolTextArea } from "./common";
 
 const KIND_CLASS = ["diff-eq", "diff-add", "diff-del"];
+export const DiffDraftContext = createContext<{
+  a: string; b: string; setA: (value: string) => void; setB: (value: string) => void;
+} | null>(null);
 
 /** 라인 단위 diff를 두 컬럼으로 표시하는 도구 */
 export function DiffTool() {
-  const [a, setA] = useState("");
-  const [b, setB] = useState("");
+  const shared = useContext(DiffDraftContext);
+  const [localA, setLocalA] = useState("");
+  const [localB, setLocalB] = useState("");
+  const a = shared?.a ?? localA, b = shared?.b ?? localB;
+  const setA = shared?.setA ?? setLocalA, setB = shared?.setB ?? setLocalB;
   const [hunks, setHunks] = useState<DiffHunk[]>([]);
 
   useEffect(() => {

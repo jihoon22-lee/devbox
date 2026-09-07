@@ -66,6 +66,10 @@ pub fn is_send(component: &str, method: &str) -> bool {
     matches!(
         (component, method),
         ("api-studio.api", "send_selection_to_toolbox")
+            | (
+                "api-studio.api" | "api-studio.transforms",
+                "send_mock_draft"
+            )
             | ("api-studio.transforms", "create_api_request_handoff")
             | (
                 "api-studio.webhooks",
@@ -124,6 +128,10 @@ pub fn send(
         .ok_or("handoff_clock_invalid")?;
     let store = app.state::<Store>();
     let (create, route, redacted) = match (component, method) {
+        ("api-studio.api" | "api-studio.transforms", "send_mock_draft") => {
+            let (create, redacted) = crate::core::mock_draft::prepare(component, args)?;
+            (create, "webhooks", redacted)
+        }
         ("api-studio.transforms", "create_api_request_handoff") => {
             let (payload, redacted) = prepare_transform_request(args)?;
             (
@@ -182,6 +190,8 @@ pub fn send(
     let mut result = publish(&store.handoffs, create, provenance, now, |link| {
         if route == "transforms" {
             developer_toolbox_lib::component::deliver(app, link)
+        } else if route == "webhooks" {
+            crate::mock_draft::deliver(app, link)
         } else {
             api_playground_lib::component::deliver(app, link)
         }
@@ -198,6 +208,9 @@ pub fn send(
         route,
     });
     let _ = app.emit_to("main", "api-studio://navigate", ());
+    if route == "webhooks" {
+        let _ = app.emit_to("main", "api-studio://mock-draft", ());
+    }
     Ok(result)
 }
 

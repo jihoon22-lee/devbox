@@ -119,6 +119,7 @@ impl Store {
             || provenance.product != "api-studio"
             || provenance.component != self.component
             || provenance.revision == 0
+            || provenance.revision > 9_007_199_254_740_991
             || provenance.request_id.is_empty()
             || provenance.request_id.len() > 64
             || !provenance
@@ -129,6 +130,11 @@ impl Store {
             || draft.created_at_ms > 9_007_199_254_740_991
             || draft.title != self.title()
             || draft.body.len() > 512 * 1024
+            || draft.body.trim().is_empty()
+            || draft
+                .body
+                .chars()
+                .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
             || draft.body.chars().count() > 256_000
             || applink::validate_handoff_text(&draft.body).is_err()
         {

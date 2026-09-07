@@ -59,6 +59,7 @@ async function connect(port, child) {
         try { await command("Runtime.enable"); await command("Log.enable"); await command("Page.enable"); } catch (error) { socket.close(); throw error; }
         return {
           close: () => socket.close(),
+          command,
           async evaluate(expression) {
             const next = ++id;
             const result = await new Promise((resolve, reject) => {
@@ -211,6 +212,37 @@ async function start(product, suffix) {
       await waitForRenderer(cdp, '!!document.querySelector(".api-feature-requests:not([hidden]) [role=dialog]")', "transform request preview did not open");
       assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-requests [role=dialog]")?.textContent ?? "").includes("synthetic-output-secret")'), false);
       componentProbe.outputPolicy = outputPolicy;
+
+      progress(product, suffix, "mock-draft-preview");
+      assert.equal(await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
+          requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "requests" };
+        const sent = await invoke("plugin:api-studio|execute", { request: { header, component: "api-studio.api", method: "send_mock_draft",
+          args: { output: "mock-fixture\\nAuthorization: Bearer synthetic-mock-secret", status: 201 } } });
+        return sent.operation.outcome.state === "succeeded";
+      })()`), true);
+      await waitForRenderer(cdp, '!!document.querySelector(".api-feature-webhooks:not([hidden]) .mock-draft-dialog")', "Mock preview did not open");
+      assert.equal(await cdp.evaluate('document.querySelector(".mock-draft-dialog").textContent.includes("synthetic-mock-secret")'), false);
+      const shot = await cdp.command("Page.captureScreenshot", { format: "png" });
+      writeFileSync(`product-foundation-evidence/mock-preview-${suffix}.png`, Buffer.from(shot.data, "base64"));
+      await cdp.evaluate('Array.from(document.querySelectorAll(".mock-draft-dialog button")).find(button => button.textContent.trim() === "현재 규칙 초안 대신 적용").click()');
+      await waitForRenderer(cdp, 'document.querySelector("#rule-body")?.value.includes("mock-fixture") && !document.querySelector(".mock-draft-dialog")', "Mock preview was not explicitly applied");
+      const mockDraft = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const call = (method) => invoke("plugin:api-studio|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId,
+            requestId: crypto.randomUUID(), deadlineMs: Date.now() + 5000, route: "webhooks" },
+          component: "api-studio.webhooks", method, args: {}
+        } });
+        const rules = await call("list_rules"); const status = await call("server_status");
+        return { editorOnly: rules.value.length === 0, listenerStopped: !status.value.running,
+          status: document.querySelector("#rule-status").value, redacted: document.querySelector("#rule-body").value.includes("[REDACTED]") };
+      })()`);
+      assert.deepEqual(mockDraft, { editorOnly: true, listenerStopped: true, status: "201", redacted: true });
+      componentProbe.mockDraft = mockDraft;
 
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });

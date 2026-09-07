@@ -46,6 +46,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.api" => {
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
+                    || crate::handoff::is_send(component, method)
                     || crate::knowledge::is_command(component, method)
                     || matches!(method, "pick_multipart_file" | "send_selection_to_toolbox")
                     || crate::handoff::is_navigation(method))
@@ -53,6 +54,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "api-studio.webhooks" => {
             route == "webhooks"
                 && (webhook_lab_lib::component::COMMANDS.contains(&method)
+                    || crate::mock_draft::COMMANDS.contains(&method)
                     || matches!(method, "send_history_to_api" | "send_fixture_to_api")
                     || crate::lifecycle::COMMANDS.contains(&method))
         }
@@ -153,6 +155,10 @@ async fn execute(
         )
         .await
     } else if request.component == "api-studio.webhooks"
+        && crate::mock_draft::COMMANDS.contains(&request.method.as_str())
+    {
+        crate::mock_draft::dispatch(app, &request.method, request.args)
+    } else if request.component == "api-studio.webhooks"
         && crate::lifecycle::COMMANDS.contains(&request.method.as_str())
     {
         crate::lifecycle::dispatch(app, &request.method, request.args)
@@ -240,6 +246,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             app.manage(Active::default());
             crate::migration::initialize(app).map_err(std::io::Error::other)?;
             let store = crate::handoff::initialize(app).map_err(std::io::Error::other)?;
+            crate::mock_draft::initialize(app, store.clone()).map_err(std::io::Error::other)?;
             api_playground_lib::component::initialize(app, store.clone())
                 .map_err(std::io::Error::other)?;
             webhook_lab_lib::component::initialize(app).map_err(std::io::Error::other)?;

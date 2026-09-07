@@ -13,6 +13,12 @@ pub fn argument(args: &[String]) -> Result<Option<String>, String> {
     Ok(value)
 }
 pub fn run(id: String, mut context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
+    // A debug executable can inherit or allocate a console even without a
+    // WebView. Explicit service mode owns no interactive console lifetime.
+    #[cfg(windows)]
+    unsafe {
+        let _ = windows::Win32::System::Console::FreeConsole();
+    }
     product_shell_tauri::isolate_installation(&mut context)?;
     context.config_mut().app.windows.clear();
     let app = tauri::Builder::default()

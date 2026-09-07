@@ -78,3 +78,13 @@ reopen, export or explicitly delete saved drafts after restart. Each owner keeps
 at most 50 drafts with 512 KiB text bounds; full stores require explicit deletion.
 Future/corrupt records and linked paths are preserved and rejected. Durable
 artifact IDs do not expire with handoff leases and grant no cross-owner access.
+
+Response bodies, eligible transform results and supported OpenAPI operations can
+open a `mock-rule-draft/v1` preview in Webhooks. The recipient validates the HTTP
+matching target, method, status and bounded masked body, with only a fixed content
+type header. It never imports response credentials, file paths or execution flags.
+Explicit apply replaces only the rule editor draft; rule storage and listener
+startup remain separate actions. A busy preview is retained and each accepted or
+cancelled publication is consumed once. Selected response text can also explicitly
+replace either side of a Transforms comparison; those two inputs survive product
+tool navigation without copying the text into metadata/history.

@@ -11,6 +11,8 @@ import {
 } from "./api";
 import { GROUPS, TOOLS } from "./tools";
 import { OutputSourceContext } from "./tools/outputPolicy";
+import { DiffDraftContext } from "./tools/diff";
+import { isProductHosted } from "../transport";
 import {
   SmartWorkflowPanel,
   type SmartWorkflowIncomingText,
@@ -72,6 +74,8 @@ export default function App() {
   const [handoffBusy, setHandoffBusy] = useState(false);
   const [handoffError, setHandoffError] = useState<string | null>(null);
   const [incomingText, setIncomingText] = useState<SmartWorkflowIncomingText | null>(null);
+  const [diffA, setDiffA] = useState("");
+  const [diffB, setDiffB] = useState("");
   const handoffPreviewRef = useRef<ToolboxTextHandoffPreview | null>(null);
   const handoffBusyRef = useRef(false);
   const handoffGenerationRef = useRef(0);
@@ -373,6 +377,11 @@ export default function App() {
       </aside>
       <main className="content">
         {handoffError ? <div className="toolbox-handoff-error" role="alert">{handoffError}</div> : null}
+        {isProductHosted() && incomingText && <section className="incoming-diff-actions" aria-label="전달받은 결과 비교">
+          <p>확인한 전달 결과를 비교 입력으로 사용할 수 있습니다. 각 버튼은 선택한 쪽의 입력만 바꿉니다.</p>
+          <button className="btn" onClick={() => { setDiffA(incomingText.text); setActiveId("diff"); }}>비교의 이전 입력으로</button>
+          <button className="btn" onClick={() => { setDiffB(incomingText.text); setActiveId("diff"); }}>비교의 새 입력으로</button>
+        </section>}
         <SmartWorkflowPanel
           activeToolId={activeId}
           onOpenTool={setActiveId}
@@ -380,7 +389,9 @@ export default function App() {
         />
         <h2 className="tool-title">{active.name}</h2>
         <OutputSourceContext value={{ kind: "tool", toolId: active.id }}>
-          <ActiveComponent />
+          <DiffDraftContext value={isProductHosted() ? { a: diffA, b: diffB, setA: setDiffA, setB: setDiffB } : null}>
+            <ActiveComponent />
+          </DiffDraftContext>
         </OutputSourceContext>
       </main>
       {handoffPreview ? (

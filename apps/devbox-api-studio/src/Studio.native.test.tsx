@@ -35,6 +35,7 @@ it("opens a native-owned pending transform preview through the actual hosted tra
     else if (request.method === "load_workflow_metadata") value = { metadata: { schemaVersion: 1, recentTools: [], favoriteTools: [], pipelines: [] }, writable: true };
     else if (request.method === "preview_toolbox_text") value = { handoffId: id, producerId: "api-playground", expiresAtMs: Date.now() + 600_000, text: "fixture [REDACTED]", redacted: true };
     else if (request.method === "accept_toolbox_text") value = "fixture [REDACTED]";
+    else if (request.method === "diff") value = [];
     else if (["discard_current_response", "save_workflow_metadata"].includes(request.method)) value = null;
     else throw new Error(`unexpected fixture method ${request.method}`);
     return { operation: { provenance: { product: "api-studio", component: request.component, requestId: request.header.requestId, revision: catalog.catalogRevision }, outcome: { state: "succeeded" } }, value };
@@ -55,4 +56,10 @@ it("opens a native-owned pending transform preview through the actual hosted tra
   await screen.findByRole("dialog", { name: "Toolbox 텍스트 미리보기" }, { timeout: 10_000 });
   fireEvent.click(screen.getByRole("button", { name: "적용" }));
   await waitFor(() => expect((screen.getByRole("textbox", { name: "스마트 워크플로 입력" }) as HTMLTextAreaElement).value).toBe("fixture [REDACTED]"));
+  fireEvent.click(screen.getByRole("button", { name: "비교의 이전 입력으로" }));
+  expect((screen.getByRole("textbox", { name: "이전 버전 입력" }) as HTMLTextAreaElement).value).toBe("fixture [REDACTED]");
+  expect((screen.getByRole("textbox", { name: "새 버전 입력" }) as HTMLTextAreaElement).value).toBe("");
+  fireEvent.click(screen.getAllByRole("button", { name: "포매터" })[0]);
+  fireEvent.click(screen.getAllByRole("button", { name: "텍스트 차이" })[0]);
+  expect((screen.getByRole("textbox", { name: "이전 버전 입력" }) as HTMLTextAreaElement).value).toBe("fixture [REDACTED]");
 }, 30_000);

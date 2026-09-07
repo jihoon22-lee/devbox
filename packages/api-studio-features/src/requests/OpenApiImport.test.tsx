@@ -5,12 +5,15 @@ import { OpenApiImport } from "./OpenApiImport";
 import type { OpenApiOperationPreview } from "./lib/openapi";
 
 vi.mock("./api", () => ({ fetchOpenApiSource: vi.fn() }));
+const product = vi.hoisted(() => ({ enabled: false, invoke: vi.fn() }));
+vi.mock("../transport", () => ({ isProductHosted: () => product.enabled, componentInvoke: () => product.invoke }));
 
 const mockedFetchOpenApiSource = vi.mocked(fetchOpenApiSource);
 
 afterEach(() => {
   cleanup();
   mockedFetchOpenApiSource.mockReset();
+  product.enabled = false; product.invoke.mockReset();
 });
 
 function fixture(paths: Record<string, unknown> = { "/users": { get: {} } }): string {
@@ -37,6 +40,21 @@ function setup() {
 }
 
 describe("OpenApiImport", () => {
+  it("hands a selected operation to the product Mock preview without applying or sending a request", async () => {
+    product.enabled = true; product.invoke.mockResolvedValue(undefined);
+    const { onClose, onApply, onAddToCollection } = setup();
+    fireEvent.change(screen.getByLabelText("로컬 파일 선택"), { target: { files: [fileWithText(fixture({
+      "/users": { get: { responses: { "201": { description: "created" } } } },
+    }))] } });
+    await screen.findByText("GET /users");
+    expect(product.invoke).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: "선택 operation을 Mock 초안으로" }));
+    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(product.invoke).toHaveBeenCalledExactlyOnceWith("send_mock_draft", {
+      output: "", status: 201, mediaType: "text", requestTarget: "/users", requestMethod: "GET",
+    });
+    expect(onApply).not.toHaveBeenCalled(); expect(onAddToCollection).not.toHaveBeenCalled();
+  });
   it("reads only a local file, previews it, and applies only after explicit confirmation", async () => {
     const { onClose, onApply } = setup();
     fireEvent.change(screen.getByLabelText("로컬 파일 선택"), {

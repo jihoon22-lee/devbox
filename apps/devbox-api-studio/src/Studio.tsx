@@ -21,7 +21,7 @@ function Content({ route, navigate }: ShellContentProps) {
       if (disposed || !pending || typeof pending !== "object") return;
       const value = pending as Record<string, unknown>;
       if (typeof value.id !== "string" || !/^[a-f0-9]{32}$/.test(value.id)
-        || (value.route !== "requests" && value.route !== "transforms")) return;
+        || (value.route !== "requests" && value.route !== "transforms" && value.route !== "webhooks")) return;
       navigate(value.route);
       await invokeNavigation("ack_pending_navigation", { id: value.id });
     };
@@ -45,7 +45,7 @@ function Content({ route, navigate }: ShellContentProps) {
       <Suspense fallback={<p role="status">요청 화면을 불러오고 있습니다…</p>}><Requests onNavigate={navigate} section={group === "requests" ? route as typeof apiSection : apiSection}/></Suspense>
     </div>}
     {(visited.has("webhooks") || group === "webhooks") && <div className="api-feature-webhooks studio-webhooks" hidden={group !== "webhooks"}>
-      <Suspense fallback={<p role="status">Webhook 화면을 불러오고 있습니다…</p>}>{group === "webhooks" && <ListenerControls/>}<Webhooks/></Suspense>
+      <Suspense fallback={<p role="status">Webhook 화면을 불러오고 있습니다…</p>}>{group === "webhooks" && <ListenerControls/>}<Webhooks active={group === "webhooks"}/></Suspense>
     </div>}
     {(visited.has("transforms") || group === "transforms") && <div className="api-feature-transforms" hidden={group !== "transforms"}>
       <Suspense fallback={<p role="status">변환 도구를 불러오고 있습니다…</p>}><Transforms/></Suspense>

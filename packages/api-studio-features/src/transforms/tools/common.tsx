@@ -19,6 +19,7 @@ import { ApiHandoffAction } from "./ApiHandoffAction";
 import { KnowledgeDraftAction } from "./KnowledgeDraftAction";
 import { isProductHosted } from "../../transport";
 import { mayExport, useOutputSource } from "./outputPolicy";
+import { MockDraftAction } from "../../webhooks/MockDraftAction";
 
 /** async 변환 결과를 입력 변경 시 자동 계산하는 훅 */
 export function useAsyncTransform(
@@ -533,6 +534,7 @@ export function ToolOutput({
   const handoffActions = allowHandoff && (source ? mayExport(source) : !isProductHosted()) ? (
     <div className="tool-output-actions">
       <ApiHandoffAction value={actionValue} disabled={busy || actionBusy} />
+      {isProductHosted() && !!actionValue && <MockDraftAction value={actionValue} owner="api-studio.transforms" source={source} disabled={busy || actionBusy} />}
       <KnowledgeDraftAction value={actionValue} disabled={busy || actionBusy} />
     </div>
   ) : null;

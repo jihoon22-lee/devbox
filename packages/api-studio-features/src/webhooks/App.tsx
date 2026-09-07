@@ -1,4 +1,5 @@
 import { isProductHosted } from "../transport";
+import { MockDraftReceiver } from "./MockDraftReceiver";
 import {
   ContextMenu,
   useContextMenu,
@@ -247,7 +248,7 @@ async function readOpenApiFile(file: File): Promise<string> {
   });
 }
 
-export default function App() {
+export default function App({ active = true }: { active?: boolean } = {}) {
   const [status, setStatus] = useState<ServerStatus>({ running: false, address: null });
   const [port, setPort] = useState(DEFAULT_PORT);
   const [lanBind, setLanBind] = useState(false);
@@ -1010,6 +1011,10 @@ export default function App() {
 
   return (
     <div className="app" aria-busy={busy}>
+      {isProductHosted() && <MockDraftReceiver active={active} disabled={busy} onApply={draft => {
+        setRuleDraft(normalizeRule(draft));
+        setHandoffNotice("전달한 결과를 규칙 초안에 적용했습니다. 경로·메서드를 확인한 뒤 규칙을 저장하세요.");
+      }} />}
       <header className="toolbar">
         <h1 className="title">Webhook Lab</h1>
         <span className={`status ${status.running ? "ok" : "off"}`}>

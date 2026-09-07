@@ -2,6 +2,7 @@ import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from
 import { isTauri } from "./lib/isTauri";
 import { isProductHosted } from "../transport";
 import { KnowledgeDraftAction } from "../knowledge/KnowledgeDraftAction";
+import { MockDraftAction } from "../webhooks/MockDraftAction";
 import type {
   ApiResponse,
   BinaryResponse,
@@ -441,6 +442,7 @@ export function ResponseViewer({
             )}
             <span className="spacer" />
             {isProductHosted() && !response.binary && <KnowledgeDraftAction owner="api-studio.api" value={responseText} />}
+            {isProductHosted() && !response.binary && <MockDraftAction owner="api-studio.api" value={responseText} status={response.status} mediaType={response.is_json ? "json" : "text"} />}
             <button
               type="button"
               className="btn"

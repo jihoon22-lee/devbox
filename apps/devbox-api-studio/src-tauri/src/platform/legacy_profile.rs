@@ -13,6 +13,43 @@ fn exclusive_read(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    #[test]
+    fn actual_exclusive_windows_handles_allow_identity_checks_and_preserve_source() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let leveldb = source.join("EBWebView/Default/Local Storage/leveldb");
+        std::fs::create_dir_all(&leveldb).unwrap();
+        std::fs::write(leveldb.join("LOCK"), []).unwrap();
+        std::fs::write(leveldb.join("CURRENT"), b"MANIFEST-000001\n").unwrap();
+        std::fs::write(leveldb.join("MANIFEST-000001"), b"synthetic manifest").unwrap();
+        std::fs::write(leveldb.join("000003.log"), b"synthetic store data").unwrap();
+        let before =
+            devbox_filesystem::filesystem_identity(leveldb.join("CURRENT"), false).unwrap();
+        let guard = exclusive_read(&leveldb.join("CURRENT")).unwrap();
+        assert!(std::fs::File::open(leveldb.join("CURRENT")).is_err());
+        assert_eq!(
+            devbox_filesystem::filesystem_identity(leveldb.join("CURRENT"), false).unwrap(),
+            before
+        );
+        drop(guard);
+        let stage = root.path().join("stage");
+        std::fs::create_dir(&stage).unwrap();
+        let (_, receipt) = snapshot(&source, &stage, &AtomicBool::new(false)).unwrap();
+        assert_eq!(receipt.files.len(), 3);
+        assert_eq!(
+            std::fs::read(leveldb.join("CURRENT")).unwrap(),
+            b"MANIFEST-000001\n"
+        );
+        assert_eq!(
+            std::fs::read(leveldb.join("000003.log")).unwrap(),
+            b"synthetic store data"
+        );
+    }
+}
+
 /// Returns the new owned WebView2 data directory plus a consistent-copy receipt.
 #[cfg(windows)]
 pub fn snapshot(
