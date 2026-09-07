@@ -267,6 +267,10 @@ pub(crate) fn start_server_inner(
 
 #[tauri::command]
 pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerStatus, String> {
+    stop_server_inner(state.inner())
+}
+
+pub(crate) fn stop_server_inner(state: &Arc<ServerState>) -> Result<ServerStatus, String> {
     // Set cancellation before acquiring lifecycle_lock. A replay holds that
     // lock while connecting/reading; this lets it observe stop immediately
     // instead of making stop wait for its full network budget.
@@ -274,7 +278,7 @@ pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerSt
     // Invalidate replay calls that are waiting for lifecycle_lock. The new
     // listener resets replay_cancel, so cancellation alone cannot distinguish
     // an old queued call from a call issued after restart.
-    advance_listener_generation(state.inner());
+    advance_listener_generation(state);
     let _lifecycle = state
         .lifecycle_lock
         .lock()
@@ -290,7 +294,7 @@ pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerSt
     // Closing cloned handles wakes workers blocked in header/body reads or a
     // slow response write. The listener thread joins its bounded worker set
     // before this command returns.
-    shutdown_active_connections(state.inner());
+    shutdown_active_connections(state);
     if let Some(thread) = state
         .server_thread
         .lock()
@@ -302,9 +306,19 @@ pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerSt
         // dropped before a later start attempts to reuse its port.
         let _ = thread.join();
     }
-    clear_active_connections(state.inner());
+    clear_active_connections(state);
     *state.address.lock().map_err(|_| BIND_ERROR.to_string())? = None;
-    Ok(current_server_status(state.inner()))
+    Ok(current_server_status(state))
+}
+
+pub(crate) fn wait_server(state: &Arc<ServerState>) -> Result<(), String> {
+    let thread = state
+        .server_thread
+        .lock()
+        .map_err(|_| BIND_ERROR.to_string())?
+        .take()
+        .ok_or_else(|| BIND_ERROR.to_string())?;
+    thread.join().map_err(|_| BIND_ERROR.to_string())
 }
 
 fn parse_error_response(error: ParseError) -> Option<(u16, &'static str)> {
@@ -934,11 +948,11 @@ pub fn send_fixture_to_api(
 }
 
 /// Product adapter obtains only a source-owned masked request by opaque ID.
-pub(crate) fn prepare_api_handoff(
+fn selected_handoff_fixture(
     app: &AppHandle,
     args: serde_json::Value,
     saved: bool,
-) -> Result<serde_json::Value, String> {
+) -> Result<CapturedFixture, String> {
     use tauri::Manager as _;
     let state = app.state::<Arc<ServerState>>();
     let fixture = if saved {
@@ -977,9 +991,32 @@ pub(crate) fn prepare_api_handoff(
         fixture_from_request(format!("fixture-{history_id}"), &request)
             .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?
     };
+    Ok(fixture)
+}
+pub(crate) fn prepare_api_handoff(
+    app: &AppHandle,
+    args: serde_json::Value,
+    saved: bool,
+) -> Result<serde_json::Value, String> {
+    let fixture = selected_handoff_fixture(app, args, saved)?;
     let payload =
         build_api_request_payload(&fixture).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
     serde_json::to_value(payload).map_err(|_| HANDOFF_INPUT_ERROR.to_string())
+}
+pub(crate) fn prepare_log_handoff(
+    app: &AppHandle,
+    args: serde_json::Value,
+    saved: bool,
+) -> Result<devbox_applink::WebhookLogPayload, String> {
+    let fixture = selected_handoff_fixture(app, args, saved)?;
+    webhook_log_payload(
+        &fixture.method,
+        &fixture.url,
+        fixture.received_at_ms,
+        &fixture.headers,
+        &fixture.body,
+    )
+    .map_err(|_| HANDOFF_INPUT_ERROR.to_string())
 }
 
 fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, String> {

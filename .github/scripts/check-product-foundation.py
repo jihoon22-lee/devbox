@@ -27,6 +27,9 @@ def check(root=ROOT):
         for evidence in review["evidence"]:
             assert (root / evidence).is_file()
         assert app["registration"]["singleInstance"] and app["registration"]["portable"]
+        if mapping := app.get("implementationReview"):
+            assert mapping["featureMappings"] == sum(f["legacyFeatureId"].startswith(app["legacyApp"] + ":") for f in parity["features"])
+            assert (root / mapping["evidence"]).is_file()
     assert data_inventory["schemaVersion"] == 1
     assert data_inventory["baselineCommit"] == parity["baselineCommit"]
     assert data_inventory["baselineRelease"] == parity["baselineRelease"]
@@ -77,9 +80,18 @@ def check(root=ROOT):
         assert any(f["owner"] == feature["product"] and f["route"] == feature["route"] for f in catalog["features"])
         assert feature["ownerIssue"] in range(544, 551)
         assert feature["status"] in {"pending", "verified"}
+        if feature.get("implementationPath"):
+            implementation = Path(feature["implementationPath"])
+            assert not implementation.is_absolute() and ".." not in implementation.parts
+            assert (root / implementation).is_file()
+        if feature.get("test") is not None:
+            assert isinstance(feature["test"], list) and feature["test"], "mapped tests must name actual files"
+            for test in feature["test"]:
+                test_path = Path(test)
+                assert not test_path.is_absolute() and ".." not in test_path.parts
+                assert (root / test_path).is_file(), test_path
         if feature["status"] == "verified":
             assert feature["test"] and feature.get("implementationPath") and feature.get("evidence")
-            assert (root / feature["implementationPath"]).is_file()
     print(f"Product foundation metadata: 4 hidden products, {len(ids)} parity entries; "
           f"{sum(f['status'] == 'pending' for f in parity['features'])} still pending. This is not feature parity acceptance.")
 

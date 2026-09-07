@@ -1294,6 +1294,7 @@ dependencies = [
  "applink",
  "data-migration",
  "developer-toolbox",
+ "dirs",
  "filesystem",
  "product-contract",
  "product-shell-tauri",

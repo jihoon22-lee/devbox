@@ -23,7 +23,18 @@
       ],
       "treatment": "Preserve workflow metadata. Do not persist transient HMAC/JWT input or non-exportable results.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs"
+      "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "wsl-desktop",
@@ -80,7 +91,18 @@
       ],
       "treatment": "Acquire an owner-produced WebView2 export without invoking destructive legacy migration on the source. Apply existing sanitizer on destination.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/api-playground/src/lib/persistence.ts"
+      "baselineSourcePath": "apps/api-playground/src/lib/persistence.ts",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "api-playground",
@@ -93,7 +115,18 @@
       ],
       "treatment": "Preserve collection labels/order/IDs with explicit mapping and conflicts; source keys remain untouched.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/api-playground/src/lib/collections.ts"
+      "baselineSourcePath": "apps/api-playground/src/lib/collections.ts",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "api-playground",
@@ -104,7 +137,18 @@
       ],
       "treatment": "Preserve environment metadata and sealed references under the API owner. Plaintext must not pass through the migration renderer or journal.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/api-playground/src/lib/environments.ts"
+      "baselineSourcePath": "apps/api-playground/src/lib/environments.ts",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "api-playground",
@@ -115,7 +159,18 @@
       ],
       "treatment": "Preserve bounded sanitized gRPC history.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/api-playground/src/lib/grpc.ts"
+      "baselineSourcePath": "apps/api-playground/src/lib/grpc.ts",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "api-playground",
@@ -125,7 +180,18 @@
         "tls-credentials.json"
       ],
       "treatment": "Keep gRPC TLS DPAPI ownership separate from ordinary environment secrets.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "api-playground",
@@ -135,7 +201,18 @@
         "mcp-grants.json"
       ],
       "treatment": "Preserve owner-scoped grant metadata; reauthorize expired or unusable grants without plaintext export.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "everything-plus",
@@ -337,7 +414,18 @@
       ],
       "treatment": "Preserve masked fixtures and their ID mapping; no raw request-header vault import.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs"
+      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "webhook-lab",
@@ -348,7 +436,18 @@
       ],
       "treatment": "Preserve exported listener profiles as inactive definitions; do not start a listener during import.",
       "importerStatus": "pending",
-      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs"
+      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        "apps/devbox-api-studio/src-tauri/src/core/import_repository.rs",
+        ".github/scripts/windows-api-migration.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "New API Studio installation namespace; preserve actual source IDs through store-qualified receipts and explicit conflict mapping"
     },
     {
       "legacyApp": "webhook-lab",
@@ -361,7 +460,18 @@
         "unsaved rule state"
       ],
       "treatment": "Quiesce and explain transient state before cutover; do not turn raw capture memory into a persistent migration archive.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
+      "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
+      "test": [
+        ".github/scripts/windows-api-lifecycle.mjs",
+        ".github/scripts/windows-api-workflow.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-07-v08-b02-api-studio.md"
+      ],
+      "verificationScope": "Source acquisition/merge/recovery implemented; actual Windows activation and repeat-source preservation pending",
+      "destinationPolicy": "No importer: explicit quiescence, no memory/archive persistence and no automatic restart"
     },
     {
       "legacyApp": "repo-manager",

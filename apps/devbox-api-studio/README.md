@@ -57,8 +57,8 @@ The Webhooks view can explicitly keep a running listener in the notification are
 its menu opens the window, stops the temporary listener or fully quits. Minimizing
 or changing routes does not recreate/stop the listener. An unavailable tray falls
 back to ordinary close. Service JSON exports stay disabled and never autostart.
-Their `--service-profile <id>` entry point is a separate process with no interactive
-window or API protocol bootstrap; its lifecycle belongs to the service runner.
+Their `--service-profile <id>` entry point reuses the bounded native listener in a
+separate process, without a Tauri App/event loop, WebView or API protocol bootstrap; its lifecycle belongs to the service runner.
 The UI's listener and that process cannot bind the same port simultaneously.
 Windows lifecycle acceptance is tracked by the
 [lifecycle fixture](../../.github/scripts/windows-api-lifecycle.mjs).
@@ -108,3 +108,17 @@ Reopening previews a masked draft; applying to Requests or publishing a Mock is
 explicit and never sends or starts a listener. Full/future/corrupt stores preserve
 their records; deletion requires confirmation and leaves Workspace references
 visible as unavailable until the user edits them.
+
+B02's 137 legacy command/UI/storage anchors and 10 preservation groups have explicit
+implementation, test and importer mappings in the v0.8 inventories. They remain
+pending semantic acceptance until their Windows and provider checks pass. The
+Webhook Logs producer exposes only the existing bounded `webhook-log/v1`
+header-name/body-preview projection; raw headers never enter it. Until WP07
+connects the verified Workspace Logs receiver, source actions report unavailable
+and preserve the original request/fixture without launching a legacy executable.
+
+The [S03 Windows fixture](../../.github/scripts/windows-api-workflow.mjs) exercises
+capture→explicit request apply→native DPAPI credential reconnect→one explicit send→
+masked response→native comparison→Mock editor→durable Knowledge fallback and restart.
+It uses disposable synthetic profiles and a loopback server. Its registration is
+not a claim that the actual Windows scenario has passed.

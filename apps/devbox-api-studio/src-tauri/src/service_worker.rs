@@ -1,5 +1,4 @@
 //! Runtime-managed mock server: explicit profile argv, no product UI/IPC/session.
-use tauri::Manager;
 pub fn argument(args: &[String]) -> Result<Option<String>, String> {
     let value = webhook_core::core::service_profile::parse_service_profile_argv(args)?;
     if value.is_none()
@@ -20,31 +19,15 @@ pub fn run(id: String, mut context: tauri::Context<tauri::Wry>) -> tauri::Result
         let _ = windows::Win32::System::Console::FreeConsole();
     }
     product_shell_tauri::isolate_installation(&mut context)?;
-    context.config_mut().app.windows.clear();
-    let app = tauri::Builder::default()
-        .setup(move |app| {
-            if !app.webview_windows().is_empty() {
-                return Err(
-                    std::io::Error::other("service worker must not create a webview").into(),
-                );
-            }
-            // Same installation/profile namespace, independent process ownership.
-            // No single-instance plugin, renderer, API state or global service owner.
-            webhook_lab_lib::component::initialize(app.handle()).map_err(std::io::Error::other)?;
-            webhook_lab_lib::component::start_owned_profile(app.handle(), &id)
-                .map_err(std::io::Error::other)?;
-            Ok(())
-        })
-        .build(context)?;
-    app.run(|handle, event| match event {
-        tauri::RunEvent::ExitRequested {
-            api, code: None, ..
-        } => api.prevent_exit(),
-        tauri::RunEvent::Exit => {
-            let _ = webhook_lab_lib::component::stop_owned_listener(handle);
-        }
-        _ => {}
-    });
+    // Match Tauri's desktop app_local_data_dir without constructing an App.
+    // The installation identifier is derived natively from this executable.
+    let root = dirs::data_local_dir()
+        .ok_or(tauri::Error::UnknownPath)?
+        .join(&context.config().identifier)
+        .join("webhooks");
+    let worker = webhook_lab_lib::component::OwnedProfile::start(&root, &id)
+        .map_err(std::io::Error::other)?;
+    worker.wait().map_err(std::io::Error::other)?;
     Ok(())
 }
 #[cfg(test)]

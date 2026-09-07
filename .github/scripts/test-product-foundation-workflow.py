@@ -37,3 +37,14 @@ assert "verify-downloaded-release.py" in performance
 assert "baseline manifest digest mismatch" in performance
 assert "--performance" in performance
 print("Hidden product build/probe target and host boundary: PASS")
+
+workflow_probe = (root / ".github/scripts/windows-api-workflow.mjs").read_text()
+assert 'process.env.RUNNER_ENVIRONMENT, "github-hosted"' in workflow_probe
+assert 'process.env.GITHUB_ACTIONS, "true"' in workflow_probe
+assert "windows-api-workflow.mjs" in workflow
+assert "windows-process-identity.mjs" in workflow
+assert "Page.handleJavaScriptDialog" in workflow_probe
+assert "captureMasked: true" in workflow_probe
+assert "restartPreservesDraft: true" in workflow_probe
+
+assert "-p api-playground -p webhook-lab -p developer-toolbox" in workflow, "B02 must execute the actual Windows domain regressions, not only compile dependencies"

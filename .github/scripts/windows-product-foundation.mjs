@@ -30,12 +30,15 @@ async function freePort() {
   const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port;
 }
 
-async function connect(port, child) {
-  for (let i = 0; i < 120; i++) {
+async function connect(port, child, deadline = performance.now() + 30_000) {
+  while (performance.now() < deadline) {
     if (child.exitCode !== null) throw new Error("product exited before renderer opened");
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) });
-      const pages = await response.json(); const page = pages.find((p) => p.type === "page" && p.webSocketDebuggerUrl);
+      const pages = await response.json(); const page = pages.find((p) => {
+        if (p.type !== "page" || !p.webSocketDebuggerUrl) return false;
+        try { const url = new URL(p.url); return (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) && ["/", "/index.html"].includes(url.pathname); } catch { return false; }
+      });
       if (page) {
         const socket = new WebSocket(page.webSocketDebuggerUrl); await once(socket, "open");
         let id = 0; const pending = new Map(); const diagnostics = [];
@@ -119,7 +122,16 @@ async function start(product, suffix) {
         ready = await cdp.evaluate(product.id === "api-studio"
           ? '!!document.querySelector(".api-feature-requests .url-input")'
           : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
-      } catch (error) { readinessError = error.message; }
+      } catch (error) {
+        readinessError = error.message;
+        // A startup document/renderer transition can invalidate this attachment.
+        // Reattach only during the same bounded readiness window; never retry
+        // an invocation, replay rejection or authority assertion below.
+        cdp.close();
+        if (performance.now() < readinessDeadline) {
+          try { cdp = await connect(port, child, readinessDeadline); } catch { break; }
+        }
+      }
       if (ready) break; await delay(100);
     }
     assert.ok(ready, `native route must render an accepted response: ${readinessError}`);

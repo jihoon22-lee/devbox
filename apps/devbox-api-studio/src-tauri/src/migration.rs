@@ -540,8 +540,21 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                         .await;
                         // The worker has closed its owned Job before returning.
                         // Purge the raw copy even when export or cancellation failed.
+                        guard.stage(match exported.as_ref().err().map(String::as_str) {
+                            None => "api-export-copy-cleanup",
+                            Some("legacy_worker_cleanup_failed") => "api-export-job-cleanup-failed",
+                            Some("legacy_worker_failed") => "api-export-process-failed",
+                            Some("legacy_worker_timeout") => "api-export-timeout",
+                            Some(
+                                "legacy_worker_unavailable" | "owned_worker_assignment_failed",
+                            ) => "api-export-launch-failed",
+                            Some(_) => "api-export-result-failed",
+                        });
                         let cleanup = repo.clear_export_copy(&id);
                         let exported = exported?;
+                        if cleanup.is_err() {
+                            guard.stage("api-export-copy-cleanup-failed");
+                        }
                         cleanup?;
                         for (kind, value) in [
                             (StoreKind::Collections, exported.collections),

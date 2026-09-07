@@ -79,13 +79,7 @@ try {
   const worker = await child(["--service-profile", service.id], environment());
   await until(() => responding(servicePort), "explicit service did not start");
   evidence.serviceWindow = windowDetails(worker);
-  // Tao uses a zero-size layered, non-activating tool window to deliver
-  // thread events. It is not shown to users; all actual WebViews are forbidden
-  // by the worker itself. Check every part of that fixed implementation shape.
-  const target = evidence.serviceWindow;
-  const internalStyles = 0x08000000 | 0x00000020 | 0x00080000 | 0x00000080;
-  assert.ok(target.handle === 0 || (target.class === "Tao Thread Event Target" && target.width === 0 && target.height === 0
-    && (target.extendedStyle & internalStyles) === internalStyles), "service worker must have no interactive window");
+  assert.equal(evidence.serviceWindow.handle, 0, "headless service worker must not create any window");
   ui = await startUi(); assert.equal((await success(ui, "server_status")).running, false);
   const refused = await command(ui, "start_server", { bind: "127.0.0.1", port: servicePort, allowLan: false }); assert.equal(refused.operation.outcome.state, "failed"); assert.equal(await responding(servicePort), true);
   const temporaryPort = await unusedPort(); await success(ui, "start_server", { bind: "127.0.0.1", port: temporaryPort, allowLan: false });

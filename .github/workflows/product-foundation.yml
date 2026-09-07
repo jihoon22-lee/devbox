@@ -25,6 +25,8 @@ on:
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-api-lifecycle.mjs'
+      - '.github/scripts/windows-api-workflow.mjs'
+      - '.github/scripts/windows-process-identity.mjs'
       - '.github/scripts/windows-packaged-smoke.mjs'
       - '.github/scripts/windows-product-installation.ps1'
       - '.github/scripts/windows-installer-helpers.ps1'
@@ -73,7 +75,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
       - name: Run native authority and WAL fixtures on Windows
-        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -- --test-threads=2
+        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p api-playground -p webhook-lab -p developer-toolbox -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
         run: node .github/scripts/windows-product-foundation.mjs
       - name: Verify API Studio migration from pinned legacy storage
@@ -84,6 +86,9 @@ jobs:
       - name: Verify temporary listener and service worker lifetimes
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-lifecycle.mjs
+      - name: Verify API Studio end-to-end local workflow
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        run: node .github/scripts/windows-api-workflow.mjs
       - name: Verify anchor and product installer coexistence
         shell: pwsh
         env:

@@ -116,27 +116,69 @@ pub fn listener_running(app: &tauri::AppHandle) -> bool {
 pub fn stop_owned_listener(app: &tauri::AppHandle) -> Result<(), String> {
     crate::commands::stop_server(app.state()).map(|_| ())
 }
-/// A Runtime-owned process explicitly starts one validated profile. It does not
-/// initialize the interactive UI, a second listener or any API protocol session.
-pub fn start_owned_profile(app: &tauri::AppHandle, id: &str) -> Result<(), String> {
-    let root = data_root(app).map_err(|_| "component_storage_unavailable")?;
-    let profile = crate::core::service_profile::load_profile(&root, id)?;
-    let state = app.state::<std::sync::Arc<crate::commands::ServerState>>();
-    *state
-        .rules
-        .lock()
-        .map_err(|_| "component_state_unavailable")? =
-        crate::core::service_profile::rules_map(&profile);
-    *state
-        .sequence_cursors
-        .lock()
-        .map_err(|_| "component_state_unavailable")? =
-        crate::core::rules::ResponseSequenceState::default();
-    crate::commands::start_server_inner(
-        state.inner(),
-        Some(profile.bind),
-        profile.port,
-        Some(false),
-    )
-    .map(|_| ())
+/// Native profile runner with no Tauri application, event loop or renderer.
+/// The owning process/Job controls its lifetime, independent of an interactive app.
+pub struct OwnedProfile {
+    state: std::sync::Arc<crate::commands::ServerState>,
+}
+impl OwnedProfile {
+    pub fn start(root: &std::path::Path, id: &str) -> Result<Self, String> {
+        let profile = crate::core::service_profile::load_profile(root, id)?;
+        let state = crate::commands::server_state();
+        *state
+            .rules
+            .lock()
+            .map_err(|_| "component_state_unavailable")? =
+            crate::core::service_profile::rules_map(&profile);
+        crate::commands::start_server_inner(&state, Some(profile.bind), profile.port, Some(false))?;
+        Ok(Self { state })
+    }
+    pub fn wait(self) -> Result<(), String> {
+        crate::commands::wait_server(&self.state)
+    }
+}
+impl Drop for OwnedProfile {
+    fn drop(&mut self) {
+        let _ = crate::commands::stop_server_inner(&self.state);
+    }
+}
+/// WP07's Logs provider may request only this bounded header-name/body-preview
+/// projection from the already-authorized Webhook owner. No raw vault is read.
+pub fn prepare_log_handoff(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+    saved: bool,
+) -> Result<devbox_applink::WebhookLogPayload, String> {
+    crate::commands::prepare_log_handoff(app, args, saved)
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    #[test]
+    fn headless_profile_owns_its_listener_and_drop_releases_the_port() {
+        use std::net::{TcpListener, TcpStream};
+        let root = tempfile::tempdir().unwrap();
+        let reservation = TcpListener::bind("127.0.0.1:0").unwrap();
+        let port = reservation.local_addr().unwrap().port();
+        drop(reservation);
+        let executable = root.path().join("fixture.exe");
+        std::fs::write(&executable, []).unwrap();
+        let definition = crate::core::service_profile::export_run_definition_in(
+            root.path(),
+            &executable,
+            "127.0.0.1",
+            port,
+            vec![],
+            1000,
+        )
+        .unwrap();
+        let id = &definition.services[0].id;
+        let worker = OwnedProfile::start(root.path(), id).unwrap();
+        assert!(TcpStream::connect(("127.0.0.1", port)).is_ok());
+        assert!(OwnedProfile::start(root.path(), id).is_err());
+        drop(worker);
+        let rebound = TcpListener::bind(("127.0.0.1", port)).unwrap();
+        drop(rebound);
+    }
 }
