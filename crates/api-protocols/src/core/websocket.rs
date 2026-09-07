@@ -100,6 +100,10 @@ impl MessageBuffer {
         self.messages.iter().find(|message| message.id == id)
     }
 
+    pub fn is_empty(&self) -> bool {
+        self.messages.is_empty()
+    }
+
     #[allow(dead_code)]
     pub fn len(&self) -> usize {
         self.messages.len()

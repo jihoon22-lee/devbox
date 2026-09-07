@@ -531,11 +531,15 @@ pub fn validate_scopes(scopes: &[String]) -> Result<Vec<String>, &'static str> {
     Ok(validated)
 }
 
-pub fn generate_state_and_pkce() -> Result<(Zeroizing<String>, Zeroizing<String>, String), ()> {
+#[derive(Debug)]
+pub struct RandomUnavailable;
+
+pub fn generate_state_and_pkce(
+) -> Result<(Zeroizing<String>, Zeroizing<String>, String), RandomUnavailable> {
     let mut state_bytes = Zeroizing::new([0_u8; 32]);
     let mut verifier_bytes = Zeroizing::new([0_u8; 32]);
-    getrandom::fill(&mut state_bytes[..]).map_err(|_| ())?;
-    getrandom::fill(&mut verifier_bytes[..]).map_err(|_| ())?;
+    getrandom::fill(&mut state_bytes[..]).map_err(|_| RandomUnavailable)?;
+    getrandom::fill(&mut verifier_bytes[..]).map_err(|_| RandomUnavailable)?;
     let state = Zeroizing::new(URL_SAFE_NO_PAD.encode(&state_bytes[..]));
     let verifier = Zeroizing::new(URL_SAFE_NO_PAD.encode(&verifier_bytes[..]));
     let challenge = URL_SAFE_NO_PAD.encode(Sha256::digest(verifier.as_bytes()));
