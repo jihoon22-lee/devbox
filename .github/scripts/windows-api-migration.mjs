@@ -1,7 +1,7 @@
 // Disposable Windows-only migration acceptance using the actual pinned v0.7 API
 // executable. All data, profiles, ports and new product identities are synthetic.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync, lstatSync, opendirSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync, lstatSync, opendirSync, rmSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
@@ -9,7 +9,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { createServer } from "node:http";
 import { once } from "node:events";
 import { DatabaseSync } from "node:sqlite";
-import { Cdp, unusedPort, waitForCdp, windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy } from "./windows-packaged-smoke.mjs";
+import { Cdp, unusedPort, waitForCdp, windowsLocalAppData, windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy } from "./windows-packaged-smoke.mjs";
 assert.equal(process.platform, "win32"); assert.equal(process.env.GITHUB_ACTIONS, "true"); assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 const directory = mkdtempSync(path.join(tmpdir(), "devbox-api-migration-fixture-"));
 const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", step: "baseline", result: "failed" };
@@ -26,11 +26,44 @@ function childEnvironment(extra) {
   return env;
 }
 const elevated = windowsProcessIsElevated(); const live = new Set();
+let nativeProfile = null;
+function claimLegacyNativeProfile() {
+  const base = windowsLocalAppData();
+  for (const identifier of ["com.devbox.apiplayground", "com.workbench.apiplayground"]) {
+    try { lstatSync(path.join(base, identifier)); }
+    catch (error) { if (error.code === "ENOENT") continue; throw error; }
+    throw new Error("legacy migration fixture requires absent native profiles");
+  }
+  const nativeRoot = path.join(base, "com.devbox.apiplayground");
+  mkdirSync(nativeRoot);
+  const identity = lstatSync(nativeRoot, { bigint: true });
+  assert.ok(identity.isDirectory() && !identity.isSymbolicLink());
+  const owner = randomUUID(); const marker = path.join(nativeRoot, `.migration-fixture-${owner}`);
+  writeFileSync(marker, owner, { flag: "wx" });
+  nativeProfile = { root: nativeRoot, identity, owner, marker, process: null };
+  evidence.nativeProfileIsolated = true;
+}
+function cleanLegacyNativeProfile() {
+  if (!nativeProfile) return;
+  assert.ok(!nativeProfile.process || nativeProfile.process.exitCode !== null || nativeProfile.process.signalCode !== null, "legacy fixture process still owns its native profile");
+  const actual = lstatSync(nativeProfile.root, { bigint: true });
+  const marker = lstatSync(nativeProfile.marker);
+  assert.ok(actual.isDirectory() && !actual.isSymbolicLink() && actual.dev === nativeProfile.identity.dev && actual.ino === nativeProfile.identity.ino, "owned legacy profile identity changed");
+  assert.ok(marker.isFile() && !marker.isSymbolicLink() && marker.size === nativeProfile.owner.length, "owned legacy profile marker changed");
+  assert.equal(readFileSync(nativeProfile.marker, "utf8"), nativeProfile.owner);
+  // WEBVIEW2_USER_DATA_FOLDER isolates browser data, but the pinned executable
+  // also writes native window state in its real app-local directory. Remove only
+  // this empty-at-start, identity/marker-verified fixture profile after exit.
+  rmSync(nativeProfile.root, { recursive: true, maxRetries: 20, retryDelay: 50 });
+  assert.equal(existsSync(nativeProfile.root), false);
+  evidence.nativeProfileCleaned = true;
+}
 async function start(executable, title, profile, extra = {}) {
   const port = await unusedPort(); const policy = elevated ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
   const item = { policy, child: null, cdp: null }; live.add(item);
   if (policy) installElevatedCdpPolicy(policy);
   item.child = spawn(executable, title === "Devbox API Studio" ? ["--import-legacy"] : [], { env: childEnvironment({ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: profile, ...extra }), stdio: "ignore" });
+  if (title === "API Playground" && nativeProfile) nativeProfile.process = item.child;
   await once(item.child, "spawn");
   const target = await waitForCdp(port, title); item.cdp = new Cdp(target.webSocketDebuggerUrl); await item.cdp.connect(); return item;
 }
@@ -112,6 +145,7 @@ try {
   const binary = path.join(assets, entry.name); assert.equal(digest(binary), entry.sha256); assert.equal(lstatSync(binary).size, entry.size);
   evidence.baseline = { commit: baseline.commit, binarySha256: entry.sha256 };
   const oldExe = path.join(directory, `legacy-api-${randomUUID()}.exe`); copyFileSync(binary, oldExe);
+  claimLegacyNativeProfile();
   const old = await start(oldExe, "API Playground", path.join(directory, "com.devbox.apiplayground"));
   await wait(old.cdp, 'localStorage.getItem("apip-collections-v1-migrated") === "2" && localStorage.getItem("apip-history-v1-migrated") === "2"', "legacy bootstrap did not finish");
   assert.equal(await old.cdp.evaluate(`(async () => {
@@ -177,4 +211,10 @@ try {
   }
   throw error;
 }
-finally { for (const item of live) { try { await stop(item); } catch { item.child?.kill(); if(item.policy)restoreElevatedCdpPolicy(item.policy); } } await new Promise(resolve=>server.close(resolve)); writeFileSync(report, JSON.stringify(evidence,null,2)); }
+finally {
+  for (const item of live) { try { await stop(item); } catch { item.child?.kill(); if(item.policy)restoreElevatedCdpPolicy(item.policy); } }
+  let cleanupFailure = false;
+  try { cleanLegacyNativeProfile(); } catch { cleanupFailure = true; evidence.nativeProfileCleaned = false; evidence.result = "failed"; evidence.cleanupError = "owned legacy native profile cleanup failed"; }
+  await new Promise(resolve=>server.close(resolve)); writeFileSync(report, JSON.stringify(evidence,null,2));
+  if (cleanupFailure) throw new Error("owned legacy native profile cleanup failed");
+}

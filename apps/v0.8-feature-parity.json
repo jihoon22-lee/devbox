@@ -64,7 +64,7 @@
           "apps/developer-toolbox/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 18,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -145,7 +145,7 @@
           "apps/api-playground/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 53,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -450,7 +450,7 @@
           "apps/webhook-lab/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 26,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -766,13 +766,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:preview_toolbox_text",
@@ -789,13 +791,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:accept_toolbox_text",
@@ -812,13 +816,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:discard_toolbox_text",
@@ -835,13 +841,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:renew_toolbox_text",
@@ -858,13 +866,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:generate_qr",
@@ -881,13 +891,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:create_api_request_handoff",
@@ -906,13 +918,15 @@
         ".github/scripts/windows-api-workflow.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/handoff.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:create_knowledge_draft_handoff",
@@ -934,11 +948,14 @@
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/knowledge.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending",
+      "verificationScope": "B02 source-owned producer and unavailable fallback verified; complete receiver delivery remains assigned to WP07 #549",
       "integrationOwnerIssue": 549,
-      "integrationContract": "Durable producer-owned masked draft and accurate unavailable receiver; verified Knowledge delivery belongs to WP07"
+      "integrationContract": "Durable producer-owned masked draft and accurate unavailable receiver; verified Knowledge delivery belongs to WP07",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf",
+      "producerVerified": true
     },
     {
       "legacyFeatureId": "developer-toolbox:command:hash",
@@ -955,13 +972,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:jwt_verify",
@@ -978,13 +997,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:hmac_generate",
@@ -1001,13 +1022,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:hmac_verify",
@@ -1024,13 +1047,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:generate_uuid",
@@ -1047,13 +1072,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:generate_ids",
@@ -1070,13 +1097,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:regex_test",
@@ -1093,13 +1122,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:diff",
@@ -1116,13 +1147,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:load_workflow_metadata",
@@ -1139,13 +1172,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:save_workflow_metadata",
@@ -1162,13 +1197,15 @@
         "packages/api-studio-features/src/transforms/api.toolbox.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/developer-toolbox/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:App.tsx",
@@ -1185,14 +1222,16 @@
         "packages/api-studio-features/src/transforms/tools/common.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/App.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/App.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/ApiHandoffAction.tsx",
@@ -1208,14 +1247,16 @@
         "packages/api-studio-features/src/transforms/tools/ApiHandoffAction.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/ApiHandoffAction.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/ApiHandoffAction.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/ByteCodecTool.tsx",
@@ -1231,14 +1272,16 @@
         "packages/api-studio-features/src/transforms/tools/ByteCodecTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/ByteCodecTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/ByteCodecTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/HmacTool.tsx",
@@ -1254,14 +1297,16 @@
         "packages/api-studio-features/src/transforms/tools/HmacTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/HmacTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/HmacTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/JsonTypescriptTool.tsx",
@@ -1277,14 +1322,16 @@
         "packages/api-studio-features/src/transforms/tools/JsonTypescriptTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/JsonTypescriptTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/JsonTypescriptTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/JsonYamlTool.tsx",
@@ -1300,14 +1347,16 @@
         "packages/api-studio-features/src/transforms/tools/JsonYamlTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/JsonYamlTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/JsonYamlTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/JwtTool.tsx",
@@ -1323,14 +1372,16 @@
         "packages/api-studio-features/src/transforms/tools/JwtTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/JwtTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/JwtTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/KnowledgeDraftAction.tsx",
@@ -1352,11 +1403,14 @@
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/knowledge.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending",
+      "verificationScope": "B02 source-owned producer and unavailable fallback verified; complete receiver delivery remains assigned to WP07 #549",
       "integrationOwnerIssue": 549,
-      "integrationContract": "Durable producer-owned masked draft and accurate unavailable receiver; verified Knowledge delivery belongs to WP07"
+      "integrationContract": "Durable producer-owned masked draft and accurate unavailable receiver; verified Knowledge delivery belongs to WP07",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf",
+      "producerVerified": true
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/LoremTool.tsx",
@@ -1372,14 +1426,16 @@
         "packages/api-studio-features/src/transforms/tools/LoremTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/LoremTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/LoremTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/MarkdownTableTool.tsx",
@@ -1395,14 +1451,16 @@
         "packages/api-studio-features/src/transforms/tools/MarkdownTableTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/MarkdownTableTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/MarkdownTableTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/QrTool.tsx",
@@ -1418,14 +1476,16 @@
         "packages/api-studio-features/src/transforms/tools/QrTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/QrTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/QrTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/RadixTool.tsx",
@@ -1441,14 +1501,16 @@
         "packages/api-studio-features/src/transforms/tools/RadixTool.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/RadixTool.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/RadixTool.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/common.tsx",
@@ -1464,14 +1526,16 @@
         "packages/api-studio-features/src/transforms/tools/common.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/common.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/common.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/diff.tsx",
@@ -1488,14 +1552,16 @@
         "packages/api-studio-features/src/transforms/tools/common.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/diff.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/diff.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/index.tsx",
@@ -1512,14 +1578,16 @@
         "packages/api-studio-features/src/transforms/tools/common.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/index.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/index.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/regex.tsx",
@@ -1536,14 +1604,16 @@
         "packages/api-studio-features/src/transforms/tools/common.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/regex.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/regex.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/security.tsx",
@@ -1559,14 +1629,16 @@
         "packages/api-studio-features/src/transforms/tools/security.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/security.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/security.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:tools/transformers.tsx",
@@ -1583,14 +1655,16 @@
         "packages/api-studio-features/src/transforms/tools/common.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/tools/transformers.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/tools/transformers.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:surface:workflows/SmartWorkflowPanel.tsx",
@@ -1606,14 +1680,16 @@
         "packages/api-studio-features/src/transforms/workflows/SmartWorkflowPanel.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src/workflows/SmartWorkflowPanel.tsx",
       "implementationPath": "packages/api-studio-features/src/transforms/workflows/SmartWorkflowPanel.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "developer-toolbox:store:src-tauri/src/core/workflows.rs",
@@ -1631,14 +1707,16 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
       "implementationPath": "crates/transforms-core/src/core/workflows.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "wsl-desktop:command:configure_quick_summon",
@@ -2173,13 +2251,15 @@
         "packages/api-studio-features/src/requests/App.applink.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:fetch_openapi_source",
@@ -2196,13 +2276,15 @@
         "packages/api-studio-features/src/requests/lib/openapi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_mcp_stdio_executable",
@@ -2219,13 +2301,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_mcp_stdio_cwd",
@@ -2242,13 +2326,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:connect_mcp_stdio",
@@ -2265,13 +2351,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:invoke_mcp_stdio",
@@ -2288,13 +2376,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:cancel_mcp_stdio",
@@ -2311,13 +2401,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:disconnect_mcp_stdio",
@@ -2334,13 +2426,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:read_json_file",
@@ -2357,13 +2451,15 @@
         "packages/api-studio-features/src/requests/lib/transfer.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:save_json_file",
@@ -2380,13 +2476,15 @@
         "packages/api-studio-features/src/requests/lib/transfer.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:seal_secret",
@@ -2403,13 +2501,15 @@
         "packages/api-studio-features/src/requests/lib/environments.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_grpc_ca",
@@ -2426,13 +2526,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_grpc_client_certificate",
@@ -2449,13 +2551,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_grpc_client_key",
@@ -2472,13 +2576,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:import_grpc_tls_credential",
@@ -2495,13 +2601,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:list_grpc_tls_credentials",
@@ -2518,13 +2626,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:delete_grpc_tls_credential",
@@ -2541,13 +2651,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:claim_api_request",
@@ -2564,13 +2676,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:renew_api_request",
@@ -2587,13 +2701,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:ack_api_request",
@@ -2610,13 +2726,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:restore_api_request",
@@ -2633,13 +2751,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:start_sse_stream",
@@ -2656,13 +2776,15 @@
         "packages/api-studio-features/src/requests/api.sse.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:stop_sse_stream",
@@ -2679,13 +2801,15 @@
         "packages/api-studio-features/src/requests/api.sse.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:authorize_mcp_http",
@@ -2702,13 +2826,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:cancel_mcp_oauth",
@@ -2725,13 +2851,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:list_mcp_oauth_grants",
@@ -2748,13 +2876,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:revoke_mcp_oauth_grant",
@@ -2771,13 +2901,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:send_selection_to_toolbox",
@@ -2796,13 +2928,15 @@
         ".github/scripts/windows-api-workflow.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/handoff.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_grpc_proto",
@@ -2819,13 +2953,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:pick_grpc_import_root",
@@ -2842,13 +2978,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:connect_grpc",
@@ -2865,13 +3003,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:cancel_grpc",
@@ -2888,13 +3028,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:disconnect_grpc",
@@ -2911,13 +3053,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:invoke_grpc",
@@ -2934,13 +3078,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:export_grpc_summary",
@@ -2957,13 +3103,15 @@
         "packages/api-studio-features/src/requests/grpcApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:send_request",
@@ -2980,13 +3128,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:cancel_request",
@@ -3003,13 +3153,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:discard_current_response",
@@ -3026,13 +3178,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:copy_raw_response_headers",
@@ -3049,13 +3203,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:copy_raw_response_cookies",
@@ -3072,13 +3228,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:save_response_binary",
@@ -3095,13 +3253,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:build_revealed_curl",
@@ -3118,13 +3278,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:sanitize_persisted_json",
@@ -3141,13 +3303,15 @@
         "packages/api-studio-features/src/requests/App.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:start_websocket",
@@ -3164,13 +3328,15 @@
         "packages/api-studio-features/src/requests/api.websocket.native.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:send_websocket_message",
@@ -3187,13 +3353,15 @@
         "packages/api-studio-features/src/requests/api.websocket.native.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:ping_websocket",
@@ -3210,13 +3378,15 @@
         "packages/api-studio-features/src/requests/api.websocket.native.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:close_websocket",
@@ -3233,13 +3403,15 @@
         "packages/api-studio-features/src/requests/api.websocket.native.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:disconnect_websocket",
@@ -3256,13 +3428,15 @@
         "packages/api-studio-features/src/requests/api.websocket.native.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:save_websocket_binary",
@@ -3279,13 +3453,15 @@
         "packages/api-studio-features/src/requests/api.websocket.native.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:connect_mcp_http",
@@ -3302,13 +3478,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:invoke_mcp_http",
@@ -3325,13 +3503,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:cancel_mcp_http",
@@ -3348,13 +3528,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:command:disconnect_mcp_http",
@@ -3371,13 +3553,15 @@
         "packages/api-studio-features/src/requests/mcpApi.test.ts"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:App.tsx",
@@ -3394,14 +3578,16 @@
         "apps/devbox-api-studio/src/Studio.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/App.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/App.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:CookieEditor.tsx",
@@ -3417,14 +3603,16 @@
         "packages/api-studio-features/src/requests/CookieEditor.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/CookieEditor.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/CookieEditor.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:GraphqlEditor.tsx",
@@ -3441,14 +3629,16 @@
         "apps/devbox-api-studio/src/Studio.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/GraphqlEditor.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/GraphqlEditor.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:GrpcLab.tsx",
@@ -3464,14 +3654,16 @@
         "packages/api-studio-features/src/requests/GrpcLab.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/GrpcLab.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/GrpcLab.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:HeaderTable.tsx",
@@ -3487,14 +3679,16 @@
         "packages/api-studio-features/src/requests/HeaderTable.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/HeaderTable.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/HeaderTable.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:McpSchemaEditor.tsx",
@@ -3511,14 +3705,16 @@
         "apps/devbox-api-studio/src/Studio.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/McpSchemaEditor.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/McpSchemaEditor.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:MultipartEditor.tsx",
@@ -3534,14 +3730,16 @@
         "packages/api-studio-features/src/requests/MultipartEditor.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/MultipartEditor.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/MultipartEditor.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:OpenApiImport.tsx",
@@ -3557,14 +3755,16 @@
         "packages/api-studio-features/src/requests/OpenApiImport.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/OpenApiImport.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/OpenApiImport.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:ProtocolLab.tsx",
@@ -3580,14 +3780,16 @@
         "packages/api-studio-features/src/requests/ProtocolLab.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/ProtocolLab.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/ProtocolLab.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:ResponseViewer.tsx",
@@ -3603,14 +3805,16 @@
         "packages/api-studio-features/src/requests/ResponseViewer.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/ResponseViewer.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/ResponseViewer.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:SseEventViewer.tsx",
@@ -3626,14 +3830,16 @@
         "packages/api-studio-features/src/requests/SseEventViewer.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/SseEventViewer.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/SseEventViewer.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:surface:WebSocketPanel.tsx",
@@ -3649,14 +3855,16 @@
         "packages/api-studio-features/src/requests/WebSocketPanel.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/WebSocketPanel.tsx",
       "implementationPath": "packages/api-studio-features/src/requests/WebSocketPanel.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:store:src/lib/environments.ts",
@@ -3674,14 +3882,16 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/api-playground/src/lib/environments.ts",
       "implementationPath": "packages/api-studio-features/src/requests/lib/environments.ts",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:store:src-tauri/src/commands/grpc.rs",
@@ -3699,13 +3909,15 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/commands/grpc.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:store:src-tauri/src/commands/grpc_credentials.rs",
@@ -3723,13 +3935,15 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/commands/grpc_credentials.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:store:src-tauri/src/commands/mcp_oauth.rs",
@@ -3747,13 +3961,15 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/commands/mcp_oauth.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "api-playground:store:src-tauri/src/commands/transfer.rs",
@@ -3771,13 +3987,15 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/api-playground/src-tauri/src/commands/transfer.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "everything-plus:command:take_pending_open",
@@ -8204,13 +8422,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:start_server",
@@ -8227,13 +8447,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:stop_server",
@@ -8250,13 +8472,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:list_history",
@@ -8273,13 +8497,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:clear_history",
@@ -8296,13 +8522,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:copy_masked_history",
@@ -8319,13 +8547,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:copy_raw_history",
@@ -8342,13 +8572,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:copy_history_headers",
@@ -8365,13 +8597,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:delete_history",
@@ -8388,13 +8622,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:replay_history",
@@ -8411,13 +8647,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:replay_fixture",
@@ -8434,13 +8672,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:list_fixtures",
@@ -8457,13 +8697,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:save_fixture",
@@ -8480,13 +8722,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:delete_fixture",
@@ -8503,13 +8747,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:clear_fixtures",
@@ -8526,13 +8772,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:fixture_to_rule",
@@ -8549,13 +8797,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:send_history_to_api",
@@ -8574,13 +8824,15 @@
         ".github/scripts/windows-api-workflow.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/handoff.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:send_fixture_to_api",
@@ -8599,13 +8851,15 @@
         ".github/scripts/windows-api-workflow.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/handoff.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:send_history_to_log_lens",
@@ -8628,11 +8882,14 @@
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending",
+      "verificationScope": "B02 source-owned producer and unavailable fallback verified; complete receiver delivery remains assigned to WP07 #549",
       "integrationOwnerIssue": 549,
-      "integrationContract": "Source-owned webhook-log/v1 bounded projection; Workspace Logs receiver unavailable until verified WP07 provider; no legacy executable launch"
+      "integrationContract": "Source-owned webhook-log/v1 bounded projection; Workspace Logs receiver unavailable until verified WP07 provider; no legacy executable launch",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf",
+      "producerVerified": true
     },
     {
       "legacyFeatureId": "webhook-lab:command:send_fixture_to_log_lens",
@@ -8655,11 +8912,14 @@
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending",
+      "verificationScope": "B02 source-owned producer and unavailable fallback verified; complete receiver delivery remains assigned to WP07 #549",
       "integrationOwnerIssue": 549,
-      "integrationContract": "Source-owned webhook-log/v1 bounded projection; Workspace Logs receiver unavailable until verified WP07 provider; no legacy executable launch"
+      "integrationContract": "Source-owned webhook-log/v1 bounded projection; Workspace Logs receiver unavailable until verified WP07 provider; no legacy executable launch",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf",
+      "producerVerified": true
     },
     {
       "legacyFeatureId": "webhook-lab:command:list_rules",
@@ -8676,13 +8936,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:preview_rule_conflicts",
@@ -8699,13 +8961,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:set_rule",
@@ -8722,13 +8986,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:delete_rule",
@@ -8745,13 +9011,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:reset_rule_sequence",
@@ -8768,13 +9036,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:command:export_run_service_definition",
@@ -8791,13 +9061,15 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/webhook-lab/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:surface:App.tsx",
@@ -8813,14 +9085,16 @@
         "packages/api-studio-features/src/webhooks/App.test.tsx"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/webhook-lab/src/App.tsx",
       "implementationPath": "packages/api-studio-features/src/webhooks/App.tsx",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:store:src-tauri/src/core/fixtures.rs",
@@ -8838,14 +9112,16 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
       "implementationPath": "crates/webhook-core/src/core/fixtures.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "webhook-lab:store:src-tauri/src/core/service_profile.rs",
@@ -8863,14 +9139,16 @@
         ".github/scripts/windows-api-migration.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
       "implementationPath": "crates/webhook-core/src/core/service_profile.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
-        "workthrough/2026-09-07-v08-b02-api-studio.md"
+        "workthrough/2026-09-07-v08-b02-api-studio.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373"
       ],
-      "verificationScope": "Reviewed destination/test/import policy mapping; portable evidence in workthrough; final Windows/runtime and provider acceptance pending"
+      "verificationScope": "B02 internal behavior verified through preserved shared/native regression suites and actual Windows product, S03, lifecycle and migration fixtures; suite release acceptance remains separate",
+      "verifiedSourceCommit": "bfc81b3284213e02245abeeccbe1beaba8100acf"
     },
     {
       "legacyFeatureId": "repo-manager:command:scan_root",

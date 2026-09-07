@@ -215,7 +215,7 @@ function isGitHubHostedWindowsAcceptanceHost(environment) {
   );
 }
 
-function windowsLocalAppData() {
+export function windowsLocalAppData() {
   const encoded = powershell(
     `$ErrorActionPreference='Stop'; ` +
       `$value=[Environment]::GetFolderPath([Environment+SpecialFolder]::LocalApplicationData); ` +

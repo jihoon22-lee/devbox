@@ -1,10 +1,10 @@
 # Devbox API Studio
 
-v0.8 B02 API Studio implementation in progress; persistent migration and integrated handoff acceptance remain open. Hidden from the v0.7 release and Manager catalog.
+v0.8 B02 API Studio. Product-internal functionality, migration and S03 have Windows acceptance; final installer coexistence and CI remain open. Hidden from the v0.7 release and Manager catalog.
 
 `pnpm --filter devbox-api-studio dev` opens the explicitly labelled browser fixture. On Windows, `pnpm --filter devbox-api-studio tauri dev` runs the native shell. Browser `?route=requests` selects a preview route. The Windows debug executable accepts `--route=requests` and validates it against this product’s registered routes before creating its webview. Native requests are restricted to the local main webview and validated by `product-shell-tauri`; route selection does not grant domain authority.
 
-Uses a new `com.devbox.v08.apistudio` identity; legacy data is accessed only by the explicit read-only importer. Navigation retains mounted route drafts in memory, with bounded history. B01 Windows installation identity evidence is recorded in the foundation workthrough. B02 native feature/runtime parity requires its own Windows acceptance.
+Uses a new `com.devbox.v08.apistudio` identity; legacy data is accessed only by the explicit read-only importer. Navigation retains mounted route drafts in memory, with bounded history. B01 Windows installation identity evidence is recorded in the foundation workthrough. B02 native feature/runtime evidence is recorded in the workthrough.
 
 Requests/Protocols, Webhooks and Transforms consume the shared frontend feature package and native adapters. See the [B02 workthrough](../../workthrough/2026-09-07-v08-b02-api-studio.md) for actual checks and remaining work.
 
@@ -19,7 +19,7 @@ this installation's `handoff/v1` namespace. Transfers open a preview and require
 explicit apply. Raw webhook payloads and caller-supplied source records are not
 accepted. A busy recipient preserves its pending action and the new publication
 is revoked. Typed artifact provenance is metadata, not permission to read another
-component's data. Other cross-product delivery and migration acceptance remain in progress.
+component's data. WP07 owns the remaining cross-product receiver delivery.
 
 The native startup gate offers an import review before any feature mounts. It
 reads the actual API browser keys, sealed environment/OAuth/TLS stores, Webhook
@@ -43,8 +43,8 @@ verified. Restart can continue a partial activation or restore its recorded prio
 values; unexpected third-party edits stop restoration. A completed import cannot
 be rolled back through the startup importer. No request, listener or process is
 started by importing. `--import-legacy` or the in-app restart action opens another
-review. Portable recovery tests pass; actual Windows migration acceptance is
-pending the new [fixture](../../.github/scripts/windows-api-migration.mjs).
+review. Portable recovery tests and the actual Windows [migration fixture](../../.github/scripts/windows-api-migration.mjs)
+pass on `bfc81b3`, including source preservation, DPAPI reuse and repeated imports.
 
 
 History/Console previews HTTP requests and gRPC summaries separately from live
@@ -110,8 +110,9 @@ their records; deletion requires confirmation and leaves Workspace references
 visible as unavailable until the user edits them.
 
 B02's 137 legacy command/UI/storage anchors and 10 preservation groups have explicit
-implementation, test and importer mappings in the v0.8 inventories. They remain
-pending semantic acceptance until their Windows and provider checks pass. The
+implementation, test and importer mappings in the v0.8 inventories. Windows evidence
+verifies 133 internal anchors and all 10 data groups; four receiver-dependent anchors
+remain pending WP07. The
 Webhook Logs producer exposes only the existing bounded `webhook-log/v1`
 header-name/body-preview projection; raw headers never enter it. Until WP07
 connects the verified Workspace Logs receiver, source actions report unavailable
@@ -122,8 +123,10 @@ capture→explicit request apply→native DPAPI credential reconnect→one expli
 masked response→native comparison→Mock editor→durable Knowledge fallback and restart.
 It uses disposable synthetic profiles and a loopback server. Its registration is
 separate from importer acceptance. The complete S03 scenario and listener lifecycle
-passed on `e986c36` in [Windows 34152328677](https://github.com/jihoon22-lee/devbox/actions/runs/34152328677);
-the importer and a separate Control Center startup probe still failed in that run.
+passed alongside the importer and four native product probes on `bfc81b3` in
+[Windows 34154505373](https://github.com/jihoon22-lee/devbox/actions/runs/34154505373).
+That run still failed installer preflight because a synthetic native profile from
+the migration fixture remained; its ownership-checked cleanup is under verification.
 
 The build checks the complete static Requests import closure, including the shell,
 against the preserved API Playground budget. OpenAPI/YAML parsing, Protocol Lab

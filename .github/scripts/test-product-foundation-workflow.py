@@ -1,6 +1,12 @@
 #!/usr/bin/env python3
 """The product builds and native probe must share a cwd-independent target root."""
 import re
+import copy
+import io
+import json
+import runpy
+from contextlib import redirect_stdout
+from unittest.mock import patch
 from pathlib import Path, PureWindowsPath
 
 root = Path(__file__).resolve().parents[2]
@@ -51,3 +57,39 @@ assert "-p api-playground -p webhook-lab -p developer-toolbox" in workflow, "B02
 
 import subprocess
 subprocess.run(["node", str(root / ".github/scripts/check-api-studio-routes.mjs"), "--self-test"], check=True)
+
+# Acceptance is an explicit evidence-bearing state, not a synonym for a mapped
+# path. Mutate only in-memory metadata; source/capability files remain read-only.
+check = runpy.run_path(str(root / ".github/scripts/check-product-foundation.py"))["check"]
+parity_path = root / "apps/v0.8-feature-parity.json"
+inventory_path = root / "apps/v0.8-data-inventory.json"
+parity = json.loads(parity_path.read_text())
+inventory = json.loads(inventory_path.read_text())
+original_read = Path.read_text
+def rejects_acceptance(change):
+    changed_parity, changed_inventory = copy.deepcopy(parity), copy.deepcopy(inventory)
+    change(changed_parity, changed_inventory)
+    def read(path, *args, **kwargs):
+        if path == parity_path:
+            return json.dumps(changed_parity)
+        if path == inventory_path:
+            return json.dumps(changed_inventory)
+        return original_read(path, *args, **kwargs)
+    with patch.object(Path, "read_text", read), redirect_stdout(io.StringIO()):
+        try:
+            check(root)
+        except AssertionError:
+            return
+    raise AssertionError("invalid acceptance metadata was accepted")
+
+internal = next(index for index, feature in enumerate(parity["features"]) if feature["status"] == "verified")
+imported = next(index for index, group in enumerate(inventory["groups"]) if group["importerStatus"] == "verified")
+def unowned_provider(p, _):
+    p["features"][internal].update(status="pending", producerVerified=True)
+    p["features"][internal].pop("integrationOwnerIssue", None)
+rejects_acceptance(lambda p, _: p["features"][internal].pop("verifiedSourceCommit"))
+rejects_acceptance(lambda p, _: p["features"][internal].update(status="pending"))
+rejects_acceptance(unowned_provider)
+rejects_acceptance(lambda _, d: d["groups"][imported].update(evidence=[]))
+rejects_acceptance(lambda _, d: d["groups"][imported].update(importerStatus="assumed"))
+print("Unverified internal features, unowned provider handoffs and unevidenced imports are rejected: PASS")
