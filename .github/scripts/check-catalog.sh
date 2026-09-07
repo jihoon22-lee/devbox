@@ -223,6 +223,7 @@ python3 .github/scripts/check-feature-fixtures.py
 python3 .github/scripts/test-scaffold-product-feature.py
 python3 .github/scripts/test-product-foundation-workflow.py
 node .github/scripts/test-windows-smoke-import.mjs
+node .github/scripts/test-product-foundation-performance.mjs
 python3 .github/scripts/test-windows-packaged-smoke-config.py
 python3 .github/scripts/test-verify-downloaded-release.py
 python3 .github/scripts/test-windows-installer-acceptance-config.py

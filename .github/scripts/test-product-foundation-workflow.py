@@ -29,4 +29,11 @@ assert "FindMainWindow($process.Id, $Title)" in installer
 assert "owner != processId || !IsWindowVisible(window)" in installer
 assert '. "$PSScriptRoot/windows-installer-helpers.ps1"' in installer
 assert "windows-product-installation.ps1" in workflow
+assert "Legacy performance baseline (Windows)" in workflow
+assert "ref: 3a23f49c85aa3c3d04b86f227e8aa184ef964085" in workflow
+performance = (root / ".github/scripts/windows-product-performance.ps1").read_text()
+assert "$env:RUNNER_ENVIRONMENT -ne 'github-hosted'" in performance
+assert "verify-downloaded-release.py" in performance
+assert "baseline manifest digest mismatch" in performance
+assert "--performance" in performance
 print("Hidden product build/probe target and host boundary: PASS")

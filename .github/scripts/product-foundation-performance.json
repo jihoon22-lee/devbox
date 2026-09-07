@@ -1,0 +1,30 @@
+{
+  "schemaVersion": 1,
+  "baselineTag": "v0.7.0",
+  "baselineCommit": "3a23f49c85aa3c3d04b86f227e8aa184ef964085",
+  "apps": ["workbench", "api-playground", "knowledge-base", "devbox-manager", "everything-plus", "run-manager", "wsl-desktop"],
+  "idleSampleMs": 5000,
+  "budgets": {
+    "coldRendererReadyMs": 30000,
+    "firstKeyboardEventMs": 1000,
+    "warmExistingWindowMs": 10000,
+    "idleCpuPercentOfMachine": 20,
+    "idleWorkingSetSumBytes": 1073741824,
+    "idleProcessCount": 16,
+    "index500FilesMs": 30000,
+    "searchMs": 1000,
+    "ownedTaskCompleteMs": 30000,
+    "profileReadbackMs": 1000
+  },
+  "conditions": {
+    "host": "github-hosted windows-2025, one app at a time",
+    "cold": "new process and isolated empty user data; OS file cache is not forcibly flushed",
+    "warm": "second invocation of an already running app; visible owned primary restored and healthy",
+    "input": "inert F24 CDP keyboard dispatch and renderer event acknowledgement",
+    "idle": "after 10-second startup survival, before synthetic workloads; parent plus owned descendants",
+    "search": "500 generated UTF-8 text files; ten exact filename searches after completed index",
+    "task": "one disabled Windows job explicitly executed to exit 0 using existing native ownership",
+    "restore": "one persisted WSL profile read back; no implicit PTY or command execution"
+  },
+  "unmeasured": ["live WSL PTY/distro restore", "integrated v0.8 workload comparison"]
+}
