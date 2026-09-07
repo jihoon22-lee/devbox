@@ -2,6 +2,73 @@
 //! for creating its own managed states after migration and enforcing native
 //! caller/owner/session checks before dispatch. This module starts no legacy app.
 
+/// Connect the actual note engine to a native-owned DB/vault and snapshot
+/// namespace after migration. This never performs legacy identifier migration.
+pub fn initialize(
+    app: &tauri::AppHandle,
+    dir: &std::path::Path,
+    integration_root: Option<std::path::PathBuf>,
+) -> Result<(), Box<dyn std::error::Error>> {
+    use crate::commands::docs::AppState;
+    use crate::commands::watcher::KnowledgeWatcher;
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+    use tauri::Manager;
+    if app.try_state::<crate::applink::PendingOpen>().is_none() {
+        app.manage(crate::applink::PendingOpen::new());
+    }
+    if app.try_state::<Arc<AppState>>().is_some() {
+        return Err("component_state_conflict".into());
+    }
+    let pending = match integration_root.as_ref() {
+        Some(root) => crate::commands::handoff::PendingKnowledgeDraft::with_store(
+            devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(root)),
+        ),
+        None => crate::commands::handoff::PendingKnowledgeDraft::new(),
+    };
+    app.manage(pending);
+    std::fs::create_dir_all(dir)?;
+    let conn = crate::core::db::init(&dir.join("data.db"))?;
+    // An unconfigured product starts in its own vault. Imported/user-selected
+    // bindings are installed only after the product migration ownership gate.
+    if integration_root.is_some() && crate::core::db::get_setting(&conn, "root")?.is_none() {
+        let vault = dir.join("vault");
+        crate::core::store::ensure_layout(&vault)?;
+        crate::core::db::set_setting(&conn, "root", &vault.to_string_lossy())?;
+    }
+    if let Ok(root) = crate::commands::docs::resolve_root(&conn) {
+        if crate::commands::docs::rebuild_wikilink_index_if_needed(&conn, &root).is_err() {
+            eprintln!("wikilink index rebuild will retry next launch");
+        }
+    }
+    let state = Arc::new(AppState {
+        integration_root: integration_root.clone(),
+        db: Mutex::new(conn),
+        rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
+        quick_capture_previews: Mutex::new(
+            crate::commands::docs::QuickCapturePreviewStore::default(),
+        ),
+        template_previews: Mutex::new(crate::commands::templates::TemplatePreviewStore::default()),
+        image_cache: Mutex::new(HashMap::new()),
+    });
+    // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
+    let watcher = KnowledgeWatcher::new(app.clone(), state.clone());
+    if let Ok(root) = crate::commands::docs::resolve_root(&state.db.lock().unwrap()) {
+        watcher.restore_root(&root);
+    }
+    // integration snapshot producer (두 번째, §10.1)
+    let _ = crate::integration::write_snapshot(
+        &state.db.lock().unwrap(),
+        state.integration_root.as_deref(),
+    );
+    let shortcut_state = Arc::new(crate::platform::QuickCaptureShortcutState::default());
+    app.manage(shortcut_state.clone());
+    crate::platform::install(app.clone(), shortcut_state);
+    app.manage(state);
+    app.manage(watcher);
+    Ok(())
+}
+
 pub const COMMANDS: &[&str] = &[
     "save_image_asset",
     "take_pending_open",

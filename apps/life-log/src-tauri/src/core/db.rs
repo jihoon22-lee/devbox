@@ -250,6 +250,7 @@ pub fn set_setting(conn: &Connection, key: &str, value: &str) {
 /// - 원본 DB는 삭제하지 않는다 (사용자가 직접 정리)
 ///
 /// TODO(0.5.0): activity-timeline 병합에 따른 1회성 흡수. 두 릴리스 뒤 제거한다.
+#[cfg(any(feature = "standalone", test))]
 pub fn absorb_activity_timeline(conn: &Connection, legacy_path: &Path) -> rusqlite::Result<()> {
     if get_setting(conn, "activity_absorbed", "") == "1" {
         return Ok(());
@@ -271,6 +272,7 @@ pub fn absorb_activity_timeline(conn: &Connection, legacy_path: &Path) -> rusqli
 }
 
 /// 이전 activity-timeline 앱의 data.db 기본 경로.
+#[cfg(feature = "standalone")]
 pub fn default_legacy_activity_db() -> String {
     let base = if cfg!(target_os = "windows") {
         std::env::var("LOCALAPPDATA").unwrap_or_else(|_| ".".into())

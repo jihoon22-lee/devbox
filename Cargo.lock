@@ -3235,6 +3235,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "window-state-tauri",
  "windows 0.58.0",

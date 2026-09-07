@@ -15,6 +15,16 @@ edition = "2021"
 name = "knowledge_base_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Products link the native component without embedding the legacy UI/entrypoint.
+[features]
+default = ["standalone"]
+standalone = []
+
+[[bin]]
+name = "knowledge-base"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

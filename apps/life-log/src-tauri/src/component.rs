@@ -2,6 +2,42 @@
 //! for creating its own managed states after migration and enforcing native
 //! caller/owner/session checks before dispatch. This module starts no legacy app.
 
+/// Initialize only this product's database and snapshot namespace. In particular,
+/// this does not invoke legacy identifier migration or absorb activity-timeline.
+pub fn initialize(
+    app: &tauri::AppHandle,
+    data_root: &std::path::Path,
+    integration_root: std::path::PathBuf,
+) -> Result<(), String> {
+    use crate::commands::tracking::{AppState, DigestOperationState};
+    use std::sync::{atomic::AtomicBool, Arc, Mutex};
+    use tauri::Manager;
+    if app.try_state::<Arc<AppState>>().is_some() {
+        return Err("component_state_conflict".into());
+    }
+    std::fs::create_dir_all(data_root).map_err(|_| "component_storage_unavailable")?;
+    let conn = crate::core::db::init(&data_root.join("data.db"))
+        .map_err(|_| "component_storage_unavailable")?;
+    let consent = crate::commands::tracking::product_consent(&conn);
+    let state = Arc::new(AppState {
+        integration_root: Some(integration_root),
+        db: Mutex::new(conn),
+        sessionizer: Mutex::new(crate::core::sessionizer::Sessionizer::new()),
+        tracking: AtomicBool::new(consent),
+        tracking_control: Mutex::new(()),
+        persist_tracking_consent: true,
+        snapshot_writer: Mutex::new(()),
+        digest_operations: Arc::new(DigestOperationState::default()),
+        digest_handles: crate::core::digest::DigestHandleStore::default(),
+    });
+    if !app.manage(state.clone()) {
+        return Err("component_state_conflict".into());
+    }
+    crate::integration::spawn_snapshot_writer(state);
+    crate::commands::tracking::spawn_poller(app);
+    Ok(())
+}
+
 pub const COMMANDS: &[&str] = &[
     "get_digest",
     "cancel_digest",

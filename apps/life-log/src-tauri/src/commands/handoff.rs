@@ -34,9 +34,7 @@ pub fn knowledge_draft_history(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<draft_history::DraftHistoryEntry>, String> {
     let now_ms = current_epoch_ms().unwrap_or(0);
-    let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
-        &devbox_integration::common_root(),
-    ));
+    let store = handoff_store(&state);
     let entries = {
         let connection = state
             .db
@@ -125,6 +123,14 @@ pub fn knowledge_draft_history(
     draft_history::list(&connection)
 }
 
+fn handoff_store(state: &AppState) -> devbox_applink::HandoffStore {
+    let root = state
+        .integration_root
+        .clone()
+        .unwrap_or_else(devbox_integration::common_root);
+    devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(&root))
+}
+
 fn record_expired_status(
     store: &devbox_applink::HandoffStore,
     entry: &draft_history::DraftHistoryEntry,
@@ -186,9 +192,7 @@ pub async fn send_digest_to_knowledge(
         }
         let now_ms = current_epoch_ms()
             .ok_or_else(|| "Knowledge draft를 준비하지 못했습니다".to_string())?;
-        let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
-            &devbox_integration::common_root(),
-        ));
+        let store = handoff_store(&state);
         let descriptor = store
             .create(
                 devbox_applink::CreateHandoff {

@@ -15,6 +15,7 @@ impl PendingOpen {
         Self::default()
     }
 
+    #[cfg(feature = "standalone")]
     pub fn set(&self, request: OpenRequest) {
         *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
     }

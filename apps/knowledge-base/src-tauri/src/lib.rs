@@ -5,16 +5,16 @@ mod core;
 mod integration;
 mod platform;
 
-use commands::docs::AppState;
-use commands::watcher::KnowledgeWatcher;
-use std::collections::HashMap;
-use std::sync::{Arc, Mutex};
+#[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
+#[cfg(feature = "standalone")]
 const LEGACY_IDENTIFIER: &str = "com.workbench.knowledgebase";
+#[cfg(feature = "standalone")]
 const CURRENT_IDENTIFIER: &str = "com.devbox.knowledgebase";
 
+#[cfg(feature = "standalone")]
 fn migrate_local_data() {
     let Some(base_dir) = dirs::data_local_dir() else {
         eprintln!(
@@ -31,6 +31,7 @@ fn migrate_local_data() {
     }
 }
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     migrate_local_data();
@@ -103,45 +104,13 @@ pub fn run() {
         .setup(|app| {
             devbox_window_state_tauri::restore_main_window(app.handle());
             app.manage(applink::PendingOpen::new());
-            app.manage(commands::handoff::PendingKnowledgeDraft::new());
             match devbox_applink::parse_argv(&std::env::args().collect::<Vec<_>>()) {
                 Ok(Some(request)) => app.state::<applink::PendingOpen>().set(request),
                 Ok(None) => {}
                 Err(_) => eprintln!("applink: invalid request"),
             }
             let dir = app.path().app_local_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            let conn = core::db::init(&dir.join("data.db"))?;
-            if let Ok(root) = commands::docs::resolve_root(&conn) {
-                if commands::docs::rebuild_wikilink_index_if_needed(&conn, &root).is_err() {
-                    eprintln!("wikilink index rebuild will retry next launch");
-                }
-            }
-            let state = Arc::new(AppState {
-                integration_root: None,
-                db: Mutex::new(conn),
-                rename_plans: Mutex::new(core::rename::RenamePlanStore::default()),
-                quick_capture_previews: Mutex::new(
-                    commands::docs::QuickCapturePreviewStore::default(),
-                ),
-                template_previews: Mutex::new(commands::templates::TemplatePreviewStore::default()),
-                image_cache: Mutex::new(HashMap::new()),
-            });
-            // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
-            let watcher = KnowledgeWatcher::new(app.handle().clone(), state.clone());
-            if let Ok(root) = commands::docs::resolve_root(&state.db.lock().unwrap()) {
-                watcher.restore_root(&root);
-            }
-            // integration snapshot producer (두 번째, §10.1)
-            let _ = integration::write_snapshot(
-                &state.db.lock().unwrap(),
-                state.integration_root.as_deref(),
-            );
-            let shortcut_state = Arc::new(platform::QuickCaptureShortcutState::default());
-            app.manage(shortcut_state.clone());
-            platform::install(app.handle().clone(), shortcut_state);
-            app.manage(state);
-            app.manage(watcher);
+            component::initialize(app.handle(), &dir, None)?;
             Ok(())
         })
         .run(tauri::generate_context!())

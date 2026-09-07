@@ -31,11 +31,19 @@ struct ClaimedKnowledgeDraft {
 
 /// At most one preview can be active in a Knowledge process. The claim token
 /// never crosses the frontend boundary.
-pub struct PendingKnowledgeDraft(Mutex<Option<ClaimedKnowledgeDraft>>);
+pub struct PendingKnowledgeDraft(Mutex<Option<ClaimedKnowledgeDraft>>, Option<HandoffStore>);
 
 impl PendingKnowledgeDraft {
     pub fn new() -> Self {
-        Self(Mutex::new(None))
+        Self(Mutex::new(None), None)
+    }
+
+    pub fn with_store(store: HandoffStore) -> Self {
+        Self(Mutex::new(None), Some(store))
+    }
+
+    fn store(&self) -> HandoffStore {
+        self.1.clone().unwrap_or_else(handoff_store)
     }
 
     fn is_open(&self) -> bool {
@@ -127,7 +135,7 @@ pub fn preview_knowledge_draft(
         validate_note_parent(&vault)?;
         vault
     };
-    let store = handoff_store();
+    let store = pending.store();
     let claim = store
         .claim(&id, &kind, CONSUMER_APP, now_ms)
         .map_err(|error| handoff::map_claim_error(&error).to_string())?;
@@ -165,7 +173,7 @@ pub fn save_knowledge_draft(
     id: String,
 ) -> Result<SaveKnowledgeDraftResult, String> {
     let claimed = pending.take(&id)?;
-    let store = handoff_store();
+    let store = pending.store();
     let now_ms = current_epoch_ms();
     if now_ms == 0 {
         restore_for_retry(&store, pending.inner(), claimed);
@@ -275,7 +283,7 @@ pub fn discard_knowledge_draft(
     id: String,
 ) -> Result<(), String> {
     let claimed = pending.take(&id)?;
-    let store = handoff_store();
+    let store = pending.store();
     let now_ms = current_epoch_ms();
     match store.restore(&claimed.claim, CONSUMER_APP, now_ms) {
         Ok(()) => {
@@ -316,7 +324,7 @@ pub fn renew_knowledge_draft(
     if current.claim.envelope.id != id {
         return Err("다른 Knowledge draft 미리보기가 열려 있습니다".into());
     }
-    let renewed = match handoff_store().renew(
+    let renewed = match pending.store().renew(
         &current.claim,
         CONSUMER_APP,
         current_epoch_ms(),
