@@ -15,6 +15,17 @@ edition = "2021"
 name = "developer_toolbox_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# A product component links the native implementation without embedding the
+# legacy executable's frontend bundle or invoking its bootstrap.
+[features]
+default = ["standalone"]
+standalone = []
+
+[[bin]]
+name = "developer-toolbox"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

@@ -51,6 +51,8 @@ pub struct RenewToolboxTextResult {
 }
 
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn preview_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -91,6 +93,8 @@ pub fn preview_toolbox_text(
 }
 
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn accept_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -117,6 +121,8 @@ pub fn accept_toolbox_text(
 }
 
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn discard_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,
@@ -142,6 +148,8 @@ pub fn discard_toolbox_text(
 }
 
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn renew_toolbox_text(
     pending: tauri::State<'_, PendingToolboxText>,
     handoff_id: String,

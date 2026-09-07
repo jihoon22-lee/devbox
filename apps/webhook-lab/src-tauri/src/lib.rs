@@ -1,12 +1,15 @@
 pub mod component;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 
+#[cfg(feature = "standalone")]
 use commands::server_state;
+#[cfg(feature = "standalone")]
 use tauri::Manager;
 
 mod commands;
 mod core;
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let service_profile_id = match core::service_profile::parse_service_profile_argv(

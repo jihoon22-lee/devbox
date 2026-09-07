@@ -16,6 +16,8 @@ pub const MAX_SERVICE_PROFILES: usize = 64;
 pub const MAX_PROFILE_DIRECTORY_ENTRIES: usize = 256;
 pub const MAX_SERVICE_PROFILE_BYTES: u64 = 8 * 1024 * 1024;
 pub const SERVICE_PROFILE_ERROR: &str = "Webhook service profile을 만들 수 없습니다";
+// Used by the standalone service entry point; the component does not auto-start profiles.
+#[allow(dead_code)]
 pub const SERVICE_PROFILE_LOAD_ERROR: &str = "Webhook service profile을 읽을 수 없습니다";
 pub const SERVICE_PROFILE_SECRET_ERROR: &str =
     "credential 형태의 응답이 포함된 규칙은 service profile로 내보낼 수 없습니다";
@@ -119,6 +121,8 @@ pub fn export_run_definition_in(
     })
 }
 
+// Used by the standalone service entry point; the component does not auto-start profiles.
+#[allow(dead_code)]
 pub fn load_profile(data_root: &Path, id: &str) -> Result<ServiceProfile, String> {
     validate_profile_id(id).map_err(|_| SERVICE_PROFILE_LOAD_ERROR.to_string())?;
     let directory = data_root.join(SERVICE_PROFILE_DIRECTORY);
@@ -295,6 +299,8 @@ fn service_command(executable: &Path, id: &str) -> Result<String, String> {
     Ok(format!("call \"{value}\" --service-profile {id}"))
 }
 
+// Used by the standalone service entry point; the component does not auto-start profiles.
+#[allow(dead_code)]
 pub fn parse_service_profile_argv(args: &[String]) -> Result<Option<String>, String> {
     let rest = args.get(1..).unwrap_or_default();
     if !rest.iter().any(|value| value == "--service-profile") {
@@ -321,6 +327,8 @@ fn profile_path(data_root: &Path, id: &str) -> PathBuf {
         .join(format!("{id}.json"))
 }
 
+// Used by the standalone service entry point; the component does not auto-start profiles.
+#[allow(dead_code)]
 pub fn rules_map(profile: &ServiceProfile) -> HashMap<String, ResponseRule> {
     profile
         .rules

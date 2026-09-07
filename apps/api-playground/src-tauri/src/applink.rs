@@ -14,6 +14,7 @@ impl PendingOpen {
         Self::default()
     }
 
+    #[cfg_attr(not(feature = "standalone"), allow(dead_code))]
     pub fn set(&self, request: OpenRequest) {
         *self
             .0

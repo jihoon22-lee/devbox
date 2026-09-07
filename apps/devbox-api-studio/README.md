@@ -7,3 +7,9 @@ v0.8 B02 API Studio implementation in progress; persistent migration and integra
 Uses a new `com.devbox.v08.apistudio` identity; no legacy data root is opened. Navigation retains mounted route drafts in memory, with bounded history. B01 Windows installation identity evidence is recorded in the foundation workthrough. B02 native feature/runtime parity requires its own Windows acceptance.
 
 Requests/Protocols, Webhooks and Transforms consume the shared frontend feature package and native adapters. See the [B02 workthrough](../../workthrough/2026-09-07-v08-b02-api-studio.md) for actual checks and remaining work.
+
+Native dependencies disable the legacy crates' default `standalone` feature.
+API Studio therefore embeds only its own frontend bundle. The three legacy apps
+still build and run with their default features. Native OAuth uses the initialized
+system-browser plugin through its validated API component; the renderer receives
+no additional opener capability.

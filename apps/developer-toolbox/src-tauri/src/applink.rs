@@ -11,6 +11,7 @@ impl PendingOpen {
         Self::default()
     }
 
+    #[cfg_attr(not(feature = "standalone"), allow(dead_code))]
     pub fn set(&self, request: OpenRequest) {
         *self
             .0
@@ -31,6 +32,7 @@ pub fn take_pending_open(state: tauri::State<'_, PendingOpen>) -> Option<OpenReq
     state.take()
 }
 
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn is_toolbox_text_request(request: &OpenRequest) -> bool {
     let OpenTarget::Handoff { kind, id } = &request.target else {
         return false;

@@ -17,8 +17,6 @@ use std::collections::BTreeSet;
 use std::io::Read;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
-#[cfg(target_os = "windows")]
-use tauri::Manager;
 use tokio::sync::Mutex as AsyncMutex;
 use zeroize::{Zeroize, Zeroizing};
 

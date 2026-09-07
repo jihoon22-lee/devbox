@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
+import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import Studio from "./Studio";
 
@@ -7,12 +7,16 @@ afterEach(() => { cleanup(); localStorage.clear(); });
 
 it("keeps the actual request draft through protocol and webhook navigation without starting native work", async () => {
   render(<Studio/>);
+  // Await the real lazy module graph, rather than making transformer speed
+  // part of this draft-lifetime unit test. Runtime budgets are measured separately.
+  await act(async () => { await vi.dynamicImportSettled(); });
   const url = await screen.findByPlaceholderText("https://api.example.com/users");
   fireEvent.change(url, { target: { value: "http://127.0.0.1:9000/draft-only" } });
   const nav = screen.getByRole("navigation", { name: "제품 화면" });
   fireEvent.click(within(nav).getByRole("button", { name: "프로토콜" }));
   await waitFor(() => expect(within(nav).getByRole("button", { name: "프로토콜" }).getAttribute("aria-current")).toBe("page"));
   fireEvent.click(within(nav).getByRole("button", { name: "웹훅 및 모의 서버" }));
+  await act(async () => { await vi.dynamicImportSettled(); });
   await screen.findByText("Webhook Lab");
   fireEvent.click(within(nav).getByRole("button", { name: /^요청$/ }));
   expect((await screen.findByPlaceholderText("https://api.example.com/users") as HTMLInputElement).value).toBe("http://127.0.0.1:9000/draft-only");

@@ -890,6 +890,8 @@ pub fn fixture_to_rule(
 /// publishing so a missing/old installation never leaves a misleading
 /// clipboard or temporary-file fallback.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn send_history_to_api(
     state: tauri::State<'_, Arc<ServerState>>,
     history_id: u64,
@@ -908,6 +910,8 @@ pub fn send_history_to_api(
 /// Publish a stored masked fixture by opaque fixture ID.  The frontend cannot
 /// provide a path, URL, body, or header value to this command.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn send_fixture_to_api(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -978,6 +982,8 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, Stri
 /// Publish a bounded, credential-redacted display projection to Log Lens.
 /// Header values and the raw request body have no field in this handoff.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn send_history_to_log_lens(
     state: tauri::State<'_, Arc<ServerState>>,
     history_id: u64,
@@ -995,6 +1001,8 @@ pub fn send_history_to_log_lens(
 
 /// Publish one backend-owned masked fixture to Log Lens by opaque ID.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn send_fixture_to_log_lens(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -1193,6 +1201,8 @@ pub fn reset_rule_sequence(
 /// and return one disabled Run Manager definition. The renderer supplies no
 /// rule JSON, executable path, bind address, or command string.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn export_run_service_definition(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,

@@ -94,6 +94,8 @@ pub struct RenewApiRequestResult {
 /// raw credential and no claim token, so the renderer cannot acknowledge a
 /// different request by forging IPC arguments.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn claim_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -156,6 +158,8 @@ fn claim_matches_route(claim: &HandoffClaim) -> bool {
 
 /// Renew the short preview lease without extending the envelope TTL.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn renew_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -199,6 +203,8 @@ pub fn renew_api_request(
 /// Acknowledge a validated preview and return the editable request.  The
 /// shared claim is deleted only after token/lease validation succeeds.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn ack_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -235,6 +241,8 @@ pub fn ack_api_request(
 /// Restore a preview after the user cancels.  Restore is idempotent for this
 /// claim and leaves the pending envelope available until its expiry.
 #[tauri::command]
+// The standalone AppLink entry point is not registered by the product adapter.
+#[cfg_attr(not(feature = "standalone"), allow(dead_code))]
 pub fn restore_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,

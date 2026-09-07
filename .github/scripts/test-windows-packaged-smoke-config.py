@@ -26,6 +26,56 @@ def source_text(directory: pathlib.Path, suffixes: set[str]) -> str:
     )
 
 
+def frontend_source(app_root: pathlib.Path, root: pathlib.Path = ROOT) -> str:
+    """Include only declared production workspace consumers, not unrelated apps."""
+    packages = {}
+    for manifest in sorted((root / "packages").glob("*/package.json")):
+        data = read_json(manifest)
+        name = data.get("name")
+        if isinstance(name, str):
+            if name in packages:
+                raise ValueError("duplicate workspace package")
+            packages[name] = manifest.parent
+    visited = set()
+    sources = []
+
+    def visit(directory: pathlib.Path) -> None:
+        if directory in visited:
+            return
+        visited.add(directory)
+        sources.append(source_text(directory / "src", {".ts", ".tsx", ".js", ".jsx", ".html"}))
+        data = read_json(directory / "package.json")
+        for field in ("dependencies", "peerDependencies", "optionalDependencies"):
+            for name, version in data.get(field, {}).items():
+                if isinstance(version, str) and version.startswith("workspace:") and name in packages:
+                    visit(packages[name])
+
+    visit(app_root)
+    return "\n".join(sources)
+
+
+def test_workspace_source_boundary() -> None:
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix="devbox-ui-source-fixture-") as temporary:
+        root = pathlib.Path(temporary)
+        fixtures = {
+            "apps/fixture": {"name": "fixture", "dependencies": {"@devbox/feature": "workspace:*"}, "devDependencies": {"@devbox/test-only": "workspace:*"}},
+            "packages/feature": {"name": "@devbox/feature", "dependencies": {"@devbox/nested": "workspace:*"}},
+            "packages/nested": {"name": "@devbox/nested", "dependencies": {"@devbox/feature": "workspace:*"}},
+            "packages/test-only": {"name": "@devbox/test-only"},
+            "packages/unrelated": {"name": "@devbox/unrelated"},
+        }
+        for directory, manifest in fixtures.items():
+            path = root / directory
+            (path / "src").mkdir(parents=True)
+            (path / "package.json").write_text(json.dumps(manifest), encoding="utf-8")
+            (path / "src/index.ts").write_text(directory, encoding="utf-8")
+        source = frontend_source(root / "apps/fixture", root)
+        assert "packages/feature" in source and "packages/nested" in source
+        assert "packages/test-only" not in source and "packages/unrelated" not in source
+        assert source.count("packages/feature") == 1, "cyclic declarations must terminate"
+
+
 def check() -> list[str]:
     failures: list[str] = []
     config = read_json(CONFIG_PATH)
@@ -86,7 +136,7 @@ def check() -> list[str]:
         ):
             failures.append(f"{app_id}: protected process name is unsafe")
 
-        frontend = source_text(app_root / "src", {".ts", ".tsx", ".js", ".jsx", ".html"})
+        frontend = frontend_source(app_root)
         markers = app.get("markers", [])
         if not markers or any(not isinstance(marker, str) or marker not in frontend for marker in markers):
             failures.append(f"{app_id}: a packaged UI marker is empty or absent from frontend source")
@@ -110,6 +160,7 @@ def check() -> list[str]:
 
 
 def main() -> int:
+    test_workspace_source_boundary()
     failures = check()
     if failures:
         print("WINDOWS PACKAGED SMOKE CONFIG FAILED:", file=sys.stderr)
