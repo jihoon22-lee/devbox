@@ -157,14 +157,30 @@ fn remove_owned_directory(directory: &Path) -> Result<(), String> {
 }
 fn remove_owned_directory_with(
     directory: &Path,
-    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+    remove: impl FnMut(&Path) -> std::io::Result<()>,
 ) -> Result<(), String> {
-    fn inspect(path: &Path, remaining: &mut usize) -> Result<bool, String> {
+    remove_owned_directory_checked(directory, remove, |path| fs::symlink_metadata(path))
+}
+fn remove_owned_directory_checked(
+    directory: &Path,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+    mut read_metadata: impl FnMut(&Path) -> std::io::Result<fs::Metadata>,
+) -> Result<(), String> {
+    fn inspect(
+        path: &Path,
+        remaining: &mut usize,
+        read_metadata: &mut impl FnMut(&Path) -> std::io::Result<fs::Metadata>,
+    ) -> Result<bool, String> {
         *remaining = remaining
             .checked_sub(1)
             .ok_or("migration_store_too_large")?;
-        let metadata =
-            fs::symlink_metadata(path).map_err(|_| "migration_cleanup_entry_metadata")?;
+        let metadata = match read_metadata(path) {
+            Ok(value) => value,
+            // An owned scratch entry may finish a pending deletion after it
+            // was enumerated. Its absence is already the desired state.
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+            Err(_) => return Err("migration_cleanup_entry_metadata".into()),
+        };
         let reparse_point = {
             #[cfg(windows)]
             {
@@ -182,14 +198,27 @@ fn remove_owned_directory_with(
         if metadata.file_type().is_symlink() || reparse_point {
             return Ok(false);
         }
-        devbox_filesystem::ensure_no_links(path).map_err(|_| "migration_cleanup_child_path")?;
+        if let Err(error) = devbox_filesystem::ensure_no_links(path) {
+            return match error.kind() {
+                std::io::ErrorKind::NotFound => Ok(false),
+                std::io::ErrorKind::InvalidInput => Err("migration_cleanup_child_path".into()),
+                _ => Err("migration_cleanup_entry_metadata".into()),
+            };
+        }
         let mut readonly = metadata.is_file() && metadata.permissions().readonly();
         if metadata.is_dir() {
-            for entry in fs::read_dir(path).map_err(|_| "migration_storage_unavailable")? {
-                readonly |= inspect(
-                    &entry.map_err(|_| "migration_storage_unavailable")?.path(),
-                    remaining,
-                )?;
+            let entries = match fs::read_dir(path) {
+                Ok(value) => value,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+                Err(_) => return Err("migration_cleanup_directory_read".into()),
+            };
+            for entry in entries {
+                let entry = match entry {
+                    Ok(value) => value,
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                    Err(_) => return Err("migration_cleanup_directory_read".into()),
+                };
+                readonly |= inspect(&entry.path(), remaining, read_metadata)?;
             }
         }
         Ok(readonly)
@@ -206,7 +235,19 @@ fn remove_owned_directory_with(
         {
             return Err("migration_cleanup_changed".into());
         }
-        let readonly = inspect(directory, &mut 20_000)?;
+        let readonly = match inspect(directory, &mut 20_000, &mut read_metadata) {
+            Ok(value) => value,
+            Err(error)
+                if matches!(
+                    error.as_str(),
+                    "migration_cleanup_entry_metadata" | "migration_cleanup_directory_read"
+                ) && std::time::Instant::now() < deadline =>
+            {
+                std::thread::sleep(std::time::Duration::from_millis(50));
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
         match remove(directory) {
             Ok(()) => return Ok(()),
             Err(error) => {
@@ -317,8 +358,10 @@ impl Repository {
     pub fn clear_export_copy(&self, id: &str) -> Result<(), String> {
         let stage = self.stage(id)?;
         let copy = stage.join("webview-copy");
-        if fs::symlink_metadata(&copy).is_ok() {
-            remove_owned_directory(&copy)?;
+        match fs::symlink_metadata(&copy) {
+            Ok(_) => remove_owned_directory(&copy)?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("migration_cleanup_root_metadata".into()),
         }
         for name in [
             "worker-ticket.json",
@@ -1007,5 +1050,58 @@ mod tests {
         assert!(remove_owned_directory(&copy).is_err());
         assert!(fs::symlink_metadata(copy).unwrap().file_type().is_symlink());
         assert_eq!(fs::read(original.join("preserved")).unwrap(), b"source");
+    }
+
+    #[test]
+    fn owned_copy_cleanup_accepts_an_entry_disappearing_after_enumeration() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        fs::create_dir(&copy).unwrap();
+        let transient = copy.join("transient");
+        fs::write(&transient, b"owned scratch").unwrap();
+        let mut disappeared = false;
+        remove_owned_directory_checked(
+            &copy,
+            |path| fs::remove_dir_all(path),
+            |path| {
+                if path == transient && !disappeared {
+                    fs::remove_file(path)?;
+                    disappeared = true;
+                }
+                fs::symlink_metadata(path)
+            },
+        )
+        .unwrap();
+        assert!(disappeared);
+        assert!(!copy.exists());
+    }
+
+    #[test]
+    fn owned_copy_cleanup_retries_transient_metadata_access_failure() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        let original = root.path().join("original");
+        fs::create_dir(&copy).unwrap();
+        let transient = copy.join("transient");
+        fs::write(&transient, b"owned scratch").unwrap();
+        fs::write(&original, b"source").unwrap();
+        let mut attempts = 0;
+        remove_owned_directory_checked(
+            &copy,
+            |path| fs::remove_dir_all(path),
+            |path| {
+                if path == transient {
+                    attempts += 1;
+                    if attempts == 1 {
+                        return Err(std::io::ErrorKind::PermissionDenied.into());
+                    }
+                }
+                fs::symlink_metadata(path)
+            },
+        )
+        .unwrap();
+        assert_eq!(attempts, 2);
+        assert!(!copy.exists());
+        assert_eq!(fs::read(original).unwrap(), b"source");
     }
 }

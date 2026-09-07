@@ -121,7 +121,9 @@ The [S03 Windows fixture](../../.github/scripts/windows-api-workflow.mjs) exerci
 capture→explicit request apply→native DPAPI credential reconnect→one explicit send→
 masked response→native comparison→Mock editor→durable Knowledge fallback and restart.
 It uses disposable synthetic profiles and a loopback server. Its registration is
-not a claim that the actual Windows scenario has passed.
+separate from importer acceptance. The complete S03 scenario and listener lifecycle
+passed on `e986c36` in [Windows 34152328677](https://github.com/jihoon22-lee/devbox/actions/runs/34152328677);
+the importer and a separate Control Center startup probe still failed in that run.
 
 The build checks the complete static Requests import closure, including the shell,
 against the preserved API Playground budget. OpenAPI/YAML parsing, Protocol Lab

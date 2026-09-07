@@ -134,6 +134,12 @@ async function start(product, suffix) {
       }
       if (ready) break; await delay(100);
     }
+    if (!ready) {
+      try {
+        const snapshot = await cdp.evaluate('({url:location.href,readyState:document.readyState,tauri:!!window.__TAURI_INTERNALS__,text:(document.body?.innerText??"").slice(0,12000)})');
+        writeFileSync(`product-foundation-evidence/startup-${product.id}-${suffix}.json`, JSON.stringify({ currentProbe, snapshot, readinessError }, null, 2));
+      } catch { /* Keep the original readiness failure if diagnostics cannot attach. */ }
+    }
     assert.ok(ready, `native route must render an accepted response: ${readinessError}`);
     const startupMs = Math.round(performance.now() - started);
     assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);

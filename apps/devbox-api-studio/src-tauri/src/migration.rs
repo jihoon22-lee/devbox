@@ -559,6 +559,12 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                                     "api-export-copy-access-denied"
                                 }
                                 "migration_cleanup_changed" => "api-export-copy-changed",
+                                "migration_cleanup_root_metadata" => {
+                                    "api-export-copy-root-metadata"
+                                }
+                                "migration_cleanup_directory_read" => {
+                                    "api-export-copy-directory-read"
+                                }
                                 "migration_cleanup_root_identity" => {
                                     "api-export-copy-root-identity"
                                 }
