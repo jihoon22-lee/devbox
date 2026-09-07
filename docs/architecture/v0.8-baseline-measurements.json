@@ -1,0 +1,380 @@
+{
+  "schemaVersion": 1,
+  "baselineTag": "v0.7.0",
+  "baselineCommit": "3a23f49c85aa3c3d04b86f227e8aa184ef964085",
+  "harnessHead": "55e5586b7460a84ff98dd4666afe6a419e629f85",
+  "testedMergeCommit": "d37e9341e2599088011eaf321b600bf6b0269792",
+  "runId": 34101371619,
+  "host": {
+    "osRelease": "10.0.26100",
+    "logicalCpus": 4,
+    "cpuModel": "AMD EPYC 7763 64-Core Processor                ",
+    "totalMemoryBytes": 17178693632,
+    "runnerImage": "win25-vs2026",
+    "runnerImageVersion": "20260824.214.3"
+  },
+  "configuration": {
+    "schemaVersion": 1,
+    "baselineTag": "v0.7.0",
+    "baselineCommit": "3a23f49c85aa3c3d04b86f227e8aa184ef964085",
+    "apps": [
+      "workbench",
+      "api-playground",
+      "knowledge-base",
+      "devbox-manager",
+      "everything-plus",
+      "run-manager",
+      "wsl-desktop"
+    ],
+    "idleSampleMs": 5000,
+    "knownBaselineFailures": [
+      {
+        "app": "run-manager",
+        "command": "run_job_now",
+        "code": "run-execution-failed",
+        "runFailureCode": "spawn-failed",
+        "evidenceRun": 34099044832,
+        "trackingIssue": 547
+      }
+    ],
+    "budgets": {
+      "coldRendererReadyMs": 30000,
+      "firstKeyboardEventMs": 1000,
+      "warmExistingWindowMs": 10000,
+      "idleCpuPercentOfMachine": 20,
+      "idleWorkingSetSumBytes": 1073741824,
+      "idleProcessCount": 16,
+      "index500FilesMs": 30000,
+      "searchMs": 1000,
+      "ownedTaskCompleteMs": 30000,
+      "profileReadbackMs": 1000
+    },
+    "conditions": {
+      "host": "github-hosted windows-2025, one app at a time",
+      "cold": "new process and isolated empty user data; OS file cache is not forcibly flushed",
+      "warm": "second invocation of an already running app; visible owned primary restored and healthy",
+      "input": "inert F24 CDP keyboard dispatch and renderer event acknowledgement",
+      "idle": "after 10-second startup survival, before synthetic workloads; parent plus owned descendants",
+      "search": "500 generated UTF-8 text files; ten exact filename searches after completed index",
+      "task": "one disabled Windows job explicitly executed to exit 0 using existing native ownership",
+      "restore": "one persisted WSL profile read back; no implicit PTY or command execution"
+    },
+    "unmeasured": [
+      "v0.7 Windows owned-task latency: pinned binary fails to spawn the relative system shell",
+      "live WSL PTY/distro restore",
+      "integrated v0.8 workload comparison"
+    ]
+  },
+  "summary": {
+    "measuredBudgetsPassed": 6,
+    "knownBaselineFailures": [
+      "run-manager"
+    ],
+    "r24Passed": false
+  },
+  "measurements": [
+    {
+      "app": "api-playground",
+      "stage": "measured",
+      "coldRendererReadyMs": 2198,
+      "firstKeyboardEventMs": 3,
+      "firstInputObservedMs": 2201,
+      "idle": {
+        "sampleMs": 5860,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0,
+        "workingSetSumBytes": 345907200,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": null,
+      "warmExistingWindowMs": 2314,
+      "budget": {
+        "passed": true,
+        "violations": [],
+        "knownBaselineFailureObserved": false,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    },
+    {
+      "app": "everything-plus",
+      "stage": "measured",
+      "coldRendererReadyMs": 2535,
+      "firstKeyboardEventMs": 3,
+      "firstInputObservedMs": 2539,
+      "idle": {
+        "sampleMs": 5870,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0.33,
+        "workingSetSumBytes": 341024768,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": {
+        "kind": "500-file-native-index-and-10-searches",
+        "result": "measured",
+        "indexMs": 268,
+        "searchMs": [
+          4,
+          3,
+          3,
+          3,
+          3,
+          2,
+          3,
+          3,
+          3,
+          3
+        ]
+      },
+      "warmExistingWindowMs": 2820,
+      "budget": {
+        "passed": true,
+        "violations": [],
+        "knownBaselineFailureObserved": false,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    },
+    {
+      "app": "knowledge-base",
+      "stage": "measured",
+      "coldRendererReadyMs": 2694,
+      "firstKeyboardEventMs": 4,
+      "firstInputObservedMs": 2699,
+      "idle": {
+        "sampleMs": 5866,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0.13,
+        "workingSetSumBytes": 349704192,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": null,
+      "warmExistingWindowMs": 2341,
+      "budget": {
+        "passed": true,
+        "violations": [],
+        "knownBaselineFailureObserved": false,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    },
+    {
+      "app": "devbox-manager",
+      "stage": "measured",
+      "coldRendererReadyMs": 2266,
+      "firstKeyboardEventMs": 3,
+      "firstInputObservedMs": 2269,
+      "idle": {
+        "sampleMs": 5874,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0,
+        "workingSetSumBytes": 349147136,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": null,
+      "warmExistingWindowMs": 2362,
+      "budget": {
+        "passed": true,
+        "violations": [],
+        "knownBaselineFailureObserved": false,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    },
+    {
+      "app": "run-manager",
+      "stage": "measured",
+      "coldRendererReadyMs": 2201,
+      "firstKeyboardEventMs": 3,
+      "firstInputObservedMs": 2204,
+      "idle": {
+        "sampleMs": 5863,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0.07,
+        "workingSetSumBytes": 347979776,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": {
+        "kind": "disabled-windows-job-explicit-owned-execution",
+        "result": "failed",
+        "observedFailureMs": 145,
+        "failure": {
+          "command": "run_job_now",
+          "code": "run-execution-failed",
+          "runFailureCode": "spawn-failed"
+        }
+      },
+      "warmExistingWindowMs": 2357,
+      "budget": {
+        "passed": false,
+        "violations": [
+          "owned-task-failed"
+        ],
+        "knownBaselineFailureObserved": true,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    },
+    {
+      "app": "workbench",
+      "stage": "measured",
+      "coldRendererReadyMs": 2152,
+      "firstKeyboardEventMs": 3,
+      "firstInputObservedMs": 2156,
+      "idle": {
+        "sampleMs": 5949,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0.07,
+        "workingSetSumBytes": 326705152,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": null,
+      "warmExistingWindowMs": 3291,
+      "budget": {
+        "passed": true,
+        "violations": [],
+        "knownBaselineFailureObserved": false,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    },
+    {
+      "app": "wsl-desktop",
+      "stage": "measured",
+      "coldRendererReadyMs": 2906,
+      "firstKeyboardEventMs": 3,
+      "firstInputObservedMs": 2910,
+      "idle": {
+        "sampleMs": 6079,
+        "logicalCpus": 4,
+        "processCount": 7,
+        "cpuPercentOfMachine": 0,
+        "workingSetSumBytes": 351379456,
+        "cohortChanged": false,
+        "memoryBoundary": "sum of process working sets; shared pages may be counted more than once"
+      },
+      "workload": {
+        "kind": "saved-terminal-profile-readback-without-execution",
+        "result": "measured",
+        "profileReadbackMs": 6,
+        "distributions": {
+          "status": "unavailable",
+          "count": null
+        },
+        "livePtyRestore": "not-run; this fixture measures persisted metadata only"
+      },
+      "warmExistingWindowMs": 2484,
+      "budget": {
+        "passed": true,
+        "violations": [],
+        "knownBaselineFailureObserved": false,
+        "r24": "not-complete; failed legacy owned-task latency, live PTY restore and integrated comparison remain unmeasured"
+      }
+    }
+  ],
+  "bundles": [
+    {
+      "app": "api-playground",
+      "initial": {
+        "rawBytes": "595425",
+        "gzipBytes": "177065"
+      },
+      "lazyTotal": {
+        "rawBytes": "0",
+        "gzipBytes": "0"
+      },
+      "rawBudget": "685000",
+      "gzipBudget": "205000"
+    },
+    {
+      "app": "devbox-manager",
+      "initial": {
+        "rawBytes": "313079",
+        "gzipBytes": "93354"
+      },
+      "lazyTotal": {
+        "rawBytes": "0",
+        "gzipBytes": "0"
+      },
+      "rawBudget": "345000",
+      "gzipBudget": "105000"
+    },
+    {
+      "app": "everything-plus",
+      "initial": {
+        "rawBytes": "234417",
+        "gzipBytes": "73025"
+      },
+      "lazyTotal": {
+        "rawBytes": "1096",
+        "gzipBytes": "584"
+      },
+      "rawBudget": "270000",
+      "gzipBudget": "85000"
+    },
+    {
+      "app": "knowledge-base",
+      "initial": {
+        "rawBytes": "839484",
+        "gzipBytes": "281084"
+      },
+      "lazyTotal": {
+        "rawBytes": "3409382",
+        "gzipBytes": "968939"
+      },
+      "rawBudget": "970000",
+      "gzipBudget": "325000"
+    },
+    {
+      "app": "run-manager",
+      "initial": {
+        "rawBytes": "333598",
+        "gzipBytes": "98376"
+      },
+      "lazyTotal": {
+        "rawBytes": "0",
+        "gzipBytes": "0"
+      },
+      "rawBudget": "385000",
+      "gzipBudget": "115000"
+    },
+    {
+      "app": "workbench",
+      "initial": {
+        "rawBytes": "280290",
+        "gzipBytes": "83367"
+      },
+      "lazyTotal": {
+        "rawBytes": "0",
+        "gzipBytes": "0"
+      },
+      "rawBudget": "325000",
+      "gzipBudget": "100000"
+    },
+    {
+      "app": "wsl-desktop",
+      "initial": {
+        "rawBytes": "697053",
+        "gzipBytes": "200841"
+      },
+      "lazyTotal": {
+        "rawBytes": "110225",
+        "gzipBytes": "29794"
+      },
+      "rawBudget": "755000",
+      "gzipBudget": "220000"
+    }
+  ],
+  "limits": [
+    "Single-run observations, not percentiles.",
+    "Byte counts in bundle reports are exact decimal strings.",
+    "Legacy Windows task execution failed; no successful latency is available.",
+    "Live WSL PTY and integrated v0.8 comparisons remain unmeasured."
+  ]
+}
