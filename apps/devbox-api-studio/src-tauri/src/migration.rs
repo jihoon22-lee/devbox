@@ -552,8 +552,17 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                         });
                         let cleanup = repo.clear_export_copy(&id);
                         let exported = exported?;
-                        if cleanup.is_err() {
-                            guard.stage("api-export-copy-cleanup-failed");
+                        if let Err(error) = &cleanup {
+                            guard.stage(match error.as_str() {
+                                "migration_cleanup_readonly" => "api-export-copy-readonly",
+                                "migration_cleanup_access_denied" => {
+                                    "api-export-copy-access-denied"
+                                }
+                                "migration_cleanup_changed" => "api-export-copy-changed",
+                                "migration_path_invalid" => "api-export-copy-path-rejected",
+                                "migration_store_too_large" => "api-export-copy-entry-limit",
+                                _ => "api-export-copy-cleanup-failed",
+                            });
                         }
                         cleanup?;
                         for (kind, value) in [

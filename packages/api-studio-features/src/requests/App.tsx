@@ -117,7 +117,8 @@ import {
   isMultipartDerivedHeader,
   validateMultipartParts,
 } from "./lib/multipart";
-import { OPENAPI_LIMITS, type OpenApiOperationPreview } from "./lib/openapi";
+import { OPENAPI_LIMITS } from "./lib/openapiLimits";
+import type { OpenApiOperationPreview } from "./lib/openapi";
 import { eventSize, MAX_DECODED_BYTES, MAX_RETAINED_EVENTS, type SseEvent } from "./lib/sse";
 import { isTauri } from "./lib/isTauri";
 import { WebSocketMessageBuffer } from "./lib/websocket";

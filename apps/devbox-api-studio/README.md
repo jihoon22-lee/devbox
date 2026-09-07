@@ -122,3 +122,8 @@ capture→explicit request apply→native DPAPI credential reconnect→one expli
 masked response→native comparison→Mock editor→durable Knowledge fallback and restart.
 It uses disposable synthetic profiles and a loopback server. Its registration is
 not a claim that the actual Windows scenario has passed.
+
+The build checks the complete static Requests import closure, including the shell,
+against the preserved API Playground budget. OpenAPI/YAML parsing, Protocol Lab
+and Transforms remain deferred. Parser-independent limits live in a separate
+module so merely rendering Requests does not load the YAML engine.

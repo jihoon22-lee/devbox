@@ -48,3 +48,6 @@ assert "captureMasked: true" in workflow_probe
 assert "restartPreservesDraft: true" in workflow_probe
 
 assert "-p api-playground -p webhook-lab -p developer-toolbox" in workflow, "B02 must execute the actual Windows domain regressions, not only compile dependencies"
+
+import subprocess
+subprocess.run(["node", str(root / ".github/scripts/check-api-studio-routes.mjs"), "--self-test"], check=True)

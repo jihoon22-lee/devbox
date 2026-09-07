@@ -153,24 +153,63 @@ fn destination_key(receipt: &Receipt) -> String {
     import_model::fingerprint(&json!([receipt.source_store, receipt.destination_id]))
 }
 fn remove_owned_directory(directory: &Path) -> Result<(), String> {
-    fn inspect(path: &Path, remaining: &mut usize) -> Result<(), String> {
+    remove_owned_directory_with(directory, |path| fs::remove_dir_all(path))
+}
+fn remove_owned_directory_with(
+    directory: &Path,
+    mut remove: impl FnMut(&Path) -> std::io::Result<()>,
+) -> Result<(), String> {
+    fn inspect(path: &Path, remaining: &mut usize) -> Result<bool, String> {
         *remaining = remaining
             .checked_sub(1)
             .ok_or("migration_store_too_large")?;
         devbox_filesystem::ensure_no_links(path).map_err(|_| "migration_path_invalid")?;
-        if path.is_dir() {
+        let metadata = fs::symlink_metadata(path).map_err(|_| "migration_storage_unavailable")?;
+        let mut readonly = metadata.is_file() && metadata.permissions().readonly();
+        if metadata.is_dir() {
             for entry in fs::read_dir(path).map_err(|_| "migration_storage_unavailable")? {
-                inspect(
+                readonly |= inspect(
                     &entry.map_err(|_| "migration_storage_unavailable")?.path(),
                     remaining,
                 )?;
             }
         }
-        Ok(())
+        Ok(readonly)
     }
-    inspect(directory, &mut 20_000)?;
-    fs::remove_dir_all(directory).map_err(|_| "migration_storage_unavailable".into())
+    let identity = devbox_filesystem::filesystem_identity(directory, true)
+        .map_err(|_| "migration_path_invalid")?;
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+    loop {
+        if devbox_filesystem::filesystem_identity(directory, true)
+            .map_err(|_| "migration_cleanup_changed")?
+            != identity
+        {
+            return Err("migration_cleanup_changed".into());
+        }
+        let readonly = inspect(directory, &mut 20_000)?;
+        match remove(directory) {
+            Ok(()) => return Ok(()),
+            Err(error) => {
+                if std::time::Instant::now() >= deadline {
+                    return Err(match error.kind() {
+                        std::io::ErrorKind::PermissionDenied if readonly => {
+                            "migration_cleanup_readonly"
+                        }
+                        std::io::ErrorKind::PermissionDenied => "migration_cleanup_access_denied",
+                        std::io::ErrorKind::NotFound => "migration_cleanup_changed",
+                        _ => "migration_cleanup_io",
+                    }
+                    .into());
+                }
+                // The worker Job is already empty. Antivirus/indexing can
+                // briefly retain a delete-incompatible handle to this owned copy.
+                // Never relax link/identity checks or alter source permissions.
+                std::thread::sleep(std::time::Duration::from_millis(50));
+            }
+        }
+    }
 }
+
 fn preserve_serialization(before: Option<&String>, after: &Value) -> Result<String, String> {
     if let Some(before) = before {
         if json_value(before)? == *after {
@@ -872,5 +911,46 @@ mod tests {
             .is_err());
         assert!(!root.path().join("webhooks/fixtures.json").exists());
         assert!(repo.pending().unwrap().is_none());
+    }
+    #[test]
+    fn owned_copy_cleanup_rechecks_identity_before_retrying_a_failed_removal() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        let moved = root.path().join("moved");
+        fs::create_dir(&copy).unwrap();
+        fs::write(copy.join("data"), b"owned copy").unwrap();
+        let mut attempts = 0;
+        let result = remove_owned_directory_with(&copy, |path| {
+            attempts += 1;
+            fs::rename(path, &moved)?;
+            fs::create_dir(path)?;
+            Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+        });
+        assert_eq!(result.unwrap_err(), "migration_cleanup_changed");
+        assert_eq!(attempts, 1);
+        assert!(copy.is_dir());
+        assert_eq!(fs::read(moved.join("data")).unwrap(), b"owned copy");
+    }
+    #[test]
+    fn owned_copy_cleanup_retries_transient_delete_failure_without_touching_original() {
+        let root = tempfile::tempdir().unwrap();
+        let copy = root.path().join("copy");
+        let original = root.path().join("original");
+        fs::create_dir(&copy).unwrap();
+        fs::write(copy.join("data"), b"owned copy").unwrap();
+        fs::write(&original, b"original").unwrap();
+        let mut attempts = 0;
+        remove_owned_directory_with(&copy, |path| {
+            attempts += 1;
+            if attempts == 1 {
+                Err(std::io::Error::from(std::io::ErrorKind::PermissionDenied))
+            } else {
+                fs::remove_dir_all(path)
+            }
+        })
+        .unwrap();
+        assert_eq!(attempts, 2);
+        assert!(!copy.exists());
+        assert_eq!(fs::read(original).unwrap(), b"original");
     }
 }

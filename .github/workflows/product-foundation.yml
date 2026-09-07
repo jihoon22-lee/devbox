@@ -26,6 +26,7 @@ on:
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-api-workflow.mjs'
+      - '.github/scripts/check-api-studio-routes.mjs'
       - '.github/scripts/windows-process-identity.mjs'
       - '.github/scripts/windows-packaged-smoke.mjs'
       - '.github/scripts/windows-product-installation.ps1'

@@ -17,6 +17,33 @@ fn exclusive_read(path: &Path) -> std::io::Result<std::fs::File> {
 mod tests {
     use super::*;
     #[test]
+    fn actual_windows_delete_lock_is_retried_only_for_the_owned_export_copy() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let repo =
+            crate::core::import_repository::Repository::open(root.path(), "fixture").unwrap();
+        let (id, stage) = repo.new_stage().unwrap();
+        let copy = stage.join("webview-copy");
+        std::fs::create_dir(&copy).unwrap();
+        let file = copy.join("fixture-data");
+        std::fs::write(&file, b"owned copy").unwrap();
+        let original = root.path().join("original");
+        std::fs::write(&original, b"unchanged").unwrap();
+        let guard = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(file)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            drop(guard);
+        });
+        repo.clear_export_copy(&id).unwrap();
+        release.join().unwrap();
+        assert!(!copy.exists());
+        assert_eq!(std::fs::read(original).unwrap(), b"unchanged");
+    }
+    #[test]
     fn actual_exclusive_windows_handles_allow_identity_checks_and_preserve_source() {
         let root = tempfile::tempdir().unwrap();
         let source = root.path().join("source");

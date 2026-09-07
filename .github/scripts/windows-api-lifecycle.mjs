@@ -36,7 +36,6 @@ function powershell(value, action) {
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", script], { encoding: "utf8", windowsHide: true });
   if (result.status !== 0) throw new Error("owned process window query failed"); return result.stdout.trim();
 }
-const handle = value => powershell(value, "$p.MainWindowHandle.ToInt64()");
 function windowDetails(value) {
   return JSON.parse(powershell(value, `
 Add-Type -TypeDefinition 'using System; using System.Text; using System.Runtime.InteropServices; public struct FixtureRect { public int Left, Top, Right, Bottom; } public static class FixtureWindow { [DllImport("user32.dll")] public static extern bool GetWindowRect(IntPtr h, out FixtureRect rect); [DllImport("user32.dll")] public static extern int GetWindowLong(IntPtr h, int index); [DllImport("user32.dll", CharSet=CharSet.Unicode)] public static extern int GetClassName(IntPtr h, StringBuilder name, int length); [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h); }';
@@ -86,10 +85,10 @@ try {
   assert.equal((await success(ui, "lifecycle_status")).trayAvailable, true);
   await success(ui, "set_close_policy", { policy: "keep-listening" });
   progress("keep-hidden");
-  closeWindow(ui.process); await until(() => handle(ui.process) === "0", "keep-listening did not hide the window");
+  closeWindow(ui.process); await until(async () => (await success(ui, "lifecycle_status")).mainWindowVisible === false, "keep-listening did not hide the product window");
   assert.equal(ui.process.exitCode, null); assert.equal(await responding(temporaryPort), true); assert.equal(await responding(servicePort), true);
   const second = await child([], ui.env); await exited(second); assert.equal(second.exitCode, 0);
-  await until(() => handle(ui.process) !== "0", "single-instance relaunch did not restore hidden window");
+  await until(async () => (await success(ui, "lifecycle_status")).mainWindowVisible === true, "single-instance relaunch did not restore hidden product window");
   assert.equal((await success(ui, "server_status")).running, true);
   progress("full-quit");
   // Full quit overrides keep-listening. The process may exit before CDP returns

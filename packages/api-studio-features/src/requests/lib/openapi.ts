@@ -1,5 +1,6 @@
+import { OPENAPI_LIMITS } from "./openapiLimits";
+export { OPENAPI_LIMITS } from "./openapiLimits";
 import {
-  OPENAPI_DOCUMENT_LIMITS,
   parseBoundedOpenApiDocument,
 } from "@devbox/openapi";
 import type {
@@ -19,20 +20,7 @@ import { MAX_MULTIPART_PARTS } from "./multipart";
  * into a secret-bearing request. Keep these limits in one place so every
  * source enforces the same parser contract.
  */
-export const OPENAPI_LIMITS = Object.freeze({
-  ...OPENAPI_DOCUMENT_LIMITS,
-  maxPaths: 250,
-  maxOperations: 1_000,
-  maxServers: 20,
-  maxParameters: 2_000,
-  maxSecuritySchemes: 100,
-  maxMediaTypes: 50,
-  maxBodyBytes: 512 * 1024,
-  maxRequestRows: 100,
-  maxParameterNameLength: 256,
-  maxFileNameLength: 120,
-  maxCollectionNameLength: 120,
-});
+
 
 export type OpenApiFormat = "json" | "yaml";
 export type OpenApiIssueScope = "document" | "operation";

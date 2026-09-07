@@ -68,7 +68,10 @@ try {
   // Set up only an empty secret reference. The real user-facing Change action
   // below supplies the value to native DPAPI; plaintext is never seeded in storage.
   await ui.cdp.evaluate('localStorage.setItem("apip-environments",JSON.stringify({version:1,environments:[{id:"s03-env",name:"S03 fixture",variables:[{key:"WEBHOOK_SECRET",value:"",secret:true}]}]}))');
-  await ui.cdp.send("Page.reload"); await wait('!!document.querySelector(".env-var-secret.unconfigured")', "empty secret fixture did not load");
+  await ui.cdp.send("Page.reload");
+  await wait('!!Array.from(document.querySelectorAll(".env-name")).find(button=>button.textContent==="S03 fixture")', "empty environment fixture did not load");
+  await click(".api-feature-requests .env-item", "S03 fixture");
+  await wait('!!document.querySelector(".env-var-secret.unconfigured")', "explicit environment selection did not expose the empty reference");
   progress("capture");
   const capturePort = await unusedPort(); await success("api-studio.webhooks", "start_server", { bind: "127.0.0.1", port: capturePort, allowLan: false });
   const captured = await fetch(`http://127.0.0.1:${capturePort}/s03`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` }, body: '{"fixture":true}' }); await captured.arrayBuffer();

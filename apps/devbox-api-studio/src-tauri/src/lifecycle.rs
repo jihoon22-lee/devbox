@@ -236,7 +236,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
     }
     match method {
         "lifecycle_status" => Ok(
-            json!({ "policy": policy(&state), "trayAvailable": state.tray.load(Ordering::Acquire), "running": webhook_lab_lib::component::listener_running(app), "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
+            json!({ "mainWindowVisible": app.get_webview_window("main").and_then(|window| window.is_visible().ok()), "policy": policy(&state), "trayAvailable": state.tray.load(Ordering::Acquire), "running": webhook_lab_lib::component::listener_running(app), "closing": state.closing.load(Ordering::Acquire), "stopFailed": state.failed.load(Ordering::Acquire), "settingsWritable": state.storage.lock().map_err(|_| "component_state_unavailable")?.writable }),
         ),
         "hide_main_window" => {
             if close_action(
