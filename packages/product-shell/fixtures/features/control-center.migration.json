@@ -1,0 +1,7 @@
+{
+  "featureId": "control-center.migration",
+  "owner": "control-center",
+  "route": "migration",
+  "authority": "shell-read",
+  "availability": "foundation"
+}

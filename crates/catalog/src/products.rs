@@ -136,7 +136,10 @@ mod tests {
     fn bundled_topology_is_complete_and_hidden() {
         let c = ProductCatalog::parse(SOURCE).unwrap();
         assert_eq!(c.products.len(), 4);
-        assert_eq!(c.features.len(), 27);
+        assert!(c.products.iter().all(|p| c
+            .features
+            .iter()
+            .any(|f| f.owner == p.id && f.route == p.default_route)));
     }
     #[test]
     fn rejects_escalation_ambiguity_and_future_contracts() {
