@@ -8,10 +8,12 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createServer } from "node:net";
 import { randomUUID } from "node:crypto";
+import { windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy } from "./windows-packaged-smoke.mjs";
 
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+const elevated = windowsProcessIsElevated();
 const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products;
 const root = mkdtempSync(path.join(tmpdir(), "devbox-product-fixture-"));
 const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", fixtureVersion: 1, products: [], result: "failed" };
@@ -58,14 +60,21 @@ async function connect(port, child) {
 
 async function start(product, suffix) {
   const directory = path.join(root, `${product.id}-${suffix}`); mkdirSync(directory);
-  const executable = path.join(directory, `devbox-${product.id}.exe`);
+  // Elevated WebView2 reads per-image machine policy instead of the process
+  // override. Each fixture copy owns a unique value while both copies run.
+  const imageName = `devbox-${product.id}-${suffix}-${randomUUID()}.exe`;
+  const executable = path.join(directory, imageName);
   const built = path.resolve("target/debug", `devbox-${product.id}.exe`);
   assert.ok(existsSync(built), "packaged executable is missing"); copyFileSync(built, executable);
-  const port = await freePort(); const started = performance.now();
-  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-address=127.0.0.1 --remote-debugging-port=${port}` };
-  const child = spawn(executable, [], { env, stdio: "ignore" });
-  let cdp;
+  const port = await freePort();
+  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, "webview2") };
+  const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
+  let cdp, child;
   try {
+    if (policy) installElevatedCdpPolicy(policy);
+    const started = performance.now();
+    child = spawn(executable, [], { env, stdio: "ignore" });
+    await once(child, "spawn");
     cdp = await connect(port, child);
     let ready = false;
     for (let i = 0; i < 100; i++) {
@@ -90,16 +99,17 @@ async function start(product, suffix) {
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
-    return { child, cdp, handshake: description.handshake, startupMs };
-  } catch (error) { cdp?.close(); child.kill(); throw error; }
+    return { child, cdp, policy, handshake: description.handshake, startupMs };
+  } catch (error) { stop({ child, cdp, policy }); throw error; }
 }
 
 function stop(instance) {
-  instance?.cdp.close();
-  if (instance?.child.pid && instance.child.exitCode === null) {
+  instance?.cdp?.close();
+  if (instance?.child?.pid && instance.child.exitCode === null) {
     // Kill only the process tree created by this fixture.
     spawnSync("taskkill.exe", ["/PID", String(instance.child.pid), "/T", "/F"], { stdio: "ignore" });
   }
+  if (instance?.policy) restoreElevatedCdpPolicy(instance.policy);
 }
 
 try {
@@ -111,7 +121,7 @@ try {
       assert.notEqual(first.handshake.sessionId, second.handshake.sessionId);
       assert.equal(first.child.exitCode, null);
       evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs] });
-    } finally { stop(second); stop(first); }
+    } finally { try { stop(second); } finally { stop(first); } }
   }
   evidence.result = "pass";
 } finally {

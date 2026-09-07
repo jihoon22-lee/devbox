@@ -15,11 +15,18 @@ import net from "node:net";
 import path from "node:path";
 import process from "node:process";
 import { DatabaseSync } from "node:sqlite";
+import { fileURLToPath } from "node:url";
+
+const entryPath = process.argv[1] ? path.resolve(process.argv[1]) : "";
+const modulePath = fileURLToPath(import.meta.url);
+const isMain = process.platform === "win32"
+  ? entryPath.toLowerCase() === modulePath.toLowerCase()
+  : entryPath === modulePath;
 
 const sleep = (milliseconds) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 let requestedSignal = null;
 let activeAcceptanceLock = null;
-for (const signal of ["SIGINT", "SIGTERM"]) {
+for (const signal of isMain ? ["SIGINT", "SIGTERM"] : []) {
   process.on(signal, () => {
     requestedSignal ??= signal;
   });
@@ -125,7 +132,7 @@ function powershellUtf8(value) {
   return Buffer.from(value, "utf8").toString("base64");
 }
 
-function windowsProcessIsElevated() {
+export function windowsProcessIsElevated() {
   return powershell(
     `$identity=[Security.Principal.WindowsIdentity]::GetCurrent(); ` +
       `$principal=[Security.Principal.WindowsPrincipal]::new($identity); ` +
@@ -133,7 +140,7 @@ function windowsProcessIsElevated() {
   ) === "true";
 }
 
-function inspectElevatedCdpPolicy(imageName, port) {
+export function inspectElevatedCdpPolicy(imageName, port) {
   const policy = {
     imageName,
     arguments: `--remote-debugging-port=${port}`,
@@ -156,7 +163,7 @@ function inspectElevatedCdpPolicy(imageName, port) {
   return policy;
 }
 
-function installElevatedCdpPolicy(policy) {
+export function installElevatedCdpPolicy(policy) {
   const name = powershellUtf8(policy.imageName);
   const value = powershellUtf8(policy.arguments);
   policy.mutationAttempted = true;
@@ -173,7 +180,7 @@ function installElevatedCdpPolicy(policy) {
   );
 }
 
-function restoreElevatedCdpPolicy(policy) {
+export function restoreElevatedCdpPolicy(policy) {
   if (!policy.mutationAttempted) return;
   const name = powershellUtf8(policy.imageName);
   const value = powershellUtf8(policy.arguments);
@@ -1920,10 +1927,10 @@ async function main() {
   }
 }
 
-if (process.argv.length === 3 && process.argv[2] === "--self-test") {
+if (isMain && process.argv.length === 3 && process.argv[2] === "--self-test") {
   runVerificationContractSelfTest();
   console.log("packaged smoke artifact verification self-test: PASS");
-} else {
+} else if (isMain) {
   try {
     await main();
   } finally {

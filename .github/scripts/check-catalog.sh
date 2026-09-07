@@ -220,6 +220,7 @@ PY
 
 python3 .github/scripts/check-product-foundation.py
 python3 .github/scripts/test-product-foundation-workflow.py
+node .github/scripts/test-windows-smoke-import.mjs
 python3 .github/scripts/test-windows-packaged-smoke-config.py
 python3 .github/scripts/test-verify-downloaded-release.py
 python3 .github/scripts/test-windows-installer-acceptance-config.py

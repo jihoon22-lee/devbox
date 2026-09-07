@@ -12,6 +12,7 @@ on:
       - 'crates/product-*/**'
       - 'packages/product-shell/**'
       - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/scripts/windows-packaged-smoke.mjs'
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
 
