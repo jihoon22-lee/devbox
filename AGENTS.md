@@ -1,73 +1,51 @@
 # AGENTS.md
 
-devbox — Tauri 15개 데스크톱 앱 모노레포. 현재 공개 v0.7.0 안정판 source/bundle을 유지한다.
-모든 규약의 기준은 루트 `CONVENTIONS.md` (반드시 먼저 읽을 것). 앱별 상세는 각 `apps/<app>/README.md` 또는
-`docs/superpowers/specs/` 설계 문서.
+Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
+현재 공개 v0.7.0의 15개 앱을 유지하며 v0.8.0의 네 제품 통합을 준비한다.
+원격은 `https://github.com/jihoon22-lee/devbox`다.
 
-## 저장소 사실
-- 원격: `https://github.com/jihoon22-lee/devbox` (로컬 디렉터리명 `devbox`와 동일)
-- git 초기화·원격 연결 완료 (`main`), CI 워크플로 동작 중
-- `gh` CLI로 jihoon22-lee 로그인 완료 (원격 작업 가능)
-- git identity: `jihoon22.lee <zkemzld1004@gmail.com>` (전역·로컬 설정됨)
+## 먼저 읽을 규약과 작업 범위
 
-## 현재 상태
-- 15개 앱 구현 완료 (v0.5.0 신규 Devbox Launcher·Log Lens, v0.6.0 W01~W11,
-  v0.7.0 WSL Desktop 사용성·검증/릴리스 효율화 포함): port-manager, developer-toolbox, wsl-desktop, api-playground,
-  everything-plus, knowledge-base, life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher, log-lens
-- 공용 크레이트: `crates/wsl`·`search`·`integration`·`secrets`·`filesystem`·`markdown`·`process`·`git`·`launch`·`applink`·`catalog`·`window-state`·`window-state-tauri`
-- 공용 패키지: `packages/tokens`·`a11y`·`editor`·`diff-view`·`context-menu`·`openapi`·
-  `mermaid-renderer`
-- 루트 `Cargo.toml`의 `[workspace] members`에 앱/크레이트가 생길 때마다 추가해야 함
-- 프론트 워크스페이스는 `pnpm-workspace.yaml` + 루트 `package.json` (packageManager: pnpm@9)
-- v0.5.0 stable evidence는 tag `efc98dd3c91b77ee7c9024010ac012a6c68f2b54`와 workflow `33216176818` 기준 15개 앱·32개 public asset·31개 manifest-declared asset·mismatch 0이다.
-- v0.5.1은 #470/#473/#477/#478/#479(및 닫힌 #474 계약)를 포함한 historical stable이다.
-- 현재 v0.7.0 stable은 #521~#536을 묶는다. annotated tag object는
-  `ec41ceb2ed4b4864d34afe383e5ff816481b3d37`, peeled source commit은
-  `3a23f49c85aa3c3d04b86f227e8aa184ef964085`, candidate workflow는 `33782002859`, release
-  workflow는 `33785966618`이다. candidate는 packaged runtime 15/15와 installer lifecycle
-  15/15를 통과했고, 공개 release는 15개 앱·32개 public asset·31개 manifest-declared asset·
-  missing/undeclared/failure 0이며 `draft=false`, `prerelease=false`, Latest다.
-- v0.6.0은 milestone #2의 W01~W11을 포함한 historical stable이다. annotated tag object
-  `a974adf975862da3d5ada16c6c6efe704387ddd7`, peeled source
-  `d2fa25a0a1f087459838449daded00c0b09764b4`, candidate `33384213398`, release workflow
-  `33390009009`의 evidence를 보존한다.
-- #518은 설치된 WSL Desktop의 user-local zellij 탐색·attach·disconnect/reconnect·session 및
-  workspace 유지가 2026-09-03 사용자 실기에서 PASS해 completed로 닫혔다. #176은 닫힌 v0.5.1
-  historical checklist다. RC1~RC3 tag/release는 삭제된 historical record이며 미래 RC는 사용자의
-  명시 요청 전에는 만들지 않는다.
+- 공통 규약의 원장은 [CONVENTIONS.md](./CONVENTIONS.md)다. 변경 전에 §1·3·5·8·9의
+  환경·스택·검증·Git 정책을 읽고, 작업에 해당하는 절을 추가로 읽는다.
+- 대상 디렉터리의 AGENTS/override, `apps/<app>/README.md`, 해당 설계 문서를 확인한다.
+  전체 README·과거 계획을 매번 읽지 않는다. 현재 구현은 코드와 테스트로 확인한다.
+- v0.8 원장 [#541](https://github.com/jihoon22-lee/devbox/issues/541), 수용 기준 #542,
+  실행 계획 #543~#551을 따른다. **v0.8에서는 CONVENTIONS §8의 B01~B09 통합 PR 정책이
+  일반 기능별 PR 규칙보다 우선한다.** #541/#542를 구현 PR에서 자동으로 닫지 않는다.
+- 현재/과거 stable의 SHA·workflow·실기 근거는 [release evidence](./docs/release-evidence.md),
+  앱·공용 모듈 목록은 CONVENTIONS §2와 [projects](./docs/projects.md)를 필요할 때 읽는다.
 
-## 명령
-- 기본 완료 검증: 루트에서 `pnpm verify:affected` — `origin/main` 이후 commit과 staged,
-  unstaged, untracked 파일을 합쳐 실제 영향 package와 역의존 소비자만 검증한다.
-- 명시적 전체 감사: `pnpm verify:all` — release 준비, CI 검증기 자체 변경, 수동 전체 감사에만 사용한다.
-- 집중 개발: 앱 디렉터리의 `pnpm build`·`pnpm test`, 또는 `cargo test -p <package>`·
-  `cargo check -p <package>`를 사용한다. 패키지 매니저는 **pnpm이지 npm이 아님**.
-- Rust(WSL 개발)는 새 셸에서 사용 전 `source ~/.cargo/env`
-- 실제 앱 실행·배포 빌드는 **Windows**에서만: `pnpm tauri dev` / `pnpm tauri build`
-- WSL에서 src-tauri 컴파일엔 Linux 라이브러리 필요:
-  `libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
+## 구현과 검증
 
-## 워크플로 (필수 규칙)
-- 브랜치: `feat/<app>/<scope>` (예: `feat/port-manager/netstat-parser`) — CONVENTIONS §8
-- **사용자에게 하나로 보이는 기능 경계 1개 = PR 1개**. 이슈 번호와 PR은 1:1일 필요가 없다.
-  같은 앱·같은 사용자 흐름에서 구현/검증 기반을 공유하는 형식별 변형, 밀접한 보강 작업,
-  관련 문서는 여러 이슈를 한 PR로 묶을 수 있다. 독립 배포·rollback·보안 경계이거나 리뷰
-  범위가 과도해지는 작업은 계속 분리한다. PR 본문에 포함 이슈와 묶음 근거를 명시한다.
-- **모든 PR은 GitHub Actions CI(`.github/workflows/ci.yml`) 통과 후에만 main으로 머지**
-- 안정판 릴리스는 tag 생성 전에 exact-main `Windows package candidate`의 3개 bounded Windows
-  package shard와 Linux assembly, packaged runtime, installer acceptance를 모두 통과시킨다.
-  assembly는 15개 앱·32개 파일의 exact coverage를 검증한다. annotated tag는 동일 commit에 만들며
-  release workflow는 일치하는 비만료 후보만 독립 검증해 승격하고, 후보가 없으면 새 바이너리를
-  대신 만들지 않는다. Stable에서 의도적으로 skip되는 prerelease builder가 있어도 최종 verifier는
-  `always()`와 preflight/draft-stage의 명시적 success 조건으로 실행되어야 한다.
-- 커밋: Conventional Commits, 영어, 현재형 — `feat(port-manager): add netstat parser`
-- 코드 산출물의 완료 정의: 집중 테스트 + `pnpm verify:affected` + GitHub Actions CI 통과.
-  전체 workspace 검증은 affected resolver가 `all`을 선택하거나 release·명시적 감사일 때만 수행한다.
-- PR 머지 또는 작업 종료 시 같은 작업 안에서 전용 worktree가 clean이고 머지된 상태인지 확인한 뒤, 전용 worktree 제거 및 `git worktree prune`, 로컬 작업 브랜치 삭제, 원격 작업 브랜치 삭제를 순서대로 수행한다. 활성·잠김·미머지·dirty worktree는 삭제하지 말고 사용자에게 즉시 보고한다. 자동 생성 worktree나 호스트가 소유한 worktree는 무단으로 삭제하지 않는다.
-- `완료`를 보고하기 전에 `git worktree list`와 로컬·원격 브랜치 목록을 다시 확인해 작업 잔존 여부를 검증한다.
+- 패키지 매니저는 **pnpm 9**다. UI는 React/Vite·순수 CSS와 기존 `packages/tokens`를 사용한다.
+- 순수 Rust 로직은 앱 `src-tauri/src/core/`, Windows 전용 처리는 command/platform 계층에 둔다.
+  두 번째 실제 소비자가 생길 때만 `crates/`·`packages/`로 추출한다. 앱/crate 추가 시 Cargo
+  workspace members와 필요한 카탈로그·검증 등록을 함께 갱신한다.
+- WSL에서 Rust 사용 전 `source ~/.cargo/env`. 집중 검증은 대상의 `pnpm build/test` 또는
+  `cargo test/check -p <package>`. 실제 앱 실행·배포 빌드는 Windows에서만 한다.
+- 기본 완료 검증은 루트 `pnpm verify:affected`다. commit·staged·unstaged·untracked와
+  역의존 소비자를 포함한다. resolver가 all을 선택하면 전체 검증한다.
+  `pnpm verify:all`은 release 준비·CI 검증기 변경·명시적 전체 감사에 사용한다.
+- 사용자 데이터·secret을 fixture로 쓰지 않는다. v0.8 migration은 원본 보존·WAL consistent
+  snapshot·destination namespace·재개/복구 경계를 검증한다. UI route 통합을 권한 통합으로 취급하지 않는다.
 
-## 함정 / 주의
-- `/mnt/e`(9p 마운트)에서 cargo 컴파일은 느림 → `target-dir`을 Linux 네이티브 경로로 (`.cargo/config.toml`, `~/.cache/targets/...`)
-- create-tauri-app 스캐폴드: `--yes`를 써야 하며, 생성 직후 파일 4곳의 `--name` 교체 필요 (CONVENTIONS §6)
-- 순수 로직은 `apps/<app>/src-tauri/src/core/`에 두고 WSL에서 테스트. Windows 전용 코드는 `src-tauri` 명령 계층에 격리
-- 공통화 원칙: 같은 코드가 두 번째 앱에서 필요해질 때만 `crates/`·`packages/`로 추출
+## PR·릴리스·정리
+
+- 작업 시작 시 git status/worktree와 원격 작업에 필요한 인증 상태를 확인한다.
+  브랜치는 CONVENTIONS §8, 커밋은 영어 Conventional Commits를 따른다.
+- 커밋 전 집중 검증 + affected 검증, **main 머지 전 PR 최종 변경의 GitHub Actions CI 통과**가 필수다.
+  미실행 Windows 검증은 PASS로 보고하지 않는다.
+- 릴리스 작업은 [release policy](./docs/release-policy.md)를 읽는다. exact-main 후보의
+  assembly·packaged runtime·installer 검증 후 같은 commit의 stable만 승격한다.
+  후보가 없거나 만료됐을 때 새 build로 대체하지 않는다. 명시 요청 없는 public RC는 만들지 않는다.
+- 직접 만든 전용 worktree는 clean·merged 확인 → 제거 → `git worktree prune` → 로컬 브랜치
+  삭제 → 원격 브랜치 삭제 순으로 정리한다. 활성·잠김·미머지·dirty·호스트 소유 worktree는
+  삭제하지 않고 보고한다. 완료 전 worktree와 로컬·원격 브랜치 목록을 다시 확인한다.
+
+## 작업 도구와 기록
+
+- 저장소 스킬은 `.agents/skills/`다. 일반 변경은 `devbox-change`, migration/권한/복구 검토는
+  `devbox-migration-review`, 명시적인 릴리스 작업은 `devbox-release`를 사용한다.
+- 작업 기록은 PR 묶음당 workthrough 하나를 갱신한다. 결정·영향·검증·남은 작업만 적는다.
+  상세 운영과 컨텍스트 인계는 CONVENTIONS §11, 개인 설정은 [Codex setup](./docs/codex-setup.md)을 따른다.
