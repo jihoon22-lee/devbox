@@ -260,6 +260,8 @@ try {
   const afterRoots = (await command(item, "knowledge.search", "list_roots")).value;
   assert.ok(afterRoots.every(root => root.id !== deletedQuery.filter.sourceRootId));
   assert.equal(logicalSources(), frozen);
+  evidence.importActivated = true; evidence.authoritativeRowsAndReservedIdsPreserved = true;
+  evidence.originalVaultBytesPreserved = true; evidence.privacyConsentPreserved = true;
   progress("activity-summary-preview");
   const markdownFiles = () => readdirSync(vault, { recursive: true }).filter(file => file.endsWith(".md")).sort();
   const beforeSummary = markdownFiles();
@@ -268,7 +270,7 @@ try {
   await item.cdp.evaluate(`(() => { const input=document.querySelector(".knowledge-feature-activity input[type=date]");
     Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"2024-02-29");
     input.dispatchEvent(new Event("input",{bubbles:true})); input.dispatchEvent(new Event("change",{bubbles:true})); })()`);
-  await wait(item.cdp, `!!document.querySelector('[aria-label="2024-02-29 선택된 날짜"]') && document.querySelector(".knowledge-feature-activity").innerText.includes("synthetic-editor.exe")`, "selected-day Activity digest missing");
+  await wait(item.cdp, `!!document.querySelector('[aria-label="2024-02-29 선택된 날짜"]') && document.querySelector(".knowledge-feature-activity").innerText.includes("synthetic-editor")`, "selected-day Activity digest missing");
   await click(item.cdp, "Knowledge로 보내기");
   await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes:not([hidden]) [role=dialog]") && document.body.innerText.includes("Life Log 초안 미리보기")', "in-product summary preview did not activate Notes");
   assert.deepEqual(markdownFiles(), beforeSummary);

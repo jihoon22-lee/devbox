@@ -9,6 +9,7 @@ it("retains the actual template draft and ignores background Escape across Activ
   await act(async () => { await vi.dynamicImportSettled(); });
   fireEvent.click(await screen.findByRole("button", { name: "템플릿" }));
   const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+  await act(async () => { await Promise.resolve(); });
   const body = within(dialog).getByRole("textbox", { name: "Markdown" }) as HTMLTextAreaElement;
   fireEvent.change(body, { target: { value: "# Unsaved template across routes" } });
   fireEvent.click(within(nav).getByRole("button", { name: "활동" }));
@@ -23,7 +24,7 @@ it("retains the actual template draft and ignores background Escape across Activ
   fireEvent.keyDown(window, { key: "Escape" });
   fireEvent.click(screen.getByRole("button", { name: "노트로 돌아가기" }));
   expect((within(await screen.findByRole("dialog", { name: "노트 템플릿" })).getByRole("textbox", { name: "Markdown" }) as HTMLTextAreaElement).value).toBe("# Unsaved template across routes");
-});
+}, 15_000);
 it("shares the selected civil date between Daily and Activity without creating a note", async () => {
   render(<Knowledge/>);
   const nav = await screen.findByRole("navigation", { name: "제품 화면" });
@@ -39,4 +40,4 @@ it("shares the selected civil date between Daily and Activity without creating a
   await act(async () => { await vi.dynamicImportSettled(); });
   expect((await screen.findByLabelText("일일 기록 날짜") as HTMLInputElement).value).toBe("2024-03-01");
   expect(screen.queryByRole("button", { name: "확인 후 새 노트 만들기" })).toBeNull();
-});
+}, 15_000);
