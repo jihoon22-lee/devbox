@@ -17,6 +17,7 @@ const MAX_COMMIT_MESSAGE_BYTES = 16 * 1024;
 interface Props {
   repo: RepoEntry | null;
   onBusyChange?: (busy: boolean) => void;
+  onOpenFile?: (path: string, line: number | null) => void;
   onDirtyChange?: (dirty: boolean) => void;
 }
 
@@ -57,7 +58,7 @@ export function createLocalOperationId(): string {
 }
 
 /** Explicit local working-tree stage/unstage and index-only commit surface. */
-export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange }: Props) {
+export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, onOpenFile }: Props) {
   const [changes, setChanges] = useState<ChangeEntry[] | null>(null);
   const [stageSelection, setStageSelection] = useState<Set<string>>(new Set());
   const [unstageSelection, setUnstageSelection] = useState<Set<string>>(new Set());
@@ -373,7 +374,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange }: 
           <fieldset className="change-group" aria-label="스테이징되지 않은 변경">
             <legend>스테이징되지 않은 변경</legend>
             {unstaged.map((change) => (
-              <label className="change-row" key={`unstaged:${change.path}`}>
+              <div className="change-row" key={`unstaged:${change.path}`}><label className="change-row-selection">
                 <input
                   type="checkbox"
                   aria-label={`stage ${change.path}`}
@@ -383,8 +384,9 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange }: 
                 />
                 <span className="change-kind">{change.kind}</span>
                 <span className="mono change-path">{change.path}</span>
-                <span className="change-status mono">{change.indexStatus}{change.worktreeStatus}</span>
-              </label>
+                <span className="change-status mono">{change.indexStatus}{change.worktreeStatus}</span></label>
+                {onOpenFile && <button type="button" disabled={busy} onClick={() => onOpenFile(change.path, null)} aria-label={`Files에서 ${change.path} 열기`}>파일 열기</button>}
+              </div>
             ))}
             {unstaged.length === 0 ? <div className="change-empty dim">unstaged 변경이 없습니다.</div> : null}
             <button
@@ -400,7 +402,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange }: 
           <fieldset className="change-group" aria-label="스테이징된 변경">
             <legend>스테이징된 변경</legend>
             {staged.map((change) => (
-              <label className="change-row" key={`staged:${change.path}`}>
+              <div className="change-row" key={`staged:${change.path}`}><label className="change-row-selection">
                 <input
                   type="checkbox"
                   aria-label={`unstage ${change.path}`}
@@ -410,8 +412,9 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange }: 
                 />
                 <span className="change-kind">{change.kind}</span>
                 <span className="mono change-path">{change.path}</span>
-                <span className="change-status mono">{change.indexStatus}{change.worktreeStatus}</span>
-              </label>
+                <span className="change-status mono">{change.indexStatus}{change.worktreeStatus}</span></label>
+                {onOpenFile && <button type="button" disabled={busy} onClick={() => onOpenFile(change.path, null)} aria-label={`Files에서 ${change.path} 열기`}>파일 열기</button>}
+              </div>
             ))}
             {staged.length === 0 ? <div className="change-empty dim">staged 변경이 없습니다.</div> : null}
             <button

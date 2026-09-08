@@ -43,6 +43,7 @@ fn ordinary(path: &Path) -> Result<String> {
 /// config may include another local drive. A UNC include must stay within the
 /// already-selected native project's server/share; WSL is never auto-started.
 pub fn transport(project: &Path, path: &Path) -> Result<()> {
+    super::windows_path::admit(path).map_err(|_| "git_source_transport_denied")?;
     use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
     let text = ordinary(path)?;
     if devbox_wsl::path::parse_wsl_unc_path(&text)
@@ -123,6 +124,7 @@ pub fn resolve(project: &Path, base: &Path, value: &Path, deadline: u64) -> Resu
 impl GitFiles {
     fn pin(&mut self, path: &Path, directory: bool, deadline: u64) -> Result<()> {
         boundary(deadline)?;
+        super::windows_path::admit(path).map_err(|_| "git_source_transport_denied")?;
         if let Some(object) = self.objects.get(path) {
             if object.directory != directory
                 || filesystem_identity(path, directory).ok() != Some(object.identity)
@@ -164,6 +166,7 @@ impl GitFiles {
                 continue;
             }
             boundary(deadline)?;
+            super::windows_path::admit(part).map_err(|_| "git_source_transport_denied")?;
             match fs::symlink_metadata(part) {
                 Ok(_) => self.pin(part, part != path || directory, deadline)?,
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
@@ -248,6 +251,7 @@ impl GitFiles {
     pub fn revalidate(&self, deadline: u64) -> Result<()> {
         for (path, object) in &self.objects {
             boundary(deadline)?;
+            super::windows_path::admit(path).map_err(|_| "git_source_transport_denied")?;
             ensure_no_links(path).map_err(|_| "git_sources_changed")?;
             if filesystem_identity(path, object.directory).ok() != Some(object.identity) {
                 return Err("git_sources_changed");
@@ -272,6 +276,7 @@ impl GitFiles {
         }
         for path in &self.absent {
             boundary(deadline)?;
+            super::windows_path::admit(path).map_err(|_| "git_source_transport_denied")?;
             if !matches!(fs::symlink_metadata(path), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
             {
                 return Err("git_sources_changed");

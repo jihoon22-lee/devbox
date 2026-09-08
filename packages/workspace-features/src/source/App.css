@@ -1414,3 +1414,7 @@
     grid-column: 1 / -1;
   }
 }
+
+.workspace-feature-source .change-row-selection {display:flex; align-items:center; gap:7px; min-width:0; flex:1; cursor:pointer;}
+.workspace-feature-source .diff-line-open {font:inherit; min-width:4em; margin-right:8px; color:var(--accent); background:transparent; border:1px solid var(--border); cursor:pointer;}
+.workspace-feature-source .diff-line-open:focus-visible {outline:2px solid var(--accent); outline-offset:1px;}

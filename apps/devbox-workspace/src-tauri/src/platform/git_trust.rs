@@ -16,6 +16,41 @@ type Result<T> = std::result::Result<T, &'static str>;
 const MAX_CONFIGS: usize = 128;
 const MAX_INCLUDE_DEPTH: usize = 10;
 
+/// Canonical directory spelling stays case-sensitive even on Windows. Git
+/// output cannot admit another NTFS worktree that differs only by letter case.
+fn same_repository_path(expected: &str, actual: &str) -> bool {
+    use devbox_filesystem::{parse_safe_project_path, ProjectPathKind};
+    let normalize = |value: &str| -> Option<(ProjectPathKind, String)> {
+        let parsed = parse_safe_project_path(value)?;
+        let normalized = match parsed.kind() {
+            ProjectPathKind::Posix => parsed.as_str().to_owned(),
+            ProjectPathKind::WindowsDrive => format!(
+                "{}:/{}",
+                (parsed.as_str().as_bytes()[0] as char).to_ascii_uppercase(),
+                parsed.as_str()[3..]
+                    .split(['/', '\\'])
+                    .filter(|part| !part.is_empty())
+                    .collect::<Vec<_>>()
+                    .join("/")
+            ),
+            ProjectPathKind::WindowsUnc => {
+                let mut parts = parsed
+                    .as_str()
+                    .split(['/', '\\'])
+                    .filter(|part| !part.is_empty());
+                format!(
+                    "//{}/{}/{}",
+                    parts.next()?.to_ascii_lowercase(),
+                    parts.next()?.to_ascii_lowercase(),
+                    parts.collect::<Vec<_>>().join("/")
+                )
+            }
+        };
+        Some((parsed.kind(), normalized))
+    };
+    normalize(expected).is_some_and(|expected| normalize(actual).as_ref() == Some(&expected))
+}
+
 pub struct GitEnvironment {
     pub program: PathBuf,
     executables: Vec<PathBuf>,
@@ -112,6 +147,11 @@ impl GitEnvironment {
                         let runtime = root.join(architecture);
                         let program = runtime.join("bin/git.exe");
                         let launcher = root.join("cmd/git.exe");
+                        if super::windows_path::admit(&program).is_err()
+                            || super::windows_path::admit(&launcher).is_err()
+                        {
+                            continue;
+                        }
                         if devbox_filesystem::ensure_no_links(&program).is_ok()
                             && devbox_filesystem::ensure_no_links(&launcher).is_ok()
                             && devbox_filesystem::ensure_no_links(root.join("etc")).is_ok()
@@ -376,6 +416,9 @@ impl GitTrust {
     pub fn digest(&self) -> &str {
         &self.digest
     }
+    pub fn directories(&self) -> Option<(&Path, &Path)> {
+        self.lease.git_directories()
+    }
     pub fn revalidate(&self, deadline: u64) -> Result<()> {
         self.lease.revalidate()?;
         self.files.revalidate(deadline)?;
@@ -386,11 +429,7 @@ impl GitTrust {
         target: &devbox_git::GitTarget,
         deadline: u64,
     ) -> Result<devbox_git::execution::NativeRepository> {
-        let actual = devbox_filesystem::parse_safe_project_path(target.cwd())
-            .ok_or("source_context_changed")?;
-        let expected = devbox_filesystem::parse_safe_project_path(&self.lease.binding().root)
-            .ok_or("source_context_changed")?;
-        if target.is_wsl() || actual.identity() != expected.identity() {
+        if target.is_wsl() || !same_repository_path(&self.lease.binding().root, target.cwd()) {
             return Err("source_context_changed");
         }
         self.revalidate(deadline)?;
@@ -409,6 +448,30 @@ impl GitTrust {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn git_returned_case_variants_cannot_admit_a_distinct_ntfs_worktree() {
+        assert!(same_repository_path(
+            r"C:\Projects\Repo",
+            "c:/Projects/Repo"
+        ));
+        assert!(!same_repository_path(
+            r"C:\Projects\Repo",
+            r"C:\Projects\repo"
+        ));
+        assert!(!same_repository_path(
+            r"C:\Projects\Repo",
+            r"C:\projects\Repo"
+        ));
+        assert!(same_repository_path(
+            r"\\Server\Share\Repo",
+            "//SERVER/share/Repo"
+        ));
+        assert!(!same_repository_path(
+            r"\\Server\Share\Repo",
+            "//server/share/repo"
+        ));
+        assert!(!same_repository_path("/project/Repo", "/project/repo"));
+    }
     fn fixture(root: &Path) -> GitEnvironment {
         std::fs::create_dir_all(root.join(".git/objects")).unwrap();
         std::fs::write(root.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();

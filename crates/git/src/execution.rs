@@ -24,7 +24,7 @@ pub struct ExecutionPolicy {
     pub(crate) program: PathBuf,
     pub(crate) environment: Vec<(OsString, OsString)>,
     deadline: Instant,
-    cancelled: AtomicBool,
+    cancelled: Arc<AtomicBool>,
     admit: Box<Admission>,
 }
 thread_local! {
@@ -54,6 +54,21 @@ impl ExecutionPolicy {
         deadline: Instant,
         admit: impl Fn(&GitTarget) -> Result<NativeRepository, String> + Send + Sync + 'static,
     ) -> Result<Arc<Self>, String> {
+        Self::new_cancellable(
+            program,
+            environment,
+            deadline,
+            Arc::new(AtomicBool::new(false)),
+            admit,
+        )
+    }
+    pub fn new_cancellable(
+        program: PathBuf,
+        environment: Vec<(OsString, OsString)>,
+        deadline: Instant,
+        cancelled: Arc<AtomicBool>,
+        admit: impl Fn(&GitTarget) -> Result<NativeRepository, String> + Send + Sync + 'static,
+    ) -> Result<Arc<Self>, String> {
         let bytes = environment.iter().try_fold(0usize, |sum, (key, value)| {
             sum.checked_add(key.as_encoded_bytes().len())?
                 .checked_add(value.as_encoded_bytes().len())
@@ -77,7 +92,7 @@ impl ExecutionPolicy {
             program,
             environment,
             deadline,
-            cancelled: AtomicBool::new(false),
+            cancelled,
             admit: Box::new(admit),
         }))
     }

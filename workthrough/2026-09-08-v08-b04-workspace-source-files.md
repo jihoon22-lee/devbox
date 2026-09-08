@@ -291,12 +291,55 @@ write rejection and continued editor recovery. Each completed Workspace feature
 now records independent evidence before the next fixture. Native rejection codes
 are retained in bounded renderer diagnostics instead of an uninformative Object.
 
+## Source worktrees, Files navigation and early cancellation
+
+Source change rows and new-side diff line positions now open the retained Files
+editor after hydration. Reopening preserves a dirty buffer and one watcher;
+context switching stays blocked until a closed tab releases its watcher.
+Worktree creation consumes a native review of the branch, canonical target,
+existing parent identity, absence and current Git approval. It rejects Git and
+product authority storage before mutation. Success offers Registry review without
+automatic registration, context selection, task execution or trust transfer.
+Cancellation reaches requests before native queue/evidence work as well as Git.
+Context-scoped cancellation intent is bounded and expires; caller cancellation
+retains running worker ownership. Git cancellation does not roll back mutations.
+
+The shared no-link check now visits ancestors first. Workspace checks Windows
+DOS drive mappings before IO, resolves local SUBST prefixes and rejects
+WSL/network/unknown device aliases. A Windows-only fixture creates, queries and
+removes a unique DOS object without opening its synthetic WSL target. The file
+protection policy is now shared by Files and worktree creation within Workspace.
+
+[cdeaa37 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34268405267) passed
+frontend, Linux Rust, catalog and dependency policy, but its Windows test failed
+because the new file-protection fixture passed a TEMP alias as the project root.
+The production Registry canonicalizes that root; the fixture now matches that
+boundary, as the existing project-document fixture already did. The same failure
+stopped [Windows packaged Source/Dependencies/Files](https://github.com/jihoon22-lee/devbox/actions/runs/34268405227)
+before execution. API Studio, Knowledge, installer coexistence and performance
+baseline continued successfully. The Windows outcome is not a packaged PASS.
+
+Focused checks passed **78 Workspace + 131 Repo Manager + 24 Git + 20 filesystem
+Rust tests**, strict Clippy, **320 shared UI + 18 Workspace UI tests**, Workspace
+build and four decoded-script/request regressions in **67.236 seconds**, under
+8 GiB (cgroup peak **3,331,039,232 bytes**). The native Windows device test remains
+pending on Windows. The expanded Windows fixture covers unsaved Source→Files
+navigation across commit, worktree review cancel/concurrent target, separate
+registration/selection, and linked-worktree Files→stage→commit.
+
+Review found that folding the directory case in Git-returned paths could admit
+a distinct NTFS worktree. Matching now preserves directory case while normalizing
+drive/UNC-authority spelling and separators. The regression and all **79 Workspace
+tests/Clippy passed in 45.543 seconds**. The in-flight affected run was stopped
+before completion to include this correction; it is not reported as a pass.
+Final affected verification selected all and passed in **536.407 seconds**, under
+the shared 8 GiB cap (cgroup peak **6,444,761,088 bytes**).
+
 ## Remaining acceptance
 
-Source worktree creation/cleanup scope and Files navigation, importer mappings,
-Windows LSP integration and WSL-native transport remain incomplete. Files currently
-serializes native IO under one state mutex; remote independent cancellation needs
-work before WSL acceptance. Native file-dialog selection is implemented but has no
-actual Windows dialog fixture yet. Strict metadata parsing is an activation
-prerequisite, not a completed legacy importer. No R/S or completion issue is closed
-by this draft.
+Broader approved worktree cleanup, importer mappings, Windows LSP integration and
+WSL-native transport remain incomplete. Files currently serializes native IO under
+one state mutex; remote independent cancellation needs work before WSL acceptance.
+Native file-dialog selection is implemented but has no actual Windows dialog
+fixture yet. Strict metadata parsing is an activation prerequisite, not a completed
+legacy importer. No R/S or completion issue is closed by this draft.

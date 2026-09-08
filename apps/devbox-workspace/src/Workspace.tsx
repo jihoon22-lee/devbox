@@ -6,6 +6,7 @@ import { configureProductTransport } from "@devbox/workspace-features/transport"
 import RegistryGate, { type Registry } from "./RegistryGate";
 import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
+import {sourceFilePath} from "./sourceNavigation";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
@@ -15,7 +16,7 @@ const Files = lazy(() => import("@devbox/workspace-features/files"));
 let displayed: Description | undefined;
 let connected = false;
 
-function NativeContent({route, description, refreshContext}: ShellContentProps) {
+function NativeContent({route, description, refreshContext, navigate}: ShellContentProps) {
   displayed = description;
   if (!connected) {
     configureProductTransport(<T,>(component: string, method: string, args: Record<string, unknown>) => {
@@ -41,19 +42,37 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
   const refreshRegistry = useCallback(() => setRegistrySignal(value => value + 1), []);
+  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null}|null>(null);
+  const [sourceNavigationError, setSourceNavigationError] = useState("");
+  const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string}|null>(null);
+  const proposeWorktree = (path:string) => {
+    setRegistrationRequest({id:crypto.randomUUID(),path,name:registry?.projects.find(project=>project.id===description.context?.projectId)?.name??""});
+    navigate("source");
+  };
+  const openSourceFile = (relative:string,line:number|null) => {
+    if (!selectedTree) return;
+    const path = sourceFilePath(selectedTree.binding.root,relative);
+    if (!path || (line !== null && (!Number.isSafeInteger(line) || line < 1))) {
+      setSourceNavigationError("Git에서 받은 파일 경로 또는 위치를 열 수 없습니다."); return;
+    }
+    setSourceNavigationError("");
+    setFileRequest({id:crypto.randomUUID(),contextKey:JSON.stringify(description.context),path,line});
+    setFilesVisited(true); navigate("files");
+  };
   const [filesVisited, setFilesVisited] = useState(route === "files");
   const markReady = useCallback(() => setReady(true), []);
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry}/>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
     </div>
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
     </div>}
     {ready && (sourceVisited || route === "source") && <div className="workspace-feature-source" hidden={route !== "source"}>
+      {sourceNavigationError && <p role="alert">{sourceNavigationError}</p>}
       {!selectedTree ? <p role="status">작업할 프로젝트를 선택해 주세요.</p> : <Suspense fallback={<p role="status">Source 화면을 불러오고 있습니다…</p>}>
-        <NativeSource key={JSON.stringify(description.context)} description={description} root={selectedTree.binding.root} editorPending={editing} onBusyChange={setSourceBusy} onDirtyChange={setSourceDirty}/>
+        <NativeSource key={JSON.stringify(description.context)} description={description} root={selectedTree.binding.root} editorPending={editing} onBusyChange={setSourceBusy} onDirtyChange={setSourceDirty} onOpenFile={openSourceFile} onProposeWorktree={proposeWorktree}/>
       </Suspense>}
     </div>}
     {ready && (dependenciesVisited || route === "dependencies") && <div className="workspace-feature-source" hidden={route !== "dependencies"}>
@@ -63,7 +82,7 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
     </div>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
-        <Files contextKey={JSON.stringify(description.context)} active={route === "files"} onDirtyChange={setEditing}/>
+        <Files contextKey={JSON.stringify(description.context)} active={route === "files"} onDirtyChange={setEditing} openRequest={fileRequest}/>
       </Suspense>
     </div>}
   </>;

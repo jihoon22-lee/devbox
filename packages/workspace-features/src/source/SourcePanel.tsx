@@ -8,9 +8,9 @@ import CleanupPanel from "./components/CleanupPanel";
 import {WorkspaceOperationError} from "../transport";
 import "./App.css";
 
-interface Props {repo:RepoEntry; onBusyChange:(busy:boolean)=>void; onDirtyChange:(dirty:boolean)=>void}
+interface Props {repo:RepoEntry; onBusyChange:(busy:boolean)=>void; onDirtyChange:(dirty:boolean)=>void; onOpenFile?:(path:string,line:number|null)=>void; onProposeWorktree?:(path:string)=>void}
 /** Product composition consumes the selected native Registry projection. */
-export default function SourcePanel({repo,onBusyChange,onDirtyChange}:Props) {
+export default function SourcePanel({repo,onBusyChange,onDirtyChange,onOpenFile,onProposeWorktree}:Props) {
   const [busy,setBusy]=useState(false);
   const [panels,setPanels]=useState<Record<string,boolean>>({});
   const [snapshot,setSnapshot]=useState<RepoSnapshot|null>(null);
@@ -32,11 +32,11 @@ export default function SourcePanel({repo,onBusyChange,onDirtyChange}:Props) {
       <button type="button" disabled={busy} onClick={()=>void refresh()}>저장소 상태 새로 고침</button>
       {error&&<p role="alert">{error}</p>}
       {snapshot&&<p>{snapshot.branch.current} · 변경 {snapshot.changes}개 · 앞섬 {snapshot.branch.ahead} / 뒤처짐 {snapshot.branch.behind}</p>}
-      {trees.length>0&&<details><summary>연결된 작업 폴더 {trees.length}개</summary><ul>{trees.map(path=><li key={path}>{path}</li>)}</ul></details>}
+      {trees.length>0&&<details><summary>연결된 작업 폴더 {trees.length}개</summary><ul>{trees.map(path=><li key={path}>{path}{onProposeWorktree&&<button type="button" disabled={busy} onClick={()=>onProposeWorktree(path)}>등록 검토</button>}</li>)}</ul></details>}
     </section>
     <GitSafetyPanel repo={repo} onBusyChange={callbacks.safety}/>
-    <HistoryDiffPanel repo={repo} onBusyChange={callbacks.history}/>
-    <StageCommitPanel repo={repo} onBusyChange={callbacks.stage} onDirtyChange={onDirtyChange}/>
+    <HistoryDiffPanel repo={repo} onBusyChange={callbacks.history} onOpenFile={onOpenFile}/>
+    <StageCommitPanel repo={repo} onBusyChange={callbacks.stage} onDirtyChange={onDirtyChange} onOpenFile={onOpenFile}/>
     <RemoteSyncPanel repo={repo} onBusyChange={callbacks.remote}/>
     <CleanupPanel repo={repo} onBusyChange={callbacks.cleanup}/>
   </div>;

@@ -9,7 +9,7 @@ interface Preview {previewId: string; binding: Worktree["binding"]; discovery: {
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
-export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void}) {
+export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot, suggestedRoot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void; suggestedRoot?: {id:string;path:string;name:string}|null}) {
   const [status, setStatus] = useState<Status>({phase:"loading"});
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [root, setRoot] = useState("");
@@ -22,6 +22,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const alive = useRef(true);
   const currentPreview = useRef<string | null>(null);
   const loadId = useRef(0);
+  const handledSuggestion=useRef<string|null>(null);
   useEffect(() => {if (registry) onSnapshot?.(registry);}, [registry, onSnapshot]);
   useEffect(() => {if (status.phase === "selected") onReady?.();}, [status.phase, onReady]);
   async function refresh() {
@@ -64,6 +65,20 @@ export default function RegistryGate({context = null, onContextChanged = async (
     try {await action();} catch (cause) {if (alive.current) setError(cause instanceof Error ? cause.message : "작업을 완료하지 못했습니다.");}
     finally {if (alive.current) setBusy(false);}
   }
+  useEffect(()=>{
+    if(!suggestedRoot || handledSuggestion.current===suggestedRoot.id || busy || status.phase!=="selected")return;
+    handledSuggestion.current=suggestedRoot.id;
+    void act(async()=>{
+      if(preview)await cancelPreview();
+      setRoot(suggestedRoot.path);setName(suggestedRoot.name);
+      const next=await registryCall<Preview>("preview_windows",{root:suggestedRoot.path});
+      if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
+      currentPreview.current=next.previewId;setPreview(next);
+      document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});
+    });
+    // A user clicked a Source proposal. Native Registry still validates its path.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  },[suggestedRoot,busy,status.phase]);
   async function cancelPreview() {
     if (!preview) return;
     await registryCall("cancel_registration", {previewId:preview.previewId});

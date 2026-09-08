@@ -24,6 +24,7 @@ struct Object {
 }
 impl Object {
     fn open(path: &Path, directory: bool) -> Result<Self> {
+        super::windows_path::admit(path)?;
         ensure_no_links(path).map_err(|_| "unsafe_project_object")?;
         let (handle, identity) =
             open_filesystem_object(path, directory).map_err(|_| "project_object_unavailable")?;
@@ -59,6 +60,7 @@ impl Object {
         Ok(object)
     }
     fn revalidate(&self) -> Result<()> {
+        super::windows_path::admit(&self.path)?;
         ensure_no_links(&self.path).map_err(|_| "project_object_changed")?;
         if filesystem_identity(&self.path, self.directory).map_err(|_| "project_object_changed")?
             != self.identity
@@ -132,6 +134,7 @@ pub fn probe_windows(root: &str) -> Result<ProjectLease> {
             return Err("invalid_target");
         }
         let root = PathBuf::from(root);
+        super::windows_path::admit(&root)?;
         ensure_no_links(&root).map_err(|_| "unsafe_project_object")?;
         let canonical = fs::canonicalize(&root).map_err(|_| "project_object_unavailable")?;
         let spelling = canonical.to_str().ok_or("invalid_root")?;
@@ -157,6 +160,7 @@ pub fn probe_windows(root: &str) -> Result<ProjectLease> {
 }
 
 fn missing(path: &Path) -> Result<bool> {
+    super::windows_path::admit(path)?;
     match fs::symlink_metadata(path) {
         Ok(_) => Ok(false),
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(true),
@@ -235,6 +239,9 @@ fn pointer_path(root: &Path, object: &Object, prefix: &str) -> Result<PathBuf> {
             root.to_str().ok_or("unsafe_git_pointer")?,
             path.to_str().ok_or("unsafe_git_pointer")?,
         )?;
+    }
+    for path in &traversed {
+        super::windows_path::admit(path)?;
     }
     for path in &traversed {
         ensure_no_links(path).map_err(|_| "unsafe_git_pointer")?;

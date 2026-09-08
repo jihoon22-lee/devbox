@@ -164,3 +164,16 @@ describe("HistoryDiffPanel", () => {
     expect(repoHistoryMock).not.toHaveBeenCalled();
   });
 });
+
+it("opens current-file diff line positions without counting removed lines", async () => {
+  const open=vi.fn();
+  repoDiffMock.mockResolvedValue({...workingDiff,files:[{path:"한글 파일.ts",oldPath:null,status:"modified",binary:false,truncated:false,patch:"@@ -8,3 +9,3 @@\n context\n-removed\n+added\n same"}]});
+  render(<HistoryDiffPanel repo={repo} onOpenFile={open}/>);
+  fireEvent.click(screen.getByRole("button",{name:"히스토리 불러오기"}));
+  await screen.findByRole("button",{name:/Add fixture/});
+  fireEvent.click(screen.getByRole("button",{name:"작업 트리 diff"}));
+  fireEvent.click(await screen.findByRole("button",{name:"현재 파일 한글 파일.ts 10행 열기"}));
+  expect(open).toHaveBeenCalledWith("한글 파일.ts",10);
+  expect(screen.getByRole("button",{name:"현재 파일 한글 파일.ts 11행 열기"})).toBeTruthy();
+  expect(screen.queryByRole("button",{name:"현재 파일 한글 파일.ts 12행 열기"})).toBeNull();
+});

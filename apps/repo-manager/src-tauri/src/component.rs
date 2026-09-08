@@ -159,6 +159,7 @@ pub async fn dispatch(
 }
 
 pub const SOURCE_COMMANDS: &[&str] = &[
+    "create_worktree",
     "repo_status",
     "worktrees",
     "worktree_clean",
@@ -222,6 +223,36 @@ pub struct SourceAccess {
     root: PathBuf,
     key: String,
     policy: std::sync::Arc<devbox_git::execution::ExecutionPolicy>,
+    creation: Option<SourceCreation>,
+}
+pub(crate) type SourceTargetValidation =
+    std::sync::Arc<dyn Fn() -> Result<(), String> + Send + Sync>;
+pub struct SourceCreation {
+    pub(crate) branch: String,
+    pub(crate) target_dir: String,
+    pub(crate) operation_id: String,
+    pub(crate) validate: SourceTargetValidation,
+}
+impl SourceCreation {
+    pub fn new(
+        branch: String,
+        target_dir: String,
+        operation_id: String,
+        validate: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+    ) -> Result<Self, String> {
+        if !source_branch_valid(&branch) {
+            return Err("worktree_branch_invalid".into());
+        }
+        Ok(Self {
+            branch,
+            target_dir,
+            operation_id,
+            validate: std::sync::Arc::new(validate),
+        })
+    }
+}
+pub fn source_branch_valid(branch: &str) -> bool {
+    crate::commands::valid_worktree_branch(branch)
 }
 impl SourceAccess {
     pub fn for_project(
@@ -229,7 +260,16 @@ impl SourceAccess {
         key: String,
         policy: std::sync::Arc<devbox_git::execution::ExecutionPolicy>,
     ) -> Self {
-        Self { root, key, policy }
+        Self {
+            root,
+            key,
+            policy,
+            creation: None,
+        }
+    }
+    pub fn with_creation(mut self, creation: SourceCreation) -> Self {
+        self.creation = Some(creation);
+        self
     }
 }
 pub async fn dispatch_source_cancel(
@@ -246,12 +286,35 @@ pub async fn dispatch_source_cancel(
 }
 pub async fn dispatch_source(
     app: &tauri::AppHandle,
-    access: SourceAccess,
+    mut access: SourceAccess,
     method: &str,
     mut args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     if !is_product() || !SOURCE_COMMANDS.contains(&method) || source_cancel(method) {
         return Err("component_method_invalid".into());
+    }
+    if method == "create_worktree" {
+        if !args.as_object().is_some_and(|object| object.is_empty()) {
+            return Err("component_args_invalid".into());
+        }
+        let mut creation = access.creation.take().ok_or("worktree_review_required")?;
+        let mut operation = serde_json::json!({"request":{"operationId":creation.operation_id}});
+        bind_source_operation(&access.key, &mut operation)?;
+        creation.operation_id = operation["request"]["operationId"]
+            .as_str()
+            .ok_or("component_args_invalid")?
+            .to_owned();
+        let _cancel = access.policy.cancel_on_drop();
+        let root = access
+            .root
+            .to_str()
+            .ok_or("source_context_changed")?
+            .to_owned();
+        let result = access
+            .policy
+            .scope_future(crate::commands::create_reviewed_worktree(root, creation))
+            .await?;
+        return serde_json::to_value(result).map_err(|_| "component_response_invalid".into());
     }
     let path = if matches!(method, "repo_status" | "worktrees" | "worktree_clean") {
         args.get("path")
@@ -432,5 +495,24 @@ mod source_tests {
             bind_source_operation("native-context-a", &mut injected).unwrap_err(),
             "component_args_invalid"
         );
+    }
+}
+
+#[cfg(test)]
+mod worktree_admission_tests {
+    #[test]
+    fn native_destination_revalidation_precedes_legacy_target_or_repository_io() {
+        let request = super::SourceCreation::new(
+            "fixture-branch".into(),
+            "invalid-relative-target".into(),
+            "review-order-fixture".into(),
+            || Err("review changed before IO".into()),
+        )
+        .unwrap();
+        let result = tauri::async_runtime::block_on(crate::commands::create_reviewed_worktree(
+            "invalid-relative-repository".into(),
+            request,
+        ));
+        assert_eq!(result.unwrap_err(), "review changed before IO");
     }
 }

@@ -16,6 +16,7 @@ const MAX_HISTORY_LIMIT = 100;
 interface Props {
   repo: RepoEntry | null;
   onBusyChange?: (busy: boolean) => void;
+  onOpenFile?: (path: string, line: number | null) => void;
 }
 
 type DiffSelection = "workingTree" | "commit";
@@ -29,7 +30,7 @@ function parseLimit(value: string): number | null {
 }
 
 /** Read-only Git history/detail/diff surface for the selected repository. */
-export default function HistoryDiffPanel({ repo, onBusyChange }: Props) {
+export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Props) {
   const [historyLimit, setHistoryLimit] = useState(DEFAULT_HISTORY_LIMIT);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [selectedCommitId, setSelectedCommitId] = useState<string | null>(null);
@@ -268,7 +269,7 @@ export default function HistoryDiffPanel({ repo, onBusyChange }: Props) {
               </button>
             </div>
 
-            {diff ? <DiffView result={diff} /> : <div className="history-empty dim">diff를 선택하세요.</div>}
+            {diff ? <DiffView result={diff} onOpenFile={onOpenFile} /> : <div className="history-empty dim">diff를 선택하세요.</div>}
           </div>
         </div>
       ) : null}
@@ -276,7 +277,8 @@ export default function HistoryDiffPanel({ repo, onBusyChange }: Props) {
   );
 }
 
-function DiffView({ result }: { result: DiffResult }) {
+function DiffView({ result, onOpenFile }: { result: DiffResult; onOpenFile?: (path: string, line: number | null) => void }) {
+  let remainingLines = 2000;
   return (
     <div className="repo-diff" aria-label={`${result.scope} diff`}>
       {result.truncated ? (
@@ -284,22 +286,41 @@ function DiffView({ result }: { result: DiffResult }) {
           diff가 안전한 출력 상한에 도달해 일부 파일 또는 줄을 생략했습니다.
         </div>
       ) : null}
-      {result.files.map((file, index) => (
+      {result.files.map((file, index) => {
+        const lineLimit = Math.min(500, remainingLines);
+        remainingLines -= Math.min(lineLimit, file.patch.split("\n", lineLimit).length);
+        return (
         <article className="diff-file" key={`${index}:${file.path}:${file.oldPath ?? ""}`}>
           <div className="diff-file-head">
             <strong>{file.status}</strong>
             <span className="mono">{file.path}</span>
             {file.oldPath ? <span className="mono">← {file.oldPath}</span> : null}
+            {onOpenFile && <button type="button" onClick={() => onOpenFile(file.path, null)}>현재 파일 열기</button>}
           </div>
           {file.binary ? (
             <div className="note diff-binary" role="note">바이너리 파일 — 내용은 표시하지 않습니다.</div>
           ) : (
-            <pre className="diff-patch">{file.patch || "(변경 내용 없음)"}</pre>
+            <pre className="diff-patch">{onOpenFile ? <PatchLines patch={file.patch} path={file.path} onOpenFile={onOpenFile} limit={lineLimit}/> : file.patch || "(변경 내용 없음)"}</pre>
           )}
           {file.truncated ? <div className="note diff-truncated">이 파일의 diff가 상한으로 잘렸습니다.</div> : null}
         </article>
-      ))}
+      );})}
       {result.files.length === 0 ? <div className="history-empty dim">변경 사항이 없습니다.</div> : null}
     </div>
   );
+}
+
+function PatchLines({patch,path,onOpenFile,limit}: {patch:string;path:string;onOpenFile:(path:string,line:number|null)=>void;limit:number}) {
+  let nextLine: number | null = null;
+  if (!patch) return "(변경 내용 없음)";
+  const lines = patch.split("\n");
+  return <>{lines.slice(0,limit).map((text,index) => {
+    const hunk = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/.exec(text);
+    if (hunk) {
+      const start = Number(hunk[1]);
+      nextLine = Number.isSafeInteger(start) && start > 0 ? start : null;
+    }
+    const line = !hunk && nextLine !== null && (text.startsWith("+") || text.startsWith(" ")) ? nextLine++ : null;
+    return <span className="diff-patch-row" key={index}>{line !== null && <button type="button" className="diff-line-open" aria-label={`현재 파일 ${path} ${line}행 열기`} onClick={() => onOpenFile(path,line)}>{line}</button>}<span>{text || " "}</span>{"\n"}</span>;
+  })}{lines.length > limit && <span>{lines.slice(limit).join("\n")}</span>}</>;
 }

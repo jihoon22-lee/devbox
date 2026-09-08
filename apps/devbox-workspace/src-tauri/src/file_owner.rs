@@ -1,7 +1,7 @@
 //! Native file approvals and open-document snapshots. Invoke only from the
 //! host's bounded IO worker, with a freshly admitted ProjectLease when used.
 //! Neither a renderer path nor its supplied hash can grant write authority.
-use crate::platform::project_probe::ProjectLease;
+use crate::platform::{project_probe::ProjectLease, storage_paths::ProtectedStorage};
 use code_pad_lib::commands::file::{
     self, ExpectedFileSnapshot, FileActionRequest, OpenFileRequest, OpenedFileWire,
     RenameFileRequest, RenamedFileWire, SaveFileRequest, SavedFileWire,
@@ -41,6 +41,7 @@ fn native_path(raw: &str) -> Result<PathBuf> {
         return Err("file_target_unavailable");
     }
     let path = PathBuf::from(path.as_str());
+    crate::platform::windows_path::admit(&path).map_err(|_| "file_target_unavailable")?;
     if path.components().count() > 128 {
         return Err("file_path_limit");
     }
@@ -99,6 +100,7 @@ struct Object {
 }
 impl Object {
     fn open(path: &Path, directory: bool) -> Result<Self> {
+        crate::platform::windows_path::admit(path).map_err(|_| "file_target_unavailable")?;
         let (handle, identity) =
             open_filesystem_object(path, directory).map_err(|_| "file_unavailable")?;
         Ok(Self {
@@ -108,6 +110,7 @@ impl Object {
         })
     }
     fn revalidate(&self, directory: bool) -> Result<()> {
+        crate::platform::windows_path::admit(&self.path).map_err(|_| "file_target_unavailable")?;
         if filesystem_identity(&self.path, directory).map_err(|_| "file_changed")? != self.identity
         {
             return Err("file_changed");
@@ -215,65 +218,30 @@ pub struct FileOwner {
     choices: Vec<PathBuf>,
     protected: Option<ProtectedStorage>,
 }
-struct ProtectedStorage {
-    root: PathBuf,
-    parents: Vec<String>,
-    identifiers: Vec<String>,
-}
 impl FileOwner {
+    pub(crate) fn protect_native_storage(
+        &mut self,
+        app: &tauri::AppHandle,
+        host: &crate::host::Host,
+    ) -> Result<()> {
+        self.protected = Some(ProtectedStorage::from_host(app, host)?);
+        Ok(())
+    }
     /// General editor access cannot rewrite native Registry/trust/secret-owner
     /// stores, even when a user registers a parent such as their home folder.
     pub fn protect_product_storage(&mut self, root: &Path, identifiers: Vec<String>) -> Result<()> {
-        let root = display_path(&std::fs::canonicalize(root).map_err(|_| "invalid_files_store")?)?;
-        let parent = root.parent().ok_or("invalid_files_store")?;
-        let parent = parse_safe_project_path(parent.to_str().ok_or("invalid_files_store")?)
-            .ok_or("invalid_files_store")?
-            .identity()
-            .replace('\\', "/");
-        self.protected = Some(ProtectedStorage {
-            root,
-            parents: vec![parent],
-            identifiers,
-        });
+        self.protected = Some(ProtectedStorage::new(root, identifiers)?);
         Ok(())
     }
     pub fn protect_sibling_storage(&mut self, parent: &Path) -> Result<()> {
-        let parent = display_path(parent)?;
-        let parent = parse_safe_project_path(parent.to_str().ok_or("invalid_files_store")?)
+        self.protected
+            .as_mut()
             .ok_or("invalid_files_store")?
-            .identity()
-            .replace('\\', "/");
-        let protected = self.protected.as_mut().ok_or("invalid_files_store")?;
-        if !protected.parents.contains(&parent) {
-            protected.parents.push(parent);
-        }
-        Ok(())
+            .add_parent(parent)
     }
     pub fn ensure_user_path(&self, path: &Path) -> Result<()> {
         if let Some(protected) = &self.protected {
-            if path == protected.root || within(&protected.root, path)? {
-                return Err("file_owner_path");
-            }
-            let path = parse_safe_project_path(path.to_str().ok_or("invalid_file_path")?)
-                .ok_or("invalid_file_path")?
-                .identity()
-                .replace('\\', "/");
-            for parent in &protected.parents {
-                if let Some(relative) = path.strip_prefix(&format!("{parent}/")) {
-                    let directory = relative.split('/').next().unwrap_or_default();
-                    if protected.identifiers.iter().any(|id| {
-                        directory == id
-                            || directory
-                                .strip_prefix(&format!("{id}.i"))
-                                .is_some_and(|suffix| {
-                                    suffix.len() == 64
-                                        && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
-                                })
-                    }) {
-                        return Err("file_owner_path");
-                    }
-                }
-            }
+            protected.ensure_user_path(path)?;
         }
         Ok(())
     }
@@ -634,21 +602,20 @@ mod tests {
     #[test]
     fn broad_project_and_picker_access_cannot_rewrite_product_authority_stores() {
         let directory = tempfile::tempdir().unwrap();
-        let own = directory
-            .path()
-            .join(format!("com.devbox.v08.workspace.i{}", "a".repeat(64)));
-        let other = directory
-            .path()
-            .join(format!("com.devbox.v08.knowledge.i{}", "b".repeat(64)));
+        // Match the native Registry boundary, including Windows TEMP's 8.3
+        // parent aliases. Grants return canonical paths after object admission.
+        let root = display_path(&fs::canonicalize(directory.path()).unwrap()).unwrap();
+        let own = root.join(format!("com.devbox.v08.workspace.i{}", "a".repeat(64)));
+        let other = root.join(format!("com.devbox.v08.knowledge.i{}", "b".repeat(64)));
         fs::create_dir(&own).unwrap();
         fs::create_dir(&other).unwrap();
         let registry = own.join("project-registry.json");
         let approval = other.join("approval.json");
         fs::write(&registry, b"native registry").unwrap();
         fs::write(&approval, b"native approval").unwrap();
-        let ordinary = directory.path().join("source.md");
+        let ordinary = root.join("source.md");
         fs::write(&ordinary, b"editable source").unwrap();
-        let lease = crate::platform::project_probe::probe_fixture(directory.path()).unwrap();
+        let lease = crate::platform::project_probe::probe_fixture(&root).unwrap();
         let context = ProjectContext {
             project_id: "project".into(),
             worktree_id: "tree".into(),

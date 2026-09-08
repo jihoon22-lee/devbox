@@ -66,3 +66,14 @@ it("selects only an explicit native context and refreshes after successful admis
   await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(2));
   expect(call).toHaveBeenCalledWith("workspace.registry", "clear_project", {});
 });
+
+it("reviews an explicit Source suggestion without automatically registering or selecting it",async()=>{
+  const suggestedRoot={id:"created-worktree",path:"C:/created/worktree",name:"현재 프로젝트"};
+  const view=render(<RegistryGate suggestedRoot={suggestedRoot}/>);
+  await screen.findByRole("heading",{name:"등록 확인"});
+  expect(call).toHaveBeenCalledWith("workspace.registry","preview_windows",{root:suggestedRoot.path});
+  view.rerender(<RegistryGate suggestedRoot={suggestedRoot}/>);
+  expect(call.mock.calls.filter(([,method])=>method==="preview_windows")).toHaveLength(1);
+  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
+  expect((screen.getByLabelText("프로젝트 이름") as HTMLInputElement).value).toBe(suggestedRoot.name);
+});

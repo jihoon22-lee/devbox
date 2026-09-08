@@ -214,7 +214,9 @@ export interface NavEntry {
   cursor: number;
 }
 
-export default function App({contextKey = "standalone", active = true, onDirtyChange}: {contextKey?:string; active?:boolean; onDirtyChange?:(dirty:boolean) => void} = {}) {
+export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null}
+export default function App({contextKey = "standalone", active = true, onDirtyChange, openRequest}: {contextKey?:string; active?:boolean; onDirtyChange?:(dirty:boolean) => void; openRequest?:FileOpenRequest | null} = {}) {
+  const handledOpenRequest = useRef<string | null>(null);
   const activeRef = useRef(active);
   activeRef.current = active;
   const contextRef = useRef(contextKey);
@@ -223,6 +225,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const [pathInput, setPathInput] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const [watchPending, setWatchPending] = useState(0);
   const [zoom, setZoom] = useState(100);
   const [hydrated, setHydrated] = useState(false);
   const [quickOpen, setQuickOpen] = useState(false);
@@ -305,7 +308,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const quickOpenRef = useRef<() => void>(() => undefined);
   const appDialogRef = useRef<HTMLDivElement>(null);
 
-  useEffect(() => {onDirtyChange?.(state.docs.some(doc => doc.dirty) || busy || !hydrated || recoveryOpen);}, [onDirtyChange, state.docs, busy, hydrated, recoveryOpen]);
+  useEffect(() => {onDirtyChange?.(state.docs.some(doc => doc.dirty) || busy || watchPending > 0 || !hydrated || recoveryOpen);}, [onDirtyChange, state.docs, busy, watchPending, hydrated, recoveryOpen]);
   useEffect(() => () => {onDirtyChange?.(false);}, [onDirtyChange]);
 
   useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
@@ -456,6 +459,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   };
 
   const enqueueWatchOperation = (path: string, operation: () => Promise<void>) => {
+    setWatchPending(count => count + 1);
     const previous = watchOperationRef.current.get(path) ?? Promise.resolve();
     const next = previous
       .catch(() => undefined)
@@ -464,6 +468,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         if (watchOperationRef.current.get(path) === next) {
           watchOperationRef.current.delete(path);
         }
+        setWatchPending(count => Math.max(0,count - 1));
       });
     watchOperationRef.current.set(path, next);
     return next;
@@ -496,7 +501,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
+    const openingContext = contextRef.current;
     const opened = await openFile(path, null);
+    if (openingContext !== contextRef.current) throw new Error("프로젝트가 변경되어 파일 열기를 중단했습니다.");
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
@@ -508,7 +515,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       await registerWatch(opened.path);
       watchRegistered = true;
     }
-    if (renameApplyGuard()) {
+    if (openingContext !== contextRef.current || renameApplyGuard()) {
       if (watchRegistered) await unregisterWatch(opened.path);
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
@@ -1441,6 +1448,17 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     // changes the native view session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [contextKey]);
+
+  // Product navigation waits for session restore and active file operations.
+  // Repeated renders consume one request; a later explicit click gets a new ID.
+  useEffect(() => {
+    if (!openRequest || !active || !hydrated || !hydratedRef.current || busyRef.current || renameApplyBusyRef.current
+      || openRequest.contextKey !== contextKey || handledOpenRequest.current === openRequest.id) return;
+    handledOpenRequest.current = openRequest.id;
+    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, null));
+    // The operation reads current document refs and retains an existing dirty buffer.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [openRequest, active, hydrated, busy, renameApplyBusy, contextKey]);
 
   // Native watcher events are authoritative only for disk metadata. A clean
   // document reloads automatically; a dirty document gets an explicit choice.

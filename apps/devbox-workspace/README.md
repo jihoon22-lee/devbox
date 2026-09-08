@@ -54,8 +54,12 @@ editor disk operations coordinate while private recovery writes remain usable.
 Commit drafts survive permission refreshes and block project switching. Generic
 file editing cannot rewrite the products' native Registry/approval stores.
 
-Source worktree creation and Files navigation, legacy import, complete Windows
-LSP integration and WSL-native Git/LSP remain incomplete. Current Source,
+Source changes and diff lines open the retained Files editor. Worktree creation
+uses a one-time native target review, then proposes Registry registration and
+selection separately. Cancellation begins before queueing/evidence capture, and
+local drive aliases are resolved before filesystem IO. Broader approved worktree
+cleanup, legacy import, complete Windows LSP integration and WSL-native Git/LSP
+remain incomplete. Current Source,
 Dependencies and Files packaged behavior still requires Windows acceptance.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)

@@ -159,29 +159,7 @@ impl FilesHost {
             return data.revalidate();
         }
         let data = MetadataRoot::open(&path)?;
-        let catalog: Value = serde_json::from_str(include_str!("../../../products.json"))
-            .map_err(|_| "invalid_files_store")?;
-        let identifiers = catalog["products"]
-            .as_array()
-            .ok_or("invalid_files_store")?
-            .iter()
-            .map(|product| {
-                product["identifier"]
-                    .as_str()
-                    .map(str::to_owned)
-                    .ok_or("invalid_files_store")
-            })
-            .collect::<Result<Vec<_>>>()?;
-        self.owner
-            .protect_product_storage(host.storage_root(), identifiers)?;
-        // Product components may use either Windows local or roaming app data.
-        // These are native known-folder paths, never renderer-provided scopes.
-        let roaming = app
-            .path()
-            .app_data_dir()
-            .map_err(|_| "invalid_files_store")?;
-        self.owner
-            .protect_sibling_storage(roaming.parent().ok_or("invalid_files_store")?)?;
+        self.owner.protect_native_storage(app, host)?;
         if let Some(bytes) = data.read(CHOICES)? {
             self.owner.restore_native_choices(&bytes)?;
         }

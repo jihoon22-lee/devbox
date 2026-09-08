@@ -6,6 +6,12 @@ import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
   source_review_required: "Git 설정이나 실행 근거를 다시 검토해 주세요.",
+  source_cancelled: "Git 작업을 취소했습니다.",
+  worktree_branch_invalid: "새 branch 이름을 확인해 주세요.",
+  worktree_preview_stale: "작업 폴더 생성 확인이 만료되었거나 실행 근거가 바뀌었습니다. 다시 검토해 주세요.",
+  worktree_target_invalid: "기존 부모 폴더 아래의 새 작업 폴더 경로를 선택해 주세요. Git 메타데이터 안에는 만들 수 없습니다.",
+  worktree_target_changed: "확인한 부모 폴더가 바뀌었거나 대상 폴더가 생겼습니다. 다시 검토해 주세요.",
+  worktree_target_unavailable: "생성할 위치의 부모 폴더를 읽지 못했습니다. 경로와 연결 상태를 확인해 주세요.",
   source_requires_repository: "이 프로젝트 폴더에는 Git 저장소가 없습니다.",
   source_context_changed: "프로젝트 또는 Git 실행 근거가 변경되었습니다. 승인 상태를 다시 확인해 주세요.",
   source_preview_stale: "Git 실행 검토가 만료되었거나 이미 사용되었습니다. 다시 검토해 주세요.",
@@ -45,6 +51,7 @@ const issues: Record<string, string> = {
   project_probe_timeout: "폴더 확인 시간이 초과되었습니다. 연결 상태를 확인해 주세요.",
   project_object_unavailable: "폴더 또는 Git 정보를 읽지 못했습니다.",
   unsafe_project_object: "연결된 경로는 등록할 수 없습니다. 실제 폴더를 선택해 주세요.",
+  native_path_transport_denied: "이 드라이브 연결을 확인할 수 없습니다. 실제 로컬 경로나 직접 선택한 Windows 공유 경로를 사용해 주세요.",
   project_object_changed: "확인한 폴더가 변경되었습니다. 다시 확인해 주세요.",
   project_preview_stale: "등록 확인이 만료되었습니다. 폴더를 다시 확인해 주세요.",
   stale_registry: "프로젝트 목록이 변경되었습니다. 새로 고친 뒤 다시 시도해 주세요.",

@@ -213,8 +213,11 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
             "path must be absolute",
         ));
     }
-    let mut current = Some(path);
-    while let Some(component) = current {
+    // Inspect each ancestor before touching its descendants. Starting at the
+    // leaf could already traverse a junction into a network/WSL provider.
+    let mut ancestors = path.ancestors().collect::<Vec<_>>();
+    ancestors.reverse();
+    for component in ancestors {
         let metadata = fs::symlink_metadata(component)?;
         let is_reparse_point = {
             #[cfg(windows)]
@@ -232,7 +235,6 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
                 "path contains a symbolic link or reparse point",
             ));
         }
-        current = component.parent();
     }
     Ok(())
 }
@@ -745,5 +747,21 @@ mod atomic_write_tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         assert!(!root.exists());
+    }
+}
+
+#[cfg(all(test, unix))]
+mod link_order_tests {
+    #[test]
+    fn rejects_a_dangling_ancestor_before_inspecting_its_missing_child() {
+        let root = std::env::temp_dir().join(format!("devbox-link-order-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let link = root.join("link");
+        std::os::unix::fs::symlink(root.join("absent-target"), &link).unwrap();
+        let error = super::ensure_no_links(link.join("never-probed-child")).unwrap_err();
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_dir(root).unwrap();
+        // Leaf-first traversal reports NotFound after following the link.
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

@@ -2039,16 +2039,46 @@ pub async fn create_worktree(
     branch: String,
     target_dir: String,
 ) -> Result<WorktreeCreate, String> {
+    create_worktree_with_admission(repo_path, branch, target_dir, None).await
+}
+pub(crate) fn valid_worktree_branch(branch: &str) -> bool {
+    branch.len() <= MAX_REMOTE_BRANCH_BYTES
+        && !branch.starts_with('-')
+        && valid_ref_path_fragment(branch)
+}
+pub(crate) async fn create_reviewed_worktree(
+    repo_path: String,
+    creation: crate::component::SourceCreation,
+) -> Result<WorktreeCreate, String> {
+    create_worktree_with_admission(
+        repo_path,
+        creation.branch,
+        creation.target_dir,
+        Some((creation.operation_id, creation.validate)),
+    )
+    .await
+}
+async fn create_worktree_with_admission(
+    repo_path: String,
+    branch: String,
+    target_dir: String,
+    admission: Option<(String, crate::component::SourceTargetValidation)>,
+) -> Result<WorktreeCreate, String> {
+    let operation = if let Some((id, _)) = &admission {
+        begin_git_operation(id, GIT_WORKTREE_ERROR, GIT_WORKTREE_ERROR)?
+    } else {
+        begin_internal_git_operation(GIT_WORKTREE_ERROR)?
+    };
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
-        if branch.len() > MAX_REMOTE_BRANCH_BYTES
-            || branch.starts_with('-')
-            || !valid_ref_path_fragment(&branch)
-        {
+        if !valid_worktree_branch(&branch) {
             return Err(GIT_WORKTREE_ERROR.to_string());
+        }
+        if let Some((_, validate)) = &admission {
+            validate()?;
         }
         let (target, target_parent_identity) = validated_new_worktree_target(&target_dir)?;
         let context = validated_repository_context(&repo_path, GIT_WORKTREE_ERROR)?;
-        let mut operation = begin_internal_git_operation(GIT_WORKTREE_ERROR)?;
+        let mut operation = operation;
         operation.bind_repository(
             context.common_git_identity,
             GIT_WORKTREE_ERROR,
@@ -2078,7 +2108,16 @@ pub async fn create_worktree(
             "--".to_string(),
             target_arg,
         ];
-        run_git_mutation(&args, &context.worktree)?;
+        if let Some((_, validate)) = &admission {
+            validate()?;
+            run_git_mutation_with_cancel(
+                &args,
+                &context.worktree,
+                operation.cancellation.as_ref(),
+            )?;
+        } else {
+            run_git_mutation(&args, &context.worktree)?;
+        }
         Ok(WorktreeCreate { path: result_path })
     })
     .await

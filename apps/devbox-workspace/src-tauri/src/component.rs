@@ -38,6 +38,7 @@ struct Runtime {
     definitions: Arc<Mutex<crate::definitions::Definitions>>,
     source: Arc<Mutex<crate::source_host::SourceHost>>,
     source_requests: Pool,
+    source_operations: crate::core::source_operations::Operations,
     source_workers: Arc<tokio::sync::Semaphore>,
     host: Arc<Mutex<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
@@ -55,6 +56,7 @@ impl Default for Runtime {
             definitions: Arc::default(),
             source: Arc::default(),
             source_requests: Pool::default(),
+            source_operations: Default::default(),
             source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             host: Arc::new(Mutex::new(Err("initializing"))),
             metadata: Pool::default(),
@@ -312,18 +314,36 @@ async fn execute_source(
             .ok_or("request_expired")
     };
     let app = window.app_handle().clone();
+    let operation_key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
     if repo_manager_lib::component::source_cancel(&request.method) {
-        let key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
-        return repo_manager_lib::component::dispatch_source_cancel(
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct CancelId {
+            operation_id: String,
+        }
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Cancel {
+            request: CancelId,
+        }
+        let cancel: Cancel = input(request.args.clone())?;
+        let admitted = runtime
+            .source_operations
+            .cancel(&operation_key, &cancel.request.operation_id)?;
+        let running = repo_manager_lib::component::dispatch_source_cancel(
             &app,
-            &key,
+            &operation_key,
             &request.method,
             request.args,
         )
         .await
-        .map_err(|error| crate::source_host::issue(&error));
+        .map_err(|error| crate::source_host::issue(&error))?;
+        return Ok(json!(admitted || running.as_bool() == Some(true)));
     }
-    let filesystem = if matches!(request.method.as_str(), "cancel_trust" | "revoke_trust") {
+    let filesystem = if matches!(
+        request.method.as_str(),
+        "cancel_trust" | "revoke_trust" | "cancel_worktree"
+    ) {
         None
     } else {
         Some(
@@ -333,11 +353,28 @@ async fn execute_source(
         )
     };
     let queued = runtime.source_requests.reserve_with_limit(16)?;
-    let worker_slot =
-        tokio::time::timeout(remaining()?, runtime.source_workers.clone().acquire_owned())
-            .await
-            .map_err(|_| "request_expired")?
-            .map_err(|_| "source_owner_unavailable")?;
+    let operation_id = if request.method == "create_worktree" {
+        request.args.get("operationId")
+    } else {
+        request
+            .args
+            .get("request")
+            .and_then(|value| value.get("operationId"))
+    };
+    let operation_id = operation_id
+        .map(|value| value.as_str().ok_or("invalid_request"))
+        .transpose()?;
+    let admitted = runtime
+        .source_operations
+        .register(&operation_key, operation_id)?;
+    let _cancel_on_drop = admitted.cancel_on_drop();
+    let worker_slot = tokio::time::timeout(
+        remaining()?,
+        admitted.until_cancelled(runtime.source_workers.clone().acquire_owned()),
+    )
+    .await
+    .map_err(|_| "request_expired")??
+    .map_err(|_| "source_owner_unavailable")?;
     let host = runtime.host()?;
     let source = runtime.source.clone();
     let definitions = runtime.definitions.clone();
@@ -345,33 +382,57 @@ async fn execute_source(
     let method = request.method;
     let args = request.args;
     if crate::source_host::management(&method) {
+        let worker_admission = admitted.clone();
         let worker = tauri::async_runtime::spawn_blocking(move || {
             let _retained = (queued, worker_slot, context_permit, filesystem);
+            worker_admission.check()?;
             crate::files_host::current_deadline(deadline)?;
             let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
             let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
             crate::files_host::current_deadline(deadline)?;
             source.initialize(&worker_app, &host)?;
-            source.manage(&host, &mut definitions, &context, &method, args, budget)
+            let result = source.manage(&host, &mut definitions, &context, &method, args, budget)?;
+            worker_admission.check()?;
+            Ok(result)
         });
-        return tokio::time::timeout(remaining()?, worker)
+        return tokio::time::timeout(remaining()?, admitted.until_cancelled(worker))
             .await
-            .map_err(|_| "request_expired")?
+            .map_err(|_| "request_expired")??
             .unwrap_or(Err("worker_unavailable"))
             .map_err(crate::source_host::issue);
     }
+    let worker_admission = admitted.clone();
+    let worker_method = method.clone();
     let worker = tauri::async_runtime::spawn_blocking(move || {
-        let retained = (queued, worker_slot, context_permit, filesystem);
+        worker_admission.check()?;
+        let retained = (
+            queued,
+            worker_slot,
+            context_permit,
+            filesystem,
+            worker_admission.clone(),
+        );
         crate::files_host::current_deadline(deadline)?;
         let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
         let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
         crate::files_host::current_deadline(deadline)?;
         source.initialize(&worker_app, &host)?;
-        source.access(host, &mut definitions, &context, budget, retained)
+        source.access(
+            host,
+            &mut definitions,
+            crate::source_host::Invocation {
+                context,
+                method: worker_method,
+                args,
+                budget,
+                admitted: worker_admission,
+            },
+            retained,
+        )
     });
-    let access = tokio::time::timeout(remaining()?, worker)
+    let (access, args) = tokio::time::timeout(remaining()?, admitted.until_cancelled(worker))
         .await
-        .map_err(|_| "request_expired")?
+        .map_err(|_| "request_expired")??
         .unwrap_or(Err("worker_unavailable"))
         .map_err(crate::source_host::issue)?;
     match tokio::time::timeout(

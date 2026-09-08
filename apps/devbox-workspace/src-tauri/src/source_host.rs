@@ -6,6 +6,8 @@ use crate::{
     platform::{
         definition_write::DefinitionTarget,
         git_trust::{GitEnvironment, GitTrust},
+        git_worktree::WorktreeTarget,
+        storage_paths::ProtectedStorage,
     },
     private_metadata::MetadataRoot,
 };
@@ -174,14 +176,32 @@ struct Pending {
     snapshot: Snapshot,
     created: Instant,
 }
+struct PendingWorktree {
+    context: ProjectContext,
+    digest: String,
+    branch: String,
+    target: Arc<WorktreeTarget>,
+    created: Instant,
+}
+pub(crate) struct Invocation {
+    pub context: ProjectContext,
+    pub method: String,
+    pub args: Value,
+    pub budget: Budget,
+    pub admitted: crate::core::source_operations::Request,
+}
 #[derive(Default)]
 pub(crate) struct SourceHost {
     pending: HashMap<String, Pending>,
+    worktrees: HashMap<String, PendingWorktree>,
+    storage: Option<ProtectedStorage>,
     common: Option<PathBuf>,
 }
 impl SourceHost {
     pub(crate) fn expire(&mut self) {
         self.pending
+            .retain(|_, pending| pending.created.elapsed() < TTL);
+        self.worktrees
             .retain(|_, pending| pending.created.elapsed() < TTL);
     }
     pub(crate) fn initialize(&mut self, app: &tauri::AppHandle, host: &Host) -> Result<()> {
@@ -190,9 +210,11 @@ impl SourceHost {
             Some(previous) if previous == &common => Ok(()),
             Some(_) => Err("source_context_changed"),
             None => {
+                let storage = ProtectedStorage::from_host(app, host)?;
                 repo_manager_lib::component::initialize(app, &common)
                     .map_err(|_| "source_owner_unavailable")?;
                 self.common = Some(common);
+                self.storage = Some(storage);
                 Ok(())
             }
         }
@@ -208,14 +230,74 @@ impl SourceHost {
     ) -> Result<Value> {
         budget.check()?;
         let deadline = budget.deadline_ms;
-        self.pending
-            .retain(|_, pending| pending.created.elapsed() < TTL);
+        self.expire();
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         struct Id {
             preview_id: String,
         }
         match method {
+            "cancel_worktree" => {
+                let id: Id = serde_json::from_value(args).map_err(|_| "invalid_request")?;
+                if self
+                    .worktrees
+                    .get(&id.preview_id)
+                    .is_some_and(|pending| pending.context == *context)
+                {
+                    self.worktrees.remove(&id.preview_id);
+                }
+                Ok(Value::Null)
+            }
+            "preview_worktree" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    branch: String,
+                    target_dir: String,
+                }
+                let input: Input = serde_json::from_value(args).map_err(|_| "invalid_request")?;
+                if !repo_manager_lib::component::source_branch_valid(&input.branch) {
+                    return Err("worktree_branch_invalid");
+                }
+                if self.pending.len() + self.worktrees.len() >= MAX_PREVIEWS {
+                    return Err("project_preview_limit");
+                }
+                let snapshot = Snapshot::capture(host, definitions, context, deadline)?;
+                if !snapshot.approved()? {
+                    return Err("source_review_required");
+                }
+                let (git, common) = snapshot
+                    .git
+                    .directories()
+                    .ok_or("source_requires_repository")?;
+                let storage = self.storage.as_ref().ok_or("source_owner_unavailable")?;
+                if devbox_filesystem::parse_safe_project_path(&input.target_dir).is_none() {
+                    return Err("worktree_target_invalid");
+                }
+                storage.ensure_user_path(std::path::Path::new(&input.target_dir))?;
+                let target = Arc::new(WorktreeTarget::capture(
+                    std::path::Path::new(&snapshot.binding.root),
+                    &input.target_dir,
+                    &[git.to_owned(), common.to_owned()],
+                    deadline,
+                )?);
+                storage.ensure_user_path(target.path())?;
+                snapshot.revalidate(host, deadline)?;
+                budget.check()?;
+                let preview_id = uuid::Uuid::new_v4().to_string();
+                let view = json!({"previewId":preview_id,"branch":input.branch,"targetDir":target.path(),"root":snapshot.binding.root});
+                self.worktrees.insert(
+                    preview_id,
+                    PendingWorktree {
+                        context: context.clone(),
+                        digest: snapshot.digest,
+                        branch: input.branch,
+                        target,
+                        created: Instant::now(),
+                    },
+                );
+                Ok(view)
+            }
             "cancel_trust" => {
                 let id: Id = serde_json::from_value(args).map_err(|_| "invalid_request")?;
                 if self
@@ -260,6 +342,8 @@ impl SourceHost {
                 }
                 self.pending
                     .retain(|_, pending| pending.snapshot.context != *context);
+                self.worktrees
+                    .retain(|_, pending| pending.context != *context);
                 Ok(json!({"approved":false}))
             }
             "trust_status" | "preview_trust" => {
@@ -272,7 +356,7 @@ impl SourceHost {
                 if method == "trust_status" {
                     return Ok(view);
                 }
-                if self.pending.len() >= MAX_PREVIEWS {
+                if self.pending.len() + self.worktrees.len() >= MAX_PREVIEWS {
                     return Err("project_preview_limit");
                 }
                 let preview_id = uuid::Uuid::new_v4().to_string();
@@ -292,28 +376,71 @@ impl SourceHost {
         &mut self,
         host: Arc<Host>,
         definitions: &mut Definitions,
-        context: &ProjectContext,
-        budget: Budget,
+        invocation: Invocation,
         retained: T,
-    ) -> Result<repo_manager_lib::component::SourceAccess> {
+    ) -> Result<(repo_manager_lib::component::SourceAccess, Value)> {
+        let Invocation {
+            context,
+            method,
+            mut args,
+            budget,
+            admitted,
+        } = invocation;
         budget.check()?;
+        admitted.check()?;
         let deadline = budget.deadline_ms;
-        let snapshot = Snapshot::capture(&host, definitions, context, deadline)?;
+        let creation = if method == "create_worktree" {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Create {
+                preview_id: String,
+                operation_id: String,
+            }
+            let input: Create = serde_json::from_value(args).map_err(|_| "invalid_request")?;
+            let pending = self
+                .worktrees
+                .remove(&input.preview_id)
+                .ok_or("worktree_preview_stale")?;
+            if pending.context != context || pending.created.elapsed() >= TTL {
+                return Err("worktree_preview_stale");
+            }
+            args = json!({});
+            Some((pending, input.operation_id))
+        } else {
+            None
+        };
+        let snapshot = Snapshot::capture(&host, definitions, &context, deadline)?;
         budget.check()?;
+        admitted.check()?;
         if !snapshot.approved()? {
             return Err("source_review_required");
         }
+        if let Some((pending, _)) = &creation {
+            if pending.digest != snapshot.digest {
+                return Err("worktree_preview_stale");
+            }
+            pending.target.revalidate(deadline)?;
+            self.storage
+                .as_ref()
+                .ok_or("source_owner_unavailable")?
+                .ensure_user_path(pending.target.path())?;
+        }
+        let target_boundary = creation.as_ref().map(|(pending, _)| pending.target.clone());
         let program = snapshot.git.environment.program.clone();
         let environment = snapshot.git.environment.environment.clone();
         let root = PathBuf::from(&snapshot.binding.root);
-        let key = serde_json::to_string(context).map_err(|_| "invalid_context")?;
-        let policy = devbox_git::execution::ExecutionPolicy::new(
+        let key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
+        let policy = devbox_git::execution::ExecutionPolicy::new_cancellable(
             program,
             environment,
             budget.expires,
+            admitted.flag(),
             move |target| {
                 let _retained = &retained;
                 budget.check().map_err(str::to_string)?;
+                if let Some(target) = &target_boundary {
+                    target.revalidate(deadline).map_err(str::to_string)?;
+                }
                 // Reject unapproved Git-returned roots before any IO, and
                 // revalidate the selected Git evidence only once per boundary.
                 let repository = snapshot
@@ -330,21 +457,49 @@ impl SourceHost {
             },
         )
         .map_err(|_| "source_context_changed")?;
-        Ok(repo_manager_lib::component::SourceAccess::for_project(
-            root, key, policy,
-        ))
+        let mut access = repo_manager_lib::component::SourceAccess::for_project(root, key, policy);
+        if let Some((pending, operation_id)) = creation {
+            let target = pending.target;
+            let path = target
+                .path()
+                .to_str()
+                .ok_or("worktree_target_invalid")?
+                .to_owned();
+            let creation = repo_manager_lib::component::SourceCreation::new(
+                pending.branch,
+                path,
+                operation_id,
+                move || target.revalidate(deadline).map_err(str::to_string),
+            )
+            .map_err(|_| "worktree_target_invalid")?;
+            access = access.with_creation(creation);
+        }
+        Ok((access, args))
     }
 }
 
 pub(crate) fn management(method: &str) -> bool {
     matches!(
         method,
-        "trust_status" | "preview_trust" | "approve_trust" | "revoke_trust" | "cancel_trust"
+        "trust_status"
+            | "preview_trust"
+            | "approve_trust"
+            | "revoke_trust"
+            | "cancel_trust"
+            | "preview_worktree"
+            | "cancel_worktree"
     )
 }
 pub(crate) fn issue(error: &str) -> &'static str {
     match error {
+        "worktree_branch_invalid" => "worktree_branch_invalid",
+        "worktree_preview_stale" => "worktree_preview_stale",
+        "worktree_target_invalid" => "worktree_target_invalid",
+        "worktree_target_changed" => "worktree_target_changed",
+        "worktree_target_unavailable" => "worktree_target_unavailable",
+        "file_owner_path" => "file_owner_path",
         "source_review_required" => "source_review_required",
+        "source_cancelled" | "git_cancelled" => "source_cancelled",
         "source_requires_repository" => "source_requires_repository",
         "source_preview_stale" => "source_preview_stale",
         "source_trust_invalid" | "source_trust_future" => "source_trust_invalid",
@@ -361,6 +516,7 @@ pub(crate) fn issue(error: &str) -> &'static str {
         "project_definition_limit" => "project_definition_limit",
         "git_installation_unavailable" => "git_installation_unavailable",
         "git_source_transport_denied"
+        | "native_path_transport_denied"
         | "git_source_path_invalid"
         | "git_source_path_unsupported" => "git_source_path_unsupported",
         "request_expired" | "git_timeout" => "request_expired",

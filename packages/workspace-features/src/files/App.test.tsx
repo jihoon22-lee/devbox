@@ -1241,3 +1241,42 @@ describe("App editor shell operations", () => {
     expect(output.textContent).toBe("");
   });
 });
+
+it("opens a retained product navigation request once after hydration and keeps a dirty tab", async () => {
+  const loading = deferred<Awaited<ReturnType<typeof loadSession>>>();
+  const empty = await loadSessionMock();
+  loadSessionMock.mockReturnValueOnce(loading.promise);
+  openFileMock.mockResolvedValue(openedFile("first\nsecond\nthird"));
+  const request = {id:"source-first",contextKey:"selected-tree",path:"/tmp/one.ts",line:2};
+  const rendered = render(<App contextKey="selected-tree" openRequest={request}/>);
+  expect(openFileMock).not.toHaveBeenCalled();
+  await act(async()=>loading.resolve(empty));
+  await waitFor(()=>expect(rendered.getByRole("tab",{name:/one\.ts/})).toBeTruthy());
+  await waitFor(()=>expect((rendered.getByRole("textbox",{name:"열 파일 경로"}) as HTMLInputElement).disabled).toBe(false));
+  fireEvent.click(rendered.getByRole("button",{name:"edit /tmp/one.ts"}));
+  rendered.rerender(<App contextKey="selected-tree" openRequest={request}/>);
+  expect(openFileMock).toHaveBeenCalledTimes(1);
+  const second={...request,id:"source-second",line:3};
+  await act(async()=>rendered.rerender(<App contextKey="selected-tree" openRequest={second}/>));
+  await waitFor(()=>expect(openFileMock).toHaveBeenCalledTimes(2));
+  expect(rendered.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("first\nsecond\nthird!");
+  expect(watchFileMock).toHaveBeenCalledTimes(1);
+  rendered.rerender(<App contextKey="selected-tree" openRequest={{...second,id:"foreign",contextKey:"other-tree"}}/>);
+  expect(openFileMock).toHaveBeenCalledTimes(2);
+});
+
+it("keeps context changes blocked until the last closed document releases its watcher",async()=>{
+  const pending=deferred<void>();
+  unwatchFileMock.mockReturnValueOnce(pending.promise);
+  openFileMock.mockResolvedValue(openedFile());
+  const dirty=vi.fn();
+  const request={id:"open-for-close",contextKey:"standalone",path:"/tmp/one.ts",line:null};
+  const rendered=render(<App openRequest={request} onDirtyChange={dirty}/>);
+  await waitFor(()=>expect(rendered.getByRole("tab",{name:/one\.ts/})).toBeTruthy());
+  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(false));
+  fireEvent.click(rendered.getByRole("button",{name:"/tmp/one.ts 닫기"}));
+  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(true));
+  expect(rendered.queryByRole("tab",{name:/one\.ts/})).toBeNull();
+  await act(async()=>pending.resolve());
+  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(false));
+});
