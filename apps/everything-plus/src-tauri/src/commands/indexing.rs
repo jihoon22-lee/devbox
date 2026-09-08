@@ -755,6 +755,109 @@ pub(crate) async fn __component_index_status(
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(windows)]
+    fn owned_wsl_fixture_root() -> std::path::PathBuf {
+        let raw = std::env::var("DEVBOX_WSL_FIXTURE_ROOT")
+            .expect("an explicitly owned WSL fixture root is required");
+        let token = std::env::var("DEVBOX_WSL_FIXTURE_OWNER").expect("fixture owner is required");
+        assert_eq!(token.len(), 36);
+        assert!(token.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'));
+        let parsed = devbox_wsl::path::parse_wsl_unc_path(&raw)
+            .unwrap()
+            .expect("actual WSL UNC root required");
+        assert_eq!(
+            parsed.linux_path(),
+            format!("/tmp/devbox-knowledge-wsl2-fixture-{token}")
+        );
+        let root = std::path::PathBuf::from(raw);
+        filesystem::ensure_no_links(&root).unwrap();
+        let marker = root.join("fixture-owner.txt");
+        filesystem::ensure_no_links(&marker).unwrap();
+        assert_eq!(
+            std::fs::metadata(&marker).unwrap().len(),
+            token.len() as u64
+        );
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), token);
+        root
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires an explicitly owned live WSL root; never uses user indexes"]
+    fn native_wsl_owned_fixture() {
+        let base = owned_wsl_fixture_root();
+        let root = base.join("Search 한글");
+        std::fs::create_dir(&root).unwrap();
+        for i in 0..500 {
+            std::fs::write(
+                root.join(format!("wslfixture{i:04}.txt")),
+                "wslnativecontent\n",
+            )
+            .unwrap();
+        }
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let stored = db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let state = state(conn);
+        reset_progress(&state);
+        run_index_with_filter(&state, &[], IndexFilter::All).unwrap();
+        assert_eq!(
+            search(&state.db.lock().unwrap(), "wslfixture", 1000)
+                .unwrap()
+                .len(),
+            500
+        );
+        assert_eq!(
+            search_content(&state.db.lock().unwrap(), "wslnativecontent", 1000)
+                .unwrap()
+                .len(),
+            500
+        );
+        let moved = base.join("search-temporarily-unavailable");
+        assert!(!moved.exists());
+        std::fs::rename(&root, &moved).unwrap();
+        reset_progress(&state);
+        run_index_with_filter(&state, std::slice::from_ref(&stored), IndexFilter::All).unwrap();
+        assert_eq!(
+            state.last_error.lock().unwrap().as_deref(),
+            Some("root_unavailable")
+        );
+        assert_eq!(
+            search(&state.db.lock().unwrap(), "wslfixture", 1000)
+                .unwrap()
+                .len(),
+            500
+        );
+        assert_eq!(
+            search_content(&state.db.lock().unwrap(), "wslnativecontent", 1000)
+                .unwrap()
+                .len(),
+            500
+        );
+        std::fs::rename(&moved, &root).unwrap();
+        std::fs::remove_file(root.join("wslfixture0000.txt")).unwrap();
+        std::fs::write(root.join("wslfixture0500.txt"), "reconnectedcontent\n").unwrap();
+        reset_progress(&state);
+        run_index_with_filter(&state, std::slice::from_ref(&stored), IndexFilter::All).unwrap();
+        assert!(state.last_error.lock().unwrap().is_none());
+        assert!(search(&state.db.lock().unwrap(), "wslfixture0000", 10)
+            .unwrap()
+            .is_empty());
+        assert_eq!(
+            search_content(&state.db.lock().unwrap(), "reconnectedcontent", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            search(&state.db.lock().unwrap(), "wslfixture", 1000)
+                .unwrap()
+                .len(),
+            500
+        );
+        std::fs::remove_dir_all(&root).unwrap();
+    }
     use super::*;
     use crate::core::content::MAX_FILE_BYTES;
     use crate::core::db::{add_root as db_add_root, search, search_content};

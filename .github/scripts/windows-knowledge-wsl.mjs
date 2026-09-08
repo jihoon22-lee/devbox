@@ -1,0 +1,114 @@
+// Hosted-runner-only actual WSL1 UNC exercise. The setup script owns the entire
+// disposable distro. Root unavailability here is an owned directory rename,
+// not a claim about WSL2 VM suspend or a stopped distribution.
+import assert from "node:assert/strict";
+import { mkdirSync, writeFileSync, readFileSync, renameSync, unlinkSync, lstatSync } from "node:fs";
+import path from "node:path";
+import { spawnSync } from "node:child_process";
+
+export async function exerciseKnowledgeWsl({ item, executable, profile, command, sourceQuery, product, stop, wait, click, delay, evidence, progress }) {
+  const distro = process.env.DEVBOX_KNOWLEDGE_WSL_DISTRO;
+  assert.match(distro ?? "", /^DevboxKnowledgeFixture-[0-9]+-[a-f0-9]{12}$/);
+  assert.equal(process.env.GITHUB_ACTIONS, "true");
+  assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+  const root = `\\\\wsl.localhost\\${distro}\\home\\devbox-fixture\\한글 project`;
+  const alternate = `\\\\wsl$\\${distro}\\home\\devbox-fixture\\한글 project`;
+  const moved = `${root}-temporarily-unavailable`;
+  const notes = path.join(root, "Notes");
+  const corpus = path.join(root, "indexed");
+  mkdirSync(root); mkdirSync(notes); mkdirSync(corpus);
+  writeFileSync(path.join(notes, "Case.md"), "# Upper case\nWSL preserved content\n", { flag: "wx" });
+  writeFileSync(path.join(notes, "case.md"), "# Lower case\nSeparate Linux file\n", { flag: "wx" });
+  for (let i = 0; i < 500; i++) writeFileSync(path.join(corpus, `wslfixture${String(i).padStart(4, "0")}.txt`), "wslnativecontent fixture\n", { flag: "wx" });
+  const identity = p => { const s = lstatSync(p, { bigint: true }); return `${s.dev}:${s.ino}`; };
+  assert.equal(identity(root), identity(alternate));
+  assert.notEqual(identity(path.join(notes, "Case.md")), identity(path.join(notes, "case.md")));
+  evidence.wsl = { version: 1, boundary: "Actual WSL1 UNC; directory rename models unavailable root, not VM suspension", result: "running" };
+  const succeeded = response => { assert.equal(response.operation.outcome.state, "succeeded", JSON.stringify(response.operation.outcome)); return response.value; };
+  const query = async (text, mode = "name", limit = 2000) => sourceQuery(item, "files", text, { sourceRootId: rootId }, limit, mode);
+  const cancel = async result => command(item, "knowledge.search", "source_cancel", { generation: result.generation });
+  const eventually = async (callback, label, timeout = 90_000) => {
+    const end = Date.now() + timeout;
+    while (Date.now() < end) { if (await callback()) return; await delay(250); }
+    throw new Error(label);
+  };
+  progress("wsl-vault-approval-and-atomic-edit");
+  succeeded(await command(item, "knowledge.migration", "schedule_vault_change", { path: alternate }));
+  await stop(item); item = await product(executable, profile);
+  await wait(item.cdp, '!!document.querySelector("#vault-setup-title")', "WSL vault review missing");
+  await click(item.cdp, "폴더 연결 미리보기");
+  await wait(item.cdp, '!!document.querySelector("#vault-preview-title")', "WSL vault preview missing");
+  assert.equal(readFileSync(path.join(notes, "Case.md"), "utf8"), "# Upper case\nWSL preserved content\n");
+  await click(item.cdp, "이 폴더로 변경하고 시작");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "WSL vault activation missing");
+  const currentRoot = succeeded(await command(item, "knowledge.notes", "get_root"));
+  assert.equal(identity(currentRoot), identity(root));
+  const content = "# 한글 WSL note\r\nExplicit native save\r\n";
+  succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content }));
+  assert.equal(readFileSync(path.join(notes, "Case.md"), "utf8"), content);
+  assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/case.md" })), "# Lower case\nSeparate Linux file\n");
+  assert.equal(succeeded(await command(item, "knowledge.notes", "list_templates"))[0].content, "new product edit");
+  evidence.wsl.vaultExplicitApprovalAndCaseDistinctAtomicEdit = true;
+
+  progress("wsl-polling-and-source-query");
+  const before = new Set(succeeded(await command(item, "knowledge.search", "list_roots")).map(r => r.id));
+  succeeded(await command(item, "knowledge.search-settings", "add_root", { path: root, indexContent: true }));
+  const added = succeeded(await command(item, "knowledge.search", "list_roots")).filter(r => !before.has(r.id));
+  assert.equal(added.length, 1); const rootId = added[0].id;
+  const statuses = succeeded(await command(item, "knowledge.search", "watcher_statuses"));
+  assert.ok(statuses.some(s => s.sourceKind === "wsl" && s.watchMode === "polling"));
+  await eventually(async () => { const result = await query("wslfixture"); const complete = result.rows.length === 500 && result.rows.every(r => r.availability === "available"); await cancel(result); return complete; }, "WSL corpus did not index");
+  const body = await query("wslnativecontent", "content"); assert.equal(body.rows.length, 500); await cancel(body);
+  // Alias registration must keep the native root ID; spelling is not identity.
+  succeeded(await command(item, "knowledge.search-settings", "add_root", { path: alternate, indexContent: true }));
+  assert.equal(succeeded(await command(item, "knowledge.search", "list_roots")).filter(r => !before.has(r.id)).length, 1);
+  evidence.wsl.aliasRegistrationKeptRootId = true;
+  evidence.wsl.pollingAnd500FileBodySearch = true;
+
+  const held = await query("wslfixture0000"); assert.equal(held.rows.length, 1); assert.ok(held.rows[0].reference);
+  const target = path.join(corpus, "wslfixture0000.txt");
+  renameSync(target, path.join(corpus, "previous-object.txt")); writeFileSync(target, "replacement fixture\n", { flag: "wx" });
+  assert.equal((await command(item, "knowledge.opener", "reveal_file", { reference: held.rows[0].reference })).operation.outcome.state, "failed");
+  await cancel(held);
+  evidence.wsl.replacedObjectRejected = true;
+
+  // A Linux symlink created inside this owned tree must not become a route to
+  // a note outside the vault, even when the Windows UNC spelling looks local.
+  const linked = spawnSync("wsl.exe", ["--distribution", distro, "--user", "root", "--exec", "/bin/ln", "-s", "/etc/hostname", "/home/devbox-fixture/한글 project/Notes/outside.md"], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+  assert.equal(linked.status, 0);
+  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/outside.md" })).operation.outcome.state, "failed");
+  unlinkSync(path.join(notes, "outside.md"));
+  evidence.wsl.outsideSymlinkRejected = true;
+
+  progress("wsl-unavailable-last-good-and-reconnect");
+  renameSync(root, moved);
+  try {
+    succeeded(await command(item, "knowledge.search-settings", "index_now"));
+    await eventually(async () => {
+      const status = succeeded(await command(item, "knowledge.search", "index_status"));
+      return !status.indexing && !!status.last_error;
+    }, "Unavailable WSL root was not diagnosed");
+    const offline = await query("wslfixture");
+    assert.equal(offline.rows.length, 500); assert.ok(offline.rows.every(r => r.availability !== "available" && !r.reference));
+    await cancel(offline);
+    assert.equal((await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content: "must not write" })).operation.outcome.state, "failed");
+    assert.equal(readFileSync(path.join(moved, "Notes/Case.md"), "utf8"), content);
+    // An unrelated local root continues serving results during WSL failure.
+    const local = await sourceQuery(item, "files", "fixturesearch0001");
+    assert.ok(local.rows.some(r => r.availability === "available")); await cancel(local);
+    evidence.wsl.unavailableRootKeptLastGoodAndLocalSource = true;
+  } finally { renameSync(moved, root); }
+  unlinkSync(path.join(corpus, "wslfixture0001.txt"));
+  writeFileSync(path.join(corpus, "wslfixture0500.txt"), "reconnected fixture\n", { flag: "wx" });
+  // No explicit index_now: the existing WSL polling owner must reconcile the
+  // restored complete snapshot and remove only the now-confirmed deletion.
+  await eventually(async () => {
+    const gone = await query("wslfixture0001"), fresh = await query("wslfixture0500");
+    const ready = gone.rows.length === 0 && fresh.rows.length === 1 && fresh.rows[0].availability === "available";
+    await cancel(gone); await cancel(fresh); return ready;
+  }, "WSL polling did not converge after reconnect", 120_000);
+  assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })), content);
+  evidence.wsl.reconnectPollingConverged = true;
+  evidence.wsl.result = "pass";
+  return item;
+}

@@ -116,13 +116,21 @@ collection OFF, independent Search and owner/replay/installation rejection in tw
 installations. The pinned legacy migration fixture additionally covers import,
 source preservation, writer/installation denial, ID mapping, repeat/recovery,
 summary preview/cancel/save/replay, regex deadline/recovery and opaque search opens.
-The current Windows run has verified original data/import activation, collection
-OFF, Activity summary preview/cancel/save/single consumption and regex timeout
-recovery. Its Notes filename assertion has been corrected to use the filename;
-a separate body query checks note FTS. Remaining search, repeat/recovery, folder
-rebinding, configured performance and actual WSL acceptance are pending. The
-[ownership/data map](../../docs/architecture/v0.8-knowledge.md) and B03 workthrough
-separate portable, native and later suite evidence. B06/B04/B07 provider contracts
+[Windows acceptance 34196340663](https://github.com/jihoon22-lee/devbox/actions/runs/34196340663)
+passed all migration/search/summary/vault/lifecycle and installer stages on head
+`b4f4173` (PR merge source `94cd22b`). Configured debug cold/input/warm measured
+983/992/327 ms; idle CPU was 0% with 365,760,512 summed working-set bytes across
+7 owned processes; 500-file indexing took 486 ms and ten exact queries 90–102 ms.
+The unchanged budget passed; this is not packaged release comparison evidence.
+General CI 34196340573 passed after its Windows file-sharing failure was rerun.
+
+The added hosted-runner fixture registers only a disposable, digest-pinned Ubuntu
+WSL1 distribution. It exercises actual UNC aliases, case-distinct notes, explicit
+vault binding, atomic writes, polling/content search, replaced objects, outside
+symlinks and unavailable-root/reconnect preservation. It has not yet run. This
+WSL1 evidence cannot establish WSL2 VM suspend/resume behavior. Local Windows interop is available again; explicitly owned WSL2 engine fixtures
+are prepared but not yet executed. The [ownership/data map](../../docs/architecture/v0.8-knowledge.md)
+and B03 workthrough distinguish these boundaries. B06/B04/B07 provider contracts
 are described below; their authenticated external transports remain delegated.
 
 ### B06 session summary input

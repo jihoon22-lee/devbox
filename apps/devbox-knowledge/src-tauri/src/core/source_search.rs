@@ -407,6 +407,81 @@ impl Work {
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(windows)]
+    fn owned_wsl_fixture_root() -> std::path::PathBuf {
+        let raw = std::env::var("DEVBOX_WSL_FIXTURE_ROOT")
+            .expect("an explicitly owned WSL fixture root is required");
+        let token = std::env::var("DEVBOX_WSL_FIXTURE_OWNER").expect("fixture owner is required");
+        assert_eq!(token.len(), 36);
+        assert!(token.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'));
+        let parsed = devbox_wsl::path::parse_wsl_unc_path(&raw)
+            .unwrap()
+            .expect("actual WSL UNC root required");
+        assert_eq!(
+            parsed.linux_path(),
+            format!("/tmp/devbox-knowledge-wsl2-fixture-{token}")
+        );
+        let root = std::path::PathBuf::from(raw);
+        devbox_filesystem::ensure_no_links(&root).unwrap();
+        let marker = root.join("fixture-owner.txt");
+        devbox_filesystem::ensure_no_links(&marker).unwrap();
+        assert_eq!(
+            std::fs::metadata(&marker).unwrap().len(),
+            token.len() as u64
+        );
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), token);
+        root
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires an explicitly owned live WSL root; never starts the product or legacy apps"]
+    fn native_wsl_owned_fixture() {
+        let base = owned_wsl_fixture_root();
+        let root = tempfile::Builder::new()
+            .prefix("Source 한글 ")
+            .tempdir_in(&base)
+            .unwrap();
+        let candidate = candidate(root.path());
+        std::fs::write(&candidate.path, "original WSL file").unwrap();
+        let jobs = SearchJobs::default();
+        let work = jobs.begin("notes", "owned-wsl-fixture").unwrap();
+        work.publish_candidates(std::slice::from_ref(&candidate), false)
+            .unwrap();
+        work.verify(0, &candidate);
+        let snapshot = jobs.snapshot(&work.generation).unwrap();
+        assert_eq!(snapshot.rows[0].availability, "available");
+        let reference = snapshot.rows[0].reference.as_ref().unwrap();
+        let issued = jobs.resolve(reference).unwrap();
+        std::fs::rename(&candidate.path, root.path().join("previous.md")).unwrap();
+        std::fs::write(&candidate.path, "replacement WSL file").unwrap();
+        assert_ne!(
+            issued.file_identity,
+            devbox_filesystem::filesystem_identity(&candidate.path, false).unwrap()
+        );
+        jobs.cancel(&work.generation).unwrap();
+        assert!(jobs.resolve(reference).is_err());
+        drop(work);
+        let mut unavailable = Candidate {
+            path: candidate.path.clone(),
+            root: candidate.root.clone(),
+            root_key: candidate.root_key.clone(),
+            revision: candidate.revision.clone(),
+            value: candidate.value.clone(),
+            index_stale: false,
+            offline: false,
+        };
+        unavailable.offline = true;
+        let work = jobs.begin("files", "owned-wsl-fixture").unwrap();
+        work.publish_candidates(std::slice::from_ref(&unavailable), true)
+            .unwrap();
+        let snapshot = jobs.snapshot(&work.generation).unwrap();
+        assert_eq!(snapshot.rows.len(), 1);
+        assert!(snapshot.rows[0].reference.is_none());
+        let local = jobs.begin("notes", "owned-local-fixture").unwrap();
+        assert!(!local.stopped());
+    }
     use super::*;
     fn candidate(root: &std::path::Path) -> Candidate {
         Candidate {

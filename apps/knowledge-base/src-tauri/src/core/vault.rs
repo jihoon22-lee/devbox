@@ -707,6 +707,87 @@ fn open_root_lease(path: &Path) -> Result<(RootLease, FileIdentity), VaultError>
 
 #[cfg(test)]
 mod tests {
+
+    #[cfg(windows)]
+    fn owned_wsl_fixture_root() -> std::path::PathBuf {
+        let raw = std::env::var("DEVBOX_WSL_FIXTURE_ROOT")
+            .expect("an explicitly owned WSL fixture root is required");
+        let token = std::env::var("DEVBOX_WSL_FIXTURE_OWNER").expect("fixture owner is required");
+        assert_eq!(token.len(), 36);
+        assert!(token.bytes().all(|b| b.is_ascii_hexdigit() || b == b'-'));
+        let parsed = devbox_wsl::path::parse_wsl_unc_path(&raw)
+            .unwrap()
+            .expect("actual WSL UNC root required");
+        assert_eq!(
+            parsed.linux_path(),
+            format!("/tmp/devbox-knowledge-wsl2-fixture-{token}")
+        );
+        let root = std::path::PathBuf::from(raw);
+        devbox_filesystem::ensure_no_links(&root).unwrap();
+        let marker = root.join("fixture-owner.txt");
+        devbox_filesystem::ensure_no_links(&marker).unwrap();
+        assert_eq!(
+            std::fs::metadata(&marker).unwrap().len(),
+            token.len() as u64
+        );
+        assert_eq!(std::fs::read_to_string(marker).unwrap(), token);
+        root
+    }
+
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires an explicitly owned live WSL root; never uses user vaults"]
+    fn native_wsl_owned_fixture() {
+        let base = owned_wsl_fixture_root();
+        let fixture = tempfile::Builder::new()
+            .prefix("Notes 한글 ")
+            .tempdir_in(&base)
+            .unwrap();
+        let root = fixture.path();
+        super::super::store::ensure_layout(root).unwrap();
+        let vault = VaultIdentity::inspect(root).unwrap();
+        let upper = vault.new_entry("Notes/Case.md").unwrap();
+        let lower = vault.new_entry("Notes/case.md").unwrap();
+        super::super::store::write_file(&upper, "# Upper\r\n한글\r\n").unwrap();
+        super::super::store::write_file(&lower, "# Lower\n").unwrap();
+        assert_ne!(
+            devbox_filesystem::filesystem_identity(&upper, false).unwrap(),
+            devbox_filesystem::filesystem_identity(&lower, false).unwrap()
+        );
+        let alias =
+            std::path::PathBuf::from(root.to_string_lossy().replace("wsl.localhost", "wsl$"));
+        assert_eq!(
+            devbox_filesystem::filesystem_identity(root, true).unwrap(),
+            devbox_filesystem::filesystem_identity(&alias, true).unwrap()
+        );
+        super::super::store::write_file(
+            &vault.existing_entry("Notes/Case.md").unwrap(),
+            "# Updated\r\nUTF-8 저장\r\n",
+        )
+        .unwrap();
+        assert_eq!(
+            super::super::store::read_file(&upper).unwrap(),
+            "# Updated\r\nUTF-8 저장\r\n"
+        );
+        assert_eq!(super::super::store::read_file(&lower).unwrap(), "# Lower\n");
+        assert!(vault.existing_entry("../fixture-owner.txt").is_err());
+        let moved = base.join("notes-temporarily-unavailable");
+        assert!(!moved.exists());
+        std::fs::rename(root, &moved).unwrap();
+        assert!(vault.revalidate().is_err());
+        assert!(vault.existing_entry("Notes/Case.md").is_err());
+        assert_eq!(
+            std::fs::read_to_string(moved.join("Notes/Case.md")).unwrap(),
+            "# Updated\r\nUTF-8 저장\r\n"
+        );
+        std::fs::rename(&moved, root).unwrap();
+        vault.revalidate().unwrap();
+        assert_eq!(
+            super::super::store::read_file(&vault.existing_entry("Notes/Case.md").unwrap())
+                .unwrap(),
+            "# Updated\r\nUTF-8 저장\r\n"
+        );
+    }
     use super::*;
     use std::fs;
 

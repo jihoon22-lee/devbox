@@ -1,6 +1,7 @@
 // Actual pinned v0.7 executables create the source schemas. Native profiles must
 // be absent before this disposable hosted-runner fixture claims them.
 import assert from "node:assert/strict";
+import { exerciseKnowledgeWsl } from "./windows-knowledge-wsl.mjs";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, readdirSync, lstatSync, rmSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
@@ -491,6 +492,7 @@ try {
   await stop(item, true); item = await product(executable, profile);
   assert.equal((await command(item, "knowledge.activity", "get_close_policy")).value.closeToTray, true);
   assert.equal((await command(item, "knowledge.activity", "set_close_policy", { closeToTray: false })).value.closeToTray, false);
+  item = await exerciseKnowledgeWsl({ item, executable, profile, command, sourceQuery, product, stop, wait, click, delay, evidence, progress });
   await stop(item);
   evidence.sourceLogicalSchemaPreserved = true; evidence.markdownAndAssetsPreserved = true; evidence.legacyWriterBlocked = true; evidence.secondInstallationBlocked = true;
   evidence.templateAndRootIdsRemapped = true; evidence.deletedRootNeverReused = true; evidence.collectionConsentNotImported = true; evidence.privacyPreserved = true;

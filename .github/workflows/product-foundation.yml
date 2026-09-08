@@ -29,6 +29,9 @@ on:
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-knowledge-migration.mjs'
+      - '.github/scripts/windows-knowledge-wsl.*'
+      - '.github/scripts/export-knowledge-wsl-fixtures.ps1'
+      - '.github/scripts/run-knowledge-wsl-fixtures.ps1'
       - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-api-workflow.mjs'
       - '.github/scripts/check-api-studio-routes.mjs'
@@ -44,6 +47,11 @@ on:
       - '.github/scripts/measure-baseline-bundles.mjs'
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
+    inputs:
+      wsl_fixture_artifact_only:
+        description: Build only private Windows unit-test executables for an owned local WSL fixture
+        type: boolean
+        default: false
 
 permissions:
   contents: read
@@ -54,6 +62,7 @@ concurrency:
 
 jobs:
   windows:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
     name: Hidden products (Windows native)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -97,11 +106,21 @@ jobs:
       - name: Verify API Studio end-to-end local workflow
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-workflow.mjs
+      - name: Prepare dedicated WSL1 filesystem fixture
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
       - name: Verify Knowledge migration, vault ownership and window lifetime
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-knowledge-migration.mjs
+      - name: Remove only the owned WSL fixture distro
+        if: ${{ always() }}
+        timeout-minutes: 3
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
       - name: Verify anchor and product installer coexistence
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
@@ -118,6 +137,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -164,3 +184,30 @@ jobs:
           path: performance-baseline/*.json
           if-no-files-found: error
           retention-days: 7
+
+  wsl-fixture-artifact:
+    name: Knowledge WSL test executables (private)
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-product-foundation
+      - name: Compile only explicit native WSL fixtures
+        shell: pwsh
+        run: .github/scripts/export-knowledge-wsl-fixtures.ps1
+      - name: Preserve private test executables for one day
+        uses: actions/upload-artifact@v7
+        with:
+          name: knowledge-wsl-fixtures-${{ github.run_id }}
+          path: knowledge-wsl-fixtures
+          retention-days: 1
+          if-no-files-found: error
