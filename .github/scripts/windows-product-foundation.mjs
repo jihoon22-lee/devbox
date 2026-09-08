@@ -167,7 +167,7 @@ async function start(product, suffix) {
     let componentProbe;
     if (product.id === "workspace") {
       progress(product, suffix, "workspace-registration");
-      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix});
+      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable});
     }
     if (product.id === "api-studio") {
       progress(product, suffix, "component-authority");

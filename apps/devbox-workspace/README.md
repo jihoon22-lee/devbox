@@ -60,8 +60,8 @@ selection separately. Cancellation begins before queueing/evidence capture, and
 local drive aliases are resolved before filesystem IO. Cleanup has a separate native review of explicitly selected registered siblings.
 Its preview/apply checks preserve existing safety rules and block folders with
 open native documents. Revocation works without contacting a sibling. Legacy
-import, complete Windows LSP integration and WSL-native Git/LSP remain incomplete. Current Source,
-Dependencies and Files packaged behavior still requires Windows acceptance.
+import, complete Windows LSP integration and WSL-native Git/LSP remain incomplete. The basic Source/worktree, Dependencies and Files packaged flows passed Windows
+acceptance at `833854a`; broader cleanup and actual dialog acceptance are pending.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.

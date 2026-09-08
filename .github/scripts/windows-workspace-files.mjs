@@ -1,12 +1,22 @@
 // Actual native file ownership and retained editor UI; only caller-owned data.
 import assert from "node:assert/strict";
-import {writeFileSync, readFileSync, renameSync, existsSync} from "node:fs";
+import {writeFileSync, readFileSync, renameSync, existsSync, realpathSync} from "node:fs";
 import path from "node:path";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
+const runFile=promisify(execFile);
 
 export const nativeFileSnapshot = doc => ({path:doc.path, nativeRevision:doc.nativeRevision, expectedMtimeNanos:doc.mtimeNanos, expectedSize:doc.size, expectedContentHash:doc.contentHash});
 export const nativeFileSave = (doc,text) => ({...nativeFileSnapshot(doc),text,encoding:doc.encoding,lineEnding:doc.lineEnding,sourceLossy:doc.lossy});
 
-export async function exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer}) {
+export async function nativeFileDialog({processId,executable,directory,action,selectedFile}) {
+  assert.ok(Number.isSafeInteger(processId)&&processId>0,"An owned product process is required for dialog acceptance");
+  const args=["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.resolve(".github/scripts/windows-workspace-file-dialog.ps1"),"-TargetProcessId",String(processId),"-ExpectedExecutable",executable,"-FixtureRoot",directory,"-Action",action];
+  if(action==="Open")args.push("-SelectedFile",selectedFile);
+  await runFile("powershell.exe",args,{windowsHide:true,timeout:25_000,maxBuffer:64*1024});
+}
+
+export async function exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer, processId, executable}) {
   const files = (method, args = {}) => call("workspace.files", method, args);
   const rejected = result => assert.equal(result.operation.outcome.state, "failed", JSON.stringify(result));
   const open = async file => success(await files("open_file", {request:{path:file, encoding:null}}));
@@ -17,6 +27,22 @@ export async function exerciseWorkspaceFiles({cdp, root, directory, call, succes
   writeFileSync(file, "original\r\n", {flag:"wx"});
   writeFileSync(outside, "outside preserved", {flag:"wx"});
   rejected(await files("open_file", {request:{path:outside, encoding:null}}));
+  assert.ok(Number.isSafeInteger(processId)&&processId>0,"An owned product process is required for dialog acceptance");
+  const cancelledChoice=files("pick_files");
+  const [cancelResult]=await Promise.all([cancelledChoice,nativeFileDialog({processId,executable,directory,action:"Cancel"})]);
+  assert.deepEqual(success(cancelResult),[]);
+  rejected(await files("open_file",{request:{path:outside,encoding:null}}));
+  const approvedChoice=files("pick_files");
+  const [choiceResult]=await Promise.all([approvedChoice,nativeFileDialog({processId,executable,directory,action:"Open",selectedFile:outside})]);
+  const chosen=success(choiceResult);assert.equal(chosen.length,1);
+  const unchosen=path.join(directory,"dialog-unselected.txt");
+  writeFileSync(unchosen,"not selected",{flag:"wx"});
+  rejected(await files("open_file",{request:{path:unchosen,encoding:null}}));
+  assert.equal(realpathSync.native(chosen[0]),realpathSync.native(outside));
+  const picked=await open(chosen[0]);
+  assert.equal(picked.text,"outside preserved");
+  success(await save(picked,"outside preserved"));
+  success(await files("unwatch_file",{path:picked.path}));
   const first = await open(file);
   assert.equal(first.lineEnding, "crlf");
   assert.match(first.nativeRevision, /^[0-9a-f-]{36}$/);
@@ -82,5 +108,5 @@ export async function exerciseWorkspaceFiles({cdp, root, directory, call, succes
   await waitForRenderer(cdp, '!document.querySelector(".workspace-feature-files [role=tab]")', "Saved native tab did not close");
   await navigate("overview");
   await waitForRenderer(cdp, 'Array.from(document.querySelectorAll(".workspace-registry button")).some(b=>b.textContent.trim()==="프로젝트 선택 해제" && !b.disabled)', "Clean Files did not release context selection");
-  return {projectScopeDeniedOutside:true,opaqueRevisionAndReplacementChecked:true,crlfSaveRenameDelete:true,recoveryCancelAndOneTimeApply:true,actualEditorSave:true,retainedDirtyDraftAndContextLock:true,hiddenShortcutIgnored:true};
+  return {projectScopeDeniedOutside:true,nativeDialogCancelGrantsNothing:true,nativeDialogSelectionGrantsOnlyChosenFile:true,opaqueRevisionAndReplacementChecked:true,crlfSaveRenameDelete:true,recoveryCancelAndOneTimeApply:true,actualEditorSave:true,retainedDirtyDraftAndContextLock:true,hiddenShortcutIgnored:true};
 }

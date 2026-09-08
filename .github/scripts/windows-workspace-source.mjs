@@ -3,9 +3,9 @@ import assert from "node:assert/strict";
 import {mkdirSync,writeFileSync,readFileSync,appendFileSync,existsSync,unlinkSync,realpathSync} from "node:fs";
 import {spawnSync} from "node:child_process";
 import path from "node:path";
-import {nativeFileSave} from "./windows-workspace-files.mjs";
+import {nativeFileSave,nativeFileDialog} from "./windows-workspace-files.mjs";
 
-export async function exerciseWorkspaceSource({cdp,directory,call,success,waitForRenderer}) {
+export async function exerciseWorkspaceSource({cdp,directory,call,success,waitForRenderer,processId,executable}) {
   const original=(await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context;
   const folder=path.join(directory,"Git 한글 source");mkdirSync(folder);
   const outside=path.join(directory,"unselected Git target");mkdirSync(outside);
@@ -188,6 +188,13 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   await click("선택한 정리 범위 검토",".workspace-source-cleanup-scope");
   await click("검토한 정리 범위 승인",".workspace-source-cleanup-scope");
   await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.getAttribute("aria-busy")==="false"&&!document.querySelector(".workspace-source-cleanup-scope > section")',"Refreshed cleanup scope did not settle");
+  const pickingSibling=call("workspace.files","pick_files");
+  const [pickedSibling]=await Promise.all([pickingSibling,nativeFileDialog({processId,executable,directory,action:"Open",selectedFile:path.join(linkedTarget,"tracked.txt")})]);
+  const siblingChoices=success(pickedSibling);assert.equal(siblingChoices.length,1);
+  const siblingDocument=success(await call("workspace.files","open_file",{request:{path:siblingChoices[0],encoding:null}}));
+  const openSiblingPreview=success(await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-open-sibling-document"}}));
+  assert.equal(openSiblingPreview.worktrees.find(tree=>realpathSync.native(tree.path)===realpathSync.native(linkedTarget)).eligible,false,"An open native picker document must prevent worktree removal");
+  success(await call("workspace.files","unwatch_file",{path:siblingDocument.path}));
   await click("정리 후보 검사",".cleanup-panel");
   const linkedCheckbox=`Array.from(document.querySelectorAll(".cleanup-panel input[type=checkbox]")).find(input=>input.getAttribute("aria-label")===${JSON.stringify(`worktree ${linked.binding.root}`)})`;
   await waitForRenderer(cdp,`!!(${linkedCheckbox})&&!(${linkedCheckbox}).matches(":disabled")`,"Approved clean sibling was not eligible");
@@ -235,5 +242,5 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   success(await call("workspace.registry","remove",{revision:registry.revision,context:registered.context}));
   await cdp.command("Page.reload");
   await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Original context did not reload");
-  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,cleanupRequiresSeparateSiblingScope:true,changedSiblingEvidenceRevokesOnlyCleanup:true,uiReviewedSiblingCleanupPreservesBranch:true,gitBlocksFileWritesButKeepsRecovery:true,ownedGitCancellationReleasesEditor:true};
+  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,cleanupRequiresSeparateSiblingScope:true,changedSiblingEvidenceRevokesOnlyCleanup:true,uiReviewedSiblingCleanupPreservesBranch:true,nativePickerDocumentBlocksSiblingCleanup:true,gitBlocksFileWritesButKeepsRecovery:true,ownedGitCancellationReleasesEditor:true};
 }

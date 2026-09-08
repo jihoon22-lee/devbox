@@ -18,7 +18,7 @@ export function workspaceRequestExpression(component, method, args = {}) {
   })()`;
 }
 
-export async function exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix}) {
+export async function exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId, executable}) {
   const root = path.join(directory, "한글 project");
   mkdirSync(root);
   const marker = path.join(root, "preserved.txt");
@@ -87,10 +87,10 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   registry = success(await call("workspace.registry","snapshot"));
   const dependencies = await exerciseWorkspaceDependencies({cdp, root:canonicalRoot, call, success, waitForRenderer});
   record("dependencies", dependencies);
-  const source = await exerciseWorkspaceSource({cdp, directory, call, success, waitForRenderer});
+  const source = await exerciseWorkspaceSource({cdp, directory, call, success, waitForRenderer, processId, executable});
   record("source", source);
   registry = success(await call("workspace.registry","snapshot"));
-  const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer});
+  const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer, processId, executable});
   record("files", files);
   await click("프로젝트 선택 해제");
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");

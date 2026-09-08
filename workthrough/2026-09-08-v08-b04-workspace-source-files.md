@@ -340,8 +340,8 @@ the shared 8 GiB cap (cgroup peak **6,444,761,088 bytes**).
 Reviewed sibling cleanup awaits Windows acceptance. Importer mappings, Windows
 LSP integration and WSL-native transport remain incomplete. Files currently serializes native IO under
 one state mutex; remote independent cancellation needs work before WSL acceptance.
-Native file-dialog selection is implemented but has no actual Windows dialog
-fixture yet. Strict metadata parsing is an activation prerequisite, not a completed
+Native file-dialog selection and its Windows fixture are implemented; actual
+dialog execution remains pending. Strict metadata parsing is an activation prerequisite, not a completed
 legacy importer. No R/S or completion issue is closed by this draft.
 
 ## Test tool advisory correction
@@ -394,3 +394,30 @@ expressions** parse successfully. Actual Windows cleanup execution remains pendi
 
 Final affected verification selected all and passed in **364.856 seconds**,
 with a **5,667,094,528-byte** cgroup peak under the shared 8 GiB limit.
+
+
+## Windows checkpoint and native file dialog
+
+For PR head `833854a` (tested merge `509f090`, base `82e257e`), [Windows product acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34287998647)
+passed native authority/WAL tests, packaged Source/Dependencies/Files/definitions,
+worktree create/register/select/edit/stage/commit, API Studio, Knowledge and
+installer coexistence. The legacy performance baseline passed too. The corrected
+TEMP alias fixture and Windows DOS mapping test now pass. [General CI](https://github.com/jihoon22-lee/devbox/actions/runs/34287998474)
+passed every job except the Vitest advisory, corrected by `0547ffa`.
+
+The next fixture drives the actual Windows file chooser through UI Automation.
+It matches the fixture process creation time and canonical executable, restricts
+selection to the owned temporary directory, and invokes only that process's
+chooser controls. It tests cancellation without a grant, one explicitly chosen
+out-of-project file, rejection of another file, and native save. Source also opens
+a sibling document through the actual picker, verifies that it blocks cleanup,
+then closes it before final worktree removal.
+
+Windows PowerShell parsed the helper, loaded the UI Automation assemblies,
+compiled its canonical-path helper and exercised that helper on a Windows
+directory successfully. Node syntax checks and all four generated
+Workspace-request regressions passed. Actual dialog execution and
+the new cleanup flow await the next Windows run; no dialog PASS is claimed yet.
+
+Final dialog affected verification selected all and passed in **312.107 seconds**,
+with a **1,613,025,280-byte** cgroup peak under the shared 8 GiB limit.
