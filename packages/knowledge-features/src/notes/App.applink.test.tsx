@@ -278,6 +278,25 @@ describe("Knowledge Path/Query app-link delivery", () => {
     expect(await screen.findByText("Knowledge 초안을 저장했습니다. handoff는 소비되어 삭제되었습니다.")).toBeTruthy();
   });
 
+  it.each(["취소", "초안 저장"])("previews Workspace session metadata and performs only the chosen %s action", async (action) => {
+    const id = "0123456789abcdef0123456789abcdef";
+    takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "handoff", handoffKind: "knowledge-session/v1", id }, from: "devbox-workspace" });
+    previewKnowledgeDraftMock.mockResolvedValueOnce({ id, kind: "knowledge-session/v1", producerId: "devbox-workspace", expiresAtMs: Date.now() + 600_000, leaseUntilMs: Date.now() + 60_000, title: "개발 세션 요약 · 2026-09-07", body: "# 개발 세션 요약\n\n- 실패한 실행: 2개\n- Git 커밋: 확인 불가", tags: ["development-session", "summary"], summary: null, sources: [] });
+    render(<App />);
+    await screen.findByRole("heading", { name: "개발 세션 요약 미리보기" });
+    expect(screen.getByText("Workspace · 선택한 세션 메타데이터")).toBeTruthy();
+    expect(screen.getByLabelText("Knowledge 초안 본문")).toHaveTextContent("Git 커밋: 확인 불가");
+    expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole("button", { name: action }));
+    if (action === "취소") {
+      await waitFor(() => expect(discardKnowledgeDraftMock).toHaveBeenCalledWith(id));
+      expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
+    } else {
+      await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalledExactlyOnceWith(id));
+      expect(discardKnowledgeDraftMock).not.toHaveBeenCalled();
+    }
+  });
+
   it("cancels a handoff preview by restoring the one-time claim without saving", async () => {
     takePendingOpenMock.mockResolvedValueOnce({
       target: {

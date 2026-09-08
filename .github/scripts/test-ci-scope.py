@@ -95,7 +95,7 @@ for app in ["knowledge-base", "life-log", "everything-plus"]:
 secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == [
     "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
-    "devbox-workspace", "product-contract", "product-shell-tauri", "run-manager",
+    "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
     "secrets", "workbench",
 ]
 

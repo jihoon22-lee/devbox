@@ -123,3 +123,29 @@ IDs, and file assertions compare actual object IDs. Current native import, summa
 Search and folder-rebinding execution remain pending past that stage. See the B03
 workthrough for exact runs and portable evidence. Session-summary/provider and
 Project Registry contracts plus final Windows/WSL acceptance remain in this PR.
+
+### B06 session summary input
+
+The native Notes component exposes `prepare_session_summary(bytes, expected)`;
+its versioned [fixture](../knowledge-base/src-tauri/tests/fixtures/session-summary-v1.json)
+is the B06 provider contract. `expected` comes from the native registered project,
+worktree, execution target, session and revision. It is never renderer input. The
+16 KiB strict DTO admits only an exact UTC interval, optional failed-run/Git counts
+and at most eight selected problem categories. Unknown fields, invalid dates,
+counts, duplicate categories and mismatched identities/revisions are rejected.
+Unavailable counts remain unavailable. No command, log, path, window title,
+problem message or secret is a summary field; opaque IDs are provenance only.
+
+The provider publishes the deterministic result once as `knowledge-session/v1`,
+from `devbox-workspace` to the private Notes consumer `knowledge-base`. B06 must
+bind publication to its native operation and reuse that descriptor on retries,
+revalidate the provider revision before publication, and deliver through the
+product's authenticated IPC/owner route. Generic envelope names do not authenticate
+an external sender. The current fixture adapter tests this receiver contract; the
+actual Workspace provider/transport is implemented in B06.
+
+`offer_product_draft` accepts only that native reference. Notes shows a fixed
+snapshot for explicit preview/cancel/save through its existing one-time claim and
+exclusive identity-checked new-note path. Existing files are not appended to or
+overwritten. Once saved, redelivery cannot claim it again. The standalone legacy
+store cannot preview this product-only kind. No new renderer mutation API is added.

@@ -6,6 +6,7 @@ pub mod frontmatter;
 pub mod handoff;
 pub mod inbound;
 pub mod rename;
+pub mod session_summary;
 pub mod store;
 pub mod templates;
 pub mod vault;

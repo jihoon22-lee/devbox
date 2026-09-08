@@ -111,10 +111,16 @@ pub fn preview_knowledge_draft(
     if !valid_handoff_id(&id)
         || !matches!(
             kind.as_str(),
-            handoff::KNOWLEDGE_DRAFT_KIND | handoff::TOOLBOX_DRAFT_KIND
+            handoff::KNOWLEDGE_DRAFT_KIND
+                | handoff::TOOLBOX_DRAFT_KIND
+                | crate::core::session_summary::KIND
         )
     {
         return Err("Knowledge draft를 사용할 수 없습니다".into());
+    }
+    // Workspace metadata is admitted only by the product-owned native store.
+    if kind == crate::core::session_summary::KIND && pending.1.is_none() {
+        return Err("session_summary_unavailable".into());
     }
     let now_ms = current_epoch_ms();
     if now_ms == 0 {
@@ -811,6 +817,69 @@ mod tests {
         assert!(valid_handoff_id("0123456789abcdef0123456789abcdef"));
         assert!(!valid_handoff_id("0123456789ABCDEF0123456789abcdef"));
         assert!(!valid_handoff_id("raw-secret"));
+    }
+
+    #[test]
+    fn session_fixture_provider_uses_one_claim_and_exclusive_note_publication() {
+        use crate::core::session_summary as session;
+        let root = tempfile::tempdir().unwrap();
+        let vault_root = root.path().join("vault");
+        fs::create_dir_all(vault_root.join("Journal")).unwrap();
+        let vault = VaultIdentity::inspect(&vault_root).unwrap();
+        let store = HandoffStore::new(root.path().join("handoff/v1"));
+        let metadata = session::fixture();
+        let draft =
+            session::prepare(&serde_json::to_vec(&metadata).unwrap(), &metadata.binding).unwrap();
+        // The fixture adapter publishes once per native operation. B06 must retry
+        // the same descriptor, never republish on renderer redelivery.
+        let descriptor = store
+            .create(
+                CreateHandoff {
+                    kind: session::KIND.into(),
+                    source_app: session::PRODUCER.into(),
+                    target_app: Some(CONSUMER_APP.into()),
+                    payload: serde_json::to_value(draft).unwrap(),
+                },
+                1_000,
+            )
+            .unwrap();
+        let claim = store
+            .claim(&descriptor.id, session::KIND, CONSUMER_APP, 2_000)
+            .unwrap();
+        let parsed = handoff::parse_claim(&claim).unwrap();
+        assert!(matches!(parsed, IncomingKnowledgeDraft::Session(_)));
+        assert_eq!(fs::read_dir(vault_root.join("Journal")).unwrap().count(), 0);
+        assert_eq!(
+            store.claim(&descriptor.id, session::KIND, CONSUMER_APP, 2_001),
+            Err(HandoffError::AlreadyClaimed)
+        );
+        let mut forged = claim.clone();
+        forged.envelope.source_app = "life-log".into();
+        assert!(handoff::parse_claim(&forged).is_err());
+        forged = claim.clone();
+        forged.envelope.payload["body"] = "synthetic-private-value".into();
+        assert!(handoff::parse_claim(&forged).is_err());
+        store.restore(&claim, CONSUMER_APP, 3_000).unwrap();
+        assert_eq!(fs::read_dir(vault_root.join("Journal")).unwrap().count(), 0);
+        let retried = store
+            .claim(&descriptor.id, session::KIND, CONSUMER_APP, 4_000)
+            .unwrap();
+        let parsed = handoff::parse_claim(&retried).unwrap();
+        let occupied = vault_root.join("Journal/2026-09-07-development-session.md");
+        fs::write(&occupied, "existing user note").unwrap();
+        let saved =
+            write_new_note_with_suffix(&vault, &parsed, note_content(&parsed).as_bytes()).unwrap();
+        assert_eq!(saved.0, "Journal/2026-09-07-development-session-1.md");
+        assert_eq!(fs::read_to_string(&occupied).unwrap(), "existing user note");
+        assert!(fs::read_to_string(saved.1)
+            .unwrap()
+            .contains("실패한 실행: 2개"));
+        store.ack(&retried, CONSUMER_APP, 5_000).unwrap();
+        assert_eq!(
+            store.claim(&descriptor.id, session::KIND, CONSUMER_APP, 6_000),
+            Err(HandoffError::Missing)
+        );
+        assert_eq!(fs::read_dir(vault_root.join("Journal")).unwrap().count(), 2);
     }
 
     #[test]

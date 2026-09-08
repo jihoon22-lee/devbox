@@ -2,6 +2,14 @@
 //! for creating its own managed states after migration and enforcing native
 //! caller/owner/session checks before dispatch. This module starts no legacy app.
 
+// B06 supplies an authenticated native provider and reuses one opaque handoff
+// descriptor per operation. This is deliberately absent from renderer COMMANDS.
+pub use crate::core::session_summary::{
+    prepare as prepare_session_summary, Binding as SessionSummaryBinding,
+    Draft as SessionSummaryDraft, Metadata as SessionSummaryMetadata,
+    ProblemCategory as SessionProblemCategory, SelectedProblem as SelectedSessionProblem,
+};
+
 pub use crate::core::db::product_search as search_projection;
 
 /// Cached health only; a disconnected WSL vault is never probed on the IPC thread.
@@ -169,10 +177,11 @@ pub fn offer_product_draft(
     request: &devbox_applink::OpenRequest,
 ) -> Result<(), String> {
     use tauri::{Emitter, Manager};
-    if request.from.as_deref() != Some("life-log")
-        || !matches!(&request.target, devbox_applink::OpenTarget::Handoff { kind, .. } if kind == "knowledge-draft/v1")
-        || devbox_applink::build_argv(request).is_err()
-    {
+    let producer_matches = matches!((&request.target, request.from.as_deref()),
+        (devbox_applink::OpenTarget::Handoff { kind, .. }, Some("life-log")) if kind == "knowledge-draft/v1")
+        || matches!((&request.target, request.from.as_deref()),
+        (devbox_applink::OpenTarget::Handoff { kind, .. }, Some(crate::core::session_summary::PRODUCER)) if kind == crate::core::session_summary::KIND);
+    if !producer_matches || devbox_applink::build_argv(request).is_err() {
         return Err("draft_delivery_invalid".into());
     }
     app.try_state::<crate::applink::PendingOpen>()
