@@ -13,9 +13,12 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
   const root = `\\\\wsl.localhost\\${distro}\\home\\devbox-fixture\\한글 project`;
   const alternate = `\\\\wsl$\\${distro}\\home\\devbox-fixture\\한글 project`;
-  const moved = `${root}-temporarily-unavailable`;
   const notes = path.join(root, "Notes");
-  const corpus = path.join(root, "indexed");
+  // A distinct Search root can become unavailable without asking Windows
+  // to rename the vault directory while native Notes watchers hold it open.
+  const corpus = `${root}-indexed`;
+  const alternateCorpus = `${alternate}-indexed`;
+  const moved = `${corpus}-temporarily-unavailable`;
   mkdirSync(root); mkdirSync(notes); mkdirSync(corpus);
   writeFileSync(path.join(notes, "Case.md"), "# Upper case\nWSL preserved content\n", { flag: "wx" });
   writeFileSync(path.join(notes, "case.md"), "# Lower case\nSeparate Linux file\n", { flag: "wx" });
@@ -23,7 +26,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   const identity = p => { const s = lstatSync(p, { bigint: true }); return `${s.dev}:${s.ino}`; };
   assert.equal(identity(root), identity(alternate));
   assert.notEqual(identity(path.join(notes, "Case.md")), identity(path.join(notes, "case.md")));
-  evidence.wsl = { version: 1, boundary: "Actual WSL1 UNC; directory rename models unavailable root, not VM suspension", result: "running" };
+  evidence.wsl = { version: 1, boundary: "Actual WSL1 UNC; independent Search directory rename models root unavailability, not vault/VM suspension", result: "running" };
   const succeeded = response => { assert.equal(response.operation.outcome.state, "succeeded", JSON.stringify(response.operation.outcome)); return response.value; };
   const query = async (text, mode = "name", limit = 2000) => sourceQuery(item, "files", text, { sourceRootId: rootId }, limit, mode);
   const cancel = async result => command(item, "knowledge.search", "source_cancel", { generation: result.generation });
@@ -52,7 +55,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
 
   progress("wsl-polling-and-source-query");
   const before = new Set(succeeded(await command(item, "knowledge.search", "list_roots")).map(r => r.id));
-  succeeded(await command(item, "knowledge.search-settings", "add_root", { path: root, indexContent: true }));
+  succeeded(await command(item, "knowledge.search-settings", "add_root", { path: corpus, indexContent: true }));
   const added = succeeded(await command(item, "knowledge.search", "list_roots")).filter(r => !before.has(r.id));
   assert.equal(added.length, 1); const rootId = added[0].id;
   const statuses = succeeded(await command(item, "knowledge.search", "watcher_statuses"));
@@ -83,7 +86,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
     await cancel(batch);
   }
   // Alias registration must keep the native root ID; spelling is not identity.
-  succeeded(await command(item, "knowledge.search-settings", "add_root", { path: alternate, indexContent: true }));
+  succeeded(await command(item, "knowledge.search-settings", "add_root", { path: alternateCorpus, indexContent: true }));
   assert.equal(succeeded(await command(item, "knowledge.search", "list_roots")).filter(r => !before.has(r.id)).length, 1);
   evidence.wsl.aliasRegistrationKeptRootId = true;
   evidence.wsl.pollingAnd500FileBodySearch = true;
@@ -104,7 +107,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   evidence.wsl.outsideSymlinkRejected = true;
 
   progress("wsl-unavailable-last-good-and-reconnect");
-  renameSync(root, moved);
+  renameSync(corpus, moved);
   try {
     succeeded(await command(item, "knowledge.search-settings", "index_now"));
     await eventually(async () => {
@@ -114,13 +117,16 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
     const offline = await query("wslfixture");
     assert.equal(offline.rows.length, 500); assert.ok(offline.rows.every(r => r.availability !== "available" && !r.reference));
     await cancel(offline);
-    assert.equal((await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content: "must not write" })).operation.outcome.state, "failed");
-    assert.equal(readFileSync(path.join(moved, "Notes/Case.md"), "utf8"), content);
+    // The unrelated active Notes vault and local indexed source remain usable.
+    // Notes unavailable/save refusal is separately executed by the native WSL2
+    // vault fixture, where the owned vault root can actually be moved.
+    succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content }));
+    assert.equal(readFileSync(path.join(notes, "Case.md"), "utf8"), content);
     // An unrelated local root continues serving results during WSL failure.
     const local = await sourceQuery(item, "files", "fixturesearch0001");
     assert.ok(local.rows.some(r => r.availability === "available")); await cancel(local);
     evidence.wsl.unavailableRootKeptLastGoodAndLocalSource = true;
-  } finally { renameSync(moved, root); }
+  } finally { renameSync(moved, corpus); }
   unlinkSync(path.join(corpus, "wslfixture0001.txt"));
   writeFileSync(path.join(corpus, "wslfixture0500.txt"), "reconnected fixture\n", { flag: "wx" });
   // No explicit index_now: the existing WSL polling owner must reconcile the

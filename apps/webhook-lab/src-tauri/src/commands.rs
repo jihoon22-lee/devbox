@@ -335,6 +335,10 @@ fn parse_error_response(error: ParseError) -> Option<(u16, &'static str)> {
 }
 
 fn configure_connection(stream: &TcpStream) -> Result<(), std::io::Error> {
+    // Winsock accepted sockets inherit the nonblocking listener mode. The
+    // bounded HTTP parser waits on socket timeouts, so restore blocking IO
+    // before either the first request byte or a split body arrives.
+    stream.set_nonblocking(false)?;
     let timeout = Some(Duration::from_millis(http::REQUEST_IO_TIMEOUT_MS));
     stream.set_read_timeout(timeout)?;
     stream.set_write_timeout(timeout)?;
@@ -1731,6 +1735,48 @@ mod tests {
         running.store(false, Ordering::Release);
         shutdown_active_connections(state);
         thread.join().unwrap();
+    }
+
+    #[test]
+    fn accepted_nonblocking_socket_waits_for_delayed_request_bytes() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut accepted, _) = listener.accept().unwrap();
+        // Winsock inherits the listener's nonblocking mode. Set it explicitly
+        // so the same regression also reproduces on portable CI.
+        accepted.set_nonblocking(true).unwrap();
+        configure_connection(&accepted).unwrap();
+        let (send, receive) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let running = AtomicBool::new(true);
+            let parsed = http::read_request(&mut accepted, &running, || true);
+            send.send(parsed).unwrap();
+        });
+        assert!(
+            matches!(
+                receive.recv_timeout(Duration::from_millis(30)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "request parsing must wait for bytes within the existing socket timeout"
+        );
+        client
+            .write_all(b"POST /delayed HTTP/1.1\r\nContent-Length: 7\r\n\r\nbo")
+            .unwrap();
+        assert!(
+            matches!(
+                receive.recv_timeout(Duration::from_millis(30)),
+                Err(mpsc::RecvTimeoutError::Timeout)
+            ),
+            "a partial body must keep the same bounded read contract"
+        );
+        client.write_all(b"dy ok").unwrap();
+        let request = receive
+            .recv_timeout(Duration::from_secs(2))
+            .unwrap()
+            .unwrap();
+        assert_eq!(request.target, "/delayed");
+        assert_eq!(request.body, "body ok");
+        worker.join().unwrap();
     }
 
     #[test]
