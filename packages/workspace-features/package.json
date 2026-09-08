@@ -1,17 +1,25 @@
 {
-  "name": "code-pad",
+  "name": "@devbox/workspace-features",
+  "version": "0.1.0",
   "private": true,
-  "version": "0.5.1",
   "type": "module",
+  "exports": {
+    "./overview": "./src/overview/App.tsx",
+    "./source": "./src/source/App.tsx",
+    "./files": "./src/files/App.tsx"
+  },
   "scripts": {
-    "dev": "vite",
-    "build": "tsc && vite build",
-    "preview": "vite preview",
-    "test": "vitest run --passWithNoTests",
-    "tauri": "tauri"
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
     "@devbox/a11y": "workspace:*",
+    "@devbox/context-menu": "workspace:*",
+    "@devbox/tokens": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
     "@codemirror/autocomplete": "^6.18.7",
     "@codemirror/commands": "^6.8.1",
     "@codemirror/lang-css": "^6.3.1",
@@ -28,22 +36,14 @@
     "@codemirror/search": "^6.5.10",
     "@codemirror/state": "^6.5.2",
     "@codemirror/view": "^6.36.5",
-    "@devbox/context-menu": "workspace:*",
-    "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "@tauri-apps/plugin-dialog": "^2",
-    "@tauri-apps/plugin-opener": "^2",
     "codemirror": "^6.0.1",
     "@devbox/mermaid-renderer": "workspace:*",
-    "react": "^19.1.0",
-    "react-dom": "^19.1.0",
-    "@devbox/tokens": "workspace:*",
     "@devbox/editor": "workspace:*",
-    "@devbox/diff-view": "workspace:*",
-    "@devbox/workspace-features": "workspace:*"
+    "@devbox/diff-view": "workspace:*"
   },
   "devDependencies": {
-    "@tauri-apps/cli": "^2",
     "@types/react": "^19.1.8",
     "@types/react-dom": "^19.1.6",
     "@vitejs/plugin-react": "^4.6.0",

@@ -54,8 +54,11 @@ assert pnpm_lock_only.frontend_scope == "all"
 assert pnpm_lock_only.dependency_scope == "all"
 
 editor = resolve("packages/editor/src/index.ts")
-assert editor.frontend_packages == ["apps/code-pad", "apps/knowledge-base", "packages/editor"]
-assert editor.frontend_apps == ["code-pad", "knowledge-base"]
+assert editor.frontend_packages == [
+    "apps/code-pad", "apps/devbox-workspace", "apps/knowledge-base", "apps/repo-manager",
+    "apps/workbench", "packages/editor", "packages/workspace-features",
+]
+assert editor.frontend_apps == ["code-pad", "devbox-workspace", "knowledge-base", "repo-manager", "workbench"]
 
 openapi = resolve("packages/openapi/src/index.ts")
 assert openapi.frontend_packages == [
@@ -94,14 +97,15 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["devbox-launcher", "devbox-manager", "everything-plus", "repo-manager"]
+assert catalog.frontend_apps == ["code-pad", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "repo-manager", "workbench"]
+assert "packages/workspace-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages
 assert "launch" in catalog.rust_packages
 assert "code-pad" not in catalog.rust_packages
 
 catalog_frontend_importers = {
-    source.relative_to(ROOT).parts[1]
-    for source in ROOT.glob("apps/*/src/**/*")
+    "/".join(source.relative_to(ROOT).parts[:2])
+    for source in [*ROOT.glob("apps/*/src/**/*"), *ROOT.glob("packages/*/src/**/*")]
     if source.is_file()
     and source.suffix in {".js", ".jsx", ".ts", ".tsx"}
     and "catalog.json" in source.read_text(encoding="utf-8")

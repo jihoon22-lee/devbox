@@ -39,10 +39,10 @@ FRONTEND_DRIVER_PATHS = {
 # these virtual build edges complement the dependency graph. The regression
 # test deliberately locks the current consumers to this set.
 CATALOG_FRONTEND_CONSUMERS = {
-    "devbox-launcher",
-    "devbox-manager",
-    "everything-plus",
-    "repo-manager",
+    "apps/devbox-launcher",
+    "apps/devbox-manager",
+    "apps/everything-plus",
+    "packages/workspace-features",
 }
 CATALOG_RUST_CONSUMERS = {
     "catalog",
@@ -332,8 +332,8 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             continue
 
         if path == "apps/catalog.json":
-            for app_name in CATALOG_FRONTEND_CONSUMERS:
-                node_name = frontend.by_directory.get(f"apps/{app_name}")
+            for directory in CATALOG_FRONTEND_CONSUMERS:
+                node_name = frontend.by_directory.get(directory)
                 if node_name is None:
                     frontend_all = True
                     break

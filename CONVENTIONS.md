@@ -74,6 +74,7 @@ devbox/
 │  ├─ context-menu/        # 위치·keyboard·focus·submenu 동작
 │  ├─ openapi/             # bounded OpenAPI JSON/YAML parsing
 │  ├─ api-studio-features/ # API·Webhook·Transforms UI (legacy 앱, API Studio)
+│  ├─ workspace-features/  # Overview·Source·Files UI (legacy 앱, Workspace)
 │  └─ mermaid-renderer/    # 필요할 때만 불러오는 Markdown diagram renderer
 │
 ├─ crates/                 # Rust 공용
