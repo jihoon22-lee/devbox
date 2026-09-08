@@ -193,9 +193,12 @@ try {
     } else {
       await legacy(item, "add_root", { path: unused, indexContent: false });
       const first = (await legacy(item, "list_roots"))[0];
-      await legacy(item, "remove_root", { path: unused });
+      // The pinned v0.7 SQLite allocator may reuse the last deleted ID. Keep
+      // a second root alive before deletion to create a genuinely dangling ref.
       await legacy(item, "add_root", { path: indexed, indexContent: true });
-      const root = (await legacy(item, "list_roots"))[0];
+      const root = (await legacy(item, "list_roots")).find(root => path.normalize(root.path) === path.normalize(indexed));
+      assert.ok(root); assert.notEqual(root.id, first.id);
+      await legacy(item, "remove_root", { path: unused });
       await legacy(item, "save_saved_query", { request: { id: null, name: "live fixture", query: "allowed", filter: { sourceRootId: root.id } } });
       await legacy(item, "save_saved_query", { request: { id: null, name: "deleted fixture", query: "allowed", filter: { sourceRootId: first.id } } });
       evidence.sourceRootId = root.id; evidence.deletedSourceRootId = first.id; await stop(item);
