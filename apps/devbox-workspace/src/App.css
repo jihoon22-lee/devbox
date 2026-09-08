@@ -1,3 +1,10 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 @import "@devbox/product-shell/styles.css";
+
+.workspace-registry { max-width: 960px; padding: 24px; }
+.workspace-registry form, .workspace-registry section { margin-block: 16px; }
+.workspace-registry label { display: block; margin-block: 8px; }
+.workspace-registry input { width: min(100%, 640px); box-sizing: border-box; padding: 8px; }
+.workspace-registry button { margin: 8px 8px 8px 0; padding: 6px 12px; }
+.workspace-registry p { overflow-wrap: anywhere; }

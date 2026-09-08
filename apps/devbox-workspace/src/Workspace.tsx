@@ -1,6 +1,9 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
+import { nativeMode } from "@devbox/product-shell/api";
+import RegistryGate from "./RegistryGate";
+
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
@@ -26,5 +29,5 @@ function Content({ route, description }: ShellContentProps) {
 }
 
 export default function Workspace() {
-  return <ProductShell product="workspace" renderContent={props => <Content {...props}/>}/>;
+  return <ProductShell product="workspace" renderContent={props => nativeMode ? <RegistryGate/> : <Content {...props}/>}/>;
 }

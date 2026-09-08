@@ -73,10 +73,41 @@ Final affected all passed in **675.610 seconds** (8 GiB enforced; cgroup peak
 changed only the Cargo.lock digest. These Linux checks do not establish actual
 Windows product or WSL LSP parity.
 
+The native host now connects an explicit blank start and Registry UI to that
+owner. Authentication precedes closed activation/Registry method roles. External
+probes and metadata use separate two-worker bounds; timed-out probes keep their
+permits until the OS returns. Preview IDs expire, cancel and cannot grant trust.
+The UI guards stale load responses, confirms register/rebind and removal, and
+submits only reviewed tokens. The current native view is startup/Registry; shared
+feature previews remain browser-only until their command/context guards are wired.
+
+The host passed **32 native Rust tests and strict Clippy**. The combined run then
+caught a missing direct Tauri frontend dependency and an invalid testing-library
+option. After those corrections the Workspace build, **4 UI tests including axe**,
+metadata checker and CI scope runner tests passed in **21.489 seconds**. The new
+Windows fixture covers actual blank-start/preview/cancel/register UI plus native
+replay/role/foreign-installation denial, rename/removal and source-file preservation.
+Its source is syntax checked; Windows execution is pending.
+
+The pushed store state [7a856ce Windows CI](https://github.com/jihoon22-lee/devbox/actions/runs/34210889932)
+failed before tests because concurrent Tauri build scripts copied the same notice
+staging file (Windows sharing violation 32). Windows Rust CI now uses one Cargo
+build job; check/Clippy/test scope and test-harness concurrency remain intact.
+Linux/local budgets are unchanged. This requires the next Windows CI execution.
+
+The first host affected run failed the catalog's closed authority parser after
+684.778 seconds: the new Registry role had been declared in JSON but not admitted
+by the Rust catalog. The exact Workspace owner/role pairs are now registered;
+foreign-owner, network-authority and unknown-component mutations remain rejected.
+Focused catalog tests/strict Clippy/metadata validation passed in **4.387 seconds**.
+The corrected final affected all passed in **587.042 seconds** under the shared
+8 GiB cap (cgroup peak 6,445,002,752 bytes), including every frontend and Rust gate.
+The native Windows registration fixture and serial Cargo CI await the pushed head.
+
 ## Remaining acceptance
 
-Host IPC/transport and startup controls, registration/trust UI, project/source/file
-context with dirty transitions, Dependencies route, importer/recovery mappings,
+Shared feature IPC/transport, trust UI, project/source/file context with dirty
+transitions, Dependencies route, importer/recovery mappings,
 Windows LSP integration and WSL-native transport remain incomplete. Retained hidden
 features need active-route keyboard/listener ownership. B03 supplies shared shell
 containment on integration. Strict metadata parsing is an activation prerequisite,

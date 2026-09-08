@@ -23,6 +23,7 @@ on:
       - 'Cargo.lock'
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/scripts/windows-workspace-registration.mjs'
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-api-workflow.mjs'
@@ -76,7 +77,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
       - name: Run native authority and WAL fixtures on Windows
-        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p api-playground -p webhook-lab -p developer-toolbox -- --test-threads=2
+        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
         run: node .github/scripts/windows-product-foundation.mjs
       - name: Verify API Studio migration from pinned legacy storage

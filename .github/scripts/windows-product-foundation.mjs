@@ -1,3 +1,4 @@
+import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
 // Runs only on a disposable GitHub-hosted Windows runner. Uses synthetic
 // product installations, never an installed user app or a legacy data store.
 import assert from "node:assert/strict";
@@ -121,7 +122,9 @@ async function start(product, suffix) {
       try {
         ready = await cdp.evaluate(product.id === "api-studio"
           ? '!!document.querySelector(".api-feature-requests .url-input")'
-          : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
+          : product.id === "workspace"
+            ? 'Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "빈 Workspace 시작" && !button.disabled)'
+            : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
       } catch (error) {
         readinessError = error.message;
         // A startup document/renderer transition can invalidate this attachment.
@@ -159,6 +162,10 @@ async function start(product, suffix) {
     })()`);
     assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
     let componentProbe;
+    if (product.id === "workspace") {
+      progress(product, suffix, "workspace-registration");
+      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix});
+    }
     if (product.id === "api-studio") {
       progress(product, suffix, "component-authority");
       componentProbe = await cdp.evaluate(`(async () => {

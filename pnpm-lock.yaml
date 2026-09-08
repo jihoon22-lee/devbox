@@ -426,6 +426,9 @@ importers:
       '@devbox/workspace-features':
         specifier: workspace:*
         version: link:../../packages/workspace-features
+      '@tauri-apps/api':
+        specifier: ^2
+        version: 2.11.1
       react:
         specifier: ^19.1.0
         version: 19.2.8

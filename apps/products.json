@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 3,
+  "catalogRevision": 4,
   "channel": "development",
   "products": [
     {
@@ -81,6 +81,20 @@
     {
       "id": "api-studio.migration",
       "owner": "api-studio",
+      "authority": "legacy-import",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.registry",
+      "owner": "workspace",
+      "authority": "project-registry",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.migration",
+      "owner": "workspace",
       "authority": "legacy-import",
       "lifecycle": "product",
       "protocolVersion": 1

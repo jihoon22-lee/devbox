@@ -42,6 +42,11 @@ memory max 초과 시 OOM으로 검증이 실패할 수 있다. 실패를 성공
 `CI=true`이면 `ci` profile로 기존 CI 실행을 유지한다. `DEVBOX_VERIFY_PROFILE=local`은
 명시적으로 로컬 제한을 선택한다. 로컬에서 `ci` profile로 제한을 우회하지 않는다.
 
+Windows Rust CI의 Cargo build job은 1개다. 여러 Tauri build script가 같은
+target staging의 고지 파일을 동시에 복사하면 Windows sharing violation 32가
+발생하므로 직렬화한다. 전체/scoped check·Clippy·test 범위와 test harness 동시성은
+유지하며, Linux CI와 로컬 검증의 별도 예산은 바꾸지 않는다.
+
 ## 실행 잠금과 측정
 
 Git common directory의 `devbox-verification/lock`으로 linked worktree까지 한 번에 하나의

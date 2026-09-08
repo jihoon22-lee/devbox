@@ -61,14 +61,15 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
     if id == format!("{owner}.shell") {
         return authority == "shell-read";
     }
-    owner == "api-studio"
-        && matches!(
-            (id, authority),
-            ("api-studio.api", "request-network")
-                | ("api-studio.webhooks", "listener-network")
-                | ("api-studio.transforms", "transform-local")
-                | ("api-studio.migration", "legacy-import")
-        )
+    matches!(
+        (owner, id, authority),
+        ("api-studio", "api-studio.api", "request-network")
+            | ("api-studio", "api-studio.webhooks", "listener-network")
+            | ("api-studio", "api-studio.transforms", "transform-local")
+            | ("api-studio", "api-studio.migration", "legacy-import")
+            | ("workspace", "workspace.registry", "project-registry")
+            | ("workspace", "workspace.migration", "legacy-import")
+    )
 }
 
 impl ProductCatalog {
@@ -157,6 +158,24 @@ mod tests {
     #[test]
     fn rejects_escalation_ambiguity_and_future_contracts() {
         let original: serde_json::Value = serde_json::from_str(SOURCE).unwrap();
+        let registry = original["components"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .position(|component| component["id"] == "workspace.registry")
+            .unwrap();
+        for (field, value) in [
+            ("owner", "api-studio"),
+            ("authority", "request-network"),
+            ("id", "workspace.unreviewed"),
+        ] {
+            let mut changed = original.clone();
+            changed["components"][registry][field] = value.into();
+            assert!(
+                ProductCatalog::parse(&changed.to_string()).is_err(),
+                "{field}"
+            );
+        }
         for (field, value) in [
             ("owner", "knowledge"),
             ("route", "../notes"),
