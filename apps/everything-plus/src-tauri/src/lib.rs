@@ -1,17 +1,18 @@
 mod applink;
 mod commands;
+pub mod component;
 mod core;
 
-use commands::indexing::AppState;
-use commands::watcher::WatcherManager;
-use std::sync::atomic::{AtomicBool, AtomicI64};
-use std::sync::{Arc, Mutex};
+#[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
+#[cfg(feature = "standalone")]
 const LEGACY_IDENTIFIER: &str = "com.workbench.everythingplus";
+#[cfg(feature = "standalone")]
 const CURRENT_IDENTIFIER: &str = "com.devbox.everythingplus";
 
+#[cfg(feature = "standalone")]
 fn migrate_local_data() {
     let Some(base_dir) = dirs::data_local_dir() else {
         eprintln!(
@@ -26,6 +27,7 @@ fn migrate_local_data() {
     }
 }
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     migrate_local_data();
@@ -79,74 +81,7 @@ pub fn run() {
                 Err(_) => eprintln!("applink: invalid request"),
             }
             let dir = app.path().app_local_data_dir()?;
-            std::fs::create_dir_all(&dir)?;
-            let (conn, index_cleared) = core::db::init(&dir.join("data.db"))?;
-            let state = Arc::new(AppState {
-                db: Mutex::new(conn),
-                lifecycle: Mutex::new(()),
-                indexing: AtomicBool::new(false),
-                cancel_requested: AtomicBool::new(false),
-                restart_requested: AtomicBool::new(false),
-                indexed: AtomicI64::new(0),
-                total: AtomicI64::new(0),
-                content_indexed: AtomicI64::new(0),
-                content_truncated: AtomicI64::new(0),
-                content_failed: AtomicI64::new(0),
-                last_indexed_at: AtomicI64::new(0),
-                last_error: Mutex::new(None),
-            });
-            // watcher는 DB 초기화 뒤, 상태 관리 전에 생성한다 (restore_all이 db를 읽는다)
-            let watcher = WatcherManager::new(app.handle().clone(), state.clone());
-            // 스키마 버전이 올라가 migrate()가 인덱스를 비웠다면, 등록된
-            // 루트가 있는 한 사용자가 빈 검색 결과만 보지 않도록 전체
-            // 재인덱싱을 자동으로 걸어준다.
-            if index_cleared {
-                let roots = core::db::list_roots(&state.db.lock().unwrap()).unwrap_or_default();
-                if !roots.is_empty() {
-                    commands::indexing::spawn_index(state.clone(), Vec::new());
-                } else {
-                    core::db::record_pdf_extractor_version(&state.db.lock().unwrap())?;
-                    core::db::record_docx_extractor_version(&state.db.lock().unwrap())?;
-                    core::db::record_xls_extractor_version(&state.db.lock().unwrap())?;
-                    core::db::record_xlsx_extractor_version(&state.db.lock().unwrap())?;
-                    core::db::record_ods_extractor_version(&state.db.lock().unwrap())?;
-                }
-            } else {
-                let conn = state.db.lock().unwrap();
-                let stale_pdf = core::db::pdf_reindex_required(&conn).unwrap_or(true);
-                let stale_docx = core::db::docx_reindex_required(&conn).unwrap_or(true);
-                let stale_xls = core::db::xls_reindex_required(&conn).unwrap_or(true);
-                let stale_xlsx = core::db::xlsx_reindex_required(&conn).unwrap_or(true);
-                let stale_ods = core::db::ods_reindex_required(&conn).unwrap_or(true);
-                drop(conn);
-                let mut formats = commands::indexing::FormatSet::empty();
-                if stale_pdf {
-                    formats = formats.with(commands::indexing::FormatSet::PDF);
-                }
-                if stale_docx {
-                    formats = formats.with(commands::indexing::FormatSet::DOCX);
-                }
-                if stale_xls {
-                    formats = formats.with(commands::indexing::FormatSet::XLS);
-                }
-                if stale_xlsx {
-                    formats = formats.with(commands::indexing::FormatSet::XLSX);
-                }
-                if stale_ods {
-                    formats = formats.with(commands::indexing::FormatSet::ODS);
-                }
-                commands::indexing::spawn_format_reindex(state.clone(), formats);
-            }
-            app.manage(state.clone());
-            app.manage(watcher.clone());
-            if let Err(error) = commands::saved_queries::publish_snapshot(&state) {
-                // Search remains available when the optional cross-app
-                // snapshot directory is unavailable; Launcher reports the
-                // source as missing/stale instead of receiving partial data.
-                eprintln!("everything-plus: saved query snapshot unavailable: {error}");
-            }
-            // 앱 재시작 시 등록된 루트의 watcher를 복원한다
-            watcher.restore_all();
+            component::initialize(app.handle(), &dir, None)?;
             Ok(())
         })
         .run(tauri::generate_context!())

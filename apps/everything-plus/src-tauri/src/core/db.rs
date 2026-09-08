@@ -7,7 +7,7 @@ use devbox_applink::contains_sensitive_value;
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
-const MAX_SAVED_QUERIES: i64 = 2_048;
+pub(crate) const MAX_SAVED_QUERIES: i64 = 2_048;
 const MAX_SAVED_NAME_BYTES: usize = 128;
 const MAX_SAVED_QUERY_BYTES: usize = 512;
 const MAX_FILTER_JSON_BYTES: usize = 8 * 1024;
@@ -581,16 +581,19 @@ pub fn upsert_content_record(
 /// Remove only PDF-derived rows below one root.  Format-specific reindexing
 /// must leave text/source/Markdown rows untouched when the PDF extractor
 /// version changes.
+#[cfg(test)]
 pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "pdf")
 }
 
 /// Remove only DOCX-derived rows below one root. DOCX reindexing must leave
 /// text/source/Markdown and other document-format rows untouched.
+#[cfg(test)]
 pub fn clear_docx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "docx")
 }
 
+#[cfg(test)]
 fn clear_format(conn: &Connection, root_path: &str, extension: &str) -> rusqlite::Result<()> {
     let normalized = normalize_path(root_path);
     if let Some(root_id) = conn
@@ -680,14 +683,17 @@ fn format_reindex_required(
 /// Remove only legacy XLS-derived rows below one root. Format-specific
 /// reindexing must leave text/source/Markdown/PDF rows untouched when the XLS
 /// extractor version changes.
+#[cfg(test)]
 pub fn clear_xls(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "xls")
 }
 
+#[cfg(test)]
 pub fn clear_xlsx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "xlsx")
 }
 
+#[cfg(test)]
 pub fn clear_ods(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "ods")
 }
@@ -874,6 +880,18 @@ pub fn search_with_filter(
     limit: i64,
     filter: &SearchFilter,
 ) -> rusqlite::Result<Vec<FileEntry>> {
+    search_with_filter_in_scope(conn, query, limit, filter, None)
+}
+
+/// Native provider scope is applied in SQL before LIMIT. This parameter is not
+/// part of the renderer/saved-query filter and grants no filesystem authority.
+pub fn search_with_filter_in_scope(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+    filter: &SearchFilter,
+    indexed_prefix: Option<&str>,
+) -> rusqlite::Result<Vec<FileEntry>> {
     // Regex filename mode asks for a larger bounded FTS candidate set and then
     // performs the regular-expression match in the frontend.
     let limit = limit.clamp(0, 2_000);
@@ -881,7 +899,8 @@ pub fn search_with_filter(
     let filter = filter
         .normalized()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
-    let (where_sql, mut values) = filter_sql(&filter, "f", Some("fc"));
+    let (mut where_sql, mut values) = filter_sql(&filter, "f", Some("fc"));
+    append_native_scope(&mut where_sql, &mut values, indexed_prefix)?;
     let sql = format!(
         "SELECT f.id, f.path, f.name, COALESCE(f.ext, ''), f.size, f.modified_ts,
                 f.root_id, fc.content_status, COALESCE(fc.truncated, 0)
@@ -926,12 +945,25 @@ pub fn search_content_with_filter(
     limit: i64,
     filter: &SearchFilter,
 ) -> rusqlite::Result<Vec<ContentResult>> {
+    search_content_with_filter_in_scope(conn, query, limit, filter, None)
+}
+
+/// Native provider scope is applied in SQL before LIMIT. This parameter is not
+/// part of the renderer/saved-query filter and grants no filesystem authority.
+pub fn search_content_with_filter_in_scope(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+    filter: &SearchFilter,
+    indexed_prefix: Option<&str>,
+) -> rusqlite::Result<Vec<ContentResult>> {
     let limit = limit.clamp(0, 200);
     let q = search::build_fts_query(query);
     let filter = filter
         .normalized()
         .map_err(|_| rusqlite::Error::InvalidQuery)?;
     let (mut where_sql, mut values) = filter_sql(&filter, "f", Some("fc"));
+    append_native_scope(&mut where_sql, &mut values, indexed_prefix)?;
     if filter.content_status.is_none() {
         where_sql.push_str(" AND fc.content_status = 'indexed'");
     }
@@ -971,6 +1003,48 @@ pub fn search_content_with_filter(
     rows.collect()
 }
 
+/// Closed lexical normalization shared by the importer and native query scope.
+/// It performs no filesystem lookup and proves no object identity by itself.
+pub fn normalize_absolute_root(raw: &str) -> rusqlite::Result<String> {
+    if raw.is_empty() || raw.len() > 32768 || raw.chars().any(char::is_control) {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    let path = normalize_path(raw);
+    let bytes = path.as_bytes();
+    let drive =
+        bytes.len() >= 3 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':' && bytes[2] == b'/';
+    if (!std::path::Path::new(&path).is_absolute() && !drive && !path.starts_with("//"))
+        || path.split('/').any(|part| matches!(part, "." | ".."))
+    {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(path)
+}
+
+fn append_native_scope(
+    sql: &mut String,
+    values: &mut Vec<Value>,
+    prefix: Option<&str>,
+) -> rusqlite::Result<()> {
+    if let Some(prefix) = prefix {
+        let prefix = normalize_absolute_root(prefix)?;
+        let child_prefix = if prefix.ends_with('/') {
+            prefix.clone()
+        } else {
+            format!("{prefix}/")
+        };
+        // No LIKE wildcards, case folding or root-ID-only approximation: a broad
+        // indexed root can contain several independent case-sensitive projects.
+        sql.push_str(" AND (f.path = ? OR substr(f.path, 1, length(?)) = ?)");
+        values.extend([
+            Value::Text(prefix),
+            Value::Text(child_prefix.clone()),
+            Value::Text(child_prefix),
+        ]);
+    }
+    Ok(())
+}
+
 /// Read saved query definitions. The result list is deliberately reconstructed
 /// from the current index later; no search result is persisted here.
 pub fn list_saved_queries(conn: &Connection) -> rusqlite::Result<Vec<SavedQuery>> {
@@ -998,6 +1072,28 @@ pub fn count_saved_queries(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row("SELECT COUNT(*) FROM saved_queries", [], |row| row.get(0))
 }
 
+pub(crate) fn validate_saved_query_definition(
+    name: &str,
+    query: &str,
+    created: i64,
+    updated: i64,
+) -> rusqlite::Result<()> {
+    if created <= 0
+        || updated < created
+        || name.trim().is_empty()
+        || query.trim().is_empty()
+        || name.len() > MAX_SAVED_NAME_BYTES
+        || query.len() > MAX_SAVED_QUERY_BYTES
+        || name.chars().any(char::is_control)
+        || query.chars().any(char::is_control)
+        || contains_sensitive_value(name)
+        || contains_sensitive_value(query)
+    {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(())
+}
+
 pub fn upsert_saved_query(
     conn: &Connection,
     id: Option<i64>,
@@ -1008,17 +1104,8 @@ pub fn upsert_saved_query(
 ) -> rusqlite::Result<SavedQuery> {
     let name = name.trim();
     let query = query.trim();
-    if now <= 0
-        || id.is_some_and(|saved_id| saved_id <= 0)
-        || name.is_empty()
-        || query.is_empty()
-        || name.len() > MAX_SAVED_NAME_BYTES
-        || query.len() > MAX_SAVED_QUERY_BYTES
-        || name.chars().any(char::is_control)
-        || query.chars().any(char::is_control)
-        || contains_sensitive_value(name)
-        || contains_sensitive_value(query)
-    {
+    validate_saved_query_definition(name, query, now, now)?;
+    if id.is_some_and(|saved_id| saved_id <= 0) {
         return Err(rusqlite::Error::InvalidQuery);
     }
     let filter = filter
@@ -1983,6 +2070,81 @@ mod tests {
         clear_root(&conn, "C:/a%").unwrap();
         assert!(search(&conn, "inside", 10).unwrap().is_empty());
         assert_eq!(search(&conn, "sibling", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn native_project_scope_precedes_limit_and_preserves_nested_root_filters() {
+        let conn = mem();
+        add_root(&conn, "C:/indexed", true).unwrap();
+        let nested = add_root(&conn, "C:/indexed/project/nested", false).unwrap();
+        for path in [
+            "C:/indexed/a-sibling/aaa.rs",
+            "C:/indexed/project-else/bbb.rs",
+            "C:/indexed/Project/ccc.rs",
+            "C:/indexed/project/nested/ddd.rs",
+            "C:/indexed/project/zzz.rs",
+        ] {
+            let id = upsert_file(&conn, path, 4, 100, 0).unwrap();
+            if !path.contains("/nested/") {
+                upsert_content_record(&conn, id, &indexed_record("shared content"), 100).unwrap();
+            }
+        }
+        let filter = SearchFilter::default();
+        let names =
+            search_with_filter_in_scope(&conn, "rs", 1, &filter, Some("C:/indexed/project"))
+                .unwrap();
+        assert_eq!(names.len(), 1);
+        assert_eq!(names[0].path, "C:/indexed/project/nested/ddd.rs");
+        let content = search_content_with_filter_in_scope(
+            &conn,
+            "shared",
+            1,
+            &filter,
+            Some("C:/indexed/project"),
+        )
+        .unwrap();
+        assert_eq!(content.len(), 1);
+        assert_eq!(content[0].path, "C:/indexed/project/zzz.rs");
+        let nested_id = root_row_for(&conn, &format!("{nested}/ddd.rs"))
+            .unwrap()
+            .unwrap()
+            .0;
+        let narrow = SearchFilter {
+            source_root_id: Some(nested_id),
+            ..filter
+        };
+        assert_eq!(
+            search_with_filter_in_scope(&conn, "rs", 20, &narrow, Some("C:/indexed/project"))
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(search_content_with_filter_in_scope(
+            &conn,
+            "shared",
+            20,
+            &narrow,
+            Some("C:/indexed/project")
+        )
+        .unwrap()
+        .is_empty());
+        assert!(search_with_filter_in_scope(
+            &conn,
+            "rs",
+            20,
+            &narrow,
+            Some("C:/indexed/a-sibling")
+        )
+        .unwrap()
+        .is_empty());
+        assert!(search_with_filter_in_scope(
+            &conn,
+            "rs",
+            20,
+            &narrow,
+            Some("C:/indexed/../project")
+        )
+        .is_err());
     }
 
     #[test]

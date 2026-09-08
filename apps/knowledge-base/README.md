@@ -24,7 +24,7 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
   먼저 미리 본 뒤 오프라인 `Inbox/`에 새 Markdown 노트를 저장한다. 미리보기는 native가
   발급한 일회성 opaque approval으로 저장하며, 취소·닫기·stale 응답은 실제로 폐기된다.
   단축키 충돌이어도 앱 내 동작은 유지하며, 클립보드는 사용자가 선택한 순간에만 한 번 읽는다
-- **노트 템플릿** — 설정한 vault 안의 SQLite 보조 인덱스에 최대 100개의 템플릿을 저장하고
+- **노트 템플릿** — 앱 데이터 폴더의 `data.db`에 최대 100개의 템플릿을 저장하고
   `{{title}}`, `{{date}}`, `{{time}}`, `{{vault-relative-path}}` 네 변수만 치환한다. 편집기는
   저장 전 미리보기에서 결과·대상을 확인하며, 적용은 명시적 승인 이후 검증된 vault-relative
   `.md` 목적지에 exclusive atomic create로만 수행한다. 이름·본문·결과·제목·대상 경로에는
@@ -43,7 +43,8 @@ Markdown-first로 설계한 개인 지식·프로젝트·일일 기록 관리 �
 
 ## 기술
 
-- 파일을 원본(source of truth)으로 두고 SQLite는 검색용 보조 인덱스
+- 노트·이미지는 파일을 원본(source of truth)으로 두고 SQLite는 검색용 보조 인덱스와
+  사용자 템플릿·설정을 저장한다. `note_templates`와 `settings`는 재생성 가능한 색인이 아니다
 - SQLite의 `doc_link_keys`·`wikilinks`도 재생성 가능한 보조 인덱스다. path stem·filename·title이
   정확히 한 노트에만 대응할 때 resolved로 판정하며 중복 title/filename은 ambiguous unresolved로
   처리한다. 새 노트가 생기거나 watcher가 외부 편집을 반영하면 source를 다시 쓰지 않아도 현재

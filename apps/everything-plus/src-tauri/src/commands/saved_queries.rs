@@ -105,7 +105,7 @@ pub fn save_saved_query(
             return Err(error);
         }
     };
-    if let Err(error) = publish_snapshot_envelope(&envelope) {
+    if let Err(error) = publish_snapshot_envelope(&envelope, state.integration_root.as_deref()) {
         restore_after_snapshot_failure(state.inner(), &previous);
         return Err(error);
     }
@@ -134,7 +134,7 @@ pub fn delete_saved_query(state: tauri::State<'_, Arc<AppState>>, id: i64) -> Re
             return Err(error);
         }
     };
-    if let Err(error) = publish_snapshot_envelope(&envelope) {
+    if let Err(error) = publish_snapshot_envelope(&envelope, state.integration_root.as_deref()) {
         restore_after_snapshot_failure(state.inner(), &previous);
         return Err(error);
     }
@@ -150,11 +150,18 @@ pub(crate) fn publish_snapshot(state: &Arc<AppState>) -> Result<(), String> {
         let conn = state.db.lock().map_err(|_| SAVED_QUERY_ERROR.to_string())?;
         build_snapshot(&conn)?
     };
-    publish_snapshot_envelope(&envelope)
+    publish_snapshot_envelope(&envelope, state.integration_root.as_deref())
 }
 
-fn publish_snapshot_envelope(envelope: &Envelope) -> Result<(), String> {
-    let directory = devbox_integration::snapshot_dir(PRODUCER_ID, SNAPSHOT_SCHEMA_VERSION);
+fn publish_snapshot_envelope(
+    envelope: &Envelope,
+    integration_root: Option<&std::path::Path>,
+) -> Result<(), String> {
+    let root = integration_root
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or_else(devbox_integration::integration_root);
+    let directory =
+        devbox_integration::snapshot_dir_in(&root, PRODUCER_ID, SNAPSHOT_SCHEMA_VERSION);
     devbox_integration::write_atomic(envelope, &directory)
         .map_err(|_| SAVED_QUERY_ERROR.to_string())
 }
@@ -303,6 +310,54 @@ fn now_ms() -> i64 {
         .unwrap_or(0)
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_list_saved_queries(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = list_saved_queries(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_save_saved_query(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: SaveSavedQueryRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = save_saved_query(component_app.state(), request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_delete_saved_query(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: i64,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    delete_saved_query(component_app.state(), id)?;
+    Ok(serde_json::Value::Null)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -408,8 +463,7 @@ mod tests {
             std::process::id(),
             now_ms()
         ));
-        let directory = devbox_integration::snapshot_dir_in(&root, PRODUCER_ID, 1);
-        devbox_integration::write_atomic(&envelope, &directory).unwrap();
+        publish_snapshot_envelope(&envelope, Some(&root)).unwrap();
         let loaded = devbox_integration::read_snapshot_in(&root, PRODUCER_ID, 1)
             .unwrap()
             .unwrap();

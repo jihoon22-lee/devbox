@@ -121,7 +121,9 @@ async function start(product, suffix) {
       try {
         ready = await cdp.evaluate(product.id === "api-studio"
           ? '!!document.querySelector(".api-feature-requests .url-input")'
-          : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
+          : product.id === "knowledge"
+            ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
+            : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
       } catch (error) {
         readinessError = error.message;
         // A startup document/renderer transition can invalidate this attachment.
@@ -297,6 +299,94 @@ async function start(product, suffix) {
       componentProbe.workspace = { staleRejected: workspace.staleRejected, unboundProjectRejected: workspace.unboundProjectRejected, definitionMasked: workspace.definitionMasked, explicitSelectionPreservesRequest: true };
 
 
+    }
+    if (product.id === "knowledge") {
+      progress(product, suffix, "knowledge-startup-gate");
+      assert.equal(await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const header = { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "notes" };
+        try { await invoke("plugin:knowledge|execute", { request: { header, component: "knowledge.notes", method: "get_root", args: {} } }); return false; }
+        catch { return true; }
+      })()`), true, "note engine must not run before startup approval");
+      await cdp.evaluate('document.querySelector(".knowledge-startup button:not([disabled])").click()');
+      await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "Knowledge stores did not activate");
+      progress(product, suffix, "knowledge-components");
+      componentProbe = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const header = (route) => ({ protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route });
+        const call = (component, route, method, args = {}) => invoke("plugin:knowledge|execute", { request: { header: header(route), component, method, args } });
+        const repeated = { header: header("notes"), component: "knowledge.notes", method: "get_root", args: {} };
+        const root = await invoke("plugin:knowledge|execute", { request: repeated });
+        let replayRejected = false, legacyCommandRejected = false, foreignInstallationRejected = false;
+        try { await invoke("plugin:knowledge|execute", { request: repeated }); } catch { replayRejected = true; }
+        try { await invoke("get_root"); } catch { legacyCommandRejected = true; }
+        try { await invoke("plugin:knowledge|execute", { request: { ...repeated, header: { ...header("notes"), installationId: "foreign-installation" } } }); } catch { foreignInstallationRejected = true; }
+        const created = await call("knowledge.notes", "notes", "create_file", { rel: "Notes/Product fixture.md", content: "# Product fixture" });
+        const read = await call("knowledge.notes", "notes", "read_file", { rel: "Notes/Product fixture.md" });
+        const tracking = await call("knowledge.activity", "activity", "is_tracking");
+        const results = await call("knowledge.search", "search", "source_query", { source: "files", mode: "name", query: "fixture", limit: 20, filter: {} });
+        let denied = 0;
+        for (const method of ["write_file", "start_tracking", "add_root", "open_file"]) {
+          try { await call("knowledge.search", "search", method); } catch { denied += 1; }
+        }
+        const blockedBinding = await call("knowledge.notes", "notes", "set_root", { path: "C:/synthetic-unapproved-vault" });
+        return { replayRejected, legacyCommandRejected, foreignInstallationRejected,
+          privateVault: root.operation.outcome.state === "succeeded" && root.value.includes("notes-vault"),
+          explicitNoteWrite: created.operation.outcome.state === "succeeded" && read.value === "# Product fixture",
+          collectorStartsOff: tracking.operation.outcome.state === "succeeded" && tracking.value === false,
+          independentSearch: results.operation.outcome.state === "succeeded" && Array.isArray(results.value.rows) && results.value.rows.length === 0 && results.value.source === "files",
+          queryMutationDenials: denied, unapprovedBindingRejected: blockedBinding.operation.outcome.state === "failed" };
+      })()`);
+      assert.deepEqual(componentProbe, { replayRejected: true, legacyCommandRejected: true, foreignInstallationRejected: true,
+        privateVault: true, explicitNoteWrite: true, collectorStartsOff: true, independentSearch: true, queryMutationDenials: 4, unapprovedBindingRejected: true });
+      await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "활동").click()`);
+      await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-activity:not([hidden]) .app")', "Activity route did not mount");
+      await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "검색").click()`);
+      await waitForRenderer(cdp, '!!document.querySelector(".knowledge-feature-search:not([hidden]) .app")', "Search route did not mount");
+      await cdp.evaluate(`Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button => button.textContent.trim() === "노트").click()`);
+      assert.equal(await cdp.evaluate('!!document.querySelector(".knowledge-feature-notes:not([hidden]) .app")'), true);
+      componentProbe.routesRemainMounted = await cdp.evaluate('document.querySelectorAll(".knowledge-feature-notes .app, .knowledge-feature-activity .app, .knowledge-feature-search .app").length === 3');
+      assert.equal(componentProbe.routesRemainMounted, true);
+      componentProbe.daily = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const call = (component, route, method, args = {}) => invoke("plugin:knowledge|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route }, component, method, args } });
+        const notes = (method, args) => call("knowledge.notes", "daily", method, args);
+        const date = "2024-02-29", path = "Journal/2024-02-29.md";
+        const preview = await notes("preview_daily", { date });
+        const before = await notes("read_file", { rel: path });
+        await notes("discard_daily", { previewId: preview.value.previewId });
+        const cancelled = await notes("save_daily", { previewId: preview.value.previewId });
+        const next = await notes("preview_daily", { date });
+        const saved = await notes("save_daily", { previewId: next.value.previewId });
+        const repeated = await notes("save_daily", { previewId: next.value.previewId });
+        const existing = await notes("preview_daily", { date });
+        const content = await notes("read_file", { rel: path });
+        let legacyDailyRejected = false;
+        try { await notes("daily_note"); } catch { legacyDailyRejected = true; }
+        return { previewDoesNotWrite: before.operation.outcome.state === "failed", cancelPreventsWrite: cancelled.operation.outcome.state === "failed",
+          explicitSave: saved.operation.outcome.state === "succeeded", repeatRejected: repeated.operation.outcome.state === "failed",
+          existingOnlyOpens: existing.value.exists === true && existing.value.previewId === null,
+          civilDate: content.value.includes("# 2024-02-29"), legacyDailyRejected };
+      })()`);
+      assert.deepEqual(componentProbe.daily, { previewDoesNotWrite: true, cancelPreventsWrite: true, explicitSave: true, repeatRejected: true, existingOnlyOpens: true, civilDate: true, legacyDailyRejected: true });
+      componentProbe.closePolicy = await cdp.evaluate(`(async () => {
+        const invoke = window.__TAURI_INTERNALS__.invoke;
+        const d = await invoke("plugin:product-shell|describe");
+        const call = (method, args = {}) => invoke("plugin:knowledge|execute", { request: {
+          header: { protocolVersion: 1, installationId: d.handshake.installationId, sessionId: d.handshake.sessionId, requestId: crypto.randomUUID(), deadlineMs: Date.now()+5000, route: "activity" }, component: "knowledge.activity", method, args } });
+        const initial = await call("get_close_policy");
+        const enabled = await call("set_close_policy", { closeToTray: true });
+        const tracking = await call("is_tracking");
+        const reset = await call("set_close_policy", { closeToTray: false });
+        return { defaultQuits: initial.value.closeToTray === false, trayAvailable: initial.value.trayAvailable === true,
+          preferenceRoundtrip: enabled.value.closeToTray === true && reset.value.closeToTray === false,
+          doesNotEnableCollection: tracking.value === false };
+      })()`);
+      assert.deepEqual(componentProbe.closePolicy, { defaultQuits: true, trayAvailable: true, preferenceRoundtrip: true, doesNotEnableCollection: true });
     }
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);

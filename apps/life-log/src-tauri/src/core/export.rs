@@ -16,13 +16,12 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering as AtomicOrdering};
 use std::sync::Arc;
-use std::time::Duration;
 
 pub const EXPORT_SCHEMA_VERSION: u32 = 2;
 pub const MAX_EXPORT_DAYS: usize = 366;
 pub const MAX_EXPORT_SESSIONS: usize = 50_000;
 pub const MAX_EXPORT_BYTES: usize = 4 * 1024 * 1024;
-pub const MAX_EXPORT_PROJECTS: usize = 64;
+pub const MAX_EXPORT_PROJECTS: usize = crate::core::git_activity::MAX_PROJECTS;
 pub const MAX_PROJECT_SETTING_BYTES: usize = MAX_EXPORT_PROJECTS * (MAX_PROJECT_PATH_BYTES + 1);
 pub const EXPORT_CSV_HEADER: &str = "record_type,date,range_start_date,range_end_date,id,app,title,start_ts_ms,end_ts_ms,duration_ms,project_path,commits,metric,value,source,available,schema_version,snapshot_version,producer_version,generated_at,freshness_ms,view,scope,error_code";
 const DAY_MS: i64 = 86_400_000;
@@ -30,8 +29,6 @@ const MAX_TIMEZONE_BYTES: usize = 128;
 const MAX_APP_BYTES: usize = 256;
 const MAX_TITLE_BYTES: usize = 4 * 1024;
 const MAX_PATH_BYTES: usize = MAX_PROJECT_PATH_BYTES;
-const MAX_GIT_OUTPUT_BYTES: usize = 256 * 1024;
-const GIT_TIMEOUT: Duration = Duration::from_secs(2);
 const MIN_CIVIL_DAY_MS: i64 = DAY_MS - 60 * 60 * 1_000;
 const MAX_CIVIL_DAY_MS: i64 = DAY_MS + 60 * 60 * 1_000;
 pub const MAX_PROVENANCE_FRESHNESS_MS: u64 = 30 * 24 * 60 * 60 * 1_000;
@@ -526,7 +523,13 @@ pub fn prepare_document(
     projects: &[String],
     input: &ExportInput,
 ) -> Result<PreparedExport, String> {
-    prepare_document_inner(conn, projects, input, None)
+    prepare_document_inner(
+        conn,
+        projects,
+        input,
+        None,
+        &devbox_integration::integration_root(),
+    )
 }
 
 /// Prepare an export using a caller-owned cancellation flag. DB progress is
@@ -537,7 +540,25 @@ pub fn prepare_document_with_cancel(
     input: &ExportInput,
     cancellation: Arc<AtomicBool>,
 ) -> Result<PreparedExport, String> {
-    prepare_document_inner(conn, projects, input, Some(cancellation))
+    prepare_document_inner(
+        conn,
+        projects,
+        input,
+        Some(cancellation),
+        &devbox_integration::integration_root(),
+    )
+}
+
+/// Product callers supply a native-owned snapshot namespace. An absent source
+/// stays unavailable; this never falls back to another installation's snapshots.
+pub fn prepare_document_in(
+    conn: &Connection,
+    projects: &[String],
+    input: &ExportInput,
+    cancellation: Option<Arc<AtomicBool>>,
+    integration_root: &Path,
+) -> Result<PreparedExport, String> {
+    prepare_document_inner(conn, projects, input, cancellation, integration_root)
 }
 
 fn prepare_document_inner(
@@ -545,6 +566,7 @@ fn prepare_document_inner(
     projects: &[String],
     input: &ExportInput,
     cancellation: Option<Arc<AtomicBool>>,
+    integration_root: &Path,
 ) -> Result<PreparedExport, String> {
     validate_project_settings(projects)?;
     let range = validate_range(input)?;
@@ -615,9 +637,9 @@ fn prepare_document_inner(
         .map(|path| path.into_string())
         .collect::<Vec<_>>();
     check_cancelled(cancellation.as_deref())?;
-    let run_source = read_run_daily_source(&range);
+    let run_source = read_run_daily_source_in(integration_root, &range);
     check_cancelled(cancellation.as_deref())?;
-    let knowledge_source = read_knowledge_daily_source(&range);
+    let knowledge_source = read_knowledge_daily_source_in(integration_root, &range);
     check_cancelled(cancellation.as_deref())?;
     Ok(PreparedExport {
         range,
@@ -664,9 +686,9 @@ pub async fn build_document_with_cancel(
         run_source,
         knowledge_source,
     } = prepared;
-    // One bounded query per configured repository is enough. Git output is
-    // post-filtered against the exact millisecond range, then assigned to the
-    // supplied civil-day boundaries; this avoids a 366-day N+1 process storm.
+    // One bounded metadata/history pair per configured path avoids a 366-day
+    // N+1 process storm. The common repository and commit ID deduplicate
+    // worktrees before exact millisecond timestamps enter civil-day buckets.
     check_cancelled(Some(cancellation.as_ref()))?;
     let git_projects = safe_projects.clone();
     let git_range = range.clone();
@@ -786,7 +808,7 @@ fn export_rules() -> ExportRules {
         privacy: "current Life Log privacy rules and obvious credential markers are reapplied before aggregation".into(),
         app_totals: "sanitized sessions grouped by app; duration descending then app byte order"
             .into(),
-        git_commits: "read-only git log with fixed argv per safe configured absolute project path; output is filtered to [range.startMs, range.endMs) and bounded by timeout/output limits".into(),
+        git_commits: "read-only bounded Git history filtered to [range.startMs, range.endMs); canonical common Git directory plus commit object ID deduplicates worktrees, attributing each commit to the first sorted configured project path".into(),
         snapshot_scope:
             "Run Manager and Knowledge daily-activity sidecars are joined only when date, timezone, and exact local civil-day boundaries match; partial, stale, missing, or mismatched days stay nullable and never fall back to latest/today values".into(),
     }
@@ -1391,48 +1413,19 @@ fn collect_git_export(
         daily_commits: vec![0; range.days.len()],
         ..GitExport::default()
     };
-    for path in projects {
+    for project in
+        crate::core::git_activity::collect(projects, range.start_ms, range.end_ms, cancellation)?
+    {
         check_cancelled(Some(cancellation))?;
-        let since = format!("--since=@{}", range.start_ms.div_euclid(1_000));
-        let before = format!("--before=@{}", ceil_seconds(range.end_ms));
-        // Keep every argument as an individual argv value. In particular,
-        // paths and date bounds never pass through a shell or shell quoting.
-        let args = [
-            "--no-pager",
-            "log",
-            since.as_str(),
-            before.as_str(),
-            "--format=%ct",
-            "--",
-        ];
-        let result = devbox_git::GitTarget::from_project_path(path)
-            .and_then(|target| {
-                devbox_git::run_bounded_target_with_cancel(
-                    &args,
-                    &target,
-                    GIT_TIMEOUT,
-                    MAX_GIT_OUTPUT_BYTES,
-                    cancellation,
-                )
-            })
-            .and_then(|stdout| {
-                parse_git_timestamps(&stdout, range, &mut output.daily_commits)
-                    .map_err(ToOwned::to_owned)
-            });
-        let (commits, error_code) = match result {
-            Ok(commits) => (commits, None),
-            Err(code) => {
-                if code == "git_cancelled" {
-                    return Err("digest_cancelled".into());
-                }
-                output.error_codes.push(code.clone());
-                (0, Some(code))
-            }
-        };
+        let commits = bucket_git_timestamps(&project.timestamps, range, &mut output.daily_commits)
+            .map_err(str::to_owned)?;
+        if let Some(code) = &project.error_code {
+            output.error_codes.push(code.clone());
+        }
         output.projects.push(ExportGitProject {
-            path: path.clone(),
+            path: project.path,
             commits,
-            error_code,
+            error_code: project.error_code,
         });
         output.total_commits = output.total_commits.saturating_add(commits);
     }
@@ -1443,28 +1436,14 @@ fn collect_git_export(
     Ok(output)
 }
 
-fn ceil_seconds(milliseconds: i64) -> i64 {
-    let seconds = milliseconds.div_euclid(1_000);
-    if milliseconds.rem_euclid(1_000) == 0 {
-        seconds
-    } else {
-        seconds.saturating_add(1)
-    }
-}
-
-fn parse_git_timestamps(
-    stdout: &str,
+fn bucket_git_timestamps(
+    timestamps: &[i64],
     range: &ValidatedRange,
     daily_commits: &mut [u32],
 ) -> Result<u32, &'static str> {
     let mut total = 0u32;
     let mut increments = vec![0u32; daily_commits.len()];
-    for line in stdout.lines().filter(|line| !line.is_empty()) {
-        let seconds = line
-            .trim()
-            .parse::<i64>()
-            .map_err(|_| "git_output_invalid")?;
-        let timestamp = seconds.checked_mul(1_000).ok_or("git_output_invalid")?;
+    for &timestamp in timestamps {
         // Git's --since/--before filters are second-granularity. The final
         // inclusion decision is therefore always made against the exact
         // requested millisecond half-open range here.
@@ -2169,10 +2148,6 @@ struct KnowledgeDailySnapshot {
     last_modified_at_ms: Option<i64>,
 }
 
-fn read_run_daily_source(range: &ValidatedRange) -> DailySourceResult<RunDailyValue> {
-    read_run_daily_source_in(&devbox_integration::integration_root(), range)
-}
-
 fn read_run_daily_source_in(
     root: &Path,
     range: &ValidatedRange,
@@ -2202,10 +2177,6 @@ fn read_run_daily_source_in(
             },
         })
     })
-}
-
-fn read_knowledge_daily_source(range: &ValidatedRange) -> DailySourceResult<KnowledgeDailyValue> {
-    read_knowledge_daily_source_in(&devbox_integration::integration_root(), range)
 }
 
 fn read_knowledge_daily_source_in(
@@ -3003,6 +2974,47 @@ mod tests {
     }
 
     #[test]
+    fn product_export_uses_only_the_selected_snapshot_namespace() {
+        let first = SourceFixture::new();
+        let second = SourceFixture::new();
+        let empty = SourceFixture::new();
+        let connection = database();
+        let request = input(ExportFormat::Json);
+        for (root, count) in [(first.path(), 2), (second.path(), 40)] {
+            write_daily_sidecar(
+                root,
+                "run-manager",
+                vec![
+                    run_day("2024-01-01", 0, DAY_MS, count),
+                    run_day("2024-01-02", DAY_MS, DAY_MS * 2, count),
+                ],
+            );
+        }
+        let first_export =
+            prepare_document_in(&connection, &[], &request, None, first.path()).unwrap();
+        let second_export =
+            prepare_document_in(&connection, &[], &request, None, second.path()).unwrap();
+        assert_eq!(
+            complete_run_digest(&first_export.run_source)
+                .unwrap()
+                .unwrap()
+                .succeeded,
+            4
+        );
+        assert_eq!(
+            complete_run_digest(&second_export.run_source)
+                .unwrap()
+                .unwrap()
+                .succeeded,
+            80
+        );
+        let absent = prepare_document_in(&connection, &[], &request, None, empty.path()).unwrap();
+        assert!(!absent.run_source.metadata.available);
+        assert!(!absent.knowledge_source.metadata.available);
+        assert!(complete_run_digest(&absent.run_source).unwrap().is_none());
+    }
+
+    #[test]
     fn daily_sidecar_requires_exact_range_boundaries_without_latest_fallback() {
         let fixture = SourceFixture::new();
         let range = validate_range(&input(ExportFormat::Json)).unwrap();
@@ -3479,17 +3491,10 @@ mod tests {
         let value = input(ExportFormat::Json);
         let range = validate_range(&value).unwrap();
         let mut daily = vec![0; range.days.len()];
-        let count = parse_git_timestamps("0\n86400\n172800\n", &range, &mut daily).unwrap();
+        let count =
+            bucket_git_timestamps(&[0, 86_400_000, 172_800_000], &range, &mut daily).unwrap();
         assert_eq!(count, 2);
         assert_eq!(daily, vec![1, 1]);
-
-        let mut unchanged = vec![0; range.days.len()];
-        assert_eq!(
-            parse_git_timestamps("not-a-timestamp\n", &range, &mut unchanged),
-            Err("git_output_invalid")
-        );
-        assert_eq!(unchanged, vec![0, 0]);
-        assert_eq!(ceil_seconds(-1), 0);
     }
 
     #[test]

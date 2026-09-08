@@ -1338,9 +1338,26 @@ dependencies = [
 name = "devbox-knowledge"
 version = "0.8.0"
 dependencies = [
+ "data-migration",
+ "everything-plus",
+ "filesystem",
+ "knowledge-base",
+ "libc",
+ "life-log",
+ "product-contract",
  "product-shell-tauri",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-opener",
+ "tempfile",
+ "uuid",
+ "windows 0.61.3",
+ "wsl",
 ]
 
 [[package]]
@@ -3093,6 +3110,7 @@ dependencies = [
  "launch",
  "markdown",
  "notify",
+ "product-contract",
  "rusqlite",
  "search",
  "serde",
@@ -3235,6 +3253,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-opener",
  "tauri-plugin-single-instance",
+ "tempfile",
  "tokio",
  "window-state-tauri",
  "windows 0.58.0",

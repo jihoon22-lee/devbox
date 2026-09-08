@@ -28,7 +28,8 @@
     "@codemirror/search": "^6.0.0",
     "@codemirror/state": "^6.0.0",
     "@codemirror/view": "^6.0.0",
-    "@devbox/editor": "workspace:*"
+    "@devbox/editor": "workspace:*",
+    "@devbox/knowledge-features": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

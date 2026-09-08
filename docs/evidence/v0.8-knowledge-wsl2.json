@@ -1,0 +1,47 @@
+{
+  "schemaVersion": 1,
+  "sourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+  "artifactRun": 34221320986,
+  "recordedAtUtc": "2026-09-08T11:41:28.822491+00:00",
+  "environment": "local Windows with actual WSL2 UNC filesystem",
+  "osVersion": "10.0.26200.0",
+  "runnerScript": ".github/scripts/run-knowledge-wsl-fixtures.ps1",
+  "boundary": "Owned synthetic folders and in-memory index DB only; no product/legacy profile, distro shutdown or VM suspend",
+  "result": "pass",
+  "tests": [
+    {
+      "executable": "knowledge_base_lib.exe",
+      "sha256": "1928ce09a8c18264836afce3997f011c12365cf66895c6dce370d026896bff05",
+      "bytes": 9976320,
+      "filter": "native_wsl_owned_fixture",
+      "result": "pass",
+      "passedTests": 1,
+      "failedTests": 0,
+      "processElapsedMs": 624,
+      "testElapsedSeconds": 0.28
+    },
+    {
+      "executable": "everything_plus_lib.exe",
+      "sha256": "e09ced90ca1a492c77ec78d6d3358866e6d16f7676ab2b10f3c1be4b2a2a5007",
+      "bytes": 12639232,
+      "filter": "native_wsl_owned_fixture",
+      "result": "pass",
+      "passedTests": 1,
+      "failedTests": 0,
+      "processElapsedMs": 8146,
+      "testElapsedSeconds": 7.76
+    },
+    {
+      "executable": "devbox_knowledge_lib.exe",
+      "sha256": "97e7371611d8ae58665dc7f3c3d67ea3e156d681627a07908c5f41ea118f1ec7",
+      "bytes": 6332928,
+      "filter": "native_wsl_owned_fixture",
+      "result": "pass",
+      "passedTests": 1,
+      "failedTests": 0,
+      "processElapsedMs": 293,
+      "testElapsedSeconds": 0.05
+    }
+  ],
+  "cleanup": "Only the two created synthetic fixture directories were removed after checking native filesystem identity and the exact owner marker."
+}

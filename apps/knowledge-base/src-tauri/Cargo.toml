@@ -15,6 +15,16 @@ edition = "2021"
 name = "knowledge_base_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Products link the native component without embedding the legacy UI/entrypoint.
+[features]
+default = ["standalone"]
+standalone = []
+
+[[bin]]
+name = "knowledge-base"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -38,6 +48,7 @@ devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../c
 devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
+product-contract = { path = "../../../crates/product-contract" }
 
 [target.'cfg(windows)'.dependencies]
 # RegisterHotKey/GetMessageW/MoveFileExW are used only on Windows.  This version is

@@ -80,6 +80,7 @@ pub struct ToolboxDraftPayload {
 pub enum IncomingKnowledgeDraft {
     LifeLog(KnowledgeDraftPayload),
     Toolbox(ToolboxDraftPayload),
+    Session(super::session_summary::Draft),
 }
 
 impl IncomingKnowledgeDraft {
@@ -87,6 +88,7 @@ impl IncomingKnowledgeDraft {
         match self {
             Self::LifeLog(payload) => &payload.title,
             Self::Toolbox(payload) => &payload.title,
+            Self::Session(payload) => &payload.title,
         }
     }
 
@@ -94,6 +96,7 @@ impl IncomingKnowledgeDraft {
         match self {
             Self::LifeLog(payload) => &payload.body,
             Self::Toolbox(payload) => &payload.body,
+            Self::Session(payload) => &payload.body,
         }
     }
 
@@ -101,6 +104,7 @@ impl IncomingKnowledgeDraft {
         match self {
             Self::LifeLog(payload) => &payload.tags,
             Self::Toolbox(payload) => &payload.tags,
+            Self::Session(payload) => &payload.tags,
         }
     }
 
@@ -113,6 +117,7 @@ impl IncomingKnowledgeDraft {
             Self::Toolbox(payload) => {
                 format!("Journal/{}-developer-toolbox-result", payload.created_date)
             }
+            Self::Session(payload) => payload.note_stem(),
         }
     }
 }
@@ -138,7 +143,9 @@ impl KnowledgeDraftPreview {
             IncomingKnowledgeDraft::LifeLog(payload) => {
                 (Some(payload.summary.clone()), payload.sources.clone())
             }
-            IncomingKnowledgeDraft::Toolbox(_) => (None, Vec::new()),
+            IncomingKnowledgeDraft::Toolbox(_) | IncomingKnowledgeDraft::Session(_) => {
+                (None, Vec::new())
+            }
         };
         Self {
             id: claim.envelope.id.clone(),
@@ -177,6 +184,13 @@ pub fn parse_claim(claim: &HandoffClaim) -> Result<IncomingKnowledgeDraft, Strin
                     .map_err(|_| "handoff draft 형식이 올바르지 않습니다".to_string())?;
             validate_toolbox_draft(&payload)?;
             IncomingKnowledgeDraft::Toolbox(payload)
+        }
+        (super::session_summary::KIND, super::session_summary::PRODUCER) => {
+            let payload: super::session_summary::Draft =
+                serde_json::from_value(claim.envelope.payload.clone())
+                    .map_err(|_| "session_summary_invalid")?;
+            payload.validate()?;
+            IncomingKnowledgeDraft::Session(payload)
         }
         _ => return Err("handoff draft 출처 또는 대상이 올바르지 않습니다".into()),
     };
@@ -471,7 +485,7 @@ fn bounded_text(value: &str, max_bytes: usize, allow_newlines: bool) -> bool {
         })
 }
 
-fn valid_date_key(value: &str) -> bool {
+pub(super) fn valid_date_key(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 10
         || bytes[4] != b'-'

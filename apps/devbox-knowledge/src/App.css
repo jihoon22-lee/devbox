@@ -1,3 +1,34 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 @import "@devbox/product-shell/styles.css";
+.product-shell { height: 100dvh; min-height: 0; grid-template-rows: 64px minmax(0, 1fr); overflow: hidden; }
+.product-shell > main { display: flex; flex-direction: column; min-height: 0; overflow: hidden; }
+.shell-toolbar { flex: 0 0 auto; }
+.product-shell > main > .knowledge-feature-notes,
+.product-shell > main > .knowledge-feature-activity,
+.product-shell > main > .knowledge-feature-search { flex: 1; min-height: 0; height: auto; overflow: auto; }
+[hidden] { display: none !important; }
+.knowledge-startup { max-width: 760px; padding: 24px; line-height: 1.6; }
+.knowledge-startup button { padding: 8px 12px; }
+
+.knowledge-daily { flex: 1; overflow: auto; min-height: 0; padding: 20px 24px; line-height: 1.6; }
+.knowledge-daily-actions { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.knowledge-daily button, .knowledge-daily input { padding: 8px 12px; font: inherit; color: var(--db-color-text); background: var(--db-color-surface); border: 1px solid var(--db-color-border); border-radius: 6px; }
+.knowledge-daily button:disabled { opacity: .5; cursor: default; }
+.knowledge-daily-preview { margin-top: 20px; max-width: 760px; }
+.knowledge-daily-preview pre { padding: 16px; white-space: pre-wrap; overflow-wrap: anywhere; border: 1px solid var(--db-color-border); }
+.knowledge-daily-preview button { margin-right: 8px; }
+.knowledge-migration, .knowledge-settings-page { flex: 1; min-height: 0; overflow: auto; padding: 20px 24px; line-height: 1.6; }
+.knowledge-settings-page .knowledge-migration { padding: 12px 0; }
+.knowledge-migration button, .knowledge-settings-page > button { padding: 8px 12px; margin: 4px 8px 4px 0; font: inherit; color: var(--db-color-text); background: var(--db-color-surface); border: 1px solid var(--db-color-border); border-radius: 6px; }
+.knowledge-migration button:disabled, .knowledge-migration fieldset:disabled { opacity: .55; }
+.knowledge-migration fieldset { max-width: 720px; margin: 16px 0; border: 1px solid var(--db-color-border); }
+.knowledge-migration fieldset label { display: flex; align-items: center; gap: 8px; padding: 8px; }
+.knowledge-migration section { margin-top: 24px; }
+.knowledge-migration table { border-collapse: collapse; width: 100%; max-width: 1000px; }
+.knowledge-migration th, .knowledge-migration td { padding: 8px 12px; text-align: left; border: 1px solid var(--db-color-border); }
+.knowledge-migration caption { text-align: left; font-weight: 600; }
+.knowledge-migration-path { overflow-wrap: anywhere; }
+
+.knowledge-vault-choice { display: grid; gap: 8px; max-width: 720px; margin: 16px 0; }
+.knowledge-vault-choice input { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 10px; color: var(--db-color-text); background: var(--db-color-surface); border: 1px solid var(--db-color-border); border-radius: 6px; font: inherit; }

@@ -22,3 +22,39 @@ pub fn app_stats(
 ) -> Result<Vec<AppTotal>, String> {
     get_app_stats(&state.db.lock().unwrap(), start, end).map_err(|e| e.to_string())
 }
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_timeline(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        day_start: i64,
+        day_end: i64,
+    }
+    let Input { day_start, day_end } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = timeline(component_app.state(), day_start, day_end)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_app_stats(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        start: i64,
+        end: i64,
+    }
+    let Input { start, end } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = app_stats(component_app.state(), start, end)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}

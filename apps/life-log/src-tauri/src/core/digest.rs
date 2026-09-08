@@ -415,6 +415,23 @@ pub fn prepare_with_cancel(
     export::prepare_document_with_cancel(conn, projects, &export_input(input), cancellation)
 }
 
+pub fn prepare_with_cancel_in(
+    conn: &Connection,
+    projects: &[String],
+    input: &DigestInput,
+    cancellation: Arc<AtomicBool>,
+    integration_root: &std::path::Path,
+) -> Result<export::PreparedExport, String> {
+    validate_input(input)?;
+    export::prepare_document_in(
+        conn,
+        projects,
+        &export_input(input),
+        Some(cancellation),
+        integration_root,
+    )
+}
+
 /// Build a small digest from the already bounded export snapshot.  No network,
 /// LLM, filesystem, or external process is introduced here; those boundaries
 /// are inherited from `core::export`.
@@ -590,7 +607,7 @@ fn digest_rules(app_filter: String) -> DigestRules {
         daily_buckets: "the supplied local civil-day boundaries are authoritative; no fixed 24-hour arithmetic is used".into(),
         app_filter,
         app_totals: "sanitized sessions are grouped by app; duration descending then app byte order".into(),
-        git_commits: "read-only bounded git counts come from the requested range and remain independent of the app filter".into(),
+        git_commits: "read-only bounded Git counts use the requested range and remain independent of the app filter; canonical common Git directory plus commit ID deduplicates worktrees, attributing shared commits to the first sorted configured path".into(),
         snapshot_scope: "Run Manager and Knowledge daily-activity sidecars are joined only when date, timezone, and exact local civil-day boundaries match; missing or mismatched values remain unavailable".into(),
         privacy: "Life Log privacy rules and obvious credential markers are reapplied before aggregation".into(),
         external_processing: "rule-based local aggregation only; no cloud/local LLM, network, telemetry, or external activity transfer".into(),

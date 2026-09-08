@@ -35,7 +35,10 @@ fn prepare(
     let raw_projects =
         db::get_setting_bounded(&conn, "projects", "", export::MAX_PROJECT_SETTING_BYTES)?;
     let projects = export::parse_project_setting(&raw_projects)?;
-    export::prepare_document(&conn, &projects, input)
+    match &state.integration_root {
+        Some(root) => export::prepare_document_in(&conn, &projects, input, None, root),
+        None => export::prepare_document(&conn, &projects, input),
+    }
 }
 
 async fn render_for_state(
@@ -302,6 +305,40 @@ fn validate_save_path(path: &Path, format: export::ExportFormat) -> Result<(), S
         return Err("선택한 파일 확장자가 export 형식과 일치하지 않습니다".into());
     }
     Ok(())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_export_life_log(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: ExportInput,
+    }
+    let Input { input } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = export_life_log(component_app.state(), input).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_save_life_log(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: ExportInput,
+    }
+    let Input { input } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = save_life_log(component_app.state(), input).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

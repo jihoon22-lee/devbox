@@ -1,0 +1,10 @@
+[
+  ["schema_version", "2"],
+  ["root_ownership_version", "2"],
+  ["next_root_id", "5"],
+  ["pdf_extractor_version", "pdf-v1"],
+  ["docx_extractor_version", "docx-v1"],
+  ["xls_extractor_version", "xls-v1"],
+  ["xlsx_extractor_version", "xlsx-v1"],
+  ["ods_extractor_version", "ods-v1"]
+]

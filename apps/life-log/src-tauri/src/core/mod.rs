@@ -14,3 +14,5 @@ pub mod project_snapshot;
 pub mod sessionizer;
 pub mod source_explanation;
 pub mod window;
+
+pub mod git_activity;

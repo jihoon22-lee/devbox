@@ -33,6 +33,8 @@ pub struct AppTotal {
 pub struct ProjectCommit {
     pub path: String,
     pub commits: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error_code: Option<String>,
 }
 
 /// git 집계

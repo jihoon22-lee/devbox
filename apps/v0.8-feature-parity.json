@@ -188,7 +188,7 @@
           "apps/everything-plus/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 17,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -200,6 +200,12 @@
         "tray": false,
         "autostart": "none in app",
         "globalShortcut": "none in app"
+      },
+      "implementationReview": {
+        "bundle": "B03",
+        "featureMappings": 20,
+        "state": "B03 internal behavior verified on Windows and actual WSL1/WSL2; delegated suite delivery and packaged release acceptance remain separate",
+        "evidence": "workthrough/2026-09-08-v08-b03-knowledge.md"
       }
     },
     {
@@ -225,7 +231,7 @@
           "apps/knowledge-base/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 41,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -237,6 +243,12 @@
         "tray": false,
         "autostart": "none in app",
         "globalShortcut": "Ctrl+Alt+K quick capture; registration failure is observable"
+      },
+      "implementationReview": {
+        "bundle": "B03",
+        "featureMappings": 49,
+        "state": "B03 internal behavior verified on Windows and actual WSL1/WSL2; delegated suite delivery and packaged release acceptance remain separate",
+        "evidence": "workthrough/2026-09-08-v08-b03-knowledge.md"
       }
     },
     {
@@ -263,7 +275,7 @@
           "apps/life-log/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 26,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -275,6 +287,12 @@
         "tray": true,
         "autostart": "Explicit HKCU Software/Microsoft/Windows/CurrentVersion/Run value LifeLog",
         "globalShortcut": "none in app"
+      },
+      "implementationReview": {
+        "bundle": "B03",
+        "featureMappings": 32,
+        "state": "B03 internal behavior verified on Windows and actual WSL1/WSL2; delegated suite delivery and packaged release acceptance remain separate",
+        "evidence": "workthrough/2026-09-08-v08-b03-knowledge.md"
       }
     },
     {
@@ -4005,11 +4023,29 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/applink.rs",
+        "packages/knowledge-features/src/search/lib/applink.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "producerVerified": true,
+      "integrationOwnerIssue": 549,
+      "integrationContract": "B07 connects authenticated suite AppLink/catalog/shortcut delivery; B03 retains the engine and reports unavailable until connected",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:watcher_statuses",
@@ -4019,11 +4055,25 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/commands/watcher.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:search_files",
@@ -4033,11 +4083,29 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/source_search.rs",
+        "apps/devbox-knowledge/src-tauri/src/search.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/search/api.source.test.ts",
+        "packages/knowledge-features/src/search/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/search.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:search_content",
@@ -4047,11 +4115,28 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/source_search.rs",
+        "apps/everything-plus/src-tauri/src/core/content.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/search/api.source.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/search.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:add_root",
@@ -4061,11 +4146,26 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search-settings: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/commands/indexing.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:remove_root",
@@ -4075,11 +4175,25 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search-settings: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:list_roots",
@@ -4089,11 +4203,25 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:index_now",
@@ -4103,11 +4231,25 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search-settings: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/commands/indexing.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:cancel_index",
@@ -4117,11 +4259,25 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search-settings: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/commands/indexing.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:index_status",
@@ -4131,11 +4287,25 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/commands/indexing.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:list_saved_queries",
@@ -4145,11 +4315,26 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs",
+        "apps/everything-plus/src-tauri/src/commands/saved_queries.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:save_saved_query",
@@ -4159,11 +4344,26 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search-settings: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs",
+        "apps/everything-plus/src-tauri/src/commands/saved_queries.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:delete_saved_query",
@@ -4173,11 +4373,26 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search-settings: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/search/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:open_file",
@@ -4187,11 +4402,27 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.opener: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/source_search.rs",
+        "apps/devbox-knowledge/src-tauri/src/search.rs",
+        "apps/everything-plus/src-tauri/src/commands/actions.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/search.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:reveal_file",
@@ -4201,11 +4432,27 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.opener: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/source_search.rs",
+        "apps/devbox-knowledge/src-tauri/src/search.rs",
+        "apps/everything-plus/src-tauri/src/commands/actions.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/search.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:open_targets",
@@ -4215,11 +4462,28 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.opener: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/open_targets.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "producerVerified": true,
+      "integrationOwnerIssue": 549,
+      "integrationContract": "B07 connects authenticated suite AppLink/catalog/shortcut delivery; B03 retains the engine and reports unavailable until connected",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:command:open_in",
@@ -4229,25 +4493,57 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.opener: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/everything-plus/src-tauri/src/core/open_targets.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/everything-plus/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "producerVerified": true,
+      "integrationOwnerIssue": 549,
+      "integrationContract": "B07 connects authenticated suite AppLink/catalog/shortcut delivery; B03 retains the engine and reports unavailable until connected",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:surface:App.tsx",
-      "sourcePath": "apps/everything-plus/src/App.tsx",
+      "sourcePath": "packages/knowledge-features/src/search/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/search/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/everything-plus/src/App.tsx",
+      "implementationPath": "packages/knowledge-features/src/search/App.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:store:src-tauri/src/core/db.rs",
@@ -4257,11 +4553,26 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "everything-plus:store:src-tauri/src/lib.rs",
@@ -4271,11 +4582,26 @@
       "product": "knowledge",
       "route": "search",
       "dataOwner": "search",
-      "authority": "search",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.search: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "WAL import preserves roots/saved queries and deleted-root references; rebuild derived indexes while retaining last-good rows. Query workers/references are transient; browser-owned preferences remain a B08 report input.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:take_pending_open",
@@ -4285,11 +4611,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/applink.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:render_markdown",
@@ -4299,11 +4640,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/markdown.rs",
+        "packages/knowledge-features/src/notes/components/MarkdownPreview.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:knowledge_watcher_status",
@@ -4313,11 +4669,25 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/watcher.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:analyze_wikilinks",
@@ -4327,11 +4697,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/wikilink.rs",
+        "packages/knowledge-features/src/notes/App.wikilinks.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:wikilink_candidates",
@@ -4341,11 +4726,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/notes/App.wikilinks.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:backlinks",
@@ -4355,11 +4755,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/notes/App.wikilinks.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:get_root",
@@ -4369,11 +4784,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/stores.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/vault_binding.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:set_root",
@@ -4383,11 +4813,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.migration: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/vault_binding.rs",
+        "apps/devbox-knowledge/src/VaultSettings.test.tsx",
+        "apps/devbox-knowledge/src/VaultSetup.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/vault_binding.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:list_tree",
@@ -4397,11 +4843,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/store.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:read_file",
@@ -4411,11 +4872,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/vault.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:open_inbound_note",
@@ -4425,11 +4901,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/inbound.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:write_file",
@@ -4439,11 +4930,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/store.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:create_file",
@@ -4453,11 +4959,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/store.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:create_directory",
@@ -4467,11 +4988,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/store.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:delete_file",
@@ -4481,11 +5017,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/entry_actions.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:entry_path",
@@ -4495,11 +5046,25 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/entry_actions.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:reveal_entry",
@@ -4509,11 +5074,25 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/entry_actions.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:open_targets",
@@ -4523,11 +5102,28 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/entry_actions.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "producerVerified": true,
+      "integrationOwnerIssue": 549,
+      "integrationContract": "B07 connects authenticated suite AppLink/catalog/shortcut delivery; B03 retains the engine and reports unavailable until connected",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:open_in",
@@ -4537,11 +5133,28 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/entry_actions.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "producerVerified": true,
+      "integrationOwnerIssue": 549,
+      "integrationContract": "B07 connects authenticated suite AppLink/catalog/shortcut delivery; B03 retains the engine and reports unavailable until connected",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:preview_quick_capture",
@@ -4551,11 +5164,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/docs.rs",
+        "apps/knowledge-base/src-tauri/src/core/capture.rs",
+        "packages/knowledge-features/src/notes/components/QuickCaptureDialog.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:save_quick_capture",
@@ -4565,11 +5194,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/docs.rs",
+        "apps/knowledge-base/src-tauri/src/core/capture.rs",
+        "packages/knowledge-features/src/notes/components/QuickCaptureDialog.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:discard_quick_capture_preview",
@@ -4579,11 +5224,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/docs.rs",
+        "apps/knowledge-base/src-tauri/src/core/capture.rs",
+        "packages/knowledge-features/src/notes/components/QuickCaptureDialog.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:search_docs",
@@ -4593,11 +5254,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:list_tags",
@@ -4607,11 +5283,25 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/db.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:daily_note",
@@ -4621,11 +5311,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/daily.rs",
+        "apps/devbox-knowledge/src/Daily.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/commands/daily.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:list_templates",
@@ -4635,11 +5340,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:create_template",
@@ -4649,11 +5370,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:update_template",
@@ -4663,11 +5400,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:delete_template",
@@ -4677,11 +5430,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:preview_template",
@@ -4691,11 +5460,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:discard_template_preview",
@@ -4705,11 +5490,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:save_template",
@@ -4719,11 +5520,27 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/templates.rs",
+        "apps/knowledge-base/src-tauri/src/core/templates.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:preview_knowledge_draft",
@@ -4733,11 +5550,28 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/session_summary.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:save_knowledge_draft",
@@ -4747,11 +5581,28 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/session_summary.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:discard_knowledge_draft",
@@ -4761,11 +5612,28 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/session_summary.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:renew_knowledge_draft",
@@ -4775,11 +5643,28 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/handoff.rs",
+        "apps/knowledge-base/src-tauri/src/core/session_summary.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:preview_rename",
@@ -4789,11 +5674,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/rename.rs",
+        "packages/knowledge-features/src/notes/App.wikilinks.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:apply_rename",
@@ -4803,11 +5703,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/rename.rs",
+        "packages/knowledge-features/src/notes/App.wikilinks.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:discard_rename_preview",
@@ -4817,11 +5732,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/core/rename.rs",
+        "packages/knowledge-features/src/notes/App.wikilinks.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:save_image_asset",
@@ -4831,11 +5761,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/commands/assets.rs",
+        "packages/knowledge-features/src/notes/lib/imageAssets.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:command:shortcut_status",
@@ -4845,81 +5790,173 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/knowledge-base/src-tauri/src/platform/mod.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/knowledge-base/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "producerVerified": true,
+      "integrationOwnerIssue": 549,
+      "integrationContract": "B07 connects authenticated suite AppLink/catalog/shortcut delivery; B03 retains the engine and reports unavailable until connected",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:App.tsx",
-      "sourcePath": "apps/knowledge-base/src/App.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/notes/App.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/knowledge-base/src/App.tsx",
+      "implementationPath": "packages/knowledge-features/src/notes/App.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/MarkdownEditor.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/MarkdownEditor.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/MarkdownEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/notes/components/MarkdownEditor.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/knowledge-base/src/components/MarkdownEditor.tsx",
+      "implementationPath": "packages/knowledge-features/src/notes/components/MarkdownEditor.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/MarkdownPreview.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/MarkdownPreview.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/MarkdownPreview.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/notes/components/MarkdownPreview.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/knowledge-base/src/components/MarkdownPreview.tsx",
+      "implementationPath": "packages/knowledge-features/src/notes/components/MarkdownPreview.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/QuickCaptureDialog.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/QuickCaptureDialog.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/QuickCaptureDialog.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/notes/components/QuickCaptureDialog.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/knowledge-base/src/components/QuickCaptureDialog.tsx",
+      "implementationPath": "packages/knowledge-features/src/notes/components/QuickCaptureDialog.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:surface:components/TemplateManager.tsx",
-      "sourcePath": "apps/knowledge-base/src/components/TemplateManager.tsx",
+      "sourcePath": "packages/knowledge-features/src/notes/components/TemplateManager.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/notes/components/TemplateManager.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/knowledge-base/src/components/TemplateManager.tsx",
+      "implementationPath": "packages/knowledge-features/src/notes/components/TemplateManager.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:store:src-tauri/src/commands/docs.rs",
@@ -4929,11 +5966,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:store:src-tauri/src/core/db.rs",
@@ -4943,11 +5995,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "knowledge-base:store:src-tauri/src/lib.rs",
@@ -4957,11 +6024,26 @@
       "product": "knowledge",
       "route": "notes",
       "dataOwner": "notes",
-      "authority": "notes",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.notes: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Keep vault Markdown/assets in place; consistently import templates/settings and remap IDs; rebuild FTS/links. Preview and writer handles are transient.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:get_digest",
@@ -4971,11 +6053,27 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/digest.rs",
+        "apps/life-log/src-tauri/src/core/export.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:cancel_digest",
@@ -4985,11 +6083,27 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/tracking.rs",
+        "apps/life-log/src-tauri/src/core/digest.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:save_digest",
@@ -4999,11 +6113,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/digest.rs",
+        "packages/knowledge-features/src/activity/api.export.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:autostart_status",
@@ -5013,11 +6142,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/autostart.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:set_autostart",
@@ -5027,11 +6170,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/autostart.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:knowledge_draft_history",
@@ -5041,11 +6198,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/draft_history.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:send_digest_to_knowledge",
@@ -5055,11 +6226,28 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/handoff.rs",
+        "apps/life-log/src-tauri/src/core/draft_history.rs",
+        "apps/knowledge-base/src-tauri/src/commands/handoff.rs",
+        "packages/knowledge-features/src/notes/App.applink.test.tsx"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:start_tracking",
@@ -5069,11 +6257,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/tracking.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:stop_tracking",
@@ -5083,11 +6285,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/tracking.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:is_tracking",
@@ -5097,11 +6313,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/tracking.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:set_idle_threshold",
@@ -5111,11 +6341,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/idle.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:get_idle_threshold",
@@ -5125,11 +6369,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/idle.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:export_life_log",
@@ -5139,11 +6397,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/export.rs",
+        "packages/knowledge-features/src/activity/api.export.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:save_life_log",
@@ -5153,11 +6426,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/export.rs",
+        "packages/knowledge-features/src/activity/api.export.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:get_privacy_rules",
@@ -5167,11 +6455,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/privacy.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:set_privacy_rules",
@@ -5181,11 +6483,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/privacy.rs",
+        "apps/life-log/src-tauri/src/core/export.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:redact_existing",
@@ -5195,11 +6512,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/privacy.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:timeline",
@@ -5209,11 +6541,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/db.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:app_stats",
@@ -5223,11 +6570,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/db.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:project_attribution",
@@ -5237,11 +6598,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/attribution.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/project_provider.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:integration_sources",
@@ -5251,11 +6627,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/commands/life.rs",
+        "apps/life-log/src-tauri/src/core/source_explanation.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:set_projects",
@@ -5265,11 +6656,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/export.rs",
+        "apps/life-log/src-tauri/src/core/project_snapshot.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:probe_project",
@@ -5279,11 +6685,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/git_activity.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:get_projects",
@@ -5293,11 +6713,25 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/export.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:get_day",
@@ -5307,11 +6741,28 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/db.rs",
+        "apps/life-log/src-tauri/src/core/git_activity.rs",
+        "apps/life-log/src-tauri/src/core/export.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:command:get_range",
@@ -5321,25 +6772,56 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/life-log/src-tauri/src/core/git_activity.rs",
+        "apps/life-log/src-tauri/src/core/export.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/life-log/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:surface:App.tsx",
-      "sourcePath": "apps/life-log/src/App.tsx",
+      "sourcePath": "packages/knowledge-features/src/activity/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "packages/knowledge-features/src/activity/App.test.ts"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "baselineSourcePath": "apps/life-log/src/App.tsx",
+      "implementationPath": "packages/knowledge-features/src/activity/App.tsx",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:store:src-tauri/src/commands/life.rs",
@@ -5349,11 +6831,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:store:src-tauri/src/core/db.rs",
@@ -5363,11 +6860,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:store:src-tauri/src/core/export.rs",
@@ -5377,11 +6889,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:store:src-tauri/src/core/project_snapshot.rs",
@@ -5391,11 +6918,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "life-log:store:src-tauri/src/lib.rs",
@@ -5405,11 +6947,26 @@
       "product": "knowledge",
       "route": "activity",
       "dataOwner": "activity",
-      "authority": "activity",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "knowledge.activity: native installation/session/window and owner admission; route metadata alone grants no write or launch authority",
+      "migration": "Consistently import native sessions/settings/draft history with receipts and privacy/retention preservation; collection remains OFF pending product consent. Older Activity Timeline input is separately reported by B08.",
+      "test": [
+        "apps/devbox-knowledge/src-tauri/src/component.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+        "apps/devbox-knowledge/src-tauri/src/core/import_plan.rs"
+      ],
       "ownerIssue": 545,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
+      "dispatchPath": "apps/devbox-knowledge/src-tauri/src/component.rs",
+      "evidence": [
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272504",
+        "docs/evidence/v0.8-knowledge-wsl2.json"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verificationScope": "B03 internal behavior verified through preserved shared UI/native regressions and actual Windows import/lifecycle/WSL1 plus exact-source local WSL2 engine fixtures; delegated suite delivery and packaged release acceptance remain separate",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1"
     },
     {
       "legacyFeatureId": "devbox-manager:command:take_pending_open",
