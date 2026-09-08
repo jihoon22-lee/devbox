@@ -237,7 +237,7 @@
         "saved_queries"
       ],
       "treatment": "Preserve root identity, exclusions and saved query definitions; these are not search cache.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -246,8 +246,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "everything-plus",
@@ -257,7 +261,7 @@
         "meta"
       ],
       "treatment": "Accept known schema/ownership markers and bounded extractor versions; preserve original metadata, remap roots using the destination allocator and receipts, and reject unknown/future metadata without activation.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -266,8 +270,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "everything-plus",
@@ -280,7 +288,7 @@
         "file_content_fts"
       ],
       "treatment": "Rebuild only after authoritative roots/settings are validated; retain original generation until cutover succeeds.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -289,8 +297,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "knowledge-base",
@@ -301,7 +313,7 @@
         "note_templates"
       ],
       "treatment": "Preserve vault selection and user templates before rebuilding indexes.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -310,8 +322,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "knowledge-base",
@@ -322,7 +338,7 @@
         "vault assets"
       ],
       "treatment": "Keep the user-selected vault in place; no automatic relocation or copying of source notes.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -331,8 +347,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "knowledge-base",
@@ -345,7 +365,7 @@
         "wikilinks"
       ],
       "treatment": "Rebuild from the preserved vault; do not reset authoritative settings/templates with the index.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -354,8 +374,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "life-log",
@@ -367,7 +391,7 @@
         "knowledge_draft_history"
       ],
       "treatment": "Preserve activity/privacy/retention and handoff history; keep collection disabled until explicit cutover. The older activitytimeline DB is a separate legacy input.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-knowledge/src-tauri/src/core/import_rows.rs",
       "schemaMapping": "docs/architecture/v0.8-knowledge.md",
       "test": [
@@ -376,8 +400,12 @@
         ".github/scripts/windows-knowledge-migration.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-08-v08-b03-knowledge.md"
-      ]
+        "workthrough/2026-09-08-v08-b03-knowledge.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34221272542"
+      ],
+      "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
+      "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
     },
     {
       "legacyApp": "devbox-manager",
