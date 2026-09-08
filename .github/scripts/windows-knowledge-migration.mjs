@@ -8,7 +8,11 @@ import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { createHash, randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { Cdp, unusedPort, waitForCdp, windowsLocalAppData, windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy } from "./windows-packaged-smoke.mjs";
+import { Cdp, unusedPort, waitForCdp, windowsLocalAppData, windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy, allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+import { ownedDescendantsFromSnapshot } from "./windows-process-identity.mjs";
+import { measureInput, measureIdle, evaluateBudgets, performanceHost } from "./product-foundation-performance.mjs";
+const performanceConfig = JSON.parse(readFileSync(new URL("./product-foundation-performance.json", import.meta.url), "utf8"));
+assert.equal(performanceConfig.schemaVersion, 1); assert.equal(performanceConfig.idleSampleMs, 5000);
 assert.equal(process.platform, "win32"); assert.equal(process.env.GITHUB_ACTIONS, "true"); assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 const directory = mkdtempSync(path.join(tmpdir(), "devbox-knowledge-migration-fixture-"));
 const base = windowsLocalAppData();
@@ -53,6 +57,7 @@ async function start(executable, title, profile) {
   const policy = elevated ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
   const item = { executable, policy, child: null, cdp: null }; live.add(item);
   if (policy) installElevatedCdpPolicy(policy);
+  item.launchedAt = performance.now();
   item.child = spawn(executable, [], { env: childEnvironment({ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: profile }), stdio: "ignore" });
   await once(item.child, "spawn"); const target = await waitForCdp(port, title);
   item.cdp = new Cdp(target.webSocketDebuggerUrl); await item.cdp.connect(); return item;
@@ -97,8 +102,8 @@ async function command(item, component, method, args = {}) {
     const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}};
     return invoke("plugin:knowledge|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
 }
-async function sourceQuery(item, source, query, filter = {}) {
-  let result = await command(item, "knowledge.search", "source_query", { source, query, mode: "name", limit: 200, filter });
+async function sourceQuery(item, source, query, filter = {}, limit = 200, mode = "name") {
+  let result = await command(item, "knowledge.search", "source_query", { source, query, mode, limit, filter });
   assert.equal(result.operation.outcome.state, "succeeded"); const generation = result.value.generation;
   for (let i = 0; i < 60 && result.value.state === "running"; i++) {
     await delay(80); result = await command(item, "knowledge.search", "source_poll", { generation });
@@ -310,9 +315,13 @@ try {
   await item.cdp.evaluate(`(() => { const source=document.querySelector('.knowledge-feature-search select[aria-label="검색 범위"]');
     source.value="notes"; source.dispatchEvent(new Event("change",{bubbles:true}));
     const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
-    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"Keep"); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
-  await wait(item.cdp, `Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).some(row=>row.innerText.includes("Keep new product note") && row.innerText.includes("Notes") && row.querySelector('button[title="열기"]:not(:disabled)'))`, "Notes source result was not available");
-  await item.cdp.evaluate(`Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).find(row=>row.innerText.includes("Keep new product note")).querySelector('button[title="열기"]').click()`);
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"new-product"); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+  await wait(item.cdp, `Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).some(row=>row.innerText.includes("new-product") && row.innerText.includes("Notes") && row.querySelector('button[title="열기"]:not(:disabled)'))`, "Notes source result was not available");
+  const bodyMatches = await sourceQuery(item, "notes", "Keep", {}, 100, "content");
+  assert.ok(bodyMatches.rows.some(row => row.value.notePath === "Notes/new-product.md" && row.availability === "available"));
+  await command(item, "knowledge.search", "source_cancel", { generation: bodyMatches.generation });
+  evidence.notesNameAndBodyQueriesVerified = true;
+  await item.cdp.evaluate(`Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).find(row=>row.innerText.includes("new-product")).querySelector('button[title="열기"]').click()`);
   await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes:not([hidden])") && document.querySelector(".knowledge-feature-notes").innerText.includes("Keep new product note")', "opaque Notes result did not open in its editor");
   assert.deepEqual(markdownFiles(), afterSummary);
   await command(item, "knowledge.search-settings", "index_now");
@@ -406,10 +415,77 @@ try {
   assert.equal(digest(path.join(vault,"Notes/original.md")),originalNote); assert.equal(logicalSources(),frozen);
   evidence.vaultScheduleKeptLiveBinding=true; evidence.vaultPreviewDidNotWrite=true; evidence.vaultCancellationKeptOriginal=true;
   evidence.vaultExplicitRebindPreservedFilesAndTemplates=true; evidence.vaultSourceIdentityChanged=true;
+  progress("configured-notes-performance");
+  await stop(item); item = await product(executable, profile);
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "configured Notes did not become ready");
+  evidence.performance = {
+    host: performanceHost(), build: "hidden Windows debug executable; not a packaged release comparison",
+    conditions: {
+      cold: "new process with the configured synthetic import/vault profile; OS cache not flushed",
+      input: "inert F24 event acknowledgement, using the baseline harness",
+      idle: "ten seconds after configured Notes startup; collection OFF; five-second owned-process sample before the 500-file workload",
+      warm: "second invocation restores the same hidden product window; no second owner",
+      search: "500 generated UTF-8 text files, native file source with exact root filter; ten exact filename queries, including async polling and identity verification",
+    },
+    coldRendererReadyMs: Math.round(performance.now() - item.launchedAt),
+    firstKeyboardEventMs: await measureInput(item.cdp),
+    firstInputObservedMs: Math.round(performance.now() - item.launchedAt),
+  };
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  await delay(Math.max(0, 10000 - (performance.now() - item.launchedAt)));
+  const processIdentity = allWindowsProcesses().find(process => process.Pid === item.child.pid);
+  assert.ok(processIdentity && running(item));
+  const measuredExe = lstatSync(processIdentity.Path, { bigint: true }), ownedExe = lstatSync(executable, { bigint: true });
+  assert.equal(measuredExe.dev, ownedExe.dev); assert.equal(measuredExe.ino, ownedExe.ino);
+  evidence.performance.idle = await measureIdle(() => {
+    const current = allWindowsProcesses();
+    assert.ok(current.some(process => process.Pid === processIdentity.Pid && process.Created === processIdentity.Created && process.Path === processIdentity.Path && process.Name === processIdentity.Name));
+    return [processIdentity, ...ownedDescendantsFromSnapshot(processIdentity, current)];
+  }, performanceConfig.idleSampleMs);
+  progress("500-file-source-performance");
+  const performanceRoot = path.join(directory, "performance-root"); mkdirSync(performanceRoot);
+  for (let i = 0; i < 500; i++) writeFileSync(path.join(performanceRoot, `fixturesearch${String(i).padStart(4, "0")}.txt`), "synthetic UTF-8 index fixture\n", { flag: "wx" });
+  const priorRoots = new Set((await command(item, "knowledge.search", "list_roots")).value.map(root => root.id));
+  const indexStarted = performance.now();
+  assert.equal((await command(item, "knowledge.search-settings", "add_root", { path: performanceRoot, indexContent: false })).operation.outcome.state, "succeeded");
+  const addedRoots = (await command(item, "knowledge.search", "list_roots")).value.filter(root => !priorRoots.has(root.id)); assert.equal(addedRoots.length, 1);
+  const performanceFilter = { sourceRootId: addedRoots[0].id };
+  let indexedCount = 0;
+  while (performance.now() - indexStarted < performanceConfig.budgets.index500FilesMs) {
+    const status = (await command(item, "knowledge.search", "index_status")).value;
+    if (!status.indexing) {
+      const counted = await sourceQuery(item, "files", "fixturesearch", performanceFilter, 2000);
+      indexedCount = counted.rows.length;
+      await command(item, "knowledge.search", "source_cancel", { generation: counted.generation });
+      if (indexedCount === 500) break;
+    }
+    await delay(100);
+  }
+  assert.equal(indexedCount, 500, "500-file native index did not complete");
+  evidence.performance.workload = { kind: "500-file-native-index-and-10-source-searches", result: "measured", indexMs: Math.round(performance.now() - indexStarted), searchMs: [] };
+  for (let i = 0; i < 10; i++) {
+    const query = `fixturesearch${String(i).padStart(4, "0")}`, started = performance.now();
+    const found = await sourceQuery(item, "files", query, performanceFilter);
+    evidence.performance.workload.searchMs.push(Math.round(performance.now() - started));
+    assert.equal(found.state, "complete"); assert.equal(found.rows.length, 1);
+    assert.equal(found.rows[0].value.name, `${query}.txt`); assert.equal(found.rows[0].availability, "available");
+    await command(item, "knowledge.search", "source_cancel", { generation: found.generation });
+  }
   progress("explicit-close-policy");
   assert.equal((await command(item, "knowledge.activity", "set_close_policy", { closeToTray: true })).value.closeToTray, true);
   const hidden = closeWindow(item); await delay(500); assert.equal(running(item), true); assert.equal(visible(hidden), false);
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  const warmStarted = performance.now();
+  const secondary = { executable, policy: null, cdp: null, child: spawn(executable, [], { env: childEnvironment({ WEBVIEW2_USER_DATA_FOLDER: profile }), stdio: "ignore" }) }; live.add(secondary);
+  await once(secondary.child, "spawn");
+  while (running(secondary) && performance.now() - warmStarted < performanceConfig.budgets.warmExistingWindowMs) await delay(50);
+  assert.equal(secondary.child.exitCode, 0, "relaunch created another live owner");
+  let restored = visible(hidden);
+  while (!restored && performance.now() - warmStarted < performanceConfig.budgets.warmExistingWindowMs) { await delay(100); restored = visible(hidden); }
+  assert.ok(restored && running(item));
+  evidence.performance.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
+  evidence.performance.budget = evaluateBudgets(evidence.performance, performanceConfig, "knowledge");
+  assert.equal(evidence.performance.budget.passed, true, `Knowledge performance budget failed: ${evidence.performance.budget.violations.join(", ")}`);
   // Crash/restart checks persisted preference; this is explicitly not a tray
   // Quit test. Default close below must terminate the process normally.
   await stop(item, true); item = await product(executable, profile);
