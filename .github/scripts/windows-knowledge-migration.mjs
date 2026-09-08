@@ -376,7 +376,7 @@ try {
   await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "Notes did not observe repeated activation");
   const scheduleVault = async () => {
     await click(item.cdp, "노트 폴더");
-    await wait(item.cdp, '!!document.querySelector("#vault-settings-title")', "vault settings missing");
+    await wait(item.cdp, '!!document.querySelector("#vault-settings-title") && !!document.querySelector(\'[aria-label="연결할 노트 폴더"]:not(:disabled)\')', "vault settings did not finish loading");
     await item.cdp.evaluate(`(() => { const input=document.querySelector('[aria-label="연결할 노트 폴더"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(selectedVault)}); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
     await click(item.cdp, "다음 시작에서 폴더 확인");
     await wait(item.cdp, 'document.body.innerText.includes("다음 시작에서 확인할 폴더")', "vault choice was not scheduled");
