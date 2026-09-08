@@ -3,12 +3,12 @@
 
 use crate::core::recovery::{RecoveryEntry, RecoveryFile};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 pub const RECOVERY_FILE_NAME: &str = "recovery.json";
 
 fn recovery_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app.path().app_local_data_dir().map_err(|e| e.to_string())?;
+    let dir = crate::component::data_root(app).map_err(|e| e.to_string())?;
     Ok(dir.join(RECOVERY_FILE_NAME))
 }
 
@@ -64,4 +64,63 @@ pub fn discard_recovery(app: AppHandle, path: Option<String>) -> Result<(), Stri
 #[tauri::command]
 pub fn apply_recovery(path: String, content: String) -> Result<(), String> {
     std::fs::write(&path, content).map_err(|e| e.to_string())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_save_recovery(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        entries: Vec<RecoveryEntry>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    save_recovery(_component_app.clone(), input.entries)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_load_recovery(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = load_recovery(_component_app.clone());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_discard_recovery(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    discard_recovery(_component_app.clone(), input.path)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_apply_recovery(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        content: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    apply_recovery(input.path, input.content)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }

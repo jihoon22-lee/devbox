@@ -1,11 +1,14 @@
+pub mod component;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
 mod applink;
 mod commands;
 mod core;
 mod integration;
 
+#[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

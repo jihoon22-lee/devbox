@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke } from "../transport";
+const invoke = componentInvoke("workspace.overview");
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
 

@@ -1349,6 +1349,96 @@ fn sync_parent(_target: &Path) -> Result<(), FileError> {
     Ok(())
 }
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_open_file(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: OpenFileRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = open_file(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_save_file(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: SaveFileRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = save_file(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_rename_file_action(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RenameFileRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = rename_file_action(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_delete_file_action(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: FileActionRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    delete_file_action(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_reveal_file_action(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    reveal_file_action(_component_app.clone(), input.path).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_validate_encoding(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: ValidateEncodingRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    validate_encoding(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

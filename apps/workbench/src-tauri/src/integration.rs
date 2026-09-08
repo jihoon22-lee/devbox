@@ -53,7 +53,7 @@ pub(crate) fn publish_profiles_best_effort(store: &ProfileStore) {
 }
 
 pub(crate) fn write_profiles(store: &ProfileStore) -> Result<(), String> {
-    write_profiles_in(&devbox_integration::integration_root(), store)
+    write_profiles_in(&crate::component::integration_root(), store)
 }
 
 /// Refresh the durable profile projections while Workbench is running. The

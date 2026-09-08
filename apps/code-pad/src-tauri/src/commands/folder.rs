@@ -162,6 +162,51 @@ pub async fn workspace_capabilities(path: String) -> Result<WorkspaceCapabilitie
     .map_err(|error| format!("작업 폴더 확인 작업이 중단되었습니다: {error}"))?
 }
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_list_workspace_files(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_workspace_files(input.path).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_canonicalize_workspace(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = canonicalize_workspace(input.path).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_workspace_capabilities(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = workspace_capabilities(input.path).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

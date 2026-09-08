@@ -299,3 +299,11 @@ aria 오류 상태를 제공한다. backend 오류는 경로·credential·subpro
   빈 overlay만 전달한다.
 
 설계 문서: `docs/superpowers/specs/2026-08-14-workbench-design.md`
+
+### v0.8 component reuse
+
+The legacy executable still uses its original native startup and data namespace.
+Its shared frontend and tests now live in `packages/workspace-features/src/overview`.
+The optional native `standalone` feature is enabled by default; Workspace can
+reuse the typed component adapter without embedding the legacy frontend or calling
+its startup. B04 product integration and platform acceptance remain in progress.

@@ -224,6 +224,23 @@ fn has_url_scheme(value: &str) -> bool {
 
 use base64::Engine;
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_render_preview(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        content: String,
+        workspace_root: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = render_preview(input.path, input.content, input.workspace_root).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

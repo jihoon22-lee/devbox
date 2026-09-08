@@ -551,6 +551,49 @@ fn is_link_metadata(metadata: &Metadata) -> bool {
     false
 }
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_preview_project_environment(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: ProjectEnvironmentPreviewRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = preview_project_environment(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.request,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_cancel_project_environment(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_project_environment(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.request_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

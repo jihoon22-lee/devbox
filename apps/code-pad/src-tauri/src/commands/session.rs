@@ -10,7 +10,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 #[cfg(unix)]
 use std::fs::File;
@@ -28,8 +28,7 @@ pub struct LoadedSession {
 }
 
 pub fn session_path(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
+    crate::component::data_root(app)
         .map(|directory| directory.join(SESSION_FILE_NAME))
         .map_err(|error| format!("앱 데이터 폴더를 확인할 수 없습니다: {error}"))
 }
@@ -183,6 +182,34 @@ pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String
         .await
         .map_err(|error| format!("세션 저장 작업이 중단되었습니다: {error}"))?
         .map_err(|error| format!("세션을 저장할 수 없습니다: {error}"))
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_load_session(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = load_session(_component_app.clone()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_save_session(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session: Session,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    save_session(_component_app.clone(), input.session).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

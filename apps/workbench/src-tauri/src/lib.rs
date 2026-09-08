@@ -1,14 +1,19 @@
 mod applink;
 mod commands;
+pub mod component;
 mod core;
 mod integration;
 mod platform;
 
+#[cfg(feature = "standalone")]
 use commands::workspace::{profile_store_state, run_registry, ProfileStoreState};
+#[cfg(feature = "standalone")]
 use std::sync::Arc;
+#[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): 신규 앱 — identifier 변경 이전 데이터가 없어 마이그레이션 없음.
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

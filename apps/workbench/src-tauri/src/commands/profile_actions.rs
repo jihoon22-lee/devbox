@@ -60,3 +60,49 @@ pub fn open_profile_in(
         .map(|_| ())
         .map_err(|_| "선택한 앱으로 프로필을 열 수 없습니다".to_string())
 }
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_profile_open_targets(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = profile_open_targets(_component_app.clone(), input.profile_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_profile_copy_path(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = profile_copy_path(_component_app.clone(), input.profile_id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_open_profile_in(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        app_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    open_profile_in(_component_app.clone(), input.profile_id, input.app_id)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}

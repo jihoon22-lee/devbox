@@ -28,7 +28,7 @@ use std::path::PathBuf;
 use std::process::Stdio;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
 
@@ -71,10 +71,7 @@ struct LifeLogProjectEntry {
 }
 
 fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let dir = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|_| PROFILE_PATH_ERROR.to_string())?;
+    let dir = crate::component::data_root(app).map_err(|_| PROFILE_PATH_ERROR.to_string())?;
     Ok(dir.join(PROFILE_FILE))
 }
 
@@ -800,8 +797,12 @@ async fn read_run_manager_snapshot_with_control(
         budget
             .check(&worker_token)
             .map_err(OperationError::message)?;
-        devbox_integration::read_snapshot("run-manager", 1)
-            .map_err(|_| "서비스 snapshot을 읽을 수 없습니다".to_string())
+        devbox_integration::read_snapshot_in(
+            &crate::component::integration_root(),
+            "run-manager",
+            1,
+        )
+        .map_err(|_| "서비스 snapshot을 읽을 수 없습니다".to_string())
     });
     tokio::pin!(worker);
     let result = tokio::select! {
@@ -2368,11 +2369,12 @@ pub fn run_registry() -> Arc<RunRegistry> {
 ///
 /// snapshot 전체를 먼저 검증하고 임시 store에 반영한 뒤에만 caller의 store를 교체한다.
 /// 파일 없음은 정상적인 no-op이고 손상/스키마 불일치는 기존 store를 그대로 둔 채 실패한다.
+#[cfg(feature = "standalone")]
 pub fn absorb_life_log_projects(store: &mut ProfileStore) -> Result<LifeLogAbsorbReport, String> {
-    absorb_life_log_projects_in(store, &devbox_integration::integration_root())
+    absorb_life_log_projects_in(store, &crate::component::integration_root())
 }
 
-fn absorb_life_log_projects_in(
+pub fn absorb_life_log_projects_in(
     store: &mut ProfileStore,
     integration_root: &std::path::Path,
 ) -> Result<LifeLogAbsorbReport, String> {
@@ -2522,6 +2524,268 @@ fn profile_from_life_log_entry(
     profile.wsl = imported_wsl;
     profile.git_root = Some(windows_path);
     Ok(Some(profile))
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_list_profiles(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_profiles(_component_app.clone())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_create_profile(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile: ProjectProfile,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = create_profile(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_update_profile(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile: ProjectProfile,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    update_profile(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile,
+    )?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_delete_profile(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    delete_profile(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.id,
+    )?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_git_status(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        projects: Vec<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = git_status(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.projects,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_project_health(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        request_id: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = project_health(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+        input.request_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_cancel_project_health(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        request_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_project_health(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+        input.request_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_cancel_start_workspace(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_start_workspace(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_start_workspace(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = start_workspace(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_retry_workspace(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        run_id: String,
+        profile_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = retry_workspace(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.run_id,
+        input.profile_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_stop_workspace(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        run_id: String,
+        profile_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = stop_workspace(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.run_id,
+        input.profile_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_current_workspace_run(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = current_workspace_run(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

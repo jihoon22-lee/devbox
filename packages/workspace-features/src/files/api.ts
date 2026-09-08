@@ -1,4 +1,7 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted } from "../transport";
+// This selects a transport owner only. Native dispatch has its own closed
+// method lists and caller/session checks; this predicate grants no authority.
+const invoke = componentInvoke(method => method.startsWith("lsp_") || method.includes("_lsp_") || method.includes("language_server") ? "workspace.lsp" : "workspace.files");
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { open } from "@tauri-apps/plugin-dialog";
 import type {
@@ -107,7 +110,7 @@ export function revealFileAction(path: string): Promise<void> {
 }
 
 export function readClipboardText(): Promise<string> {
-  return readText();
+  return isProductHosted() ? invoke<string>("read_clipboard_text") : readText();
 }
 
 export function listWorkspaceFiles(path: string): Promise<WorkspaceFiles> {
@@ -228,6 +231,7 @@ export function installLsp(
 }
 
 export async function pickLspArchives(): Promise<string[]> {
+  if (isProductHosted()) return componentInvoke("workspace.lsp")<string[]>("pick_lsp_archives");
   const selected = await open({
     directory: false,
     multiple: true,

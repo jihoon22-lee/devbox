@@ -66,3 +66,11 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
 설계 문서: `docs/superpowers/specs/2026-08-12-code-pad-design.md`
+
+### v0.8 component reuse
+
+The legacy executable still uses its original native startup and data namespace.
+Its shared frontend and tests now live in `packages/workspace-features/src/files`.
+The optional native `standalone` feature is enabled by default; Workspace can
+reuse the typed component adapter without embedding the legacy frontend or calling
+its startup. B04 product integration and platform acceptance remain in progress.

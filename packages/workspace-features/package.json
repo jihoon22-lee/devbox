@@ -6,7 +6,8 @@
   "exports": {
     "./overview": "./src/overview/App.tsx",
     "./source": "./src/source/App.tsx",
-    "./files": "./src/files/App.tsx"
+    "./files": "./src/files/App.tsx",
+    "./transport": "./src/transport.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

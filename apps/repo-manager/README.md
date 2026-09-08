@@ -387,3 +387,11 @@ cleanup batch는 여러 branch/worktree mutation을 하나의 OS/Git transaction
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
 설계 문서: `docs/superpowers/specs/2026-08-14-repo-manager-design.md`
+
+### v0.8 component reuse
+
+The legacy executable still uses its original native startup and data namespace.
+Its shared frontend and tests now live in `packages/workspace-features/src/source`.
+The optional native `standalone` feature is enabled by default; Workspace can
+reuse the typed component adapter without embedding the legacy frontend or calling
+its startup. B04 product integration and platform acceptance remain in progress.

@@ -149,7 +149,7 @@ pub async fn dependency_enrichment_preview(
         return Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into());
     }
     let now_ms = now_epoch_ms();
-    let common_root = devbox_integration::common_root();
+    let common_root = crate::component::common_root();
     let prepared = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
         let _analysis = dependency_analysis_lock()
             .try_lock()
@@ -228,7 +228,7 @@ pub async fn dependency_enrichment_execute(
     let mut resolved =
         resolve_enrichment(&stored.plan, osv_network, &deps_network, completed_at_ms);
 
-    let common_root = devbox_integration::common_root();
+    let common_root = crate::component::common_root();
     let updates = resolved.updates.clone();
     let cache_persisted = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
         if updates.is_empty() {
@@ -510,6 +510,36 @@ fn prepare_cache_directory(common_root: &Path, directory: &Path) -> Result<(), S
     }
     devbox_filesystem::ensure_no_links(directory)
         .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_dependency_enrichment_preview(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: DependencyEnrichmentPreviewRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = dependency_enrichment_preview(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_dependency_enrichment_execute(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: DependencyEnrichmentExecuteRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = dependency_enrichment_execute(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
