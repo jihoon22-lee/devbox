@@ -707,11 +707,11 @@ pub fn merge(
                 let supported = match key {
                     "schema_version" | "root_ownership_version" => value == "2",
                     "next_root_id" => value.parse::<i64>().is_ok_and(|id| id > 0),
-                    "pdf_extractor_version"
-                    | "docx_extractor_version"
-                    | "xls_extractor_version"
-                    | "xlsx_extractor_version"
-                    | "ods_extractor_version" => value.len() <= 20 && value.parse::<u64>().is_ok(),
+                    "pdf_extractor_version" => value == "pdf-v1",
+                    "docx_extractor_version" => value == "docx-v1",
+                    "xls_extractor_version" => value == "xls-v1",
+                    "xlsx_extractor_version" => value == "xlsx-v1",
+                    "ods_extractor_version" => value == "ods-v1",
                     _ => false,
                 };
                 if supported {
@@ -991,14 +991,27 @@ mod tests {
         destination
             .execute_batch("INSERT INTO roots VALUES(7,'C:/existing',0);")
             .unwrap();
+        // Real v0.7 markers are named versions; an empty initialized DB has
+        // no completed format-scan markers and cannot represent this case.
+        let metadata: Vec<(String, String)> = serde_json::from_str(include_str!(
+            "../../tests/fixtures/legacy-search-meta-v070.json"
+        ))
+        .unwrap();
+        let restore_metadata = || {
+            legacy
+                .execute("DELETE FROM meta WHERE key='future_user_exclusions'", [])
+                .unwrap();
+            for (key, value) in &metadata {
+                legacy.execute("INSERT INTO meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value]).unwrap();
+            }
+        };
         for (key, value) in [
             ("future_user_exclusions", "keep-original"),
             ("root_ownership_version", "3"),
             ("next_root_id", "invalid"),
+            ("pdf_extractor_version", "pdf-v2"),
         ] {
-            legacy
-                .execute("DELETE FROM meta WHERE key='future_user_exclusions'", [])
-                .unwrap();
+            restore_metadata();
             legacy.execute("INSERT INTO meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value]).unwrap();
             assert_eq!(
                 merge(
@@ -1026,19 +1039,8 @@ mod tests {
                     .unwrap(),
                 value
             );
-            legacy
-                .execute(
-                    "UPDATE meta SET value='2' WHERE key='root_ownership_version'",
-                    [],
-                )
-                .unwrap();
         }
-        legacy
-            .execute("UPDATE meta SET value='5' WHERE key='next_root_id'", [])
-            .unwrap();
-        legacy
-            .execute("INSERT INTO meta VALUES('pdf_extractor_version','1')", [])
-            .unwrap();
+        restore_metadata();
         let report = run(&source, &mut destination, Source::Search, false);
         assert_eq!(report.imported, 1);
         assert_eq!(count(&destination, "roots"), 2);
