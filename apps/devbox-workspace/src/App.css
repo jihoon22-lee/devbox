@@ -12,3 +12,8 @@
 .workspace-definitions button { margin: 8px 8px 8px 0; padding: 6px 12px; }
 .workspace-definitions pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
 .workspace-definitions details { margin-block: 12px; }
+
+.workspace-definition-editor textarea { display: block; width: 100%; min-height: 240px; font-family: monospace; resize: vertical; }
+.workspace-definition-editor label { display: block; margin-block: 12px; }
+.workspace-definition-comparison { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 640px) { .workspace-definition-comparison { grid-template-columns: 1fr; } }

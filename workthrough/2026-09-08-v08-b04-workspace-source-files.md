@@ -139,9 +139,33 @@ to the Windows UI fixture, which verifies the returned root against its owned
 directory before writing fixture files. Final affected all passed in **430.582
 seconds** under the shared 8 GiB cap (cgroup peak 5,652,332,544 bytes).
 
+## Reviewed definition authoring
+
+Project settings now edit/import JSON with native before/after and effective diff,
+then save only the one-time reviewed token. A native load revision detects stale
+editor bases. Shared export excludes the local overlay. Local editing preserves
+Secret/API owner references; arbitrary JSON cannot grant their authority.
+
+One target is written per review. Save durably revokes trust before file IO, so a
+failed write can leave the prior definitions untrusted. Existing files reuse Code
+Pad's bounded object/mtime/size/hash writer and preserve CRLF. New files are synced
+and published without overwrite; unsupported hard-link volumes fail, and a failed
+first save may leave an empty `.devbox` directory. Source and parent changes reject
+pending saves; the UI preserves drafts on conflict. No automatic commit/execution
+or cross-file transaction is claimed.
+
+Focused validation passed **58 Rust tests + strict Clippy**, Workspace build and
+**11 UI tests** in **37.531 seconds** under the shared cap. Regressions cover concurrent
+creation, changed bytes/replaced objects, parent links, CRLF, expired validation,
+local owner references, explicit review/save and late-token cleanup. The Windows
+fixture now additionally exercises native manifest creation, stale/cancel/replay
+rejection, UI save and local precedence; this authoring version has not run on
+Windows yet. Final affected all passed in **411.265 seconds** under the shared
+8 GiB cap (cgroup peak **5,826,940,928 bytes**).
+
 ## Remaining acceptance
 
-Source/Dependencies routing, complete Git/LSP execution-trust evidence and manifest IO, importer mappings,
+Source/Dependencies routing, complete Git/LSP execution-trust evidence, importer mappings,
 Windows LSP integration and WSL-native transport remain incomplete. Files currently
 serializes native IO under one state mutex; remote independent cancellation needs
 work before WSL acceptance. Native file-dialog selection is implemented but has no

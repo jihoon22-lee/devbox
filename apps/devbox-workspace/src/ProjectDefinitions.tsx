@@ -1,9 +1,11 @@
 import {useEffect, useRef, useState} from "react";
 import type {Description} from "@devbox/product-shell/api";
+import DefinitionEditor from "./DefinitionEditor";
 import {componentCall, nativeCall} from "./native";
 
 interface View {
   registryRevision: number;
+  editRevision: string;
   project: Record<string, unknown>;
   local: Record<string, unknown>;
   effective: {tasks:Record<string,{source:string;selector:string}>;toolchains:Record<string,{tool:string;version:string}>};
@@ -19,6 +21,7 @@ export default function ProjectDefinitions({description,onDirtyChange,onChanged}
   const [open,setOpen]=useState(false);
   const [view,setView]=useState<View|null>(null);
   const [preview,setPreview]=useState<Preview|null>(null);
+  const [editing,setEditing]=useState(false);
   const [busy,setBusy]=useState(false);
   const [error,setError]=useState("");
   const sequence=useRef(0);
@@ -26,7 +29,7 @@ export default function ProjectDefinitions({description,onDirtyChange,onChanged}
   const busyRef=useRef(false);
   const contextKey=JSON.stringify(description.context);
   const call=<T,>(method:string,args:Record<string,unknown>={})=>componentCall<T>(description,"workspace.definitions",method,args,"overview");
-  useEffect(()=>{onDirtyChange(busy||!!preview);},[busy,preview,onDirtyChange]);
+  useEffect(()=>{onDirtyChange(busy||!!preview||editing);},[busy,preview,editing,onDirtyChange]);
   useEffect(()=>()=>onDirtyChange(false),[onDirtyChange]);
   useEffect(()=>{
     setOpen(false);setView(null);setPreview(null);setError("");setBusy(false);busyRef.current=false;
@@ -50,7 +53,7 @@ export default function ProjectDefinitions({description,onDirtyChange,onChanged}
     await call("cancel",{previewId:preview.previewId});if(sequence.current!==request)return;pending.current=null;setPreview(null);
   }
   return <section className="workspace-definitions" aria-label="프로젝트 설정" aria-busy={busy}>
-    <button type="button" disabled={busy} onClick={()=>void act(async request=>{setOpen(true);await load(request);})}>프로젝트 설정</button>
+    <button type="button" disabled={busy||editing||!!preview} onClick={()=>void act(async request=>{setOpen(true);await load(request);})}>프로젝트 설정</button>
     {open&&<>
       <h2>프로젝트 실행 정의</h2>
       {error&&<p role="alert">{error}</p>}
@@ -61,12 +64,13 @@ export default function ProjectDefinitions({description,onDirtyChange,onChanged}
         {view.unavailableSources.length>0&&<p role="status">확인할 수 없는 실행 소스: {view.unavailableSources.join(", ")}</p>}
         <details><summary>공유 프로젝트 정의</summary><pre>{JSON.stringify(view.project,null,2)}</pre></details>
         <details><summary>이 컴퓨터의 설정</summary><pre>{JSON.stringify(view.local,null,2)}</pre></details>
-        {!preview&&<button type="button" disabled={busy||view.unavailableSources.length>0} onClick={()=>void act(async request=>{
+        {!preview&&<DefinitionEditor key={contextKey} description={description} view={view} disabled={busy} onDirtyChange={setEditing} onSaved={()=>{onChanged();void act(load);}}/>}
+        {!preview&&!editing&&<button type="button" disabled={busy||view.unavailableSources.length>0} onClick={()=>void act(async request=>{
           const next=await call<Preview>("preview_trust");
           if(sequence.current!==request){void nativeCall("workspace.definitions","cancel",{previewId:next.previewId}).catch(()=>{});return;}
           pending.current=next.previewId;setPreview(next);
         })}>실행 정의 검토</button>}
-        {!preview&&view.hasApproval&&<button type="button" disabled={busy} onClick={()=>void act(async request=>{await call("revoke_trust",{revision:view.registryRevision});if(sequence.current!==request)return;onChanged();await load(request);})}>실행 정의 승인 철회</button>}
+        {!preview&&!editing&&view.hasApproval&&<button type="button" disabled={busy} onClick={()=>void act(async request=>{await call("revoke_trust",{revision:view.registryRevision});if(sequence.current!==request)return;onChanged();await load(request);})}>실행 정의 승인 철회</button>}
       </>}
       {preview&&<section aria-label="실행 정의 승인 확인">
         <h3>이 실행 정의를 승인할까요?</h3>
@@ -78,7 +82,7 @@ export default function ProjectDefinitions({description,onDirtyChange,onChanged}
         })}>검토한 실행 정의 승인</button>
         <button type="button" disabled={busy} onClick={()=>void act(cancel)}>승인 취소</button>
       </section>}
-      {!preview&&<button type="button" disabled={busy} onClick={()=>setOpen(false)}>설정 닫기</button>}
+      {!preview&&!editing&&<button type="button" disabled={busy} onClick={()=>setOpen(false)}>설정 닫기</button>}
     </>}
   </section>;
 }

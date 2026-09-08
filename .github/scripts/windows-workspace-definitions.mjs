@@ -1,12 +1,18 @@
 // Native definition trust consumes filesystem evidence, never executes sources.
 import assert from "node:assert/strict";
-import {mkdirSync,writeFileSync,existsSync} from "node:fs";
+import {readFileSync,writeFileSync,existsSync} from "node:fs";
 import path from "node:path";
 
 export async function exerciseWorkspaceDefinitions({cdp,root,call,success,waitForRenderer}) {
   const definitions=(method,args={})=>call("workspace.definitions",method,args);
-  mkdirSync(path.join(root,".devbox"));
-  writeFileSync(path.join(root,".devbox/project.json"),JSON.stringify({schemaVersion:1,tasks:{dev:{kind:"package-script",source:"package.json",selector:"dev"}}}),{flag:"wx"});
+  const manifestPath=path.join(root,".devbox/project.json");
+  const manifest={schemaVersion:1,tasks:{dev:{kind:"package-script",source:"package.json",selector:"dev"}}};
+  const empty=success(await definitions("load"));
+  const creation=success(await definitions("preview_edit",{target:"project",content:JSON.stringify(manifest),editRevision:empty.editRevision}));
+  assert.equal(existsSync(manifestPath),false);
+  assert.equal(success(await definitions("apply_edit",{previewId:creation.previewId})).saved,true);
+  assert.deepEqual(JSON.parse(readFileSync(manifestPath,"utf8")).tasks,manifest.tasks);
+  assert.equal((await definitions("apply_edit",{previewId:creation.previewId})).operation.outcome.state,"failed");
   const source=path.join(root,"package.json");
   const writeSource=label=>writeFileSync(source,JSON.stringify({scripts:{dev:`node -e "require('fs').writeFileSync('unexpected-execution.txt','${label}')"`}}));
   writeSource("initial");
@@ -38,7 +44,36 @@ export async function exerciseWorkspaceDefinitions({cdp,root,call,success,waitFo
   assert.equal(changed.hasApproval,true);
   success(await definitions("revoke_trust",{revision:changed.registryRevision}));
   assert.equal(success(await call("workspace.registry","snapshot")).worktrees[0].trustedDigest,null);
+  const current=success(await definitions("load"));
+  const edit=success(await definitions("preview_edit",{target:"project",content:JSON.stringify({...current.project,expectedPorts:[8080]}),editRevision:current.editRevision}));
+  assert.equal((await definitions("approve_trust",{previewId:edit.previewId})).operation.outcome.state,"failed");
+  const external=JSON.stringify({...current.project,expectedPorts:[9090]});
+  writeFileSync(manifestPath,external);
+  assert.equal((await definitions("apply_edit",{previewId:edit.previewId})).operation.outcome.state,"failed");
+  assert.equal(readFileSync(manifestPath,"utf8"),external);
+  const refreshed=success(await definitions("load"));
+  const cancelled=success(await definitions("preview_edit",{target:"local",content:JSON.stringify({...refreshed.local,expectedPorts:[7777]}),editRevision:refreshed.editRevision}));
+  success(await definitions("cancel",{previewId:cancelled.previewId}));
+  assert.equal((await definitions("apply_edit",{previewId:cancelled.previewId})).operation.outcome.state,"failed");
+  assert.deepEqual(success(await definitions("load")).local,refreshed.local);
+  assert.equal((await definitions("preview_edit",{target:"local",content:JSON.stringify({...refreshed.local,apiEnvironmentId:"unowned-environment"}),editRevision:refreshed.editRevision})).operation.outcome.state,"failed");
+  await click("프로젝트 설정");
+  await click("공유 정의 편집");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-definition-editor textarea")',"Definition editor missing");
+  await cdp.evaluate(`(()=>{const input=document.querySelector(".workspace-definition-editor textarea");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(input,${JSON.stringify(JSON.stringify({...refreshed.project,expectedPorts:[8080]}))});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
+  await click("저장 변경 검토");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-definition-editor [aria-label=\"설정 저장 확인\"]")',"Definition save review missing");
+  assert.equal(readFileSync(manifestPath,"utf8"),external);
+  await click("검토한 설정 저장");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-definition-editor")?.textContent.includes("설정을 저장했습니다.")',"Definition UI save missing");
+  assert.deepEqual(JSON.parse(readFileSync(manifestPath,"utf8")).expectedPorts,[8080]);
+  assert.equal(success(await definitions("load")).hasApproval,false);
+  const forLocal=success(await definitions("load"));
+  const localEdit=success(await definitions("preview_edit",{target:"local",content:JSON.stringify({...forLocal.local,expectedPorts:[7777]}),editRevision:forLocal.editRevision}));
+  success(await definitions("apply_edit",{previewId:localEdit.previewId}));
+  assert.deepEqual(success(await definitions("load")).effective.expectedPorts,[7777]);
+  assert.deepEqual(JSON.parse(readFileSync(manifestPath,"utf8")).expectedPorts,[8080]);
   assert.equal(existsSync(path.join(root,"unexpected-execution.txt")),false);
   await click("설정 닫기");
-  return {explicitReviewCancel:true,changedSourceDenied:true,approvalRetainsWorktreeContext:true,changedSourceInvalidatesDigest:true,explicitRevoke:true,noSourceExecution:true};
+  return {reviewedManifestCreation:true,changedManifestPreserved:true,cancelledLocalEditPreserved:true,ownerReferenceDenied:true,uiReviewedSave:true,localPrecedence:true,explicitReviewCancel:true,changedSourceDenied:true,approvalRetainsWorktreeContext:true,changedSourceInvalidatesDigest:true,explicitRevoke:true,noSourceExecution:true};
 }

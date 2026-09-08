@@ -94,7 +94,13 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
             route == "overview"
                 && matches!(
                     method,
-                    "load" | "preview_trust" | "approve_trust" | "revoke_trust" | "cancel"
+                    "load"
+                        | "preview_trust"
+                        | "approve_trust"
+                        | "revoke_trust"
+                        | "cancel"
+                        | "preview_edit"
+                        | "apply_edit"
                 )
         }
         "workspace.files" | "workspace.lsp" => {
@@ -311,6 +317,8 @@ async fn execute(
             bytes.len()
                 > if request.component == "workspace.files" {
                     64 * 1024 * 1024
+                } else if request.component == "workspace.definitions" {
+                    2 * 1024 * 1024
                 } else {
                     64 * 1024
                 }
@@ -329,6 +337,7 @@ async fn execute(
             | "clear_project"
             | "apply_registration"
             | "remove"
+            | "apply_edit"
             | "approve_trust"
             | "revoke_trust"
     );
@@ -390,6 +399,21 @@ async fn execute(
                         "load" => {
                             empty(&request.args)?;
                             Ok(json!(owner.load(&host, context, deadline)?))
+                        }
+                        "preview_edit" => Ok(json!(owner.preview_edit(
+                            &host,
+                            context,
+                            input(request.args)?,
+                            deadline
+                        )?)),
+                        "apply_edit" => {
+                            let token: Token = input(request.args)?;
+                            Ok(json!(owner.apply_edit(
+                                &host,
+                                context,
+                                &token.preview_id,
+                                deadline
+                            )?))
                         }
                         "preview_trust" => {
                             empty(&request.args)?;

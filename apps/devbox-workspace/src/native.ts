@@ -5,6 +5,9 @@ import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
+  definition_owner_reference_required: "비밀 및 API 환경 참조는 해당 연결 화면에서 변경해 주세요.",
+  session_task_conflict: "세션이 참조하는 작업을 먼저 조정해 주세요.",
+  unsupported_overlay_version: "지원하지 않는 로컬 설정 버전입니다. 기존 파일은 보존됩니다.",
   project_definition_changed: "프로젝트 정의나 참조 파일이 변경되었습니다. 다시 확인해 주세요.",
   project_definition_unavailable: "프로젝트 정의의 참조 파일을 읽지 못했습니다. 경로와 연결 상태를 확인해 주세요.",
   project_definition_limit: "프로젝트 정의의 파일 수나 크기가 허용 범위를 넘었습니다.",

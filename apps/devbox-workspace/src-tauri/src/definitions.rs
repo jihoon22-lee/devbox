@@ -10,7 +10,7 @@ use crate::{
     private_metadata::MetadataRoot,
 };
 use product_contract::ProjectContext;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::{
     collections::{BTreeMap, BTreeSet, HashMap},
@@ -22,7 +22,7 @@ const MANIFEST: &str = ".devbox/project.json";
 const OVERLAY: &str = "local-overlay.json";
 const TTL: Duration = Duration::from_secs(180);
 const MAX_PREVIEWS: usize = 4;
-fn digest(bytes: &[u8]) -> String {
+pub(crate) fn digest(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
         .map(|byte| format!("{byte:02x}"))
@@ -34,6 +34,7 @@ fn digest(bytes: &[u8]) -> String {
 pub struct DefinitionView {
     context: ProjectContext,
     registry_revision: u64,
+    edit_revision: String,
     project: Manifest,
     local: LocalOverlay,
     effective: Manifest,
@@ -54,6 +55,7 @@ struct Snapshot {
     files: ProjectFiles,
     private: MetadataRoot,
     overlay_bytes: Option<Vec<u8>>,
+    project_bytes: Option<Vec<u8>>,
 }
 impl Snapshot {
     fn capture(
@@ -64,9 +66,10 @@ impl Snapshot {
         deadline: u64,
     ) -> Result<Self> {
         crate::files_host::current_deadline(deadline)?;
-        let project = files
-            .read(MANIFEST, true)?
-            .map(|bytes| Manifest::parse(&bytes))
+        let project_bytes = files.read(MANIFEST, true)?;
+        let project = project_bytes
+            .as_ref()
+            .map(|bytes| Manifest::parse(bytes))
             .transpose()?
             .unwrap_or_default();
         let overlay_bytes = private.read(OVERLAY)?;
@@ -115,6 +118,7 @@ impl Snapshot {
             files,
             private,
             overlay_bytes,
+            project_bytes,
         };
         snapshot.revalidate()?;
         crate::files_host::current_deadline(deadline)?;
@@ -127,10 +131,22 @@ impl Snapshot {
         }
         Ok(())
     }
+    fn edit_revision(&self) -> Result<String> {
+        Ok(digest(
+            &serde_json::to_vec(&(
+                &self.context,
+                self.registry_revision,
+                &self.project_bytes,
+                &self.overlay_bytes,
+            ))
+            .map_err(|_| "invalid_manifest")?,
+        ))
+    }
     fn view(&self, registry: &Registry) -> Result<DefinitionView> {
         Ok(DefinitionView {
             context: self.context.clone(),
             registry_revision: registry.revision,
+            edit_revision: self.edit_revision()?,
             project: self.project.clone(),
             local: self.local.clone(),
             effective: self.effective.clone(),
@@ -154,11 +170,46 @@ pub struct TrustPreview {
     preview_id: String,
     definition: DefinitionView,
 }
+#[derive(Clone, Copy, Deserialize, Serialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EditTarget {
+    Project,
+    Local,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct EditRequest {
+    target: EditTarget,
+    content: String,
+    edit_revision: String,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditPreview {
+    preview_id: String,
+    target: EditTarget,
+    before: serde_json::Value,
+    after: serde_json::Value,
+    effective_diff: manifest::DefinitionDiff,
+}
+struct PendingEdit {
+    snapshot: Snapshot,
+    target: crate::platform::definition_write::DefinitionTarget,
+    bytes: Vec<u8>,
+    created: Instant,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct EditSaved {
+    saved: bool,
+    warning: Option<String>,
+}
 #[derive(Default)]
 pub struct Definitions {
     data: Option<MetadataRoot>,
     views: Option<MetadataRoot>,
     pending: HashMap<String, Pending>,
+    edits: HashMap<String, PendingEdit>,
 }
 impl Definitions {
     fn private(&mut self, host: &Host, context: &ProjectContext) -> Result<MetadataRoot> {
@@ -222,7 +273,7 @@ impl Definitions {
         deadline: u64,
     ) -> Result<TrustPreview> {
         self.expire();
-        if self.pending.len() >= MAX_PREVIEWS {
+        if self.pending.len() + self.edits.len() >= MAX_PREVIEWS {
             return Err("project_preview_limit");
         }
         let snapshot = self.snapshot(host, context, deadline)?;
@@ -281,13 +332,131 @@ impl Definitions {
             .retain(|_, pending| pending.snapshot.context != *context);
         host.projects()?.revoke_definition_trust(revision, context)
     }
+    pub fn preview_edit(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        request: EditRequest,
+        deadline: u64,
+    ) -> Result<EditPreview> {
+        self.expire();
+        if self.pending.len() + self.edits.len() >= MAX_PREVIEWS {
+            return Err("project_preview_limit");
+        }
+        let snapshot = self.snapshot(host, context, deadline)?;
+        if snapshot.edit_revision()? != request.edit_revision {
+            return Err("project_definition_changed");
+        }
+        let (before, after, effective, bytes, path, expected) = match request.target {
+            EditTarget::Project => {
+                let next = Manifest::parse(request.content.as_bytes())?;
+                let effective =
+                    manifest::effective(&Manifest::default(), &next, &snapshot.local, context)?;
+                (
+                    serde_json::to_value(&snapshot.project),
+                    serde_json::to_value(&next),
+                    effective,
+                    next.encode()?,
+                    std::path::Path::new(&snapshot.files.lease().binding().root).join(MANIFEST),
+                    snapshot.project_bytes.as_deref(),
+                )
+            }
+            EditTarget::Local => {
+                let next = LocalOverlay::parse(request.content.as_bytes(), context)?;
+                // Owner references may only be assigned by the corresponding
+                // native owner. JSON editing cannot mint cross-owner authority.
+                validate_local_edit(&snapshot.local, &next)?;
+                let effective =
+                    manifest::effective(&Manifest::default(), &snapshot.project, &next, context)?;
+                let bytes = serde_json::to_vec_pretty(&next).map_err(|_| "invalid_overlay")?;
+                (
+                    serde_json::to_value(&snapshot.local),
+                    serde_json::to_value(&next),
+                    effective,
+                    bytes,
+                    snapshot.private.path().join(OVERLAY),
+                    snapshot.overlay_bytes.as_deref(),
+                )
+            }
+        };
+        if bytes.len() > 256 * 1024 {
+            return Err("project_definition_limit");
+        }
+        let target = crate::platform::definition_write::DefinitionTarget::capture(&path, expected)?;
+        snapshot.revalidate()?;
+        crate::files_host::current_deadline(deadline)?;
+        let preview_id = uuid::Uuid::new_v4().to_string();
+        let preview = EditPreview {
+            preview_id: preview_id.clone(),
+            target: request.target,
+            before: before.map_err(|_| "invalid_manifest")?,
+            after: after.map_err(|_| "invalid_manifest")?,
+            effective_diff: snapshot.effective.diff(&effective)?,
+        };
+        self.edits.insert(
+            preview_id,
+            PendingEdit {
+                snapshot,
+                target,
+                bytes,
+                created: Instant::now(),
+            },
+        );
+        Ok(preview)
+    }
+    pub fn apply_edit(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        id: &str,
+        deadline: u64,
+    ) -> Result<EditSaved> {
+        let pending = self.edits.remove(id).ok_or("definition_preview_stale")?;
+        if pending.created.elapsed() >= TTL || pending.snapshot.context != *context {
+            return Err("definition_preview_stale");
+        }
+        let snapshot = pending.snapshot;
+        let projects = host.projects()?;
+        if projects.binding(context)? != *snapshot.files.lease().binding()
+            || projects.snapshot()?.revision != snapshot.registry_revision
+        {
+            return Err("stale_context");
+        }
+        snapshot.revalidate()?;
+        crate::files_host::current_deadline(deadline)?;
+        // Revoke durably before file IO. If writing fails, the old definitions
+        // remain available but require review; no partial write grants trust.
+        projects.revoke_definition_trust(snapshot.registry_revision, context)?;
+        self.pending
+            .retain(|_, value| value.snapshot.context != *context);
+        self.edits
+            .retain(|_, value| value.snapshot.context != *context);
+        let warning = pending.target.write(&pending.bytes, || {
+            snapshot.revalidate()?;
+            crate::files_host::current_deadline(deadline)
+        })?;
+        Ok(EditSaved {
+            saved: true,
+            warning,
+        })
+    }
     pub fn cancel(&mut self, id: &str) {
         self.pending.remove(id);
+        self.edits.remove(id);
     }
     pub fn expire(&mut self) {
+        self.edits
+            .retain(|_, pending| pending.created.elapsed() < TTL);
         self.pending
             .retain(|_, pending| pending.created.elapsed() < TTL);
     }
+}
+
+fn validate_local_edit(before: &LocalOverlay, after: &LocalOverlay) -> Result<()> {
+    if before.secrets != after.secrets || before.api_environment_id != after.api_environment_id {
+        return Err("definition_owner_reference_required");
+    }
+    Ok(())
 }
 
 #[cfg(test)]
@@ -358,5 +527,33 @@ mod tests {
             fs::read(private.path().join(OVERLAY)).unwrap(),
             br#"{"schemaVersion":99}"#
         );
+    }
+    #[test]
+    fn edit_revision_tracks_exact_bytes_and_owner_references_cannot_be_minted() {
+        let root = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let (original, _) = snapshot(root.path(), private.path());
+        let before = original.edit_revision().unwrap();
+        let mut local = original.local.clone();
+        local.api_environment_id = Some("unowned-environment".into());
+        assert!(validate_local_edit(&original.local, &local).is_err());
+        local.api_environment_id = None;
+        local.expected_ports = Some(vec![8080]);
+        assert!(validate_local_edit(&original.local, &local).is_ok());
+        fs::write(
+            private.path().join(OVERLAY),
+            serde_json::to_vec(&local).unwrap(),
+        )
+        .unwrap();
+        assert!(original.revalidate().is_err());
+        let changed = Snapshot::capture(
+            &original.context,
+            original.registry_revision,
+            ProjectFiles::new(probe_fixture(root.path()).unwrap()).unwrap(),
+            MetadataRoot::open(private.path()).unwrap(),
+            u64::MAX,
+        )
+        .unwrap();
+        assert_ne!(before, changed.edit_revision().unwrap());
     }
 }

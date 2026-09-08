@@ -36,7 +36,11 @@ Project settings now inspect manifest/local-overlay definitions and their native
 source snapshots, with explicit one-time approval, cancellation and revocation.
 Changes to source files invalidate approval without changing editor context.
 
-Source/Dependencies, complete Git/LSP execution trust, definition authoring, legacy import and Windows/WSL LSP remain
+Project/local JSON edits and imports show native before/after definitions and
+require explicit save. Concurrent changes preserve the original file and editor
+draft. Saving revokes execution approval; shared export includes only the manifest.
+
+Source/Dependencies, complete Git/LSP execution trust, legacy import and Windows/WSL LSP remain
 incomplete. Basic Files and its new Windows fixture still require native execution
 on the current change before being counted as verified product behavior.
 

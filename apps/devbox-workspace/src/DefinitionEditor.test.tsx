@@ -1,0 +1,45 @@
+import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {afterEach,beforeEach,expect,it,vi} from "vitest";
+import {describe as describeProduct,type Description} from "@devbox/product-shell/api";
+import DefinitionEditor from "./DefinitionEditor";
+import {componentCall,nativeCall} from "./native";
+vi.mock("./native",()=>({componentCall:vi.fn(),nativeCall:vi.fn().mockResolvedValue(null)}));
+const call=vi.mocked(componentCall);
+const view={project:{schemaVersion:1},local:{schemaVersion:1},editRevision:"native-base"};
+const preview={previewId:"native-edit",target:"project",before:view.project,after:{schemaVersion:1,expectedPorts:[8080]},effectiveDiff:{added:[],changed:[],removed:[],expectedPortsChanged:true}};
+let description:Description;
+beforeEach(async()=>{vi.clearAllMocks();description=await describeProduct("workspace");call.mockImplementation(async(_d,_c,method)=>method==="preview_edit"?preview:{saved:true,warning:null});});
+afterEach(cleanup);
+it("reviews before saving, retains the native base, and sends only the one-time token",async()=>{
+  const dirty=vi.fn(),saved=vi.fn();render(<DefinitionEditor description={description} view={view} disabled={false} onDirtyChange={dirty} onSaved={saved}/>);
+  fireEvent.click(screen.getByRole("button",{name:"공유 정의 편집"}));
+  fireEvent.change(screen.getByRole("textbox",{name:"설정 JSON"}),{target:{value:JSON.stringify(preview.after)}});
+  await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(true));
+  fireEvent.click(screen.getByRole("button",{name:"저장 변경 검토"}));
+  await screen.findByRole("heading",{name:"공유 프로젝트 정의 저장 전후"});
+  expect(call).toHaveBeenCalledWith(description,"workspace.definitions","preview_edit",{target:"project",content:JSON.stringify(preview.after),editRevision:"native-base"},"overview");
+  expect(call.mock.calls.some(([, ,method])=>method==="apply_edit")).toBe(false);
+  fireEvent.click(screen.getByRole("button",{name:"검토한 설정 저장"}));
+  await screen.findByText("설정을 저장했습니다.");
+  expect(call).toHaveBeenCalledWith(description,"workspace.definitions","apply_edit",{previewId:"native-edit"},"overview");
+  expect(saved).toHaveBeenCalledTimes(1);
+});
+it("preserves a conflicted draft and requires a new review after a consumed token",async()=>{
+  call.mockImplementation(async(_d,_c,method)=>{if(method==="apply_edit")throw new Error("파일 변경 충돌");return preview;});
+  render(<DefinitionEditor description={description} view={view} disabled={false} onDirtyChange={vi.fn()} onSaved={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"공유 정의 편집"}));
+  fireEvent.change(screen.getByRole("textbox"),{target:{value:"my draft"}});
+  fireEvent.click(screen.getByRole("button",{name:"저장 변경 검토"}));
+  fireEvent.click(await screen.findByRole("button",{name:"검토한 설정 저장"}));
+  await screen.findByText("파일 변경 충돌");
+  expect((screen.getByRole("textbox") as HTMLTextAreaElement).value).toBe("my draft");
+  expect(screen.queryByRole("button",{name:"검토한 설정 저장"})).toBeNull();
+});
+it("cancels a late native preview after the editor unmounts",async()=>{
+  let finish!:(value:unknown)=>void;call.mockImplementation(()=>new Promise(resolve=>{finish=resolve;}));
+  const ui=render(<DefinitionEditor description={description} view={view} disabled={false} onDirtyChange={vi.fn()} onSaved={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"이 컴퓨터 설정 편집"}));
+  fireEvent.click(screen.getByRole("button",{name:"저장 변경 검토"}));ui.unmount();
+  await act(async()=>finish(preview));
+  expect(nativeCall).toHaveBeenCalledWith("workspace.definitions","cancel",{previewId:"native-edit"});
+});

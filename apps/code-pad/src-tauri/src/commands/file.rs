@@ -289,10 +289,11 @@ pub fn open_path_with_encoding(
     open_path_with_encoding_limit(path, selected_encoding, None)
 }
 
-/// Open a file with a consumer-specific byte cap. Multi-file LSP mutations use
+/// Open a file with a consumer-specific byte cap. Native definition owners and
+/// multi-file LSP mutations use
 /// this before decoding so a file that grows after its metadata preflight
 /// cannot make the rename worker allocate the general 64 MiB open budget.
-pub(crate) fn open_path_limited(path: &Path, max_bytes: u64) -> Result<OpenedFile, FileError> {
+pub fn open_path_limited(path: &Path, max_bytes: u64) -> Result<OpenedFile, FileError> {
     open_path_with_encoding_limit(path, None, Some(max_bytes))
 }
 
@@ -360,7 +361,7 @@ pub fn save_path(
 /// editor save keeps the established inspection limit, while a rename worker
 /// must not expand a preflighted small file into the larger general-open budget
 /// if an external writer grows it while approval is pending.
-pub(crate) fn save_path_limited(
+pub fn save_path_limited(
     path: &Path,
     text: &str,
     encoding: Encoding,
