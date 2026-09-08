@@ -69,12 +69,13 @@ function visible(window) {
   const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", code], { encoding: "utf8", windowsHide: true });
   assert.equal(result.status, 0); assert.ok(["True", "False"].includes(result.stdout.trim())); return result.stdout.trim() === "True";
 }
+function running(item) { return item.child?.exitCode === null && item.child?.signalCode === null; }
 async function stop(item, force = false) {
   item.cdp?.close();
-  if (item.child?.exitCode === null) {
+  if (running(item)) {
     if (force) item.child.kill(); else closeWindow(item);
-    for (let i = 0; i < 100 && item.child.exitCode === null; i++) await delay(100);
-    if (item.child.exitCode === null) { item.child.kill(); throw new Error("owned fixture process did not exit"); }
+    for (let i = 0; i < 100 && running(item); i++) await delay(100);
+    if (running(item)) { item.child.kill(); throw new Error("owned fixture process did not exit"); }
   }
   if (item.policy) restoreElevatedCdpPolicy(item.policy); live.delete(item);
 }
@@ -263,7 +264,7 @@ try {
   const savedSummary = afterSummary.find(file => !beforeSummary.includes(file));
   assert.ok(readFileSync(path.join(vault, savedSummary), "utf8").includes("2024-02-29"));
   assert.equal((await command(item, "knowledge.notes", "save_knowledge_draft", { id: consumed.handoffId })).operation.outcome.state, "failed");
-  assert.deepEqual(markdownFiles(), afterSummary); assert.equal(oldNotes.child.exitCode === null, false);
+  assert.deepEqual(markdownFiles(), afterSummary); assert.equal(running(oldNotes), false);
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   evidence.summaryPreviewDidNotWrite = true; evidence.summaryCancellationPreservedVault = true;
   evidence.summaryExplicitSaveConsumedOnce = true; evidence.summaryStayedInProduct = true;
@@ -288,7 +289,7 @@ try {
   assert.equal(logicalSources(), frozen); assert.equal(digest(path.join(vault, "Notes/original.md")), originalNote); assert.equal(digest(path.join(vault, "Notes/second.md")), originalSecond); assert.equal(digest(path.join(vault, "Notes/assets/pixel.png")), originalImage);
   progress("explicit-close-policy");
   assert.equal((await command(item, "knowledge.activity", "set_close_policy", { closeToTray: true })).value.closeToTray, true);
-  const hidden = closeWindow(item); await delay(500); assert.equal(item.child.exitCode, null); assert.equal(visible(hidden), false);
+  const hidden = closeWindow(item); await delay(500); assert.equal(running(item), true); assert.equal(visible(hidden), false);
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   // Crash/restart checks persisted preference; this is explicitly not a tray
   // Quit test. Default close below must terminate the process normally.
