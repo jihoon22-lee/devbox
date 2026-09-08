@@ -463,6 +463,20 @@ mod tests {
         jobs.cancel(&work.generation).unwrap();
         assert!(jobs.resolve(reference).is_err());
         drop(work);
+        let mut normalized = candidate.clone();
+        normalized.root = PathBuf::from(normalized.root.to_string_lossy().replace('\\', "/"));
+        normalized.path = PathBuf::from(normalized.path.to_string_lossy().replace('\\', "/"));
+        let slash_work = jobs.begin("files", "owned-wsl-fixture").unwrap();
+        slash_work
+            .publish_candidates(std::slice::from_ref(&normalized), false)
+            .unwrap();
+        slash_work.verify(0, &normalized);
+        assert_eq!(
+            jobs.snapshot(&slash_work.generation).unwrap().rows[0].availability,
+            "available"
+        );
+        jobs.cancel(&slash_work.generation).unwrap();
+        drop(slash_work);
         let mut unavailable = Candidate {
             path: candidate.path.clone(),
             root: candidate.root.clone(),

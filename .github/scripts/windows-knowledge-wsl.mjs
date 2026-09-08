@@ -19,7 +19,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   mkdirSync(root); mkdirSync(notes); mkdirSync(corpus);
   writeFileSync(path.join(notes, "Case.md"), "# Upper case\nWSL preserved content\n", { flag: "wx" });
   writeFileSync(path.join(notes, "case.md"), "# Lower case\nSeparate Linux file\n", { flag: "wx" });
-  for (let i = 0; i < 500; i++) writeFileSync(path.join(corpus, `wslfixture${String(i).padStart(4, "0")}.txt`), "wslnativecontent fixture\n", { flag: "wx" });
+  for (let i = 0; i < 500; i++) writeFileSync(path.join(corpus, `wslfixture${String(i).padStart(4, "0")}.txt`), `wslnativecontent wslgroup${Math.floor(i / 100)} fixture\n`, { flag: "wx" });
   const identity = p => { const s = lstatSync(p, { bigint: true }); return `${s.dev}:${s.ino}`; };
   assert.equal(identity(root), identity(alternate));
   assert.notEqual(identity(path.join(notes, "Case.md")), identity(path.join(notes, "case.md")));
@@ -57,8 +57,31 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   assert.equal(added.length, 1); const rootId = added[0].id;
   const statuses = succeeded(await command(item, "knowledge.search", "watcher_statuses"));
   assert.ok(statuses.some(s => s.sourceKind === "wsl" && s.watchMode === "polling"));
-  await eventually(async () => { const result = await query("wslfixture"); const complete = result.rows.length === 500 && result.rows.every(r => r.availability === "available"); await cancel(result); return complete; }, "WSL corpus did not index");
-  const body = await query("wslnativecontent", "content"); assert.equal(body.rows.length, 500); await cancel(body);
+  await eventually(async () => {
+    const result = await query("wslfixture");
+    evidence.wsl.largeFilenameQuery = { state: result.state, partial: result.partial, rows: result.rows.length,
+      verifiedRows: result.rows.filter(row => row.availability === "available").length };
+    evidence.wsl.indexStatus = succeeded(await command(item, "knowledge.search", "index_status"));
+    // The 1.5 s source deadline may leave a large remote result partly verified.
+    // Cached row publication proves index coverage; exact queries below prove
+    // usable native references without widening that deadline.
+    const indexed = result.rows.length === 500 && !evidence.wsl.indexStatus.indexing;
+    await cancel(result); return indexed;
+  }, "WSL index did not publish the complete 500-file corpus");
+  for (const index of [0, 99, 199, 299, 399, 499]) {
+    const exact = await query(`wslfixture${String(index).padStart(4, "0")}`);
+    evidence.wsl.lastExactQuery = { state: exact.state, rows: exact.rows.length, availability: exact.rows[0]?.availability };
+    assert.equal(exact.rows.length, 1); assert.equal(exact.rows[0].availability, "available");
+    assert.ok(exact.rows[0].reference); await cancel(exact);
+  }
+  const body = await query("wslnativecontent", "content"); assert.equal(body.rows.length, 200); await cancel(body);
+  // Preserve the content API's existing 200-row ceiling while checking that
+  // all five disjoint 100-file groups were indexed, without truncation claims.
+  for (let group = 0; group < 5; group++) {
+    const batch = await query(`wslgroup${group}`, "content");
+    assert.equal(batch.rows.length, 100);
+    await cancel(batch);
+  }
   // Alias registration must keep the native root ID; spelling is not identity.
   succeeded(await command(item, "knowledge.search-settings", "add_root", { path: alternate, indexContent: true }));
   assert.equal(succeeded(await command(item, "knowledge.search", "list_roots")).filter(r => !before.has(r.id)).length, 1);

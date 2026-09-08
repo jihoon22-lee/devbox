@@ -812,6 +812,19 @@ mod tests {
             search_content(&state.db.lock().unwrap(), "wslnativecontent", 1000)
                 .unwrap()
                 .len(),
+            200 // The existing public content query has a 200-row ceiling.
+        );
+        assert_eq!(
+            state
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM file_content_fts WHERE file_content_fts MATCH ?",
+                    ["wslnativecontent"],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
             500
         );
         let moved = base.join("search-temporarily-unavailable");
@@ -833,6 +846,19 @@ mod tests {
             search_content(&state.db.lock().unwrap(), "wslnativecontent", 1000)
                 .unwrap()
                 .len(),
+            200 // The existing public content query has a 200-row ceiling.
+        );
+        assert_eq!(
+            state
+                .db
+                .lock()
+                .unwrap()
+                .query_row(
+                    "SELECT COUNT(*) FROM file_content_fts WHERE file_content_fts MATCH ?",
+                    ["wslnativecontent"],
+                    |row| row.get::<_, i64>(0),
+                )
+                .unwrap(),
             500
         );
         std::fs::rename(&moved, &root).unwrap();
