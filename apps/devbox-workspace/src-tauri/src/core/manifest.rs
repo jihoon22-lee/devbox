@@ -263,6 +263,21 @@ impl Manifest {
     }
 }
 impl LocalOverlay {
+    pub fn empty(context: ProjectContext) -> Self {
+        Self {
+            schema_version: 1,
+            context,
+            tasks: BTreeMap::new(),
+            toolchains: BTreeMap::new(),
+            openapi_sources: BTreeMap::new(),
+            log_sources: BTreeMap::new(),
+            sessions: BTreeMap::new(),
+            expected_ports: None,
+            secrets: Vec::new(),
+            api_environment_id: None,
+            layout_id: None,
+        }
+    }
     pub fn parse(bytes: &[u8], expected: &ProjectContext) -> Result<Self> {
         if bytes.len() > MAX_BYTES {
             return Err("overlay_limit");

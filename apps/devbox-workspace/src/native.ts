@@ -5,6 +5,16 @@ import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
+  project_definition_changed: "프로젝트 정의나 참조 파일이 변경되었습니다. 다시 확인해 주세요.",
+  project_definition_unavailable: "프로젝트 정의의 참조 파일을 읽지 못했습니다. 경로와 연결 상태를 확인해 주세요.",
+  project_definition_limit: "프로젝트 정의의 파일 수나 크기가 허용 범위를 넘었습니다.",
+  unsafe_project_definition: "프로젝트 밖이나 연결된 경로의 정의는 사용할 수 없습니다.",
+  definition_preview_stale: "프로젝트 정의 확인이 만료되었습니다. 다시 검토해 주세요.",
+  unsupported_manifest_version: "지원하지 않는 프로젝트 정의 버전입니다. 기존 파일은 보존됩니다.",
+  invalid_manifest: "프로젝트 정의 JSON을 읽지 못했습니다. 기존 파일은 보존됩니다.",
+  invalid_manifest_definition: "프로젝트 정의의 작업·도구·참조 경로를 확인해 주세요.",
+  invalid_overlay: "이 컴퓨터의 프로젝트 설정을 읽지 못했습니다. 기존 파일은 보존됩니다.",
+  stale_overlay_binding: "이 컴퓨터의 설정이 이전 프로젝트 연결을 사용합니다. 다시 검토해 주세요.",
   initializing: "저장된 정보를 불러오고 있습니다.",
   busy: "앞선 작업이 끝난 뒤 다시 시도해 주세요.",
   store_owner_busy: "다른 작업에서 저장소를 사용하고 있습니다.",

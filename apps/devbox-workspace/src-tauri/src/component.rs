@@ -34,6 +34,7 @@ impl Drop for Permit {
 #[derive(Clone)]
 struct Runtime {
     context_activity: crate::core::context_activity::ContextActivity,
+    definitions: Arc<Mutex<crate::definitions::Definitions>>,
     host: Arc<Mutex<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
     probes: Pool,
@@ -46,6 +47,7 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             context_activity: Default::default(),
+            definitions: Arc::default(),
             host: Arc::new(Mutex::new(Err("initializing"))),
             metadata: Pool::default(),
             probes: Pool::default(),
@@ -88,6 +90,13 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         return false;
     }
     match component {
+        "workspace.definitions" => {
+            route == "overview"
+                && matches!(
+                    method,
+                    "load" | "preview_trust" | "approve_trust" | "revoke_trust" | "cancel"
+                )
+        }
         "workspace.files" | "workspace.lsp" => {
             route == "files" && crate::files_host::allowed(component, method)
         }
@@ -313,13 +322,19 @@ async fn execute(
         request.component.as_str(),
         "workspace.files" | "workspace.lsp"
     );
+    let definitions = request.component == "workspace.definitions";
     let context_change = matches!(
         request.method.as_str(),
-        "select_project" | "clear_project" | "apply_registration" | "remove"
+        "select_project"
+            | "clear_project"
+            | "apply_registration"
+            | "remove"
+            | "approve_trust"
+            | "revoke_trust"
     );
     // Acquire before checking the session, and retain through queued/native
     // work. Worker clones keep the boundary after caller timeout/cancellation.
-    let context_permit = if files || context_change {
+    let context_permit = if files || definitions || context_change {
         Some(
             runtime
                 .context_activity
@@ -344,6 +359,72 @@ async fn execute(
             context_permit.clone().expect("file context permit"),
         )
         .await
+    } else if definitions {
+        let host = runtime.host();
+        let owner = runtime.definitions.clone();
+        let permit = runtime.probes.reserve();
+        match (host, permit) {
+            (Ok(host), Ok(permit)) => {
+                let worker_context = context_permit.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let (_permit, _context) = (permit, worker_context);
+                    crate::files_host::current_deadline(deadline)?;
+                    let mut owner = owner.lock().map_err(|_| "definition_owner_busy")?;
+                    crate::files_host::current_deadline(deadline)?;
+                    let context = request
+                        .header
+                        .context
+                        .as_ref()
+                        .ok_or("project_selection_required")?;
+                    #[derive(Deserialize)]
+                    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                    struct Token {
+                        preview_id: String,
+                    }
+                    #[derive(Deserialize)]
+                    #[serde(deny_unknown_fields)]
+                    struct Revision {
+                        revision: u64,
+                    }
+                    match request.method.as_str() {
+                        "load" => {
+                            empty(&request.args)?;
+                            Ok(json!(owner.load(&host, context, deadline)?))
+                        }
+                        "preview_trust" => {
+                            empty(&request.args)?;
+                            Ok(json!(owner.preview_trust(&host, context, deadline)?))
+                        }
+                        "approve_trust" => {
+                            let token: Token = input(request.args)?;
+                            Ok(json!(owner.approve_trust(
+                                &host,
+                                context,
+                                &token.preview_id,
+                                deadline
+                            )?))
+                        }
+                        "revoke_trust" => {
+                            let revision: Revision = input(request.args)?;
+                            Ok(json!(owner.revoke_trust(
+                                &host,
+                                context,
+                                revision.revision
+                            )?))
+                        }
+                        "cancel" => {
+                            let token: Token = input(request.args)?;
+                            owner.cancel(&token.preview_id);
+                            Ok(Value::Null)
+                        }
+                        _ => Err("invalid_request"),
+                    }
+                })
+                .await
+                .unwrap_or(Err("worker_unavailable"))
+            }
+            (Err(issue), _) | (_, Err(issue)) => Err(issue),
+        }
     } else if request.method == "clear_project" {
         empty(&request.args).and_then(|()| {
             product_shell_tauri::replace_project_context(
@@ -440,10 +521,14 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 loop {
                     tokio::time::sleep(Duration::from_secs(10)).await;
                     if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
+                        let definitions = runtime.definitions.clone();
                         let _ = tauri::async_runtime::spawn_blocking(move || {
                             let _permit = permit;
                             if let Ok(projects) = host.projects() {
                                 let _ = projects.expire();
+                            }
+                            if let Ok(mut definitions) = definitions.try_lock() {
+                                definitions.expire();
                             }
                         })
                         .await;

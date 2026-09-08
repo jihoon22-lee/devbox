@@ -9,7 +9,7 @@ interface Preview {previewId: string; binding: Worktree["binding"]; discovery: {
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
-export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean}) {
+export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number}) {
   const [status, setStatus] = useState<Status>({phase:"loading"});
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [root, setRoot] = useState("");
@@ -33,6 +33,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
       if (alive.current && loadId.current === requestId) setRegistry(snapshot);
     }
   }
+  useEffect(() => {if (refreshSignal) void refresh().catch(cause => setError(cause instanceof Error ? cause.message : "목록을 확인하지 못했습니다."));}, [refreshSignal]);
   useEffect(() => {
     alive.current = true;
     let timer: ReturnType<typeof setTimeout>;
@@ -109,7 +110,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
           await registryCall("rename", {revision:registry.revision,projectId:project.id,name:rename.name}); setRename(null); await refresh();
         });}}><label htmlFor="workspace-rename">새 이름</label><input id="workspace-rename" required maxLength={120} value={rename.name} disabled={busy} onChange={event => setRename({...rename,name:event.target.value})}/><button disabled={busy}>저장</button><button type="button" disabled={busy} onClick={() => setRename(null)}>취소</button></form>}
         {registry.worktrees.filter(worktree => worktree.projectId === project.id).map(worktree => <div key={worktree.id}>
-          <p>{worktree.binding.root}</p><p>{worktree.trustedDigest ? "실행 정의를 신뢰한 프로젝트" : "실행 신뢰 확인 전"}</p>
+          <p>{worktree.binding.root}</p><p>{worktree.trustedDigest ? "실행 정의 검토 기록이 있습니다. 현재 상태는 프로젝트 설정에서 확인하세요." : "실행 신뢰 확인 전"}</p>
           <button disabled={busy || editing || (context?.worktreeId === worktree.id && context.revision === worktree.revision)} onClick={() => void act(async () => {
             const next: ProjectContext = {projectId:worktree.projectId,worktreeId:worktree.id,revision:worktree.revision,target:worktree.binding.target};
             await registryCall("select_project", {context:next}); await onContextChanged();

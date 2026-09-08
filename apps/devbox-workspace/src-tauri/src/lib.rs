@@ -1,9 +1,11 @@
 mod component;
 pub mod core;
+mod definitions;
 pub mod file_owner;
 mod files_host;
 pub mod host;
 pub mod platform;
+mod private_metadata;
 pub mod project_owner;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

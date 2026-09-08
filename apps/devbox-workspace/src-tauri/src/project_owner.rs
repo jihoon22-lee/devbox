@@ -77,8 +77,8 @@ impl ProjectOwner {
             .ok_or("stale_context")
     }
     fn admit_lease(&self, context: &ProjectContext, lease: ProjectLease) -> Result<ProjectLease> {
-        // Read again after the potentially slow probe. Rebind/removal/trust
-        // revision changes while probing must not enter the previous context.
+        // Read again after the potentially slow probe. Rebind/removal changes
+        // must not enter the previous context. Execution owners check trust separately.
         if self.binding(context)? != *lease.binding() {
             return Err("project_binding_changed");
         }
@@ -196,6 +196,31 @@ impl ProjectOwner {
     pub fn remove(&self, revision: u64, context: &ProjectContext) -> Result<Registry> {
         self.store
             .update(revision, |registry| registry.remove(revision, context))
+            .map(|(registry, ())| registry)
+    }
+    pub(crate) fn review_definition_trust(
+        &self,
+        revision: u64,
+        context: &ProjectContext,
+        digest: &str,
+        verify: impl FnOnce() -> Result<()>,
+    ) -> Result<Registry> {
+        self.store
+            .update(revision, |registry| {
+                verify()?;
+                registry.review_trust(revision, context, digest)
+            })
+            .map(|(registry, _)| registry)
+    }
+    pub(crate) fn revoke_definition_trust(
+        &self,
+        revision: u64,
+        context: &ProjectContext,
+    ) -> Result<Registry> {
+        self.store
+            .update(revision, |registry| {
+                registry.revoke_trust(revision, context)
+            })
             .map(|(registry, ())| registry)
     }
 }

@@ -551,7 +551,7 @@ describe("Everything+ filters and saved queries", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "저장된 검색어 Rust sources 삭제" }));
     await waitFor(() => expect(deleteSavedQueryMock).toHaveBeenCalledWith(7));
-    expect(screen.queryByRole("button", { name: "Rust sources" })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Rust sources" })).toBeNull());
   });
 
   it("does not let the initial saved-query response overwrite a completed save", async () => {

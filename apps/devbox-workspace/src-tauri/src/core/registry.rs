@@ -493,9 +493,17 @@ impl Registry {
         let index = self.context_index(context)?;
         self.revision += 1;
         let tree = &mut self.worktrees[index];
-        tree.revision = self.revision;
+        // Approval has its own digest and Registry CAS revision. It does not
+        // rebind the worktree or invalidate its local overlay/editor context.
         tree.trusted_digest = Some(definition_digest.into());
         Ok(tree.context())
+    }
+    pub fn revoke_trust(&mut self, expected: u64, context: &ProjectContext) -> Result<()> {
+        self.check_revision(expected)?;
+        let index = self.context_index(context)?;
+        self.worktrees[index].trusted_digest = None;
+        self.revision += 1;
+        Ok(())
     }
     pub fn trusted(&self, context: &ProjectContext, current_digest: &str) -> Result<bool> {
         let index = self.context_index(context)?;

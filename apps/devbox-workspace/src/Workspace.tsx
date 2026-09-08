@@ -5,6 +5,7 @@ import { nativeMode, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
 import RegistryGate from "./RegistryGate";
 import { componentCall } from "./native";
+import ProjectDefinitions from "./ProjectDefinitions";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
@@ -26,13 +27,19 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
   }
   const [ready, setReady] = useState(false);
   const [editing, setEditing] = useState(false);
+  const [definitionsEditing, setDefinitionsEditing] = useState(false);
+  const [registrySignal, setRegistrySignal] = useState(0);
+  const refreshRegistry = useCallback(() => setRegistrySignal(value => value + 1), []);
   const [filesVisited, setFilesVisited] = useState(route === "files");
   const markReady = useCallback(() => setReady(true), []);
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing}/>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing} refreshSignal={registrySignal}/>
     </div>
+    {ready && description.context && <div hidden={route !== "overview"}>
+      <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
+    </div>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
         <Files contextKey={JSON.stringify(description.context)} active={route === "files"} onDirtyChange={setEditing}/>

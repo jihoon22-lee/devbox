@@ -110,9 +110,38 @@ retention/context lock, outside-project denial, replaced objects/stale revisions
 CRLF save/rename/delete and recovery cancel/replay/apply. It uses only synthetic
 owned files. Its Windows execution on the pushed head remains pending.
 
+## Project definition review
+
+Native project settings now read the strict manifest and private local overlay,
+merge effective definitions and retain bounded native source/object snapshots.
+The main window requests a one-time preview before recording or revoking trust.
+Source/overlay changes invalidate approval; missing sources stay readable but cannot
+be approved. Trust updates its own Registry CAS revision/digest while preserving
+worktree binding revision, so overlays and editor sessions remain valid. This grants
+no Git/task/LSP dispatch; their additional execution evidence is still required.
+Shared private metadata IO moved into an app-local helper and uses an atomic writer
+that requires the already-pinned parent rather than recreating a missing one.
+
+The db6f04a general CI failed two tests: a saved-query deletion test observed only
+the backend call before asserting the completed UI update; Windows TEMP used an
+8.3 alias while the file-owner fixture expected Registry-canonical spelling. The
+UI test now waits for removal, and the filesystem fixture uses canonical wire paths.
+The Windows product job failed that same Rust fixture and skipped basic Files UI
+acceptance, so no Files Windows PASS is claimed for db6f04a.
+
+Corrected definition/file owner focused validation passed **52 Rust tests and
+strict Clippy**, Workspace build and **8 UI tests**, generated Windows request and
+metadata checks in **27.224 seconds**. The saved-query regression's **25 tests**
+also passed. The new native definition fixture checks cancel, changed-source denial,
+approval/revocation, stable editor context and absence of command execution. Its
+Windows execution remains pending. The canonical native-root fix also applies
+to the Windows UI fixture, which verifies the returned root against its owned
+directory before writing fixture files. Final affected all passed in **430.582
+seconds** under the shared 8 GiB cap (cgroup peak 5,652,332,544 bytes).
+
 ## Remaining acceptance
 
-Source/Dependencies routing, execution-trust UI and manifest IO, importer mappings,
+Source/Dependencies routing, complete Git/LSP execution-trust evidence and manifest IO, importer mappings,
 Windows LSP integration and WSL-native transport remain incomplete. Files currently
 serializes native IO under one state mutex; remote independent cancellation needs
 work before WSL acceptance. Native file-dialog selection is implemented but has no

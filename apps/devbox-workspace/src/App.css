@@ -8,3 +8,7 @@
 .workspace-registry input { width: min(100%, 640px); box-sizing: border-box; padding: 8px; }
 .workspace-registry button { margin: 8px 8px 8px 0; padding: 6px 12px; }
 .workspace-registry p { overflow-wrap: anywhere; }
+.workspace-definitions { max-width: 960px; padding: 0 24px 24px; }
+.workspace-definitions button { margin: 8px 8px 8px 0; padding: 6px 12px; }
+.workspace-definitions pre { max-height: 320px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-definitions details { margin-block: 12px; }

@@ -671,6 +671,9 @@ mod tests {
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().join("project");
         fs::create_dir(&root).unwrap();
+        // Windows TEMP can use an 8.3 parent alias. The native Registry sends
+        // canonical spelling; the fixture must use that same wire boundary.
+        let root = display_path(&fs::canonicalize(&root).unwrap()).unwrap();
         let path = root.join("file.txt");
         fs::write(&path, "before").unwrap();
         let lease = crate::platform::project_probe::probe_fixture(&root).unwrap();

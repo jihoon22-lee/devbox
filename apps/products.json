@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 5,
+  "catalogRevision": 6,
   "channel": "development",
   "products": [
     {
@@ -152,6 +152,13 @@
       "id": "knowledge.migration",
       "owner": "knowledge",
       "authority": "legacy-import",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.definitions",
+      "owner": "workspace",
+      "authority": "project-definition",
       "lifecycle": "product",
       "protocolVersion": 1
     }

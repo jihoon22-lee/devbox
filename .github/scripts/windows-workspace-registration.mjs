@@ -1,8 +1,9 @@
 // Actual hidden Workspace native admission/registration with owned fixtures.
 import assert from "node:assert/strict";
-import {mkdirSync, writeFileSync, readFileSync} from "node:fs";
+import {mkdirSync, writeFileSync, readFileSync, realpathSync} from "node:fs";
 import path from "node:path";
 import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
+import {exerciseWorkspaceDefinitions} from "./windows-workspace-definitions.mjs";
 
 export function workspaceRequestExpression(component, method, args = {}) {
   const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : "overview";
@@ -72,7 +73,14 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   })()`);
   assert.equal(staleContext,"stale-context");
   assert.equal((await call("workspace.registry","select_project",{context:{...selected.context,revision:selected.context.revision+1}})).operation.outcome.state,"failed");
-  const files = await exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer});
+  // Native registration canonicalizes Windows TEMP's possible 8.3 spelling.
+  // Feature clients use that returned path, while fixture ownership is checked
+  // against the directory we created before any subsequent fixture writes.
+  const canonicalRoot = registry.worktrees[0].binding.root;
+  assert.equal(realpathSync.native(canonicalRoot), realpathSync.native(root));
+  const definitions = await exerciseWorkspaceDefinitions({cdp, root:canonicalRoot, call, success, waitForRenderer});
+  registry = success(await call("workspace.registry","snapshot"));
+  const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer});
   await click("프로젝트 선택 해제");
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");
   assert.equal((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,null);
@@ -89,5 +97,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry and basic Files UI/native commands; native file dialog, Source, LSP and importer acceptance are separate"};
+  return {authority,definitions,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust and basic Files UI/native commands; definition writes, native file dialog, Source, LSP and importer acceptance are separate"};
 }

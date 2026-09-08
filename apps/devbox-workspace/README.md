@@ -32,7 +32,11 @@ snapshot. Tabs remain mounted across routes, and dirty/busy/recovery states bloc
 project switching. Session and recovery metadata are private to each context.
 Recovery uses explicit native preview/apply tokens and preserves cancelled entries.
 
-Source/Dependencies, execution trust, legacy import and Windows/WSL LSP remain
+Project settings now inspect manifest/local-overlay definitions and their native
+source snapshots, with explicit one-time approval, cancellation and revocation.
+Changes to source files invalidate approval without changing editor context.
+
+Source/Dependencies, complete Git/LSP execution trust, definition authoring, legacy import and Windows/WSL LSP remain
 incomplete. Basic Files and its new Windows fixture still require native execution
 on the current change before being counted as verified product behavior.
 
