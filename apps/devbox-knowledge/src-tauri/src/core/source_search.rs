@@ -3,7 +3,18 @@
 //! workers without accounting for the old OS call.
 use super::retirement::{Lease, Pool};
 use devbox_filesystem::FilesystemIdentity;
-type Objects = (std::fs::File, std::fs::File);
+type Objects = (std::fs::File, std::fs::File, Option<Arc<std::fs::File>>);
+
+#[derive(Clone)]
+pub struct ProjectReference {
+    pub epoch: String,
+    pub root: PathBuf,
+    pub identity: FilesystemIdentity,
+}
+pub struct VerifiedProject {
+    pub reference: ProjectReference,
+    pub object: Arc<std::fs::File>,
+}
 use serde::Serialize;
 use serde_json::Value;
 use std::{
@@ -39,6 +50,7 @@ pub struct Reference {
     pub root_identity: FilesystemIdentity,
     pub source: String,
     pub store_generation: String,
+    pub project: Option<ProjectReference>,
     // Object IDs cannot be recycled while this bounded lease is alive.
     // Its final close is deferred, including when a job expires under a lock.
     _objects: Lease<Objects>,
@@ -63,6 +75,8 @@ pub struct Snapshot {
     pub partial: bool,
     pub rows: Vec<Row>,
     pub bounds: Value,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub project_context: Option<product_contract::ProjectContext>,
 }
 struct Job {
     snapshot: Snapshot,
@@ -86,11 +100,13 @@ pub struct Work {
     pub cancelled: Arc<AtomicBool>,
     pub deadline: Instant,
     pool: Option<Arc<Pool<Objects>>>,
+    worker_source: String,
+    project_valid: Option<Arc<AtomicBool>>,
 }
 impl Drop for Work {
     fn drop(&mut self) {
         if let Ok(mut inner) = self.owner.0.lock() {
-            if let Some(count) = inner.workers.get_mut(&self.source) {
+            if let Some(count) = inner.workers.get_mut(&self.worker_source) {
                 *count = count.saturating_sub(1);
             }
         }
@@ -120,7 +136,12 @@ impl SearchJobs {
         inner.jobs.retain(|_, job| job.started.elapsed() < TTL);
         // Each consumer cancels its own opaque generation. Another consumer's
         // query must not revoke this reader's references or revive a late job.
-        if inner.workers.get(source).copied().unwrap_or(0) >= 2 {
+        let worker_source = if source == "current_project" {
+            "files"
+        } else {
+            source
+        };
+        if inner.workers.get(worker_source).copied().unwrap_or(0) >= 2 {
             return Err("search_busy".into());
         }
         if inner.jobs.len() >= MAX_JOBS {
@@ -135,13 +156,13 @@ impl SearchJobs {
                 }
             }
         }
-        let pool = if matches!(source, "files" | "notes") {
-            if !inner.pools.contains_key(source) {
+        let pool = if matches!(worker_source, "files" | "notes") {
+            if !inner.pools.contains_key(worker_source) {
                 inner
                     .pools
-                    .insert(source.into(), Pool::new(MAX_JOBS * MAX_ROWS)?);
+                    .insert(worker_source.into(), Pool::new(MAX_JOBS * MAX_ROWS)?);
             }
-            inner.pools.get(source).cloned()
+            inner.pools.get(worker_source).cloned()
         } else {
             None
         };
@@ -158,6 +179,7 @@ impl SearchJobs {
                     state: "running".into(),
                     partial: false,
                     rows: Vec::new(),
+                    project_context: None,
                     bounds: serde_json::json!({"maxRows":MAX_ROWS,"maxBytes":MAX_BYTES,"timeoutMs":QUERY_TIME.as_millis(),"referenceTtlSeconds":TTL.as_secs(),"maxObjectLeasesPerSource":MAX_JOBS*MAX_ROWS}),
                 },
                 started,
@@ -165,7 +187,7 @@ impl SearchJobs {
                 references: HashMap::new(),
             },
         );
-        *inner.workers.entry(source.into()).or_default() += 1;
+        *inner.workers.entry(worker_source.into()).or_default() += 1;
         Ok(Work {
             owner: self.clone(),
             generation,
@@ -174,6 +196,8 @@ impl SearchJobs {
             cancelled,
             deadline: started + QUERY_TIME,
             pool,
+            worker_source: worker_source.into(),
+            project_valid: None,
         })
     }
     pub fn snapshot(&self, generation: &str) -> Result<Snapshot, String> {
@@ -198,6 +222,20 @@ impl SearchJobs {
         }
         Ok(())
     }
+    pub fn cancel_project(&self) {
+        if let Ok(mut inner) = self.0.lock() {
+            for job in inner
+                .jobs
+                .values_mut()
+                .filter(|j| j.snapshot.source == "current_project")
+            {
+                job.cancelled.store(true, Ordering::Release);
+                job.references.clear();
+                job.snapshot.rows.clear();
+                job.snapshot.state = "cancelled".into();
+            }
+        }
+    }
     pub fn resolve(&self, reference: &str) -> Result<Reference, String> {
         let inner = self.0.lock().map_err(|_| "search_unavailable")?;
         inner
@@ -209,8 +247,21 @@ impl SearchJobs {
     }
 }
 impl Work {
+    pub fn bind_project(&mut self, selection: &super::project_provider::Selection) {
+        self.project_valid = Some(selection.valid.clone());
+        if let Ok(mut inner) = self.owner.0.lock() {
+            if let Some(job) = inner.jobs.get_mut(&self.generation) {
+                job.snapshot.project_context = Some(selection.project.context.clone());
+            }
+        }
+    }
     pub fn stopped(&self) -> bool {
-        self.cancelled.load(Ordering::Acquire) || Instant::now() >= self.deadline
+        self.cancelled.load(Ordering::Acquire)
+            || self
+                .project_valid
+                .as_ref()
+                .is_some_and(|valid| !valid.load(Ordering::Acquire))
+            || Instant::now() >= self.deadline
     }
     pub fn publish_candidates(&self, candidates: &[Candidate], capped: bool) -> Result<(), String> {
         if self.stopped() {
@@ -252,11 +303,24 @@ impl Work {
         Ok(())
     }
     pub fn verify(&self, index: usize, candidate: &Candidate) {
+        self.verify_with_project(index, candidate, None);
+    }
+    pub fn verify_with_project(
+        &self,
+        index: usize,
+        candidate: &Candidate,
+        project: Option<&VerifiedProject>,
+    ) {
         if self.stopped() {
             return;
         }
         let identities = (|| {
-            if candidate.offline || !self.pool.as_ref().is_some_and(|pool| pool.available()) {
+            if (self.source == "current_project" && project.is_none())
+                || project
+                    .is_some_and(|project| !candidate.path.starts_with(&project.reference.root))
+                || candidate.offline
+                || !self.pool.as_ref().is_some_and(|pool| pool.available())
+            {
                 return None;
             }
             if !candidate.path.is_absolute()
@@ -280,7 +344,7 @@ impl Work {
         let identities = identities.and_then(|((root, root_identity), (file, file_identity))| {
             self.pool
                 .as_ref()?
-                .hold((file, root))
+                .hold((file, root, project.map(|p| p.object.clone())))
                 .map(|objects| (root_identity, file_identity, objects))
         });
         // A late filesystem reply can neither publish rows nor revive refs.
@@ -301,6 +365,7 @@ impl Work {
                             reference,
                             Reference {
                                 candidate: candidate.clone(),
+                                project: project.map(|p| p.reference.clone()),
                                 root_identity,
                                 file_identity,
                                 source: self.source.clone(),
@@ -320,6 +385,17 @@ impl Work {
         if let Ok(mut inner) = self.owner.0.lock() {
             if let Some(job) = inner.jobs.get_mut(&self.generation) {
                 if !job.cancelled.load(Ordering::Acquire) {
+                    if self
+                        .project_valid
+                        .as_ref()
+                        .is_some_and(|valid| !valid.load(Ordering::Acquire))
+                    {
+                        job.cancelled.store(true, Ordering::Release);
+                        job.references.clear();
+                        job.snapshot.rows.clear();
+                        job.snapshot.state = "cancelled".into();
+                        return;
+                    }
                     let timed_out = Instant::now() >= self.deadline;
                     job.snapshot.state = if timed_out { "timed_out" } else { state }.into();
                     job.snapshot.partial |= timed_out || state != "complete";
@@ -404,6 +480,82 @@ mod tests {
         assert_eq!(result.state, "timed_out");
         assert!(result.rows[0].reference.is_none());
     }
+    #[test]
+    fn project_provider_fixture_pins_scope_and_invalidates_only_its_references() {
+        use super::super::project_provider::Registry;
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("project");
+        std::fs::create_dir(&root).unwrap();
+        let mut candidate = candidate(directory.path());
+        candidate.path = root.join("note.md");
+        std::fs::write(&candidate.path, "fixture").unwrap();
+        let registry = Registry::default();
+        let context = serde_json::json!({"projectId":"fixture-project","worktreeId":"fixture-worktree","target":{"kind":"windows"},"revision":1});
+        let mut snapshot = serde_json::json!({"schemaVersion":1,"revision":1,"current":context,"projects":[{"context":context,"root":root,"availability":"available","activityPaths":[]}]});
+        registry
+            .replace(&serde_json::to_vec(&snapshot).unwrap())
+            .unwrap();
+        let selection = registry.current().unwrap();
+        let jobs = SearchJobs::default();
+        let files = jobs.begin("files", "store").unwrap();
+        files
+            .publish_candidates(std::slice::from_ref(&candidate), false)
+            .unwrap();
+        files.verify(0, &candidate);
+        let file_ref = jobs.snapshot(&files.generation).unwrap().rows[0]
+            .reference
+            .clone()
+            .unwrap();
+        let mut work = jobs.begin("current_project", "store").unwrap();
+        work.bind_project(&selection);
+        assert!(jobs.begin("files", "store").is_err());
+        assert!(jobs.begin("current_project", "store").is_err());
+        work.publish_candidates(std::slice::from_ref(&candidate), false)
+            .unwrap();
+        let (object, identity) = devbox_filesystem::open_filesystem_object(&root, true).unwrap();
+        let verified = VerifiedProject {
+            reference: ProjectReference {
+                epoch: selection.epoch.clone(),
+                root,
+                identity,
+            },
+            object: Arc::new(object),
+        };
+        work.verify_with_project(0, &candidate, Some(&verified));
+        let result = jobs.snapshot(&work.generation).unwrap();
+        assert_eq!(
+            result.project_context.as_ref().unwrap().worktree_id,
+            "fixture-worktree"
+        );
+        let project_ref = result.rows[0].reference.clone().unwrap();
+        assert_eq!(
+            jobs.resolve(&project_ref)
+                .unwrap()
+                .project
+                .as_ref()
+                .unwrap()
+                .identity,
+            identity
+        );
+        snapshot["revision"] = 2.into();
+        registry
+            .replace(&serde_json::to_vec(&snapshot).unwrap())
+            .unwrap();
+        jobs.cancel_project();
+        assert!(jobs.resolve(&project_ref).is_err());
+        assert!(jobs.resolve(&file_ref).is_ok());
+        assert!(work.stopped());
+        // A registration can change between taking its snapshot and admitting
+        // a query. Such late admission cannot publish old-context candidates.
+        drop(work);
+        let mut late = jobs.begin("current_project", "store").unwrap();
+        late.bind_project(&selection);
+        assert!(late.publish_candidates(&[candidate], false).is_err());
+        late.finish("complete");
+        assert_eq!(jobs.snapshot(&late.generation).unwrap().state, "cancelled");
+        assert!(jobs.begin("notes", "store").is_ok());
+    }
+
     #[test]
     fn expiry_releases_object_leases_and_delete_recreate_cannot_recycle_identity() {
         let root = tempfile::tempdir().unwrap();

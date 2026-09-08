@@ -6,7 +6,8 @@
 /// connections. The domain keeps its existing filter and deepest-root rules.
 pub mod query {
     pub use crate::core::db::{
-        is_indexed_path, list_roots, search_content_with_filter, search_with_filter,
+        is_indexed_path, list_roots, search_content_with_filter,
+        search_content_with_filter_in_scope, search_with_filter, search_with_filter_in_scope,
     };
     pub use crate::core::models::SearchFilter;
 }
@@ -173,19 +174,7 @@ pub fn remap_import_filter(raw: &str, root: Option<i64>) -> Result<String, Strin
         .map_err(|_| "import_row_invalid".into())
 }
 pub fn normalize_import_root(raw: &str) -> Result<String, String> {
-    if raw.is_empty() || raw.len() > 32768 || raw.chars().any(char::is_control) {
-        return Err("import_row_invalid".into());
-    }
-    let path = crate::core::db::normalize_path(raw);
-    let drive = path.as_bytes();
-    let windows_absolute =
-        drive.len() >= 3 && drive[0].is_ascii_alphabetic() && drive[1] == b':' && drive[2] == b'/';
-    if (!std::path::Path::new(&path).is_absolute() && !windows_absolute && !path.starts_with("//"))
-        || path.split('/').any(|part| matches!(part, "." | ".."))
-    {
-        return Err("import_row_invalid".into());
-    }
-    Ok(path)
+    crate::core::db::normalize_absolute_root(raw).map_err(|_| "import_row_invalid".into())
 }
 
 pub const COMMANDS: &[&str] = &[

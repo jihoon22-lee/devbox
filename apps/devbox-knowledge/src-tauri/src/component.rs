@@ -258,7 +258,9 @@ async fn execute(
             .await
         }
         "knowledge.activity" => {
-            life_log_lib::component::dispatch(app, &request.method, request.args).await
+            life_log_lib::component::dispatch(app, &request.method, request.args)
+                .await
+                .map(|value| crate::search::associate_activity(app, &request.method, value))
         }
         "knowledge.opener" if request.method == "open_targets" => Ok(json!([])),
         "knowledge.opener" if request.method == "open_in" => Err("provider_unavailable".into()),

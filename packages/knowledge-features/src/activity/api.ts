@@ -1,7 +1,7 @@
 import { componentInvoke } from "../transport";
 const invoke = componentInvoke("knowledge.activity");
 import { isTauri } from "./lib/isTauri";
-import type { AppTotal, DaySummary, RangeSummary, Session } from "./types";
+import type { AppTotal, DaySummary, ProjectAssociation, RangeSummary, Session } from "./types";
 
 /** Export and digest documents share the same versioned activity contract. */
 export const LIFE_LOG_SCHEMA_VERSION = 2 as const;
@@ -223,6 +223,7 @@ export interface DigestDocument {
 }
 
 export interface DigestResponse {
+  projectAssociations?: Record<string, ProjectAssociation>;
   origin: ExportOrigin;
   document: DigestDocument;
   markdown: string;
@@ -575,6 +576,7 @@ export async function integrationSources(): Promise<SourceStatus[]> {
 }
 
 export interface Attribution {
+  projectAssociation?: ProjectAssociation;
   projectId: string;
   sessions: number;
   durationMs: number;

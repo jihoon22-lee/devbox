@@ -187,7 +187,7 @@ interface ResultContext {
   source?: string;
 }
 
-export default function App({ onNoteOpen }: { onNoteOpen?: () => void } = {}) {
+export default function App({ onNoteOpen, projectRevision = 0 }: { onNoteOpen?: () => void; projectRevision?: number } = {}) {
   const product = isProductHosted();
   const [source, setSource] = useState<SearchSource>("files");
   const [sourceSnapshot, setSourceSnapshot] = useState<SourceSnapshot>();
@@ -442,7 +442,7 @@ export default function App({ onNoteOpen }: { onNoteOpen?: () => void } = {}) {
       controller.abort();
       clearTimeout(t);
     };
-  }, [query, mode, regexMode, filter, source, product, queryRevision]);
+  }, [query, mode, regexMode, filter, source, product, queryRevision, projectRevision]);
 
   useEffect(() => {
     if (status.last_error === "indexing_failed") {
@@ -762,12 +762,13 @@ export default function App({ onNoteOpen }: { onNoteOpen?: () => void } = {}) {
       </header>
 
       {product && <p role="status" className="source-status">
-        {source === "current_project" ? "현재 프로젝트가 연결되지 않았습니다. 프로젝트 연결 후 해당 범위에서 검색할 수 있습니다."
+        {source === "current_project" && (!sourceSnapshot || sourceSnapshot.state === "unsupported") ? "현재 프로젝트가 연결되지 않았습니다. 프로젝트 연결 후 해당 범위에서 검색할 수 있습니다."
           : sourceSnapshot?.state === "unsupported" ? "이 검색 범위에서 현재 필터를 지원하지 않습니다. 필터를 해제하거나 All Indexed Files를 선택해 주세요."
           : sourceSnapshot?.state === "unavailable" ? "검색 출처를 읽지 못했습니다. 다른 범위를 선택하거나 다시 검색해 주세요."
           : sourceSnapshot?.state === "running" ? "검색 중… 파일 연결을 확인하고 있습니다."
           : sourceSnapshot?.state === "timed_out" ? "제한 시간 내 확인한 결과입니다. 연결을 확인하지 못한 파일은 열 수 없습니다."
           : sourceSnapshot?.partial ? "일부 결과입니다. 결과 상한이나 연결 상태를 확인해 주세요."
+          : source === "current_project" ? "현재 프로젝트 폴더의 파일 인덱스에서 검색합니다."
           : source === "notes" ? "Notes의 노트 인덱스에서 검색합니다. 파일 필터는 All Indexed Files에서 사용할 수 있습니다." : "파일 인덱스에서 검색합니다. 검색 결과의 출처와 루트를 함께 표시합니다."}
       </p>}
       {status.indexing && (
@@ -1082,7 +1083,7 @@ export default function App({ onNoteOpen }: { onNoteOpen?: () => void } = {}) {
                 >
                   <td>
                     <span className="name">{f.name}</span>
-                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
+                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : f.source === "current_project" ? "Current Project" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
                   </td>
                   <td className="snippet">{f.snippet}</td>
                   <td className="mono dim">{f.path}</td>
@@ -1139,7 +1140,7 @@ export default function App({ onNoteOpen }: { onNoteOpen?: () => void } = {}) {
                 >
                   <td>
                     <span className="name">{f.name}</span>
-                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
+                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : f.source === "current_project" ? "Current Project" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
                   </td>
                   <td className="mono dim">{f.path}</td>
                   <td className="mono">{f.source === "notes" ? "—" : fmtSize(f.size)}</td>

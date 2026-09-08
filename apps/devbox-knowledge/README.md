@@ -90,7 +90,8 @@ the 280,000 / 90,000 outer-shell budget.
 Search provides Notes / Current Project / All Indexed Files on the existing full
 filename/content/regex/filter/root/index/saved-search surface. Notes title/body FTS
 and file FTS remain separate. File-only filters report unsupported in Notes;
-Current Project explains that trusted project context is not yet connected.
+Current Project uses a native registry projection and reports unavailable context
+until the B04/B07 authenticated provider is connected.
 
 The native source API returns opaque query/store generations, source/root identity,
 result bounds and partial/stale/unsupported state. Read-only SQL has a 1.5-second
@@ -122,7 +123,8 @@ stopped on a normalized Windows-path string comparison. Root setup now uses nati
 IDs, and file assertions compare actual object IDs. Current native import, summary,
 Search and folder-rebinding execution remain pending past that stage. See the B03
 workthrough for exact runs and portable evidence. Session-summary/provider and
-Project Registry contracts plus final Windows/WSL acceptance remain in this PR.
+The Project Registry provider contract is implemented below. Final Windows/WSL
+acceptance and detailed parity evidence remain in this PR.
 
 ### B06 session summary input
 
@@ -149,3 +151,32 @@ snapshot for explicit preview/cancel/save through its existing one-time claim an
 exclusive identity-checked new-note path. Existing files are not appended to or
 overwritten. Once saved, redelivery cannot claim it again. The standalone legacy
 store cannot preview this product-only kind. No new renderer mutation API is added.
+
+### B04/B07 project provider
+
+The native `install_project_snapshot`/`disconnect_project_provider` entry points
+accept only a bounded projection from the authenticated registry owner; they are
+absent from renderer commands. The [v1 fixture](src-tauri/tests/fixtures/project-provider-v1.json)
+contains a registry revision, exact B01 current context, at most 256 project records,
+normalized host roots, availability and explicit old Activity path mappings. The
+whole projection is limited to 64 KiB; aliases are capped at 16 per record. B04/B07
+must authenticate the provider, resolve opaque distro IDs to the supplied host
+roots, forward revisions and revoke the projection on disconnect/expiry. Its actual
+transport is their later integration scope. No renderer path becomes project authority.
+
+Current Project now queries the same filename/content/filter engine with a native
+folder prefix applied in SQL before LIMIT. It retains separate file/Notes indexes,
+deepest-root ownership and case-sensitive WSL tails. A broad index root containing
+multiple projects does not widen the selected scope. Cached rows are published
+before any filesystem probe; offline/missing projects remain inspectable without
+opening. Current Project and All Indexed Files share two retained file workers and
+one object-retirement budget. A verified project root is pinned with each reference
+and rechecked by the separate opener. Provider changes revoke old project jobs and
+references without cancelling Notes or All Indexed Files; late old-context admission
+cannot publish. Product events refresh the mounted Search/Activity views.
+
+Activity keeps its old paths, durations and commit counts. A separate UI projection
+marks mapped, unmapped, ambiguous, offline, missing or unavailable registry entries;
+no row is silently dropped. Digest documents, exports and deterministic note bodies
+are unchanged. Until the provider is connected, Current Project reports unavailable
+context and Activity shows that the registry connection is pending.

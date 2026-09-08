@@ -602,3 +602,25 @@ it("shows unavailable Git projects without representing them as a zero-commit su
   expect(within(unavailable as HTMLElement).queryByText("커밋 0개")).not.toBeInTheDocument();
   expect(screen.getByText("커밋 2개")).toBeInTheDocument();
 });
+
+
+it("keeps unmapped and offline project rows visible without changing their Git counts", async () => {
+  mocks.getDigest.mockImplementation(async (input: DigestInput) => {
+    const response = digestFixture(input);
+    response.document.git.projects = [
+      { path: "C:/fixture/unmapped", commits: 2, errorCode: null },
+      { path: "C:/fixture/registered-offline", commits: 1, errorCode: null },
+    ];
+    response.document.git.totalCommits = 3;
+    response.projectAssociations = {
+      "C:/fixture/unmapped": { state: "unmapped" },
+      "C:/fixture/registered-offline": { state: "offline", context: { projectId: "project", worktreeId: "worktree" } },
+    };
+    return response;
+  });
+  await renderLoadedApp();
+  expect(screen.getByText(/등록되지 않은 프로젝트/u)).toBeInTheDocument();
+  expect(screen.getByText(/프로젝트 오프라인/u)).toBeInTheDocument();
+  expect(screen.getByText("커밋 2개")).toBeInTheDocument();
+  expect(screen.getByText("커밋 1개")).toBeInTheDocument();
+});

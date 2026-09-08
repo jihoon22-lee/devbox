@@ -585,7 +585,7 @@ describe("Everything+ filters and saved queries", () => {
 
 
 describe("product source search", () => {
-  function snapshot(generation: string, source: "files" | "notes", reference: string | null = "opaque-note") : SourceSnapshot {
+  function snapshot(generation: string, source: "files" | "notes" | "current_project", reference: string | null = "opaque-note") : SourceSnapshot {
     return { generation, storeGeneration: "native-store", source, state: "complete", partial: false, rows: [{ source, rootIdentity: `${source}:7`, reference, availability: reference ? "available" : "stale", value: { id: 1, path: "C:/vault/shared.md", name: generation, ext: "md", size: 5, modified_ts: 1, snippet: "" } }] };
   }
   it("cancels superseded work, ignores late rows and opens the exact Notes reference", async () => {
@@ -605,6 +605,26 @@ describe("product source search", () => {
     fireEvent.click(within(row).getByRole("button", { name: "열기" }));
     await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("C:/vault/shared.md", "opaque-note"));
     expect(activate).toHaveBeenCalledOnce();
+  });
+  it("refreshes current-project results on a provider revision and rejects late old rows", async () => {
+    mocks.product = true;
+    const pending: Array<{ signal: AbortSignal; update: (value: SourceSnapshot) => void }> = [];
+    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, signal, update) => { pending.push({ signal, update }); return []; });
+    const { rerender } = render(<App projectRevision={0}/>);
+    fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "shared" } });
+    fireEvent.change(screen.getByRole("combobox", { name: "검색 범위" }), { target: { value: "current_project" } });
+    await waitFor(() => expect(pending).toHaveLength(1));
+    act(() => pending[0].update(snapshot("old project", "current_project")));
+    expect(screen.getByText("현재 프로젝트 폴더의 파일 인덱스에서 검색합니다.")).toBeInTheDocument();
+    rerender(<App projectRevision={1}/>);
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(pending[0].signal.aborted).toBe(true);
+    act(() => { pending[1].update(snapshot("new project", "current_project", "new-scope-reference")); pending[0].update(snapshot("late old project", "current_project")); });
+    expect(screen.queryByText("late old project")).not.toBeInTheDocument();
+    const row = screen.getByText("new project").closest("tr")!;
+    expect(within(row).getByText(/Current Project/u)).toBeInTheDocument();
+    fireEvent.click(within(row).getByRole("button", { name: "열기" }));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("C:/vault/shared.md", "new-scope-reference"));
   });
   it("preserves an unavailable result for inspection while disabling all opening paths", async () => {
     mocks.product = true;

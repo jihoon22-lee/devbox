@@ -1,3 +1,4 @@
+import { projectAssociationLabel } from "./types";
 import {
   ContextMenu,
   useContextMenu,
@@ -202,6 +203,7 @@ function rangeFromDigest(response: DigestResponse, label: string): RangeSummary 
         path: project.path,
         commits: project.commits,
         error_code: project.errorCode,
+        projectAssociation: response.projectAssociations?.[project.path],
       })),
       total_commits: response.document.git.totalCommits,
     },
@@ -226,6 +228,7 @@ function dayFromDigest(response: DigestResponse): DaySummary {
         path: project.path,
         commits: project.commits,
         error_code: project.errorCode,
+        projectAssociation: response.projectAssociations?.[project.path],
       })),
       total_commits: response.document.git.totalCommits,
     },
@@ -437,9 +440,10 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
   );
 }
 
-export default function App({ active = true, selectedDate, onDateChange, onDaily, onDraft, lifecycleSettings }: {
+export default function App({ active = true, selectedDate, onDateChange, onDaily, onDraft, lifecycleSettings, projectRevision = 0 }: {
   active?: boolean;
   selectedDate?: string;
+  projectRevision?: number;
   onDateChange?: (date: string) => void;
   onDaily?: () => void;
   onDraft?: () => void;
@@ -1008,7 +1012,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     } finally {
       if (loadRequestRef.current === request) setLoading(false);
     }
-  }, [view, date, dateStr, digestAppFilter]);
+  }, [view, date, dateStr, digestAppFilter, projectRevision]);
 
   useEffect(() => {
     void load();
@@ -1696,7 +1700,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                   <h2>프로젝트 귀속 · 모든 애플리케이션</h2>
                   {attribution.attributed.map((a) => (
                     <div key={a.projectId} className="git-row">
-                      <span className="mono dim">{a.projectId}</span>
+                      <span className="mono dim">{a.projectId}{a.projectAssociation && <small> · {projectAssociationLabel(a.projectAssociation)}</small>}</span>
                       <span className="git-count">세션 {a.sessions}개 · {fmtDuration(a.durationMs)}</span>
                     </div>
                   ))}
@@ -1716,7 +1720,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
                   <p className="dim">같은 저장소의 동일 커밋은 한 번만 집계하며, 경로 순서상 첫 프로젝트에 귀속합니다. 조회하지 못한 프로젝트는 합계에서 제외합니다.</p>
                   {summary.git.projects.map((p) => (
                     <div key={p.path} className="git-row">
-                      <span className="mono dim">{p.path}</span>
+                      <span className="mono dim">{p.path}{p.projectAssociation && <small> · {projectAssociationLabel(p.projectAssociation)}</small>}</span>
                       <span className="git-count">{p.error_code ? "조회할 수 없음 · 경로와 Git 연결 확인" : `커밋 ${p.commits}개`}</span>
                     </div>
                   ))}

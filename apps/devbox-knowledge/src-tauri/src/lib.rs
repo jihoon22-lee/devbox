@@ -3,6 +3,7 @@ mod core;
 mod lifecycle;
 mod migration;
 mod search;
+pub use search::{disconnect_project_provider, install_project_snapshot};
 mod startup;
 mod storage_space;
 mod vault_owner;

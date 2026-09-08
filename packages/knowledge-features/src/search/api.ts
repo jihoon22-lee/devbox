@@ -245,6 +245,7 @@ export async function deleteSavedQuery(id: number): Promise<void> {
 
 export type SearchSource = "notes" | "files" | "current_project";
 export interface SourceSnapshot {
+  projectContext?: { projectId: string; worktreeId: string; revision: number };
   generation: string;
   storeGeneration: string;
   source: SearchSource;

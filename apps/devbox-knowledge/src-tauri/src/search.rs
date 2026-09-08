@@ -1,6 +1,7 @@
 //! Product source API and separate opener. Renderer paths are never authority.
 use crate::core::{
-    source_search::{Candidate, SearchJobs, Work},
+    project_provider::{Availability, Registry, Selection},
+    source_search::{Candidate, ProjectReference, SearchJobs, VerifiedProject, Work},
     stores,
 };
 use everything_plus_lib::component::query::{self, SearchFilter};
@@ -23,6 +24,7 @@ struct Host {
     manifest: stores::Manifest,
     jobs: SearchJobs,
     openers: Arc<AtomicUsize>,
+    projects: Registry,
 }
 pub fn initialize(
     app: &tauri::AppHandle,
@@ -36,10 +38,73 @@ pub fn initialize(
         manifest: manifest.clone(),
         jobs,
         openers: Arc::default(),
+        projects: Registry::default(),
     }) {
         return Err("component_state_conflict".into());
     }
     Ok(())
+}
+/// B04/B07 calls this only after authenticating the registry owner and resolving
+/// its Windows/WSL target bindings. There is no renderer invoke for this API.
+pub fn install_project_snapshot(app: &tauri::AppHandle, bytes: &[u8]) -> Result<(), String> {
+    use tauri::Emitter;
+    let host = app.try_state::<Host>().ok_or("setup_required")?;
+    if host.projects.replace(bytes)? {
+        host.jobs.cancel_project();
+        let _ = app.emit_to("main", "devbox://project-context", ());
+    }
+    Ok(())
+}
+/// Called on provider disconnect/expiry; existing file/note source jobs survive.
+pub fn disconnect_project_provider(app: &tauri::AppHandle) {
+    use tauri::Emitter;
+    if let Some(host) = app.try_state::<Host>() {
+        host.projects.disconnect();
+        host.jobs.cancel_project();
+        let _ = app.emit_to("main", "devbox://project-context", ());
+    }
+}
+/// Decorate the existing Activity projections without rewriting source IDs,
+/// dropping unmapped rows or changing duration/commit aggregation.
+pub fn associate_activity(app: &tauri::AppHandle, method: &str, mut value: Value) -> Value {
+    let Some(host) = app.try_state::<Host>() else {
+        return value;
+    };
+    let registry = &host.projects;
+    if method == "project_attribution" {
+        if let Some(rows) = value["attributed"].as_array_mut() {
+            for row in rows {
+                if let Some(path) = row["projectId"].as_str() {
+                    row["projectAssociation"] = registry.association(path);
+                }
+            }
+        }
+    }
+    if method == "get_digest" {
+        if let Some(rows) = value["document"]["git"]["projects"].as_array() {
+            let associations: serde_json::Map<String, Value> = rows
+                .iter()
+                .filter_map(|row| {
+                    row["path"]
+                        .as_str()
+                        .map(|path| (path.into(), registry.association(path)))
+                })
+                .collect();
+            // The export document and its Markdown remain the existing immutable
+            // native digest. Registry mapping is a separate UI projection.
+            value["projectAssociations"] = Value::Object(associations);
+        }
+    }
+    if matches!(method, "get_day" | "get_range") {
+        if let Some(rows) = value["git"]["projects"].as_array_mut() {
+            for row in rows {
+                if let Some(path) = row["path"].as_str() {
+                    row["projectAssociation"] = registry.association(path);
+                }
+            }
+        }
+    }
+    value
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -96,7 +161,12 @@ fn revision(conn: &Connection, source: &str, path: &str) -> Result<(PathBuf, Val
         }).map_err(|_| "search_stale".into())
     }
 }
-fn candidates(conn: &Connection, request: &Query, limit: i64) -> Result<Vec<Candidate>, String> {
+fn candidates(
+    conn: &Connection,
+    request: &Query,
+    limit: i64,
+    scope: Option<&str>,
+) -> Result<Vec<Candidate>, String> {
     if request.query.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -119,13 +189,25 @@ fn candidates(conn: &Connection, request: &Query, limit: i64) -> Result<Vec<Cand
     } else {
         let values = if request.mode == "content" {
             serde_json::to_value(
-                query::search_content_with_filter(conn, &request.query, limit, &request.filter)
-                    .map_err(|_| "search_unavailable")?,
+                query::search_content_with_filter_in_scope(
+                    conn,
+                    &request.query,
+                    limit,
+                    &request.filter,
+                    scope,
+                )
+                .map_err(|_| "search_unavailable")?,
             )
         } else {
             serde_json::to_value(
-                query::search_with_filter(conn, &request.query, limit, &request.filter)
-                    .map_err(|_| "search_unavailable")?,
+                query::search_with_filter_in_scope(
+                    conn,
+                    &request.query,
+                    limit,
+                    &request.filter,
+                    scope,
+                )
+                .map_err(|_| "search_unavailable")?,
             )
         }
         .map_err(|_| "search_unavailable")?;
@@ -159,6 +241,7 @@ fn run(
     request: Query,
     limit: i64,
     work: Work,
+    project: Option<Selection>,
 ) {
     let result = (|| {
         let component = if request.source == "notes" {
@@ -168,7 +251,12 @@ fn run(
         };
         let path = stores::directory(&root, &manifest, component)?.join("data.db");
         let conn = read_connection(&path, Some(&work), work.deadline)?;
-        let mut rows = candidates(&conn, &request, limit)?;
+        let mut rows = candidates(
+            &conn,
+            &request,
+            limit,
+            project.as_ref().map(|p| p.project.root.as_str()),
+        )?;
         if request.source == "notes" {
             let (offline, stale) = knowledge_base_lib::component::product_index_health(&app);
             for row in &mut rows {
@@ -186,9 +274,40 @@ fn run(
                 row.index_stale = status.is_none_or(|(_, _, stale)| *stale);
             }
         }
+        if project
+            .as_ref()
+            .is_some_and(|p| p.project.availability != Availability::Available)
+        {
+            for row in &mut rows {
+                row.offline = true;
+                row.index_stale = true;
+            }
+        }
         // Release the SQL snapshot before any potentially offline filesystem IO.
         drop(conn);
         work.publish_candidates(&rows, rows.len() >= limit as usize)?;
+        // Cached rows are already visible before an unknown/offline project
+        // root can block a probe. The same retained source worker owns this IO.
+        let verified_project = project
+            .as_ref()
+            .filter(|p| p.project.availability == Availability::Available)
+            .and_then(|p| {
+                if work.stopped() {
+                    return None;
+                }
+                let root = PathBuf::from(&p.project.root);
+                devbox_filesystem::ensure_no_links(&root).ok()?;
+                let (object, identity) =
+                    devbox_filesystem::open_filesystem_object(&root, true).ok()?;
+                Some(VerifiedProject {
+                    reference: ProjectReference {
+                        epoch: p.epoch.clone(),
+                        root,
+                        identity,
+                    },
+                    object: Arc::new(object),
+                })
+            });
         // Native roots are checked first. A disconnected WSL probe cannot delay
         // publishing the already-read matches or other source workers.
         let mut order: Vec<_> = rows.iter().enumerate().collect();
@@ -199,7 +318,11 @@ fn run(
                 .starts_with("//")
         });
         for (index, row) in order {
-            work.verify(index, row);
+            if project.is_some() {
+                work.verify_with_project(index, row, verified_project.as_ref());
+            } else {
+                work.verify(index, row);
+            }
             if work.stopped() {
                 break;
             }
@@ -231,7 +354,10 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 .filter
                 .normalized()
                 .map_err(|_| "component_args_invalid")?;
-            if request.source == "current_project"
+            let project = (request.source == "current_project")
+                .then(|| host.projects.current())
+                .flatten();
+            if (request.source == "current_project" && project.is_none())
                 || (request.source == "notes" && !request.filter.is_empty())
             {
                 let work = host
@@ -251,15 +377,18 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                     2000
                 },
             );
-            let work = host
+            let mut work = host
                 .jobs
                 .begin(&request.source, &host.manifest.generation)?;
+            if let Some(project) = &project {
+                work.bind_project(project);
+            }
             let snapshot = host.jobs.snapshot(&work.generation)?;
             let root = host.root.clone();
             let manifest = host.manifest.clone();
             let app = app.clone();
             tauri::async_runtime::spawn_blocking(move || {
-                run(app, root, manifest, request, limit, work)
+                run(app, root, manifest, request, limit, work, project)
             });
             serde_json::to_value(snapshot).map_err(|_| "search_unavailable".into())
         }
@@ -305,6 +434,7 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
         .map_err(|_| "search_busy")?;
     let permit = OpenPermit(host.openers.clone());
     let jobs = host.jobs.clone();
+    let projects = host.projects.clone();
     let root = host.root.clone();
     let app = app.clone();
     let reveal = method == "reveal_file";
@@ -313,6 +443,13 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
     tauri::async_runtime::spawn_blocking(move || {
         let _permit = permit;
         let result = (|| {
+            if reference
+                .project
+                .as_ref()
+                .is_some_and(|p| !projects.matches(&p.epoch))
+            {
+                return Err("search_stale".into());
+            }
             let manifest = stores::read(&root)?.ok_or("search_stale")?;
             if manifest.generation != reference.store_generation {
                 return Err("search_stale".into());
@@ -347,6 +484,16 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
             {
                 return Err("search_stale".into());
             }
+            if let Some(project) = &reference.project {
+                if !projects.matches(&project.epoch)
+                    || !row.path.starts_with(&project.root)
+                    || devbox_filesystem::filesystem_identity(&project.root, true)
+                        .map_err(|_| "search_stale")?
+                        != project.identity
+                {
+                    return Err("search_stale".into());
+                }
+            }
             // Root removal/index replacement may have happened during a slow OS
             // probe. Re-read the current registered row before authorizing launch.
             let current = read_connection(&database, None, deadline)?;
@@ -355,6 +502,13 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
             }
             drop(current);
             jobs.resolve(&input.reference)?;
+            if reference
+                .project
+                .as_ref()
+                .is_some_and(|p| !projects.matches(&p.epoch))
+            {
+                return Err("search_stale".into());
+            }
             if Instant::now() >= deadline {
                 return Err("search_stale".into());
             }
@@ -415,32 +569,34 @@ mod tests {
             .execute("INSERT INTO roots(id,path,content) VALUES(7,?1,1)", [&root])
             .unwrap();
         files.execute("INSERT INTO files(id,path,name,ext,size,modified_ts,root_id) VALUES(1,?1,'shared.md','md',12,100,7)", [&file]).unwrap();
-        let note_rows = candidates(&notes, &query_request("notes"), 200).unwrap();
-        let file_rows = candidates(&files, &query_request("files"), 200).unwrap();
+        let note_rows = candidates(&notes, &query_request("notes"), 200, None).unwrap();
+        let file_rows = candidates(&files, &query_request("files"), 200, None).unwrap();
         assert_eq!(note_rows.len(), 1);
         assert_eq!(file_rows.len(), 1);
         assert_eq!(note_rows[0].path, file_rows[0].path);
         assert_ne!(note_rows[0].root_key, file_rows[0].root_key);
         let mut body_query = query_request("notes");
         body_query.query = "onlynote".into();
-        assert!(candidates(&notes, &body_query, 200).unwrap().is_empty());
+        assert!(candidates(&notes, &body_query, 200, None)
+            .unwrap()
+            .is_empty());
         body_query.mode = "content".into();
         assert!(
-            candidates(&notes, &body_query, 200).unwrap()[0].value["snippet"]
+            candidates(&notes, &body_query, 200, None).unwrap()[0].value["snippet"]
                 .as_str()
                 .unwrap()
                 .contains("onlynote")
         );
         let mut filtered = query_request("files");
         filtered.filter.source_root_id = Some(99);
-        assert!(candidates(&files, &filtered, 200).unwrap().is_empty());
+        assert!(candidates(&files, &filtered, 200, None).unwrap().is_empty());
         files.execute("DELETE FROM roots WHERE id=7", []).unwrap();
         assert!(revision(&files, "files", &file).is_err());
-        assert!(candidates(&files, &query_request("files"), 200)
+        assert!(candidates(&files, &query_request("files"), 200, None)
             .unwrap()
             .is_empty());
         assert_eq!(
-            candidates(&notes, &query_request("notes"), 200)
+            candidates(&notes, &query_request("notes"), 200, None)
                 .unwrap()
                 .len(),
             1
