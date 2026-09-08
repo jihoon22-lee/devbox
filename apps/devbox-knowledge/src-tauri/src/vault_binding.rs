@@ -77,28 +77,33 @@ fn database(
     deadline: Instant,
 ) -> Result<Connection, String> {
     let path = stores::directory(root, manifest, "notes")?.join("data.db");
-    let conn = Connection::open_with_flags(
-        path,
-        if writable {
-            OpenFlags::SQLITE_OPEN_READ_WRITE
-        } else {
-            OpenFlags::SQLITE_OPEN_READ_ONLY
-        },
-    )
-    .map_err(|_| "vault_change_invalid")?;
+    open_database(&path, writable, cancel, deadline)
+}
+fn open_database(
+    path: &Path,
+    writable: bool,
+    cancel: Arc<AtomicBool>,
+    deadline: Instant,
+) -> Result<Connection, String> {
+    // This is the already-selected product-owned database. Even a read-only
+    // preview must let SQLite recover a hot journal left by process exit.
+    // No CREATE flag, schema migration, legacy source write, or row mutation.
+    let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE)
+        .map_err(|_| "vault_change_invalid")?;
     conn.busy_timeout(Duration::from_millis(50))
         .map_err(|_| "vault_change_invalid")?;
     conn.progress_handler(
         1000,
         Some(move || cancel.load(Ordering::Acquire) || Instant::now() >= deadline),
     );
-    crate::core::import_rows::validate_owned_store(&conn, crate::core::import_rows::Source::Notes)?;
     if !writable {
         conn.execute_batch("PRAGMA trusted_schema=OFF; PRAGMA query_only=ON")
             .map_err(|_| "vault_change_invalid")?;
     }
+    crate::core::import_rows::validate_owned_store(&conn, crate::core::import_rows::Source::Notes)?;
     Ok(conn)
 }
+
 fn boundary(cancel: &AtomicBool, deadline: Instant) -> Result<(), String> {
     if cancel.load(Ordering::Acquire) {
         Err("vault_change_cancelled".into())
@@ -381,5 +386,81 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
             Ok(json!({"jobId":id}))
         }
         _ => Err("component_method_invalid".into()),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn interrupted_writer_fixture() {
+        let Some(path) = std::env::var_os("DEVBOX_VAULT_JOURNAL_FIXTURE") else {
+            return;
+        };
+        let conn = Connection::open_with_flags(path, OpenFlags::SQLITE_OPEN_READ_WRITE).unwrap();
+        conn.execute_batch("PRAGMA cache_size=1; PRAGMA synchronous=FULL; BEGIN IMMEDIATE;")
+            .unwrap();
+        for index in 0..32 {
+            conn.execute(
+                "INSERT INTO settings(key,value) VALUES(?1,?2)",
+                rusqlite::params![format!("uncommitted-{index}"), "x".repeat(8192)],
+            )
+            .unwrap();
+        }
+        // Simulate process exit while a derived-index writer is still active.
+        // SQLite, not the fixture, must recover its hot rollback journal.
+        std::process::exit(0);
+    }
+
+    #[test]
+    fn preview_recovers_owned_hot_journal_without_allowing_setting_writes() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("notes.db");
+        knowledge_base_lib::component::create_empty_store(&path, root.path()).unwrap();
+        let status = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "vault_binding::tests::interrupted_writer_fixture",
+                "--nocapture",
+            ])
+            .env("DEVBOX_VAULT_JOURNAL_FIXTURE", &path)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(path.with_extension("db-journal").metadata().unwrap().len() > 0);
+        let conn = open_database(
+            &path,
+            false,
+            Arc::new(AtomicBool::new(false)),
+            Instant::now() + TIMEOUT,
+        )
+        .unwrap();
+        assert_eq!(
+            data::current_root(&conn).unwrap(),
+            root.path().to_string_lossy()
+        );
+        assert_eq!(
+            conn.query_row(
+                "SELECT count(*) FROM settings WHERE key LIKE 'uncommitted-%'",
+                [],
+                |row| row.get::<_, i64>(0)
+            )
+            .unwrap(),
+            0
+        );
+        assert!(conn
+            .execute("UPDATE settings SET value='changed' WHERE key='root'", [])
+            .is_err());
+        drop(conn);
+        assert!(!path.with_extension("db-journal").exists());
+        assert!(open_database(
+            &root.path().join("missing.db"),
+            false,
+            Arc::new(AtomicBool::new(false)),
+            Instant::now() + TIMEOUT
+        )
+        .is_err());
+        assert!(!root.path().join("missing.db").exists());
     }
 }

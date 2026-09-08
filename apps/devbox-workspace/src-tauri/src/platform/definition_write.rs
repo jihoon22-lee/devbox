@@ -135,6 +135,26 @@ mod tests {
         assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
     }
     #[test]
+    fn private_overlay_publication_supports_long_generation_paths() {
+        let root = tempfile::tempdir().unwrap();
+        let mut parent = root.path().to_path_buf();
+        for _ in 0..8 {
+            parent.push("generation-0123456789-한글-space");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let path = parent.join("local-overlay.json");
+        let target = DefinitionTarget::capture(&path, None).unwrap();
+        assert_eq!(
+            target
+                .write(b"{\"expectedPorts\":[7777]}", || Ok(()))
+                .unwrap(),
+            None
+        );
+        assert_eq!(fs::read(&path).unwrap(), b"{\"expectedPorts\":[7777]}");
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    }
+
+    #[test]
     fn changed_bytes_or_objects_preserve_the_external_definition() {
         let root = tempfile::tempdir().unwrap();
         let path = root.path().join("project.json");

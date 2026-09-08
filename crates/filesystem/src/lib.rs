@@ -118,22 +118,14 @@ fn open_object(
 
     #[cfg(windows)]
     {
-        use std::os::windows::ffi::OsStrExt;
-        use std::os::windows::io::FromRawHandle;
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::{GENERIC_READ, WIN32_ERROR};
+        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+        use windows::Win32::Foundation::{GENERIC_READ, HANDLE, WIN32_ERROR};
         use windows::Win32::Storage::FileSystem::{
-            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, OPEN_EXISTING,
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
+            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
         };
 
-        let wide = path
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect::<Vec<_>>();
         let flags = FILE_FLAG_OPEN_REPARSE_POINT
             | if directory {
                 FILE_FLAG_BACKUP_SEMANTICS
@@ -148,25 +140,15 @@ fn open_object(
             } else {
                 GENERIC_READ.0
             };
-        let raw = unsafe {
-            CreateFileW(
-                PCWSTR(wide.as_ptr()),
-                desired_access,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                None,
-                OPEN_EXISTING,
-                flags,
-                None,
-            )
-        }
-        .map_err(|error| {
-            WIN32_ERROR::from_error(&error)
-                .map(|code| io::Error::from_raw_os_error(code.0 as i32))
-                .unwrap_or_else(|| io::Error::other(error))
-        })?;
-        // Transfer ownership immediately so every later error closes exactly
-        // this handle once.
-        let handle = unsafe { std::fs::File::from_raw_handle(raw.0) };
+        // Rust's Windows path conversion handles extended-length paths. Direct
+        // CreateFileW with an ordinary spelling fails once private generation
+        // paths (especially sibling temporary files) cross MAX_PATH.
+        let handle = OpenOptions::new()
+            .access_mode(desired_access)
+            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+            .custom_flags(flags.0)
+            .open(path)?;
+        let raw = HANDLE(handle.as_raw_handle());
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
         unsafe { GetFileInformationByHandle(raw, &mut information) }.map_err(|error| {
             WIN32_ERROR::from_error(&error)
@@ -573,6 +555,32 @@ mod identity_tests {
         assert!(filesystem_identity(&link, true).is_err());
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_long_paths_retain_contents_identity_and_replacement_checks() {
+        use std::io::Read;
+        use std::os::windows::ffi::OsStrExt;
+        let root = fixture_root();
+        let mut parent = root.clone();
+        while parent.as_os_str().encode_wide().count() < 300 {
+            parent.push("long-generation-한글-space");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let source = parent.join("local-overlay.json");
+        fs::write(&source, b"original").unwrap();
+        let (mut handle, identity) = open_filesystem_object(&source, false).unwrap();
+        let mut bytes = Vec::new();
+        handle.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"original");
+        assert_eq!(filesystem_identity(&source, false).unwrap(), identity);
+        assert!(filesystem_identity(&parent, true).is_ok());
+        fs::rename(&source, parent.join("previous.json")).unwrap();
+        fs::write(&source, b"replacement").unwrap();
+        assert_ne!(filesystem_identity(&source, false).unwrap(), identity);
+        drop(handle);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(windows)]

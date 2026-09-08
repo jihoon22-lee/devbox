@@ -208,6 +208,37 @@ Final `pnpm verify:affected` selected all and passed in **604.15 seconds**, unde
 the shared 8 GiB cap (cgroup peak **6,445,027,328 bytes**). The authoritative
 dependency-policy audit remains the final-commit CI gate.
 
+## Windows acceptance corrections
+
+The [09a52be Windows run](https://github.com/jihoon22-lee/devbox/actions/runs/34247438817)
+passed native authority/WAL tests, API Studio workflows and installer coexistence,
+but failed first private-overlay publication and Knowledge vault review. Files
+execution was not reached. General CI for that commit passed.
+
+Private generation paths plus the definition temporary filename can exceed
+Windows MAX_PATH. The shared identity opener now uses Rust OpenOptions with the
+same no-follow/access/share flags, retaining long-path conversion before querying
+the same native handle. A Windows native API probe without long-path opt-in
+reproduced ordinary-path error 3 at 306 characters while the extended spelling
+opened the same owned directory. New regressions cover long-directory identity, retained
+handles after replacement and complete private-overlay publication. The packaged
+Workspace result still requires a new Windows run.
+
+Knowledge vault preview could reject a hot rollback journal left by process exit
+as `import_database_invalid`. A subprocess regression reproduces the exact error
+with the old read-only connection. The selected product DB now permits SQLite
+recovery without CREATE or migration, enables query-only before validation, and
+still rejects setting writes. It never opens the legacy DB writable or edits vault
+files. The regression confirms rollback of uncommitted rows, the original binding,
+query-only enforcement and no missing-database creation. This correction belongs
+to the failing cross-product acceptance of this B04 PR, not a new feature bundle.
+
+Focused regression checks and strict Clippy passed in **69.116 seconds** under
+the shared 8 GiB cap (cgroup peak **4,646,440,960 bytes**). Windows-specific Rust
+checks and packaged workflows remain pending on the corrected commit. Final
+`pnpm verify:affected` selected all and passed in **571.894 seconds**, under the
+shared 8 GiB cap (cgroup peak **6,445,330,432 bytes**).
+
 ## Remaining acceptance
 
 Source routing, complete Git/LSP execution-trust evidence, importer mappings,
