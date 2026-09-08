@@ -343,3 +343,17 @@ one state mutex; remote independent cancellation needs work before WSL acceptanc
 Native file-dialog selection is implemented but has no actual Windows dialog
 fixture yet. Strict metadata parsing is an activation prerequisite, not a completed
 legacy importer. No R/S or completion issue is closed by this draft.
+
+## Test tool advisory correction
+
+CI at `833854a` found the newly indexed
+[Vitest mock redirect advisory](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
+All eight declared Vitest consumers now require `^4.1.11`; the lockfile resolves
+Vitest/mocker and their companion packages to 4.1.11. This updates development
+tooling only, preserving the production dependency graph. `pnpm audit
+--audit-level=moderate` reported no known vulnerabilities; notices generation and
+policy checking passed in **3.847 seconds**, with a **204,197,888-byte** cgroup
+peak. The notice package rows remained unchanged; only the pnpm lockfile digest
+changed. Full affected
+verification with the updated test runner passed in **546.214 seconds**, with a
+**6,446,292,992-byte** cgroup peak under the shared 8 GiB limit.
