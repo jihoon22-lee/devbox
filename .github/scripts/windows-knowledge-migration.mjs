@@ -21,7 +21,7 @@ const digest = file => createHash("sha256").update(readFileSync(file)).digest("h
 const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
 const progress = step => { evidence.step = step; writeFileSync(report, JSON.stringify(evidence, null, 2)); };
 const profiles = [], live = new Set(), databases = new Set();
-function openDatabase(file, options) { const db = new DatabaseSync(file, options); databases.add(db); return db; }
+function openDatabase(file, options = {}) { const db = new DatabaseSync(file, options); databases.add(db); return db; }
 const elevated = windowsProcessIsElevated();
 const apps = [
   { app: "knowledge-base", identifier: "com.devbox.knowledgebase", title: "Knowledge Base", source: "notes" },

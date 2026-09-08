@@ -88,11 +88,13 @@ fn legacy_guard(_path: &Path) -> Result<File, String> {
 fn root_guard(path: &Path) -> Result<File, String> {
     use std::os::windows::fs::OpenOptionsExt;
     use windows::Win32::Storage::FileSystem::{
-        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
-        FILE_SHARE_READ, FILE_SHARE_WRITE,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
+        FILE_READ_ATTRIBUTES, FILE_SHARE_READ, FILE_SHARE_WRITE,
     };
     OpenOptions::new()
-        .access_mode(FILE_READ_ATTRIBUTES.0)
+        // Attribute-only opens do not participate in Windows share-access
+        // checks. Directory read access is required to deny rename/delete.
+        .access_mode((FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES).0)
         .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE).0)
         .custom_flags((FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT).0)
         .open(path)
@@ -218,5 +220,8 @@ mod tests {
         assert!(fs::rename(vault.path(), vault.path().with_extension("moved")).is_err());
         drop(owner);
         assert!(OpenOptions::new().read(true).write(true).open(&db).is_ok());
+        let moved = vault.path().with_extension("moved");
+        fs::rename(vault.path(), &moved).unwrap();
+        fs::rename(&moved, vault.path()).unwrap();
     }
 }
