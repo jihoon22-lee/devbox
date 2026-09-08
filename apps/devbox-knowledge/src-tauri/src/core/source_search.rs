@@ -210,7 +210,20 @@ impl SearchJobs {
             job.snapshot.state = "timed_out".into();
             job.snapshot.partial = true;
         }
-        Ok(job.snapshot.clone())
+        let mut snapshot = job.snapshot.clone();
+        let source = if snapshot.source == "current_project" {
+            "files"
+        } else {
+            &snapshot.source
+        };
+        // Logical cancellation does not imply that blocking probes or remote
+        // handle retirement have completed. Report that retained capacity
+        // separately without doing filesystem IO under this metadata lock.
+        snapshot.bounds["retainedObjects"] =
+            serde_json::json!(inner.pools.get(source).map_or(0, |pool| pool.usage()));
+        snapshot.bounds["runningWorkers"] =
+            serde_json::json!(inner.workers.get(source).copied().unwrap_or(0));
+        Ok(snapshot)
     }
     pub fn cancel(&self, generation: &str) -> Result<(), String> {
         let mut inner = self.0.lock().map_err(|_| "search_unavailable")?;
@@ -645,6 +658,42 @@ mod tests {
         assert!(jobs.begin("notes", "store").is_ok());
     }
 
+    #[test]
+    fn cancelled_snapshot_reports_workers_and_native_objects_still_retained() {
+        let root = tempfile::tempdir().unwrap();
+        let candidate = candidate(root.path());
+        std::fs::write(&candidate.path, "fixture").unwrap();
+        let jobs = SearchJobs::default();
+        let work = jobs.begin("notes", "store").unwrap();
+        let generation = work.generation.clone();
+        work.publish_candidates(std::slice::from_ref(&candidate), false)
+            .unwrap();
+        work.verify(0, &candidate);
+        let snapshot = jobs.snapshot(&generation).unwrap();
+        let issued = jobs
+            .resolve(snapshot.rows[0].reference.as_ref().unwrap())
+            .unwrap();
+        jobs.cancel(&generation).unwrap();
+        let cancelled = jobs.snapshot(&generation).unwrap();
+        assert_eq!(cancelled.state, "cancelled");
+        assert_eq!(cancelled.bounds["runningWorkers"], 1);
+        assert_eq!(cancelled.bounds["retainedObjects"], 1);
+        drop(work);
+        let stopped = jobs.snapshot(&generation).unwrap();
+        assert_eq!(stopped.bounds["runningWorkers"], 0);
+        assert_eq!(stopped.bounds["retainedObjects"], 1);
+        drop(issued);
+        for _ in 0..100 {
+            if jobs.snapshot(&generation).unwrap().bounds["retainedObjects"] == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        assert_eq!(
+            jobs.snapshot(&generation).unwrap().bounds["retainedObjects"],
+            0
+        );
+    }
     #[test]
     fn expiry_releases_object_leases_and_delete_recreate_cannot_recycle_identity() {
         let root = tempfile::tempdir().unwrap();

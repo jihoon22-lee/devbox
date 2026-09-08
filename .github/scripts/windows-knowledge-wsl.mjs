@@ -22,7 +22,9 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   const posixMoved = `${posixCorpus}-temporarily-unavailable`;
   const moveCorpus = (from, to) => {
     const moved = spawnSync("wsl.exe", ["--distribution", distro, "--user", "root", "--exec", "/bin/mv", "-T", "--", from, to], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
-    assert.equal(moved.status, 0, "Owned WSL corpus move failed");
+    if (moved.status !== 0) evidence.wsl.moveFailure = { status: moved.status, signal: moved.signal,
+      error: moved.error?.code, stderr: (moved.stderr ?? "").slice(0, 2048), stdout: (moved.stdout ?? "").slice(0, 512) };
+    assert.equal(moved.status, 0, `Owned WSL corpus move failed: ${JSON.stringify(evidence.wsl.moveFailure)}`);
   };
   mkdirSync(root); mkdirSync(notes); mkdirSync(corpus);
   writeFileSync(path.join(notes, "Case.md"), "# Upper case\nWSL preserved content\n", { flag: "wx" });
@@ -112,6 +114,14 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   evidence.wsl.outsideSymlinkRejected = true;
 
   progress("wsl-unavailable-last-good-and-reconnect");
+  // Cancel acknowledges revocation immediately, while remote handles close on
+  // the bounded retirement worker. Establish that our own file-source work has
+  // actually drained before preparing an external directory move.
+  await eventually(async () => {
+    const state = succeeded(await command(item, "knowledge.search", "source_poll", { generation: held.generation }));
+    evidence.wsl.beforeMoveResources = { state: state.state, retainedObjects: state.bounds.retainedObjects, runningWorkers: state.bounds.runningWorkers };
+    return state.state === "cancelled" && state.bounds.retainedObjects === 0 && state.bounds.runningWorkers === 0;
+  }, "Cancelled WSL source work did not release its native objects", 30_000);
   // Move inside the owned distro: Windows UNC directory rename can fail with
   // EPERM while previously verified remote objects are being retired. A Linux
   // move models the source changing independently of the Windows client.

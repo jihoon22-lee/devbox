@@ -98,7 +98,6 @@ impl<T: Send + Sync + 'static> Pool<T> {
             pool: self.clone(),
         })))
     }
-    #[cfg(test)]
     pub fn usage(&self) -> usize {
         self.used.load(Ordering::Acquire)
     }
