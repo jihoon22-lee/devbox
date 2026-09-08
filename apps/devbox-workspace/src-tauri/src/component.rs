@@ -84,6 +84,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 | "apply_registration"
                 | "rename"
                 | "remove"
+                | "select_project"
+                | "clear_project"
         ),
         _ => false,
     }
@@ -129,6 +131,11 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         revision: u64,
         context: product_contract::ProjectContext,
     }
+    #[derive(Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Select {
+        context: product_contract::ProjectContext,
+    }
     match method {
         "start_empty" => {
             empty(&args)?;
@@ -138,6 +145,11 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         "snapshot" => {
             empty(&args)?;
             Ok(json!(host.projects()?.snapshot()?))
+        }
+        "select_project" => {
+            let value: Select = input(args)?;
+            let lease = host.projects()?.admit(&value.context)?;
+            Ok(json!({"context":value.context,"binding":lease.binding()}))
         }
         "preview_windows" => {
             let value: Root = input(args)?;
@@ -194,10 +206,23 @@ async fn execute(
         return Err(rejected(ProblemCode::InvalidRequest));
     }
     let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
-    let result = if request.method == "status" {
+    let select = request.method == "select_project";
+    let expected_context = request.header.context.clone();
+    let deadline = request.header.deadline_ms;
+    let mut result = if request.method == "clear_project" {
+        empty(&request.args).and_then(|()| {
+            product_shell_tauri::replace_project_context(
+                &window,
+                expected_context.as_ref(),
+                None,
+                deadline,
+            )?;
+            Ok(json!({"context":null}))
+        })
+    } else if request.method == "status" {
         empty(&request.args).map(|()| runtime.status())
     } else {
-        let preview = request.method == "preview_windows";
+        let preview = request.method == "preview_windows" || select;
         let pool = if preview {
             &runtime.probes
         } else {
@@ -223,6 +248,21 @@ async fn execute(
             (Err(issue), _) | (_, Err(issue)) => Err(issue),
         }
     };
+    if select {
+        result = result.and_then(|value| {
+            // The worker produced this context after native Registry/object
+            // admission. A timed-out worker never reaches session mutation.
+            let context = serde_json::from_value(value["context"].clone())
+                .map_err(|_| "context_unavailable")?;
+            product_shell_tauri::replace_project_context(
+                &window,
+                expected_context.as_ref(),
+                Some(context),
+                deadline,
+            )?;
+            Ok(value)
+        });
+    }
     let (outcome, value) = match result {
         Ok(value) => (OperationState::Succeeded {}, value),
         Err(issue) => (

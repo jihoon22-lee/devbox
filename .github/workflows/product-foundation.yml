@@ -68,6 +68,8 @@ jobs:
         with:
           shared-key: devbox-product-foundation
       - run: pnpm install --frozen-lockfile
+      - name: Check generated Workspace fixture requests
+        run: node --test .github/scripts/windows-workspace-registration.test.mjs
       - name: Build unpublished product installers
         id: product-build
         shell: pwsh

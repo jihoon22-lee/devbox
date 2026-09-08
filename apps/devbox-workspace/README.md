@@ -20,9 +20,14 @@ native folder preview/cancel, explicit registration/rebind, rename and reviewed
 metadata removal. Registration grants no execution trust. Blocking probes use a
 separate bounded worker pool and cannot consume all metadata workers.
 
-On Windows the current native view is this startup/Registry screen. The shared
+Explicit project selection rechecks native root/Git identity and binds the exact
+Registry context to the product session. Stale revisions and replaced roots fail
+without changing Registry bytes. Clearing selection grants no execution authority.
+The shell refresh preserves the mounted feature subtree.
+
+On Windows the current native view is this startup/Registry/selection screen. The shared
 Overview/Source/Files remain available as browser previews while domain admission,
-context/dirty transitions, importer/recovery and LSP wiring are completed. The
+dirty transitions, importer/recovery and LSP wiring are completed. The
 native integration fixture exercises the actual startup/registration UI and
 command roles; Windows execution of the latest host must pass before parity is
 claimed.

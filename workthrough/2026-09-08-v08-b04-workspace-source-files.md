@@ -104,6 +104,24 @@ The corrected final affected all passed in **587.042 seconds** under the shared
 8 GiB cap (cgroup peak 6,445,002,752 bytes), including every frontend and Rust gate.
 The native Windows registration fixture and serial Cargo CI await the pushed head.
 
+The next change adds native project selection with fresh Registry/root/Git
+admission, stale-context rejection and request-deadline/previous-context checks.
+Shell metadata refresh keeps the feature subtree mounted. Added regressions cover
+root replacement, explicit rebind, stale revision/removal, explicit selection and
+preservation of an unsaved UI buffer; the Windows fixture adds actual selection,
+stale-header denial and clear. Workspace **33** and shared context **8** Rust
+tests, strict Clippy, and **11** shell tests passed in **43.577 seconds**. The
+Workspace build and **5** UI tests including axe then passed in **16.765 seconds**.
+The previous [native run](https://github.com/jihoon22-lee/devbox/actions/runs/34215893198)
+failed because the registration fixture generated an invalid JavaScript request
+(a missing object delimiter); module syntax checking did not parse that generated
+string. Request generation now serializes the complete payload, and a passing
+regression executes the generated expressions with and without selected context,
+including quoted Korean paths. Windows acceptance runs it before packaging.
+The ongoing affected run was stopped to include this correction. The corrected
+final affected all passed in **566.209 seconds** under the shared 8 GiB cap
+(cgroup peak 6,445,039,616 bytes). Actual Windows selection execution is pending.
+
 ## Remaining acceptance
 
 Shared feature IPC/transport, trust UI, project/source/file context with dirty

@@ -35,6 +35,19 @@ describe("product shell", () => {
     expect(state.entries[state.entries.length - 1]).toBe("files");
     expect(traverse(state, 20).cursor).toBe(state.cursor);
   });
+  it("refreshes native context metadata without remounting feature buffers", async () => {
+    let refreshed = false;
+    render(<ProductShell product="workspace" renderContent={({refreshContext}) => <>
+      <input aria-label="fixture buffer" defaultValue="original"/>
+      <button onClick={() => {void refreshContext().then(() => {refreshed = true;});}}>refresh context</button>
+    </>}/>);
+    const input = await screen.findByLabelText("fixture buffer");
+    fireEvent.change(input, {target:{value:"unsaved 한글"}});
+    fireEvent.click(screen.getByRole("button", {name:"refresh context"}));
+    await waitFor(() => expect(refreshed).toBe(true));
+    expect(screen.getByLabelText("fixture buffer")).toBe(input);
+    expect((input as HTMLInputElement).value).toBe("unsaved 한글");
+  });
   it("opens all four products with keyboard navigation and accessible empty states", async () => {
     for (const product of ["workspace", "api-studio", "knowledge", "control-center"] as const) {
       const { container, unmount } = render(<ProductShell product={product}/>);

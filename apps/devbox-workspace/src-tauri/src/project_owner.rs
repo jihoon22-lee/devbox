@@ -56,6 +56,35 @@ impl ProjectOwner {
     pub fn snapshot(&self) -> Result<Registry> {
         self.store.read()
     }
+    /// Resolve the exact persisted context, then obtain fresh native evidence.
+    /// A renderer-supplied root, target or object stamp cannot admit an operation.
+    /// Registration metadata alone is insufficient after a root/Git replacement.
+    pub fn admit(&self, context: &ProjectContext) -> Result<ProjectLease> {
+        let binding = self.binding(context)?;
+        if binding.target != product_contract::ExecutionTarget::Windows {
+            return Err("wsl_admission_required");
+        }
+        self.admit_lease(context, probe_windows(&binding.root)?)
+    }
+    fn binding(&self, context: &ProjectContext) -> Result<Binding> {
+        context.validate().map_err(|_| "invalid_context")?;
+        self.store
+            .read()?
+            .worktrees
+            .into_iter()
+            .find(|tree| tree.context() == *context)
+            .map(|tree| tree.binding)
+            .ok_or("stale_context")
+    }
+    fn admit_lease(&self, context: &ProjectContext, lease: ProjectLease) -> Result<ProjectLease> {
+        // Read again after the potentially slow probe. Rebind/removal/trust
+        // revision changes while probing must not enter the previous context.
+        if self.binding(context)? != *lease.binding() {
+            return Err("project_binding_changed");
+        }
+        lease.revalidate()?;
+        Ok(lease)
+    }
     /// Listing persisted metadata is separate from probing an external root.
     /// This function does not execute Git, start a distro, or grant trust.
     pub fn preview_windows(&self, root: &str) -> Result<RegistrationPreview> {
@@ -225,6 +254,57 @@ mod tests {
                 .unwrap(),
             registry
         );
+    }
+    fn admitted(
+        owner: &ProjectOwner,
+        context: &ProjectContext,
+        root: &Path,
+    ) -> Result<ProjectLease> {
+        #[cfg(windows)]
+        {
+            let _ = root;
+            owner.admit(context)
+        }
+        #[cfg(unix)]
+        {
+            owner.admit_lease(
+                context,
+                crate::platform::project_probe::probe_fixture(root)?,
+            )
+        }
+    }
+    #[test]
+    fn runtime_admission_rechecks_context_and_native_binding_after_registration() {
+        let data = tempfile::tempdir().unwrap();
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("프로젝트 space");
+        fs::create_dir(&root).unwrap();
+        let owner = ProjectOwner::open(data.path()).unwrap();
+        let preview = preview_root(&owner, &root).unwrap();
+        let (registered, context) = owner
+            .apply(&preview.preview_id, "name", RegistrationAction::Register)
+            .unwrap();
+        drop(admitted(&owner, &context, &root).unwrap());
+        let mut other = context.clone();
+        other.worktree_id = "unknown-worktree".into();
+        assert!(admitted(&owner, &other, &root).is_err());
+        other = context.clone();
+        other.revision += 1;
+        assert!(admitted(&owner, &other, &root).is_err());
+        fs::rename(&root, parent.path().join("previous")).unwrap();
+        fs::create_dir(&root).unwrap();
+        assert!(admitted(&owner, &context, &root).is_err());
+        assert_eq!(owner.snapshot().unwrap(), registered);
+        let preview = preview_root(&owner, &root).unwrap();
+        let (rebound, next) = owner
+            .apply(&preview.preview_id, "name", RegistrationAction::Rebind)
+            .unwrap();
+        assert_ne!(next.revision, context.revision);
+        assert!(admitted(&owner, &context, &root).is_err());
+        drop(admitted(&owner, &next, &root).unwrap());
+        owner.remove(rebound.revision, &next).unwrap();
+        assert!(admitted(&owner, &next, &root).is_err());
+        assert!(root.is_dir());
     }
     #[test]
     fn review_checks_registry_revision_and_expiry_before_persistence() {

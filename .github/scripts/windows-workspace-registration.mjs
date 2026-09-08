@@ -3,17 +3,21 @@ import assert from "node:assert/strict";
 import {mkdirSync, writeFileSync, readFileSync} from "node:fs";
 import path from "node:path";
 
+export function workspaceRequestExpression(component, method, args = {}) {
+  return `(async () => {
+    const invoke = window.__TAURI_INTERNALS__.invoke;
+    const d = await invoke("plugin:product-shell|describe");
+    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"overview",...(d.context ? {context:d.context} : {})};
+    return invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});
+  })()`;
+}
+
 export async function exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix}) {
   const root = path.join(directory, "한글 project");
   mkdirSync(root);
   const marker = path.join(root, "preserved.txt");
   writeFileSync(marker, "synthetic project bytes\r\n", {flag:"wx"});
-  const call = async (component, method, args = {}) => cdp.evaluate(`(async () => {
-    const invoke = window.__TAURI_INTERNALS__.invoke;
-    const d = await invoke("plugin:product-shell|describe");
-    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"overview"};
-    return invoke("plugin:workspace|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}});
-  })()`);
+  const call = async (component, method, args = {}) => cdp.evaluate(workspaceRequestExpression(component, method, args));
   const success = result => {assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
   const click = async label => {
     const predicate = `Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled)`;
@@ -54,6 +58,21 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   assert.equal(registry.projects.length,1);assert.equal(registry.worktrees.length,1);
   assert.equal(registry.worktrees[0].trustedDigest,null);
   assert.notEqual(registry.projects[0].id,root);
+  await click("프로젝트 선택");
+  await waitForRenderer(cdp,'!!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace selected context did not refresh");
+  const selected = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
+  assert.equal(selected.context.worktreeId,registry.worktrees[0].id);
+  const staleContext = await cdp.evaluate(`(async () => {
+    const invoke=window.__TAURI_INTERNALS__.invoke;
+    const d=await invoke("plugin:product-shell|describe");
+    const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"overview"};
+    try {await invoke("plugin:workspace|execute",{request:{header,component:"workspace.registry",method:"snapshot",args:{}}});return null;} catch (error) {return error.code;}
+  })()`);
+  assert.equal(staleContext,"stale-context");
+  assert.equal((await call("workspace.registry","select_project",{context:{...selected.context,revision:selected.context.revision+1}})).operation.outcome.state,"failed");
+  await click("프로젝트 선택 해제");
+  await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");
+  assert.equal((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,null);
   const reviewed=success(await call("workspace.registry","preview_windows",{root}));
   success(await call("workspace.registry","cancel_registration",{previewId:reviewed.previewId}));
   assert.equal((await call("workspace.registry","apply_registration",{previewId:reviewed.previewId,name:"replayed",action:"register"})).operation.outcome.state,"failed");
@@ -67,5 +86,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry UI/native commands; Source/Files/LSP and importer acceptance are separate"};
+  return {authority,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry/context UI/native commands; Source/Files/LSP and importer acceptance are separate"};
 }

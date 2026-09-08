@@ -17,6 +17,9 @@ const issues: Record<string, string> = {
   project_object_changed: "확인한 폴더가 변경되었습니다. 다시 확인해 주세요.",
   project_preview_stale: "등록 확인이 만료되었습니다. 폴더를 다시 확인해 주세요.",
   stale_registry: "프로젝트 목록이 변경되었습니다. 새로 고친 뒤 다시 시도해 주세요.",
+  stale_context: "프로젝트 연결이 변경되었습니다. 작업 폴더를 다시 선택해 주세요.",
+  project_binding_changed: "등록한 폴더가 교체되었습니다. 폴더를 확인하고 경로를 다시 연결해 주세요.",
+  context_selection_expired: "프로젝트 확인 시간이 초과되었습니다. 다시 선택해 주세요.",
   project_has_legacy_references: "이 프로젝트를 참조하는 항목이 있어 등록을 해제할 수 없습니다.",
   wsl_admission_required: "WSL 프로젝트 연결은 아직 사용할 수 없습니다.",
 };

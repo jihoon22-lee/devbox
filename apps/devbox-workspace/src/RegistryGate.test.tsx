@@ -51,3 +51,18 @@ it("sends only the reviewed preview token on explicit registration", async () =>
   await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry", "apply_registration", {previewId:"fixture-preview",name:"합성 프로젝트",action:"register"}));
   expect(call.mock.calls.some(([,method])=>/trust|execute|start_workspace/.test(method))).toBe(false);
 });
+it("selects only an explicit native context and refreshes after successful admission", async () => {
+  const context = {projectId:"project-a",worktreeId:"tree-a",revision:2,target:{kind:"windows" as const}};
+  const registry = {revision:2,projects:[{id:"project-a",name:"fixture"}],worktrees:[{id:"tree-a",projectId:"project-a",revision:2,binding:preview.binding,trustedDigest:null}]};
+  const refreshed = vi.fn(async () => {});
+  call.mockImplementation(async (_component, method) => method === "status" ? {phase:"selected"} : method === "snapshot" ? registry : {});
+  const view = render(<RegistryGate onContextChanged={refreshed}/>);
+  fireEvent.click(await screen.findByRole("button", {name:"프로젝트 선택"}));
+  await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(1));
+  expect(call).toHaveBeenCalledWith("workspace.registry", "select_project", {context});
+  expect(call.mock.calls.some(([,method]) => /trust|language_server/.test(method))).toBe(false);
+  view.rerender(<RegistryGate context={context} onContextChanged={refreshed}/>);
+  fireEvent.click(screen.getByRole("button", {name:"프로젝트 선택 해제"}));
+  await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(2));
+  expect(call).toHaveBeenCalledWith("workspace.registry", "clear_project", {});
+});

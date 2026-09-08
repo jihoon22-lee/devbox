@@ -29,5 +29,5 @@ function Content({ route, description }: ShellContentProps) {
 }
 
 export default function Workspace() {
-  return <ProductShell product="workspace" renderContent={props => nativeMode ? <RegistryGate/> : <Content {...props}/>}/>;
+  return <ProductShell product="workspace" renderContent={props => nativeMode ? <RegistryGate context={props.description.context} onContextChanged={props.refreshContext}/> : <Content {...props}/>}/>;
 }
