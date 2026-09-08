@@ -723,7 +723,10 @@ export default function App({ active = true, onActivate, onDaily, onImport, open
     const consumePendingOpen = () => {
       void takePendingOpen()
         .then((request) => {
-          if (!disposed && request) void handleOpenRequestRef.current(request);
+          if (!disposed && request) {
+            activateRef.current?.();
+            void handleOpenRequestRef.current(request);
+          }
         })
         .catch(() => {
           if (!disposed) setError("열기 요청을 처리하지 못했습니다");

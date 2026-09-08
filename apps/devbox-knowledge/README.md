@@ -2,7 +2,7 @@
 
 Hidden v0.8 B03 product integrating the existing Notes, Activity and Search engines.
 The public v0.7 topology remains unchanged until cutover. PR #556 / WP #545 tracks
-remaining provider, summary and runtime acceptance.
+remaining provider, search and runtime acceptance.
 
 `pnpm --filter devbox-knowledge dev` opens the labelled browser fixture. On Windows,
 `pnpm --filter devbox-knowledge tauri dev` runs the native product. Browser rendering
@@ -58,6 +58,12 @@ an existing note opens through the editor's normal dirty-document confirmation.
 Expired, cancelled or replaced previews cannot write, and a concurrent external
 file is never overwritten. A derived-index failure preserves a published note.
 
+Activity sends a deterministic selected-day digest directly to Notes through the
+existing native one-time handoff store. Only an opaque draft reference crosses the
+owner boundary; Activity cannot write the vault. Notes activates for a preview,
+cancellation releases the claim, and explicit save publishes and consumes once.
+The standalone Life Log launcher path remains available in the legacy app.
+
 Visited feature routes remain mounted to preserve drafts. Hidden modal handlers do
 not trap another route's focus. The shared shell styles only its direct containers.
 Notes defers Activity, Search and Mermaid; the build checks its actual static closure
@@ -70,5 +76,9 @@ mounted route retention in two installations. Host ceb2e7c and Daily/tray b230a5
 passed their Windows fixtures. The new migration fixture uses pinned v0.7 executables
 to create synthetic legacy schemas and tests explicit UI import, live-writer denial,
 two-installation ownership, repeat import, privacy, ID remapping and close/restart.
-Its Windows execution is pending. Activity summaries, source-aware opaque Search
-references and final Windows/WSL acceptance remain in this same B03 PR.
+The first Windows run found an attribute-only directory handle that did not prevent
+vault rename and a fixture SQLite constructor option error before source creation.
+Both have been corrected for the next run; migration execution remains pending.
+The fixture now also exercises in-product summary preview/cancel/save/replay.
+Source-aware opaque Search references, session-summary provider input and final
+Windows/WSL acceptance remain in this same B03 PR.

@@ -435,11 +435,12 @@ export function DataSourceRow({ source }: { source: SourceStatus }) {
   );
 }
 
-export default function App({ active = true, selectedDate, onDateChange, onDaily, lifecycleSettings }: {
+export default function App({ active = true, selectedDate, onDateChange, onDaily, onDraft, lifecycleSettings }: {
   active?: boolean;
   selectedDate?: string;
   onDateChange?: (date: string) => void;
   onDaily?: () => void;
+  onDraft?: () => void;
   lifecycleSettings?: React.ReactNode;
 } = {}) {
   const activeRef = useRef(active); activeRef.current = active;
@@ -754,6 +755,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
     try {
       const result = await sendDigestToKnowledge(digestInputFromResponse(response));
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
+        onDraft?.();
         await refreshDraftHistory();
         setNotice("Knowledge 초안을 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.");
       }
@@ -776,6 +778,7 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
         entry.handoffId,
       );
       if (isCurrentDigestAction(action) && result.kind === "knowledge-draft/v1") {
+        onDraft?.();
         await refreshDraftHistory();
         setNotice("새 Knowledge 초안을 만들었습니다. 이전 handoff와 별도의 ID로 다시 확인하세요.");
       }

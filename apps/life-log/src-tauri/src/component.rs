@@ -65,6 +65,35 @@ pub fn validate_import_history(connection: &rusqlite::Connection) -> Result<(), 
         .map_err(|_| "import_row_invalid".into())
 }
 
+/// Product-owned delivery preserves the producer's validation, cancellation and
+/// one-time history without requiring a standalone Knowledge installation.
+pub async fn send_product_draft<F>(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+    deliver: F,
+) -> Result<serde_json::Value, String>
+where
+    F: FnOnce(&devbox_applink::OpenRequest) -> Result<(), String> + Send,
+{
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: crate::core::digest::DigestInput,
+        regenerated_from: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let result = crate::commands::handoff::send_with_delivery(
+        app.state(),
+        input.input,
+        input.regenerated_from,
+        false,
+        deliver,
+    )
+    .await?;
+    serde_json::to_value(result).map_err(|_| "component_response_invalid".into())
+}
+
 pub const COMMANDS: &[&str] = &[
     "get_digest",
     "cancel_digest",

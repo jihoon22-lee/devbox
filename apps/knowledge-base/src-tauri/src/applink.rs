@@ -20,6 +20,16 @@ impl PendingOpen {
         *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
     }
 
+    /// Product offers never replace a request that the frontend has yet to take.
+    pub fn offer(&self, request: OpenRequest) -> Result<(), String> {
+        let mut pending = self.0.lock().map_err(|_| "draft_delivery_unavailable")?;
+        if pending.is_some() {
+            return Err("draft_delivery_busy".into());
+        }
+        *pending = Some(request);
+        Ok(())
+    }
+
     pub fn take(&self) -> Option<OpenRequest> {
         self.0.lock().expect("PendingOpen mutex poisoned").take()
     }
@@ -58,6 +68,22 @@ mod tests {
             },
             from: Some("devbox-launcher".to_string()),
         }
+    }
+
+    #[test]
+    fn product_offer_preserves_unread_reference_and_becomes_available_after_take() {
+        let pending = PendingOpen::new();
+        let first = path_request("first.md");
+        let second = path_request("second.md");
+        pending.offer(first.clone()).unwrap();
+        assert_eq!(
+            pending.offer(second.clone()).unwrap_err(),
+            "draft_delivery_busy"
+        );
+        assert_eq!(pending.take(), Some(first));
+        pending.offer(second.clone()).unwrap();
+        assert_eq!(pending.take(), Some(second));
+        assert_eq!(pending.take(), None);
     }
 
     #[test]

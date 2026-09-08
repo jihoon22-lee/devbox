@@ -231,7 +231,10 @@ async fn execute(
             crate::lifecycle::dispatch(app, &request.method, request.args)
         }
         "knowledge.activity" if request.method == "send_digest_to_knowledge" => {
-            Err("provider_unavailable".into())
+            life_log_lib::component::send_product_draft(app, request.args, |draft| {
+                knowledge_base_lib::component::offer_product_draft(app, draft)
+            })
+            .await
         }
         "knowledge.activity" => {
             life_log_lib::component::dispatch(app, &request.method, request.args).await

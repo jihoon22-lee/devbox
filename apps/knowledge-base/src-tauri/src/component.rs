@@ -105,6 +105,28 @@ pub fn validate_import_template(name: &str, content: &str) -> Result<(), String>
     .map_err(|_| "import_row_invalid".into())
 }
 
+/// Only the native product host can offer this reference. Reading the envelope,
+/// claiming it and publishing a note remain the Notes owner's separate actions.
+pub fn offer_product_draft(
+    app: &tauri::AppHandle,
+    request: &devbox_applink::OpenRequest,
+) -> Result<(), String> {
+    use tauri::{Emitter, Manager};
+    if request.from.as_deref() != Some("life-log")
+        || !matches!(&request.target, devbox_applink::OpenTarget::Handoff { kind, .. } if kind == "knowledge-draft/v1")
+        || devbox_applink::build_argv(request).is_err()
+    {
+        return Err("draft_delivery_invalid".into());
+    }
+    app.try_state::<crate::applink::PendingOpen>()
+        .ok_or("draft_delivery_unavailable")?
+        .offer(request.clone())?;
+    // The event is only a wakeup. The native pending slot is authoritative and
+    // also survives Notes not having been mounted/listening yet.
+    let _ = app.emit_to("main", "devbox://open", ());
+    Ok(())
+}
+
 pub const COMMANDS: &[&str] = &[
     "save_image_asset",
     "take_pending_open",

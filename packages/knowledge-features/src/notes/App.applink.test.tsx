@@ -248,7 +248,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
     expect(searchDocsMock).not.toHaveBeenCalled();
   });
 
-  it("previews a knowledge-draft handoff and saves only after explicit confirmation", async () => {
+  it("activates hidden product Notes, previews a draft and saves only after explicit confirmation", async () => {
     takePendingOpenMock.mockResolvedValueOnce({
       target: {
         kind: "handoff",
@@ -258,7 +258,8 @@ describe("Knowledge Path/Query app-link delivery", () => {
       from: "life-log",
     });
 
-    render(<App />);
+    const onActivate = vi.fn();
+    render(<App active={false} onActivate={onActivate} />);
 
     expect(await screen.findByRole("heading", { name: "Life Log 초안 미리보기" })).toBeTruthy();
     expect(screen.getByText("Life Log digest · 2026-08-27 ~ 2026-08-27")).toBeTruthy();
@@ -266,6 +267,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
     expect(screen.getByLabelText("Knowledge 초안 본문")).toHaveTextContent("## Summary");
     expect(screen.getByLabelText("Knowledge 초안 크기")).toHaveTextContent(/제목 .*바이트 · 본문 .*바이트/u);
     expect(screen.getByRole("dialog").getAttribute("aria-describedby")).toBe("knowledge-draft-description");
+    expect(onActivate).toHaveBeenCalledTimes(1);
     expect(saveKnowledgeDraftMock).not.toHaveBeenCalled();
 
     await act(async () => {

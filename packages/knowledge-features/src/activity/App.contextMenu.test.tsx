@@ -218,8 +218,8 @@ it("초기 앱 셸에 구조적 접근성 위반이 없다", async () => {
   await assertNoA11yViolations(container);
 });
 
-async function renderLoadedApp() {
-  render(<App />);
+async function renderLoadedApp(onDraft?: () => void) {
+  render(<App onDraft={onDraft} />);
   await screen.findByRole("heading", { name: "일간 로컬 요약" });
   await waitFor(() => expect(screen.queryByText("불러오는 중…")).toBeNull());
   return screen.getByLabelText(/\d{4}-\d{2}-\d{2} 선택된 날짜/u) as HTMLInputElement;
@@ -309,7 +309,8 @@ describe("Life Log daily digest", () => {
 
   it("sends the current native digest once and reports preview-before-save", async () => {
     mocks.native = true;
-    await renderLoadedApp();
+    const onDraft = vi.fn();
+    await renderLoadedApp(onDraft);
 
     const handoff = screen.getByRole("button", { name: "Knowledge로 보내기" });
     expect((handoff as HTMLButtonElement).disabled).toBe(false);
@@ -318,6 +319,7 @@ describe("Life Log daily digest", () => {
 
     await waitFor(() => expect(mocks.sendDigestToKnowledge).toHaveBeenCalledTimes(1));
     expect(await screen.findByText("Knowledge 초안을 미리보기로 보냈습니다. 저장 전 내용을 확인하세요.")).toBeTruthy();
+    expect(onDraft).toHaveBeenCalledTimes(1);
     expect(mocks.sendDigestToKnowledge).toHaveBeenCalledWith(expect.objectContaining({
       period: "day",
     }));
