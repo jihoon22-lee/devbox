@@ -201,6 +201,7 @@ function rangeFromDigest(response: DigestResponse, label: string): RangeSummary 
       projects: response.document.git.projects.map((project) => ({
         path: project.path,
         commits: project.commits,
+        error_code: project.errorCode,
       })),
       total_commits: response.document.git.totalCommits,
     },
@@ -224,6 +225,7 @@ function dayFromDigest(response: DigestResponse): DaySummary {
       projects: response.document.git.projects.map((project) => ({
         path: project.path,
         commits: project.commits,
+        error_code: project.errorCode,
       })),
       total_commits: response.document.git.totalCommits,
     },
@@ -1711,10 +1713,11 @@ export default function App({ active = true, selectedDate, onDateChange, onDaily
               {summary.git.projects.length > 0 && (
                 <section className="panel">
                   <h2>Git</h2>
+                  <p className="dim">같은 저장소의 동일 커밋은 한 번만 집계하며, 경로 순서상 첫 프로젝트에 귀속합니다. 조회하지 못한 프로젝트는 합계에서 제외합니다.</p>
                   {summary.git.projects.map((p) => (
                     <div key={p.path} className="git-row">
                       <span className="mono dim">{p.path}</span>
-                      <span className="git-count">커밋 {p.commits}개</span>
+                      <span className="git-count">{p.error_code ? "조회할 수 없음 · 경로와 Git 연결 확인" : `커밋 ${p.commits}개`}</span>
                     </div>
                   ))}
                 </section>

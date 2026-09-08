@@ -16,6 +16,7 @@ export interface Session {
 export interface ProjectCommit {
   path: string;
   commits: number;
+  error_code?: string | null;
 }
 
 export interface GitDay {

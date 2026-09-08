@@ -584,3 +584,21 @@ describe("Life Log date context menu", () => {
     expect(screen.queryByText("C:\\stale\\project")).toBeNull();
   });
 });
+
+
+it("shows unavailable Git projects without representing them as a zero-commit success", async () => {
+  mocks.getDigest.mockImplementation(async (input: DigestInput) => {
+    const response = digestFixture(input);
+    response.document.git.projects = [
+      { path: "C:/fixture/healthy", commits: 2, errorCode: null },
+      { path: "C:/fixture/offline", commits: 0, errorCode: "git_timeout" },
+    ];
+    response.document.git.totalCommits = 2;
+    return response;
+  });
+  await renderLoadedApp();
+  const unavailable = screen.getByText("C:/fixture/offline").closest(".git-row")!;
+  expect(within(unavailable as HTMLElement).getByText("조회할 수 없음 · 경로와 Git 연결 확인")).toBeInTheDocument();
+  expect(within(unavailable as HTMLElement).queryByText("커밋 0개")).not.toBeInTheDocument();
+  expect(screen.getByText("커밋 2개")).toBeInTheDocument();
+});

@@ -40,6 +40,12 @@ WSL availability checks and watcher restoration run away from startup, and note 
 operations run away from the shared IPC executor. Per-write vault identity checks
 remain in the existing engine. Direct live vault rebinding is still unavailable.
 
+Git activity shares the same exact-range collector across calendar and digest/export.
+Canonical common Git directory plus commit ID deduplicates linked worktrees; shared
+commits are attributed to the first sorted configured path, while independent repos
+remain separate. Unavailable projects remain visible and do not masquerade as zero
+commits. Neither commit messages nor IDs enter a note summary.
+
 The native registry separates note writing, Activity, Search reads, Search settings,
 result opening and migration. Query calls cannot become note mutations or launches.
 Every dispatch checks the local main window, native installation/session and replay
@@ -95,9 +101,10 @@ collection OFF, independent Search and owner/replay/installation rejection in tw
 installations. The pinned legacy migration fixture additionally covers import,
 source preservation, writer/installation denial, ID mapping, repeat/recovery,
 summary preview/cancel/save/replay, regex deadline/recovery and opaque search opens.
-9427d77 passed general CI and the corrected Windows vault-rename regression. Its
-migration fixture reached collector quiescing but misread signal termination as a
-live process; the fixture now checks both exit code and signal. Current migration,
-summary and Search execution remain pending. See the single B03 workthrough for
+2953c62 passed general CI, including Windows vault-rename regression. Its migration
+fixture passed old-writer rejection, then found that the pinned legacy app had reused
+the fixture's deleted root ID. The fixture now keeps another root alive before deletion
+and asserts the IDs differ. Current migration, summary and Search execution remain
+pending past that stage. See the single B03 workthrough for
 exact runs and portable evidence. Session-summary input, project attribution, live
 vault rebinding and final Windows/WSL acceptance remain in this PR.
