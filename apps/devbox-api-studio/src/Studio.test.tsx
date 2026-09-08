@@ -11,6 +11,7 @@ it("keeps the actual request draft through protocol and webhook navigation witho
   // The async description must mount the feature before waiting for its imports.
   // Await the real lazy module graph, rather than making transformer speed
   // part of this draft-lifetime unit test. Runtime budgets are measured separately.
+  // The case timeout also allows the real multi-route graph under CI contention.
   await act(async () => { await vi.dynamicImportSettled(); });
   const url = await screen.findByPlaceholderText("https://api.example.com/users");
   fireEvent.change(url, { target: { value: "http://127.0.0.1:9000/draft-only" } });
@@ -22,7 +23,7 @@ it("keeps the actual request draft through protocol and webhook navigation witho
   await screen.findByText("Webhook Lab");
   fireEvent.click(within(nav).getByRole("button", { name: /^요청$/ }));
   expect((await screen.findByPlaceholderText("https://api.example.com/users") as HTMLInputElement).value).toBe("http://127.0.0.1:9000/draft-only");
-});
+}, 15_000);
 
 it("previews collections and History independently of the live request draft", async () => {
   const request = { method: "GET", url: "https://fixture.test/saved", headers: [], params: [], cookies: [], multipart: [], body_kind: "none", body: "", auth: null, timeout_ms: 30000, requiresSecretReview: false };
@@ -51,4 +52,4 @@ it("previews collections and History independently of the live request draft", a
   fireEvent.click(screen.getByRole("button", { name: "현재 초안 대신 열기" }));
   expect((await screen.findByPlaceholderText("https://api.example.com/users") as HTMLInputElement).value).toBe("https://fixture.test/saved");
   expect(screen.getByRole("button", { name: "보내기" })).toBeTruthy();
-});
+}, 15_000);
