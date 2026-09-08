@@ -2,6 +2,39 @@
 //! for creating its own managed states after migration and enforcing native
 //! caller/owner/session checks before dispatch. This module starts no legacy app.
 
+/// Read-only projections for the product's bounded, independently cancellable
+/// connections. The domain keeps its existing filter and deepest-root rules.
+pub mod query {
+    pub use crate::core::db::{
+        is_indexed_path, list_roots, search_content_with_filter, search_with_filter,
+    };
+    pub use crate::core::models::SearchFilter;
+}
+
+/// Cached watcher health only; this function performs no filesystem IO.
+pub fn product_root_health(app: &tauri::AppHandle) -> Vec<(String, bool, bool)> {
+    use std::sync::atomic::Ordering;
+    use tauri::Manager;
+    let state = app.state::<std::sync::Arc<crate::commands::indexing::AppState>>();
+    let indexing = state.indexing.load(Ordering::Acquire);
+    let indexed_once = state.last_indexed_at.load(Ordering::Acquire) > 0;
+    app.state::<std::sync::Arc<crate::commands::watcher::WatcherManager>>()
+        .statuses()
+        .into_iter()
+        .map(|status| {
+            let offline = status.error.as_deref() == Some("root_unavailable");
+            (
+                status.root,
+                offline,
+                status.error.is_some()
+                    || status.pending > 0
+                    || indexing
+                    || (status.last_synced_at.is_none() && !indexed_once),
+            )
+        })
+        .collect()
+}
+
 /// Reuse indexing, watcher restoration and saved-query publication with an
 /// explicit native data root. Legacy identifier migration remains in run().
 pub fn initialize(

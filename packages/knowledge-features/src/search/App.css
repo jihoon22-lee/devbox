@@ -405,3 +405,6 @@
   color: var(--db-color-accent, #4f8cff);
   border-color: var(--db-color-accent, #4f8cff);
 }
+
+.source-status { margin: 0; padding: 8px 12px; font-size: 12px; }
+.source-label { display: block; color: var(--text-muted); font-size: 11px; }

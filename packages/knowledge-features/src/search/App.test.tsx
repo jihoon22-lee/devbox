@@ -17,6 +17,8 @@ import {
   revealFile,
   saveSavedQuery,
   searchContent,
+  searchSource,
+  type SourceSnapshot,
   searchFiles,
   takePendingOpen,
   type OpenRequest,
@@ -26,9 +28,13 @@ import {
 const mocks = vi.hoisted(() => ({
   openHandler: null as ((request: OpenRequest) => void) | null,
   order: [] as string[],
+  product: false,
 }));
 
+vi.mock("../transport", () => ({ isProductHosted: () => mocks.product }));
+
 vi.mock("./api", () => ({
+  searchSource: vi.fn(async () => []),
   indexStatus: vi.fn(async () => ({
     indexing: false,
     cancel_requested: false,
@@ -98,6 +104,8 @@ const watcherStatusesMock = vi.mocked(watcherStatuses);
 const writeTextMock = vi.fn<(text: string) => Promise<void>>();
 
 beforeEach(() => {
+  mocks.product = false;
+  vi.mocked(searchSource).mockReset().mockResolvedValue([]);
   mocks.openHandler = null;
   mocks.order.length = 0;
   takePendingOpenMock.mockReset().mockImplementation(async () => {
@@ -572,5 +580,44 @@ describe("Everything+ filters and saved queries", () => {
       resolveInitial?.([]);
     });
     expect(screen.getByRole("button", { name: "Saved during load" })).toBeTruthy();
+  });
+});
+
+
+describe("product source search", () => {
+  function snapshot(generation: string, source: "files" | "notes", reference: string | null = "opaque-note") : SourceSnapshot {
+    return { generation, storeGeneration: "native-store", source, state: "complete", partial: false, rows: [{ source, rootIdentity: `${source}:7`, reference, availability: reference ? "available" : "stale", value: { id: 1, path: "C:/vault/shared.md", name: generation, ext: "md", size: 5, modified_ts: 1, snippet: "" } }] };
+  }
+  it("cancels superseded work, ignores late rows and opens the exact Notes reference", async () => {
+    mocks.product = true;
+    const pending: Array<{ signal: AbortSignal; update: (value: SourceSnapshot) => void }> = [];
+    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, signal, update) => { pending.push({ signal, update }); return []; });
+    const activate = vi.fn();
+    render(<App onNoteOpen={activate}/>);
+    fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "shared" } });
+    await waitFor(() => expect(pending).toHaveLength(1));
+    fireEvent.change(screen.getByRole("combobox", { name: "검색 범위" }), { target: { value: "notes" } });
+    await waitFor(() => expect(pending).toHaveLength(2));
+    expect(pending[0].signal.aborted).toBe(true);
+    act(() => { pending[1].update(snapshot("new note", "notes")); pending[0].update(snapshot("late file", "files")); });
+    expect(screen.queryByText("late file")).not.toBeInTheDocument();
+    const row = screen.getByText("new note").closest("tr")!;
+    fireEvent.click(within(row).getByRole("button", { name: "열기" }));
+    await waitFor(() => expect(openFileMock).toHaveBeenCalledWith("C:/vault/shared.md", "opaque-note"));
+    expect(activate).toHaveBeenCalledOnce();
+  });
+  it("preserves an unavailable result for inspection while disabling all opening paths", async () => {
+    mocks.product = true;
+    vi.mocked(searchSource).mockImplementation(async (_source, _query, _mode, _limit, _filter, _signal, update) => { update(snapshot("offline indexed file", "files", null)); return []; });
+    render(<App/>);
+    fireEvent.change(screen.getByRole("textbox", { name: "파일 이름 검색" }), { target: { value: "shared" } });
+    const row = (await screen.findByText("offline indexed file")).closest("tr")!;
+    expect(within(row).getByRole("button", { name: "열기" })).toBeDisabled();
+    expect(within(row).getByRole("button", { name: "폴더" })).toBeDisabled();
+    fireEvent.click(row);
+    fireEvent.keyDown(row, { key: "Enter" });
+    expect(openFileMock).not.toHaveBeenCalled();
+    fireEvent.click(within(row).getByRole("button", { name: "복사" }));
+    expect(copyPathMock).toHaveBeenCalledWith("C:/vault/shared.md");
   });
 });

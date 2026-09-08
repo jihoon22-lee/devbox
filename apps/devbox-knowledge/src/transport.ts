@@ -8,6 +8,7 @@ const routeFor: Record<Component, string> = {
   "knowledge.search-settings": "search", "knowledge.opener": "search", "knowledge.migration": "notes",
 };
 const messages: Record<string, string> = {
+  search_stale: "검색 결과가 오래되었거나 파일 연결이 바뀌었습니다. 다시 검색해 주세요.",
   import_invalid: "가져오기 데이터의 내용이나 형식을 확인하지 못했습니다. 원본과 현재 데이터를 유지했습니다.",
   import_schema_unsupported: "이전 데이터의 형식을 지원하지 않습니다. 원본과 현재 저장소를 유지했습니다.",
   import_source_changed: "미리보기 이후 이전 앱의 데이터가 바뀌었습니다. 다시 준비해 주세요.",

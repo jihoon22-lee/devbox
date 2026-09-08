@@ -33,7 +33,7 @@ function Content({ route, navigate }: ShellContentProps) {
       <Suspense fallback={<p role="status">활동을 불러오고 있습니다…</p>}><Activity active={group === "activity"} selectedDate={date} onDateChange={setDate} onDaily={activateDaily} onDraft={activateNotes} lifecycleSettings={<Suspense fallback={<p role="status">종료 설정을 불러오고 있습니다…</p>}><LifecycleSettings/></Suspense>}/></Suspense>
     </div>}
     {(visited.has("search") || group === "search") && <div className="knowledge-feature-search" hidden={group !== "search"}>
-      <Suspense fallback={<p role="status">검색을 불러오고 있습니다…</p>}><Search/></Suspense>
+      <Suspense fallback={<p role="status">검색을 불러오고 있습니다…</p>}><Search onNoteOpen={activateNotes}/></Suspense>
     </div>}
   </>;
 }

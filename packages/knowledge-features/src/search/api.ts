@@ -1,4 +1,4 @@
-import { componentInvoke } from "../transport";
+import { componentInvoke, isProductHosted } from "../transport";
 const invoke = componentInvoke("knowledge.search");
 import catalogJson from "../../../../apps/catalog.json";
 import { isTauri } from "./lib/isTauri";
@@ -186,17 +186,17 @@ export async function watcherStatuses(): Promise<RootStatus[]> {
   return invoke<RootStatus[]>("watcher_statuses");
 }
 
-export async function openFile(path: string): Promise<void> {
+export async function openFile(path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) {
     window.open("about:blank", "_blank");
     return;
   }
-  await invoke("open_file", { path });
+  await invoke("open_file", isProductHosted() ? { reference } : { path });
 }
 
-export async function revealFile(path: string): Promise<void> {
+export async function revealFile(path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
-  await invoke("reveal_file", { path });
+  await invoke("reveal_file", isProductHosted() ? { reference } : { path });
 }
 
 export async function copyPath(path: string): Promise<void> {
@@ -241,4 +241,43 @@ export async function deleteSavedQuery(id: number): Promise<void> {
     return;
   }
   await invoke("delete_saved_query", { id });
+}
+
+export type SearchSource = "notes" | "files" | "current_project";
+export interface SourceSnapshot {
+  generation: string;
+  storeGeneration: string;
+  source: SearchSource;
+  state: "running" | "complete" | "cancelled" | "timed_out" | "unsupported" | "unavailable";
+  partial: boolean;
+  rows: Array<{ source: string; rootIdentity: string; reference: string | null; availability: string; indexStale?: boolean; value: FileEntry & ContentResult }>;
+}
+export async function searchSource(
+  source: SearchSource, query: string, mode: "name" | "content", limit: number,
+  filter: SearchFilter, signal: AbortSignal, update: (snapshot: SourceSnapshot) => void,
+): Promise<Array<FileEntry & ContentResult>> {
+  if (!isTauri()) {
+    const rows = source === "files" ? (mode === "name" ? await searchFiles(query, limit, filter) : await searchContent(query, limit, filter)) : [];
+    const snapshot: SourceSnapshot = { generation: "fixture", storeGeneration: "fixture", source, state: source === "files" ? "complete" : "unsupported", partial: false, rows: rows.map(value => ({ source, rootIdentity: "fixture", reference: null, availability: "unverified", value: value as FileEntry & ContentResult })) };
+    if (!signal.aborted) update(snapshot);
+    return snapshot.rows.map(row => row.value);
+  }
+  let generation: string | undefined;
+  const cancel = () => { if (generation) void invoke("source_cancel", { generation }).catch(() => undefined); };
+  signal.addEventListener("abort", cancel, { once: true });
+  try {
+    let snapshot = await invoke<SourceSnapshot>("source_query", { source, query, mode, limit, filter });
+    generation = snapshot.generation;
+    const project = (value: SourceSnapshot) => value.rows.map(row => ({ ...row.value, source: row.source, sourceRoot: row.rootIdentity, reference: row.reference, availability: row.availability, indexStale: row.indexStale }));
+    while (!signal.aborted) {
+      if (snapshot.generation !== generation || snapshot.source !== source) throw new Error("검색 응답의 출처를 확인하지 못했습니다.");
+      update(snapshot);
+      if (snapshot.state !== "running") return project(snapshot);
+      await new Promise(resolve => setTimeout(resolve, 80));
+      if (!signal.aborted) snapshot = await invoke<SourceSnapshot>("source_poll", { generation });
+    }
+    cancel();
+    return [];
+  } catch (error) { cancel(); throw error; }
+  finally { if (signal.aborted || !generation) signal.removeEventListener("abort", cancel); }
 }

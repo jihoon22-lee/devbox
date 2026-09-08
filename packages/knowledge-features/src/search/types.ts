@@ -1,4 +1,12 @@
-export interface FileEntry {
+export interface SourceResult {
+  reference?: string | null;
+  source?: string;
+  sourceRoot?: string;
+  availability?: string;
+  indexStale?: boolean;
+}
+
+export interface FileEntry extends SourceResult {
   id: number;
   path: string;
   name: string;
@@ -11,7 +19,7 @@ export interface FileEntry {
   truncated?: boolean;
 }
 
-export interface ContentResult {
+export interface ContentResult extends SourceResult {
   path: string;
   name: string;
   snippet: string;

@@ -377,6 +377,33 @@ pub fn search(
     rows.collect()
 }
 
+/// Bounded product projection on its own read-only connection. Oversized
+/// derived rows cannot force the host to allocate an unbounded title/path.
+pub fn product_search(
+    conn: &Connection,
+    query: &str,
+    limit: i64,
+    title_only: bool,
+) -> rusqlite::Result<Vec<(String, String, String)>> {
+    let terms = search::build_fts_query(query);
+    let q = if title_only {
+        format!("title: ({terms})")
+    } else {
+        terms
+    };
+    let mut stmt = conn.prepare(
+        "SELECT d.path, d.title, substr(snippet(docs_fts, 1, '[', ']', '…', 20),1,1024)
+         FROM docs_fts JOIN docs d ON d.id=docs_fts.rowid
+         WHERE docs_fts MATCH ?1 AND length(CAST(d.path AS BLOB))<=32768
+         AND length(CAST(d.title AS BLOB))<=8192
+         ORDER BY d.modified_ts DESC, d.id LIMIT ?2",
+    )?;
+    let rows = stmt.query_map(params![q, limit.clamp(0, 100)], |r| {
+        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+    })?;
+    rows.collect()
+}
+
 pub fn list_tags(conn: &Connection) -> rusqlite::Result<Vec<String>> {
     let mut stmt = conn.prepare("SELECT tags FROM docs")?;
     let rows = stmt.query_map([], |r| r.get::<_, String>(0))?;

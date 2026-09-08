@@ -1,7 +1,7 @@
 // Actual pinned v0.7 executables create the source schemas. Native profiles must
 // be absent before this disposable hosted-runner fixture claims them.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, existsSync, readdirSync, lstatSync, rmSync } from "node:fs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, readdirSync, lstatSync, rmSync } from "node:fs";
 import path from "node:path";
 import { tmpdir } from "node:os";
 import { spawn, spawnSync } from "node:child_process";
@@ -92,10 +92,20 @@ async function legacy(item, method, args = {}) {
   return item.cdp.evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(method)}, ${JSON.stringify(args)})`);
 }
 async function command(item, component, method, args = {}) {
-  const route = component === "knowledge.activity" ? "activity" : component.includes("search") ? "search" : "notes";
+  const route = component === "knowledge.activity" ? "activity" : (component.includes("search") || component === "knowledge.opener") ? "search" : "notes";
   return item.cdp.evaluate(`(async () => { const invoke=window.__TAURI_INTERNALS__.invoke; const d=await invoke("plugin:product-shell|describe");
     const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}};
     return invoke("plugin:knowledge|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
+}
+async function sourceQuery(item, source, query, filter = {}) {
+  let result = await command(item, "knowledge.search", "source_query", { source, query, mode: "name", limit: 200, filter });
+  assert.equal(result.operation.outcome.state, "succeeded"); const generation = result.value.generation;
+  for (let i = 0; i < 60 && result.value.state === "running"; i++) {
+    await delay(80); result = await command(item, "knowledge.search", "source_poll", { generation });
+    assert.equal(result.operation.outcome.state, "succeeded"); assert.equal(result.value.generation, generation);
+  }
+  assert.notEqual(result.value.state, "running"); assert.equal(result.value.source, source);
+  return result.value;
 }
 async function job(item, method, args) {
   const started = await command(item, "knowledge.migration", method, args); assert.equal(started.operation.outcome.state, "succeeded");
@@ -231,6 +241,8 @@ try {
   await command(item, "knowledge.notes", "update_template", { id: templates[0].id, draft: { name: "edited product fixture", content: "new product edit" } });
   assert.equal((await command(item, "knowledge.notes", "create_file", { rel: "Notes/new-product.md", content: "# Keep new product note" })).operation.outcome.state, "succeeded");
   const additional = path.join(directory, "new-product-root"); mkdirSync(additional);
+  const opaqueFile = path.join(additional, "opaque-search.txt"); writeFileSync(opaqueFile, "synthetic product search", { flag: "wx" });
+  writeFileSync(path.join(additional, "a".repeat(64) + "!.txt"), "bounded regex fixture", { flag: "wx" });
   assert.equal((await command(item, "knowledge.search-settings", "add_root", { path: additional, indexContent: false })).operation.outcome.state, "succeeded");
   const afterRoots = (await command(item, "knowledge.search", "list_roots")).value;
   assert.ok(afterRoots.every(root => root.id !== deletedQuery.filter.sourceRootId));
@@ -268,6 +280,45 @@ try {
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   evidence.summaryPreviewDidNotWrite = true; evidence.summaryCancellationPreservedVault = true;
   evidence.summaryExplicitSaveConsumedOnce = true; evidence.summaryStayedInProduct = true;
+  progress("source-search-and-opaque-open");
+  await click(item.cdp, "검색");
+  await wait(item.cdp, `!!document.querySelector('.knowledge-feature-search select[aria-label="검색 범위"]')`, "source selector missing");
+  await item.cdp.evaluate(`(() => { const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"(a+)+$"); input.dispatchEvent(new Event("input",{bubbles:true}));
+    document.querySelector(".knowledge-feature-search .regex-toggle input").click(); })()`);
+  await wait(item.cdp, 'document.querySelector(".knowledge-feature-search").innerText.includes("정규식 검색이 제한 시간")', "pathological regex did not time out");
+  await item.cdp.evaluate(`(() => { const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"opaque.*"); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+  await wait(item.cdp, 'Array.from(document.querySelectorAll(".knowledge-feature-search tbody tr")).some(row=>row.innerText.includes("opaque-search.txt"))', "search did not recover after regex timeout");
+  await item.cdp.evaluate('document.querySelector(".knowledge-feature-search .regex-toggle input").click()');
+  evidence.regexWorkerDeadlineAndRecovery = true;
+  await item.cdp.evaluate(`(() => { const source=document.querySelector('.knowledge-feature-search select[aria-label="검색 범위"]');
+    source.value="notes"; source.dispatchEvent(new Event("change",{bubbles:true}));
+    const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"Keep"); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+  await wait(item.cdp, `Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).some(row=>row.innerText.includes("Keep new product note") && row.innerText.includes("Notes") && row.querySelector('button[title="열기"]:not(:disabled)'))`, "Notes source result was not available");
+  await item.cdp.evaluate(`Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).find(row=>row.innerText.includes("Keep new product note")).querySelector('button[title="열기"]').click()`);
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes:not([hidden])") && document.querySelector(".knowledge-feature-notes").innerText.includes("Keep new product note")', "opaque Notes result did not open in its editor");
+  assert.deepEqual(markdownFiles(), afterSummary);
+  await command(item, "knowledge.search-settings", "index_now");
+  let fileQuery;
+  for (let i = 0; i < 40; i++) {
+    fileQuery = await sourceQuery(item, "files", "opaque");
+    if (fileQuery.rows.some(row => row.reference)) break;
+    await delay(250);
+  }
+  const fileRow = fileQuery.rows.find(row => row.reference && path.normalize(row.value.path) === path.normalize(opaqueFile)); assert.ok(fileRow);
+  assert.equal(fileRow.source, "files"); assert.ok(fileRow.rootIdentity.startsWith("files:")); assert.equal(fileQuery.storeGeneration, active.generation);
+  assert.equal((await command(item, "knowledge.opener", "open_file", { path: opaqueFile })).operation.outcome.state, "failed");
+  renameSync(opaqueFile, path.join(additional, "previous-object.txt")); writeFileSync(opaqueFile, "replacement object", { flag: "wx" });
+  assert.equal((await command(item, "knowledge.opener", "reveal_file", { reference: fileRow.reference })).operation.outcome.state, "failed");
+  await command(item, "knowledge.search", "source_cancel", { generation: fileQuery.generation });
+  assert.equal((await command(item, "knowledge.opener", "open_file", { reference: fileRow.reference })).operation.outcome.state, "failed");
+  assert.equal((await sourceQuery(item, "current_project", "opaque")).state, "unsupported");
+  assert.equal((await sourceQuery(item, "files", "opaque", { sourceRootId: deletedQuery.filter.sourceRootId })).rows.length, 0);
+  assert.equal(logicalSources(), frozen); assert.deepEqual(markdownFiles(), afterSummary);
+  evidence.sourceSearchSeparated = true; evidence.opaqueNoteOpenedInProduct = true;
+  evidence.rendererPathRejected = true; evidence.replacedObjectRejected = true; evidence.cancelledSearchReferenceRejected = true;
   progress("second-installation-owner");
   const secondExe = path.join(directory, `knowledge-second-${randomUUID()}.exe`); copyFileSync(executable, secondExe);
   const second = await product(secondExe, path.join(directory, "second-webview"));

@@ -326,7 +326,7 @@ async function start(product, suffix) {
         const created = await call("knowledge.notes", "notes", "create_file", { rel: "Notes/Product fixture.md", content: "# Product fixture" });
         const read = await call("knowledge.notes", "notes", "read_file", { rel: "Notes/Product fixture.md" });
         const tracking = await call("knowledge.activity", "activity", "is_tracking");
-        const results = await call("knowledge.search", "search", "search_files", { query: "fixture", limit: 20, filter: null });
+        const results = await call("knowledge.search", "search", "source_query", { source: "files", mode: "name", query: "fixture", limit: 20, filter: {} });
         let denied = 0;
         for (const method of ["write_file", "start_tracking", "add_root", "open_file"]) {
           try { await call("knowledge.search", "search", method); } catch { denied += 1; }
@@ -336,7 +336,7 @@ async function start(product, suffix) {
           privateVault: root.operation.outcome.state === "succeeded" && root.value.includes("notes-vault"),
           explicitNoteWrite: created.operation.outcome.state === "succeeded" && read.value === "# Product fixture",
           collectorStartsOff: tracking.operation.outcome.state === "succeeded" && tracking.value === false,
-          independentSearch: results.operation.outcome.state === "succeeded" && Array.isArray(results.value) && results.value.length === 0,
+          independentSearch: results.operation.outcome.state === "succeeded" && Array.isArray(results.value.rows) && results.value.rows.length === 0 && results.value.source === "files",
           queryMutationDenials: denied, unapprovedBindingRejected: blockedBinding.operation.outcome.state === "failed" };
       })()`);
       assert.deepEqual(componentProbe, { replayRejected: true, legacyCommandRejected: true, foreignInstallationRejected: true,

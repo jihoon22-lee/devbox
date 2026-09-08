@@ -65,7 +65,9 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         "knowledge.search" => {
             route == "search"
-                && everything_plus_lib::component::COMMANDS.contains(&method)
+                && (everything_plus_lib::component::COMMANDS.contains(&method)
+                    || crate::search::METHODS.contains(&method))
+                && !matches!(method, "search_files" | "search_content")
                 && !SEARCH_SETTINGS.contains(&method)
                 && !OPENERS.contains(&method)
         }
@@ -78,7 +80,8 @@ pub(crate) fn issue(error: &str) -> &'static str {
     match error {
         "component_args_invalid" => "invalid_request",
         "setup_required" => "setup_required",
-        "store_busy" | "digest_busy" => "busy",
+        "store_busy" | "digest_busy" | "search_busy" => "busy",
+        "search_stale" => "search_stale",
         "store_future_schema" => "future_schema",
         "store_manifest_invalid" | "store_path_invalid" => "store_invalid",
         "activity_consent_save_failed" => "consent_save_failed",
@@ -241,7 +244,11 @@ async fn execute(
         }
         "knowledge.opener" if request.method == "open_targets" => Ok(json!([])),
         "knowledge.opener" if request.method == "open_in" => Err("provider_unavailable".into()),
-        "knowledge.search" | "knowledge.search-settings" | "knowledge.opener" => {
+        "knowledge.opener" => crate::search::open(app, &request.method, request.args).await,
+        "knowledge.search" if crate::search::METHODS.contains(&request.method.as_str()) => {
+            crate::search::dispatch(app, &request.method, request.args)
+        }
+        "knowledge.search" | "knowledge.search-settings" => {
             everything_plus_lib::component::dispatch(app, &request.method, request.args).await
         }
         _ => Err("component_method_invalid".into()),
@@ -286,8 +293,10 @@ mod tests {
     use super::*;
     #[test]
     fn query_service_cannot_mutate_notes_index_settings_or_launch() {
-        assert!(allowed("knowledge.search", "search", "search_files"));
+        assert!(allowed("knowledge.search", "search", "source_query"));
         for method in [
+            "search_files",
+            "search_content",
             "write_file",
             "set_root",
             "start_tracking",

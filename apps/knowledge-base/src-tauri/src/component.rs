@@ -2,6 +2,40 @@
 //! for creating its own managed states after migration and enforcing native
 //! caller/owner/session checks before dispatch. This module starts no legacy app.
 
+pub use crate::core::db::product_search as search_projection;
+
+/// Cached health only; a disconnected WSL vault is never probed on the IPC thread.
+pub fn product_index_health(app: &tauri::AppHandle) -> (bool, bool) {
+    use tauri::Manager;
+    let status = app
+        .state::<std::sync::Arc<crate::commands::watcher::KnowledgeWatcher>>()
+        .status();
+    (
+        status.error.as_deref() == Some("vault_unavailable"),
+        status.error.is_some() || status.last_synced_at.is_none(),
+    )
+}
+
+/// The product opener has already resolved and checked an opaque reference.
+/// Notes still performs its normal inbound validation and dirty-editor prompt.
+pub fn offer_product_path(app: &tauri::AppHandle, path: &std::path::Path) -> Result<(), String> {
+    use tauri::{Emitter, Manager};
+    let request = devbox_applink::OpenRequest {
+        target: devbox_applink::OpenTarget::Path {
+            path: path.to_str().ok_or("search_stale")?.into(),
+            line: None,
+            column: None,
+        },
+        from: Some("everything-plus".into()),
+    };
+    devbox_applink::build_argv(&request).map_err(|_| "search_stale")?;
+    app.try_state::<crate::applink::PendingOpen>()
+        .ok_or("search_unavailable")?
+        .offer(request)?;
+    let _ = app.emit_to("main", "devbox://open", ());
+    Ok(())
+}
+
 /// Connect the actual note engine to a native-owned DB/vault and snapshot
 /// namespace after migration. This never performs legacy identifier migration.
 pub fn initialize(

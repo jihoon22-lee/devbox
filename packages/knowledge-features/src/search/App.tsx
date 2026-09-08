@@ -3,6 +3,7 @@ import {
   useContextMenu,
   type ContextMenuEntry,
 } from "@devbox/context-menu";
+import { isProductHosted } from "../transport";
 import { isImeComposing } from "@devbox/a11y";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import {
@@ -22,6 +23,9 @@ import {
   deleteSavedQuery,
   saveSavedQuery,
   searchContent,
+  searchSource,
+  type SearchSource,
+  type SourceSnapshot,
   searchFiles,
   takePendingOpen,
   watcherStatuses,
@@ -37,6 +41,7 @@ import type {
   SavedQuery,
   SearchFilter,
 } from "./types";
+import { matchNames } from "./lib/regex";
 import { normalizeFilter, routeOpenRequest } from "./lib/applink";
 import "./App.css";
 
@@ -178,9 +183,15 @@ function watcherTitle(status: RootStatus): string {
 interface ResultContext {
   path: string;
   name: string;
+  reference?: string | null;
+  source?: string;
 }
 
-export default function App() {
+export default function App({ onNoteOpen }: { onNoteOpen?: () => void } = {}) {
+  const product = isProductHosted();
+  const [source, setSource] = useState<SearchSource>("files");
+  const [sourceSnapshot, setSourceSnapshot] = useState<SourceSnapshot>();
+  const [queryRevision, setQueryRevision] = useState(0);
   const [query, setQuery] = useState("");
   const [mode, setMode] = useState<"name" | "content">("name");
   const [regexMode, setRegexMode] = useState(false);
@@ -352,6 +363,7 @@ export default function App() {
     const current = ++seq.current;
     const q = query.trim();
     setActiveIdx(-1);
+    setSourceSnapshot(undefined);
     if (!isSearchQueryAllowed(query)) {
       setResults([]);
       setContentResults([]);
@@ -367,9 +379,36 @@ export default function App() {
     }
     if (mode !== "name" || !regexMode) setRegexError(null);
     let cancelled = false;
+    const controller = new AbortController();
+    if (product) { setResults([]); setContentResults([]); }
     const t = setTimeout(async () => {
       try {
-        if (mode === "content") {
+        if (product) {
+          let expression: RegExp | undefined;
+          if (mode === "name" && regexMode) {
+            try { expression = new RegExp(q, "i"); if (!cancelled) setRegexError(null); }
+            catch { if (!cancelled) setRegexError("정규식을 해석할 수 없습니다."); return; }
+          }
+          let matches: Promise<Set<number>> | undefined;
+          let snapshotSequence = 0;
+          const accept = (snapshot: SourceSnapshot) => {
+            if (cancelled || seq.current !== current) return;
+            const revision = ++snapshotSequence;
+            setSourceSnapshot(snapshot);
+            const rows = snapshot.rows.map(row => ({ ...row.value, source: row.source, sourceRoot: row.rootIdentity, reference: row.reference, availability: row.availability, indexStale: row.indexStale }));
+            if (mode === "content") setContentResults(rows);
+            else if (!expression || rows.length === 0) setResults(rows);
+            else {
+              matches ??= matchNames(q, rows.map(row => row.name), controller.signal);
+              void matches.then(indices => {
+                if (!cancelled && seq.current === current && revision === snapshotSequence) setResults(rows.filter((_row, index) => indices.has(index)));
+              }).catch(cause => {
+                if (!cancelled && seq.current === current && revision === snapshotSequence) setRegexError(cause instanceof Error ? cause.message : "정규식 검색을 완료하지 못했습니다.");
+              });
+            }
+          };
+          await searchSource(source, expression ? q.replace(/[^a-zA-Z0-9\s]/g, "") : q, mode, expression ? 2000 : 200, filter, controller.signal, accept);
+        } else if (mode === "content") {
           const next = isFilterEmpty(filter) ? await searchContent(q) : await searchContent(q, undefined, filter);
           if (!cancelled && seq.current === current) setContentResults(next);
         } else if (regexMode) {
@@ -400,9 +439,10 @@ export default function App() {
     }, 150);
     return () => {
       cancelled = true;
+      controller.abort();
       clearTimeout(t);
     };
-  }, [query, mode, regexMode, filter]);
+  }, [query, mode, regexMode, filter, source, product, queryRevision]);
 
   useEffect(() => {
     if (status.last_error === "indexing_failed") {
@@ -529,7 +569,7 @@ export default function App() {
     const result = activeList[index];
     if (!Number.isInteger(index) || !result) return;
     setActiveIdx(index);
-    setContextResult({ path: result.path, name: result.name });
+    setContextResult({ path: result.path, name: result.name, reference: result.reference, source: result.source });
   }, [activeList]);
 
   const contextMenu = useContextMenu({
@@ -554,10 +594,12 @@ export default function App() {
 
   const onOpenActive = async (index = activeIdx) => {
     const path = index >= 0 ? activePath(index) : null;
-    if (!path) return;
+    if (!path || (product && !activeList[index]?.reference)) return;
     setError(null);
     try {
-      await openFile(path);
+      if (product) await openFile(path, activeList[index]?.reference);
+      else await openFile(path);
+      if (activeList[index]?.source === "notes") onNoteOpen?.();
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -585,12 +627,16 @@ export default function App() {
     }
   };
 
-  const onRowAction = async (path: string, action: "open" | "folder" | "copy") => {
+  const onRowAction = async (result: ResultContext, action: "open" | "folder" | "copy") => {
+    if (product && action !== "copy" && !result.reference) return;
     setError(null);
     try {
-      if (action === "open") await openFile(path);
-      else if (action === "folder") await revealFile(path);
-      else await copyPath(path);
+      if (action === "open") {
+        if (product) await openFile(result.path, result.reference); else await openFile(result.path);
+        if (result.source === "notes") onNoteOpen?.();
+      }
+      else if (action === "folder") { if (product) await revealFile(result.path, result.reference); else await revealFile(result.path); }
+      else await copyPath(result.path);
     } catch (e) {
       setError(e instanceof Error ? e.message : String(e));
     }
@@ -604,8 +650,8 @@ export default function App() {
       label: target.displayName,
     }));
     return [
-      { type: "item", id: "open", label: "열기" },
-      { type: "item", id: "reveal", label: "폴더에서 보기" },
+      { type: "item", id: "open", label: "열기", disabled: product && !contextResult.reference },
+      { type: "item", id: "reveal", label: "폴더에서 보기", disabled: product && !contextResult.reference },
       { type: "separator", id: "copy-separator" },
       { type: "item", id: "copy-path", label: "경로 복사" },
       { type: "item", id: "copy-name", label: "파일 이름 복사" },
@@ -618,21 +664,21 @@ export default function App() {
         items: targetItems,
       },
     ];
-  }, [availableTargets, contextResult]);
+  }, [availableTargets, contextResult, product]);
 
   const onContextMenuSelect = (id: string) => {
     const result = contextResult;
     if (!result) return;
     if (id === "open") {
-      void onRowAction(result.path, "open");
+      void onRowAction(result, "open");
       return;
     }
     if (id === "reveal") {
-      void onRowAction(result.path, "folder");
+      void onRowAction(result, "folder");
       return;
     }
     if (id === "copy-path") {
-      void onRowAction(result.path, "copy");
+      void onRowAction(result, "copy");
       return;
     }
     if (id === "copy-name") {
@@ -652,7 +698,10 @@ export default function App() {
   return (
     <div className="app">
       <header className="toolbar">
-        <h1 className="title">Everything+</h1>
+        <h1 className="title">{product ? "Search" : "Everything+"}</h1>
+        {product && <label>검색 범위 <select aria-label="검색 범위" value={source} onChange={event => { setSource(event.currentTarget.value as SearchSource); setError(null); }}>
+          <option value="notes">Notes</option><option value="current_project">Current Project</option><option value="files">All Indexed Files</option>
+        </select></label>}
         <div className="mode-tabs">
           <button
             className={`mode-tab ${mode === "name" ? "active" : ""}`}
@@ -686,6 +735,7 @@ export default function App() {
           }}
           autoFocus
         />
+        {product && <button className="btn" disabled={!query.trim()} onClick={() => { setError(null); setQueryRevision(value => value + 1); }}>다시 검색</button>}
         {mode === "name" && (
           <label className="regex-toggle">
             <input type="checkbox" checked={regexMode} onChange={(e) => setRegexMode(e.currentTarget.checked)} />
@@ -711,6 +761,15 @@ export default function App() {
         </button>
       </header>
 
+      {product && <p role="status" className="source-status">
+        {source === "current_project" ? "현재 프로젝트가 연결되지 않았습니다. 프로젝트 연결 후 해당 범위에서 검색할 수 있습니다."
+          : sourceSnapshot?.state === "unsupported" ? "이 검색 범위에서 현재 필터를 지원하지 않습니다. 필터를 해제하거나 All Indexed Files를 선택해 주세요."
+          : sourceSnapshot?.state === "unavailable" ? "검색 출처를 읽지 못했습니다. 다른 범위를 선택하거나 다시 검색해 주세요."
+          : sourceSnapshot?.state === "running" ? "검색 중… 파일 연결을 확인하고 있습니다."
+          : sourceSnapshot?.state === "timed_out" ? "제한 시간 내 확인한 결과입니다. 연결을 확인하지 못한 파일은 열 수 없습니다."
+          : sourceSnapshot?.partial ? "일부 결과입니다. 결과 상한이나 연결 상태를 확인해 주세요."
+          : source === "notes" ? "Notes의 노트 인덱스에서 검색합니다. 파일 필터는 All Indexed Files에서 사용할 수 있습니다." : "파일 인덱스에서 검색합니다. 검색 결과의 출처와 루트를 함께 표시합니다."}
+      </p>}
       {status.indexing && (
         <div className="progress">
           <div className="progress-bar" style={{ width: `${Math.max(4, pct)}%` }} />
@@ -1017,20 +1076,21 @@ export default function App() {
                   onFocus={() => setActiveIdx(i)}
                   onClick={() => {
                     setActiveIdx(i);
-                    void onRowAction(f.path, "open");
+                    void onRowAction(f, "open");
                   }}
                   {...contextMenu.triggerProps}
                 >
                   <td>
                     <span className="name">{f.name}</span>
+                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
                   </td>
                   <td className="snippet">{f.snippet}</td>
                   <td className="mono dim">{f.path}</td>
                   <td className="status-cell">{contentStatusLabel(f.content_status, f.truncated)}</td>
                   <td className="row-actions">
-                    <button className="mini" title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>열기</button>
-                    <button className="mini" title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>폴더</button>
-                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>복사</button>
+                    <button className="mini" disabled={product && !f.reference} title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "open"); }}>열기</button>
+                    <button className="mini" disabled={product && !f.reference} title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "folder"); }}>폴더</button>
+                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "copy"); }}>복사</button>
                   </td>
                 </tr>
               ))}
@@ -1073,20 +1133,21 @@ export default function App() {
                   onFocus={() => setActiveIdx(i)}
                   onClick={() => {
                     setActiveIdx(i);
-                    void onRowAction(f.path, "open");
+                    void onRowAction(f, "open");
                   }}
                   {...contextMenu.triggerProps}
                 >
                   <td>
                     <span className="name">{f.name}</span>
+                    {product && <small className="source-label">{f.source === "notes" ? "Notes" : "Files"} · {f.sourceRoot}{f.indexStale && " · 인덱스 갱신 필요"}{f.availability !== "available" && " · 연결 미확인"}</small>}
                   </td>
                   <td className="mono dim">{f.path}</td>
-                  <td className="mono">{fmtSize(f.size)}</td>
+                  <td className="mono">{f.source === "notes" ? "—" : fmtSize(f.size)}</td>
                   <td className="status-cell">{contentStatusLabel(f.content_status, f.content_truncated)}</td>
                   <td className="row-actions">
-                    <button className="mini" title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "open"); }}>열기</button>
-                    <button className="mini" title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "folder"); }}>폴더</button>
-                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f.path, "copy"); }}>복사</button>
+                    <button className="mini" disabled={product && !f.reference} title="열기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "open"); }}>열기</button>
+                    <button className="mini" disabled={product && !f.reference} title="폴더에서 보기" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "folder"); }}>폴더</button>
+                    <button className="mini" title="경로 복사" onClick={(e) => { e.stopPropagation(); void onRowAction(f, "copy"); }}>복사</button>
                   </td>
                 </tr>
               ))}

@@ -2,6 +2,7 @@ mod component;
 mod core;
 mod lifecycle;
 mod migration;
+mod search;
 mod startup;
 mod storage_space;
 mod vault_owner;

@@ -70,15 +70,34 @@ Notes defers Activity, Search and Mermaid; the build checks its actual static cl
 against the preserved 970,000 raw / 325,000 gzip legacy ceiling and separately checks
 the 280,000 / 90,000 outer-shell budget.
 
-The Windows foundation fixture now includes explicit startup, private note writes,
-default collection OFF, independent Search, replay/installation/role rejection and
-mounted route retention in two installations. Host ceb2e7c and Daily/tray b230a53
-passed their Windows fixtures. The new migration fixture uses pinned v0.7 executables
-to create synthetic legacy schemas and tests explicit UI import, live-writer denial,
-two-installation ownership, repeat import, privacy, ID remapping and close/restart.
-The first Windows run found an attribute-only directory handle that did not prevent
-vault rename and a fixture SQLite constructor option error before source creation.
-Both have been corrected for the next run; migration execution remains pending.
-The fixture now also exercises in-product summary preview/cancel/save/replay.
-Source-aware opaque Search references, session-summary provider input and final
-Windows/WSL acceptance remain in this same B03 PR.
+Search provides Notes / Current Project / All Indexed Files on the existing full
+filename/content/regex/filter/root/index/saved-search surface. Notes title/body FTS
+and file FTS remain separate. File-only filters report unsupported in Notes;
+Current Project explains that trusted project context is not yet connected.
+
+The native source API returns opaque query/store generations, source/root identity,
+result bounds and partial/stale/unsupported state. Read-only SQL has a 1.5-second
+progress deadline; two retained workers per source prevent blocked filesystem calls
+from spawning unbounded replacements. Four retained jobs and a 4 MiB candidate
+projection bound storage; name/regex caps at 2,000, content at 200 and Notes at 100.
+Known-offline roots retain inspectable index rows without probing. The UI applies
+only the latest query. Product regex runs in a cancellable 500 ms worker.
+
+Only rows with an issued opaque reference can open. The separate opener checks the
+current store generation, registered/deepest root, indexed row and actual root/file
+identity; raw renderer paths are rejected. References expire after three minutes or
+cancellation. Two opener permits and a two-second response deadline bound slow
+probes and prevent late launches. Notes results open through the editor's existing
+dirty confirmation. Query services cannot launch a process or mutate a file.
+
+The Windows foundation fixture covers startup, private note writes, default
+collection OFF, independent Search and owner/replay/installation rejection in two
+installations. The pinned legacy migration fixture additionally covers import,
+source preservation, writer/installation denial, ID mapping, repeat/recovery,
+summary preview/cancel/save/replay, regex deadline/recovery and opaque search opens.
+9427d77 passed general CI and the corrected Windows vault-rename regression. Its
+migration fixture reached collector quiescing but misread signal termination as a
+live process; the fixture now checks both exit code and signal. Current migration,
+summary and Search execution remain pending. See the single B03 workthrough for
+exact runs and portable evidence. Session-summary input, project attribution, live
+vault rebinding and final Windows/WSL acceptance remain in this PR.
