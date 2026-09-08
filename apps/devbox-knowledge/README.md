@@ -116,15 +116,14 @@ collection OFF, independent Search and owner/replay/installation rejection in tw
 installations. The pinned legacy migration fixture additionally covers import,
 source preservation, writer/installation denial, ID mapping, repeat/recovery,
 summary preview/cancel/save/replay, regex deadline/recovery and opaque search opens.
-f8f9f87 passed its Windows Rust checks, but its general CI hit a five-second API
-Studio route-test timeout under CI contention. That test now has a 15-second case
-budget; native performance measurements remain separate. Its migration fixture
-stopped on a normalized Windows-path string comparison. Root setup now uses native
-IDs, and file assertions compare actual object IDs. Current native import, summary,
-Search and folder-rebinding execution remain pending past that stage. See the B03
-workthrough for exact runs and portable evidence. Session-summary/provider and
-The Project Registry provider contract is implemented below. Final Windows/WSL
-acceptance and detailed parity evidence remain in this PR.
+The current Windows run has verified original data/import activation, collection
+OFF, Activity summary preview/cancel/save/single consumption and regex timeout
+recovery. Its Notes filename assertion has been corrected to use the filename;
+a separate body query checks note FTS. Remaining search, repeat/recovery, folder
+rebinding, configured performance and actual WSL acceptance are pending. The
+[ownership/data map](../../docs/architecture/v0.8-knowledge.md) and B03 workthrough
+separate portable, native and later suite evidence. B06/B04/B07 provider contracts
+are described below; their authenticated external transports remain delegated.
 
 ### B06 session summary input
 

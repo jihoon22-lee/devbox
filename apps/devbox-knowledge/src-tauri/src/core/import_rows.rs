@@ -697,7 +697,29 @@ pub fn merge(
             walk(&source_db,"knowledge_draft_history","id,handoff_id,kind,status,summary_json,sources_json,created_ts,updated_ts,expires_ts,regenerated_from",&mut budget,|r|merger.history(r))?;
         }
         Source::Search => {
-            schema(&source_db, "meta", "key,value")?;
+            // Metadata is a mixed table, not an unrestricted cache. Unknown
+            // keys require a new inventory decision; never silently discard
+            // a future preference. Known derived markers are rebuilt, while
+            // the destination owns its separately remapped root-ID sequence.
+            walk(&source_db, "meta", "key,value", &mut budget, |row| {
+                let key = text(&row[0])?;
+                let value = text(&row[1])?;
+                let supported = match key {
+                    "schema_version" | "root_ownership_version" => value == "2",
+                    "next_root_id" => value.parse::<i64>().is_ok_and(|id| id > 0),
+                    "pdf_extractor_version"
+                    | "docx_extractor_version"
+                    | "xls_extractor_version"
+                    | "xlsx_extractor_version"
+                    | "ods_extractor_version" => value.len() <= 20 && value.parse::<u64>().is_ok(),
+                    _ => false,
+                };
+                if supported {
+                    Ok(())
+                } else {
+                    Err("import_schema_unsupported".into())
+                }
+            })?;
             let version: String = sql(source_db.query_row(
                 "SELECT value FROM meta WHERE key='schema_version'",
                 [],
@@ -955,6 +977,71 @@ mod tests {
             .exists([])
             .unwrap());
         assert_eq!(count(&source, "settings"), 2);
+    }
+    #[test]
+    fn unknown_search_metadata_blocks_import_without_losing_source_or_destination_rows() {
+        let temp = tempfile::tempdir().unwrap();
+        let source = temp.path().join("source.db");
+        let target = temp.path().join("target.db");
+        create(&source, Source::Search, temp.path());
+        create(&target, Source::Search, temp.path());
+        let legacy = Connection::open(&source).unwrap();
+        let mut destination = Connection::open(&target).unwrap();
+        legacy.execute_batch("INSERT INTO roots VALUES(4,'C:/legacy',1); INSERT INTO meta VALUES('future_user_exclusions','keep-original');").unwrap();
+        destination
+            .execute_batch("INSERT INTO roots VALUES(7,'C:/existing',0);")
+            .unwrap();
+        for (key, value) in [
+            ("future_user_exclusions", "keep-original"),
+            ("root_ownership_version", "3"),
+            ("next_root_id", "invalid"),
+        ] {
+            legacy
+                .execute("DELETE FROM meta WHERE key='future_user_exclusions'", [])
+                .unwrap();
+            legacy.execute("INSERT INTO meta VALUES(?1,?2) ON CONFLICT(key) DO UPDATE SET value=excluded.value", [key, value]).unwrap();
+            assert_eq!(
+                merge(
+                    &source,
+                    &mut destination,
+                    Source::Search,
+                    false,
+                    Arc::new(AtomicBool::new(false))
+                )
+                .unwrap_err(),
+                "import_schema_unsupported"
+            );
+            assert_eq!(count(&destination, "roots"), 1);
+            assert_eq!(
+                destination
+                    .query_row("SELECT path FROM roots WHERE id=7", [], |r| r
+                        .get::<_, String>(0))
+                    .unwrap(),
+                "C:/existing"
+            );
+            assert_eq!(
+                legacy
+                    .query_row("SELECT value FROM meta WHERE key=?1", [key], |r| r
+                        .get::<_, String>(0))
+                    .unwrap(),
+                value
+            );
+            legacy
+                .execute(
+                    "UPDATE meta SET value='2' WHERE key='root_ownership_version'",
+                    [],
+                )
+                .unwrap();
+        }
+        legacy
+            .execute("UPDATE meta SET value='5' WHERE key='next_root_id'", [])
+            .unwrap();
+        legacy
+            .execute("INSERT INTO meta VALUES('pdf_extractor_version','1')", [])
+            .unwrap();
+        let report = run(&source, &mut destination, Source::Search, false);
+        assert_eq!(report.imported, 1);
+        assert_eq!(count(&destination, "roots"), 2);
     }
     #[test]
     fn unknown_authoritative_tables_and_invalid_bindings_are_not_silently_discarded() {
