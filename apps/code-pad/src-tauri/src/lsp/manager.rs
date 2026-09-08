@@ -27,7 +27,7 @@ use super::installer::ManagedInstaller;
 use super::logs::{LanguageServerLog, LspLogLevel, LspLogStore, StderrLineSanitizer};
 use super::positions::{position_to_offset, LspPosition, LspRange, PositionEncoding};
 use super::process::{IncomingMessage, LspProcess, ProcessState};
-use super::runtime::RuntimeResolver;
+use super::runtime::{ResolvedProcess, RuntimeResolver};
 use super::transport::RequestCancellation;
 use crate::commands::file as file_commands;
 use crate::core::encoding::Encoding;
@@ -87,6 +87,7 @@ pub enum LspManagerError {
     Config(String),
     ConfigRecoveryRequired,
     Disabled,
+    ExecutionApprovalRequired,
     MissingWorkspace,
     UnsupportedWslWorkspace,
     MissingServer(String),
@@ -105,6 +106,9 @@ impl fmt::Display for LspManagerError {
                 "기존 LSP 설정 파일이 손상되었습니다. 명시적으로 복구를 선택해야 덮어쓸 수 있습니다",
             ),
             Self::Disabled => formatter.write_str("LSP가 비활성화되어 있습니다"),
+            Self::ExecutionApprovalRequired => {
+                formatter.write_str("현재 프로젝트의 언어 서버 실행 승인이 필요합니다")
+            }
             Self::MissingWorkspace => formatter.write_str("LSP 작업 폴더가 설정되지 않았습니다"),
             Self::UnsupportedWslWorkspace => formatter.write_str(
                 "WSL 작업 폴더는 Windows host LSP를 지원하지 않습니다. 파일 편집과 5초 폴링 감시는 계속 사용할 수 있습니다",
@@ -436,11 +440,43 @@ impl Drop for StartReservation {
     }
 }
 
+/// Standalone Code Pad owns its existing recovery history. A product importing
+/// that history must preserve it until its native owner approves recovery;
+/// constructing a manager is not permission to touch recorded external paths.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StartupRecovery {
+    RecoverOwnedJournals,
+    PreserveJournals,
+}
+
+/// Persistent native authority is checked for every start, including monitor
+/// retries. A per-command or thread-local guard cannot cover those retries.
+pub trait LspExecutionAuthority: Send + Sync {
+    /// Runs before workspace path IO or runtime resolution.
+    fn validate_config(&self, language_id: &str, config: &LspConfig)
+        -> Result<(), LspManagerError>;
+    /// Runs before a managed runtime probe and again before server spawn.
+    fn validate_process(&self, process: &ResolvedProcess) -> Result<(), LspManagerError>;
+}
+
+/// A hosted read-only manager has no execution authority. A later native
+/// context owner must construct its own manager with reviewed evidence.
+pub struct UnapprovedLspExecution;
+impl LspExecutionAuthority for UnapprovedLspExecution {
+    fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
+        Err(LspManagerError::ExecutionApprovalRequired)
+    }
+    fn validate_process(&self, _: &ResolvedProcess) -> Result<(), LspManagerError> {
+        Err(LspManagerError::ExecutionApprovalRequired)
+    }
+}
+
 #[derive(Clone)]
 pub struct LspManager {
     app_local_data_dir: PathBuf,
     app_version: String,
     resolver: RuntimeResolver,
+    execution_authority: Option<Arc<dyn LspExecutionAuthority>>,
     installer: Arc<ManagedInstaller>,
     state: Arc<Mutex<ManagerState>>,
     logs: Arc<Mutex<LspLogStore>>,
@@ -475,6 +511,20 @@ impl LspManager {
         app_version: impl Into<String>,
         installer: Arc<ManagedInstaller>,
     ) -> Self {
+        Self::with_startup_recovery(
+            app_local_data_dir,
+            app_version,
+            installer,
+            StartupRecovery::RecoverOwnedJournals,
+        )
+    }
+
+    pub fn with_startup_recovery(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+        recovery: StartupRecovery,
+    ) -> Self {
         let app_local_data_dir = app_local_data_dir.into();
         let rename_backup_root = app_local_data_dir.join("rename-backups");
         let (events, _) = broadcast::channel(128);
@@ -482,6 +532,7 @@ impl LspManager {
             app_local_data_dir,
             app_version: app_version.into(),
             resolver: RuntimeResolver::new(),
+            execution_authority: None,
             installer,
             state: Arc::new(Mutex::new(ManagerState::default())),
             logs: Arc::new(Mutex::new(LspLogStore::default())),
@@ -497,7 +548,25 @@ impl LspManager {
             rename_backup_root,
             document_mutation_gate: Arc::new(Mutex::new(())),
         };
-        recover_rename_journals(&manager.rename_backup_root);
+        if recovery == StartupRecovery::RecoverOwnedJournals {
+            recover_rename_journals(&manager.rename_backup_root);
+        }
+        manager
+    }
+
+    pub fn with_execution_authority(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+        authority: Arc<dyn LspExecutionAuthority>,
+    ) -> Self {
+        let mut manager = Self::with_startup_recovery(
+            app_local_data_dir,
+            app_version,
+            installer,
+            StartupRecovery::PreserveJournals,
+        );
+        manager.execution_authority = Some(authority);
         manager
     }
 
@@ -775,6 +844,9 @@ impl LspManager {
         if config.workspace_root.is_empty() {
             return Err(LspManagerError::MissingWorkspace);
         }
+        if let Some(authority) = &self.execution_authority {
+            authority.validate_config(language_id, &config)?;
+        }
         ensure_host_workspace_supported(&config.workspace_root)?;
 
         let workspace = WorkspaceRoot::new(&config.workspace_root)
@@ -790,16 +862,24 @@ impl LspManager {
                         .installer
                         .resolve_managed_install(manifest_id, version)
                         .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-                    self.resolver
-                        .resolve_managed(
+                    let resolved = self
+                        .resolver
+                        .prepare_managed(
                             &installation.manifest,
                             language_id,
                             &installation.installed_path,
                             node_path.as_deref(),
                             workspace.path(),
                         )
+                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+                    if let Some(authority) = &self.execution_authority {
+                        authority.validate_process(&resolved)?;
+                    }
+                    self.resolver
+                        .probe_managed_runtime(&resolved)
                         .await
-                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?
+                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+                    resolved
                 }
                 _ => self
                     .resolver
@@ -818,6 +898,10 @@ impl LspManager {
             return Err(LspManagerError::MissingServer(language_id.to_owned()));
         };
 
+        if let Some(authority) = &self.execution_authority {
+            authority.validate_config(language_id, &config)?;
+            authority.validate_process(&resolved)?;
+        }
         let process = LspProcess::spawn(resolved.process_spec())
             .await
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
@@ -4164,6 +4248,97 @@ mod status_tests {
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn hosted_execution_rejects_unapproved_roots_before_path_resolution() {
+        let data = tempfile::tempdir().unwrap();
+        let manager = LspManager::with_execution_authority(
+            data.path(),
+            "test",
+            Arc::new(ManagedInstaller::new(data.path()).unwrap()),
+            Arc::new(UnapprovedLspExecution),
+        );
+        manager
+            .save_config(
+                &LspConfig {
+                    enabled: true,
+                    workspace_root: data
+                        .path()
+                        .join("does-not-exist")
+                        .to_string_lossy()
+                        .into_owned(),
+                    ..LspConfig::default()
+                },
+                false,
+            )
+            .unwrap();
+        for _ in 0..2 {
+            assert!(matches!(
+                manager.start("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+            // The monitor's restart path uses the same session constructor.
+            assert!(matches!(
+                manager.create_session("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+        }
+        assert!(manager.state.lock().await.starting.is_empty());
+        assert!(manager.state.lock().await.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn hosted_execution_rechecks_the_resolved_command_before_spawn() {
+        struct DenyProcess(std::sync::atomic::AtomicUsize);
+        impl LspExecutionAuthority for DenyProcess {
+            fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
+                Ok(())
+            }
+            fn validate_process(&self, _: &ResolvedProcess) -> Result<(), LspManagerError> {
+                self.0.fetch_add(1, Ordering::AcqRel);
+                Err(LspManagerError::ExecutionApprovalRequired)
+            }
+        }
+        let data = tempfile::tempdir().unwrap();
+        let executable = data.path().join("server.exe");
+        fs::write(
+            &executable,
+            b"not an executable: spawn must not be attempted",
+        )
+        .unwrap();
+        let authority = Arc::new(DenyProcess(std::sync::atomic::AtomicUsize::new(0)));
+        let manager = LspManager::with_execution_authority(
+            data.path(),
+            "test",
+            Arc::new(ManagedInstaller::new(data.path()).unwrap()),
+            authority.clone(),
+        );
+        manager
+            .save_config(
+                &LspConfig {
+                    enabled: true,
+                    workspace_root: data.path().to_string_lossy().into_owned(),
+                    server_by_language: BTreeMap::from([(
+                        "rust".into(),
+                        ServerRef::Custom {
+                            executable: executable.to_string_lossy().into_owned(),
+                            args: vec![],
+                        },
+                    )]),
+                    ..LspConfig::default()
+                },
+                false,
+            )
+            .unwrap();
+        for _ in 0..2 {
+            assert!(matches!(
+                manager.start("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+        }
+        assert_eq!(authority.0.load(Ordering::Acquire), 2);
+        assert!(manager.state.lock().await.sessions.is_empty());
+    }
+
     #[test]
     fn windows_host_lsp_rejects_wsl_workspace_aliases_with_one_stable_reason() {
         for path in [
@@ -4360,6 +4535,65 @@ mod tests {
         recover_rename_journals(backup_root.path());
         assert_eq!(fs::read(&target).unwrap(), before);
         assert!(!directory.exists());
+    }
+
+    #[test]
+    fn hosted_startup_preserves_applying_and_committed_journals() {
+        for state in [RenameJournalState::Applying, RenameJournalState::Committed] {
+            let data = tempfile::tempdir().unwrap();
+            let workspace = tempfile::tempdir().unwrap();
+            let target = workspace.path().join("main.rs");
+            fs::write(&target, b"after\n").unwrap();
+            let directory = file_commands::create_private_backup_dir(
+                &data.path().join("rename-backups"),
+                "rename-hosted",
+            )
+            .unwrap();
+            let backup = directory.join("backup-test.bak");
+            fs::write(&backup, b"before\n").unwrap();
+            let journal = RenameJournal {
+                schema: 1,
+                plan_id: "rename-hosted".into(),
+                workspace_root: workspace.path().to_string_lossy().into_owned(),
+                state,
+                entries: vec![RenameJournalEntry {
+                    target: target.to_string_lossy().into_owned(),
+                    backup: backup.to_string_lossy().into_owned(),
+                    before_size: 7,
+                    before_hash: file_commands::content_hash(b"before\n"),
+                    after_size: 6,
+                    after_hash: file_commands::content_hash(b"after\n"),
+                }],
+            };
+            let journal_path = write_rename_journal(&directory, &journal).unwrap();
+            let original_journal = fs::read(&journal_path).unwrap();
+            let target_identity = devbox_filesystem::filesystem_identity(&target, false).unwrap();
+            let installer = Arc::new(ManagedInstaller::new(data.path()).unwrap());
+            let _hosted = LspManager::with_startup_recovery(
+                data.path(),
+                "test",
+                installer.clone(),
+                StartupRecovery::PreserveJournals,
+            );
+            assert_eq!(fs::read(&target).unwrap(), b"after\n");
+            assert_eq!(fs::read(&backup).unwrap(), b"before\n");
+            assert_eq!(fs::read(&journal_path).unwrap(), original_journal);
+            assert_eq!(
+                devbox_filesystem::filesystem_identity(&target, false).unwrap(),
+                target_identity
+            );
+
+            // The same recoverable fixture proves standalone parity and makes
+            // this test fail if product construction accidentally scans it.
+            let _standalone = LspManager::with_installer(data.path(), "test", installer);
+            let expected = if state == RenameJournalState::Applying {
+                b"before\n".as_slice()
+            } else {
+                b"after\n".as_slice()
+            };
+            assert_eq!(fs::read(&target).unwrap(), expected);
+            assert!(!directory.exists());
+        }
     }
 
     #[tokio::test]

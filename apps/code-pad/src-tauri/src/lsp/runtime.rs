@@ -551,6 +551,22 @@ impl RuntimeResolver {
         node_path: Option<&str>,
         workspace: impl AsRef<Path>,
     ) -> Result<ResolvedProcess, RuntimeError> {
+        let resolved =
+            self.prepare_managed(manifest, language_id, installed_root, node_path, workspace)?;
+        self.probe_managed_runtime(&resolved).await?;
+        Ok(resolved)
+    }
+
+    /// Resolve command paths and argv without spawning even a version probe.
+    /// Product owners use this phase to review and pin execution evidence.
+    pub fn prepare_managed(
+        &self,
+        manifest: &ServerManifest,
+        language_id: &str,
+        installed_root: impl AsRef<Path>,
+        node_path: Option<&str>,
+        workspace: impl AsRef<Path>,
+    ) -> Result<ResolvedProcess, RuntimeError> {
         manifest
             .validate_for_install()
             .map_err(|error| RuntimeError::InvalidSpec(error.to_string()))?;
@@ -643,7 +659,6 @@ impl RuntimeResolver {
                 }
             }
         };
-        self.probe_runtime(&runtime).await?;
         let mut process_args = Vec::with_capacity(args.len() + 1);
         process_args.push(command_path.into_os_string());
         process_args.extend(args);
@@ -656,10 +671,27 @@ impl RuntimeResolver {
         })
     }
 
-    async fn probe_runtime(&self, runtime: &ResolvedRuntime) -> Result<(), RuntimeError> {
+    /// Execution boundary: the native owner must revalidate its approval before
+    /// calling this method, then again before spawning the language server.
+    pub async fn probe_managed_runtime(
+        &self,
+        resolved: &ResolvedProcess,
+    ) -> Result<(), RuntimeError> {
+        if let Some(runtime) = &resolved.runtime {
+            self.probe_runtime(runtime, &resolved.current_dir).await?;
+        }
+        Ok(())
+    }
+
+    async fn probe_runtime(
+        &self,
+        runtime: &ResolvedRuntime,
+        workspace: &Path,
+    ) -> Result<(), RuntimeError> {
         let mut command = Command::new(&runtime.executable);
         command
             .arg("--version")
+            .current_dir(workspace)
             .env_clear()
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
@@ -1692,6 +1724,43 @@ mod tests {
             );
             assert_eq!(resolved.args[1], OsString::from("--stdio"));
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_preparation_does_not_execute_the_runtime_probe() {
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        let bin = directory.path().join("bin");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(installed.join("server.js"), b"fixture").unwrap();
+        executable_fixture(
+            &bin.join("node"),
+            "#!/bin/sh\n[ \"$1\" = \"--version\" ] || exit 1\nprintf probe > probe-marker\necho v20.11.1\n",
+        );
+        let manifest = managed_manifest(
+            RuntimeKind::Node,
+            "server.js",
+            vec![LanguageSupport {
+                language_id: "javascript".into(),
+                extensions: vec![".js".into()],
+                command: None,
+            }],
+        );
+        let resolver = RuntimeResolver::with_path(bin.as_os_str().to_os_string());
+        let prepared = resolver
+            .prepare_managed(&manifest, "javascript", &installed, None, &workspace)
+            .unwrap();
+        assert!(!workspace.join("probe-marker").exists());
+        assert_eq!(
+            prepared.executable,
+            bin.join("node").canonicalize().unwrap()
+        );
+        resolver.probe_managed_runtime(&prepared).await.unwrap();
+        assert_eq!(fs::read(workspace.join("probe-marker")).unwrap(), b"probe");
     }
 
     #[cfg(unix)]

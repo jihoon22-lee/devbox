@@ -80,10 +80,11 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path) -> Result<(), String> {
     let installer = Arc::new(
         crate::lsp::ManagedInstaller::new(data).map_err(|_| "component_storage_unavailable")?,
     );
-    let manager = Arc::new(crate::lsp::LspManager::with_installer(
+    let manager = Arc::new(crate::lsp::LspManager::with_execution_authority(
         data.to_path_buf(),
         env!("CARGO_PKG_VERSION"),
         installer.clone(),
+        Arc::new(crate::lsp::UnapprovedLspExecution),
     ));
     let mut events = manager.subscribe_events();
     let handle = app.clone();

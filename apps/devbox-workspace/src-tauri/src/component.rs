@@ -4,7 +4,7 @@ use product_contract::{Operation, OperationState, Problem, ProblemCode, Provenan
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{
-    atomic::{AtomicUsize, Ordering},
+    atomic::{AtomicBool, AtomicUsize, Ordering},
     Arc, Mutex,
 };
 use std::time::Duration;
@@ -33,6 +33,8 @@ impl Drop for Permit {
 }
 #[derive(Clone)]
 struct Runtime {
+    shutdown_started: Arc<AtomicBool>,
+    exit_authorized: Arc<AtomicBool>,
     context_activity: crate::core::context_activity::ContextActivity,
     filesystem_activity: crate::core::context_activity::ContextActivity,
     definitions: Arc<Mutex<crate::definitions::Definitions>>,
@@ -51,6 +53,8 @@ struct Runtime {
 impl Default for Runtime {
     fn default() -> Self {
         Self {
+            shutdown_started: Arc::default(),
+            exit_authorized: Arc::default(),
             context_activity: Default::default(),
             filesystem_activity: Default::default(),
             definitions: Arc::default(),
@@ -599,6 +603,9 @@ async fn execute(
             revision: 1,
         },
     };
+    if runtime.shutdown_started.load(Ordering::Acquire) {
+        return Err(rejected(ProblemCode::Unavailable));
+    }
     if !allowed(&request.component, &request.header.route, &request.method)
         || !request.args.is_object()
         || serde_json::to_vec(&request.args).map_or(true, |bytes| {
@@ -871,6 +878,42 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 }
             });
             Ok(())
+        })
+        .on_event(|app, event| {
+            let tauri::RunEvent::ExitRequested { api, code, .. } = event else {
+                return;
+            };
+            let runtime = app.state::<Runtime>();
+            if runtime.exit_authorized.load(Ordering::Acquire) {
+                return;
+            }
+            let Some(manager) = app.try_state::<Arc<code_pad_lib::lsp::LspManager>>() else {
+                // Before Files activation no language-server owner exists.
+                runtime.shutdown_started.store(true, Ordering::Release);
+                return;
+            };
+            api.prevent_exit();
+            if runtime
+                .shutdown_started
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .is_err()
+            {
+                return;
+            }
+            let runtime = runtime.inner().clone();
+            let manager = manager.inner().clone();
+            let app = app.clone();
+            let exit_code = code.unwrap_or(0);
+            tauri::async_runtime::spawn(async move {
+                if manager.shutdown_for_exit().await.is_ok() {
+                    runtime.exit_authorized.store(true, Ordering::Release);
+                    app.exit(exit_code);
+                } else {
+                    // Keep the owner alive if a child has not been confirmed
+                    // terminated. A later exit request retries shutdown.
+                    runtime.shutdown_started.store(false, Ordering::Release);
+                }
+            });
         })
         .build()
 }

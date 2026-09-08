@@ -65,6 +65,24 @@ The raw legacy recovery writer is blocked. Preview assets use bounded no-link
 reads inside the admitted project. Windows LSP remains disabled in the product
 until execution trust is integrated; existing installer/cache engines are retained.
 
+LSP product initialization preserves applying and committed rename journals without
+reading their external targets or deleting backups; standalone Code Pad retains
+its existing automatic recovery. Manager-owned execution policy now runs before
+root IO, before managed Node version probes and again before server spawn, including
+automatic restart paths. The hosted metadata manager has no execution authority.
+Managed command preparation is process-free; the explicit probe uses the resolved
+workspace cwd. Workspace exit awaits the manager's existing confirmed shutdown
+boundary and retries failed shutdown instead of abandoning owned children.
+These are prerequisites for the pending context-specific native LSP owner.
+
+Focused LSP checks passed **125 tests and strict Clippy** in **29.586 seconds**
+(cgroup peak **2,153,611,264 bytes**, 8 GiB cap). Fixtures verify applying/committed
+journal preservation plus standalone recovery, denied root/process execution and
+the separate managed probe boundary. Workspace's **82 Rust tests and strict Clippy**
+also passed in **36.831 seconds** (cgroup peak **4,293,656,576 bytes**).
+Final affected all passed in **403.909 seconds** (cgroup peak **6,442,516,480 bytes**,
+8 GiB cap). No new Windows execution result is claimed for these LSP changes.
+
 ## Actual verification
 
 The extracted shared UI passed 307 tests and the original native suites passed

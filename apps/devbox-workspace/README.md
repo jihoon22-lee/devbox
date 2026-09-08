@@ -13,6 +13,11 @@ routes explicitly remain unavailable. The native engines expose typed component
 adapters and opt out of standalone bootstrap/web assets for product consumers.
 Native-only initialization selects immutable per-process data/snapshot/handoff/cache
 roots; it neither invokes old identifier migration nor starts a language server.
+The hosted LSP manager preserves existing rename journals during initialization
+and denies execution before project path resolution. Server preparation now
+separates path/argv inspection from runtime probes; native approval hooks cover
+probes, server starts and automatic retries. Workspace waits for confirmed LSP
+shutdown before exiting. Context-specific LSP approval and editing remain pending.
 The product host now authenticates explicit startup and Registry commands. Its
 native startup screen creates a blank generation only after a user action and
 shows schema/owner failures without replacing existing data. Registry UI supports
