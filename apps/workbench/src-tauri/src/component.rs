@@ -6,6 +6,18 @@ pub use crate::commands::workspace::{absorb_life_log_projects_in, LifeLogAbsorbR
 pub use crate::core::profile::{ProfileStore, ProjectProfile, WslProfile};
 pub use crate::core::templates::ProfileTemplateStore;
 
+/// Validate copied settings before a product generation can be selected.
+/// This parses bytes only; profile paths, services and distro names are not run.
+pub fn validate_persistent_file(name: &str, bytes: &[u8]) -> Result<(), &'static str> {
+    let input = std::str::from_utf8(bytes).map_err(|_| "invalid_overview_store")?;
+    match name {
+        "project-profiles.json" => ProfileStore::load(input).map(|_| ()),
+        "profile-templates.json" => ProfileTemplateStore::load(input).map(|_| ()),
+        _ => return Err("unknown_overview_store"),
+    }
+    .map_err(|_| "invalid_overview_store")
+}
+
 use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use tauri::Manager;

@@ -5,6 +5,48 @@ use std::path::{Path, PathBuf};
 use std::sync::{Arc, OnceLock};
 use tauri::{Emitter, Manager};
 
+/// Strict import/startup validation preserves unreadable user metadata instead
+/// of invoking the standalone session/recovery empty-state fallback.
+pub fn validate_persistent_file(name: &str, bytes: &[u8]) -> Result<(), &'static str> {
+    if bytes.len() > 8 * 1024 * 1024 {
+        return Err("invalid_files_store");
+    }
+    let input = std::str::from_utf8(bytes).map_err(|_| "invalid_files_store")?;
+    match name {
+        "session.json" => crate::core::session::Session::from_json(input)
+            .map(|_| ())
+            .map_err(|_| "invalid_files_store"),
+        "lsp/config.json" => crate::lsp::catalog::LspConfig::from_json(input)
+            .map(|_| ())
+            .map_err(|_| "invalid_files_store"),
+        "recovery.json" => {
+            use crate::core::recovery::{
+                RecoveryFile, MAX_DOC_CHARS, MAX_TOTAL_CHARS, RECOVERY_VERSION,
+            };
+            let value: RecoveryFile =
+                serde_json::from_str(input).map_err(|_| "invalid_files_store")?;
+            if value.version != RECOVERY_VERSION {
+                return Err("invalid_files_store");
+            }
+            let mut paths = std::collections::HashSet::new();
+            let mut total = 0;
+            for entry in value.entries {
+                let count = entry.content.chars().count();
+                total += count;
+                if entry.path.trim().is_empty()
+                    || !paths.insert(entry.path)
+                    || count > MAX_DOC_CHARS
+                    || total > MAX_TOTAL_CHARS
+                {
+                    return Err("invalid_files_store");
+                }
+            }
+            Ok(())
+        }
+        _ => Err("unknown_files_store"),
+    }
+}
+
 // Immutable native-selected generation. Initialization never runs the legacy
 // identifier migrator, reads a repository manifest or starts a language server.
 static PRODUCT_DATA: OnceLock<PathBuf> = OnceLock::new();

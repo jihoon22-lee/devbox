@@ -380,10 +380,28 @@ mod tests {
         assert!(plain.revalidate().is_err());
         let repo = observe(&root).unwrap();
         assert!(repo.binding().repository_object.is_some());
-        fs::rename(&root, owner.path().join("old")).unwrap();
-        repository(&root);
-        assert!(repo.revalidate().is_err());
-        assert_ne!(repo.binding(), observe(&root).unwrap().binding());
+        let before = repo.binding().clone();
+        match fs::rename(&root, owner.path().join("old")) {
+            Ok(()) => {
+                repository(&root);
+                assert!(repo.revalidate().is_err());
+            }
+            #[cfg(windows)]
+            Err(error) => {
+                // Windows can forbid renaming a directory while its Git
+                // children have open handles. The reviewed objects remain
+                // valid; release the native lease before testing replacement.
+                assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+                repo.revalidate().unwrap();
+                drop(repo);
+                drop(plain);
+                fs::rename(&root, owner.path().join("old")).unwrap();
+                repository(&root);
+            }
+            #[cfg(not(windows))]
+            Err(error) => panic!("fixture rename failed: {error}"),
+        }
+        assert_ne!(&before, observe(&root).unwrap().binding());
     }
     #[test]
     fn linked_worktrees_share_common_object_and_pointer_edits_are_detected() {

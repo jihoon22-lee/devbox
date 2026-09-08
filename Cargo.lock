@@ -1398,6 +1398,7 @@ dependencies = [
 name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
+ "code-pad",
  "filesystem",
  "product-contract",
  "product-shell-tauri",
@@ -1409,6 +1410,7 @@ dependencies = [
  "tempfile",
  "uuid",
  "windows 0.61.3",
+ "workbench",
  "wsl",
 ]
 
