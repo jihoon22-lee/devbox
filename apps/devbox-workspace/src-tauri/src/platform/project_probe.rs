@@ -88,6 +88,7 @@ pub struct ProjectLease {
     binding: Binding,
     objects: Vec<Object>,
     absent: Vec<PathBuf>,
+    git: Option<(PathBuf, PathBuf)>,
 }
 impl ProjectLease {
     pub fn binding(&self) -> &Binding {
@@ -95,6 +96,11 @@ impl ProjectLease {
     }
     pub fn native_root_identity(&self) -> FilesystemIdentity {
         self.objects[0].identity
+    }
+    pub fn git_directories(&self) -> Option<(&Path, &Path)> {
+        self.git
+            .as_ref()
+            .map(|(git, common)| (git.as_path(), common.as_path()))
     }
     pub fn revalidate(&self) -> Result<()> {
         for object in &self.objects {
@@ -242,6 +248,7 @@ fn probe(root: &Path, target: ExecutionTarget, spelling: String) -> Result<Proje
     let root_stamp = stamp(&root_object.handle)?;
     let mut objects = vec![root_object];
     let mut absent = vec![];
+    let mut git_directories = None;
     let dot_git = root.join(".git");
     let repository_object = if missing(&dot_git)? {
         absent.push(dot_git);
@@ -280,6 +287,7 @@ fn probe(root: &Path, target: ExecutionTarget, spelling: String) -> Result<Proje
         // folder. Inspect standard metadata without invoking git or hooks.
         objects.push(Object::open(&gitdir.join("HEAD"), false)?);
         objects.push(Object::open(&common.join("objects"), true)?);
+        git_directories = Some((gitdir, common.clone()));
         let common = Object::open(&common, true)?;
         let stamp = stamp(&common.handle)?;
         objects.push(common);
@@ -296,6 +304,7 @@ fn probe(root: &Path, target: ExecutionTarget, spelling: String) -> Result<Proje
         binding,
         objects,
         absent,
+        git: git_directories,
     };
     lease.revalidate()?;
     Ok(lease)

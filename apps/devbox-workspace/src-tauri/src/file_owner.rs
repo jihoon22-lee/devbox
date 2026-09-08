@@ -213,8 +213,70 @@ pub struct FileOwner {
     // Reopening in a new session captures a fresh object and fresh disk bytes;
     // no prior write snapshot or serialized filesystem identity is restored.
     choices: Vec<PathBuf>,
+    protected: Option<ProtectedStorage>,
+}
+struct ProtectedStorage {
+    root: PathBuf,
+    parents: Vec<String>,
+    identifiers: Vec<String>,
 }
 impl FileOwner {
+    /// General editor access cannot rewrite native Registry/trust/secret-owner
+    /// stores, even when a user registers a parent such as their home folder.
+    pub fn protect_product_storage(&mut self, root: &Path, identifiers: Vec<String>) -> Result<()> {
+        let root = display_path(&std::fs::canonicalize(root).map_err(|_| "invalid_files_store")?)?;
+        let parent = root.parent().ok_or("invalid_files_store")?;
+        let parent = parse_safe_project_path(parent.to_str().ok_or("invalid_files_store")?)
+            .ok_or("invalid_files_store")?
+            .identity()
+            .replace('\\', "/");
+        self.protected = Some(ProtectedStorage {
+            root,
+            parents: vec![parent],
+            identifiers,
+        });
+        Ok(())
+    }
+    pub fn protect_sibling_storage(&mut self, parent: &Path) -> Result<()> {
+        let parent = display_path(parent)?;
+        let parent = parse_safe_project_path(parent.to_str().ok_or("invalid_files_store")?)
+            .ok_or("invalid_files_store")?
+            .identity()
+            .replace('\\', "/");
+        let protected = self.protected.as_mut().ok_or("invalid_files_store")?;
+        if !protected.parents.contains(&parent) {
+            protected.parents.push(parent);
+        }
+        Ok(())
+    }
+    pub fn ensure_user_path(&self, path: &Path) -> Result<()> {
+        if let Some(protected) = &self.protected {
+            if path == protected.root || within(&protected.root, path)? {
+                return Err("file_owner_path");
+            }
+            let path = parse_safe_project_path(path.to_str().ok_or("invalid_file_path")?)
+                .ok_or("invalid_file_path")?
+                .identity()
+                .replace('\\', "/");
+            for parent in &protected.parents {
+                if let Some(relative) = path.strip_prefix(&format!("{parent}/")) {
+                    let directory = relative.split('/').next().unwrap_or_default();
+                    if protected.identifiers.iter().any(|id| {
+                        directory == id
+                            || directory
+                                .strip_prefix(&format!("{id}.i"))
+                                .is_some_and(|suffix| {
+                                    suffix.len() == 64
+                                        && suffix.bytes().all(|byte| byte.is_ascii_hexdigit())
+                                })
+                    }) {
+                        return Err("file_owner_path");
+                    }
+                }
+            }
+        }
+        Ok(())
+    }
     pub fn restore_native_choices(&mut self, bytes: &[u8]) -> Result<()> {
         if bytes.len() > 512 * 1024 {
             return Err("invalid_file_choices");
@@ -261,6 +323,7 @@ impl FileOwner {
     /// independently chosen file remains usable when that project is offline.
     pub fn needs_project(&self, raw: &str) -> Result<bool> {
         let path = native_path(raw)?;
+        self.ensure_user_path(&path)?;
         let id = key(&path)?;
         if let Some(document) = self.documents.get(&id) {
             return Ok(document.grant.context.is_some());
@@ -276,7 +339,9 @@ impl FileOwner {
             return Err("file_limit");
         }
         let path = native_path(path.to_str().ok_or("invalid_file_path")?)?;
+        self.ensure_user_path(&path)?;
         let grant = Grant::open(&path, None)?;
+        self.ensure_user_path(&grant.file.path)?;
         let display = grant
             .file
             .path
@@ -295,6 +360,7 @@ impl FileOwner {
     }
     pub fn open(&mut self, scope: Scope<'_>, request: OpenFileRequest) -> Result<OpenedFileWire> {
         let path = native_path(&request.path)?;
+        self.ensure_user_path(&path)?;
         let requested_key = key(&path)?;
         let grant = if let Some(approval) = self.approvals.remove(&requested_key) {
             if approval.created.elapsed() >= APPROVAL_LIFETIME {
@@ -320,6 +386,7 @@ impl FileOwner {
             lease.revalidate()?;
             Grant::open(&path, Some(context.clone()))?
         };
+        self.ensure_user_path(&grant.file.path)?;
         let canonical_key = key(&grant.file.path)?;
         if !self.documents.contains_key(&canonical_key) && self.documents.len() >= MAX_DOCUMENTS {
             return Err("file_limit");
@@ -378,11 +445,13 @@ impl FileOwner {
     }
     pub fn admitted_path(&self, scope: Scope<'_>, raw: &str) -> Result<PathBuf> {
         let path = native_path(raw)?;
+        self.ensure_user_path(&path)?;
         let document = self
             .documents
             .get(&key(&path)?)
             .ok_or("file_selection_required")?;
         document.grant.admit(scope)?;
+        self.ensure_user_path(&document.grant.file.path)?;
         Ok(document.grant.file.path.clone())
     }
     pub fn save(&mut self, scope: Scope<'_>, request: SaveFileRequest) -> Result<SavedFileWire> {
@@ -562,6 +631,65 @@ impl FileOwner {
 mod tests {
     use super::*;
     use std::fs;
+    #[test]
+    fn broad_project_and_picker_access_cannot_rewrite_product_authority_stores() {
+        let directory = tempfile::tempdir().unwrap();
+        let own = directory
+            .path()
+            .join(format!("com.devbox.v08.workspace.i{}", "a".repeat(64)));
+        let other = directory
+            .path()
+            .join(format!("com.devbox.v08.knowledge.i{}", "b".repeat(64)));
+        fs::create_dir(&own).unwrap();
+        fs::create_dir(&other).unwrap();
+        let registry = own.join("project-registry.json");
+        let approval = other.join("approval.json");
+        fs::write(&registry, b"native registry").unwrap();
+        fs::write(&approval, b"native approval").unwrap();
+        let ordinary = directory.path().join("source.md");
+        fs::write(&ordinary, b"editable source").unwrap();
+        let lease = crate::platform::project_probe::probe_fixture(directory.path()).unwrap();
+        let context = ProjectContext {
+            project_id: "project".into(),
+            worktree_id: "tree".into(),
+            revision: 1,
+            target: lease.binding().target.clone(),
+        };
+        let mut owner = FileOwner::default();
+        owner
+            .protect_product_storage(
+                &own,
+                vec![
+                    "com.devbox.v08.workspace".into(),
+                    "com.devbox.v08.knowledge".into(),
+                ],
+            )
+            .unwrap();
+        for path in [&registry, &approval] {
+            assert_eq!(
+                owner
+                    .open(Some((&context, &lease)), open_request(path))
+                    .unwrap_err(),
+                "file_owner_path"
+            );
+            assert_eq!(
+                owner.approve_native_selection(path).unwrap_err(),
+                "file_owner_path"
+            );
+        }
+        let opened = owner
+            .open(Some((&context, &lease)), open_request(&ordinary))
+            .unwrap();
+        owner
+            .save(
+                Some((&context, &lease)),
+                save_request(&opened, "edited source"),
+            )
+            .unwrap();
+        assert_eq!(fs::read(&registry).unwrap(), b"native registry");
+        assert_eq!(fs::read(&approval).unwrap(), b"native approval");
+        assert_eq!(fs::read(&ordinary).unwrap(), b"edited source");
+    }
     fn open_request(path: &Path) -> OpenFileRequest {
         OpenFileRequest {
             path: path.to_str().unwrap().into(),

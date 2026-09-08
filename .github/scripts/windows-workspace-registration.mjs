@@ -5,14 +5,16 @@ import path from "node:path";
 import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
 import {exerciseWorkspaceDependencies} from "./windows-workspace-dependencies.mjs";
 import {exerciseWorkspaceDefinitions} from "./windows-workspace-definitions.mjs";
+import {exerciseWorkspaceSource} from "./windows-workspace-source.mjs";
 
 export function workspaceRequestExpression(component, method, args = {}) {
-  const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : component === "workspace.dependencies" ? "dependencies" : "overview";
+  const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : component === "workspace.dependencies" ? "dependencies" : component === "workspace.source" ? "source" : "overview";
   return `(async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke;
     const d = await invoke("plugin:product-shell|describe");
-    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${component === "workspace.dependencies" ? 30000 : 5000},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
-    return invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});
+    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${["workspace.dependencies","workspace.source"].includes(component) ? 29000 : 5000},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
+    try {return await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});}
+    catch(problem) {throw new Error("Native Workspace request rejected: " + JSON.stringify(problem).slice(0,2000));}
   })()`;
 }
 
@@ -80,9 +82,16 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   const canonicalRoot = registry.worktrees[0].binding.root;
   assert.equal(realpathSync.native(canonicalRoot), realpathSync.native(root));
   const definitions = await exerciseWorkspaceDefinitions({cdp, root:canonicalRoot, call, success, waitForRenderer});
+  const record = (feature, checks) => writeFileSync(`product-foundation-evidence/workspace-${feature}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks},null,2));
+  record("definitions", definitions);
   registry = success(await call("workspace.registry","snapshot"));
   const dependencies = await exerciseWorkspaceDependencies({cdp, root:canonicalRoot, call, success, waitForRenderer});
+  record("dependencies", dependencies);
+  const source = await exerciseWorkspaceSource({cdp, directory, call, success, waitForRenderer});
+  record("source", source);
+  registry = success(await call("workspace.registry","snapshot"));
   const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer});
+  record("files", files);
   await click("프로젝트 선택 해제");
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");
   assert.equal((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,null);
@@ -99,5 +108,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,definitions,dependencies,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies analyze/review/cancel and basic Files UI/native commands; native file dialog, Source, LSP and importer acceptance are separate"};
+  return {authority,definitions,dependencies,source,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP and importer acceptance are separate"};
 }

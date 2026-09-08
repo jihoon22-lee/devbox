@@ -15,6 +15,7 @@ const MAX_HISTORY_LIMIT = 100;
 
 interface Props {
   repo: RepoEntry | null;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 type DiffSelection = "workingTree" | "commit";
@@ -28,7 +29,7 @@ function parseLimit(value: string): number | null {
 }
 
 /** Read-only Git history/detail/diff surface for the selected repository. */
-export default function HistoryDiffPanel({ repo }: Props) {
+export default function HistoryDiffPanel({ repo, onBusyChange }: Props) {
   const [historyLimit, setHistoryLimit] = useState(DEFAULT_HISTORY_LIMIT);
   const [history, setHistory] = useState<HistoryResult | null>(null);
   const [selectedCommitId, setSelectedCommitId] = useState<string | null>(null);
@@ -40,6 +41,9 @@ export default function HistoryDiffPanel({ repo }: Props) {
   const sequenceRef = useRef(0);
   const busyRef = useRef(false);
   const composingRef = useRef(0);
+
+  useEffect(() => {onBusyChange?.(busy);}, [busy, onBusyChange]);
+  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
 
   useEffect(() => {
     sequenceRef.current += 1;

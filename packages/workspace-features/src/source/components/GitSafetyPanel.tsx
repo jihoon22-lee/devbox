@@ -9,6 +9,7 @@ import {
 
 interface Props {
   repo: RepoEntry | null;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const ISSUE_LABELS: Record<GitSafetyIssue, string> = {
@@ -21,13 +22,16 @@ const ISSUE_LABELS: Record<GitSafetyIssue, string> = {
 };
 
 /** Read-only Git state preflight. It intentionally owns no recovery action. */
-export default function GitSafetyPanel({ repo }: Props) {
+export default function GitSafetyPanel({ repo, onBusyChange }: Props) {
   const [snapshot, setSnapshot] = useState<GitSafetySnapshot | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const sequenceRef = useRef(0);
   const busyRef = useRef(false);
   const mountedRef = useRef(false);
+
+  useEffect(() => {onBusyChange?.(busy);}, [busy, onBusyChange]);
+  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
 
   useEffect(() => {
     mountedRef.current = true;

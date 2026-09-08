@@ -9,6 +9,7 @@ import ProjectDefinitions from "./ProjectDefinitions";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
+const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
 let displayed: Description | undefined;
@@ -29,6 +30,10 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
   const [ready, setReady] = useState(false);
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [dependenciesBusy, setDependenciesBusy] = useState(false);
+  const [sourceBusy, setSourceBusy] = useState(false);
+  const [sourceDirty, setSourceDirty] = useState(false);
+  const [sourceVisited, setSourceVisited] = useState(route === "source");
+  useEffect(() => {if (route === "source") setSourceVisited(true);}, [route]);
   const [dependenciesVisited, setDependenciesVisited] = useState(route === "dependencies");
   useEffect(() => {if (route === "dependencies") setDependenciesVisited(true);}, [route]);
   const selectedTree = registry?.worktrees.find(tree => tree.projectId === description.context?.projectId && tree.id === description.context.worktreeId && tree.revision === description.context.revision);
@@ -41,10 +46,15 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing || dependenciesBusy} refreshSignal={registrySignal} onSnapshot={setRegistry}/>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry}/>
     </div>
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
+    </div>}
+    {ready && (sourceVisited || route === "source") && <div className="workspace-feature-source" hidden={route !== "source"}>
+      {!selectedTree ? <p role="status">작업할 프로젝트를 선택해 주세요.</p> : <Suspense fallback={<p role="status">Source 화면을 불러오고 있습니다…</p>}>
+        <NativeSource key={JSON.stringify(description.context)} description={description} root={selectedTree.binding.root} editorPending={editing} onBusyChange={setSourceBusy} onDirtyChange={setSourceDirty}/>
+      </Suspense>}
     </div>}
     {ready && (dependenciesVisited || route === "dependencies") && <div className="workspace-feature-source" hidden={route !== "dependencies"}>
       {!selectedTree ? <p role="status">분석할 프로젝트를 선택해 주세요.</p> : <Suspense fallback={<p role="status">의존성 화면을 불러오고 있습니다…</p>}>

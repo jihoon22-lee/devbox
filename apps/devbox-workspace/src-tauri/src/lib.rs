@@ -7,6 +7,7 @@ pub mod host;
 pub mod platform;
 mod private_metadata;
 pub mod project_owner;
+mod source_host;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

@@ -34,7 +34,11 @@ impl Drop for Permit {
 #[derive(Clone)]
 struct Runtime {
     context_activity: crate::core::context_activity::ContextActivity,
+    filesystem_activity: crate::core::context_activity::ContextActivity,
     definitions: Arc<Mutex<crate::definitions::Definitions>>,
+    source: Arc<Mutex<crate::source_host::SourceHost>>,
+    source_requests: Pool,
+    source_workers: Arc<tokio::sync::Semaphore>,
     host: Arc<Mutex<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
     probes: Pool,
@@ -47,7 +51,11 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             context_activity: Default::default(),
+            filesystem_activity: Default::default(),
             definitions: Arc::default(),
+            source: Arc::default(),
+            source_requests: Pool::default(),
+            source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             host: Arc::new(Mutex::new(Err("initializing"))),
             metadata: Pool::default(),
             probes: Pool::default(),
@@ -90,6 +98,11 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         return false;
     }
     match component {
+        "workspace.source" => {
+            route == "source"
+                && (crate::source_host::management(method)
+                    || repo_manager_lib::component::SOURCE_COMMANDS.contains(&method))
+        }
         "workspace.definitions" => {
             route == "overview"
                 && matches!(
@@ -179,6 +192,9 @@ async fn execute_files(
     } else {
         None
     };
+    let filesystem = file_access(&request.method)
+        .map(|write| runtime.filesystem_activity.enter(write))
+        .transpose()?;
     let worker = runtime
         .file_workers
         .clone()
@@ -189,7 +205,8 @@ async fn execute_files(
     let host = runtime.host()?;
     let app = window.app_handle().clone();
     tauri::async_runtime::spawn_blocking(move || {
-        let (_queued, _worker, _context) = (queued, worker, context_permit);
+        let (_queued, _worker, _context, _filesystem) =
+            (queued, worker, context_permit, filesystem);
         let mut files = files.lock().map_err(|_| "files_unavailable")?;
         crate::files_host::current_deadline(deadline)?;
         files.initialize(&app, &host)?;
@@ -264,6 +281,144 @@ async fn execute_dependencies(
         Ok(Ok(value)) => Ok(value),
         Ok(Err(error)) => Err(repo_manager_lib::component::dependency_issue(&error)),
         Err(_) => Err("request_expired"),
+    }
+}
+
+async fn execute_source(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context_permit: crate::core::context_activity::ContextPermit,
+) -> Result<Value, &'static str> {
+    let context = request.header.context.ok_or("project_selection_required")?;
+    let deadline = request.header.deadline_ms;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "request_expired")?
+        .as_millis() as u64;
+    let span = deadline
+        .checked_sub(now)
+        .ok_or("request_expired")?
+        .min(product_contract::MAX_DEADLINE_MS);
+    let budget = crate::source_host::Budget {
+        deadline_ms: deadline,
+        expires: std::time::Instant::now() + Duration::from_millis(span),
+    };
+    let remaining = || -> Result<Duration, &'static str> {
+        budget.check()?;
+        budget
+            .expires
+            .checked_duration_since(std::time::Instant::now())
+            .ok_or("request_expired")
+    };
+    let app = window.app_handle().clone();
+    if repo_manager_lib::component::source_cancel(&request.method) {
+        let key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
+        return repo_manager_lib::component::dispatch_source_cancel(
+            &app,
+            &key,
+            &request.method,
+            request.args,
+        )
+        .await
+        .map_err(|error| crate::source_host::issue(&error));
+    }
+    let filesystem = if matches!(request.method.as_str(), "cancel_trust" | "revoke_trust") {
+        None
+    } else {
+        Some(
+            runtime
+                .filesystem_activity
+                .enter(source_mutation(&request.method))?,
+        )
+    };
+    let queued = runtime.source_requests.reserve_with_limit(16)?;
+    let worker_slot =
+        tokio::time::timeout(remaining()?, runtime.source_workers.clone().acquire_owned())
+            .await
+            .map_err(|_| "request_expired")?
+            .map_err(|_| "source_owner_unavailable")?;
+    let host = runtime.host()?;
+    let source = runtime.source.clone();
+    let definitions = runtime.definitions.clone();
+    let worker_app = app.clone();
+    let method = request.method;
+    let args = request.args;
+    if crate::source_host::management(&method) {
+        let worker = tauri::async_runtime::spawn_blocking(move || {
+            let _retained = (queued, worker_slot, context_permit, filesystem);
+            crate::files_host::current_deadline(deadline)?;
+            let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
+            let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
+            crate::files_host::current_deadline(deadline)?;
+            source.initialize(&worker_app, &host)?;
+            source.manage(&host, &mut definitions, &context, &method, args, budget)
+        });
+        return tokio::time::timeout(remaining()?, worker)
+            .await
+            .map_err(|_| "request_expired")?
+            .unwrap_or(Err("worker_unavailable"))
+            .map_err(crate::source_host::issue);
+    }
+    let worker = tauri::async_runtime::spawn_blocking(move || {
+        let retained = (queued, worker_slot, context_permit, filesystem);
+        crate::files_host::current_deadline(deadline)?;
+        let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
+        let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
+        crate::files_host::current_deadline(deadline)?;
+        source.initialize(&worker_app, &host)?;
+        source.access(host, &mut definitions, &context, budget, retained)
+    });
+    let access = tokio::time::timeout(remaining()?, worker)
+        .await
+        .map_err(|_| "request_expired")?
+        .unwrap_or(Err("worker_unavailable"))
+        .map_err(crate::source_host::issue)?;
+    match tokio::time::timeout(
+        remaining()?,
+        repo_manager_lib::component::dispatch_source(&app, access, &method, args),
+    )
+    .await
+    {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(crate::source_host::issue(&error)),
+        Err(_) => Err("request_expired"),
+    }
+}
+
+fn source_mutation(method: &str) -> bool {
+    matches!(
+        method,
+        "repo_stage"
+            | "repo_unstage"
+            | "repo_commit"
+            | "repo_fetch"
+            | "repo_pull"
+            | "repo_push"
+            | "repo_cleanup"
+            | "create_worktree"
+    )
+}
+/// Private editor recovery/session writes remain available while Git owns the
+/// worktree. User-file reads/writes coordinate with Git until workers retire.
+fn file_access(method: &str) -> Option<bool> {
+    match method {
+        "save_file" | "rename_file_action" | "delete_file_action" | "apply_recovery_preview" => {
+            Some(true)
+        }
+        "load_session"
+        | "save_session"
+        | "load_recovery"
+        | "save_recovery"
+        | "discard_recovery"
+        | "cancel_recovery_preview"
+        | "take_pending_open"
+        | "read_clipboard_text"
+        | "validate_encoding"
+        | "lsp_catalog"
+        | "lsp_installed"
+        | "load_lsp_config" => None,
+        _ => Some(false),
     }
 }
 
@@ -397,6 +552,7 @@ async fn execute(
     );
     let definitions = request.component == "workspace.definitions";
     let dependencies = request.component == "workspace.dependencies";
+    let source = request.component == "workspace.source";
     let context_change = matches!(
         request.method.as_str(),
         "select_project"
@@ -409,7 +565,7 @@ async fn execute(
     );
     // Acquire before checking the session, and retain through queued/native
     // work. Worker clones keep the boundary after caller timeout/cancellation.
-    let context_permit = if files || definitions || dependencies || context_change {
+    let context_permit = if files || definitions || dependencies || source || context_change {
         Some(
             runtime
                 .context_activity
@@ -432,6 +588,14 @@ async fn execute(
             &runtime,
             request,
             context_permit.clone().expect("file context permit"),
+        )
+        .await
+    } else if source {
+        execute_source(
+            &window,
+            &runtime,
+            request,
+            context_permit.clone().expect("source context permit"),
         )
         .await
     } else if dependencies {
@@ -619,6 +783,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     tokio::time::sleep(Duration::from_secs(10)).await;
                     if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
                         let definitions = runtime.definitions.clone();
+                        let source = runtime.source.clone();
                         let _ = tauri::async_runtime::spawn_blocking(move || {
                             let _permit = permit;
                             if let Ok(projects) = host.projects() {
@@ -626,6 +791,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                             }
                             if let Ok(mut definitions) = definitions.try_lock() {
                                 definitions.expire();
+                            }
+                            if let Ok(mut source) = source.try_lock() {
+                                source.expire();
                             }
                         })
                         .await;
@@ -639,6 +807,63 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn git_and_editor_io_exclude_writes_without_blocking_private_recovery() {
+        let runtime = Runtime::default();
+        let context = runtime.context_activity.enter(false).unwrap();
+        let git = runtime
+            .filesystem_activity
+            .enter(source_mutation("repo_pull"))
+            .unwrap();
+        assert!(runtime
+            .filesystem_activity
+            .enter(file_access("open_file").unwrap())
+            .is_err());
+        assert!(runtime
+            .filesystem_activity
+            .enter(file_access("save_file").unwrap())
+            .is_err());
+        assert!(file_access("save_recovery").is_none());
+        let recovery = runtime.context_activity.enter(false).unwrap();
+        assert!(runtime.context_activity.enter(true).is_err());
+        drop(git);
+        let status = runtime
+            .filesystem_activity
+            .enter(source_mutation("repo_changes"))
+            .unwrap();
+        assert!(runtime.filesystem_activity.enter(true).is_err());
+        drop(status);
+        drop(recovery);
+        drop(context);
+        assert!(runtime.filesystem_activity.enter(true).is_ok());
+        assert!(runtime.context_activity.enter(true).is_ok());
+    }
+    #[test]
+    fn admitted_native_features_have_a_matching_product_component() {
+        let catalog: Value = serde_json::from_str(include_str!("../../../products.json")).unwrap();
+        let components = catalog["components"].as_array().unwrap();
+        for (component, route, method) in [
+            ("workspace.registry", "overview", "snapshot"),
+            ("workspace.migration", "overview", "status"),
+            ("workspace.definitions", "overview", "load"),
+            (
+                "workspace.dependencies",
+                "dependencies",
+                "dependency_inventory",
+            ),
+            ("workspace.source", "source", "trust_status"),
+            ("workspace.source", "source", "repo_changes"),
+            ("workspace.files", "files", "open_file"),
+        ] {
+            assert!(allowed(component, route, method), "{component} {method}");
+            assert!(
+                components
+                    .iter()
+                    .any(|entry| entry["id"] == component && entry["owner"] == "workspace"),
+                "the product shell would reject {component} before its domain adapter"
+            );
+        }
+    }
     #[test]
     fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
         assert!(allowed("workspace.registry", "overview", "preview_windows"));

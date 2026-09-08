@@ -16,6 +16,7 @@ import ConfirmDialog from "./ConfirmDialog";
 
 interface Props {
   repo: RepoEntry | null;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 type RemoteAction = "fetch" | "pull" | "push";
@@ -108,7 +109,7 @@ interface RemoteConfirmation {
 }
 
 /** Bounded fetch/FF-only pull/current-branch push surface for one repository. */
-export default function RemoteSyncPanel({ repo }: Props) {
+export default function RemoteSyncPanel({ repo, onBusyChange }: Props) {
   const [state, setState] = useState<RemoteState | null>(null);
   const [busy, setBusy] = useState(false);
   const [action, setAction] = useState<RemoteAction | null>(null);
@@ -121,6 +122,9 @@ export default function RemoteSyncPanel({ repo }: Props) {
   const cancelledOperationRef = useRef<string | null>(null);
   const [cancelPending, setCancelPending] = useState(false);
   const [remoteConfirmation, setRemoteConfirmation] = useState<RemoteConfirmation | null>(null);
+
+  useEffect(() => {onBusyChange?.(busy || remoteConfirmation !== null);}, [busy, remoteConfirmation, onBusyChange]);
+  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
 
   useEffect(() => {
     mountedRef.current = true;

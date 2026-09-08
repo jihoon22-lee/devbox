@@ -16,6 +16,8 @@ const MAX_COMMIT_MESSAGE_BYTES = 16 * 1024;
 
 interface Props {
   repo: RepoEntry | null;
+  onBusyChange?: (busy: boolean) => void;
+  onDirtyChange?: (dirty: boolean) => void;
 }
 
 type Selection = "stage" | "unstage";
@@ -55,7 +57,7 @@ export function createLocalOperationId(): string {
 }
 
 /** Explicit local working-tree stage/unstage and index-only commit surface. */
-export default function StageCommitPanel({ repo }: Props) {
+export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange }: Props) {
   const [changes, setChanges] = useState<ChangeEntry[] | null>(null);
   const [stageSelection, setStageSelection] = useState<Set<string>>(new Set());
   const [unstageSelection, setUnstageSelection] = useState<Set<string>>(new Set());
@@ -71,6 +73,11 @@ export default function StageCommitPanel({ repo }: Props) {
   const mountedRef = useRef(false);
   const operationIdRef = useRef<string | null>(null);
   const cancelledOperationRef = useRef<string | null>(null);
+
+  useEffect(() => {onBusyChange?.(busy || commitConfirmation !== null);}, [busy, commitConfirmation, onBusyChange]);
+  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
+  useEffect(() => {onDirtyChange?.(message.length > 0);}, [message, onDirtyChange]);
+  useEffect(() => () => {onDirtyChange?.(false);}, [onDirtyChange]);
 
   useEffect(() => {
     mountedRef.current = true;

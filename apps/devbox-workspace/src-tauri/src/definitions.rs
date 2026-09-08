@@ -57,6 +57,18 @@ struct Snapshot {
     overlay_bytes: Option<Vec<u8>>,
     project_bytes: Option<Vec<u8>>,
 }
+/// Native-only evidence retained by another execution owner. Source approval
+/// can bind these inputs without granting task execution or changing Registry
+/// definition approval. No source bytes are projected to the renderer here.
+pub(crate) struct ExecutionDefinitions(Snapshot);
+impl ExecutionDefinitions {
+    pub(crate) fn digest(&self) -> &str {
+        &self.0.digest
+    }
+    pub(crate) fn revalidate(&self) -> Result<()> {
+        self.0.revalidate()
+    }
+}
 impl Snapshot {
     fn capture(
         context: &ProjectContext,
@@ -212,6 +224,18 @@ pub struct Definitions {
     edits: HashMap<String, PendingEdit>,
 }
 impl Definitions {
+    pub(crate) fn execution_evidence(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        deadline: u64,
+    ) -> Result<ExecutionDefinitions> {
+        let snapshot = self.snapshot(host, context, deadline)?;
+        if !snapshot.unavailable_sources.is_empty() {
+            return Err("project_definition_unavailable");
+        }
+        Ok(ExecutionDefinitions(snapshot))
+    }
     fn private(&mut self, host: &Host, context: &ProjectContext) -> Result<MetadataRoot> {
         let path = host.component("overview")?;
         if self.data.is_none() {

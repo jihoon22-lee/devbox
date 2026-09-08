@@ -47,9 +47,16 @@ context/input-bound review, with cancellation and a 30-second request budget.
 Summary/cache writes use the private generation; corrupt/future cache files are
 preserved, and a missing generation is never recreated by cache publication.
 
-Source, complete Git/LSP execution trust, legacy import and Windows/WSL LSP remain
-incomplete. Basic Files and its new Windows fixture still require native execution
-on the current change before being counted as verified product behavior.
+Source now offers separate native Git approval and the shared Git panels. It
+pins the launcher/core executable, config/include/hook evidence and native
+worktree arguments before execution. Changed evidence requires review. Git and
+editor disk operations coordinate while private recovery writes remain usable.
+Commit drafts survive permission refreshes and block project switching. Generic
+file editing cannot rewrite the products' native Registry/approval stores.
+
+Source worktree creation and Files navigation, legacy import, complete Windows
+LSP integration and WSL-native Git/LSP remain incomplete. Current Source,
+Dependencies and Files packaged behavior still requires Windows acceptance.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.

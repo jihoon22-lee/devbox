@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `dd90a437ed318a698c4298871bab27f3e4bd8cf97b71e2c0c515e47bd57f4e98`
+- Cargo.lock SHA-256: `1cf41eb3e48b24a7b1f8da626c01cf4a162b9ee6c0987d3eda44a401685ddede`
 - pnpm-lock.yaml SHA-256: `4bdb97dd476104f262859a5a0c8754c9211177c99881d8137dbfd8b7066504fc`
 
 ## Rust dependencies
@@ -163,6 +163,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | fallible-iterator | 0.3.0 | MIT/Apache-2.0 | https://github.com/sfackler/rust-fallible-iterator | `sha256:2acce4a10f12dc2fb14a218589d4f1f62ef011b2d0cc4b3cb1bba8e94da14649` |
 | fallible-streaming-iterator | 0.1.9 | MIT/Apache-2.0 | https://github.com/sfackler/fallible-streaming-iterator | `sha256:7360491ce676a36bf9bb3c56c1aa791658183a54d2744120f27285738d90465a` |
 | fast-float2 | 0.2.4 | MIT OR Apache-2.0 | https://github.com/Alexhuszagh/fast-float-rust | `sha256:c6e8948ce679d00a02a94739ea185595dca7118ed04feb991127e443bd3d761f` |
+| faster-hex | 0.10.0 | MIT | https://github.com/NervosFoundation/faster-hex | `sha256:7223ae2d2f179b803433d9c830478527e92b8117eab39460edae7f1614d9fb73` |
 | fastrand | 2.5.0 | Apache-2.0 OR MIT | https://github.com/smol-rs/fastrand | `sha256:da7c62ceae207dd37ea5b845da6a0696c799f85e97da1ab5b7910be3c1c80223` |
 | fax | 0.2.7 | MIT | https://github.com/pdf-rs/fax | `sha256:caf1079563223d5d59d83c85886a56e586cfd5c1a26292e971a0fa266531ac5a` |
 | fdeflate | 0.3.7 | MIT OR Apache-2.0 | https://github.com/image-rs/fdeflate | `sha256:1e6853b52649d4ac5c0bd02320cddc5ba956bdb407c4b75a2c6b75bf51500f8c` |
@@ -206,6 +207,25 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | getrandom | 0.4.3 | MIT OR Apache-2.0 | https://github.com/rust-random/getrandom | `sha256:300e883d756b2e4ec94e02791f39b04b522276138852cfc41d9fb7e904106099` |
 | gio | 0.18.4 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:d4fc8f532f87b79cbc51a79748f16a6828fb784be93145a322fa14d06d354c73` |
 | gio-sys | 0.18.1 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:37566df850baf5e4cb0dfb78af2e4b9898d817ed9263d1090a2df958c64737d2` |
+| gix-actor | 0.42.0 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:e37efa99929ac62f980fb1a7dcd09dea85b3aa6ead6ba0498362add3f4e698de` |
+| gix-config | 0.60.0 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:f973c28c0a4871a7926fc90c8377d4458fd6cbb19692f56582b4d2022313ae90` |
+| gix-config-value | 0.19.1 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:6f6af5321bfd3711a279d6b244d58532ba1cfabf9eb6374791f19929d8970082` |
+| gix-date | 0.16.0 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:e63d9aa18f29facd571c8953e66224ee0075b9e16622024794555ed4acceea85` |
+| gix-error | 0.3.2 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:4a1ba536602db507119eb5f3cdf80bef3ca5a5ec0dfc6e9c7f46dc70ade7c112` |
+| gix-features | 0.49.1 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:39c0e59d9d253dcccc38c3a46b91bfb9b46bd63eed54fe1a719e12194884d52a` |
+| gix-fs | 0.22.1 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:ebcfa9fd253f25350a3b21b3dd74034a446098e373c6123d4cee3519894f12ef` |
+| gix-glob | 0.27.1 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:b417cf515fd8c91468b578071f76d6cba716f8a1eccd853906bff4908b2c1413` |
+| gix-hash | 0.26.2 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:380b9c423a54f0821064b954b5a5ab25c660812f6a91da03c3f1cb4b10762aa5` |
+| gix-hashtable | 0.16.0 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:78fccd6fea3bcf0b39c076bae60ae49b08daaf538b950202101a981f9d3c01d3` |
+| gix-lock | 24.0.0 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:d4c69157820343bf1c6e4b88b9808e920900de02e18aaf5862b30ada43814848` |
+| gix-object | 0.64.1 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:56fef799ca40cdeab4de5a3e74a696d8fa9b9c6264592646bf022e026f13ce2c` |
+| gix-path | 0.12.6 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:38fc6f029ea67de83cbcbd33fd98c05a48360d2932b39d9fdacbc6eae802d475` |
+| gix-ref | 0.67.1 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:8328387e7ab354e1dc3afb63e6b4d1866f82d7ce035222bc9d5baaf36bc88020` |
+| gix-sec | 0.14.2 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:af4fe6c152c1d50aea36f299825702cd37e303307832fec1d0fdd5844e47ce2f` |
+| gix-tempfile | 24.0.0 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:b675b920bd5a61d17ad542772f03ec34c60feb8ff683e1560c03ae967363731e` |
+| gix-trace | 0.1.21 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:be3eb81d9dc914335923e50d52829c551feefd6a72d176c4130c546b67a60814` |
+| gix-utils | 0.3.6 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:0da1c46491b49458a446cc76f0085860f8164c2290742e0aa8c653ce67240a97` |
+| gix-validate | 0.11.4 | MIT OR Apache-2.0 | https://github.com/GitoxideLabs/gitoxide | `sha256:4dae8780f63ed8a803b8bdabbd7aa5f5c5d74592c8b50eed875c1bb4f6545a6a` |
 | glib | 0.18.5 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:233daaf6e83ae6a12a52055f568f9d7cf4671dabb78ff9560ab6da230ce00ee5` |
 | glib-macros | 0.18.5 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:0bb0228f477c0900c880fd78c8759b95c7636dbd7842707f49e132378aa2acdc` |
 | glib-sys | 0.18.1 | MIT | https://github.com/gtk-rs/gtk-rs-core | `sha256:063ce2eb6a8d0ea93d2bf8ba1957e78dbab6be1c2220dd3daca57d5a9d869898` |
@@ -217,11 +237,13 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | gtk3-macros | 0.18.2 | MIT | https://github.com/gtk-rs/gtk3-rs | `sha256:52ff3c5b21f14f0736fed6dcfc0bfb4225ebf5725f3c0209edeec181e4d73e9d` |
 | h2 | 0.4.16 | MIT | https://github.com/hyperium/h2 | `sha256:a9f37a958b41b3b19ee2707c06439c0e9e547e847223eb791ecb0cb821c65e27` |
 | half | 2.7.1 | MIT OR Apache-2.0 | https://github.com/VoidStarKat/half-rs | `sha256:6ea2d84b969582b4b1864a92dc5d27cd2b77b622a8d79306834f1be5ba20d84b` |
+| hash32 | 0.3.1 | MIT OR Apache-2.0 | https://github.com/japaric/hash32 | `sha256:47d60b12902ba28e2730cd37e95b8c9223af2808df9e902d4df49588d1470606` |
 | hashbrown | 0.12.3 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:8a9ee70c43aaf417c914396645a0fa852624801b24ebb7ae78fe8272889ac888` |
 | hashbrown | 0.14.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:e5274423e17b7c9fc20b6e7e208532f9b19825d82dfd615708b70edd83df41f1` |
 | hashbrown | 0.15.5 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:9229cfe53dfd69f0609a49f65461bd93001ea1ef889cd5529dd176593f5338a1` |
 | hashbrown | 0.17.1 | MIT OR Apache-2.0 | https://github.com/rust-lang/hashbrown | `sha256:ed5909b6e89a2db4456e54cd5f673791d7eca6732202bbf2a9cc504fe2f9b84a` |
 | hashlink | 0.9.1 | MIT OR Apache-2.0 | https://github.com/kyren/hashlink | `sha256:6ba4ff7128dee98c7dc9794b6a411377e1404dba1c97deb8d1a55297bd25d8af` |
+| heapless | 0.8.0 | MIT OR Apache-2.0 | https://github.com/rust-embedded/heapless | `sha256:0bfb9eb618601c89945a70e254898da93b13be0388091d42117462b265bb3fad` |
 | heck | 0.4.1 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck | `sha256:95505c38b4572b2d910cecb0281560f54b440a19336cbbcb27bf6ce6adc6f5a8` |
 | heck | 0.5.0 | MIT OR Apache-2.0 | https://github.com/withoutboats/heck | `sha256:2304e00983f87ffb38b55b444b5e3b60a884b5d30c0fca7d82fe33449bbe55ea` |
 | hermit-abi | 0.5.2 | MIT OR Apache-2.0 | https://github.com/hermit-os/hermit-rs | `sha256:fc0fef456e4baa96da950455cd02c081ca953b141298e41db3fc7e36b1da849c` |
@@ -311,6 +333,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | markup5ever | 0.39.0 | MIT OR Apache-2.0 | https://github.com/servo/html5ever | `sha256:7122d987ec5f704ee56f6e5b41a7d93722e9aae27ae07cafa4036c4d3f9757de` |
 | md-5 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:69b6441f590336821bb897fb28fc622898ccceb1d6cea3fde5ea86b090c4de98` |
 | memchr | 2.8.3 | Unlicense OR MIT | https://github.com/BurntSushi/memchr | `sha256:cf8baf1c55e62ffcace7a9f06f4bd9cd3f0c4beb022d3b367256b91b87513d98` |
+| memmap2 | 0.9.11 | MIT OR Apache-2.0 | https://github.com/RazrFalcon/memmap2-rs | `sha256:d1219ed1b7f229ee7104d281dd01d6802fe28bb6e95d292942c4daacdeb798c0` |
 | memoffset | 0.9.1 | MIT | https://github.com/Gilnaa/memoffset | `sha256:488016bfae457b036d996092f6cb448677611ce4449e970ceaf42695203f218a` |
 | miette | 7.6.0 | Apache-2.0 | https://github.com/zkat/miette | `sha256:5f98efec8807c63c752b5bd61f862c165c115b0a35685bdcfd9238c7aeb592b7` |
 | miette-derive | 7.6.0 | Apache-2.0 | https://github.com/zkat/miette | `sha256:db5b29714e950dbb20d5e6f74f9dcec4edbcc1067bb7f8ed198c097b8c1a818b` |
@@ -395,6 +418,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | proc-macro-error | 1.0.4 | MIT OR Apache-2.0 | https://gitlab.com/CreepySkeleton/proc-macro-error | `sha256:da25490ff9892aab3fcf7c36f08cfb902dd3e71ca0f9f9517bea02a73a5ce38c` |
 | proc-macro-error-attr | 1.0.4 | MIT OR Apache-2.0 | https://gitlab.com/CreepySkeleton/proc-macro-error | `sha256:a1be40180e52ecc98ad80b184934baf3d0d29f979574e439af5a55274b35f869` |
 | proc-macro2 | 1.0.107 | MIT OR Apache-2.0 | https://github.com/dtolnay/proc-macro2 | `sha256:985e7ec9bb745e6ce6535b544d84d6cd6f7ad8bd711c398938ae983b91a766d9` |
+| prodash | 31.0.0 | MIT | https://github.com/GitoxideLabs/prodash | `sha256:962200e2d7d551451297d9fdce85138374019ada198e30ea9ede38034e27604c` |
 | prost | 0.14.4 | Apache-2.0 | https://github.com/tokio-rs/prost | `sha256:528ac67416ff8646872a3c02cad9cc4ee5dc9f9540c9b10771855c95cb2e5ae1` |
 | prost-derive | 0.14.4 | Apache-2.0 | https://github.com/tokio-rs/prost | `sha256:b570b25f7617e43d59005d0990ccb79e950a423952cea19671b7a876da390adf` |
 | prost-reflect | 0.16.5 | MIT OR Apache-2.0 | https://github.com/andrewhickman/prost-reflect | `sha256:01b80ea363c31af2de2b92e3c07ed1156628f7838c4afb4df75ee78a37fedbd1` |
@@ -472,7 +496,9 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | serialize-to-javascript | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript | `sha256:04f3666a07a197cdb77cdf306c32be9b7f598d7060d50cfd4d5aa04bfd92f6c5` |
 | serialize-to-javascript-impl | 0.1.2 | MIT OR Apache-2.0 | https://github.com/chippers/serialize-to-javascript | `sha256:772ee033c0916d670af7860b6e1ef7d658a4629a6d0b4c8c3e67f09b3765b75d` |
 | servo_arc | 0.4.3 | MIT OR Apache-2.0 | https://github.com/servo/stylo | `sha256:170fb83ab34de17dc69aa7c67482b22218ddb85da56546f9bd6b929e32a05930` |
+| sha1 | 0.10.7 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:a978451301f4db1d02937a4ab3ccce137717b81826e79b7d49ffe3244a13c3b8` |
 | sha1 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:aacc4cc499359472b4abe1bf11d0b12e688af9a805fa5e3016f9a386dc2d0214` |
+| sha1-checked | 0.10.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:89f599ac0c323ebb1c6082821a54962b839832b03984598375bff3975b804423` |
 | sha2 | 0.10.9 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:a7507d819769d01a365ab707794a4084392c824f54a7a6a7862f8c3d0892b283` |
 | sha2 | 0.11.0 | MIT OR Apache-2.0 | https://github.com/RustCrypto/hashes | `sha256:446ba717509524cb3f22f17ecc096f10f4822d76ab5c0b9822c5f9c284e825f4` |
 | shared_library | 0.1.9 | Apache-2.0/MIT | https://github.com/tomaka/shared_library/ | `sha256:5a9e7e0f2bfae24d8a5b5a66c5b257a83c7412304311512a0c054cd5e619da11` |
@@ -584,6 +610,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | unic-ucd-version | 0.9.0 | MIT/Apache-2.0 | https://github.com/open-i18n/rust-unic/ | `sha256:96bd2f2237fe450fcd0a1d2f5f4e91711124f7857ba2e964247776ebeeb7b0c4` |
 | unicase | 2.9.0 | MIT OR Apache-2.0 | https://github.com/seanmonstar/unicase | `sha256:dbc4bc3a9f746d862c45cb89d705aa10f187bb96c76001afab07a0d35ce60142` |
 | unicode-bidi | 0.3.18 | MIT OR Apache-2.0 | https://github.com/servo/unicode-bidi | `sha256:5c1cb5db39152898a79168971543b1cb5020dff7fe43c8dc468b0885f5e29df5` |
+| unicode-bom | 2.0.3 | Apache-2.0 | https://gitlab.com/philbooth/unicode-bom | `sha256:7eec5d1121208364f6793f7d2e222bf75a915c19557537745b195b253dd64217` |
 | unicode-ident | 1.0.24 | (MIT OR Apache-2.0) AND Unicode-3.0 | https://github.com/dtolnay/unicode-ident | `sha256:e6e4313cd5fcd3dad5cafa179702e2b244f760991f45397d14d4ebf38247da75` |
 | unicode-normalization | 0.1.25 | MIT OR Apache-2.0 | https://github.com/unicode-rs/unicode-normalization | `sha256:5fd4f6878c9cb28d874b009da9e8d183b5abc80117c40bbd187a1fde336be6e8` |
 | unicode-properties | 0.1.4 | MIT/Apache-2.0 | https://github.com/unicode-rs/unicode-properties | `sha256:7df058c713841ad818f1dc5d3fd88063241cc61f49f5fbea4b951e8cf5a8d71d` |

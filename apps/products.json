@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 6,
+  "catalogRevision": 7,
   "channel": "development",
   "products": [
     {
@@ -159,6 +159,20 @@
       "id": "workspace.definitions",
       "owner": "workspace",
       "authority": "project-definition",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.dependencies",
+      "owner": "workspace",
+      "authority": "dependency-review",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.source",
+      "owner": "workspace",
+      "authority": "git-execution",
       "lifecycle": "product",
       "protocolVersion": 1
     }

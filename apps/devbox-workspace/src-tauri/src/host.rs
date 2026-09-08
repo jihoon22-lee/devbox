@@ -49,6 +49,9 @@ pub struct Host {
     selected: Mutex<Option<Selected>>,
 }
 impl Host {
+    pub fn storage_root(&self) -> &Path {
+        self.stores.root()
+    }
     pub fn open(root: &Path) -> Result<Self> {
         let stores = Arc::new(StoreRoot::open(root)?);
         let selected = stores

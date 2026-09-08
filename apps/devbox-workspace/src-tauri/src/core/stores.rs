@@ -43,6 +43,9 @@ pub struct StoreRoot {
     writer: Mutex<()>,
 }
 impl StoreRoot {
+    pub fn root(&self) -> &Path {
+        &self.root
+    }
     /// Native startup supplies this existing product-local directory. No
     /// renderer path selects an activation owner or legacy namespace.
     pub fn open(root: &Path) -> Result<Self> {

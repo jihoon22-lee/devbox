@@ -17,6 +17,7 @@ import ConfirmDialog from "./ConfirmDialog";
 
 interface Props {
   repo: RepoEntry | null;
+  onBusyChange?: (busy: boolean) => void;
 }
 
 const REASON_LABELS: Record<string, string> = {
@@ -108,7 +109,7 @@ function cleanupConfirmationSummary(pending: {
 }
 
 /** Preview-first branch/worktree cleanup with fail-closed selection and result handling. */
-export default function CleanupPanel({ repo }: Props) {
+export default function CleanupPanel({ repo, onBusyChange }: Props) {
   const [preview, setPreview] = useState<CleanupPreview | null>(null);
   const [selectedBranches, setSelectedBranches] = useState<Set<string>>(new Set());
   const [selectedWorktrees, setSelectedWorktrees] = useState<Set<string>>(new Set());
@@ -130,6 +131,9 @@ export default function CleanupPanel({ repo }: Props) {
   const busyRef = useRef(false);
   const operationIdRef = useRef<string | null>(null);
   const cancelledOperationRef = useRef<string | null>(null);
+
+  useEffect(() => {onBusyChange?.(busy || confirmation !== null);}, [busy, confirmation, onBusyChange]);
+  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
 
   useEffect(() => {
     mountedRef.current = true;

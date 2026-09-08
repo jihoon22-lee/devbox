@@ -2,7 +2,7 @@ import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.
 // Runs only on a disposable GitHub-hosted Windows runner. Uses synthetic
 // product installations, never an installed user app or a legacy data store.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -103,6 +103,7 @@ async function start(product, suffix) {
   const executable = path.join(directory, imageName);
   const built = path.resolve("target/debug", `devbox-${product.id}.exe`);
   assert.ok(existsSync(built), "packaged executable is missing"); copyFileSync(built, executable);
+  writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:"debug",executableBytes:statSync(built).size},null,2));
   const port = await freePort();
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, "webview2") };
   const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;

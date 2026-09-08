@@ -7,6 +7,7 @@
     "./overview": "./src/overview/App.tsx",
     "./dependencies": "./src/source/Dependencies.tsx",
     "./source": "./src/source/App.tsx",
+    "./source-panel": "./src/source/SourcePanel.tsx",
     "./files": "./src/files/App.tsx",
     "./transport": "./src/transport.ts"
   },

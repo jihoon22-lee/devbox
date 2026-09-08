@@ -402,3 +402,11 @@ engine without calling Git for admission. Standalone commands retain their Git
 repository checks and original cache namespace. Product cache failures preserve
 existing bytes; offline analysis remains available. The product owns the request
 deadline and retains project/single-flight guards through blocking worker cleanup.
+
+Workspace Source supplies a native `SourceAccess` and reviewed execution policy.
+Only that scope overrides the executable/environment and fixes the native Git
+worktree/gitdir. The scope follows async polls into blocking workers and retains
+cancellation/deadline ownership. Git-returned roots and metadata are admitted
+before IO, and operation IDs are namespaced by product context. The product
+Registry owns discovery/provider identity; these calls do not publish the legacy
+repository view. Standalone behavior and its existing storage remain unchanged.

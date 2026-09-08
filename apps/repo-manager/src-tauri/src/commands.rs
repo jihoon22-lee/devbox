@@ -360,6 +360,8 @@ fn parse_safety_marker_paths(output: &str, cwd: &Path) -> Result<[std::path::Pat
         if resolved.file_name().and_then(|name| name.to_str()) != Some(expected_name) {
             return Err(GIT_SAFETY_ERROR.to_string());
         }
+        source_metadata_before_io(cwd, &resolved, false)
+            .map_err(|_| GIT_SAFETY_ERROR.to_string())?;
         paths.push(resolved);
     }
     paths.try_into().map_err(|_| GIT_SAFETY_ERROR.to_string())
@@ -653,6 +655,7 @@ fn resolve_cleanup_worktree_path(
     parsed: &ParsedWorktree,
 ) -> Result<(PathBuf, FilesystemIdentity), String> {
     let path = PathBuf::from(&parsed.path);
+    source_root_before_io(&path).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     GitTarget::validate_host_absolute_path(&parsed.path)
         .map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     let identity = filesystem_identity(&path, true).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
@@ -1248,9 +1251,13 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(operation)
-        .await
-        .map_err(|_| join_error.to_string())?
+    let policy = devbox_git::execution::current();
+    tauri::async_runtime::spawn_blocking(move || match policy {
+        Some(policy) => policy.scope(operation),
+        None => operation(),
+    })
+    .await
+    .map_err(|_| join_error.to_string())?
 }
 
 fn run_git_remote_bounded(
@@ -1306,6 +1313,8 @@ fn remote_marker_exists(
     if marker_path.file_name().and_then(|name| name.to_str()) != Some(expected_marker) {
         return Err(GIT_REMOTE_ERROR.to_string());
     }
+    source_metadata_before_io(cwd, &marker_path, false)
+        .map_err(|_| GIT_REMOTE_ERROR.to_string())?;
     marker_present_with_error(&marker_path, GIT_REMOTE_ERROR)
 }
 
@@ -1538,6 +1547,7 @@ fn repository_context_for_worktree_with_options(
     cancellation: Option<&AtomicBool>,
     deadline: Option<Instant>,
 ) -> Result<RepositoryContext, String> {
+    source_root_before_io(&worktree).map_err(|_| error.to_string())?;
     repository_context_boundary(cancellation, deadline, error)?;
     let worktree_identity = filesystem_identity(&worktree, true)
         .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
@@ -1576,6 +1586,7 @@ fn repository_context_for_worktree_with_options(
         return Err(error.to_string());
     }
     let common = host_path_from_git(&worktree, value, error)?;
+    source_metadata_before_io(&worktree, &common, true).map_err(|_| error.to_string())?;
     let common = common
         .canonicalize()
         .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
@@ -1625,6 +1636,7 @@ fn cleanup_validated_repository_context(
     deadline: Instant,
 ) -> Result<RepositoryContext, String> {
     repository_context_boundary(Some(cancellation), Some(deadline), error)?;
+    source_root_before_io(Path::new(path)).map_err(|_| error.to_string())?;
     if !valid_repository_path_syntax(path) {
         return Err(error.to_string());
     }
@@ -2005,7 +2017,11 @@ pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
             .iter()
             .filter_map(|path| repository_entry(Path::new(path)).ok())
             .collect::<Vec<_>>();
-        crate::integration::add_worktree_repositories(entries);
+        // The product Registry owns project discovery/provider identity. Do
+        // not recreate a legacy snapshot namespace from a product Git query.
+        if !crate::component::is_product() {
+            crate::integration::add_worktree_repositories(entries);
+        }
         Ok(paths)
     })
     .await
@@ -3082,6 +3098,7 @@ pub fn open_targets() -> Vec<RepoOpenTarget> {
 }
 
 fn repository_entry(path: &Path) -> Result<RepoEntry, &'static str> {
+    source_root_before_io(path)?;
     let canonical = path
         .canonicalize()
         .map_err(|_| "repository를 찾을 수 없습니다")?;
@@ -3097,6 +3114,48 @@ fn repository_entry(path: &Path) -> Result<RepoEntry, &'static str> {
         canonical_key,
         has_worktrees: canonical.join(".git").join("worktrees").is_dir(),
     })
+}
+
+fn source_root_before_io(path: &Path) -> Result<(), &'static str> {
+    if let Some(policy) = devbox_git::execution::current() {
+        let spelling = host_path_spelling(path, "source_context_changed")
+            .map_err(|_| "source_context_changed")?;
+        policy
+            .admit(&GitTarget::native(spelling))
+            .map_err(|_| "source_context_changed")?;
+    }
+    Ok(())
+}
+fn source_metadata_before_io(
+    cwd: &Path,
+    path: &Path,
+    common_only: bool,
+) -> Result<(), &'static str> {
+    if let Some(policy) = devbox_git::execution::current() {
+        let spelling = host_path_spelling(cwd, "source_context_changed")
+            .map_err(|_| "source_context_changed")?;
+        let repository = policy
+            .admit(&GitTarget::native(spelling))
+            .map_err(|_| "source_context_changed")?;
+        let normalized = |path: &Path| -> Result<String, &'static str> {
+            let path = host_path_spelling(path, "source_context_changed")
+                .map_err(|_| "source_context_changed")?;
+            devbox_filesystem::parse_safe_project_path(&path)
+                .map(|path| path.identity().to_owned())
+                .ok_or("source_context_changed")
+        };
+        let path = normalized(path)?;
+        let common = normalized(&repository.common_dir)?;
+        let git = normalized(&repository.git_dir)?;
+        let child = |base: &str| {
+            path.strip_prefix(base)
+                .is_some_and(|rest| rest.starts_with(['/', '\\']))
+        };
+        if path != common && (common_only || !(path == git || child(&common) || child(&git))) {
+            return Err("source_context_changed");
+        }
+    }
+    Ok(())
 }
 
 fn validated_repository(path: &str) -> Result<RepoEntry, &'static str> {

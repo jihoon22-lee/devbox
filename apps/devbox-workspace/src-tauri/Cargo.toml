@@ -22,6 +22,7 @@ serde_json = "1"
 uuid = { version = "1", features = ["v4"] }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
+devbox-git = { package = "git", path = "../../../crates/git" }
 workbench = { path = "../../workbench/src-tauri", default-features = false }
 code-pad = { path = "../../code-pad/src-tauri", default-features = false }
 repo-manager = { path = "../../repo-manager/src-tauri", default-features = false }
@@ -31,6 +32,7 @@ tokio = { version = "1", features = ["time", "sync"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"
+gix-config = { version = "=0.60.0", default-features = false, features = ["sha1"] }
 
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }

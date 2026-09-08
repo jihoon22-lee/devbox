@@ -239,9 +239,61 @@ checks and packaged workflows remain pending on the corrected commit. Final
 `pnpm verify:affected` selected all and passed in **571.894 seconds**, under the
 shared 8 GiB cap (cgroup peak **6,445,330,432 bytes**).
 
+## Source execution and cross-owner IO
+
+Source now connects the shared Git panels through a separate native approval
+owner. The exact Git launcher/core executables, config/include/hook evidence,
+project execution definitions and environment bind a versioned approval. A fresh
+native snapshot precedes each operation; another root or changed evidence cannot
+reuse permission. Revocation needs no external config read. Task/LSP trust is not
+granted by Git review. `gix-config =0.60.0` supplies the pure parser; the dependency
+decision is in the Workspace architecture and notices are regenerated.
+
+Native `--git-dir`/`--work-tree` arguments prevent config redirection. Async poll
+scopes and inherited worker scopes retain ownership without leaking between
+tasks. Context-scoped cancellation reaches the existing process-tree supervisor.
+Git/file IO share a reader/writer boundary; private recovery remains writable
+while Git runs. The editor rejects the products' native authority-store paths,
+including when a broad project/picker scope would otherwise cover them. Commit
+drafts remain mounted across review/revocation and routes.
+
+The [50c5253 Windows run](https://github.com/jihoon22-lee/devbox/actions/runs/34253708553)
+completed definition/local-overlay assertions and the full Knowledge workflow,
+including vault rebinding/recovery. Dependencies then failed before its engine:
+its component was missing from the authority catalog. Source/Dependencies are now
+registered explicitly in catalog revision 7, with a regression against the native
+allowlist. The baseline artifact upload separately failed with service HTTP 403.
+The [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34253708525)
+passed frontend and both Rust platforms but failed the stale notices digest;
+generation and the local dependency-policy/Cargo deny checks now pass.
+
+Focused checks passed 68 Workspace, 129 Repo Manager, 24 Git and 2 catalog tests
+plus strict Clippy in 45.062 seconds. Subsequent Source UI approval/cancel/draft
+regressions (3 tests), Workspace build and four generated-request/decoded-script
+checks passed in 15.46 seconds. Final combined focused checks passed 70 Workspace + 130 Repo Manager + 24 Git +
+2 catalog tests, strict Clippy, shared UI 317 + Workspace UI 14, build and Node
+regressions in **95.628 seconds**, under 8 GiB (peak **4,161,253,376 bytes**).
+The final monotonic-budget correction passed **71 Workspace tests/strict Clippy**
+in 19.291 seconds. Queue, observation and Git execution share one monotonic expiry;
+a wall-clock change cannot extend the execution capability. These local results
+do not establish Windows Source/Dependencies/Files parity.
+
+The first full run exposed a Source UI test interaction before approval mount
+effects settled. The test now awaits React completion and an enabled fieldset
+before entering its draft; all 14 Workspace UI tests passed in 4.115 seconds.
+Final `pnpm verify:affected` selected all and passed in **946.342 seconds**,
+under the shared 8 GiB cap (cgroup peak **6,445,232,128 bytes**).
+
+The Windows fixture adds explicit/cancelled/stale Git approval, no pre-approval
+fsmonitor execution, config worktree-redirection rejection, UI selected stage and
+reviewed commit, changed-hook rejection, owned Git cancellation, concurrent file
+write rejection and continued editor recovery. Each completed Workspace feature
+now records independent evidence before the next fixture. Native rejection codes
+are retained in bounded renderer diagnostics instead of an uninformative Object.
+
 ## Remaining acceptance
 
-Source routing, complete Git/LSP execution-trust evidence, importer mappings,
+Source worktree creation/cleanup scope and Files navigation, importer mappings,
 Windows LSP integration and WSL-native transport remain incomplete. Files currently
 serializes native IO under one state mutex; remote independent cancellation needs
 work before WSL acceptance. Native file-dialog selection is implemented but has no

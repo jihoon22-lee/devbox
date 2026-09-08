@@ -158,6 +158,117 @@ pub async fn dispatch(
     }
 }
 
+pub const SOURCE_COMMANDS: &[&str] = &[
+    "repo_status",
+    "worktrees",
+    "worktree_clean",
+    "repo_preflight",
+    "repo_history",
+    "repo_commit_detail",
+    "repo_diff",
+    "repo_changes",
+    "repo_stage",
+    "repo_unstage",
+    "repo_commit",
+    "repo_local_cancel",
+    "repo_remote_status",
+    "repo_fetch",
+    "repo_pull",
+    "repo_push",
+    "repo_remote_cancel",
+    "repo_cleanup_preview",
+    "repo_cleanup",
+    "repo_cleanup_cancel",
+];
+pub fn source_cancel(method: &str) -> bool {
+    matches!(
+        method,
+        "repo_local_cancel" | "repo_remote_cancel" | "repo_cleanup_cancel"
+    )
+}
+fn bind_source_operation(key: &str, args: &mut serde_json::Value) -> Result<(), String> {
+    use sha2::{Digest, Sha256};
+    let Some(request) = args
+        .get_mut("request")
+        .and_then(serde_json::Value::as_object_mut)
+    else {
+        return Ok(());
+    };
+    if let Some(id) = request.get("operationId") {
+        let id = id
+            .as_str()
+            .filter(|value| {
+                !value.is_empty()
+                    && value.len() <= 128
+                    && value.bytes().all(|byte| {
+                        byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_' | b'.')
+                    })
+            })
+            .ok_or("component_args_invalid")?;
+        let mut hash = Sha256::new();
+        hash.update((key.len() as u64).to_be_bytes());
+        hash.update(key.as_bytes());
+        hash.update(id.as_bytes());
+        let id: String = hash
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        request.insert("operationId".into(), id.into());
+    }
+    Ok(())
+}
+pub struct SourceAccess {
+    root: PathBuf,
+    key: String,
+    policy: std::sync::Arc<devbox_git::execution::ExecutionPolicy>,
+}
+impl SourceAccess {
+    pub fn for_project(
+        root: PathBuf,
+        key: String,
+        policy: std::sync::Arc<devbox_git::execution::ExecutionPolicy>,
+    ) -> Self {
+        Self { root, key, policy }
+    }
+}
+pub async fn dispatch_source_cancel(
+    app: &tauri::AppHandle,
+    key: &str,
+    method: &str,
+    mut args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if !source_cancel(method) {
+        return Err("component_method_invalid".into());
+    }
+    bind_source_operation(key, &mut args)?;
+    dispatch(app, method, args).await
+}
+pub async fn dispatch_source(
+    app: &tauri::AppHandle,
+    access: SourceAccess,
+    method: &str,
+    mut args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    if !is_product() || !SOURCE_COMMANDS.contains(&method) || source_cancel(method) {
+        return Err("component_method_invalid".into());
+    }
+    let path = if matches!(method, "repo_status" | "worktrees" | "worktree_clean") {
+        args.get("path")
+    } else {
+        args.get("request").and_then(|request| request.get("path"))
+    };
+    if path.and_then(serde_json::Value::as_str) != access.root.to_str() {
+        return Err("source_context_changed".into());
+    }
+    bind_source_operation(&access.key, &mut args)?;
+    let _cancel = access.policy.cancel_on_drop();
+    access
+        .policy
+        .scope_future(dispatch(app, method, args))
+        .await
+}
+
 /// Dependencies accept only a native-created project capability. This adapter
 /// never resolves a renderer path or invokes Git to admit a product request.
 #[derive(Clone)]
@@ -291,5 +402,35 @@ pub fn dependency_issue(error: &str) -> &'static str {
         | "project_binding_changed"
         | "stale_context" => "dependency_context_changed",
         _ => "dependency_operation_failed",
+    }
+}
+
+#[cfg(test)]
+mod source_tests {
+    use super::*;
+    #[test]
+    fn cancellation_ids_are_bound_to_the_native_context_and_other_arguments_stay_literal() {
+        let original = serde_json::json!({"request":{"path":"C:\\selected","paths":["literal.txt"],"operationId":"operation-1"}});
+        let mut first = original.clone();
+        let mut same = original.clone();
+        let mut other = original;
+        bind_source_operation("native-context-a", &mut first).unwrap();
+        bind_source_operation("native-context-a", &mut same).unwrap();
+        bind_source_operation("native-context-b", &mut other).unwrap();
+        assert_eq!(first, same);
+        assert_ne!(
+            first["request"]["operationId"],
+            other["request"]["operationId"]
+        );
+        assert_eq!(first["request"]["path"], "C:\\selected");
+        assert_eq!(
+            first["request"]["paths"],
+            serde_json::json!(["literal.txt"])
+        );
+        let mut injected = serde_json::json!({"request":{"operationId":"../untrusted;value"}});
+        assert_eq!(
+            bind_source_operation("native-context-a", &mut injected).unwrap_err(),
+            "component_args_invalid"
+        );
     }
 }

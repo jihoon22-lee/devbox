@@ -36,7 +36,7 @@ import {Script} from "node:vm";
 const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
 test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
   let checked=0;
-  for(const name of ["registration","definitions","dependencies","files"]){
+  for(const name of ["registration","definitions","dependencies","source","files"]){
     const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
     const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));
@@ -58,12 +58,23 @@ test("Workspace renderer probes contain valid decoded JavaScript expressions",()
   assert.ok(checked>=20,"the browser expression regression must inspect the actual fixture call sites");
 });
 
-test("dependency fixture requests select their own route and bounded analysis deadline", async()=>{
+test("long feature fixture requests select their own route inside the native deadline ceiling", async()=>{
+  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"]]) {
   let sent;
-  await runInNewContext(workspaceRequestExpression("workspace.dependencies","dependency_inventory",{request:{path:"C:\\fixture"}}),{
+  await runInNewContext(workspaceRequestExpression(component,"fixture_method",{request:{path:"C:\\fixture"}}),{
     window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>command==="plugin:product-shell|describe"?{handshake:{installationId:"installation",sessionId:"session"},context:null}:(sent=input.request)}},
     crypto:{randomUUID:()=>"request"},Date:{now:()=>1000},
   });
-  assert.equal(sent.header.route,"dependencies");
-  assert.equal(sent.header.deadlineMs,31000);
+  assert.equal(sent.header.route,route);
+  assert.equal(sent.header.deadlineMs,30000);
+  }
+});
+
+test("native component rejection retains its structured problem in renderer diagnostics",async()=>{
+  await assert.rejects(runInNewContext(workspaceRequestExpression("workspace.source","trust_status"),{
+    window:{__TAURI_INTERNALS__:{invoke:async(command)=>{
+      if(command==="plugin:product-shell|describe")return {handshake:{installationId:"installation",sessionId:"session"},context:null};
+      throw {code:"unauthorized",provenance:{component:"workspace.source"}};
+    }}},crypto:{randomUUID:()=>"request"},Date:{now:()=>1000},
+  }),/Native Workspace request rejected:.*unauthorized/);
 });

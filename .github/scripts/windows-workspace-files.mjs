@@ -3,12 +3,15 @@ import assert from "node:assert/strict";
 import {writeFileSync, readFileSync, renameSync, existsSync} from "node:fs";
 import path from "node:path";
 
+export const nativeFileSnapshot = doc => ({path:doc.path, nativeRevision:doc.nativeRevision, expectedMtimeNanos:doc.mtimeNanos, expectedSize:doc.size, expectedContentHash:doc.contentHash});
+export const nativeFileSave = (doc,text) => ({...nativeFileSnapshot(doc),text,encoding:doc.encoding,lineEnding:doc.lineEnding,sourceLossy:doc.lossy});
+
 export async function exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer}) {
   const files = (method, args = {}) => call("workspace.files", method, args);
   const rejected = result => assert.equal(result.operation.outcome.state, "failed", JSON.stringify(result));
   const open = async file => success(await files("open_file", {request:{path:file, encoding:null}}));
-  const snapshot = doc => ({path:doc.path, nativeRevision:doc.nativeRevision, expectedMtimeNanos:doc.mtimeNanos, expectedSize:doc.size, expectedContentHash:doc.contentHash});
-  const save = (doc, text) => files("save_file", {request:{...snapshot(doc), text, encoding:doc.encoding, lineEnding:doc.lineEnding, sourceLossy:doc.lossy}});
+  const snapshot = nativeFileSnapshot;
+  const save = (doc, text) => files("save_file", {request:nativeFileSave(doc,text)});
   const file = path.join(root, "한글 edit.txt");
   const outside = path.join(directory, "outside.txt");
   writeFileSync(file, "original\r\n", {flag:"wx"});

@@ -159,6 +159,29 @@ impl FilesHost {
             return data.revalidate();
         }
         let data = MetadataRoot::open(&path)?;
+        let catalog: Value = serde_json::from_str(include_str!("../../../products.json"))
+            .map_err(|_| "invalid_files_store")?;
+        let identifiers = catalog["products"]
+            .as_array()
+            .ok_or("invalid_files_store")?
+            .iter()
+            .map(|product| {
+                product["identifier"]
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("invalid_files_store")
+            })
+            .collect::<Result<Vec<_>>>()?;
+        self.owner
+            .protect_product_storage(host.storage_root(), identifiers)?;
+        // Product components may use either Windows local or roaming app data.
+        // These are native known-folder paths, never renderer-provided scopes.
+        let roaming = app
+            .path()
+            .app_data_dir()
+            .map_err(|_| "invalid_files_store")?;
+        self.owner
+            .protect_sibling_storage(roaming.parent().ok_or("invalid_files_store")?)?;
         if let Some(bytes) = data.read(CHOICES)? {
             self.owner.restore_native_choices(&bytes)?;
         }
@@ -491,6 +514,8 @@ impl FilesHost {
                 if request.path != lease.binding().root {
                     return Err("file_context_changed");
                 }
+                self.owner
+                    .ensure_user_path(std::path::Path::new(&lease.binding().root))?;
                 if method == "canonicalize_workspace" {
                     return Ok(json!(lease.binding().root));
                 }
@@ -506,11 +531,18 @@ impl FilesHost {
                 ))
                 .map_err(|_| "file_listing_unavailable")?;
                 if let Some(files) = result["files"].as_array_mut() {
-                    for file in files {
+                    for file in files.iter_mut() {
                         if let Some(path) = file["path"].as_str() {
                             file["path"] = json!(client_path(path));
                         }
                     }
+                    files.retain(|file| {
+                        file["path"].as_str().is_some_and(|path| {
+                            self.owner
+                                .ensure_user_path(std::path::Path::new(path))
+                                .is_ok()
+                        })
+                    });
                 }
                 lease.revalidate()?;
                 Ok(result)
