@@ -1,4 +1,6 @@
 pub mod core;
+pub mod platform;
+pub mod project_owner;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

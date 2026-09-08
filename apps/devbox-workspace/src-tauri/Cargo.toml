@@ -25,5 +25,8 @@ devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 
 sha2 = "0.11.0"
 
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+
 [dev-dependencies]
 tempfile = "3"

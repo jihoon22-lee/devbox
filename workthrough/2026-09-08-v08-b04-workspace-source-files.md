@@ -56,7 +56,7 @@ Component mode now requires a native recovery review instead of forwarding that
 write; B04 must supply the identity-bound preview/apply workflow before claiming
 recovery parity. The importer must also validate recovery/session/config schemas
 strictly rather than using legacy empty-on-corruption convenience readers.
-CI, actual Windows/WSL and packaged product acceptance remain unperformed.
+The pushed Registry/model state passed general CI; full Windows/WSL product acceptance remains incomplete.
 
 The final shared transport/readiness-independent state passed the same 307 UI
 tests, package typecheck, Workspace build and component-only strict Clippy in
@@ -69,7 +69,7 @@ unimplemented and is not represented as passing.
 The initial draft CI exposed a retained-entry accessibility contract omission:
 the three legacy apps' CSS and axe smoke test had moved entirely into the shared
 package. Their entry CSS/smokes are now restored; the 19-app accessibility checker
-passes. The new smoke tests still require execution. No gate was relaxed.
+passes. The three restored smokes subsequently passed. No gate was relaxed.
 
 Project Registry model code now separates UUID identities, native root/common-Git
 evidence, target/distro, reviewed moves, revisions, legacy mappings and trust.
@@ -92,3 +92,29 @@ The final Registry/store/manifest and restored entry state passed affected all i
 All frontend build/test/typecheck and Rust check/Clippy/test/fmt gates passed.
 Notice regeneration passed in 2.055 seconds and changed only the Cargo.lock digest.
 This does not complete native host/platform admission, importer or LSP integration.
+
+
+Native project observation now obtains root/common-Git evidence from held objects
+without invoking Git or starting a distro. It validates linked-worktree pointers
+and backlinks, detects replacements/changed metadata, and rejects link traversal.
+The Registry owner requires a one-time revision-bound preview and explicit
+register/rebind action, rejects cancellation/expiry/replay and leaves trust absent.
+Only product Registry metadata is written. Host IPC/UI and WSL distro admission
+remain pending; the public probe currently accepts only Windows-local/ordinary UNC.
+
+All 24 Registry/store/manifest/probe/owner tests and strict Clippy passed in
+**3.330 seconds**, including actual portable filesystem swaps and token lifecycle.
+The Windows implementations are not executed by these Linux tests. Pushed model
+commit d3b67c1 passed [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34204524413).
+Its [Windows product fixture](https://github.com/jihoon22-lee/devbox/actions/runs/34204524304)
+still fails the old Workspace placeholder readiness assertion while host/UI
+integration remains unfinished. Other native fixture success does not complete B04.
+
+Git pointer transport checks run before IO: a local repository pointer cannot
+select WSL or a new UNC host/share, and device/stream paths are rejected. The
+focused regression covers these declarations without starting a distro or network
+probe. Notices regenerated successfully in 1.790 seconds for the Windows API edge.
+
+The final native project probe/owner state passed affected all in **624.910 seconds**
+(cgroup peak 6,445,195,264 bytes under the shared 8 GiB cap), including all frontend
+and Rust gates. Windows native execution of the new owner/probe remains pending CI.
