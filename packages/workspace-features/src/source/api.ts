@@ -1,4 +1,4 @@
-import { componentInvoke } from "../transport";
+import { componentInvoke, isProductHosted } from "../transport";
 const invoke = componentInvoke(method => method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source");
 import catalogJson from "../../../../apps/catalog.json";
 import { isTauri } from "./lib/isTauri";
@@ -841,4 +841,9 @@ export function repositoryCopyPath(path: string): Promise<string> {
 export function openRepositoryFolder(path: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
   return invoke<void>("open_repository_folder", { path });
+}
+
+/** Product preview ownership is explicitly discarded on cancel or stale UI. */
+export async function dependencyEnrichmentCancel(path: string, previewToken: string): Promise<void> {
+  if (isProductHosted()) await invoke("dependency_enrichment_cancel", {request:{path, previewToken}});
 }

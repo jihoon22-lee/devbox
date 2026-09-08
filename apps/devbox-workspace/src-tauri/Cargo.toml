@@ -24,6 +24,7 @@ devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 workbench = { path = "../../workbench/src-tauri", default-features = false }
 code-pad = { path = "../../code-pad/src-tauri", default-features = false }
+repo-manager = { path = "../../repo-manager/src-tauri", default-features = false }
 
 sha2 = "0.11.0"
 tokio = { version = "1", features = ["time", "sync"] }

@@ -395,3 +395,10 @@ Its shared frontend and tests now live in `packages/workspace-features/src/sourc
 The optional native `standalone` feature is enabled by default; Workspace can
 reuse the typed component adapter without embedding the legacy frontend or calling
 its startup. B04 product integration and platform acceptance remain in progress.
+
+Workspace Dependencies uses `component::DependencyAccess` supplied by the native
+Project Registry owner. It reuses the local parser, summary and opt-in remote
+engine without calling Git for admission. Standalone commands retain their Git
+repository checks and original cache namespace. Product cache failures preserve
+existing bytes; offline analysis remains available. The product owns the request
+deadline and retains project/single-flight guards through blocking worker cleanup.

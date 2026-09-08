@@ -177,9 +177,40 @@ fix, together with the existing generated-request test. `node --check` alone did
 not inspect those nested strings. Corrected final affected all passed in
 **323.806 seconds** under the shared 8 GiB cap (cgroup peak **1,620,996,096 bytes**).
 
+## Dependencies native integration
+
+The shared Dependency Lens now mounts lazily against the exact native Registry
+context. Plain folders can be analyzed without Git; standalone Repo Manager keeps
+its Git admission. Both consumers use the existing bounded parsers, graph/stale
+lock diagnostics, summary builder and reviewed OSV/deps.dev client. Renderer paths
+cannot select another root. Context/input changes, cancellation, expiry and token
+reuse reject remote execution. Selection stays locked while busy or reviewing.
+
+Native generation metadata and root leases are rechecked around blocking IO and
+network. The product allows at most 30 seconds per request, drops pending network
+futures at expiry, and retains context/single-flight guards until blocking workers
+finish. Corrupt/future caches are preserved, missing generations are not recreated,
+and offline analysis does not depend on cache health. This remains bounded
+cooperative filesystem cancellation; an active OS filesystem call can outlive the
+caller. Summary/cache writes are derived state, not a multi-file transaction.
+
+Focused checks passed 58 Workspace + 129 Repo Manager Rust tests, strict Clippy,
+317 shared UI tests and 11 Workspace UI tests in 94.998 seconds under the shared
+8 GiB cap. Subsequent focused regressions also cover guard retention after caller
+drop. Three Node request/renderer checks pass. The new Windows fixture checks
+plain-folder analysis, path rejection, reviewed/cancelled/stale-lock requests and
+UI analyze/review/cancel without contacting public APIs; it is not yet Windows
+execution evidence for this change.
+
+Final store checks passed 24 integration tests, 11 focused enrichment tests and
+strict Clippy. The dependency UI's 15 focused tests and Workspace build also passed.
+Final `pnpm verify:affected` selected all and passed in **604.15 seconds**, under
+the shared 8 GiB cap (cgroup peak **6,445,027,328 bytes**). The authoritative
+dependency-policy audit remains the final-commit CI gate.
+
 ## Remaining acceptance
 
-Source/Dependencies routing, complete Git/LSP execution-trust evidence, importer mappings,
+Source routing, complete Git/LSP execution-trust evidence, importer mappings,
 Windows LSP integration and WSL-native transport remain incomplete. Files currently
 serializes native IO under one state mutex; remote independent cancellation needs
 work before WSL acceptance. Native file-dialog selection is implemented but has no

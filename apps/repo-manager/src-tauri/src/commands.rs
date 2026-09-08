@@ -2686,29 +2686,92 @@ pub struct DependencyInventoryRequest {
 pub async fn dependency_inventory(
     request: DependencyInventoryRequest,
 ) -> Result<DependencyReport, String> {
+    let access = spawn_git_task(DEPENDENCY_LENS_ERROR, move || {
+        legacy_dependency_access(&request.path)
+    })
+    .await?;
+    dependency_inventory_with_access(access).await
+}
+
+pub(crate) fn legacy_dependency_access(
+    path: &str,
+) -> Result<crate::component::DependencyAccess, String> {
+    let context = validated_repository_context(path, DEPENDENCY_LENS_ERROR)?;
+    let repository =
+        repository_entry(&context.worktree).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+    Ok(crate::component::DependencyAccess::legacy_parts(
+        context.worktree.clone(),
+        repository.canonical_key,
+        move || revalidate_repository_context(&context, DEPENDENCY_LENS_ERROR),
+    ))
+}
+
+pub(crate) async fn dependency_inventory_with_access(
+    access: crate::component::DependencyAccess,
+) -> Result<DependencyReport, String> {
     spawn_git_task(DEPENDENCY_LENS_ERROR, move || {
         let _analysis = dependency_analysis_lock()
             .try_lock()
             .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
-        let context = validated_repository_context(&request.path, DEPENDENCY_LENS_ERROR)?;
-        let repository =
-            repository_entry(&context.worktree).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
-        let mut report = analyze_repository(&context.worktree, Duration::from_secs(10))?;
-        revalidate_repository_context(&context, DEPENDENCY_LENS_ERROR)?;
-
-        // Publishing is derived-state best effort: a corrupt/unsafe snapshot
-        // must not hide the successfully parsed local inventory, and it must
-        // never be overwritten with a partial replacement.
+        access.verify()?;
+        let mut report = analyze_repository(&access.root, Duration::from_secs(10))?;
+        access.verify()?;
         let now_ms = now_epoch_ms();
-        let published = dependency_summary_entry(&repository.canonical_key, &report, now_ms)
+        let published = dependency_summary_entry(&access.key, &report, now_ms)
             .and_then(|entry| {
                 let _write = dependency_summary_write_lock()
                     .lock()
-                    .map_err(|_| "dependency summary writer를 사용할 수 없습니다".to_string())?;
-                publish_summary_in(&crate::component::integration_root(), entry, now_ms)
+                    .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+                access.verify()?;
+                if access.strict_cache {
+                    crate::core::dependency_lens::publish_summary_with(
+                        &access.common.join("integration"),
+                        entry,
+                        now_ms,
+                        |envelope, directory| {
+                            access.verify()?;
+                            // Create only descendants of the admitted, existing generation.
+                            // Retained handles detect replacement and never recreate its root.
+                            let mut parent = access.common.clone();
+                            let mut pins = Vec::new();
+                            for part in directory
+                                .strip_prefix(&access.common)
+                                .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?
+                            {
+                                parent.push(part);
+                                match fs::create_dir(&parent) {
+                                    Ok(()) => {}
+                                    Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                                    Err(_) => return Err(DEPENDENCY_LENS_ERROR.into()),
+                                }
+                                devbox_filesystem::ensure_no_links(&parent)
+                                    .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+                                let (handle, identity) =
+                                    devbox_filesystem::open_filesystem_object(&parent, true)
+                                        .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+                                pins.push((parent.clone(), handle, identity));
+                                access.verify()?;
+                            }
+                            for (path, _, identity) in &pins {
+                                if filesystem_identity(path, true)
+                                    .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?
+                                    != *identity
+                                {
+                                    return Err(DEPENDENCY_LENS_ERROR.into());
+                                }
+                            }
+                            access.verify()?;
+                            devbox_integration::write_atomic_existing(envelope, directory)
+                        },
+                    )?;
+                } else {
+                    publish_summary_in(&access.common.join("integration"), entry, now_ms)?;
+                }
+                access.verify()
             })
             .is_ok();
         report.summary_published = published;
+        access.verify()?;
         Ok(report)
     })
     .await

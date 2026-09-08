@@ -103,6 +103,16 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                         | "apply_edit"
                 )
         }
+        "workspace.dependencies" => {
+            route == "dependencies"
+                && matches!(
+                    method,
+                    "dependency_inventory"
+                        | "dependency_enrichment_preview"
+                        | "dependency_enrichment_execute"
+                        | "dependency_enrichment_cancel"
+                )
+        }
         "workspace.files" | "workspace.lsp" => {
             route == "files" && crate::files_host::allowed(component, method)
         }
@@ -202,6 +212,61 @@ async fn execute_files(
     .await
     .unwrap_or(Err("worker_unavailable"))
 }
+async fn execute_dependencies(
+    runtime: &Runtime,
+    request: Request,
+    context_permit: crate::core::context_activity::ContextPermit,
+) -> Result<Value, &'static str> {
+    let host = runtime.host()?;
+    let permit = runtime.probes.reserve()?;
+    let deadline = request.header.deadline_ms;
+    let context = request.header.context.ok_or("project_selection_required")?;
+    let access = tauri::async_runtime::spawn_blocking(move || {
+        crate::files_host::current_deadline(deadline)?;
+        let owner = host.projects()?;
+        let lease = owner.admit(&context)?;
+        let root = std::path::PathBuf::from(&lease.binding().root);
+        let common = crate::private_metadata::MetadataRoot::open(&host.component("common")?)?;
+        let key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
+        repo_manager_lib::component::DependencyAccess::for_project(
+            root,
+            key,
+            common.path().into(),
+            move || {
+                let _retained = (&permit, &context_permit);
+                crate::files_host::current_deadline(deadline).map_err(str::to_string)?;
+                if host.component("common").map_err(str::to_string)? != common.path()
+                    || owner.binding(&context).map_err(str::to_string)? != *lease.binding()
+                {
+                    return Err("dependency_context_changed".into());
+                }
+                common.revalidate().map_err(str::to_string)?;
+                lease.revalidate().map_err(str::to_string)?;
+                crate::files_host::current_deadline(deadline).map_err(str::to_string)
+            },
+        )
+        .map_err(|_| "dependency_context_changed")
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))?;
+    crate::files_host::current_deadline(deadline)?;
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|_| "request_expired")?
+        .as_millis() as u64;
+    let remaining = deadline.checked_sub(now).ok_or("request_expired")?;
+    match tokio::time::timeout(
+        Duration::from_millis(remaining),
+        repo_manager_lib::component::dispatch_dependencies(access, &request.method, request.args),
+    )
+    .await
+    {
+        Ok(Ok(value)) => Ok(value),
+        Ok(Err(error)) => Err(repo_manager_lib::component::dependency_issue(&error)),
+        Err(_) => Err("request_expired"),
+    }
+}
+
 fn input<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, &'static str> {
     serde_json::from_value(value).map_err(|_| "invalid_request")
 }
@@ -331,6 +396,7 @@ async fn execute(
         "workspace.files" | "workspace.lsp"
     );
     let definitions = request.component == "workspace.definitions";
+    let dependencies = request.component == "workspace.dependencies";
     let context_change = matches!(
         request.method.as_str(),
         "select_project"
@@ -343,7 +409,7 @@ async fn execute(
     );
     // Acquire before checking the session, and retain through queued/native
     // work. Worker clones keep the boundary after caller timeout/cancellation.
-    let context_permit = if files || definitions || context_change {
+    let context_permit = if files || definitions || dependencies || context_change {
         Some(
             runtime
                 .context_activity
@@ -366,6 +432,13 @@ async fn execute(
             &runtime,
             request,
             context_permit.clone().expect("file context permit"),
+        )
+        .await
+    } else if dependencies {
+        execute_dependencies(
+            &runtime,
+            request,
+            context_permit.clone().expect("dependency context permit"),
         )
         .await
     } else if definitions {

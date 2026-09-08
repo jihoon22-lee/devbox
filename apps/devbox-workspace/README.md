@@ -40,7 +40,14 @@ Project/local JSON edits and imports show native before/after definitions and
 require explicit save. Concurrent changes preserve the original file and editor
 draft. Saving revokes execution approval; shared export includes only the manifest.
 
-Source/Dependencies, complete Git/LSP execution trust, legacy import and Windows/WSL LSP remain
+Dependencies now lazily mounts the shared local parser and review UI for the
+selected native project, including plain folders without Git. Analysis does not
+launch package managers or Git. Remote OSV/deps.dev requests consume a one-time
+context/input-bound review, with cancellation and a 30-second request budget.
+Summary/cache writes use the private generation; corrupt/future cache files are
+preserved, and a missing generation is never recreated by cache publication.
+
+Source, complete Git/LSP execution trust, legacy import and Windows/WSL LSP remain
 incomplete. Basic Files and its new Windows fixture still require native execution
 on the current change before being counted as verified product behavior.
 

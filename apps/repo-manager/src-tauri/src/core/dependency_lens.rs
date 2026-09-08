@@ -1882,6 +1882,20 @@ pub fn publish_summary_in(
     entry: DependencySummaryEntry,
     now_ms: u64,
 ) -> Result<(), String> {
+    publish_summary_with(
+        integration_root,
+        entry,
+        now_ms,
+        devbox_integration::write_atomic,
+    )
+}
+
+pub fn publish_summary_with(
+    integration_root: &Path,
+    entry: DependencySummaryEntry,
+    now_ms: u64,
+    write: impl FnOnce(&devbox_integration::Envelope, &Path) -> Result<(), String>,
+) -> Result<(), String> {
     validate_summary_entry(&entry, now_ms)?;
     let mut views = match devbox_integration::read_snapshot_in(
         integration_root,
@@ -1948,7 +1962,7 @@ pub fn publish_summary_in(
         env!("CARGO_PKG_VERSION"),
         views,
     );
-    devbox_integration::write_atomic(
+    write(
         &envelope,
         &devbox_integration::snapshot_dir_in(
             integration_root,

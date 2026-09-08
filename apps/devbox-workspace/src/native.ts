@@ -5,6 +5,10 @@ import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
+  dependency_busy: "다른 Dependency Lens 분석 또는 원격 조회가 진행 중입니다.",
+  dependency_review_required: "전송 내용을 다시 검토해 주세요.",
+  dependency_context_changed: "프로젝트 연결이 변경되었습니다. 다시 선택한 뒤 분석해 주세요.",
+  dependency_operation_failed: "의존성 분석이나 조회를 완료하지 못했습니다. 파일과 저장된 캐시 상태를 확인하고 다시 검토해 주세요.",
   definition_owner_reference_required: "비밀 및 API 환경 참조는 해당 연결 화면에서 변경해 주세요.",
   session_task_conflict: "세션이 참조하는 작업을 먼저 조정해 주세요.",
   unsupported_overlay_version: "지원하지 않는 로컬 설정 버전입니다. 기존 파일은 보존됩니다.",
@@ -64,6 +68,7 @@ export async function nativeCall<T>(component: string, method: string, args: Rec
 /** Feature actions bind the description currently displayed by the caller. */
 export async function componentCall<T>(description: Description, component: string, method: string, args: Record<string, unknown>, route: string): Promise<T> {
   const header = makeRequest(description.handshake, route, Date.now(), description.context);
+  if (component === "workspace.dependencies") header.deadlineMs += 25_000;
   const provenance = { product: "workspace", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: {operation: unknown; value: T & {issue?: string}};
   try {response = await invoke("plugin:workspace|execute", {request:{header, component, method, args}});}

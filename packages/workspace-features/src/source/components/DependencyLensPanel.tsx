@@ -1,5 +1,7 @@
+import { WorkspaceOperationError } from "../../transport";
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  dependencyEnrichmentCancel,
   dependencyEnrichmentExecute,
   dependencyEnrichmentPreview,
   dependencyInventory,
@@ -57,6 +59,7 @@ const MAX_QUERY_LENGTH = 256;
 type RemoteActivity = "preview" | "execute" | null;
 
 function fixedRemoteError(error: unknown): string {
+  if (error instanceof WorkspaceOperationError) return error.message;
   const message = typeof error === "string" ? error : error instanceof Error ? error.message : "";
   if (message === DEPENDENCY_ENRICHMENT_BUSY) return DEPENDENCY_ENRICHMENT_BUSY;
   if (message === DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED) return DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED;
@@ -123,7 +126,7 @@ function RemotePackageMetadata({ entry }: { entry: DependencyEnrichmentEntry }) 
   );
 }
 
-export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }) {
+export default function DependencyLensPanel({ repo, onBusyChange }: { repo: RepoEntry | null; onBusyChange?: (busy: boolean) => void }) {
   const [report, setReport] = useState<DependencyReport | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -136,8 +139,17 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
   const [remoteError, setRemoteError] = useState<string | null>(null);
   const requestSequence = useRef(0);
   const busy = loading || remoteActivity !== null;
+  const pending = useRef<{path: string; token: string} | null>(null);
+  const discardPreview = () => {
+    const previous = pending.current;
+    pending.current = null;
+    if (previous) void dependencyEnrichmentCancel(previous.path, previous.token).catch(() => {});
+  };
+  useEffect(() => {onBusyChange?.(busy || preview !== null);}, [busy, preview, onBusyChange]);
+  useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
 
   useEffect(() => {
+    discardPreview();
     requestSequence.current += 1;
     setReport(null);
     setError(null);
@@ -149,11 +161,13 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
     setRemoteActivity(null);
     setRemoteError(null);
     return () => {
+      discardPreview();
       requestSequence.current += 1;
     };
   }, [repo?.canonicalKey]);
 
   const resetRemote = () => {
+    discardPreview();
     requestSequence.current += 1;
     setPreview(null);
     setEnrichment(null);
@@ -165,6 +179,7 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
     const sequence = ++requestSequence.current;
     setLoading(true);
     setError(null);
+    discardPreview();
     setPreview(null);
     setEnrichment(null);
     setRemoteError(null);
@@ -185,16 +200,19 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
     if (!repo || !report || busy || (!selection.osv && !selection.depsDev)) return;
     const sequence = ++requestSequence.current;
     setRemoteActivity("preview");
+    discardPreview();
     setPreview(null);
     setEnrichment(null);
     setRemoteError(null);
     try {
       const result = await dependencyEnrichmentPreview(repo.path, selection, forceRefresh);
-      if (sequence !== requestSequence.current) return;
+      if (sequence !== requestSequence.current) {void dependencyEnrichmentCancel(repo.path, result.token).catch(() => {}); return;}
       if (result.revision !== report.revision) {
+        void dependencyEnrichmentCancel(repo.path, result.token).catch(() => {});
         setRemoteError(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED);
         return;
       }
+      pending.current = {path:repo.path, token:result.token};
       setPreview(result);
     } catch (caught) {
       if (sequence === requestSequence.current) setRemoteError(fixedRemoteError(caught));
@@ -206,6 +224,7 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
   const executeEnrichment = async () => {
     if (!repo || !report || !preview || busy) return;
     const reviewed = preview;
+    pending.current = null;
     const sequence = ++requestSequence.current;
     setRemoteActivity("execute");
     setRemoteError(null);
@@ -372,6 +391,7 @@ export default function DependencyLensPanel({ repo }: { repo: RepoEntry | null }
                   </div>
                 ))}
                 <div className="dependency-enrichment-confirm">
+                  <button type="button" className="btn" disabled={busy} onClick={resetRemote}>전송 검토 취소</button>
                   <span className="dim">이 검토는 5분 동안 한 번만 사용할 수 있으며 저장소가 바뀌면 무효입니다.</span>
                   <button type="button" className="btn primary" disabled={busy} onClick={() => void executeEnrichment()}>
                     {serviceTransmissionCount > 0 ? "검토한 정보 보내기" : "캐시 결과 적용"}

@@ -157,3 +157,139 @@ pub async fn dispatch(
         _ => Err("component_method_invalid".into()),
     }
 }
+
+/// Dependencies accept only a native-created project capability. This adapter
+/// never resolves a renderer path or invokes Git to admit a product request.
+#[derive(Clone)]
+pub struct DependencyAccess {
+    pub(crate) root: PathBuf,
+    pub(crate) key: String,
+    pub(crate) common: PathBuf,
+    pub(crate) strict_cache: bool,
+    verify: std::sync::Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+}
+impl DependencyAccess {
+    pub fn for_project(
+        root: PathBuf,
+        key: String,
+        common: PathBuf,
+        verify: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+    ) -> Result<Self, String> {
+        if !root.is_absolute() || !common.is_absolute() || key.is_empty() {
+            return Err("dependency_access_invalid".into());
+        }
+        let access = Self {
+            root,
+            key,
+            common,
+            strict_cache: true,
+            verify: std::sync::Arc::new(verify),
+        };
+        access.verify()?;
+        Ok(access)
+    }
+    pub(crate) fn legacy(path: &str) -> Result<Self, String> {
+        crate::commands::legacy_dependency_access(path)
+    }
+    pub(crate) fn legacy_parts(
+        root: PathBuf,
+        key: String,
+        verify: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            root,
+            key,
+            common: common_root(),
+            strict_cache: false,
+            verify: std::sync::Arc::new(verify),
+        }
+    }
+    pub(crate) fn retaining<T: Send + Sync + 'static>(mut self, guard: T) -> Self {
+        let verify = self.verify.clone();
+        self.verify = std::sync::Arc::new(move || {
+            let _retained = &guard;
+            verify()
+        });
+        self
+    }
+    pub(crate) fn verify(&self) -> Result<(), String> {
+        (self.verify)()
+    }
+}
+
+pub async fn dispatch_dependencies(
+    access: DependencyAccess,
+    method: &str,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use crate::commands::dependency_enrichment as remote;
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Input<T> {
+        request: T,
+    }
+    fn input<T: serde::de::DeserializeOwned>(args: serde_json::Value) -> Result<T, String> {
+        serde_json::from_value::<Input<T>>(args)
+            .map(|value| value.request)
+            .map_err(|_| "component_args_invalid".into())
+    }
+    // Legacy UI paths are a projection only, checked for stale UI selection.
+    let check_path = |path: &str| {
+        if path == access.root.to_string_lossy() {
+            Ok(())
+        } else {
+            Err("dependency_context_changed".to_string())
+        }
+    };
+    match method {
+        "dependency_inventory" => {
+            let request: crate::commands::DependencyInventoryRequest = input(args)?;
+            check_path(&request.path)?;
+            serde_json::to_value(crate::commands::dependency_inventory_with_access(access).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        "dependency_enrichment_preview" => {
+            let request: remote::DependencyEnrichmentPreviewRequest = input(args)?;
+            check_path(&request.path)?;
+            serde_json::to_value(
+                remote::preview_with_access(access, request.services, request.force_refresh)
+                    .await?,
+            )
+            .map_err(|_| "component_response_invalid".into())
+        }
+        "dependency_enrichment_execute" => {
+            let request: remote::DependencyEnrichmentExecuteRequest = input(args)?;
+            check_path(&request.path)?;
+            serde_json::to_value(remote::execute_with_access(access, request.preview_token).await?)
+                .map_err(|_| "component_response_invalid".into())
+        }
+        "dependency_enrichment_cancel" => {
+            let request: remote::DependencyEnrichmentExecuteRequest = input(args)?;
+            check_path(&request.path)?;
+            tauri::async_runtime::spawn_blocking(move || {
+                remote::cancel_with_access(&access, &request.preview_token)
+            })
+            .await
+            .map_err(|_| "component_worker_unavailable")??;
+            Ok(serde_json::json!({}))
+        }
+        _ => Err("component_method_invalid".into()),
+    }
+}
+
+/// Only fixed issue codes cross into the product's provenance-checked response.
+pub fn dependency_issue(error: &str) -> &'static str {
+    use crate::core::dependency_enrichment::{
+        DEPENDENCY_ENRICHMENT_BUSY, DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED,
+    };
+    match error {
+        DEPENDENCY_ENRICHMENT_BUSY => "dependency_busy",
+        DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED => "dependency_review_required",
+        "request_expired" => "request_expired",
+        "dependency_context_changed"
+        | "project_object_changed"
+        | "project_binding_changed"
+        | "stale_context" => "dependency_context_changed",
+        _ => "dependency_operation_failed",
+    }
+}

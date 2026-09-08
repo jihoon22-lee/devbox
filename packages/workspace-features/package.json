@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./overview": "./src/overview/App.tsx",
+    "./dependencies": "./src/source/Dependencies.tsx",
     "./source": "./src/source/App.tsx",
     "./files": "./src/files/App.tsx",
     "./transport": "./src/transport.ts"

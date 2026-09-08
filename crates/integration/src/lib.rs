@@ -566,7 +566,26 @@ pub fn write_atomic(envelope: &Envelope, dir: &Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|_| "snapshot 디렉터리를 만들 수 없습니다")?;
     reject_owned_directory_links(dir)?;
 
-    write_snapshot_file(envelope, &dir.join("summary.json"))
+    write_atomic_existing(envelope, dir)
+}
+
+/// Publish into a caller-owned directory without recreating a removed product
+/// generation. Legacy producers may still explicitly create their directories.
+pub fn write_atomic_existing(envelope: &Envelope, dir: &Path) -> Result<(), String> {
+    validate_envelope(envelope)?;
+    validate_target_dir(envelope, dir)?;
+    reject_owned_directory_links(dir)?;
+    let (_handle, identity) = devbox_filesystem::open_filesystem_object(dir, true)
+        .map_err(|_| "snapshot 디렉터리를 확인할 수 없습니다")?;
+    write_snapshot_file(envelope, &dir.join("summary.json"))?;
+    reject_owned_directory_links(dir)?;
+    if devbox_filesystem::filesystem_identity(dir, true)
+        .map_err(|_| "snapshot 디렉터리를 확인할 수 없습니다")?
+        != identity
+    {
+        return Err("snapshot 디렉터리가 변경되었습니다".into());
+    }
+    Ok(())
 }
 
 /// Atomically write a validated named-view snapshot beside `summary.json`.
@@ -1224,6 +1243,21 @@ mod tests {
     fn write_to_root(root: &Path, envelope: &Envelope) {
         let dir = snapshot_dir_in(root, &envelope.producer, envelope.schema_version);
         write_atomic(envelope, &dir).unwrap();
+    }
+
+    #[test]
+    fn existing_snapshot_writer_does_not_recreate_removed_generation() {
+        let root = test_root("existing-writer");
+        let dir = snapshot_dir_in(&root, "run-manager", 1);
+        let value = envelope("run-manager", 1);
+        assert!(write_atomic_existing(&value, &dir).is_err());
+        assert!(!root.exists());
+        std::fs::create_dir_all(&dir).unwrap();
+        write_atomic_existing(&value, &dir).unwrap();
+        assert!(read_snapshot_in(&root, "run-manager", 1).unwrap().is_some());
+        std::fs::remove_dir_all(&root).unwrap();
+        assert!(write_atomic_existing(&value, &dir).is_err());
+        assert!(!root.exists());
     }
 
     fn run_port_binding() -> PortBindingEntry {

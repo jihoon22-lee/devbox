@@ -3,13 +3,13 @@ import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
 
 type Status = {phase: "loading" | "setup" | "selected" | "failed"; issue?: string};
-interface Worktree {id: string; projectId: string; revision: number; binding: {root: string; target: ProjectContext["target"]}; trustedDigest: string | null}
-interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[]}
+export interface Worktree {id: string; projectId: string; revision: number; binding: {root: string; target: ProjectContext["target"]}; trustedDigest: string | null}
+export interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[]}
 interface Preview {previewId: string; binding: Worktree["binding"]; discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
-export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number}) {
+export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void}) {
   const [status, setStatus] = useState<Status>({phase:"loading"});
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [root, setRoot] = useState("");
@@ -22,6 +22,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const alive = useRef(true);
   const currentPreview = useRef<string | null>(null);
   const loadId = useRef(0);
+  useEffect(() => {if (registry) onSnapshot?.(registry);}, [registry, onSnapshot]);
   useEffect(() => {if (status.phase === "selected") onReady?.();}, [status.phase, onReady]);
   async function refresh() {
     const requestId = ++loadId.current;

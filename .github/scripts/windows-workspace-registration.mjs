@@ -3,14 +3,15 @@ import assert from "node:assert/strict";
 import {mkdirSync, writeFileSync, readFileSync, realpathSync} from "node:fs";
 import path from "node:path";
 import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
+import {exerciseWorkspaceDependencies} from "./windows-workspace-dependencies.mjs";
 import {exerciseWorkspaceDefinitions} from "./windows-workspace-definitions.mjs";
 
 export function workspaceRequestExpression(component, method, args = {}) {
-  const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : "overview";
+  const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : component === "workspace.dependencies" ? "dependencies" : "overview";
   return `(async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke;
     const d = await invoke("plugin:product-shell|describe");
-    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
+    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${component === "workspace.dependencies" ? 30000 : 5000},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
     return invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});
   })()`;
 }
@@ -80,6 +81,7 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   assert.equal(realpathSync.native(canonicalRoot), realpathSync.native(root));
   const definitions = await exerciseWorkspaceDefinitions({cdp, root:canonicalRoot, call, success, waitForRenderer});
   registry = success(await call("workspace.registry","snapshot"));
+  const dependencies = await exerciseWorkspaceDependencies({cdp, root:canonicalRoot, call, success, waitForRenderer});
   const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer});
   await click("프로젝트 선택 해제");
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");
@@ -97,5 +99,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,definitions,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust and basic Files UI/native commands; definition writes, native file dialog, Source, LSP and importer acceptance are separate"};
+  return {authority,definitions,dependencies,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies analyze/review/cancel and basic Files UI/native commands; native file dialog, Source, LSP and importer acceptance are separate"};
 }

@@ -1,6 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
+  dependencyEnrichmentCancel,
   dependencyEnrichmentExecute,
   dependencyEnrichmentPreview,
   dependencyInventory,
@@ -19,6 +20,7 @@ vi.mock("../api", () => ({
   DEPENDENCY_ENRICHMENT_ERROR: "Dependency Lens 원격 정보를 불러오지 못했습니다.",
   DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED: "전송 내용을 다시 검토해 주세요.",
   DEPENDENCY_LENS_ERROR: "Dependency Lens 분석을 완료하지 못했습니다.",
+  dependencyEnrichmentCancel: vi.fn().mockResolvedValue(undefined),
   dependencyEnrichmentExecute: vi.fn(),
   dependencyEnrichmentPreview: vi.fn(),
   dependencyInventory: vi.fn(),
@@ -222,6 +224,7 @@ function deferred<T>() {
 }
 
 beforeEach(() => {
+  vi.mocked(dependencyEnrichmentCancel).mockClear();
   dependencyInventoryMock.mockReset().mockResolvedValue(report);
   dependencyEnrichmentPreviewMock.mockReset().mockResolvedValue(preview);
   dependencyEnrichmentExecuteMock.mockReset().mockResolvedValue(partialEnrichment);
@@ -484,4 +487,31 @@ describe("DependencyLensPanel", () => {
     expect(screen.queryByText("GHSA-serde-example")).toBeNull();
     expect(screen.getByRole("button", { name: "의존성 분석" })).toBeTruthy();
   });
+});
+
+it("locks product selection during review and releases its native token on cancel", async () => {
+  const onBusyChange = vi.fn();
+  render(<DependencyLensPanel repo={repo} onBusyChange={onBusyChange}/>);
+  fireEvent.click(screen.getByRole("button", {name:"의존성 분석"}));
+  await screen.findByRole("button", {name:"다시 분석"});
+  fireEvent.click(screen.getByRole("button", {name:"전송 내용 검토"}));
+  await screen.findByLabelText("원격 전송 검토");
+  expect(onBusyChange).toHaveBeenLastCalledWith(true);
+  fireEvent.click(screen.getByRole("button", {name:"전송 검토 취소"}));
+  expect(dependencyEnrichmentCancel).toHaveBeenCalledWith(repo.path, preview.token);
+  expect(dependencyEnrichmentExecute).not.toHaveBeenCalled();
+  await waitFor(() => expect(onBusyChange).toHaveBeenLastCalledWith(false));
+});
+
+it("discards a native review arriving after its project has changed", async () => {
+  let resolve!: (value: DependencyEnrichmentPreview) => void;
+  dependencyEnrichmentPreviewMock.mockReturnValue(new Promise(done => {resolve = done;}));
+  const view = render(<DependencyLensPanel repo={repo}/>);
+  fireEvent.click(screen.getByRole("button", {name:"의존성 분석"}));
+  await screen.findByRole("button", {name:"다시 분석"});
+  fireEvent.click(screen.getByRole("button", {name:"전송 내용 검토"}));
+  view.rerender(<DependencyLensPanel repo={otherRepo}/>);
+  resolve(preview);
+  await waitFor(() => expect(dependencyEnrichmentCancel).toHaveBeenCalledWith(repo.path, preview.token));
+  expect(screen.queryByLabelText("원격 전송 검토")).toBeNull();
 });

@@ -36,7 +36,7 @@ import {Script} from "node:vm";
 const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
 test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
   let checked=0;
-  for(const name of ["registration","definitions","files"]){
+  for(const name of ["registration","definitions","dependencies","files"]){
     const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
     const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));
@@ -56,4 +56,14 @@ test("Workspace renderer probes contain valid decoded JavaScript expressions",()
     visit(tree);
   }
   assert.ok(checked>=20,"the browser expression regression must inspect the actual fixture call sites");
+});
+
+test("dependency fixture requests select their own route and bounded analysis deadline", async()=>{
+  let sent;
+  await runInNewContext(workspaceRequestExpression("workspace.dependencies","dependency_inventory",{request:{path:"C:\\fixture"}}),{
+    window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>command==="plugin:product-shell|describe"?{handshake:{installationId:"installation",sessionId:"session"},context:null}:(sent=input.request)}},
+    crypto:{randomUUID:()=>"request"},Date:{now:()=>1000},
+  });
+  assert.equal(sent.header.route,"dependencies");
+  assert.equal(sent.header.deadlineMs,31000);
 });

@@ -3,12 +3,13 @@ import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
 import { nativeMode, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
-import RegistryGate from "./RegistryGate";
+import RegistryGate, { type Registry } from "./RegistryGate";
 import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
+const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
 let displayed: Description | undefined;
 let connected = false;
@@ -26,6 +27,11 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
     connected = true;
   }
   const [ready, setReady] = useState(false);
+  const [registry, setRegistry] = useState<Registry | null>(null);
+  const [dependenciesBusy, setDependenciesBusy] = useState(false);
+  const [dependenciesVisited, setDependenciesVisited] = useState(route === "dependencies");
+  useEffect(() => {if (route === "dependencies") setDependenciesVisited(true);}, [route]);
+  const selectedTree = registry?.worktrees.find(tree => tree.projectId === description.context?.projectId && tree.id === description.context.worktreeId && tree.revision === description.context.revision);
   const [editing, setEditing] = useState(false);
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
@@ -35,10 +41,15 @@ function NativeContent({route, description, refreshContext}: ShellContentProps) 
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing} refreshSignal={registrySignal}/>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || definitionsEditing || dependenciesBusy} refreshSignal={registrySignal} onSnapshot={setRegistry}/>
     </div>
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
+    </div>}
+    {ready && (dependenciesVisited || route === "dependencies") && <div className="workspace-feature-source" hidden={route !== "dependencies"}>
+      {!selectedTree ? <p role="status">분석할 프로젝트를 선택해 주세요.</p> : <Suspense fallback={<p role="status">의존성 화면을 불러오고 있습니다…</p>}>
+        <Dependencies repo={{path:selectedTree.binding.root, canonicalKey:JSON.stringify(description.context), hasWorktrees:false}} onBusyChange={setDependenciesBusy}/>
+      </Suspense>}
     </div>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
