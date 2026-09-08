@@ -51,8 +51,15 @@
   결과를 낸다. 브라우저 JSON/CSV preview도 같은 range/day/source 순서와 24열 CSV
   contract를 유지하며, 실제 데이터가 없다는 사실은 `RenderedExport.origin`과 source
   metadata로 구분한다.
-- Git 조회는 검증된 absolute project path만 fixed argv로 `git log --format=%ct`에
-  전달한다. Windows 경로는 native Git을 사용하고 WSL UNC 경로는 server alias와 distro를
+- Git 조회는 검증된 absolute project path만 fixed argv로 `git rev-parse
+  --path-format=absolute --git-common-dir`와 `git log --format=%H%x09%ct`에 전달한다.
+  Git의 [절대·정규화 경로 규약](https://git-scm.com/docs/git-rev-parse)에 따라 공통 Git
+  디렉터리와 commit ID로 같은 저장소의 worktree를 중복 제거한다. 고유 커밋은 정렬상
+  첫 프로젝트에 귀속하며 독립 저장소의 같은 commit ID는 별도로 센다. 커밋 메시지·작성자·
+  remote URL은 읽지 않고, hash는 집계 내부에서만 사용한다. metadata/history 두 조회는
+  프로젝트별 기존 2초 예산을 나눠 쓴다. Calendar와 digest/export가 같은 집계를 사용하고
+  Git 대기는 async IPC executor 밖에서 수행한다. 조회 실패는 0개 성공과 구분해 표시한다.
+  Windows 경로는 native Git을 사용하고 WSL UNC 경로는 server alias와 distro를
   정규화한 뒤 `wsl.exe -d <distro> -- /usr/bin/timeout ... /usr/bin/env ... -- git -C
   <linux-path> ...`의 shell 없는 고정 argv로 해당 배포판의 Git을 사용한다. Linux 경로
   부분의 대소문자는 보존하며 `wsl$`/`wsl.localhost` 및 slash 표기 차이만 같은 project

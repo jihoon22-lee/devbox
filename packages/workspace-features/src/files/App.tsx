@@ -1,4 +1,5 @@
 import "./App.css";
+import { isProductHosted, WorkspaceOperationError } from "../transport";
 import { listen } from "@tauri-apps/api/event";
 import { focusFirst, isImeComposing, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import { useEffect, useMemo, useReducer, useRef, useState } from "react";
@@ -10,6 +11,7 @@ import {
   loadSession,
   loadRecovery,
   openFile,
+  pickFiles,
   renameFileAction,
   revealFileAction,
   renderPreview,
@@ -68,6 +70,7 @@ import type {
 
 function docFromOpenedFile(file: OpenedFile, metadata?: SessionState["docs"][number]): Doc {
   return {
+    ...(file.nativeRevision !== undefined ? {nativeRevision:file.nativeRevision} : {}),
     id: metadata?.id ?? docIdForPath(file.path),
     path: file.path,
     text: file.text,
@@ -145,6 +148,7 @@ const SAFE_CODE_PAD_ERRORS = new Set([
 ]);
 
 function safeCodePadError(cause: unknown, fallback: string): string {
+  if (cause instanceof WorkspaceOperationError) return cause.message;
   const raw = cause instanceof Error ? cause.message : typeof cause === "string" ? cause : "";
   const message = raw.replace(/^Error:\s*/u, "").trim();
   if (SAFE_CODE_PAD_ERRORS.has(message)) return message;
@@ -181,12 +185,13 @@ function snapshotMatches(
   doc: Doc | undefined,
   snapshot: Pick<
     Doc,
-    "revision" | "text" | "mtimeNanos" | "size" | "contentHash" | "dirty" | "encoding" | "lineEnding"
+    "revision" | "text" | "mtimeNanos" | "size" | "contentHash" | "dirty" | "encoding" | "lineEnding" | "nativeRevision"
   >,
 ): boolean {
   return (
     doc !== undefined &&
     doc.dirty === snapshot.dirty &&
+    doc.nativeRevision === snapshot.nativeRevision &&
     doc.revision === snapshot.revision &&
     doc.text === snapshot.text &&
     doc.mtimeNanos === snapshot.mtimeNanos &&
@@ -209,7 +214,11 @@ export interface NavEntry {
   cursor: number;
 }
 
-export default function App() {
+export default function App({contextKey = "standalone", active = true, onDirtyChange}: {contextKey?:string; active?:boolean; onDirtyChange?:(dirty:boolean) => void} = {}) {
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const contextRef = useRef(contextKey);
+  contextRef.current = contextKey;
   const [state, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const [pathInput, setPathInput] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -296,6 +305,9 @@ export default function App() {
   const quickOpenRef = useRef<() => void>(() => undefined);
   const appDialogRef = useRef<HTMLDivElement>(null);
 
+  useEffect(() => {onDirtyChange?.(state.docs.some(doc => doc.dirty) || busy || !hydrated || recoveryOpen);}, [onDirtyChange, state.docs, busy, hydrated, recoveryOpen]);
+  useEffect(() => () => {onDirtyChange?.(false);}, [onDirtyChange]);
+
   useEffect(() => lspSync.subscribe(setLspSyncState), [lspSync]);
 
   useEffect(() => lspSync.subscribeDiagnostics((snapshot) => {
@@ -320,6 +332,8 @@ export default function App() {
   // 비정상 종료 후 미저장 버퍼 복구 확인 (§12.1)
   useEffect(() => {
     let active = true;
+    setRecoveryChecked(false);
+    setRecoveryOpen(false);
     void loadRecovery().then((entries) => {
       if (!active) return;
       setRecoveryChecked(true);
@@ -330,7 +344,7 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, []);
+  }, [contextKey]);
 
   useEffect(() => {
     let disposed = false;
@@ -545,6 +559,7 @@ export default function App() {
         doc.size,
         doc.contentHash,
         doc.lossy,
+        doc.nativeRevision,
       ),
     );
     if (!saved) return undefined;
@@ -555,11 +570,13 @@ export default function App() {
       type: "saveDoc",
       docId,
       submittedRevision,
+      ...(doc.nativeRevision !== undefined ? {submittedNativeRevision:doc.nativeRevision} : {}),
       submittedText,
       mtimeNanos: saved.mtimeNanos,
       size: saved.size,
       contentHash: saved.contentHash,
       durabilityWarning: saved.durabilityWarning,
+      ...(saved.nativeRevision !== undefined ? {nativeRevision:saved.nativeRevision} : {}),
     });
     void lspSync.save(docId);
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
@@ -567,6 +584,7 @@ export default function App() {
       saved,
       matchedSnapshot:
         latestDoc !== undefined &&
+        latestDoc.nativeRevision === saved.nativeRevision &&
         latestDoc.revision === submittedRevision &&
         latestDoc.text === submittedText,
     };
@@ -1128,6 +1146,7 @@ export default function App() {
     if (!newName || newName === fileNameForPath(doc.path)) return;
     void runFileOperation(async () => {
       const renamed = await renameFileAction({
+        ...(doc.nativeRevision !== undefined ? {nativeRevision:doc.nativeRevision} : {}),
         path: doc.path,
         mtimeNanos: doc.mtimeNanos,
         size: doc.size,
@@ -1156,6 +1175,7 @@ export default function App() {
       }
       dispatchAction({
         type: "renameDoc",
+        ...(renamed.nativeRevision !== undefined ? {nativeRevision:renamed.nativeRevision} : {}),
         docId: doc.id,
         path: renamed.path,
         mtimeNanos: renamed.mtimeNanos,
@@ -1177,6 +1197,7 @@ export default function App() {
     if (!confirmed) return;
     void runFileOperation(async () => {
       await deleteFileAction({
+        ...(doc.nativeRevision !== undefined ? {nativeRevision:doc.nativeRevision} : {}),
         path: doc.path,
         mtimeNanos: doc.mtimeNanos,
         size: doc.size,
@@ -1323,6 +1344,18 @@ export default function App() {
   // disk; missing files are skipped individually. The UI remains gated until
   // all restore reads and watcher registrations have settled.
   useEffect(() => {
+    if (stateRef.current.docs.some(doc => doc.dirty)) {
+      setError("프로젝트가 변경되어도 미저장 내용은 보존됩니다. 먼저 현재 편집을 마쳐 주세요.");
+      return;
+    }
+    hydratedRef.current = false;
+    setHydrated(false);
+    pendingSessionRef.current = null;
+    if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
+    sessionSaveTimerRef.current = null;
+    setWorkspaceFiles([]); setWorkspaceListingRoot(null); setQuickOpen(false);
+    for (const doc of stateRef.current.docs) void lspSync.close(doc.id);
+    void lspSync.setWorkspace(null);
     let cancelled = false;
     const hydrationWatchPaths = new Set<string>();
     void loadSession()
@@ -1330,8 +1363,7 @@ export default function App() {
         if (cancelled) return;
         persistenceAllowedRef.current = loaded.persistAllowed;
         setSessionPersistenceAllowed(loaded.persistAllowed);
-        const restored = await Promise.all(
-          loaded.session.docs.map(async (metadata) => {
+        const restoreDocument = async (metadata: SessionState["docs"][number]): Promise<Doc | null> => {
           try {
             const opened = await openFile(metadata.path, null);
             if (cancelled) return null;
@@ -1343,10 +1375,23 @@ export default function App() {
           } catch {
             return null;
           }
-          }),
-        );
+        };
+        const restored: Array<Doc | null> = [];
+        if (isProductHosted()) {
+          // Match the bounded native queue; a large restored tab set must not
+          // turn temporary queue saturation into silently missing documents.
+          for (const metadata of loaded.session.docs) {
+            if (cancelled) break;
+            restored.push(await restoreDocument(metadata));
+          }
+        } else { restored.push(...await Promise.all(loaded.session.docs.map(restoreDocument))); }
         if (cancelled) return;
         const restoredDocs = restored.filter((doc): doc is Doc => doc !== null);
+        if (isProductHosted() && restoredDocs.length < loaded.session.docs.length) {
+          persistenceAllowedRef.current = false;
+          setSessionPersistenceAllowed(false);
+          setError("일부 파일을 다시 열지 못했습니다. 저장된 세션은 새 편집 작업 전까지 보존됩니다.");
+        }
         dispatchAction({
           type: "restoreSession",
           session: loaded.session,
@@ -1388,12 +1433,14 @@ export default function App() {
       });
     return () => {
       cancelled = true;
-      for (const path of hydrationWatchPaths) unregisterWatch(path);
+      const paths = new Set([...hydrationWatchPaths, ...stateRef.current.docs.map(doc => doc.path)]);
+      for (const path of paths) void unregisterWatch(path);
       hydrationWatchPaths.clear();
     };
-    // Session restoration is one app-lifetime operation.
+    // Routes retain this subtree; only a reviewed clean project transition
+    // changes the native view session.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [contextKey]);
 
   // Native watcher events are authoritative only for disk metadata. A clean
   // document reloads automatically; a dirty document gets an explicit choice.
@@ -1554,13 +1601,19 @@ export default function App() {
   // A single debounced, serialized writer means a slow save cannot let an old
   // request finish after a newer request and overwrite the newest session.
   useEffect(() => {
-    if (!hydrated || !sessionPersistenceAllowed) return;
+    if (!hydrated || !hydratedRef.current || !sessionPersistenceAllowed) return;
     if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
     pendingSessionRef.current = stateToSession(state);
     const startDrain = () => {
-      if (sessionSaveInFlightRef.current) return;
+      if (contextRef.current !== contextKey) return;
+      if (sessionSaveInFlightRef.current) {
+        void sessionSaveInFlightRef.current.finally(() => {
+          if (contextRef.current === contextKey && pendingSessionRef.current) startDrain();
+        });
+        return;
+      }
       const drain = async () => {
-        while (pendingSessionRef.current) {
+        while (contextRef.current === contextKey && pendingSessionRef.current) {
           const next = pendingSessionRef.current;
           pendingSessionRef.current = null;
           try {
@@ -1574,7 +1627,7 @@ export default function App() {
       sessionSaveInFlightRef.current = inFlight;
       void inFlight.finally(() => {
         if (sessionSaveInFlightRef.current === inFlight) sessionSaveInFlightRef.current = null;
-        if (pendingSessionRef.current && !sessionSaveTimerRef.current) {
+        if (contextRef.current === contextKey && pendingSessionRef.current && !sessionSaveTimerRef.current) {
           // Keep the same quiet debounce for edits that arrived while the
           // previous native write was in flight.
           sessionSaveTimerRef.current = setTimeout(() => {
@@ -1594,10 +1647,11 @@ export default function App() {
         sessionSaveTimerRef.current = null;
       }
     };
-  }, [hydrated, sessionPersistenceAllowed, state]);
+  }, [contextKey, hydrated, sessionPersistenceAllowed, state]);
 
   useEffect(() => {
     const handleShortcut = (event: KeyboardEvent) => {
+      if (!activeRef.current) return;
       if (isImeComposing(event)) return;
       if (!(event.ctrlKey || event.metaKey)) return;
       const key = event.key.toLowerCase();
@@ -1644,8 +1698,8 @@ export default function App() {
       )}
       <header className="app-header">
         <div className="app-heading">
-          <p className="eyebrow">WORKBENCH</p>
-          <h1>Code Pad</h1>
+          <p className="eyebrow">{isProductHosted() ? "WORKSPACE" : "WORKBENCH"}</p>
+          <h1>{isProductHosted() ? "파일" : "Code Pad"}</h1>
         </div>
         <div className="file-toolbar">
           <input
@@ -1663,6 +1717,9 @@ export default function App() {
           <button type="button" className="toolbar-button" onClick={handleOpen} disabled={busy || !hydrated}>
             파일 열기
           </button>
+          {isProductHosted() && <button type="button" className="toolbar-button" disabled={busy || !hydrated} onClick={() => void runFileOperation(async () => {
+            for (const path of await pickFiles()) await openPath(path);
+          })}>파일 선택</button>}
           <button type="button" className="toolbar-button" onClick={handleSetWorkspace} disabled={busy || !hydrated}>
             작업 폴더
           </button>

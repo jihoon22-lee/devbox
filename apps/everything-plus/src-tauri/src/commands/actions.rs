@@ -95,6 +95,71 @@ pub fn open_in(
     devbox_launch::launch_open(&target_id, &request).map(|_| ())
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_open_file(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let Input { path } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    open_file(component_app.clone(), component_app.state(), path).await?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_reveal_file(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let Input { path } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    reveal_file(component_app.clone(), component_app.state(), path).await?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_open_targets(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = open_targets();
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_open_in(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        app_id: String,
+        path: String,
+    }
+    let Input { app_id, path } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    open_in(component_app.state(), app_id, path)?;
+    Ok(serde_json::Value::Null)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{validate_result_path, INVALID_RESULT_PATH, MISSING_RESULT_FILE};

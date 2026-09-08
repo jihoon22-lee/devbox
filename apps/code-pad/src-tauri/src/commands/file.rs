@@ -58,6 +58,13 @@ pub struct OpenedFileWire {
     pub lossy: bool,
 }
 
+impl OpenedFile {
+    /// Native component owners retain this evidence; it is never serialized.
+    pub fn native_identity(&self) -> FilesystemIdentity {
+        self.identity
+    }
+}
+
 impl From<OpenedFile> for OpenedFileWire {
     fn from(file: OpenedFile) -> Self {
         Self {
@@ -95,6 +102,13 @@ pub struct SavedFileWire {
     pub size: u64,
     pub content_hash: String,
     pub durability_warning: Option<String>,
+}
+
+impl SavedFile {
+    /// None means the write committed but its replacement could not be pinned.
+    pub fn native_identity(&self) -> Option<FilesystemIdentity> {
+        self.identity
+    }
 }
 
 impl From<SavedFile> for SavedFileWire {

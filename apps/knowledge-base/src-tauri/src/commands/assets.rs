@@ -498,6 +498,23 @@ fn compare_existing(
     }
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_save_image_asset(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: SaveImageAssetRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = save_image_asset(component_app.state(), request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

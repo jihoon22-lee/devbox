@@ -67,8 +67,16 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             | ("api-studio", "api-studio.webhooks", "listener-network")
             | ("api-studio", "api-studio.transforms", "transform-local")
             | ("api-studio", "api-studio.migration", "legacy-import")
+            | ("knowledge", "knowledge.notes", "note-writer")
+            | ("knowledge", "knowledge.activity", "activity-collector")
+            | ("knowledge", "knowledge.search", "search-read")
+            | ("knowledge", "knowledge.search-settings", "search-admin")
+            | ("knowledge", "knowledge.opener", "result-open")
+            | ("knowledge", "knowledge.migration", "legacy-import")
             | ("workspace", "workspace.registry", "project-registry")
             | ("workspace", "workspace.migration", "legacy-import")
+            | ("workspace", "workspace.files", "file-edit")
+            | ("workspace", "workspace.lsp", "language-service")
     )
 }
 

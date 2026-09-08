@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "revision": 1,
+  "current": {
+    "projectId": "project",
+    "worktreeId": "worktree",
+    "target": {
+      "kind": "windows"
+    },
+    "revision": 4
+  },
+  "projects": [
+    {
+      "context": {
+        "projectId": "project",
+        "worktreeId": "worktree",
+        "target": {
+          "kind": "windows"
+        },
+        "revision": 4
+      },
+      "root": "C:/indexed/project",
+      "availability": "available",
+      "activityPaths": [
+        "C:/old/project"
+      ]
+    }
+  ]
+}

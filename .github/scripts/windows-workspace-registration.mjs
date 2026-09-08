@@ -2,12 +2,14 @@
 import assert from "node:assert/strict";
 import {mkdirSync, writeFileSync, readFileSync} from "node:fs";
 import path from "node:path";
+import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
 
 export function workspaceRequestExpression(component, method, args = {}) {
+  const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : "overview";
   return `(async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke;
     const d = await invoke("plugin:product-shell|describe");
-    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"overview",...(d.context ? {context:d.context} : {})};
+    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
     return invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});
   })()`;
 }
@@ -70,6 +72,7 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   })()`);
   assert.equal(staleContext,"stale-context");
   assert.equal((await call("workspace.registry","select_project",{context:{...selected.context,revision:selected.context.revision+1}})).operation.outcome.state,"failed");
+  const files = await exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer});
   await click("프로젝트 선택 해제");
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");
   assert.equal((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,null);
@@ -86,5 +89,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry/context UI/native commands; Source/Files/LSP and importer acceptance are separate"};
+  return {authority,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry and basic Files UI/native commands; native file dialog, Source, LSP and importer acceptance are separate"};
 }

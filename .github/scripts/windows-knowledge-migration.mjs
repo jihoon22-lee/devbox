@@ -1,0 +1,518 @@
+// Actual pinned v0.7 executables create the source schemas. Native profiles must
+// be absent before this disposable hosted-runner fixture claims them.
+import assert from "node:assert/strict";
+import { exerciseKnowledgeWsl } from "./windows-knowledge-wsl.mjs";
+import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, readdirSync, lstatSync, rmSync } from "node:fs";
+import path from "node:path";
+import { tmpdir } from "node:os";
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { createHash, randomUUID } from "node:crypto";
+import { DatabaseSync } from "node:sqlite";
+import { Cdp, unusedPort, waitForCdp, windowsLocalAppData, windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy, allWindowsProcesses } from "./windows-packaged-smoke.mjs";
+import { ownedDescendantsFromSnapshot } from "./windows-process-identity.mjs";
+import { measureInput, measureIdle, evaluateBudgets, performanceHost } from "./product-foundation-performance.mjs";
+const performanceConfig = JSON.parse(readFileSync(new URL("./product-foundation-performance.json", import.meta.url), "utf8"));
+assert.equal(performanceConfig.schemaVersion, 1); assert.equal(performanceConfig.idleSampleMs, 5000);
+assert.equal(process.platform, "win32"); assert.equal(process.env.GITHUB_ACTIONS, "true"); assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+const directory = mkdtempSync(path.join(tmpdir(), "devbox-knowledge-migration-fixture-"));
+const base = windowsLocalAppData();
+const report = "product-foundation-evidence/knowledge-migration.json";
+mkdirSync(path.dirname(report), { recursive: true });
+const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", step: "baseline", result: "failed" };
+const historyFixture = JSON.parse(readFileSync("apps/devbox-knowledge/src-tauri/fixtures/legacy-activity-history.json", "utf8"));
+const baseline = JSON.parse(readFileSync(".github/scripts/product-foundation-baseline.json", "utf8"));
+const digest = file => createHash("sha256").update(readFileSync(file)).digest("hex");
+const delay = ms => new Promise(resolve => setTimeout(resolve, ms));
+const progress = step => { evidence.step = step; writeFileSync(report, JSON.stringify(evidence, null, 2)); };
+const profiles = [], live = new Set(), databases = new Set();
+function openDatabase(file, options = {}) { const db = new DatabaseSync(file, options); databases.add(db); return db; }
+const elevated = windowsProcessIsElevated();
+const apps = [
+  { app: "knowledge-base", identifier: "com.devbox.knowledgebase", title: "Knowledge Base", source: "notes" },
+  { app: "life-log", identifier: "com.devbox.lifelog", title: "Life Log", source: "activity" },
+  { app: "everything-plus", identifier: "com.devbox.everythingplus", title: "Everything+", source: "search" },
+];
+function gh(args) {
+  const result = spawnSync("gh", args, { encoding: "utf8", maxBuffer: 2 * 1024 * 1024, windowsHide: true });
+  if (result.status !== 0) throw new Error("pinned baseline identity or download failed"); return result.stdout;
+}
+function absent(file) {
+  try { lstatSync(file); } catch (error) { if (error.code === "ENOENT") return; throw error; }
+  throw new Error("migration fixture requires absent legacy native profiles");
+}
+function claim(app) {
+  absent(path.join(base, app.identifier)); absent(path.join(base, app.identifier.replace("com.devbox.", "com.workbench.")));
+  const root = path.join(base, app.identifier); mkdirSync(root);
+  const owner = randomUUID(), marker = path.join(root, `.knowledge-fixture-${owner}`);
+  writeFileSync(marker, owner, { flag: "wx" });
+  const profile = { ...app, root, owner, marker, identity: lstatSync(root, { bigint: true }) }; profiles.push(profile); return profile;
+}
+function childEnvironment(extra) {
+  const env = { ...process.env, ...extra };
+  for (const key of Object.keys(env)) if (/TOKEN|SECRET|PASSWORD|PRIVATE_KEY|API_KEY/i.test(key)) delete env[key];
+  return env;
+}
+async function start(executable, title, profile) {
+  const port = await unusedPort();
+  const policy = elevated ? inspectElevatedCdpPolicy(path.basename(executable), port) : null;
+  const item = { executable, policy, child: null, cdp: null }; live.add(item);
+  if (policy) installElevatedCdpPolicy(policy);
+  item.launchedAt = performance.now();
+  item.child = spawn(executable, [], { env: childEnvironment({ WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: profile }), stdio: "ignore" });
+  await once(item.child, "spawn"); const target = await waitForCdp(port, title);
+  item.cdp = new Cdp(target.webSocketDebuggerUrl); await item.cdp.connect(); return item;
+}
+function closeWindow(item) {
+  assert.ok(Number.isInteger(item.child.pid) && item.child.pid > 0);
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", `$p=[Diagnostics.Process]::GetProcessById(${item.child.pid}); $window=$p.MainWindowHandle.ToInt64(); $requested=$p.CloseMainWindow(); @{window=$window;requested=$requested}|ConvertTo-Json -Compress`], { encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0); const closed = JSON.parse(result.stdout);
+  assert.equal(closed.requested, true); assert.ok(Number.isSafeInteger(closed.window) && closed.window > 0); return closed.window;
+}
+function visible(window) {
+  assert.ok(Number.isSafeInteger(window) && window > 0);
+  const code = `Add-Type -TypeDefinition 'using System; using System.Runtime.InteropServices; public static class KnowledgeWindowProbe { [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr window); }'; [KnowledgeWindowProbe]::IsWindowVisible([IntPtr]${window})`;
+  const result = spawnSync("powershell.exe", ["-NoProfile", "-NonInteractive", "-Command", code], { encoding: "utf8", windowsHide: true });
+  assert.equal(result.status, 0); assert.ok(["True", "False"].includes(result.stdout.trim())); return result.stdout.trim() === "True";
+}
+function running(item) { return item.child?.exitCode === null && item.child?.signalCode === null; }
+async function stop(item, force = false) {
+  item.cdp?.close();
+  if (running(item)) {
+    if (force) item.child.kill(); else closeWindow(item);
+    for (let i = 0; i < 100 && running(item); i++) await delay(100);
+    if (running(item)) { item.child.kill(); throw new Error("owned fixture process did not exit"); }
+  }
+  if (item.policy) restoreElevatedCdpPolicy(item.policy); live.delete(item);
+}
+async function wait(cdp, expression, label, timeout = 60_000) {
+  const deadline = Date.now() + timeout;
+  while (Date.now() < deadline) { if (await cdp.evaluate(expression)) return; await delay(150); }
+  evidence.ui = await cdp.evaluate('(document.body?.innerText ?? "").slice(0, 10000)'); throw new Error(label);
+}
+async function click(cdp, label) {
+  await wait(cdp, `Array.from(document.querySelectorAll("button")).some(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled)`, `control unavailable: ${label}`);
+  await cdp.evaluate(`Array.from(document.querySelectorAll("button")).find(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled).click()`);
+}
+async function legacy(item, method, args = {}) {
+  return item.cdp.evaluate(`window.__TAURI_INTERNALS__.invoke(${JSON.stringify(method)}, ${JSON.stringify(args)})`);
+}
+async function command(item, component, method, args = {}) {
+  const route = component === "knowledge.activity" ? "activity" : (component.includes("search") || component === "knowledge.opener") ? "search" : "notes";
+  return item.cdp.evaluate(`(async () => { const invoke=window.__TAURI_INTERNALS__.invoke; const d=await invoke("plugin:product-shell|describe");
+    const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}};
+    return invoke("plugin:knowledge|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
+}
+async function sourceQuery(item, source, query, filter = {}, limit = 200, mode = "name") {
+  let result = await command(item, "knowledge.search", "source_query", { source, query, mode, limit, filter });
+  assert.equal(result.operation.outcome.state, "succeeded"); const generation = result.value.generation;
+  for (let i = 0; i < 60 && result.value.state === "running"; i++) {
+    await delay(80); result = await command(item, "knowledge.search", "source_poll", { generation });
+    assert.equal(result.operation.outcome.state, "succeeded"); assert.equal(result.value.generation, generation);
+  }
+  assert.notEqual(result.value.state, "running"); assert.equal(result.value.source, source);
+  return result.value;
+}
+async function job(item, method, args) {
+  const started = await command(item, "knowledge.migration", method, args); assert.equal(started.operation.outcome.state, "succeeded");
+  for (let i = 0; i < 400; i++) {
+    const result = await command(item, "knowledge.migration", "import_job", { jobId: started.value.jobId });
+    assert.equal(result.operation.outcome.state, "succeeded");
+    if (result.value.state !== "running") return result.value;
+    await delay(150);
+  }
+  throw new Error("migration job deadline exceeded");
+}
+function logicalSources() {
+  const values = {};
+  for (const profile of profiles) {
+    const db = openDatabase(path.join(profile.root, "data.db"), { readOnly: true });
+    const tables = profile.source === "notes" ? ["settings", "note_templates"] : profile.source === "activity" ? ["settings", "sessions", "knowledge_draft_history"] : ["roots", "saved_queries", "meta"];
+    values[profile.source] = tables.map(table => ({ table, schema: db.prepare("SELECT sql FROM sqlite_master WHERE name=?").get(table).sql, rows: db.prepare(`SELECT * FROM ${table} ORDER BY 1`).all() })); db.close();
+  }
+  return createHash("sha256").update(JSON.stringify(values)).digest("hex");
+}
+async function product(executable, profile) {
+  const before = new Set(readdirSync(base).filter(name => name.startsWith("com.devbox.v08.knowledge.i")));
+  const item = await start(executable, "Devbox Knowledge", profile);
+  await wait(item.cdp, '!!document.querySelector(".knowledge-startup") || !!document.querySelector(".knowledge-migration") || !!document.querySelector(".knowledge-feature-notes .app")', "Knowledge startup missing");
+  const added = readdirSync(base).filter(name => name.startsWith("com.devbox.v08.knowledge.i") && !before.has(name));
+  if (added.length) { assert.equal(added.length, 1); item.dataRoot = path.join(base, added[0]); }
+  return item;
+}
+async function prepare(item) {
+  const result = await job(item, "prepare_import", { sources: ["notes", "activity", "search"] });
+  assert.equal(result.state, "succeeded"); return result.value.plan;
+}
+const vault = path.join(directory, "original-vault"), indexed = path.join(directory, "indexed-files"), unused = path.join(directory, "deleted-root");
+let originalNote, originalSecond, originalImage;
+try {
+  for (const id of ["com.devbox.activitytimeline", "com.workbench.activitytimeline"]) absent(path.join(base, id));
+  for (const app of apps) claim(app);
+  for (const relative of ["Projects", "Notes/assets", "Journal", "Reference", "Archive"]) mkdirSync(path.join(vault, relative), { recursive: true });
+  mkdirSync(indexed); mkdirSync(unused);
+  writeFileSync(path.join(vault, "Notes/original.md"), "# Original\n\n[[second]]\n\n![](assets/pixel.png)\n", { flag: "wx" });
+  writeFileSync(path.join(vault, "Notes/second.md"), "# Second\n", { flag: "wx" });
+  writeFileSync(path.join(vault, "Notes/assets/pixel.png"), Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=", "base64"), { flag: "wx" });
+  writeFileSync(path.join(indexed, "allowed.txt"), "knowledge migration searchable fixture", { flag: "wx" });
+  writeFileSync(path.join(indexed, ".env"), "FIXTURE_TOKEN=synthetic-excluded", { flag: "wx" });
+  originalNote = digest(path.join(vault, "Notes/original.md")); originalSecond = digest(path.join(vault, "Notes/second.md")); originalImage = digest(path.join(vault, "Notes/assets/pixel.png"));
+  // Seed only the two legacy settings needed to avoid default document writes
+  // and mask collection from the first poll. The pinned apps create all schemas.
+  for (const profile of profiles.filter(profile => profile.source !== "search")) {
+    const db = openDatabase(path.join(profile.root, "data.db"));
+    db.exec("CREATE TABLE settings(key TEXT PRIMARY KEY,value TEXT NOT NULL); PRAGMA journal_mode=WAL;");
+    if (profile.source === "notes") db.prepare("INSERT INTO settings VALUES('root',?)").run(vault);
+    else db.prepare("INSERT INTO settings VALUES('privacy_rules',?)").run(JSON.stringify({ excludedProcesses: [], excludedTitlePatterns: [], redactTitlePatterns: [], maskAllTitles: true }));
+    db.close();
+  }
+  let object = JSON.parse(gh(["api", `repos/jihoon22-lee/devbox/git/ref/tags/${baseline.tag}`])).object;
+  for (let depth = 0; object.type === "tag" && depth < 3; depth++) object = JSON.parse(gh(["api", `repos/jihoon22-lee/devbox/git/tags/${object.sha}`])).object;
+  assert.equal(object.type, "commit"); assert.equal(object.sha, baseline.commit);
+  const assets = path.join(directory, "assets"); mkdirSync(assets);
+  gh(["release", "download", baseline.tag, "--repo", "jihoon22-lee/devbox", "--pattern", "release-manifest.json", "--dir", assets]);
+  assert.equal(digest(path.join(assets, "release-manifest.json")), baseline.manifestSha256);
+  const manifest = JSON.parse(readFileSync(path.join(assets, "release-manifest.json"), "utf8")); evidence.baseline = { commit: baseline.commit, binaries: [] };
+  let oldNotes;
+  for (const profile of profiles) {
+    const entry = manifest.apps.find(app => app.id === profile.app).portable;
+    gh(["release", "download", baseline.tag, "--repo", "jihoon22-lee/devbox", "--pattern", entry.name, "--dir", assets]);
+    const binary = path.join(assets, entry.name); assert.equal(digest(binary), entry.sha256); assert.equal(lstatSync(binary).size, entry.size);
+    evidence.baseline.binaries.push({ app: profile.app, sha256: entry.sha256 });
+    const executable = path.join(directory, `legacy-${profile.app}-${randomUUID()}.exe`); copyFileSync(binary, executable);
+    const item = await start(executable, profile.title, path.join(directory, `webview-${profile.app}`));
+    await wait(item.cdp, '!!window.__TAURI_INTERNALS__ && !!document.querySelector(".app")', "legacy UI did not initialize");
+    if (profile.source === "notes") {
+      assert.equal(path.normalize(await legacy(item, "get_root")), path.normalize(vault));
+      const removed = await legacy(item, "create_template", { draft: { name: "discarded fixture", content: "discarded" } });
+      const kept = await legacy(item, "create_template", { draft: { name: "imported fixture", content: "# {{title}}\nlegacy template" } });
+      await legacy(item, "delete_template", { id: removed.id }); evidence.sourceTemplateId = kept.id; oldNotes = item;
+    } else if (profile.source === "activity") {
+      await legacy(item, "stop_tracking"); assert.equal(await legacy(item, "is_tracking"), false);
+      // The legacy close policy hides to tray. Terminate only this stopped,
+      // disposable collector before adding exact synthetic historical rows.
+      await stop(item, true);
+      const db = openDatabase(path.join(profile.root, "data.db"));
+      db.exec("DELETE FROM sessions; INSERT INTO sessions VALUES(71,'synthetic-editor.exe','',1709164800000,1709164860000,60000);");
+      db.prepare("INSERT INTO settings(key,value) VALUES('product_activity_collection_v1','true')").run();
+      db.prepare("INSERT INTO knowledge_draft_history VALUES(9,'0123456789abcdef0123456789abcdef','knowledge-draft/v1','pending',?,?,1,2,3,NULL)").run(JSON.stringify(historyFixture.summary), JSON.stringify(historyFixture.sources)); db.close();
+    } else {
+      await legacy(item, "add_root", { path: unused, indexContent: false });
+      const first = (await legacy(item, "list_roots"))[0];
+      // Keep a second root alive so the fixture has a live and a dangling ID.
+      // Commands must use the native registered path (Windows temp aliases
+      // can differ from the canonical path returned by the legacy app).
+      await legacy(item, "add_root", { path: indexed, indexContent: true });
+      const legacyRoots = await legacy(item, "list_roots"); assert.equal(legacyRoots.length, 2);
+      const root = legacyRoots.find(root => root.id !== first.id);
+      assert.ok(root); assert.notEqual(root.id, first.id);
+      await legacy(item, "remove_root", { path: first.path });
+      const remainingRoots = await legacy(item, "list_roots");
+      assert.deepEqual(remainingRoots.map(entry => entry.id), [root.id]);
+      evidence.legacyRegisteredRootRemovalConfirmed = true;
+      await legacy(item, "save_saved_query", { request: { id: null, name: "live fixture", query: "allowed", filter: { sourceRootId: root.id } } });
+      await legacy(item, "save_saved_query", { request: { id: null, name: "deleted fixture", query: "allowed", filter: { sourceRootId: first.id } } });
+      const savedQueries = await legacy(item, "list_saved_queries");
+      assert.equal(savedQueries.length, 2);
+      assert.equal(savedQueries.find(query => query.name === "live fixture").filter.sourceRootId, root.id);
+      assert.equal(savedQueries.find(query => query.name === "deleted fixture").filter.sourceRootId, first.id);
+      evidence.sourceRootId = root.id; evidence.deletedSourceRootId = first.id; await stop(item);
+    }
+  }
+  progress("legacy-writer-quiesce");
+  const executable = path.join(directory, `knowledge-product-${randomUUID()}.exe`); copyFileSync(path.resolve("target/debug/devbox-knowledge.exe"), executable);
+  const profile = path.join(directory, "product-webview"); let item = await product(executable, profile); const dataRoot = item.dataRoot; assert.ok(dataRoot);
+  await click(item.cdp, "기존 앱 데이터 가져오기");
+  await click(item.cdp, "가져오기 미리보기 준비");
+  await wait(item.cdp, '!!document.querySelector("#import-preview-title")', "migration preview was not rendered");
+  assert.equal(existsSync(path.join(dataRoot, "active-stores.json")), false);
+  const firstPlan = (await command(item, "knowledge.migration", "list_imports")).value.find(plan => plan.phase === "prepared"); assert.ok(firstPlan);
+  await click(item.cdp, "미리보기를 확인하고 적용");
+  await wait(item.cdp, 'Array.from(document.querySelectorAll("[role=alert]")).some(alert => alert.textContent.includes("이전 Knowledge 앱을 완전히 종료"))', "active legacy writer was not rejected");
+  assert.equal(existsSync(path.join(dataRoot, "active-stores.json")), false);
+  await stop(oldNotes); await job(item, "discard_import", { planId: firstPlan.id });
+  const frozen = logicalSources();
+  progress("activate-and-read");
+  await click(item.cdp, "시작 화면으로"); await click(item.cdp, "기존 앱 데이터 가져오기"); await click(item.cdp, "가져오기 미리보기 준비");
+  await wait(item.cdp, '!!document.querySelector("#import-preview-title")', "new migration preview missing");
+  const plan = (await command(item, "knowledge.migration", "list_imports")).value.find(plan => plan.phase === "prepared");
+  evidence.previewSourceReports = plan.sources.map(source => ({ source: source.source, report: source.report }));
+  assert.ok(plan.sources.some(source => source.report.reservedRootIds === 1));
+  await click(item.cdp, "미리보기를 확인하고 적용");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "imported Notes did not mount after explicit UI approval");
+  assert.equal((await command(item, "knowledge.migration", "status")).value.active, true);
+  const templates = (await command(item, "knowledge.notes", "list_templates")).value;
+  assert.equal(templates.length, 1); assert.equal(templates[0].content, "# {{title}}\nlegacy template"); assert.notEqual(templates[0].id, evidence.sourceTemplateId);
+  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/original.md" })).value, "# Original\n\n[[second]]\n\n![](assets/pixel.png)\n");
+  assert.equal((await command(item, "knowledge.activity", "get_privacy_rules")).value.maskAllTitles, true);
+  const history = (await command(item, "knowledge.activity", "knowledge_draft_history")).value;
+  assert.equal(history.length, 1); assert.equal(history[0].status, "expired"); assert.equal(history[0].summary.startDate, "2024-02-29");
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  const roots = (await command(item, "knowledge.search", "list_roots")).value;
+  const queries = (await command(item, "knowledge.search", "list_saved_queries")).value;
+  assert.equal(roots.length, 1); assert.equal(queries.length, 2);
+  const liveQuery = queries.find(query => query.name === "live fixture"), deletedQuery = queries.find(query => query.name === "deleted fixture");
+  assert.equal(liveQuery.filter.sourceRootId, roots[0].id); assert.notEqual(deletedQuery.filter.sourceRootId, roots[0].id);
+  const active = JSON.parse(readFileSync(path.join(dataRoot, "active-stores.json"), "utf8"));
+  const activityDb = openDatabase(path.join(dataRoot, "stores", active.generation, "activity/data.db"), { readOnly: true });
+  assert.equal(activityDb.prepare("SELECT duration_ms FROM sessions WHERE app='synthetic-editor.exe'").get().duration_ms, 60000);
+  assert.equal(activityDb.prepare("SELECT status FROM knowledge_draft_history").get().status, "expired"); activityDb.close();
+  await command(item, "knowledge.notes", "update_template", { id: templates[0].id, draft: { name: "edited product fixture", content: "new product edit" } });
+  assert.equal((await command(item, "knowledge.notes", "create_file", { rel: "Notes/new-product.md", content: "# Keep new product note" })).operation.outcome.state, "succeeded");
+  const additional = path.join(directory, "new-product-root"); mkdirSync(additional);
+  const opaqueFile = path.join(additional, "opaque-search.txt"); writeFileSync(opaqueFile, "synthetic product search", { flag: "wx" });
+  writeFileSync(path.join(additional, "a".repeat(64) + "!.txt"), "bounded regex fixture", { flag: "wx" });
+  assert.equal((await command(item, "knowledge.search-settings", "add_root", { path: additional, indexContent: false })).operation.outcome.state, "succeeded");
+  const afterRoots = (await command(item, "knowledge.search", "list_roots")).value;
+  assert.ok(afterRoots.every(root => root.id !== deletedQuery.filter.sourceRootId));
+  assert.equal(logicalSources(), frozen);
+  evidence.importActivated = true; evidence.authoritativeRowsAndReservedIdsPreserved = true;
+  evidence.originalVaultBytesPreserved = true; evidence.privacyConsentPreserved = true;
+  progress("activity-summary-preview");
+  const markdownFiles = () => readdirSync(vault, { recursive: true }).filter(file => file.endsWith(".md")).sort();
+  const beforeSummary = markdownFiles();
+  await click(item.cdp, "활동");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-activity input[type=date]")', "Activity date missing");
+  await item.cdp.evaluate(`(() => { const input=document.querySelector(".knowledge-feature-activity input[type=date]");
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"2024-02-29");
+    input.dispatchEvent(new Event("input",{bubbles:true})); input.dispatchEvent(new Event("change",{bubbles:true})); })()`);
+  await wait(item.cdp, `!!document.querySelector('[aria-label="2024-02-29 선택된 날짜"]') && document.querySelector(".knowledge-feature-activity").innerText.includes("synthetic-editor")`, "selected-day Activity digest missing");
+  await click(item.cdp, "Knowledge로 보내기");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes:not([hidden]) [role=dialog]") && document.body.innerText.includes("Life Log 초안 미리보기")', "in-product summary preview did not activate Notes");
+  assert.deepEqual(markdownFiles(), beforeSummary);
+  const sentHistory = (await command(item, "knowledge.activity", "knowledge_draft_history")).value;
+  const cancelledDraft = sentHistory.find(entry => entry.status === "sent"); assert.ok(cancelledDraft);
+  assert.equal(cancelledDraft.summary.startDate, "2024-02-29");
+  await click(item.cdp, "취소");
+  await wait(item.cdp, '!document.querySelector(".knowledge-feature-notes [role=dialog]")', "summary cancellation did not release preview");
+  assert.deepEqual(markdownFiles(), beforeSummary);
+  await click(item.cdp, "활동"); await click(item.cdp, "Knowledge로 보내기");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes:not([hidden]) [role=dialog]")', "regenerated summary preview missing");
+  assert.deepEqual(markdownFiles(), beforeSummary);
+  await click(item.cdp, "초안 저장");
+  await wait(item.cdp, 'document.body.innerText.includes("Knowledge 초안을 저장했습니다")', "explicit summary save did not complete");
+  const consumedHistory = (await command(item, "knowledge.activity", "knowledge_draft_history")).value;
+  const consumed = consumedHistory.find(entry => entry.status === "consumed"); assert.ok(consumed); assert.notEqual(consumed.handoffId, cancelledDraft.handoffId);
+  const afterSummary = markdownFiles(); assert.equal(afterSummary.length, beforeSummary.length + 1);
+  const savedSummary = afterSummary.find(file => !beforeSummary.includes(file));
+  assert.ok(readFileSync(path.join(vault, savedSummary), "utf8").includes("2024-02-29"));
+  assert.equal((await command(item, "knowledge.notes", "save_knowledge_draft", { id: consumed.handoffId })).operation.outcome.state, "failed");
+  assert.deepEqual(markdownFiles(), afterSummary); assert.equal(running(oldNotes), false);
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  evidence.summaryPreviewDidNotWrite = true; evidence.summaryCancellationPreservedVault = true;
+  evidence.summaryExplicitSaveConsumedOnce = true; evidence.summaryStayedInProduct = true;
+  progress("source-search-and-opaque-open");
+  await click(item.cdp, "검색");
+  await wait(item.cdp, `!!document.querySelector('.knowledge-feature-search select[aria-label="검색 범위"]')`, "source selector missing");
+  await item.cdp.evaluate(`(() => { const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"(a+)+$"); input.dispatchEvent(new Event("input",{bubbles:true}));
+    document.querySelector(".knowledge-feature-search .regex-toggle input").click(); })()`);
+  await wait(item.cdp, 'document.querySelector(".knowledge-feature-search").innerText.includes("정규식 검색이 제한 시간")', "pathological regex did not time out");
+  await item.cdp.evaluate(`(() => { const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"opaque.*"); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+  await wait(item.cdp, 'Array.from(document.querySelectorAll(".knowledge-feature-search tbody tr")).some(row=>row.innerText.includes("opaque-search.txt"))', "search did not recover after regex timeout");
+  await item.cdp.evaluate('document.querySelector(".knowledge-feature-search .regex-toggle input").click()');
+  evidence.regexWorkerDeadlineAndRecovery = true;
+  await item.cdp.evaluate(`(() => { const source=document.querySelector('.knowledge-feature-search select[aria-label="검색 범위"]');
+    source.value="notes"; source.dispatchEvent(new Event("change",{bubbles:true}));
+    const input=document.querySelector('.knowledge-feature-search input[aria-label="파일 이름 검색"]');
+    Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,"new-product"); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+  await wait(item.cdp, `Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).some(row=>row.innerText.includes("new-product") && row.innerText.includes("Notes") && row.querySelector('button[title="열기"]:not(:disabled)'))`, "Notes source result was not available");
+  const bodyMatches = await sourceQuery(item, "notes", "Keep", {}, 100, "content");
+  assert.ok(bodyMatches.rows.some(row => row.value.notePath === "Notes/new-product.md" && row.availability === "available"));
+  await command(item, "knowledge.search", "source_cancel", { generation: bodyMatches.generation });
+  evidence.notesNameAndBodyQueriesVerified = true;
+  await item.cdp.evaluate(`Array.from(document.querySelectorAll('.knowledge-feature-search tbody tr')).find(row=>row.innerText.includes("new-product")).querySelector('button[title="열기"]').click()`);
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes:not([hidden])") && document.querySelector(".knowledge-feature-notes").innerText.includes("Keep new product note")', "opaque Notes result did not open in its editor");
+  assert.deepEqual(markdownFiles(), afterSummary);
+  await command(item, "knowledge.search-settings", "index_now");
+  let fileQuery;
+  for (let i = 0; i < 40; i++) {
+    fileQuery = await sourceQuery(item, "files", "opaque");
+    if (fileQuery.rows.some(row => row.reference)) break;
+    await delay(250);
+  }
+  const fileRow = fileQuery.rows.find(row => row.reference && row.value.name === "opaque-search.txt"); assert.ok(fileRow);
+  const actualFile = lstatSync(fileRow.value.path, { bigint: true }), expectedFile = lstatSync(opaqueFile, { bigint: true });
+  assert.equal(actualFile.dev, expectedFile.dev); assert.equal(actualFile.ino, expectedFile.ino);
+  assert.equal(fileRow.source, "files"); assert.ok(fileRow.rootIdentity.startsWith("files:")); assert.equal(fileQuery.storeGeneration, active.generation);
+  assert.equal((await command(item, "knowledge.opener", "open_file", { path: opaqueFile })).operation.outcome.state, "failed");
+  renameSync(opaqueFile, path.join(additional, "previous-object.txt")); writeFileSync(opaqueFile, "replacement object", { flag: "wx" });
+  assert.equal((await command(item, "knowledge.opener", "reveal_file", { reference: fileRow.reference })).operation.outcome.state, "failed");
+  await command(item, "knowledge.search", "source_cancel", { generation: fileQuery.generation });
+  assert.equal((await command(item, "knowledge.opener", "open_file", { reference: fileRow.reference })).operation.outcome.state, "failed");
+  assert.equal((await sourceQuery(item, "current_project", "opaque")).state, "unsupported");
+  assert.equal((await sourceQuery(item, "files", "opaque", { sourceRootId: deletedQuery.filter.sourceRootId })).rows.length, 0);
+  assert.equal(logicalSources(), frozen); assert.deepEqual(markdownFiles(), afterSummary);
+  evidence.sourceSearchSeparated = true; evidence.opaqueNoteOpenedInProduct = true;
+  evidence.rendererPathRejected = true; evidence.replacedObjectRejected = true; evidence.cancelledSearchReferenceRejected = true;
+  progress("second-installation-owner");
+  const secondExe = path.join(directory, `knowledge-second-${randomUUID()}.exe`); copyFileSync(executable, secondExe);
+  const second = await product(secondExe, path.join(directory, "second-webview"));
+  const secondPlan = await prepare(second); const secondResult = await job(second, "activate_import", { planId: secondPlan.id });
+  assert.equal(secondResult.state, "failed"); assert.equal(secondResult.issue, "vault_owner_busy");
+  await job(second, "discard_import", { planId: secondPlan.id }); await stop(second);
+  progress("restart-repeat-and-recovery");
+  assert.equal((await command(item, "knowledge.migration", "schedule_import")).value.scheduled, true);
+  await stop(item); item = await product(executable, profile);
+  await wait(item.cdp, '!!document.querySelector("#migration-title")', "scheduled import did not pause engine startup");
+  assert.equal((await command(item, "knowledge.migration", "status")).value.active, false);
+  const rollback = await job(item, "rollback_import", { planId: plan.id }); assert.equal(rollback.state, "failed"); assert.equal(rollback.issue, "preview_stale");
+  const repeat = await prepare(item); assert.ok(repeat.sources.every(source => source.report.imported === 0));
+  const repeated = await job(item, "activate_import", { planId: repeat.id }); assert.equal(repeated.state, "succeeded");
+  assert.equal((await command(item, "knowledge.notes", "list_templates")).value[0].content, "new product edit");
+  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/new-product.md" })).value, "# Keep new product note");
+  assert.equal((await command(item, "knowledge.search", "list_saved_queries")).value.length, 2);
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  assert.equal(logicalSources(), frozen); assert.equal(digest(path.join(vault, "Notes/original.md")), originalNote); assert.equal(digest(path.join(vault, "Notes/second.md")), originalSecond); assert.equal(digest(path.join(vault, "Notes/assets/pixel.png")), originalImage);
+  progress("reviewed-vault-rebinding");
+  const selectedVault = path.join(directory, "selected-vault"); mkdirSync(selectedVault); mkdirSync(path.join(selectedVault, "Notes"));
+  writeFileSync(path.join(selectedVault, "Notes/existing.md"), "# Existing selected note", { flag: "wx" });
+  const selectedOriginal = digest(path.join(selectedVault, "Notes/existing.md"));
+  const selectedBefore = readdirSync(selectedVault, { recursive: true }).sort();
+  const sameDirectory = (left, right) => { const a=lstatSync(left,{bigint:true}), b=lstatSync(right,{bigint:true}); return a.dev===b.dev && a.ino===b.ino; };
+  // The preceding repeat import used the native job API. Reload to observe its
+  // active state through the actual product UI before scheduling a folder change.
+  await item.cdp.send("Page.reload");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "Notes did not observe repeated activation");
+  const scheduleVault = async () => {
+    await click(item.cdp, "노트 폴더");
+    await wait(item.cdp, '!!document.querySelector("#vault-settings-title") && !!document.querySelector(\'[aria-label="연결할 노트 폴더"]:not(:disabled)\')', "vault settings did not finish loading");
+    await item.cdp.evaluate(`(() => { const input=document.querySelector('[aria-label="연결할 노트 폴더"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(selectedVault)}); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+    await click(item.cdp, "다음 시작에서 폴더 확인");
+    await wait(item.cdp, 'document.body.innerText.includes("다음 시작에서 확인할 폴더")', "vault choice was not scheduled");
+    assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,vault));
+  };
+  await scheduleVault();
+  assert.equal((await command(item,"knowledge.notes","create_file",{rel:"Notes/still-old.md",content:"# Still in original vault"})).operation.outcome.state,"succeeded");
+  assert.ok(existsSync(path.join(vault,"Notes/still-old.md"))); assert.equal(existsSync(path.join(selectedVault,"Notes/still-old.md")),false);
+  await stop(item); item=await product(executable,profile);
+  await wait(item.cdp, '!!document.querySelector("#vault-setup-title")', "next-start vault review missing");
+  assert.equal((await command(item,"knowledge.migration","status")).value.active,false);
+  await click(item.cdp,"폴더 연결 미리보기");
+  await wait(item.cdp,'!!document.querySelector("#vault-preview-title")',"vault preview missing");
+  assert.deepEqual(readdirSync(selectedVault,{recursive:true}).sort(),selectedBefore);
+  await click(item.cdp,"현재 폴더 유지하고 계속");
+  await wait(item.cdp,'!!document.querySelector(".knowledge-feature-notes .app")',"cancel did not restore original editor");
+  assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,vault));
+  await scheduleVault();
+  const vaultPlan=(await command(item,"knowledge.migration","vault_change_status")).value.schedule;
+  await stop(item); item=await product(executable,profile);
+  await wait(item.cdp,'!!document.querySelector("#vault-setup-title")',"second vault review missing");
+  await click(item.cdp,"폴더 연결 미리보기");
+  await wait(item.cdp,'!!document.querySelector("#vault-preview-title")',"second vault preview missing");
+  assert.deepEqual(readdirSync(selectedVault,{recursive:true}).sort(),selectedBefore);
+  await click(item.cdp,"이 폴더로 변경하고 시작");
+  await wait(item.cdp,'!!document.querySelector(".knowledge-feature-notes .app")',"explicit vault activation missing");
+  assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,selectedVault));
+  assert.equal((await command(item,"knowledge.notes","list_templates")).value[0].content,"new product edit");
+  assert.equal((await command(item,"knowledge.notes","read_file",{rel:"Notes/existing.md"})).value,"# Existing selected note");
+  assert.equal((await command(item,"knowledge.notes","create_file",{rel:"Notes/new-selected.md",content:"# Selected vault"})).operation.outcome.state,"succeeded");
+  assert.ok(existsSync(path.join(selectedVault,"Notes/new-selected.md"))); assert.equal(existsSync(path.join(vault,"Notes/new-selected.md")),false);
+  let selectedQuery;
+  for(let i=0;i<40;i++){ selectedQuery=await sourceQuery(item,"notes","Selected"); if(selectedQuery.rows.some(row=>row.rootIdentity===`notes:${vaultPlan.id}`)) break; await delay(150); }
+  assert.ok(selectedQuery.rows.some(row=>row.rootIdentity===`notes:${vaultPlan.id}`));
+  assert.equal(digest(path.join(selectedVault,"Notes/existing.md")),selectedOriginal);
+  assert.equal(digest(path.join(vault,"Notes/original.md")),originalNote); assert.equal(logicalSources(),frozen);
+  evidence.vaultScheduleKeptLiveBinding=true; evidence.vaultPreviewDidNotWrite=true; evidence.vaultCancellationKeptOriginal=true;
+  evidence.vaultExplicitRebindPreservedFilesAndTemplates=true; evidence.vaultSourceIdentityChanged=true;
+  progress("configured-notes-performance");
+  await stop(item); item = await product(executable, profile);
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "configured Notes did not become ready");
+  evidence.performance = {
+    host: performanceHost(), build: "hidden Windows debug executable; not a packaged release comparison",
+    conditions: {
+      cold: "new process with the configured synthetic import/vault profile; OS cache not flushed",
+      input: "inert F24 event acknowledgement, using the baseline harness",
+      idle: "ten seconds after configured Notes startup; collection OFF; five-second owned-process sample before the 500-file workload",
+      warm: "second invocation restores the same hidden product window; no second owner",
+      search: "500 generated UTF-8 text files, native file source with exact root filter; ten exact filename queries, including async polling and identity verification",
+    },
+    coldRendererReadyMs: Math.round(performance.now() - item.launchedAt),
+    firstKeyboardEventMs: await measureInput(item.cdp),
+    firstInputObservedMs: Math.round(performance.now() - item.launchedAt),
+  };
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  await delay(Math.max(0, 10000 - (performance.now() - item.launchedAt)));
+  const processIdentity = allWindowsProcesses().find(process => process.Pid === item.child.pid);
+  assert.ok(processIdentity && running(item));
+  const measuredExe = lstatSync(processIdentity.Path, { bigint: true }), ownedExe = lstatSync(executable, { bigint: true });
+  assert.equal(measuredExe.dev, ownedExe.dev); assert.equal(measuredExe.ino, ownedExe.ino);
+  evidence.performance.idle = await measureIdle(() => {
+    const current = allWindowsProcesses();
+    assert.ok(current.some(process => process.Pid === processIdentity.Pid && process.Created === processIdentity.Created && process.Path === processIdentity.Path && process.Name === processIdentity.Name));
+    return [processIdentity, ...ownedDescendantsFromSnapshot(processIdentity, current)];
+  }, performanceConfig.idleSampleMs);
+  progress("500-file-source-performance");
+  const performanceRoot = path.join(directory, "performance-root"); mkdirSync(performanceRoot);
+  for (let i = 0; i < 500; i++) writeFileSync(path.join(performanceRoot, `fixturesearch${String(i).padStart(4, "0")}.txt`), "synthetic UTF-8 index fixture\n", { flag: "wx" });
+  const priorRoots = new Set((await command(item, "knowledge.search", "list_roots")).value.map(root => root.id));
+  const indexStarted = performance.now();
+  assert.equal((await command(item, "knowledge.search-settings", "add_root", { path: performanceRoot, indexContent: false })).operation.outcome.state, "succeeded");
+  const addedRoots = (await command(item, "knowledge.search", "list_roots")).value.filter(root => !priorRoots.has(root.id)); assert.equal(addedRoots.length, 1);
+  const performanceFilter = { sourceRootId: addedRoots[0].id };
+  let indexedCount = 0;
+  while (performance.now() - indexStarted < performanceConfig.budgets.index500FilesMs) {
+    const status = (await command(item, "knowledge.search", "index_status")).value;
+    if (!status.indexing) {
+      const counted = await sourceQuery(item, "files", "fixturesearch", performanceFilter, 2000);
+      indexedCount = counted.rows.length;
+      await command(item, "knowledge.search", "source_cancel", { generation: counted.generation });
+      if (indexedCount === 500) break;
+    }
+    await delay(100);
+  }
+  assert.equal(indexedCount, 500, "500-file native index did not complete");
+  evidence.performance.workload = { kind: "500-file-native-index-and-10-source-searches", result: "measured", indexMs: Math.round(performance.now() - indexStarted), searchMs: [] };
+  for (let i = 0; i < 10; i++) {
+    const query = `fixturesearch${String(i).padStart(4, "0")}`, started = performance.now();
+    const found = await sourceQuery(item, "files", query, performanceFilter);
+    evidence.performance.workload.searchMs.push(Math.round(performance.now() - started));
+    assert.equal(found.state, "complete"); assert.equal(found.rows.length, 1);
+    assert.equal(found.rows[0].value.name, `${query}.txt`); assert.equal(found.rows[0].availability, "available");
+    await command(item, "knowledge.search", "source_cancel", { generation: found.generation });
+  }
+  progress("explicit-close-policy");
+  assert.equal((await command(item, "knowledge.activity", "set_close_policy", { closeToTray: true })).value.closeToTray, true);
+  const hidden = closeWindow(item); await delay(500); assert.equal(running(item), true); assert.equal(visible(hidden), false);
+  assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
+  const warmStarted = performance.now();
+  const secondary = { executable, policy: null, cdp: null, child: spawn(executable, [], { env: childEnvironment({ WEBVIEW2_USER_DATA_FOLDER: profile }), stdio: "ignore" }) }; live.add(secondary);
+  await once(secondary.child, "spawn");
+  while (running(secondary) && performance.now() - warmStarted < performanceConfig.budgets.warmExistingWindowMs) await delay(50);
+  assert.equal(secondary.child.exitCode, 0, "relaunch created another live owner");
+  let restored = visible(hidden);
+  while (!restored && performance.now() - warmStarted < performanceConfig.budgets.warmExistingWindowMs) { await delay(100); restored = visible(hidden); }
+  assert.ok(restored && running(item));
+  evidence.performance.warmExistingWindowMs = Math.round(performance.now() - warmStarted);
+  evidence.performance.budget = evaluateBudgets(evidence.performance, performanceConfig, "knowledge");
+  assert.equal(evidence.performance.budget.passed, true, `Knowledge performance budget failed: ${evidence.performance.budget.violations.join(", ")}`);
+  // Crash/restart checks persisted preference; this is explicitly not a tray
+  // Quit test. Default close below must terminate the process normally.
+  await stop(item, true); item = await product(executable, profile);
+  assert.equal((await command(item, "knowledge.activity", "get_close_policy")).value.closeToTray, true);
+  assert.equal((await command(item, "knowledge.activity", "set_close_policy", { closeToTray: false })).value.closeToTray, false);
+  item = await exerciseKnowledgeWsl({ item, executable, profile, command, sourceQuery, product, stop, wait, click, delay, evidence, progress });
+  await stop(item);
+  evidence.sourceLogicalSchemaPreserved = true; evidence.markdownAndAssetsPreserved = true; evidence.legacyWriterBlocked = true; evidence.secondInstallationBlocked = true;
+  evidence.templateAndRootIdsRemapped = true; evidence.deletedRootNeverReused = true; evidence.collectionConsentNotImported = true; evidence.privacyPreserved = true;
+  evidence.pendingDeliveryRetired = true; evidence.repeatNoDuplicates = true; evidence.newProductEditsPreserved = true; evidence.rollbackNewEditsRejected = true;
+  evidence.closeToTrayKeepsProcess = true; evidence.closePreferenceSurvivesCrash = true; evidence.defaultCloseExits = true; evidence.result = "pass"; progress("complete");
+} catch (error) { evidence.error = String(error.message).slice(0, 2000); throw error; }
+finally {
+  for (const item of live) { try { await stop(item, true); } catch { item.child?.kill(); if (item.policy) restoreElevatedCdpPolicy(item.policy); } }
+  for (const db of databases) { try { db.close(); } catch { /* Already closed. */ } }
+  let cleanupFailed = false;
+  for (const profile of profiles) {
+    try {
+      const actual = lstatSync(profile.root, { bigint: true }); const marker = lstatSync(profile.marker);
+      assert.ok(actual.isDirectory() && !actual.isSymbolicLink() && actual.dev === profile.identity.dev && actual.ino === profile.identity.ino);
+      assert.ok(marker.isFile() && !marker.isSymbolicLink() && marker.size === profile.owner.length); assert.equal(readFileSync(profile.marker, "utf8"), profile.owner);
+      rmSync(profile.root, { recursive: true, maxRetries: 20, retryDelay: 50 });
+    } catch { cleanupFailed = true; }
+  }
+  evidence.ownedLegacyProfilesCleaned = !cleanupFailed;
+  if (cleanupFailed) evidence.result = "failed";
+  writeFileSync(report, JSON.stringify(evidence, null, 2));
+  if (cleanupFailed) throw new Error("owned legacy migration profile cleanup failed");
+}

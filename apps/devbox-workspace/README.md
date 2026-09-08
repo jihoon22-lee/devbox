@@ -25,12 +25,16 @@ Registry context to the product session. Stale revisions and replaced roots fail
 without changing Registry bytes. Clearing selection grants no execution authority.
 The shell refresh preserves the mounted feature subtree.
 
-On Windows the current native view is this startup/Registry/selection screen. The shared
-Overview/Source/Files remain available as browser previews while domain admission,
-dirty transitions, importer/recovery and LSP wiring are completed. The
-native integration fixture exercises the actual startup/registration UI and
-command roles; Windows execution of the latest host must pass before parity is
-claimed.
+On Windows, Files now mounts the existing CodeMirror editor after native store
+activation. A selected project or native file dialog admits file access; save,
+rename and delete require an unchanged native document revision and filesystem
+snapshot. Tabs remain mounted across routes, and dirty/busy/recovery states block
+project switching. Session and recovery metadata are private to each context.
+Recovery uses explicit native preview/apply tokens and preserves cancelled entries.
+
+Source/Dependencies, execution trust, legacy import and Windows/WSL LSP remain
+incomplete. Basic Files and its new Windows fixture still require native execution
+on the current change before being counted as verified product behavior.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.

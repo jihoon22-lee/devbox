@@ -15,9 +15,12 @@ struct Pool(Arc<AtomicUsize>);
 struct Permit(Arc<AtomicUsize>);
 impl Pool {
     fn reserve(&self) -> Result<Permit, &'static str> {
+        self.reserve_with_limit(2)
+    }
+    fn reserve_with_limit(&self, limit: usize) -> Result<Permit, &'static str> {
         self.0
             .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < 2).then_some(n + 1)
+                (n < limit).then_some(n + 1)
             })
             .map_err(|_| "busy")?;
         Ok(Permit(self.0.clone()))
@@ -30,16 +33,26 @@ impl Drop for Permit {
 }
 #[derive(Clone)]
 struct Runtime {
+    context_activity: crate::core::context_activity::ContextActivity,
     host: Arc<Mutex<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
     probes: Pool,
+    files: Arc<Mutex<crate::files_host::FilesHost>>,
+    file_requests: Pool,
+    file_workers: Arc<tokio::sync::Semaphore>,
+    dialogs: Pool,
 }
 impl Default for Runtime {
     fn default() -> Self {
         Self {
+            context_activity: Default::default(),
             host: Arc::new(Mutex::new(Err("initializing"))),
             metadata: Pool::default(),
             probes: Pool::default(),
+            files: Arc::default(),
+            file_requests: Pool::default(),
+            file_workers: Arc::new(tokio::sync::Semaphore::new(2)),
+            dialogs: Pool::default(),
         }
     }
 }
@@ -75,6 +88,9 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         return false;
     }
     match component {
+        "workspace.files" | "workspace.lsp" => {
+            route == "files" && crate::files_host::allowed(component, method)
+        }
         "workspace.migration" => matches!(method, "status" | "start_empty"),
         "workspace.registry" => matches!(
             method,
@@ -89,6 +105,87 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         ),
         _ => false,
     }
+}
+
+async fn execute_files(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context_permit: crate::core::context_activity::ContextPermit,
+) -> Result<Value, &'static str> {
+    use tauri_plugin_dialog::DialogExt;
+    let queued = runtime.file_requests.reserve_with_limit(16)?;
+    let mut deadline = request.header.deadline_ms;
+    let chosen = if request.method == "pick_files" {
+        empty(&request.args)?;
+        let dialog = runtime.dialogs.reserve_with_limit(1)?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        window
+            .dialog()
+            .file()
+            .set_parent(window)
+            .pick_files(move |paths| {
+                // Retain the sole dialog slot until the native chooser closes.
+                let _dialog = dialog;
+                let _ = sender.send(paths);
+            });
+        let Some(paths) = receiver.await.map_err(|_| "file_dialog_unavailable")? else {
+            return Ok(json!([]));
+        };
+        // The explicit native user choice can outlive the original RPC's
+        // deadline. Re-admit the same installation/session/context/window with
+        // a native request before using any returned path or saving a choice.
+        let mut admitted = request.header.clone();
+        admitted.request_id = uuid::Uuid::new_v4().to_string();
+        admitted.deadline_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis() as u64
+            + 5000;
+        product_shell_tauri::authorize(window, &admitted, "workspace.files")
+            .map_err(|_| "file_selection_expired")?;
+        deadline = admitted.deadline_ms;
+        Some(
+            paths
+                .into_iter()
+                .map(|path| path.into_path().map_err(|_| "invalid_file_path"))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        None
+    };
+    let worker = runtime
+        .file_workers
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "worker_unavailable")?;
+    let files = runtime.files.clone();
+    let host = runtime.host()?;
+    let app = window.app_handle().clone();
+    tauri::async_runtime::spawn_blocking(move || {
+        let (_queued, _worker, _context) = (queued, worker, context_permit);
+        let mut files = files.lock().map_err(|_| "files_unavailable")?;
+        crate::files_host::current_deadline(deadline)?;
+        files.initialize(&app, &host)?;
+        if let Some(paths) = chosen {
+            files.approve_native_selection(&paths)
+        } else {
+            files.execute(
+                &app,
+                &host,
+                crate::files_host::Invocation {
+                    context: request.header.context.as_ref(),
+                    component: &request.component,
+                    method: &request.method,
+                    args: request.args,
+                    deadline,
+                },
+            )
+        }
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
 }
 fn input<T: serde::de::DeserializeOwned>(value: Value) -> Result<T, &'static str> {
     serde_json::from_value(value).map_err(|_| "invalid_request")
@@ -201,15 +298,53 @@ async fn execute(
     };
     if !allowed(&request.component, &request.header.route, &request.method)
         || !request.args.is_object()
-        || serde_json::to_vec(&request.args).map_or(true, |bytes| bytes.len() > 64 * 1024)
+        || serde_json::to_vec(&request.args).map_or(true, |bytes| {
+            bytes.len()
+                > if request.component == "workspace.files" {
+                    64 * 1024 * 1024
+                } else {
+                    64 * 1024
+                }
+        })
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
+    let files = matches!(
+        request.component.as_str(),
+        "workspace.files" | "workspace.lsp"
+    );
+    let context_change = matches!(
+        request.method.as_str(),
+        "select_project" | "clear_project" | "apply_registration" | "remove"
+    );
+    // Acquire before checking the session, and retain through queued/native
+    // work. Worker clones keep the boundary after caller timeout/cancellation.
+    let context_permit = if files || context_change {
+        Some(
+            runtime
+                .context_activity
+                .enter(context_change)
+                .map_err(|_| rejected(ProblemCode::Unavailable))?,
+        )
+    } else {
+        None
+    };
     let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
-    let mut result = if request.method == "clear_project" {
+    let mut result = if matches!(
+        request.component.as_str(),
+        "workspace.files" | "workspace.lsp"
+    ) {
+        execute_files(
+            &window,
+            &runtime,
+            request,
+            context_permit.clone().expect("file context permit"),
+        )
+        .await
+    } else if request.method == "clear_project" {
         empty(&request.args).and_then(|()| {
             product_shell_tauri::replace_project_context(
                 &window,
@@ -230,10 +365,11 @@ async fn execute(
         };
         match (runtime.host(), pool.reserve()) {
             (Ok(host), Ok(permit)) => {
+                let worker_context = context_permit.clone();
                 let worker = tauri::async_runtime::spawn_blocking(move || {
                     // A timed-out probe keeps its permit until the OS returns.
                     // A late preview cannot register or grant trust by itself.
-                    let _permit = permit;
+                    let (_permit, _context) = (permit, worker_context);
                     dispatch(&host, &request.method, request.args)
                 });
                 if preview {

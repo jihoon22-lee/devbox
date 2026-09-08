@@ -41,8 +41,8 @@ FRONTEND_DRIVER_PATHS = {
 CATALOG_FRONTEND_CONSUMERS = {
     "apps/devbox-launcher",
     "apps/devbox-manager",
-    "apps/everything-plus",
     "packages/workspace-features",
+    "packages/knowledge-features",
 }
 CATALOG_RUST_CONSUMERS = {
     "catalog",

@@ -1,12 +1,13 @@
 {
   "identifier": "main",
-  "description": "Local product shell window; domain mutations are not granted.",
+  "description": "Local Knowledge main window with native owner and session authorization.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "product-shell:allow-describe",
-    "product-shell:allow-route-status"
+    "product-shell:allow-route-status",
+    "knowledge:allow-execute"
   ]
 }

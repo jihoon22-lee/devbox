@@ -37,6 +37,7 @@ import type {
 } from "./types";
 
 export interface FileActionSnapshot {
+  nativeRevision?: string | null;
   path: string;
   mtimeNanos: string;
   size: number;
@@ -44,6 +45,7 @@ export interface FileActionSnapshot {
 }
 
 export interface RenamedFile {
+  nativeRevision?: string | null;
   path: string;
   mtimeNanos: string;
   size: number;
@@ -52,6 +54,15 @@ export interface RenamedFile {
 
 export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
   return invoke<OpenedFile>("open_file", { request: { path, encoding } });
+}
+
+export function pickFiles(): Promise<string[]> {
+  return invoke<string[]>("pick_files");
+}
+
+function actionRequest(file: FileActionSnapshot) {
+  return {path:file.path, expectedMtimeNanos:file.mtimeNanos, expectedSize:file.size, expectedContentHash:file.contentHash,
+    ...(file.nativeRevision !== undefined ? {nativeRevision:file.nativeRevision} : {})};
 }
 
 /**
@@ -73,6 +84,7 @@ export function saveFile(
   expectedSize: number,
   expectedContentHash: string,
   sourceLossy: boolean,
+  nativeRevision?: string | null,
 ): Promise<SavedFile> {
   return invoke<SavedFile>("save_file", {
     request: {
@@ -84,6 +96,7 @@ export function saveFile(
       expectedSize,
       expectedContentHash,
       sourceLossy,
+      ...(nativeRevision !== undefined ? {nativeRevision} : {}),
     },
   });
 }
@@ -97,12 +110,12 @@ export function renameFileAction(
   newName: string,
 ): Promise<RenamedFile> {
   return invoke<RenamedFile>("rename_file_action", {
-    request: { ...file, newName },
+    request: { ...actionRequest(file), newName },
   });
 }
 
 export function deleteFileAction(file: FileActionSnapshot): Promise<void> {
-  return invoke<void>("delete_file_action", { request: file });
+  return invoke<void>("delete_file_action", { request: actionRequest(file) });
 }
 
 export function revealFileAction(path: string): Promise<void> {
@@ -376,13 +389,14 @@ export interface RecoveryEntry {
   baseHash: string | null;
   snapshotAtMs: number;
 }
+interface RecoveryWire {path:string; content:string; base_hash:string | null; snapshot_at_ms:number}
 
 export function saveRecovery(entries: RecoveryEntry[]): Promise<void> {
-  return invoke<void>("save_recovery", { entries });
+  return invoke<void>("save_recovery", { entries:entries.map(entry => ({path:entry.path, content:entry.content, base_hash:entry.baseHash, snapshot_at_ms:entry.snapshotAtMs})) });
 }
 
 export function loadRecovery(): Promise<RecoveryEntry[]> {
-  return invoke<RecoveryEntry[]>("load_recovery");
+  return invoke<RecoveryWire[]>("load_recovery").then(entries => entries.map(entry => ({path:entry.path, content:entry.content, baseHash:entry.base_hash, snapshotAtMs:entry.snapshot_at_ms})));
 }
 
 export function discardRecovery(path: string | null): Promise<void> {
@@ -392,3 +406,7 @@ export function discardRecovery(path: string | null): Promise<void> {
 export function applyRecovery(path: string, content: string): Promise<void> {
   return invoke<void>("apply_recovery", { path, content });
 }
+export interface RecoveryPreview {previewId:string; path:string; before:string; after:string}
+export function prepareRecovery(path:string): Promise<RecoveryPreview> { return invoke("prepare_recovery", {path}); }
+export function applyRecoveryPreview(previewId:string): Promise<SavedFile> { return invoke("apply_recovery_preview", {previewId}); }
+export function cancelRecoveryPreview(previewId:string): Promise<void> { return invoke("cancel_recovery_preview", {previewId}); }

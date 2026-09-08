@@ -34,9 +34,7 @@ pub fn knowledge_draft_history(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<draft_history::DraftHistoryEntry>, String> {
     let now_ms = current_epoch_ms().unwrap_or(0);
-    let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
-        &devbox_integration::common_root(),
-    ));
+    let store = handoff_store(&state);
     let entries = {
         let connection = state
             .db
@@ -125,6 +123,14 @@ pub fn knowledge_draft_history(
     draft_history::list(&connection)
 }
 
+fn handoff_store(state: &AppState) -> devbox_applink::HandoffStore {
+    let root = state
+        .integration_root
+        .clone()
+        .unwrap_or_else(devbox_integration::common_root);
+    devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(&root))
+}
+
 fn record_expired_status(
     store: &devbox_applink::HandoffStore,
     entry: &draft_history::DraftHistoryEntry,
@@ -151,9 +157,35 @@ pub async fn send_digest_to_knowledge(
     input: DigestInput,
     regenerated_from: Option<String>,
 ) -> Result<SendKnowledgeDraftResult, String> {
+    send_with_delivery(state, input, regenerated_from, true, |request| {
+        devbox_launch::launch_open("knowledge-base", request)
+            .map(|_| ())
+            .map_err(|_| "Knowledge 앱을 실행할 수 없습니다".to_owned())
+    })
+    .await
+}
+
+/// The product supplies a native delivery callback for an opaque draft reference.
+/// This producer never receives authority to read or write the destination vault.
+pub(crate) async fn send_with_delivery<F>(
+    state: tauri::State<'_, Arc<AppState>>,
+    input: DigestInput,
+    regenerated_from: Option<String>,
+    require_installation: bool,
+    deliver: F,
+) -> Result<SendKnowledgeDraftResult, String>
+where
+    F: FnOnce(&devbox_applink::OpenRequest) -> Result<(), String> + Send,
+{
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = (state, input, regenerated_from);
+        let _ = (
+            state,
+            input,
+            regenerated_from,
+            require_installation,
+            deliver,
+        );
         Err("Knowledge handoff는 Windows 데스크톱에서 사용할 수 없습니다".into())
     }
 
@@ -163,9 +195,10 @@ pub async fn send_digest_to_knowledge(
         // payload behind.  A launch race can still leave an expiring pending
         // item, which contains only the bounded summary and is retryable.
         draft_history::validate_regenerated_from(regenerated_from.as_deref())?;
-        if !devbox_launch::installed_targets("handoff:knowledge-draft/v1")
-            .iter()
-            .any(|target| target.id == "knowledge-base")
+        if require_installation
+            && !devbox_launch::installed_targets("handoff:knowledge-draft/v1")
+                .iter()
+                .any(|target| target.id == "knowledge-base")
         {
             return Err("Knowledge 앱을 실행할 수 없습니다".into());
         }
@@ -186,9 +219,7 @@ pub async fn send_digest_to_knowledge(
         }
         let now_ms = current_epoch_ms()
             .ok_or_else(|| "Knowledge draft를 준비하지 못했습니다".to_string())?;
-        let store = devbox_applink::HandoffStore::new(devbox_applink::handoff_root_in(
-            &devbox_integration::common_root(),
-        ));
+        let store = handoff_store(&state);
         let descriptor = store
             .create(
                 devbox_applink::CreateHandoff {
@@ -288,14 +319,18 @@ pub async fn send_digest_to_knowledge(
             return Err("Knowledge draft 이력을 갱신하지 못했습니다".into());
         }
         drop(connection);
-        if devbox_launch::launch_open("knowledge-base", &request).is_err() {
+        if operation.is_cancelled() {
+            discard_producer_state(&state, &store, &descriptor);
+            return Err("digest_cancelled".into());
+        }
+        if let Err(error) = deliver(&request) {
             // A consumer may have claimed the envelope while the launcher
             // was returning an error. Only regress to pending when the
             // sidecar still agrees; if it already reached a terminal state,
             // mirror that state into the DB instead of overwriting consumed
             // history with a launch-failure result.
             reconcile_after_launch_failure(&state, &store, &descriptor, expires_at_ms, sent_at_ms);
-            return Err("Knowledge 앱을 실행할 수 없습니다".into());
+            return Err(error);
         }
         Ok(SendKnowledgeDraftResult {
             id: descriptor.id.clone(),
@@ -372,4 +407,38 @@ fn discard_producer_state(
         let _ = draft_history::remove(&connection, &descriptor.id);
     }
     let _ = store.discard_created(descriptor);
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_send_digest_to_knowledge(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: DigestInput,
+        regenerated_from: Option<String>,
+    }
+    let Input {
+        input,
+        regenerated_from,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = send_digest_to_knowledge(component_app.state(), input, regenerated_from).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_knowledge_draft_history(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = knowledge_draft_history(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }

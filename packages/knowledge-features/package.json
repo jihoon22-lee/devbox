@@ -1,0 +1,43 @@
+{
+  "name": "@devbox/knowledge-features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./notes": "./src/notes/App.tsx",
+    "./activity": "./src/activity/App.tsx",
+    "./search": "./src/search/App.tsx",
+    "./transport": "./src/transport.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@devbox/a11y": "workspace:*",
+    "@devbox/context-menu": "workspace:*",
+    "@devbox/diff-view": "workspace:*",
+    "@devbox/mermaid-renderer": "workspace:*",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@devbox/tokens": "workspace:*",
+    "@codemirror/autocomplete": "^6.18.7",
+    "@codemirror/commands": "^6.0.0",
+    "@codemirror/lang-markdown": "^6.0.0",
+    "@codemirror/language": "^6.0.0",
+    "@codemirror/search": "^6.0.0",
+    "@codemirror/state": "^6.0.0",
+    "@codemirror/view": "^6.0.0",
+    "@devbox/editor": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

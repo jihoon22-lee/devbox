@@ -19,7 +19,6 @@ use super::history::{
 };
 use std::fmt::Write as FmtWrite;
 use std::io::{self, BufReader, Read, Write};
-use std::net::TcpStream;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
 
@@ -270,8 +269,8 @@ fn within(value: &str, max_chars: usize, max_bytes: usize) -> bool {
 /// Read one bounded request from a single-use connection. The admission
 /// callback runs after the complete header but before body allocation/read so
 /// callers can reject rate-limited requests without consuming the body.
-pub fn read_request<F>(
-    stream: &mut TcpStream,
+pub fn read_request<R: Read, F>(
+    stream: &mut R,
     running: &AtomicBool,
     admit: F,
 ) -> Result<ParsedRequest, ParseError>
@@ -282,8 +281,7 @@ where
         return Err(ParseError::Cancelled);
     }
     let deadline = Instant::now() + Duration::from_millis(REQUEST_IO_TIMEOUT_MS);
-    let mut reader =
-        BufReader::with_capacity(8 * 1024, stream.try_clone().map_err(|_| ParseError::Io)?);
+    let mut reader = BufReader::with_capacity(8 * 1024, stream);
     let request_line = read_crlf_line(&mut reader, MAX_REQUEST_LINE_BYTES, deadline)
         .map_err(|error| map_line_error(error, ParseError::RequestLineTooLarge))?
         .ok_or(ParseError::Closed)?;
@@ -387,8 +385,8 @@ fn safe_response_header(name: &str, value: &str) -> bool {
 /// this writer so a rule cannot accidentally turn a HEAD request into a body
 /// response; callers that are handling a parse error can use the wrapper below
 /// when no method was safely recovered.
-pub fn write_response_for_method(
-    stream: &mut TcpStream,
+pub fn write_response_for_method<W: Write>(
+    stream: &mut W,
     status: u16,
     headers: &[(String, String)],
     body: &str,
@@ -467,8 +465,8 @@ pub fn write_response_for_method(
 
 /// Write a response when the request method is unavailable (for example, a
 /// malformed request line).  Status-based no-body rules still apply.
-pub fn write_response(
-    stream: &mut TcpStream,
+pub fn write_response<W: Write>(
+    stream: &mut W,
     status: u16,
     headers: &[(String, String)],
     body: &str,

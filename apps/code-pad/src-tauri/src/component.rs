@@ -50,6 +50,9 @@ pub fn validate_persistent_file(name: &str, bytes: &[u8]) -> Result<(), &'static
 // Immutable native-selected generation. Initialization never runs the legacy
 // identifier migrator, reads a repository manifest or starts a language server.
 static PRODUCT_DATA: OnceLock<PathBuf> = OnceLock::new();
+pub(crate) fn product_hosted() -> bool {
+    PRODUCT_DATA.get().is_some()
+}
 pub(crate) fn data_root(app: &tauri::AppHandle) -> tauri::Result<PathBuf> {
     match PRODUCT_DATA.get() {
         Some(root) => Ok(root.clone()),

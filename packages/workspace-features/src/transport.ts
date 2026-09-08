@@ -3,6 +3,8 @@ import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 export type Component = "workspace.overview" | "workspace.source" | "workspace.dependencies" | "workspace.files" | "workspace.lsp" | "workspace.migration";
 export type Transport = <T>(component: Component, method: string, args: Record<string, unknown>) => Promise<T>;
 let productTransport: Transport | undefined;
+/** Only the native product bridge constructs this from fixed, validated messages. */
+export class WorkspaceOperationError extends Error {}
 
 /** Installed once by native product startup, before any feature is mounted. */
 export function configureProductTransport(transport: Transport): void {

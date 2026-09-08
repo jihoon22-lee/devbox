@@ -80,6 +80,50 @@ pub fn search_content(
     }
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_search_files(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        query: String,
+        limit: Option<i64>,
+        filter: Option<SearchFilter>,
+    }
+    let Input {
+        query,
+        limit,
+        filter,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = search_files(component_app.state(), query, limit, filter)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_search_content(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        query: String,
+        limit: Option<i64>,
+        filter: Option<SearchFilter>,
+    }
+    let Input {
+        query,
+        limit,
+        filter,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = search_content(component_app.state(), query, limit, filter)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

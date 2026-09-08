@@ -15,8 +15,19 @@ impl PendingOpen {
         Self::default()
     }
 
+    #[cfg(feature = "standalone")]
     pub fn set(&self, request: OpenRequest) {
         *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
+    }
+
+    /// Product offers never replace a request that the frontend has yet to take.
+    pub fn offer(&self, request: OpenRequest) -> Result<(), String> {
+        let mut pending = self.0.lock().map_err(|_| "draft_delivery_unavailable")?;
+        if pending.is_some() {
+            return Err("draft_delivery_busy".into());
+        }
+        *pending = Some(request);
+        Ok(())
     }
 
     pub fn take(&self) -> Option<OpenRequest> {
@@ -27,6 +38,20 @@ impl PendingOpen {
 #[tauri::command]
 pub fn take_pending_open(state: tauri::State<'_, PendingOpen>) -> Option<OpenRequest> {
     state.take()
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_take_pending_open(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = take_pending_open(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]
@@ -43,6 +68,22 @@ mod tests {
             },
             from: Some("devbox-launcher".to_string()),
         }
+    }
+
+    #[test]
+    fn product_offer_preserves_unread_reference_and_becomes_available_after_take() {
+        let pending = PendingOpen::new();
+        let first = path_request("first.md");
+        let second = path_request("second.md");
+        pending.offer(first.clone()).unwrap();
+        assert_eq!(
+            pending.offer(second.clone()).unwrap_err(),
+            "draft_delivery_busy"
+        );
+        assert_eq!(pending.take(), Some(first));
+        pending.offer(second.clone()).unwrap();
+        assert_eq!(pending.take(), Some(second));
+        assert_eq!(pending.take(), None);
     }
 
     #[test]

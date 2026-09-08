@@ -204,7 +204,10 @@ macro-enabled DOCM, OCR, semantic search는 이 기능에 포함하지 않는다
 - 전체/루트 재인덱스는 250개 파일 배치로 DB lock을 양보하고 UI에서 진행률·indexed/
   truncated/failed 수·마지막 시각을 확인할 수 있다. 실행 중 `Cancel`은 안전한 배치와
   파일 경계에서 협력적으로 중지하며, 이미 커밋된 부분 인덱스는 다음 `Re-index`로
-  수렴한다. watcher 증분 반영도 동일 extractor와 bounds를 사용하고 읽기 전후의 크기와
+  수렴한다. 기존 행은 스캔 중 유지하고, 연결 로컬 임시 테이블에 확인한 경로를 기록한 뒤
+  모든 배치 완료와 실제 루트 객체 재확인을 통과할 때만 사라진 행을 제거한다.
+  루트 이동·접근 불가 또는 중단된 스캔은 마지막 색인을 지우지 않는다. 지연된 watcher
+  이벤트도 루트와 상위 폴더를 확인하며 접근 오류를 파일 삭제로 처리하지 않는다. watcher 증분 반영도 동일 extractor와 bounds를 사용하고 읽기 전후의 크기와
   수정 시각을 열린 파일 및 경로 양쪽에서 다시 확인해 변경된 읽기는
   `changed_during_read`로 폐기한다.
 - schema v2 migration은 사용자가 등록한 roots는 보존하고 파생 files/content FTS와
@@ -212,8 +215,8 @@ macro-enabled DOCM, OCR, semantic search는 이 기능에 포함하지 않는다
   `indexed_at`, `error_code`, `encoding`, `text_chars`를 함께 저장하므로 검색 결과와
   상태 화면이 단순히 "없음"과 실패를 혼동하지 않는다.
 - text/PDF/DOCX/XLS/XLSX/ODS extractor 버전은 서로 독립적으로 기록된다. parser 또는 cell
-  normalization 규칙이 바뀌면 stale format row만 지우고 해당 확장자 후보만 다시 읽어 다른
-  형식 인덱스를 보존한다. 각 marker가 없거나 현재 버전과 달라도 해당 형식 scan을 수행하며,
+  normalization 규칙이 바뀌면 해당 확장자 후보만 다시 읽고, 완료된 스캔에서 사라진
+  해당 형식 행만 정리해 다른 형식 인덱스를 보존한다. 각 marker가 없거나 현재 버전과 달라도 해당 형식 scan을 수행하며,
   성공한 full/format-only scan만 marker를 갱신한다. partial/cancelled scan은 marker를 남기지
   않고, format-only worker 중 새 root/index 요청이 들어오면 다음 실행을 `All`로 승격한다.
 

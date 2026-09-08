@@ -471,7 +471,11 @@ impl WatcherManager {
     /// is invalidated by removing its generation before the command returns;
     /// a later registration receives a fresh application-lifetime value.
     pub fn unregister(&self, path: &Path) -> Result<(), String> {
-        let candidate = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
+        let candidate = if crate::component::product_hosted() {
+            path.to_path_buf()
+        } else {
+            path.canonicalize().unwrap_or_else(|_| path.to_path_buf())
+        };
         let polling_invalidation = {
             let mut state = self
                 .state
@@ -593,6 +597,12 @@ fn ensure_registration_capacity(state: &WatcherState, path: &Path) -> Result<(),
 /// Resolves the registration key even when the file itself has already been
 /// deleted. The parent directory is still the key owned by the manager.
 fn unregister_target(path: &Path) -> Option<(PathBuf, OsString)> {
+    if crate::component::product_hosted() {
+        return Some((
+            path.parent()?.to_path_buf(),
+            path.file_name()?.to_os_string(),
+        ));
+    }
     let path = path.canonicalize().unwrap_or_else(|_| path.to_path_buf());
     let parent = path.parent()?.to_path_buf();
     let parent = parent.canonicalize().unwrap_or(parent);
@@ -725,8 +735,23 @@ fn emit_current_snapshots(weak_state: &Weak<Mutex<WatcherState>>, app: &AppHandl
             continue;
         };
         if is_current_registration(weak_state, &path, generation) {
-            let _ = app.emit("file-changed", snapshot.event);
+            emit_file_change(app, snapshot.event);
         }
+    }
+}
+
+fn emit_file_change(app: &AppHandle, mut event: FileChangedEvent) {
+    if crate::component::product_hosted() {
+        // Product file responses use ordinary canonical Windows spellings.
+        // Keep watcher keys private and deliver the matching client spelling.
+        if let Some(unc) = event.path.strip_prefix(r"\\?\UNC\") {
+            event.path = format!(r"\\{unc}");
+        } else if let Some(local) = event.path.strip_prefix(r"\\?\") {
+            event.path = local.to_owned();
+        }
+        let _ = app.emit_to("main", "file-changed", event);
+    } else {
+        let _ = app.emit("file-changed", event);
     }
 }
 
@@ -805,7 +830,7 @@ fn poll_wsl_files(weak_state: &Weak<Mutex<WatcherState>>, app: &AppHandle) {
             }
         };
         if accepted && changed {
-            let _ = app.emit("file-changed", current.event);
+            emit_file_change(app, current.event);
         }
     }
 }
@@ -823,7 +848,7 @@ fn deliver_ready(
         };
         if let Some(snapshot) = metadata_snapshot(&path) {
             if is_current_registration(weak_state, &path, generation) {
-                let _ = app.emit("file-changed", snapshot.event);
+                emit_file_change(app, snapshot.event);
             }
         }
     }

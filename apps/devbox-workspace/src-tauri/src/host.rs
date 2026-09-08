@@ -3,6 +3,8 @@
 use crate::{core::stores::StoreRoot, project_owner::ProjectOwner};
 use serde_json::{json, Value};
 use std::{
+    collections::HashMap,
+    fs::File,
     path::Path,
     sync::{Arc, Mutex},
 };
@@ -11,6 +13,36 @@ type Result<T> = std::result::Result<T, &'static str>;
 struct Selected {
     generation: crate::core::stores::Generation,
     projects: Arc<ProjectOwner>,
+    components: HashMap<&'static str, ComponentRoot>,
+}
+struct ComponentRoot {
+    path: std::path::PathBuf,
+    identity: devbox_filesystem::FilesystemIdentity,
+    _handle: File,
+}
+impl Selected {
+    fn open(stores: &StoreRoot, generation: crate::core::stores::Generation) -> Result<Self> {
+        let mut components = HashMap::new();
+        for name in ["registry", "overview", "files", "common"] {
+            let path = stores.component(&generation, name)?;
+            let (handle, identity) = devbox_filesystem::open_filesystem_object(&path, true)
+                .map_err(|_| "store_generation_changed")?;
+            components.insert(
+                name,
+                ComponentRoot {
+                    path,
+                    identity,
+                    _handle: handle,
+                },
+            );
+        }
+        let projects = Arc::new(ProjectOwner::open(&components["registry"].path)?);
+        Ok(Self {
+            generation,
+            projects,
+            components,
+        })
+    }
 }
 pub struct Host {
     stores: Arc<StoreRoot>,
@@ -21,15 +53,7 @@ impl Host {
         let stores = Arc::new(StoreRoot::open(root)?);
         let selected = stores
             .read()?
-            .map(|generation| {
-                let projects = Arc::new(ProjectOwner::open(
-                    &stores.component(&generation, "registry")?,
-                )?);
-                Ok::<_, &'static str>(Selected {
-                    generation,
-                    projects,
-                })
-            })
+            .map(|generation| Selected::open(&stores, generation))
             .transpose()?;
         Ok(Self {
             stores,
@@ -48,14 +72,9 @@ impl Host {
             return Err("store_already_active");
         }
         let generation = self.stores.prepare()?;
-        let projects = Arc::new(ProjectOwner::open(
-            &self.stores.component(&generation, "registry")?,
-        )?);
+        let next = Selected::open(&self.stores, generation.clone())?;
         self.stores.activate_new(&generation)?;
-        *selected = Some(Selected {
-            generation,
-            projects,
-        });
+        *selected = Some(next);
         Ok(())
     }
     pub fn projects(&self) -> Result<Arc<ProjectOwner>> {
@@ -72,7 +91,16 @@ impl Host {
         if self.stores.read()?.as_ref() != Some(&selected.generation) {
             return Err("store_pointer_changed");
         }
-        self.stores.component(&selected.generation, name)
+        let component = selected.components.get(name).ok_or("unknown_component")?;
+        let current = self.stores.component(&selected.generation, name)?;
+        if current != component.path
+            || devbox_filesystem::filesystem_identity(&current, true)
+                .map_err(|_| "store_generation_changed")?
+                != component.identity
+        {
+            return Err("store_generation_changed");
+        }
+        Ok(current)
     }
 }
 

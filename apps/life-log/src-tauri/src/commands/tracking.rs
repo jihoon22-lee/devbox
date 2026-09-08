@@ -120,9 +120,15 @@ impl Drop for DigestOperationGuard {
 
 /// 앱 전역 상태: DB 커넥션 + 세션 병합기 + 추적 플래그
 pub struct AppState {
+    /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
+    pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
     pub sessionizer: Mutex<Sessionizer>,
     pub tracking: AtomicBool,
+    /// Serializes poll observations with explicit start/stop.
+    pub tracking_control: Mutex<()>,
+    /// Only the new product persists consent; the legacy default is preserved.
+    pub persist_tracking_consent: bool,
     pub snapshot_writer: Mutex<()>,
     pub digest_operations: Arc<DigestOperationState>,
     pub digest_handles: crate::core::digest::DigestHandleStore,
@@ -138,20 +144,70 @@ pub fn now_ms() -> i64 {
 /// 추적 시작. 이미 진행 중이면 false를 반환한다.
 #[tauri::command]
 pub fn start_tracking(state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
-    let was_tracking = state.tracking.swap(true, Ordering::SeqCst);
-    Ok(!was_tracking)
+    start_tracking_inner(&state)
 }
 
-/// 추적 중지. 열려 있던 세션을 마감한다.
+fn start_tracking_inner(state: &AppState) -> Result<bool, String> {
+    let _control = state
+        .tracking_control
+        .lock()
+        .map_err(|_| "tracking_state_unavailable")?;
+    if state.persist_tracking_consent {
+        let conn = state.db.lock().map_err(|_| "tracking_state_unavailable")?;
+        set_product_consent(&conn, true)?;
+    }
+    Ok(!state.tracking.swap(true, Ordering::SeqCst))
+}
+
+/// Stop collection before returning, even when persistence fails.
 #[tauri::command]
 pub fn stop_tracking(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
+    stop_tracking_inner(&state)
+}
+
+fn stop_tracking_inner(state: &AppState) -> Result<(), String> {
+    stop_tracking_runtime(state, true)
+}
+
+pub(crate) fn stop_tracking_runtime(state: &AppState, update_consent: bool) -> Result<(), String> {
+    let _control = state
+        .tracking_control
+        .lock()
+        .map_err(|_| "tracking_state_unavailable")?;
     state.tracking.store(false, Ordering::SeqCst);
-    let closed = state.sessionizer.lock().unwrap().finish(now_ms());
+    let closed = state
+        .sessionizer
+        .lock()
+        .map_err(|_| "tracking_state_unavailable")?
+        .finish(now_ms());
+    let conn = state.db.lock().map_err(|_| "tracking_state_unavailable")?;
+    let persisted = if update_consent && state.persist_tracking_consent {
+        set_product_consent(&conn, false)
+    } else {
+        Ok(())
+    };
     if let Some(c) = closed {
-        let conn = state.db.lock().unwrap();
-        let rules = privacy_rules(&conn);
-        insert_filtered(&conn, &c, &rules).map_err(|e| e.to_string())?;
+        insert_filtered(&conn, &c, &privacy_rules(&conn)).map_err(|e| e.to_string())?;
     }
+    persisted
+}
+
+const PRODUCT_CONSENT_KEY: &str = "product_activity_collection_v1";
+
+/// Missing, malformed or unreadable consent never starts the product collector.
+pub(crate) fn product_consent(conn: &Connection) -> bool {
+    conn.query_row(
+        "SELECT value FROM settings WHERE key = ?1",
+        [PRODUCT_CONSENT_KEY],
+        |row| row.get::<_, String>(0),
+    )
+    .is_ok_and(|value| value == "enabled")
+}
+
+fn set_product_consent(conn: &Connection, enabled: bool) -> Result<(), String> {
+    conn.execute("INSERT INTO settings(key, value) VALUES (?1, ?2) ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+        [PRODUCT_CONSENT_KEY, if enabled { "enabled" } else { "disabled" }])
+        .map_err(|_| "activity_consent_save_failed".to_owned())?;
     Ok(())
 }
 
@@ -171,7 +227,11 @@ pub fn spawn_poller(app: &tauri::AppHandle) {
         let mut idle_active = false;
         loop {
             interval.tick().await;
+            let Ok(_control) = state.tracking_control.lock() else {
+                continue;
+            };
             if !state.tracking.load(Ordering::SeqCst) {
+                idle_active = false;
                 continue;
             }
             let now = now_ms();
@@ -300,10 +360,180 @@ fn last_input_ms() -> Option<i64> {
     None
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_start_tracking(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = start_tracking(component_app.state())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_stop_tracking(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    stop_tracking(component_app.state())?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_is_tracking(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = is_tracking(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_set_idle_threshold(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        threshold_ms: i64,
+    }
+    let Input { threshold_ms } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    set_idle_threshold(component_app.state(), threshold_ms)?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_get_idle_threshold(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = get_idle_threshold(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::DigestOperationState;
     use std::sync::Arc;
+
+    fn collector_state(conn: rusqlite::Connection) -> super::AppState {
+        super::AppState {
+            integration_root: None,
+            tracking: std::sync::atomic::AtomicBool::new(super::product_consent(&conn)),
+            tracking_control: std::sync::Mutex::new(()),
+            persist_tracking_consent: true,
+            db: std::sync::Mutex::new(conn),
+            sessionizer: std::sync::Mutex::new(crate::core::sessionizer::Sessionizer::new()),
+            snapshot_writer: std::sync::Mutex::new(()),
+            digest_operations: Arc::new(DigestOperationState::default()),
+            digest_handles: crate::core::digest::DigestHandleStore::default(),
+        }
+    }
+
+    #[test]
+    fn product_collection_requires_explicit_consent_and_preserves_stop_on_reopen() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("activity.db");
+        let state = collector_state(crate::core::db::init(&path).unwrap());
+        assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+        assert!(super::start_tracking_inner(&state).unwrap());
+        drop(state);
+        let state = collector_state(crate::core::db::init(&path).unwrap());
+        assert!(state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+        super::stop_tracking_inner(&state).unwrap();
+        drop(state);
+        let state = collector_state(crate::core::db::init(&path).unwrap());
+        assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn failed_consent_write_never_enables_collection_and_stop_still_disables() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        let state = collector_state(conn);
+        state
+            .db
+            .lock()
+            .unwrap()
+            .execute_batch("PRAGMA query_only = ON")
+            .unwrap();
+        assert_eq!(
+            super::start_tracking_inner(&state).unwrap_err(),
+            "activity_consent_save_failed"
+        );
+        assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+        state
+            .tracking
+            .store(true, std::sync::atomic::Ordering::SeqCst);
+        assert_eq!(
+            super::stop_tracking_inner(&state).unwrap_err(),
+            "activity_consent_save_failed"
+        );
+        assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+    }
+
+    #[test]
+    fn product_exit_flushes_a_privacy_filtered_session_without_revoking_consent() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        conn.execute(
+            "INSERT INTO settings VALUES ('privacy_rules', ?1)",
+            [r#"{"maskAllTitles":true}"#],
+        )
+        .unwrap();
+        let state = collector_state(conn);
+        super::start_tracking_inner(&state).unwrap();
+        state.sessionizer.lock().unwrap().observe(
+            "fixture.exe".into(),
+            "private synthetic title".into(),
+            super::now_ms() - 10,
+        );
+        super::stop_tracking_runtime(&state, false).unwrap();
+        assert!(!state.tracking.load(std::sync::atomic::Ordering::SeqCst));
+        let conn = state.db.lock().unwrap();
+        assert!(super::product_consent(&conn));
+        let title: String = conn
+            .query_row("SELECT title FROM sessions", [], |row| row.get(0))
+            .unwrap();
+        assert!(!title.contains("private synthetic title"));
+    }
+
+    #[test]
+    fn malformed_or_legacy_settings_do_not_imply_product_consent() {
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        conn.execute("INSERT INTO settings VALUES ('tracking', 'true')", [])
+            .unwrap();
+        assert!(!super::product_consent(&conn));
+        conn.execute(
+            "INSERT INTO settings VALUES (?1, 'true')",
+            [super::PRODUCT_CONSENT_KEY],
+        )
+        .unwrap();
+        assert!(!super::product_consent(&conn));
+    }
 
     #[test]
     fn digest_operations_are_single_flight_and_generation_scoped() {

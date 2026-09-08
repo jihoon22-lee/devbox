@@ -807,12 +807,16 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.click(screen.getByRole("menuitem", { name: "마스킹 복사" }));
     await waitFor(() => expect(copyMaskedHistoryMock).toHaveBeenCalledWith(2));
     expect(copyRawHistoryMock).not.toHaveBeenCalled();
+
+    // Calling the backend is earlier than completing the clipboard write and
+    // releasing the UI's busy state. Wait for the next action to be available.
+    await waitFor(() => expect(target.closest(".app")?.getAttribute("aria-busy")).toBe("false"));
     expect(writeTextMock).toHaveBeenCalledWith("masked:2");
 
     fireEvent.contextMenu(target);
     fireEvent.click(screen.getByRole("menuitem", { name: "헤더 복사" }));
     await waitFor(() => expect(copyHistoryHeadersMock).toHaveBeenCalledWith(2));
-    expect(writeTextMock).toHaveBeenCalledWith("masked-headers:2");
+    await waitFor(() => expect(writeTextMock).toHaveBeenCalledWith("masked-headers:2"));
   });
 
   it("unmount 뒤 늦게 도착한 복사 결과는 clipboard side effect를 만들지 않는다", async () => {

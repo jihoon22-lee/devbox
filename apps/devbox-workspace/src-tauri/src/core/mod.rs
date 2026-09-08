@@ -1,3 +1,4 @@
+pub mod context_activity;
 pub mod registry;
 
 pub mod manifest;

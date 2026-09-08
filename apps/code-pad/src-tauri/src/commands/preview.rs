@@ -3,7 +3,6 @@
 use crate::commands::folder::{canonical_workspace, is_within_workspace};
 use devbox_markdown::{render, ImageResult};
 use serde::Serialize;
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
@@ -127,40 +126,64 @@ pub fn load_image(root: &Path, document_parent: &Path, src: &str) -> ImageResult
         return ImageResult::OutsideRoot;
     }
 
-    let candidate = document_parent.join(source);
-    let canonical = match candidate.canonicalize() {
-        Ok(path) => path,
-        Err(_) => return ImageResult::NotFound,
-    };
-    if !is_within_workspace(root, &canonical) {
+    // Resolve URL dot segments lexically before filesystem IO, then reject
+    // links/reparse points and require the actual root among the ancestors.
+    let mut candidate = std::path::PathBuf::new();
+    for component in document_parent.join(source).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                if !candidate.pop() {
+                    return ImageResult::OutsideRoot;
+                }
+            }
+            std::path::Component::CurDir => {}
+            other => candidate.push(other),
+        }
+    }
+    if !is_within_workspace(root, &candidate) {
         return ImageResult::OutsideRoot;
     }
-
-    let metadata = match std::fs::metadata(&canonical) {
-        Ok(metadata) if metadata.is_file() => metadata,
-        _ => return ImageResult::NotFound,
+    if let Err(error) = devbox_filesystem::ensure_no_links(&candidate) {
+        return if error.kind() == std::io::ErrorKind::InvalidInput {
+            ImageResult::OutsideRoot
+        } else {
+            ImageResult::NotFound
+        };
+    }
+    let Ok(root_identity) = devbox_filesystem::filesystem_identity(root, true) else {
+        return ImageResult::NotFound;
+    };
+    let mut parent = candidate.parent();
+    let mut ancestors = Vec::new();
+    let mut owns_root = false;
+    while let Some(path) = parent {
+        let Ok((handle, identity)) = devbox_filesystem::open_filesystem_object(path, true) else {
+            return ImageResult::NotFound;
+        };
+        owns_root |= identity == root_identity;
+        ancestors.push((path.to_path_buf(), identity, handle));
+        parent = path.parent();
+    }
+    if !owns_root {
+        return ImageResult::OutsideRoot;
+    }
+    let Ok((mut file, identity)) = devbox_filesystem::open_filesystem_object(&candidate, false)
+    else {
+        return ImageResult::NotFound;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return ImageResult::NotFound;
     };
     if metadata.len() > MAX_IMAGE_BYTES {
         return ImageResult::TooLarge;
     }
-    let Some(mime) = raster_mime_from_path(&canonical) else {
-        // SVG and unknown extensions are never converted to data URIs. The
-        // sanitizer also rejects arbitrary data: URLs at the HTML boundary.
+    let Some(mime) = raster_mime_from_path(&candidate) else {
         return ImageResult::NotFound;
-    };
-
-    // Read through a capped handle rather than `fs::read`: a replacement or
-    // symlink race after the metadata check must not allocate an unbounded
-    // buffer. The canonical/root check is repeated after the read before any
-    // bytes are returned to the renderer.
-    let mut file = match File::open(&canonical) {
-        Ok(file) => file,
-        Err(_) => return ImageResult::NotFound,
     };
     let mut bytes = Vec::new();
     if file
         .by_ref()
-        .take(MAX_IMAGE_BYTES.saturating_add(1))
+        .take(MAX_IMAGE_BYTES + 1)
         .read_to_end(&mut bytes)
         .is_err()
     {
@@ -169,20 +192,13 @@ pub fn load_image(root: &Path, document_parent: &Path, src: &str) -> ImageResult
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
         return ImageResult::TooLarge;
     }
-    let Some(after) = canonical.canonicalize().ok() else {
-        return ImageResult::NotFound;
-    };
-    if after != canonical || !is_within_workspace(root, &after) {
+    if devbox_filesystem::ensure_no_links(&candidate).is_err()
+        || devbox_filesystem::filesystem_identity(&candidate, false).ok() != Some(identity)
+        || ancestors.iter().any(|(path, expected, _)| {
+            devbox_filesystem::filesystem_identity(path, true).ok() != Some(*expected)
+        })
+    {
         return ImageResult::OutsideRoot;
-    }
-    let Ok(after_metadata) = std::fs::metadata(&after) else {
-        return ImageResult::NotFound;
-    };
-    if !after_metadata.is_file() {
-        return ImageResult::NotFound;
-    }
-    if after_metadata.len() > MAX_IMAGE_BYTES {
-        return ImageResult::TooLarge;
     }
     let data_uri = format!(
         "data:{};base64,{}",

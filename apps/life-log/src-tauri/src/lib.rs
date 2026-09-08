@@ -1,18 +1,28 @@
 mod commands;
+pub mod component;
 mod core;
 mod integration;
 
+#[cfg(feature = "standalone")]
 use commands::tracking::{spawn_poller, AppState, DigestOperationState};
+#[cfg(feature = "standalone")]
 use core::db::init;
+#[cfg(feature = "standalone")]
 use core::sessionizer::Sessionizer;
+#[cfg(feature = "standalone")]
 use std::sync::atomic::AtomicBool;
+#[cfg(feature = "standalone")]
 use std::sync::{Arc, Mutex};
+#[cfg(feature = "standalone")]
 use tauri::Manager;
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
+#[cfg(feature = "standalone")]
 const LEGACY_IDENTIFIER: &str = "com.workbench.lifelog";
+#[cfg(feature = "standalone")]
 const CURRENT_IDENTIFIER: &str = "com.devbox.lifelog";
 
+#[cfg(feature = "standalone")]
 fn migrate_local_data() {
     let Some(base_dir) = dirs::data_local_dir() else {
         eprintln!(
@@ -29,6 +39,7 @@ fn migrate_local_data() {
     }
 }
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     migrate_local_data();
@@ -80,9 +91,12 @@ pub fn run() {
                 eprintln!("devbox: activity-timeline 흡수 실패, 다음 실행에서 재시도: {error}");
             }
             let state = Arc::new(AppState {
+                integration_root: None,
                 db: Mutex::new(conn),
                 sessionizer: Mutex::new(Sessionizer::new()),
                 tracking: AtomicBool::new(true),
+                tracking_control: Mutex::new(()),
+                persist_tracking_consent: false,
                 snapshot_writer: Mutex::new(()),
                 digest_operations: Arc::new(DigestOperationState::default()),
                 digest_handles: core::digest::DigestHandleStore::default(),
@@ -105,6 +119,7 @@ pub fn run() {
         .expect("error while running tauri application");
 }
 
+#[cfg(feature = "standalone")]
 fn focus_main_window(app: &tauri::AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         let _ = window.show();
@@ -113,6 +128,7 @@ fn focus_main_window(app: &tauri::AppHandle) {
     }
 }
 
+#[cfg(feature = "standalone")]
 fn setup_tray(app: &mut tauri::App) -> tauri::Result<()> {
     use tauri::menu::{Menu, MenuItem};
     use tauri::tray::TrayIconBuilder;

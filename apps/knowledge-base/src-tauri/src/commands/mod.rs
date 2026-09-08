@@ -1,4 +1,5 @@
 pub mod assets;
+pub mod daily;
 pub mod docs;
 pub mod handoff;
 pub mod markdown;

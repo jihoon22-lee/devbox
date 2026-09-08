@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 4,
+  "catalogRevision": 5,
   "channel": "development",
   "products": [
     {
@@ -95,6 +95,62 @@
     {
       "id": "workspace.migration",
       "owner": "workspace",
+      "authority": "legacy-import",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.files",
+      "owner": "workspace",
+      "authority": "file-edit",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.lsp",
+      "owner": "workspace",
+      "authority": "language-service",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.notes",
+      "owner": "knowledge",
+      "authority": "note-writer",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.activity",
+      "owner": "knowledge",
+      "authority": "activity-collector",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.search",
+      "owner": "knowledge",
+      "authority": "search-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.search-settings",
+      "owner": "knowledge",
+      "authority": "search-admin",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.opener",
+      "owner": "knowledge",
+      "authority": "result-open",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.migration",
+      "owner": "knowledge",
       "authority": "legacy-import",
       "lifecycle": "product",
       "protocolVersion": 1

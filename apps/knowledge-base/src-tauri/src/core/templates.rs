@@ -212,7 +212,7 @@ fn safe_relative_path(value: &str) -> bool {
         && normalized.chars().all(|character| !character.is_control())
 }
 
-fn valid_date(value: &str) -> bool {
+pub(crate) fn valid_date(value: &str) -> bool {
     let bytes = value.as_bytes();
     if bytes.len() != 10
         || bytes[4] != b'-'

@@ -36,7 +36,10 @@ fn prepare(
         crate::core::export::MAX_PROJECT_SETTING_BYTES,
     )?;
     let projects = crate::core::export::parse_project_setting(&raw_projects)?;
-    digest::prepare_with_cancel(&conn, &projects, input, cancellation)
+    match &state.integration_root {
+        Some(root) => digest::prepare_with_cancel_in(&conn, &projects, input, cancellation, root),
+        None => digest::prepare_with_cancel(&conn, &projects, input, cancellation),
+    }
 }
 
 pub(crate) async fn build_for_state(
@@ -217,4 +220,52 @@ fn validate_save_path(path: &std::path::Path) -> Result<(), String> {
         return Err("digest 저장 형식이 올바르지 않습니다".into());
     }
     Ok(())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_get_digest(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: DigestInput,
+    }
+    let Input { input } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = get_digest(component_app.state(), input).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_cancel_digest(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = cancel_digest(component_app.state()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_save_digest(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: SaveDigestRequest,
+    }
+    let Input { request } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = save_digest(component_app.state(), request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }

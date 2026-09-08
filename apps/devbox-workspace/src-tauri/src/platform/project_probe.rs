@@ -93,6 +93,9 @@ impl ProjectLease {
     pub fn binding(&self) -> &Binding {
         &self.binding
     }
+    pub fn native_root_identity(&self) -> FilesystemIdentity {
+        self.objects[0].identity
+    }
     pub fn revalidate(&self) -> Result<()> {
         for object in &self.objects {
             object.revalidate()?;

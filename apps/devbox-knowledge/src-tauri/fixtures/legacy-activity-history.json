@@ -1,0 +1,14 @@
+{
+  "summary": {
+    "period": "day", "startDate": "2024-02-29", "endDate": "2024-02-29",
+    "timezone": "Asia/Seoul", "filter": null, "pcUsageMs": 60000,
+    "sessionCount": 1, "activeDays": 1, "totalDays": 1,
+    "averageDailyUsageMs": 60000, "gitCommits": 0, "topApp": "synthetic-editor.exe"
+  },
+  "sources": [
+    { "id": "life-log", "available": true, "schemaVersion": 1, "snapshotVersion": null, "producerVersion": "0.7.0", "generatedAt": null, "freshnessMs": null, "view": null, "scope": "requested-range", "errorCode": null },
+    { "id": "git", "available": true, "schemaVersion": null, "snapshotVersion": null, "producerVersion": null, "generatedAt": null, "freshnessMs": null, "view": null, "scope": "requested-range", "errorCode": null },
+    { "id": "run-manager", "available": false, "schemaVersion": null, "snapshotVersion": null, "producerVersion": null, "generatedAt": null, "freshnessMs": null, "view": null, "scope": "latest-snapshot-out-of-range", "errorCode": "snapshot_unavailable" },
+    { "id": "knowledge-base", "available": true, "schemaVersion": 1, "snapshotVersion": 1, "producerVersion": "0.7.0", "generatedAt": "2024-02-29T00:00:00Z", "freshnessMs": 1000, "view": null, "scope": "latest-snapshot-out-of-range", "errorCode": null }
+  ]
+}

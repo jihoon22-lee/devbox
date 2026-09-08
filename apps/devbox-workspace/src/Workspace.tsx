@@ -1,12 +1,45 @@
-import { lazy, Suspense, useEffect, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
-import { nativeMode } from "@devbox/product-shell/api";
+import { nativeMode, type Description } from "@devbox/product-shell/api";
+import { configureProductTransport } from "@devbox/workspace-features/transport";
 import RegistryGate from "./RegistryGate";
+import { componentCall } from "./native";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
+let displayed: Description | undefined;
+let connected = false;
+
+function NativeContent({route, description, refreshContext}: ShellContentProps) {
+  displayed = description;
+  if (!connected) {
+    configureProductTransport(<T,>(component: string, method: string, args: Record<string, unknown>) => {
+      const snapshot = displayed;
+      if (!snapshot) return Promise.reject(new Error("제품 연결 정보를 확인하지 못했습니다."));
+      const ownerRoute = component === "workspace.files" || component === "workspace.lsp" ? "files"
+        : component === "workspace.source" ? "source" : component === "workspace.dependencies" ? "dependencies" : "overview";
+      return componentCall<T>(snapshot, component, method, args, ownerRoute);
+    });
+    connected = true;
+  }
+  const [ready, setReady] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [filesVisited, setFilesVisited] = useState(route === "files");
+  const markReady = useCallback(() => setReady(true), []);
+  useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
+  return <>
+    <div hidden={ready && route === "files"}>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing}/>
+    </div>
+    {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
+      <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
+        <Files contextKey={JSON.stringify(description.context)} active={route === "files"} onDirtyChange={setEditing}/>
+      </Suspense>
+    </div>}
+  </>;
+}
 
 function Content({ route, description }: ShellContentProps) {
   const group = route === "files" ? "files" : ["source", "dependencies"].includes(route) ? "source" : route === "overview" ? "overview" : "unavailable";
@@ -23,11 +56,11 @@ function Content({ route, description }: ShellContentProps) {
       <Suspense fallback={<p role="status">저장소를 불러오고 있습니다…</p>}><Source/></Suspense>
     </div>}
     {(visited.has("files") || group === "files") && <div className="workspace-feature-files" hidden={group !== "files"}>
-      <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}><Files/></Suspense>
+      <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}><Files active={group === "files"}/></Suspense>
     </div>}
   </>;
 }
 
 export default function Workspace() {
-  return <ProductShell product="workspace" renderContent={props => nativeMode ? <RegistryGate context={props.description.context} onContextChanged={props.refreshContext}/> : <Content {...props}/>}/>;
+  return <ProductShell product="workspace" renderContent={props => nativeMode ? <NativeContent {...props}/> : <Content {...props}/>}/>;
 }

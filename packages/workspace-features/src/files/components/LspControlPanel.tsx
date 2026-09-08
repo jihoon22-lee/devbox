@@ -418,6 +418,7 @@ export default function LspControlPanel({
             WSL 작업 폴더의 편집과 파일 감시는 지원하지만, Windows 호스트에서 실행하는 LSP는 아직 지원하지 않습니다.
           </p>
         )}
+        {workspaceCapabilities?.lspReason === "project_untrusted" && <p className="lsp-warning" role="status">프로젝트의 실행 정의를 신뢰한 뒤 언어 서버를 사용할 수 있습니다. 파일 편집은 계속 사용할 수 있습니다.</p>}
 
         <label className="lsp-toggle">
           <input

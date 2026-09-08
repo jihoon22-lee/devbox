@@ -31,11 +31,19 @@ struct ClaimedKnowledgeDraft {
 
 /// At most one preview can be active in a Knowledge process. The claim token
 /// never crosses the frontend boundary.
-pub struct PendingKnowledgeDraft(Mutex<Option<ClaimedKnowledgeDraft>>);
+pub struct PendingKnowledgeDraft(Mutex<Option<ClaimedKnowledgeDraft>>, Option<HandoffStore>);
 
 impl PendingKnowledgeDraft {
     pub fn new() -> Self {
-        Self(Mutex::new(None))
+        Self(Mutex::new(None), None)
+    }
+
+    pub fn with_store(store: HandoffStore) -> Self {
+        Self(Mutex::new(None), Some(store))
+    }
+
+    fn store(&self) -> HandoffStore {
+        self.1.clone().unwrap_or_else(handoff_store)
     }
 
     fn is_open(&self) -> bool {
@@ -103,10 +111,16 @@ pub fn preview_knowledge_draft(
     if !valid_handoff_id(&id)
         || !matches!(
             kind.as_str(),
-            handoff::KNOWLEDGE_DRAFT_KIND | handoff::TOOLBOX_DRAFT_KIND
+            handoff::KNOWLEDGE_DRAFT_KIND
+                | handoff::TOOLBOX_DRAFT_KIND
+                | crate::core::session_summary::KIND
         )
     {
         return Err("Knowledge draft를 사용할 수 없습니다".into());
+    }
+    // Workspace metadata is admitted only by the product-owned native store.
+    if kind == crate::core::session_summary::KIND && pending.1.is_none() {
+        return Err("session_summary_unavailable".into());
     }
     let now_ms = current_epoch_ms();
     if now_ms == 0 {
@@ -127,7 +141,7 @@ pub fn preview_knowledge_draft(
         validate_note_parent(&vault)?;
         vault
     };
-    let store = handoff_store();
+    let store = pending.store();
     let claim = store
         .claim(&id, &kind, CONSUMER_APP, now_ms)
         .map_err(|error| handoff::map_claim_error(&error).to_string())?;
@@ -165,7 +179,7 @@ pub fn save_knowledge_draft(
     id: String,
 ) -> Result<SaveKnowledgeDraftResult, String> {
     let claimed = pending.take(&id)?;
-    let store = handoff_store();
+    let store = pending.store();
     let now_ms = current_epoch_ms();
     if now_ms == 0 {
         restore_for_retry(&store, pending.inner(), claimed);
@@ -235,7 +249,7 @@ pub fn save_knowledge_draft(
         return Err("Knowledge 검색 인덱스를 갱신하지 못했습니다".into());
     }
     if let Ok(connection) = state.db.lock() {
-        let _ = crate::integration::write_snapshot(&connection);
+        let _ = crate::integration::write_snapshot(&connection, state.integration_root.as_deref());
     }
     let handoff_deleted = match store.ack(&claimed.claim, CONSUMER_APP, current_epoch_ms()) {
         Ok(()) => true,
@@ -275,7 +289,7 @@ pub fn discard_knowledge_draft(
     id: String,
 ) -> Result<(), String> {
     let claimed = pending.take(&id)?;
-    let store = handoff_store();
+    let store = pending.store();
     let now_ms = current_epoch_ms();
     match store.restore(&claimed.claim, CONSUMER_APP, now_ms) {
         Ok(()) => {
@@ -316,7 +330,7 @@ pub fn renew_knowledge_draft(
     if current.claim.envelope.id != id {
         return Err("다른 Knowledge draft 미리보기가 열려 있습니다".into());
     }
-    let renewed = match handoff_store().renew(
+    let renewed = match pending.store().renew(
         &current.claim,
         CONSUMER_APP,
         current_epoch_ms(),
@@ -398,11 +412,10 @@ fn rollback_saved_note(
     });
     vault::cleanup_file(vault, path, identity);
     let snapshot_restored = indexed
-        && state
-            .db
-            .lock()
-            .ok()
-            .is_some_and(|connection| crate::integration::write_snapshot(&connection).is_ok());
+        && state.db.lock().ok().is_some_and(|connection| {
+            crate::integration::write_snapshot(&connection, state.integration_root.as_deref())
+                .is_ok()
+        });
     indexed && !path.exists() && snapshot_restored
 }
 
@@ -489,7 +502,7 @@ fn write_new_note_with_suffix(
 }
 
 #[derive(Debug)]
-enum NewNoteError {
+pub(crate) enum NewNoteError {
     Exists,
     Storage,
     Stale,
@@ -498,7 +511,7 @@ enum NewNoteError {
 /// Write a complete private file to a unique temporary sibling, then create
 /// the final name with an exclusive hard link. This preserves no-overwrite
 /// semantics even if two handoff saves race for the same date.
-fn write_new_note(
+pub(crate) fn write_new_note(
     vault: &VaultIdentity,
     path: &Path,
     contents: &[u8],
@@ -610,6 +623,75 @@ fn current_epoch_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(0)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_preview_knowledge_draft(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+        kind: String,
+    }
+    let Input { id, kind } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = preview_knowledge_draft(component_app.state(), component_app.state(), id, kind)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_save_knowledge_draft(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = save_knowledge_draft(component_app.state(), component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_discard_knowledge_draft(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    discard_knowledge_draft(component_app.state(), id)?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_renew_knowledge_draft(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let Input { id } =
+        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = renew_knowledge_draft(component_app.state(), id)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]
@@ -735,6 +817,69 @@ mod tests {
         assert!(valid_handoff_id("0123456789abcdef0123456789abcdef"));
         assert!(!valid_handoff_id("0123456789ABCDEF0123456789abcdef"));
         assert!(!valid_handoff_id("raw-secret"));
+    }
+
+    #[test]
+    fn session_fixture_provider_uses_one_claim_and_exclusive_note_publication() {
+        use crate::core::session_summary as session;
+        let root = tempfile::tempdir().unwrap();
+        let vault_root = root.path().join("vault");
+        fs::create_dir_all(vault_root.join("Journal")).unwrap();
+        let vault = VaultIdentity::inspect(&vault_root).unwrap();
+        let store = HandoffStore::new(root.path().join("handoff/v1"));
+        let metadata = session::fixture();
+        let draft =
+            session::prepare(&serde_json::to_vec(&metadata).unwrap(), &metadata.binding).unwrap();
+        // The fixture adapter publishes once per native operation. B06 must retry
+        // the same descriptor, never republish on renderer redelivery.
+        let descriptor = store
+            .create(
+                CreateHandoff {
+                    kind: session::KIND.into(),
+                    source_app: session::PRODUCER.into(),
+                    target_app: Some(CONSUMER_APP.into()),
+                    payload: serde_json::to_value(draft).unwrap(),
+                },
+                1_000,
+            )
+            .unwrap();
+        let claim = store
+            .claim(&descriptor.id, session::KIND, CONSUMER_APP, 2_000)
+            .unwrap();
+        let parsed = handoff::parse_claim(&claim).unwrap();
+        assert!(matches!(parsed, IncomingKnowledgeDraft::Session(_)));
+        assert_eq!(fs::read_dir(vault_root.join("Journal")).unwrap().count(), 0);
+        assert_eq!(
+            store.claim(&descriptor.id, session::KIND, CONSUMER_APP, 2_001),
+            Err(HandoffError::AlreadyClaimed)
+        );
+        let mut forged = claim.clone();
+        forged.envelope.source_app = "life-log".into();
+        assert!(handoff::parse_claim(&forged).is_err());
+        forged = claim.clone();
+        forged.envelope.payload["body"] = "synthetic-private-value".into();
+        assert!(handoff::parse_claim(&forged).is_err());
+        store.restore(&claim, CONSUMER_APP, 3_000).unwrap();
+        assert_eq!(fs::read_dir(vault_root.join("Journal")).unwrap().count(), 0);
+        let retried = store
+            .claim(&descriptor.id, session::KIND, CONSUMER_APP, 4_000)
+            .unwrap();
+        let parsed = handoff::parse_claim(&retried).unwrap();
+        let occupied = vault_root.join("Journal/2026-09-07-development-session.md");
+        fs::write(&occupied, "existing user note").unwrap();
+        let saved =
+            write_new_note_with_suffix(&vault, &parsed, note_content(&parsed).as_bytes()).unwrap();
+        assert_eq!(saved.0, "Journal/2026-09-07-development-session-1.md");
+        assert_eq!(fs::read_to_string(&occupied).unwrap(), "existing user note");
+        assert!(fs::read_to_string(saved.1)
+            .unwrap()
+            .contains("실패한 실행: 2개"));
+        store.ack(&retried, CONSUMER_APP, 5_000).unwrap();
+        assert_eq!(
+            store.claim(&descriptor.id, session::KIND, CONSUMER_APP, 6_000),
+            Err(HandoffError::Missing)
+        );
+        assert_eq!(fs::read_dir(vault_root.join("Journal")).unwrap().count(), 2);
     }
 
     #[test]

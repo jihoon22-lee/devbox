@@ -8,6 +8,7 @@ export interface Encoding {
 export type LineEnding = "lf" | "crlf" | "cr";
 
 export interface OpenedFile {
+  nativeRevision?: string | null;
   path: string;
   text: string;
   encoding: Encoding;
@@ -24,6 +25,7 @@ export interface OpenedFile {
 }
 
 export interface SavedFile {
+  nativeRevision?: string | null;
   path: string;
   /** Decimal epoch nanoseconds. Keep this as a string: JS numbers lose i64 precision. */
   mtimeNanos: string;
@@ -54,7 +56,7 @@ export interface WorkspaceCapabilities {
   watchMode: "native" | "polling";
   editSupported: boolean;
   lspSupported: boolean;
-  lspReason: "host_lsp_wsl_unsupported" | null;
+  lspReason: "host_lsp_wsl_unsupported" | "project_untrusted" | null;
 }
 
 export interface FileChangedEvent {
@@ -108,6 +110,7 @@ export type DocId = string;
  * the session payload; it is reconstructed from disk when a session is restored.
  */
 export interface Doc {
+  nativeRevision?: string | null;
   id: DocId;
   path: string;
   text: string;

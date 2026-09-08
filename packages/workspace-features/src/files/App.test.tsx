@@ -14,6 +14,7 @@ import {
   listWorkspaceFiles,
   loadLspConfig,
   loadSession,
+  saveSession,
   openFile,
   openLspDocument,
   pullLspDiagnostics,
@@ -437,6 +438,41 @@ function fileName(path: string): string {
 }
 
 describe("App editor shell operations", () => {
+  it("retains a dirty hidden route without handling another route's save shortcut", async () => {
+    const view = await openOne();
+    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
+    view.rerender(<App active={false}/>);
+    fireEvent.keyDown(window, {key:"s", ctrlKey:true});
+    expect(saveFileMock).not.toHaveBeenCalled();
+    expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
+    view.rerender(<App active/>);
+    fireEvent.keyDown(window, {key:"s", ctrlKey:true});
+    await waitFor(() => expect(saveFileMock).toHaveBeenCalledTimes(1));
+  });
+
+  it("cancels old session persistence when a clean context starts hydrating", async () => {
+    const view = await openOne();
+    const next = deferred<Awaited<ReturnType<typeof loadSession>>>();
+    loadSessionMock.mockReturnValueOnce(next.promise);
+    vi.mocked(saveSession).mockClear();
+    view.rerender(<App contextKey="next-project"/>);
+    await waitFor(() => expect(loadSessionMock).toHaveBeenCalledTimes(2));
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 1100));});
+    expect(saveSession).not.toHaveBeenCalled();
+    expect(unwatchFileMock).toHaveBeenCalledWith("/tmp/one.ts");
+    next.resolve({session:{version:1, workspace_folder:null, docs:[], views:[[],[]], active_view:0, active_doc_by_view:[null,null], recent_files:[]}, persistAllowed:true});
+    await waitFor(() => expect(view.queryByRole("tab")).toBeNull());
+  });
+
+  it("keeps unsaved text when an unexpected context update arrives", async () => {
+    const view = await openOne();
+    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
+    view.rerender(<App contextKey="unexpected-project"/>);
+    expect(loadSessionMock).toHaveBeenCalledTimes(1);
+    expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
+    expect(view.getByText(/프로젝트가 변경되어도 미저장 내용은 보존됩니다/)).toBeTruthy();
+  });
+
   it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
     const { container, getByRole } = render(<App />);
     await waitFor(() => expect((getByRole("textbox", { name: "열 파일 경로" }) as HTMLInputElement).disabled).toBe(false));

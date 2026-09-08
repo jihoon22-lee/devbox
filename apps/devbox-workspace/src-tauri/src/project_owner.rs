@@ -66,7 +66,7 @@ impl ProjectOwner {
         }
         self.admit_lease(context, probe_windows(&binding.root)?)
     }
-    fn binding(&self, context: &ProjectContext) -> Result<Binding> {
+    pub fn binding(&self, context: &ProjectContext) -> Result<Binding> {
         context.validate().map_err(|_| "invalid_context")?;
         self.store
             .read()?

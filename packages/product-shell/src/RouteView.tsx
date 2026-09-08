@@ -12,7 +12,7 @@ export default function RouteView({ description, feature }: { description: Descr
     void routeStatus(description, feature.route).then((value) => { if (active) setStatus(value); }, (failure: unknown) => { if (active) setError(failure instanceof Error ? failure.message : "화면 상태를 확인할 수 없습니다."); });
     return () => { active = false; };
   }, [description, feature.route, attempt]);
-  return <section aria-label={feature.label}>
+  return <section className="shell-route" aria-label={feature.label}>
     <h1>{feature.label}</h1>
     {error ? <div role="alert"><p>{error}</p><button onClick={() => setAttempt((a) => a + 1)}>다시 시도</button></div>
       : !status ? <p role="status">화면을 확인하고 있습니다…</p>

@@ -55,10 +55,12 @@ assert pnpm_lock_only.dependency_scope == "all"
 
 editor = resolve("packages/editor/src/index.ts")
 assert editor.frontend_packages == [
-    "apps/code-pad", "apps/devbox-workspace", "apps/knowledge-base", "apps/repo-manager",
-    "apps/workbench", "packages/editor", "packages/workspace-features",
+    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/repo-manager",
+    "apps/workbench", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
 ]
-assert editor.frontend_apps == ["code-pad", "devbox-workspace", "knowledge-base", "repo-manager", "workbench"]
+assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
+knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
+assert knowledge_features.frontend_apps == ["devbox-knowledge", "everything-plus", "knowledge-base", "life-log"]
 
 openapi = resolve("packages/openapi/src/index.ts")
 assert openapi.frontend_packages == [
@@ -69,9 +71,11 @@ api_features = resolve("packages/api-studio-features/src/requests/api.ts")
 assert api_features.frontend_apps == ["api-playground", "devbox-api-studio", "developer-toolbox", "webhook-lab"]
 api_protocols = resolve("crates/api-protocols/src/core/grpc.rs")
 assert api_protocols.rust_packages == ["api-playground", "api-protocols", "devbox-api-studio"]
-for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "developer-toolbox"), ("data-migration", "devbox-control-center")]:
+for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "developer-toolbox")]:
     shared_domain = resolve(f"crates/{crate}/src/lib.rs")
     assert shared_domain.rust_packages == sorted([crate, legacy, "devbox-api-studio"])
+migration = resolve("crates/data-migration/src/lib.rs")
+assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge"]
 api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
 assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
 
@@ -83,12 +87,15 @@ process = resolve("crates/process/src/lib.rs")
 assert process.rust_packages == ["port-manager", "process"]
 
 search = resolve("crates/search/src/lib.rs")
-assert search.rust_packages == ["everything-plus", "knowledge-base", "search"]
+assert search.rust_packages == ["devbox-knowledge", "everything-plus", "knowledge-base", "search"]
+for app in ["knowledge-base", "life-log", "everything-plus"]:
+    native_component = resolve(f"apps/{app}/src-tauri/src/component.rs")
+    assert native_component.rust_packages == sorted([app, "devbox-knowledge"])
 
 secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == [
     "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
-    "devbox-workspace", "product-contract", "product-shell-tauri", "run-manager",
+    "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
     "secrets", "workbench",
 ]
 
@@ -97,8 +104,9 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["code-pad", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "repo-manager", "workbench"]
+assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
 assert "packages/workspace-features" in catalog.frontend_packages
+assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages
 assert "launch" in catalog.rust_packages
 assert "code-pad" not in catalog.rust_packages

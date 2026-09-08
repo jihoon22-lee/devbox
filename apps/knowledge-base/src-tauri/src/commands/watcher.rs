@@ -812,7 +812,10 @@ fn now_ms() -> u64 {
 }
 
 fn publish_docs_changed(state: &Arc<AppState>, app: &AppHandle) {
-    let _ = crate::integration::write_snapshot(&state.db.lock().unwrap());
+    let _ = crate::integration::write_snapshot(
+        &state.db.lock().unwrap(),
+        state.integration_root.as_deref(),
+    );
     let _ = app.emit("docs-changed", ());
 }
 
@@ -924,6 +927,20 @@ fn read_bounded_note(
     String::from_utf8(bytes).map_err(|_| ())
 }
 
+/// Typed product adapter; the caller enforces native owner/session authorization.
+pub(crate) async fn __component_knowledge_watcher_status(
+    component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager as _;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let value = knowledge_watcher_status(component_app.state());
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1005,6 +1022,7 @@ mod tests {
 
         let mut complete = scan_vault(&vault);
         let state = Arc::new(AppState {
+            integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
             quick_capture_previews: Mutex::new(
@@ -1048,6 +1066,7 @@ mod tests {
         let connection = db::init(Path::new(":memory:")).unwrap();
         db::index_doc(&connection, "Notes/raced.md", "# indexed").unwrap();
         let state = Arc::new(AppState {
+            integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
             quick_capture_previews: Mutex::new(
@@ -1080,6 +1099,7 @@ mod tests {
         let connection = db::init(Path::new(":memory:")).unwrap();
         db::index_doc(&connection, "Notes/last-known.md", "# retained").unwrap();
         let state = Arc::new(AppState {
+            integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
             quick_capture_previews: Mutex::new(

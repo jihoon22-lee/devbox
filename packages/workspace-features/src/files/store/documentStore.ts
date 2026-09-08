@@ -13,6 +13,7 @@ export type EditorAction =
   | { type: "replaceDoc"; doc: Doc }
   | {
       type: "renameDoc";
+      nativeRevision?: string | null;
       docId: DocId;
       path: string;
       mtimeNanos: string;
@@ -43,6 +44,7 @@ export type EditorAction =
     }
   | {
       type: "saveDoc";
+      nativeRevision?: string | null;
       docId: DocId;
       mtimeNanos: string;
       size: number;
@@ -51,6 +53,7 @@ export type EditorAction =
       durabilityWarning?: string | null;
       /** Snapshot submitted to the native save command. */
       submittedRevision?: number;
+      submittedNativeRevision?: string | null;
       submittedText?: string;
       /** Compatibility aliases for callers that use the shorter names. */
       revision?: number;
@@ -392,6 +395,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
           ? {
               ...doc,
               path: action.path,
+              ...(action.nativeRevision !== undefined ? {nativeRevision:action.nativeRevision} : {}),
               mtimeNanos: action.mtimeNanos,
               size: action.size,
               contentHash: action.contentHash,
@@ -511,6 +515,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
               doc.id !== action.docId
                 ? doc
                 : (() => {
+                    if (action.submittedNativeRevision !== undefined && doc.nativeRevision !== action.submittedNativeRevision) return doc;
                     const submittedRevision = action.submittedRevision ?? action.revision;
                     const submittedText = action.submittedText ?? action.text;
                     const matchesSubmittedSnapshot =
@@ -525,6 +530,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                       // matching submitted buffer may clear dirty state.
                       dirty: matchesSubmittedSnapshot ? false : true,
                       mtimeNanos: action.mtimeNanos,
+                      ...(action.nativeRevision !== undefined ? {nativeRevision:action.nativeRevision} : {}),
                       size: action.size,
                       ...(action.contentHash !== undefined ? { contentHash: action.contentHash } : {}),
                       ...(action.lossy !== undefined ? { lossy: action.lossy } : {}),

@@ -45,89 +45,77 @@ opened by these byte validators. Unreadable user metadata is preserved, includin
 unsaved recovery content. Engine dependencies reuse the existing local consumers;
 no external package version or dependency family was added.
 
+## Native Files behavior
+
+The native Files route uses Code Pad's editor and encoding/line-ending engines.
+FileOwner admits a current project file or explicit OS-dialog choice, retains
+native file/ancestor objects and bounds documents/choices to 64. Save/rename/delete
+require an opaque native document revision plus unchanged object/content evidence.
+Persisted picker paths restore consent only; a restart creates a fresh snapshot.
+Session/recovery metadata is scoped to the private worktree or project-free view.
+Metadata IO checks held generation/component/view identities and preserves corrupt
+files. Project changes retire pending session saves; partial restoration does not
+automatically remove unavailable tabs from the saved session.
+
+Files keeps dirty buffers across routes and ignores hidden-route global shortcuts.
+Registry changes are disabled while editing, hydrating or reviewing recovery. Native
+recovery binds one-time preview tokens to context, file revision and entry bytes;
+cancel preserves entries, and late/unmounted previews release temporary state.
+The raw legacy recovery writer is blocked. Preview assets use bounded no-link
+reads inside the admitted project. Windows LSP remains disabled in the product
+until execution trust is integrated; existing installer/cache engines are retained.
+
 ## Actual verification
 
-Extraction passed 307 shared UI tests, package typecheck and four entry builds;
-preserved native suites passed 475 tests and component-only strict Clippy. Restored
-standalone entry axe smokes passed. The final model/entry state passed affected all
-in 702.074 seconds and [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34204524413).
+The extracted shared UI passed 307 tests and the original native suites passed
+475 tests/component-only strict Clippy. Registry/store/probe/context changes passed
+focused regressions and final affected all in **566.209 seconds** under 8 GiB.
+[General CI at be043f2](https://github.com/jihoon22-lee/devbox/actions/runs/34219530369)
+passed. Its [Windows product run](https://github.com/jihoon22-lee/devbox/actions/runs/34219530355)
+passed actual Workspace Registry/selection on both installations; the overall run
+failed the older API Studio lifecycle boundary fixed in B03. B03 is now integrated
+from main `82e257e`; its final general CI and complete Windows product acceptance
+both passed.
 
-The native probe/preview owner passed 24 focused Rust tests, strict Clippy and final
-affected all in **624.910 seconds** (8 GiB enforced, cgroup peak 6,445,195,264 bytes).
-Its [Windows CI](https://github.com/jihoon22-lee/devbox/actions/runs/34207972813) compiled
-successfully but failed one probe test: renaming a repository with held child objects
-returned PermissionDenied. The corrected test checks that blocked rename preserves
-the lease, then releases it and verifies replacement identity. Portable systems still
-exercise replacement while the lease is held. This Windows correction awaits rerun.
-The [Windows product fixture](https://github.com/jihoon22-lee/devbox/actions/runs/34207972858)
-also retains the old placeholder readiness assertion until host integration is complete.
+Current Files owner/host changes passed **44 Workspace Rust tests**, **5 Code Pad
+preview tests** and strict Clippy. The first shared UI run found duplicate
+StrictMode watcher cleanup; cleanup now deduplicates restored/current document
+paths. The corrected Files UI/API/recovery suite passed **39 tests**, followed by
+Workspace build and **5 UI tests including axe**, in **24.640 seconds**. New tests
+cover hidden-route save ownership, clean-context pending session retirement,
+unexpected dirty-context preservation, one-time recovery approval and late preview
+cancellation. Generated native Registry request regression and Files script syntax
+passed. Notices were regenerated from lockfiles (only the Cargo.lock digest changed).
 
-The current activation/schema/probe changes passed **30 focused Rust tests and strict
-Clippy in 14.109 seconds**. Tests cover competing owners, cancellation/unselected
-preparation, restart, future/corrupt metadata byte preservation, component type
-changes, replaced root and bounded preparation without recovery deletion. Initial
-new-store tests caught missing optional files being rejected; absence is now checked
-one path component at a time while existing symlink/reparse paths remain rejected.
-Final affected all passed in **675.610 seconds** (8 GiB enforced; cgroup peak
-6,445,158,400 bytes), including all frontend and Rust gates. Generated notices
-changed only the Cargo.lock digest. These Linux checks do not establish actual
-Windows product or WSL LSP parity.
+Native review found a context-change race while file IO was queued. The first
+affected run was stopped to include an owned context permit spanning admission,
+queues and workers; select/clear/rebind/remove cannot overlap file operations.
+Worker clones retain the permit after caller cancellation. **46 Workspace Rust
+tests and strict Clippy passed in 30.498 seconds**, including both permit lifetime
+regressions. The next affected run stopped at Rust build after **264.961 seconds**:
+the shared worktree target reused an older Workspace build script missing the
+Workspace plugin permission. Cleaning only that package's Cargo artifacts restored
+all-target check (**9.004 seconds PASS**). No capability grant was widened to work
+around this cache issue.
 
-The native host now connects an explicit blank start and Registry UI to that
-owner. Authentication precedes closed activation/Registry method roles. External
-probes and metadata use separate two-worker bounds; timed-out probes keep their
-permits until the OS returns. Preview IDs expire, cancel and cannot grant trust.
-The UI guards stale load responses, confirms register/rebind and removal, and
-submits only reviewed tokens. The current native view is startup/Registry; shared
-feature previews remain browser-only until their command/context guards are wired.
+Main `82e257e` brings the completed B03 implementation. Integration preserves both
+products' component roles, source-graph consumers, Windows readiness and native test
+sets. The generated request, metadata and CI scope regressions passed after resolving
+those shared-file conflicts; notices were regenerated from the combined lockfiles.
+Final combined affected all passed in **832.640 seconds** under the shared
+8 GiB cap (cgroup peak 6,444,875,776 bytes), including all frontend/Rust checks.
 
-The host passed **32 native Rust tests and strict Clippy**. The combined run then
-caught a missing direct Tauri frontend dependency and an invalid testing-library
-option. After those corrections the Workspace build, **4 UI tests including axe**,
-metadata checker and CI scope runner tests passed in **21.489 seconds**. The new
-Windows fixture covers actual blank-start/preview/cancel/register UI plus native
-replay/role/foreign-installation denial, rename/removal and source-file preservation.
-Its source is syntax checked; Windows execution is pending.
-
-The pushed store state [7a856ce Windows CI](https://github.com/jihoon22-lee/devbox/actions/runs/34210889932)
-failed before tests because concurrent Tauri build scripts copied the same notice
-staging file (Windows sharing violation 32). Windows Rust CI now uses one Cargo
-build job; check/Clippy/test scope and test-harness concurrency remain intact.
-Linux/local budgets are unchanged. This requires the next Windows CI execution.
-
-The first host affected run failed the catalog's closed authority parser after
-684.778 seconds: the new Registry role had been declared in JSON but not admitted
-by the Rust catalog. The exact Workspace owner/role pairs are now registered;
-foreign-owner, network-authority and unknown-component mutations remain rejected.
-Focused catalog tests/strict Clippy/metadata validation passed in **4.387 seconds**.
-The corrected final affected all passed in **587.042 seconds** under the shared
-8 GiB cap (cgroup peak 6,445,002,752 bytes), including every frontend and Rust gate.
-The native Windows registration fixture and serial Cargo CI await the pushed head.
-
-The next change adds native project selection with fresh Registry/root/Git
-admission, stale-context rejection and request-deadline/previous-context checks.
-Shell metadata refresh keeps the feature subtree mounted. Added regressions cover
-root replacement, explicit rebind, stale revision/removal, explicit selection and
-preservation of an unsaved UI buffer; the Windows fixture adds actual selection,
-stale-header denial and clear. Workspace **33** and shared context **8** Rust
-tests, strict Clippy, and **11** shell tests passed in **43.577 seconds**. The
-Workspace build and **5** UI tests including axe then passed in **16.765 seconds**.
-The previous [native run](https://github.com/jihoon22-lee/devbox/actions/runs/34215893198)
-failed because the registration fixture generated an invalid JavaScript request
-(a missing object delimiter); module syntax checking did not parse that generated
-string. Request generation now serializes the complete payload, and a passing
-regression executes the generated expressions with and without selected context,
-including quoted Korean paths. Windows acceptance runs it before packaging.
-The ongoing affected run was stopped to include this correction. The corrected
-final affected all passed in **566.209 seconds** under the shared 8 GiB cap
-(cgroup peak 6,445,039,616 bytes). Actual Windows selection execution is pending.
+The new Windows Files fixture exercises actual CodeMirror open/edit/save, draft
+retention/context lock, outside-project denial, replaced objects/stale revisions,
+CRLF save/rename/delete and recovery cancel/replay/apply. It uses only synthetic
+owned files. Its Windows execution on the pushed head remains pending.
 
 ## Remaining acceptance
 
-Shared feature IPC/transport, trust UI, project/source/file context with dirty
-transitions, Dependencies route, importer/recovery mappings,
-Windows LSP integration and WSL-native transport remain incomplete. Retained hidden
-features need active-route keyboard/listener ownership. B03 supplies shared shell
-containment on integration. Strict metadata parsing is an activation prerequisite,
-not a completed legacy importer. Windows CI remains required for the current
-changes; no R/S or completion issue is closed by this draft.
+Source/Dependencies routing, execution-trust UI and manifest IO, importer mappings,
+Windows LSP integration and WSL-native transport remain incomplete. Files currently
+serializes native IO under one state mutex; remote independent cancellation needs
+work before WSL acceptance. Native file-dialog selection is implemented but has no
+actual Windows dialog fixture yet. Strict metadata parsing is an activation
+prerequisite, not a completed legacy importer. No R/S or completion issue is closed
+by this draft.
