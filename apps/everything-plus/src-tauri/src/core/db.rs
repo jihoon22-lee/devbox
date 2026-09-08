@@ -581,16 +581,19 @@ pub fn upsert_content_record(
 /// Remove only PDF-derived rows below one root.  Format-specific reindexing
 /// must leave text/source/Markdown rows untouched when the PDF extractor
 /// version changes.
+#[cfg(test)]
 pub fn clear_pdf(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "pdf")
 }
 
 /// Remove only DOCX-derived rows below one root. DOCX reindexing must leave
 /// text/source/Markdown and other document-format rows untouched.
+#[cfg(test)]
 pub fn clear_docx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "docx")
 }
 
+#[cfg(test)]
 fn clear_format(conn: &Connection, root_path: &str, extension: &str) -> rusqlite::Result<()> {
     let normalized = normalize_path(root_path);
     if let Some(root_id) = conn
@@ -680,14 +683,17 @@ fn format_reindex_required(
 /// Remove only legacy XLS-derived rows below one root. Format-specific
 /// reindexing must leave text/source/Markdown/PDF rows untouched when the XLS
 /// extractor version changes.
+#[cfg(test)]
 pub fn clear_xls(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "xls")
 }
 
+#[cfg(test)]
 pub fn clear_xlsx(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "xlsx")
 }
 
+#[cfg(test)]
 pub fn clear_ods(conn: &Connection, root_path: &str) -> rusqlite::Result<()> {
     clear_format(conn, root_path, "ods")
 }

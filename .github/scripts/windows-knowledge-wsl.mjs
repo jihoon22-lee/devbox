@@ -119,8 +119,9 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   // actually drained before preparing an external directory move.
   await eventually(async () => {
     const state = succeeded(await command(item, "knowledge.search", "source_poll", { generation: held.generation }));
-    evidence.wsl.beforeMoveResources = { state: state.state, retainedObjects: state.bounds.retainedObjects, runningWorkers: state.bounds.runningWorkers };
-    return state.state === "cancelled" && state.bounds.retainedObjects === 0 && state.bounds.runningWorkers === 0;
+    const index = succeeded(await command(item, "knowledge.search", "index_status"));
+    evidence.wsl.beforeMoveResources = { state: state.state, retainedObjects: state.bounds.retainedObjects, runningWorkers: state.bounds.runningWorkers, indexing: index.indexing };
+    return state.state === "cancelled" && state.bounds.retainedObjects === 0 && state.bounds.runningWorkers === 0 && !index.indexing;
   }, "Cancelled WSL source work did not release its native objects", 30_000);
   // Move inside the owned distro: Windows UNC directory rename can fail with
   // EPERM while previously verified remote objects are being retired. A Linux
@@ -133,6 +134,9 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
       return !status.indexing && !!status.last_error;
     }, "Unavailable WSL root was not diagnosed");
     const offline = await query("wslfixture");
+    evidence.wsl.offlineQuery = { state: offline.state, partial: offline.partial, rows: offline.rows.length,
+      bounds: offline.bounds, indexStatus: succeeded(await command(item, "knowledge.search", "index_status")),
+      watcherStatuses: succeeded(await command(item, "knowledge.search", "watcher_statuses")) };
     assert.equal(offline.rows.length, 500); assert.ok(offline.rows.every(r => r.availability !== "available" && !r.reference));
     await cancel(offline);
     // The unrelated active Notes vault and local indexed source remain usable.

@@ -3,11 +3,10 @@ use crate::core::content::{
     is_xlsx_path,
 };
 use crate::core::db::{
-    add_root as db_add_root, clear_content_for_file, clear_docx, clear_ods, clear_pdf, clear_root,
-    clear_xls, clear_xlsx, content_status_summary, delete_file_by_id, list_roots as db_list_roots,
-    record_docx_extractor_version, record_ods_extractor_version, record_pdf_extractor_version,
-    record_xls_extractor_version, record_xlsx_extractor_version, remove_root as db_remove_root,
-    root_row_for, total_files, upsert_content_record, upsert_file,
+    add_root as db_add_root, clear_content_for_file, content_status_summary, delete_file_by_id,
+    list_roots as db_list_roots, record_docx_extractor_version, record_ods_extractor_version,
+    record_pdf_extractor_version, record_xls_extractor_version, record_xlsx_extractor_version,
+    remove_root as db_remove_root, root_row_for, total_files, upsert_content_record, upsert_file,
 };
 use crate::core::models::IndexStatus;
 use rusqlite::{Connection, OptionalExtension};
@@ -349,6 +348,14 @@ fn run_index_with_filter(
     only_roots: &[String],
     filter: IndexFilter,
 ) -> rusqlite::Result<()> {
+    run_observed_index(state, only_roots, filter, || {})
+}
+fn run_observed_index(
+    state: &Arc<AppState>,
+    only_roots: &[String],
+    filter: IndexFilter,
+    mut after_scan: impl FnMut(),
+) -> rusqlite::Result<()> {
     let full_reindex = only_roots.is_empty();
     let (all_roots, targets): (Vec<_>, Vec<_>) = {
         let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
@@ -373,8 +380,8 @@ fn run_index_with_filter(
         // Authorize the root before walking it. In particular, do not follow
         // a path whose parent was replaced by a symlink/reparse point and only
         // reject it after the potentially expensive traversal has happened.
-        let walked = match collect_root_files(Path::new(&root.path)) {
-            Ok(walked) => walked,
+        let (observation, walked) = match observed_root_files(Path::new(&root.path)) {
+            Ok(value) => value,
             Err(code) => {
                 all_scans_complete = false;
                 if let Ok(mut error) = state.last_error.lock() {
@@ -395,27 +402,17 @@ fn run_index_with_filter(
             if let Ok(mut error) = state.last_error.lock() {
                 *error = Some(code.to_string());
             }
-        } else {
-            // Clear derived rows only after obtaining a complete authoritative
-            // snapshot. An offline distro or unreadable subtree must never be
-            // misread as an empty root.
+        }
+        // Keep last-good rows visible while the replacement scan is prepared.
+        // This connection-local table records only paths admitted by this scan;
+        // stale rows are pruned after every batch and final root revalidation.
+        {
             let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let current_content: Option<bool> = conn
-                .query_row(
-                    "SELECT content != 0 FROM roots WHERE path = ?1",
-                    [root.path.as_str()],
-                    |row| row.get(0),
-                )
-                .optional()?;
-            if current_content != Some(root.content) {
-                continue;
-            }
-            match filter {
-                IndexFilter::All => clear_root(&conn, &root.path)?,
-                IndexFilter::Formats(formats) => clear_format_rows(&conn, &root.path, formats)?,
-            }
+            conn.execute_batch("CREATE TEMP TABLE IF NOT EXISTS devbox_scan_seen(path TEXT PRIMARY KEY); DELETE FROM devbox_scan_seen;")?;
         }
 
+        after_scan();
+        let mut root_complete = scan_error.is_none();
         let files: Vec<_> = walked
             .files
             .into_iter()
@@ -423,6 +420,14 @@ fn run_index_with_filter(
             .collect();
         state.total.fetch_add(files.len() as i64, Ordering::SeqCst);
         for chunk in files.chunks(BATCH_SIZE) {
+            if observation.revalidate().is_err() {
+                all_scans_complete = false;
+                root_complete = false;
+                if let Ok(mut error) = state.last_error.lock() {
+                    *error = Some("root_unavailable".into());
+                }
+                break;
+            }
             if state.cancel_requested.load(Ordering::SeqCst) {
                 return Ok(());
             }
@@ -459,6 +464,16 @@ fn run_index_with_filter(
             if state.cancel_requested.load(Ordering::SeqCst) {
                 return Ok(());
             }
+            // A root can disappear during extraction. Do not replace useful
+            // content with read failures or infer deletions from that outage.
+            if observation.revalidate().is_err() {
+                all_scans_complete = false;
+                root_complete = false;
+                if let Ok(mut error) = state.last_error.lock() {
+                    *error = Some("root_unavailable".into());
+                }
+                break;
+            }
             let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
             let current_content: Option<bool> = conn
                 .query_row(
@@ -471,11 +486,20 @@ fn run_index_with_filter(
                 // Root removal or a content-policy toggle won the race while
                 // this chunk was being read. The queued re-index owns the
                 // replacement state; do not commit a stale batch.
+                root_complete = false;
+                all_scans_complete = false;
                 continue;
             }
             conn.execute("BEGIN TRANSACTION", [])?;
             let mut failed = None;
             for (path, size, modified_ts, record) in &prepared {
+                if let Err(error) = conn.execute(
+                    "INSERT OR IGNORE INTO devbox_scan_seen(path) VALUES(?1)",
+                    [crate::core::db::normalize_path(path)],
+                ) {
+                    failed = Some(error);
+                    break;
+                }
                 let file_id = match upsert_file(&conn, path, *size, *modified_ts, root.id) {
                     Ok(file_id) => file_id,
                     Err(error) => {
@@ -516,6 +540,28 @@ fn run_index_with_filter(
                 }
             }
         }
+        if root_complete && !state.cancel_requested.load(Ordering::SeqCst) {
+            if observation.revalidate().is_err() {
+                all_scans_complete = false;
+                if let Ok(mut error) = state.last_error.lock() {
+                    *error = Some("root_unavailable".into());
+                }
+            } else {
+                let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+                let current_content = conn
+                    .query_row(
+                        "SELECT content != 0 FROM roots WHERE id=?1 AND path=?2",
+                        rusqlite::params![root.id, root.path],
+                        |row| row.get::<_, bool>(0),
+                    )
+                    .optional()?;
+                if current_content == Some(root.content) {
+                    prune_unseen(&conn, root.id, filter)?;
+                } else {
+                    all_scans_complete = false;
+                }
+            }
+        }
     }
     // A root change can request cancellation after the last batch commits but
     // before the format marker is recorded.  Treat that narrow handoff window
@@ -537,41 +583,81 @@ fn run_index_with_filter(
     Ok(())
 }
 
-/// Preflight one root before collecting its bounded snapshot. Kept shared
-/// with the WSL polling worker so full scans and reconnect scans enforce the
-/// same directory/link authority boundary.
-pub(crate) fn collect_root_files(root: &Path) -> Result<filesystem::WalkResult, &'static str> {
-    let metadata = std::fs::symlink_metadata(root).map_err(|_| "root_unavailable")?;
-    if !metadata.is_dir()
-        || metadata.file_type().is_symlink()
-        || filesystem::ensure_no_links(root).is_err()
-    {
-        return Err("root_unavailable");
+/// Retain native root identity across a scan/extraction. A successful empty
+/// traversal alone is insufficient when the directory moved or was replaced.
+pub(crate) struct RootObservation {
+    path: std::path::PathBuf,
+    identity: filesystem::FilesystemIdentity,
+    _handle: std::fs::File,
+}
+impl RootObservation {
+    pub(crate) fn open(root: &Path) -> Result<Self, &'static str> {
+        filesystem::ensure_no_links(root).map_err(|_| "root_unavailable")?;
+        let (handle, identity) =
+            filesystem::open_filesystem_object(root, true).map_err(|_| "root_unavailable")?;
+        Ok(Self {
+            path: root.into(),
+            identity,
+            _handle: handle,
+        })
     }
-    Ok(filesystem::collect_limited(root, MAX_ROOT_SCAN_FILES))
+    pub(crate) fn revalidate(&self) -> Result<(), &'static str> {
+        filesystem::ensure_no_links(&self.path).map_err(|_| "root_unavailable")?;
+        if filesystem::filesystem_identity(&self.path, true).map_err(|_| "root_unavailable")?
+            != self.identity
+        {
+            return Err("root_unavailable");
+        }
+        Ok(())
+    }
+}
+fn observed_root_files(
+    root: &Path,
+) -> Result<(RootObservation, filesystem::WalkResult), &'static str> {
+    let observation = RootObservation::open(root)?;
+    let walked = filesystem::collect_limited(root, MAX_ROOT_SCAN_FILES);
+    observation.revalidate()?;
+    Ok((observation, walked))
+}
+/// Polling and full scans share the same root observation boundary.
+pub(crate) fn collect_root_files(root: &Path) -> Result<filesystem::WalkResult, &'static str> {
+    observed_root_files(root).map(|(_, walked)| walked)
 }
 
-fn clear_format_rows(
-    conn: &Connection,
-    root_path: &str,
-    formats: FormatSet,
-) -> rusqlite::Result<()> {
-    if formats.contains(FormatSet::PDF) {
-        clear_pdf(conn, root_path)?;
+fn prune_unseen(conn: &Connection, root_id: i64, filter: IndexFilter) -> rusqlite::Result<()> {
+    let scope = match filter {
+        IndexFilter::All => String::new(),
+        IndexFilter::Formats(formats) => {
+            let selected = [
+                (FormatSet::PDF, "'pdf'"),
+                (FormatSet::XLS, "'xls'"),
+                (FormatSet::XLSX, "'xlsx'"),
+                (FormatSet::ODS, "'ods'"),
+                (FormatSet::DOCX, "'docx'"),
+            ]
+            .into_iter()
+            .filter(|(format, _)| formats.contains(*format))
+            .map(|(_, ext)| ext)
+            .collect::<Vec<_>>();
+            if selected.is_empty() {
+                return Ok(());
+            }
+            format!(" AND ext IN ({})", selected.join(","))
+        }
+    };
+    // The scope is assembled exclusively from the closed format constants.
+    let predicate = format!("root_id=?1{scope} AND NOT EXISTS(SELECT 1 FROM devbox_scan_seen s WHERE s.path=files.path)");
+    conn.execute_batch("SAVEPOINT devbox_scan_prune")?;
+    let result = (|| {
+        conn.execute(&format!("DELETE FROM file_content WHERE file_id IN (SELECT id FROM files WHERE {predicate})"), [root_id])?;
+        conn.execute(&format!("DELETE FROM files WHERE {predicate}"), [root_id])?;
+        Ok::<_, rusqlite::Error>(())
+    })();
+    if result.is_err() {
+        let _ = conn.execute_batch("ROLLBACK TO devbox_scan_prune");
     }
-    if formats.contains(FormatSet::XLS) {
-        clear_xls(conn, root_path)?;
-    }
-    if formats.contains(FormatSet::XLSX) {
-        clear_xlsx(conn, root_path)?;
-    }
-    if formats.contains(FormatSet::ODS) {
-        clear_ods(conn, root_path)?;
-    }
-    if formats.contains(FormatSet::DOCX) {
-        clear_docx(conn, root_path)?;
-    }
-    Ok(())
+    conn.execute_batch("RELEASE devbox_scan_prune")?;
+    result
 }
 
 fn record_format_markers(conn: &Connection, formats: FormatSet) -> rusqlite::Result<()> {
@@ -1198,6 +1284,129 @@ mod tests {
             .unwrap()
             .is_empty());
         fs::remove_dir_all(root).unwrap();
+    }
+
+    struct ReconcileFixture(std::path::PathBuf);
+    impl ReconcileFixture {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for ReconcileFixture {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn reconcile_fixture() -> ReconcileFixture {
+        let path = std::env::temp_dir().join(format!(
+            "everything-plus-reconcile-{}-{}-{}",
+            std::process::id(),
+            NEXT_FIXTURE.fetch_add(1, Ordering::Relaxed),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        fs::create_dir(&path).unwrap();
+        ReconcileFixture(path)
+    }
+
+    #[test]
+    fn cancelled_replacement_scan_keeps_last_good_rows_and_content() {
+        let root = reconcile_fixture();
+        let first = root.path().join("survivor.txt");
+        fs::write(&first, "last good content").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.path().to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        fs::remove_file(&first).unwrap();
+        fs::write(root.path().join("replacement.txt"), "new content").unwrap();
+        run_observed_index(&app_state, &[], IndexFilter::All, || {
+            app_state.cancel_requested.store(true, Ordering::SeqCst);
+        })
+        .unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search(&conn, "survivor", 10).unwrap().len(), 1);
+        assert_eq!(
+            crate::core::db::search_content(&conn, "last", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert!(search(&conn, "replacement", 10).unwrap().is_empty());
+        drop(conn);
+        app_state.cancel_requested.store(false, Ordering::SeqCst);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert!(search(&conn, "survivor", 10).unwrap().is_empty());
+        assert_eq!(search(&conn, "replacement", 10).unwrap().len(), 1);
+    }
+
+    #[test]
+    fn queued_incremental_changes_cannot_delete_an_offline_root_index() {
+        let parent = reconcile_fixture();
+        let root = parent.path().join("root");
+        fs::create_dir(&root).unwrap();
+        let child = root.join("survivor.txt");
+        fs::write(&child, "last good content").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        let moved = parent.path().join("offline");
+        fs::rename(&root, &moved).unwrap();
+        assert!(
+            crate::commands::watcher::apply_incremental(&app_state, child.to_str().unwrap())
+                .is_err()
+        );
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search(&conn, "survivor", 10).unwrap().len(), 1);
+        assert_eq!(
+            crate::core::db::search_content(&conn, "last", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        drop(conn);
+        fs::rename(&moved, &root).unwrap();
+        fs::remove_file(&child).unwrap();
+        crate::commands::watcher::apply_incremental(&app_state, child.to_str().unwrap()).unwrap();
+        assert!(search(&app_state.db.lock().unwrap(), "survivor", 10)
+            .unwrap()
+            .is_empty());
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_root_moved_after_traversal_does_not_replace_last_good_content() {
+        let parent = reconcile_fixture();
+        let root = parent.path().join("root");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("survivor.txt"), "last good content").unwrap();
+        let conn = Connection::open_in_memory().unwrap();
+        crate::core::db::migrate(&conn).unwrap();
+        db_add_root(&conn, root.to_str().unwrap(), true).unwrap();
+        let app_state = state(conn);
+        run_index_with_filter(&app_state, &[], IndexFilter::All).unwrap();
+        run_observed_index(&app_state, &[], IndexFilter::All, || {
+            fs::rename(&root, parent.path().join("offline")).unwrap();
+        })
+        .unwrap();
+        let conn = app_state.db.lock().unwrap();
+        assert_eq!(search(&conn, "survivor", 10).unwrap().len(), 1);
+        assert_eq!(
+            crate::core::db::search_content(&conn, "last", 10)
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            app_state.last_error.lock().unwrap().as_deref(),
+            Some("root_unavailable")
+        );
     }
 
     #[test]

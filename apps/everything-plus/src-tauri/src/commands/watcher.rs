@@ -5,7 +5,9 @@
 //! (full re-index가 루트를 통째로 다시 쓰므로 generation 대신 `indexing` 플래그로
 //! 배타 제어한다 — §8.3).
 
-use crate::commands::indexing::{collect_root_files, spawn_index, validate_root, AppState};
+use crate::commands::indexing::{
+    collect_root_files, spawn_index, validate_root, AppState, RootObservation,
+};
 use crate::core::content::{extract_file, is_content_candidate};
 use crate::core::db::{
     delete_content, delete_file, find_root_for, root_row_for, upsert_content_record, upsert_file,
@@ -467,6 +469,7 @@ fn deliver_ready(
             eprintln!("everything-plus: incremental index failed");
             if let Ok(conn) = state.db.lock() {
                 if let Ok(Some(root)) = find_root_for(&conn, &path_str) {
+                    mark_reconcile(reconcile_roots, &root.path);
                     if let Some(entry) = status.lock().unwrap().get_mut(&root.path) {
                         entry.error = Some("incremental_index_failed".to_string());
                     }
@@ -593,9 +596,25 @@ fn changed_poll_paths(
 /// - 일반 파일이면 upsert(크기·mtime) + 내용(설정·확장자·크기 조건부)
 /// - 아니면(삭제·디렉터리·심링크) 이전 인덱스 정리
 pub(crate) fn apply_incremental(state: &Arc<AppState>, path: &str) -> rusqlite::Result<()> {
+    // A queued change may outlive the root's connection. Establish the root
+    // before inspecting a child; a failed read is not proof of deletion.
+    let root = {
+        let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
+        find_root_for(&conn, path)?
+    };
+    let Some(root) = root else {
+        return Ok(());
+    };
+    let observation =
+        RootObservation::open(Path::new(&root.path)).map_err(|_| rusqlite::Error::InvalidQuery)?;
+    let parent = Path::new(path)
+        .parent()
+        .ok_or(rusqlite::Error::InvalidQuery)?;
+    filesystem::ensure_no_links(parent).map_err(|_| rusqlite::Error::InvalidQuery)?;
     let meta = std::fs::symlink_metadata(path);
     match meta {
         Ok(m) if m.file_type().is_file() => {
+            filesystem::ensure_no_links(path).map_err(|_| rusqlite::Error::InvalidQuery)?;
             let size = i64::try_from(m.len()).unwrap_or(i64::MAX);
             let modified_ts = m
                 .modified()
@@ -621,6 +640,9 @@ pub(crate) fn apply_incremental(state: &Arc<AppState>, path: &str) -> rusqlite::
             } else {
                 None
             };
+            observation
+                .revalidate()
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
             let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
             let Some((current_root_id, current_content)) = root_row_for(&conn, path)? else {
                 // The root may have been removed while the bounded read was in
@@ -640,10 +662,20 @@ pub(crate) fn apply_incremental(state: &Arc<AppState>, path: &str) -> rusqlite::
                 delete_content(&conn, file_id)?;
             }
         }
+        Err(error) if error.kind() != std::io::ErrorKind::NotFound => {
+            return Err(rusqlite::Error::InvalidQuery);
+        }
         _ => {
-            // 삭제·디렉터리·심링크 → 이전 인덱스 정리 (idempotent)
+            // Only an absent/non-file child of an available, unchanged root
+            // may remove its row. Missing parents require a complete reconcile.
+            observation
+                .revalidate()
+                .map_err(|_| rusqlite::Error::InvalidQuery)?;
+            filesystem::ensure_no_links(parent).map_err(|_| rusqlite::Error::InvalidQuery)?;
             let conn = state.db.lock().map_err(|_| rusqlite::Error::InvalidQuery)?;
-            let _ = delete_file(&conn, path)?;
+            if find_root_for(&conn, path)?.is_some_and(|current| current.path == root.path) {
+                let _ = delete_file(&conn, path)?;
+            }
         }
     }
     state
