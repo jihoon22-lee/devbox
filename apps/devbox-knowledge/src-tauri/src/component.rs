@@ -46,7 +46,11 @@ const SEARCH_SETTINGS: &[&str] = &[
 const OPENERS: &[&str] = &["open_file", "reveal_file", "open_targets", "open_in"];
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     match component {
-        "knowledge.migration" => route == "notes" && crate::startup::COMMANDS.contains(&method),
+        "knowledge.migration" => {
+            route == "notes"
+                && (crate::startup::COMMANDS.contains(&method)
+                    || crate::migration::METHODS.contains(&method))
+        }
         "knowledge.notes" => {
             matches!(route, "notes" | "daily")
                 && method != "daily_note"
@@ -70,7 +74,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         _ => false,
     }
 }
-fn issue(error: &str) -> &'static str {
+pub(crate) fn issue(error: &str) -> &'static str {
     match error {
         "component_args_invalid" => "invalid_request",
         "setup_required" => "setup_required",
@@ -88,10 +92,47 @@ fn issue(error: &str) -> &'static str {
         "daily_vault_unavailable" => "vault_unavailable",
         "tray_unavailable" => "tray_unavailable",
         "close_policy_save_failed" => "close_policy_save_failed",
+        "import_cancelled" | "snapshot cancelled" => "cancelled",
+        "import_schema_unsupported" | "unsupported source schema" => "import_schema_unsupported",
+        "import_preview_stale" | "import_job_stale" => "preview_stale",
+        "import_source_changed" => "import_source_changed",
+        "import_restart_required" => "import_restart_required",
+        "import_limit_exceeded"
+        | "import_storage_limit"
+        | "source exceeds limit"
+        | "snapshot exceeds limit" => "import_limit_exceeded",
+        "import_disk_full" => "import_disk_full",
+        "import_plan_invalid" | "import_path_invalid" => "store_invalid",
+        "import_row_invalid" | "import_database_invalid" => "import_invalid",
+        "legacy_writer_active" => "legacy_writer_active",
+        "vault_owner_busy" => "vault_owner_busy",
+        "vault_binding_invalid" | "vault_owner_unavailable" => "vault_binding_unavailable",
+        "import_timed_out" | "snapshot timed out; quiesce source and retry" => "import_timed_out",
         _ if error.contains("만료") => "preview_expired",
         _ if error.contains("미리보기") && error.contains("오래") => "preview_stale",
         _ => "operation_failed",
     }
+}
+/// A disconnected vault can block an OS filesystem call. Keep those calls off
+/// the shared IPC executor so Activity and indexed Search remain responsive.
+async fn notes_dispatch(
+    app: &tauri::AppHandle,
+    method: &str,
+    args: Value,
+) -> Result<Value, String> {
+    let app = app.clone();
+    let method = method.to_owned();
+    tauri::async_runtime::spawn_blocking(move || {
+        if knowledge_base_lib::component::DAILY_METHODS.contains(&method.as_str()) {
+            knowledge_base_lib::component::daily_dispatch(&app, &method, args)
+        } else {
+            tauri::async_runtime::block_on(knowledge_base_lib::component::dispatch(
+                &app, &method, args,
+            ))
+        }
+    })
+    .await
+    .map_err(|_| "component_worker_unavailable")?
 }
 #[tauri::command]
 async fn execute(
@@ -145,7 +186,7 @@ async fn execute(
         "knowledge.notes"
             if knowledge_base_lib::component::DAILY_METHODS.contains(&request.method.as_str()) =>
         {
-            knowledge_base_lib::component::daily_dispatch(app, &request.method, request.args)
+            notes_dispatch(app, &request.method, request.args).await
         }
         "knowledge.notes" => match request.method.as_str() {
             "read_clipboard_text" => {
@@ -184,7 +225,7 @@ async fn execute(
             "set_root" => Err("vault_binding_unavailable".into()),
             "open_targets" => Ok(json!([])),
             "open_in" => Err("provider_unavailable".into()),
-            _ => knowledge_base_lib::component::dispatch(app, &request.method, request.args).await,
+            _ => notes_dispatch(app, &request.method, request.args).await,
         },
         "knowledge.activity" if crate::lifecycle::METHODS.contains(&request.method.as_str()) => {
             crate::lifecycle::dispatch(app, &request.method, request.args)

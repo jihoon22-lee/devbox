@@ -1,0 +1,20 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+const invoke = vi.hoisted(() => vi.fn());
+vi.mock("@devbox/knowledge-features/transport", () => ({ componentInvoke: () => invoke }));
+vi.mock("@devbox/product-shell/api", () => ({ nativeMode: true }));
+import MigrationSettings from "./MigrationSettings";
+afterEach(cleanup);
+it("schedules review for next launch without activating or restarting the current app", async () => {
+  invoke.mockReset();
+  invoke.mockImplementation(async (method: string) => ({ scheduled: method === "schedule_import" }));
+  render(<MigrationSettings/>);
+  const schedule = await screen.findByRole("button", { name: "다음 시작에서 가져오기 검토" });
+  await waitFor(() => expect((schedule as HTMLButtonElement).disabled).toBe(false));
+  fireEvent.click(schedule);
+  expect((await screen.findByRole("status")).textContent).toContain("지금은 계속 작업할 수 있습니다");
+  expect(invoke.mock.calls.map(([method]) => method)).toEqual(["status", "schedule_import"]);
+  fireEvent.click(screen.getByRole("button", { name: "다음 시작의 가져오기 취소" }));
+  await waitFor(() => expect(screen.queryByRole("status")).toBeNull());
+  expect(invoke).toHaveBeenLastCalledWith("cancel_scheduled_import");
+});

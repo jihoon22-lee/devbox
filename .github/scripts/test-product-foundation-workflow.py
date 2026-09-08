@@ -54,6 +54,11 @@ assert "captureMasked: true" in workflow_probe
 assert "restartPreservesDraft: true" in workflow_probe
 
 assert "-p api-playground -p webhook-lab -p developer-toolbox" in workflow, "B02 must execute the actual Windows domain regressions, not only compile dependencies"
+assert "-p devbox-knowledge" in workflow, "B03 must execute Windows vault handle and migration regressions"
+assert "windows-knowledge-migration.mjs" in workflow
+assert workflow.index("- name: Verify Knowledge migration") < workflow.index("- name: Verify anchor and product installer coexistence"), "migration claims absent legacy profiles before installer coexistence creates them"
+for source in ("packages/knowledge-features/**", "apps/knowledge-base/src-tauri/**", "apps/life-log/src-tauri/**", "apps/everything-plus/src-tauri/**"):
+    assert source in workflow, "native Knowledge consumers require acceptance on source changes"
 
 import subprocess
 subprocess.run(["node", str(root / ".github/scripts/check-api-studio-routes.mjs"), "--self-test"], check=True)

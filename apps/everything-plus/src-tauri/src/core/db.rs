@@ -7,7 +7,7 @@ use devbox_applink::contains_sensitive_value;
 use rusqlite::types::Value;
 use rusqlite::{params, params_from_iter, Connection, OptionalExtension};
 
-const MAX_SAVED_QUERIES: i64 = 2_048;
+pub(crate) const MAX_SAVED_QUERIES: i64 = 2_048;
 const MAX_SAVED_NAME_BYTES: usize = 128;
 const MAX_SAVED_QUERY_BYTES: usize = 512;
 const MAX_FILTER_JSON_BYTES: usize = 8 * 1024;
@@ -998,6 +998,28 @@ pub fn count_saved_queries(conn: &Connection) -> rusqlite::Result<i64> {
     conn.query_row("SELECT COUNT(*) FROM saved_queries", [], |row| row.get(0))
 }
 
+pub(crate) fn validate_saved_query_definition(
+    name: &str,
+    query: &str,
+    created: i64,
+    updated: i64,
+) -> rusqlite::Result<()> {
+    if created <= 0
+        || updated < created
+        || name.trim().is_empty()
+        || query.trim().is_empty()
+        || name.len() > MAX_SAVED_NAME_BYTES
+        || query.len() > MAX_SAVED_QUERY_BYTES
+        || name.chars().any(char::is_control)
+        || query.chars().any(char::is_control)
+        || contains_sensitive_value(name)
+        || contains_sensitive_value(query)
+    {
+        return Err(rusqlite::Error::InvalidQuery);
+    }
+    Ok(())
+}
+
 pub fn upsert_saved_query(
     conn: &Connection,
     id: Option<i64>,
@@ -1008,17 +1030,8 @@ pub fn upsert_saved_query(
 ) -> rusqlite::Result<SavedQuery> {
     let name = name.trim();
     let query = query.trim();
-    if now <= 0
-        || id.is_some_and(|saved_id| saved_id <= 0)
-        || name.is_empty()
-        || query.is_empty()
-        || name.len() > MAX_SAVED_NAME_BYTES
-        || query.len() > MAX_SAVED_QUERY_BYTES
-        || name.chars().any(char::is_control)
-        || query.chars().any(char::is_control)
-        || contains_sensitive_value(name)
-        || contains_sensitive_value(query)
-    {
+    validate_saved_query_definition(name, query, now, now)?;
+    if id.is_some_and(|saved_id| saved_id <= 0) {
         return Err(rusqlite::Error::InvalidQuery);
     }
     let filter = filter

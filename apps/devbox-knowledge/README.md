@@ -2,18 +2,43 @@
 
 Hidden v0.8 B03 product integrating the existing Notes, Activity and Search engines.
 The public v0.7 topology remains unchanged until cutover. PR #556 / WP #545 tracks
-remaining migration, provider and runtime acceptance.
+remaining provider, summary and runtime acceptance.
 
 `pnpm --filter devbox-knowledge dev` opens the labelled browser fixture. On Windows,
 `pnpm --filter devbox-knowledge tauri dev` runs the native product. Browser rendering
 and portable tests are not Windows execution evidence.
 
-The first native launch requires an explicit new-store action. A generation pointer
+The first native launch offers explicit new-store or legacy-import actions. A generation pointer
 selects independent Notes, Activity and Search SQLite databases under the product's
 installation-specific app-local root. Its private Markdown vault lives outside DB
 generations. A corrupt/future pointer blocks initialization without resetting data.
-No legacy source is initialized or imported by the new-user action. Existing-vault
-selection remains blocked until the legacy-writer ownership gate is implemented.
+No legacy source is initialized or imported by the new-user action.
+
+Import reads the three known app-local legacy SQLite profiles with WAL-consistent
+online backups. It copies settings/templates, activity/history and roots/saved
+queries into an unselected generation, preserving current product data and indexes.
+Original Markdown/assets stay in place. Source-table receipts remap IDs, reserve
+deleted root references and preserve destination edits/deletions on repeat import.
+The actual template, query and draft-history validators reject unsupported input.
+Legacy collection consent is excluded; pending/sent deliveries become valid expired
+history and never replay. Selecting an existing product's import setting schedules
+review for the next launch without closing its dirty editors.
+
+Preparation, cancellation, activation and recovery have a durable journal. Applying
+requires a separate preview approval, unchanged source/destination snapshots and
+three validated destination stores before selecting one pointer. Rollback compares
+authoritative rows, permits derived-index changes and refuses newer user edits.
+Both generations and all Markdown/assets remain preserved. Each snapshot is limited
+to 256 MiB; row/cell/time limits, cancellation, disk preflight and eight retained
+preparation slots bound the operation. Cancelled preparation slots can be reclaimed.
+
+An imported legacy vault requires its original Windows database writer to close.
+A retained share-read-only handle prevents that legacy writer from reopening, and
+a shared exclusive vault lease prevents two product installations from writing the
+same vault. Windows/WSL spelling aliases share the lease; Linux path case is preserved.
+WSL availability checks and watcher restoration run away from startup, and note file
+operations run away from the shared IPC executor. Per-write vault identity checks
+remain in the existing engine. Direct live vault rebinding is still unavailable.
 
 The native registry separates note writing, Activity, Search reads, Search settings,
 result opening and migration. Query calls cannot become note mutations or launches.
@@ -41,8 +66,9 @@ the 280,000 / 90,000 outer-shell budget.
 
 The Windows foundation fixture now includes explicit startup, private note writes,
 default collection OFF, independent Search, replay/installation/role rejection and
-mounted route retention in two installations. This fixture is registered but its
-execution for host revision ceb2e7c passed. Additional Daily cancellation/save and
-tray preference fixtures await Windows execution. Actual OS close/restart behavior,
-legacy SQLite migration, vault quiesce, Activity summaries and source-aware opaque
-Search references remain under implementation in this same B03 PR.
+mounted route retention in two installations. Host ceb2e7c and Daily/tray b230a53
+passed their Windows fixtures. The new migration fixture uses pinned v0.7 executables
+to create synthetic legacy schemas and tests explicit UI import, live-writer denial,
+two-installation ownership, repeat import, privacy, ID remapping and close/restart.
+Its Windows execution is pending. Activity summaries, source-aware opaque Search
+references and final Windows/WSL acceptance remain in this same B03 PR.

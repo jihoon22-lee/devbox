@@ -58,6 +58,13 @@ pub fn create_empty_store(path: &std::path::Path) -> Result<(), String> {
     Ok(())
 }
 
+/// Use the same bounded metadata validator as the actual history reader.
+pub fn validate_import_history(connection: &rusqlite::Connection) -> Result<(), String> {
+    crate::core::draft_history::list(connection)
+        .map(|_| ())
+        .map_err(|_| "import_row_invalid".into())
+}
+
 pub const COMMANDS: &[&str] = &[
     "get_digest",
     "cancel_digest",

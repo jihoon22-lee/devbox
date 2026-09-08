@@ -96,15 +96,16 @@ describe("Knowledge quick capture dialog", () => {
       body: "body\n",
       tags: ["rust", "rust", "offline"],
     }));
+    const save = await within(dialog).findByRole("button", { name: "저장" });
     expect(dialog).toHaveTextContent("Inbox");
     expect(dialog).toHaveTextContent("Idea");
     expect(dialog).toHaveTextContent("rust, offline");
     expect(dialog).toHaveTextContent("body");
     expect(saveMock).not.toHaveBeenCalled();
 
-    fireEvent.click(within(dialog).getByRole("button", { name: "저장" }));
+    fireEvent.click(save);
     await waitFor(() => expect(saveMock).toHaveBeenCalledWith("qc-1"));
-    expect(onSaved).toHaveBeenCalledWith({ path: "Inbox/quick-capture-test.md" });
+    await waitFor(() => expect(onSaved).toHaveBeenCalledWith({ path: "Inbox/quick-capture-test.md" }));
     expect(onClose).toHaveBeenCalledTimes(1);
   });
 

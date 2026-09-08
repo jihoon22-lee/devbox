@@ -22,6 +22,7 @@ pub fn initialize(
     }
     std::fs::create_dir_all(dir)?;
     let (conn, index_cleared) = crate::core::db::init(&dir.join("data.db"))?;
+    let product_hosted = integration_root.is_some();
     let state = Arc::new(AppState {
         integration_root,
         db: Mutex::new(conn),
@@ -88,7 +89,11 @@ pub fn initialize(
         eprintln!("everything-plus: saved query snapshot unavailable: {error}");
     }
     // 앱 재시작 시 등록된 루트의 watcher를 복원한다
-    watcher.restore_all();
+    if product_hosted {
+        tauri::async_runtime::spawn_blocking(move || watcher.restore_all());
+    } else {
+        watcher.restore_all();
+    }
     Ok(())
 }
 
@@ -101,6 +106,53 @@ pub fn create_empty_store(path: &std::path::Path) -> Result<(), String> {
         .map_err(|_| "component_store_exists")?;
     crate::core::db::init(path).map_err(|_| "component_storage_unavailable")?;
     Ok(())
+}
+
+/// Migration reuses the actual source filter validator and preserves root filters
+/// by remapping IDs, including a reserved ID for a deleted source root.
+pub const IMPORT_SAVED_QUERY_LIMIT: usize = crate::core::db::MAX_SAVED_QUERIES as usize;
+pub fn validate_import_saved_query(
+    name: &str,
+    query: &str,
+    created: i64,
+    updated: i64,
+) -> Result<(), String> {
+    crate::core::db::validate_saved_query_definition(name, query, created, updated)
+        .map_err(|_| "import_row_invalid".into())
+}
+pub fn import_filter_root(raw: &str) -> Result<Option<i64>, String> {
+    if raw.len() > 8 * 1024 {
+        return Err("import_row_invalid".into());
+    }
+    let filter: crate::core::models::SearchFilter =
+        serde_json::from_str(raw).map_err(|_| "import_row_invalid")?;
+    Ok(filter
+        .normalized()
+        .map_err(|_| "import_row_invalid")?
+        .source_root_id)
+}
+pub fn remap_import_filter(raw: &str, root: Option<i64>) -> Result<String, String> {
+    import_filter_root(raw)?;
+    let mut filter: crate::core::models::SearchFilter =
+        serde_json::from_str(raw).map_err(|_| "import_row_invalid")?;
+    filter.source_root_id = root;
+    serde_json::to_string(&filter.normalized().map_err(|_| "import_row_invalid")?)
+        .map_err(|_| "import_row_invalid".into())
+}
+pub fn normalize_import_root(raw: &str) -> Result<String, String> {
+    if raw.is_empty() || raw.len() > 32768 || raw.chars().any(char::is_control) {
+        return Err("import_row_invalid".into());
+    }
+    let path = crate::core::db::normalize_path(raw);
+    let drive = path.as_bytes();
+    let windows_absolute =
+        drive.len() >= 3 && drive[0].is_ascii_alphabetic() && drive[1] == b':' && drive[2] == b'/';
+    if (!std::path::Path::new(&path).is_absolute() && !windows_absolute && !path.starts_with("//"))
+        || path.split('/').any(|part| matches!(part, "." | ".."))
+    {
+        return Err("import_row_invalid".into());
+    }
+    Ok(path)
 }
 
 pub const COMMANDS: &[&str] = &[

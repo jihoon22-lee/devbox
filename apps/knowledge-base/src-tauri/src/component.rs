@@ -36,7 +36,11 @@ pub fn initialize(
         crate::core::store::ensure_layout(&vault)?;
         crate::core::db::set_setting(&conn, "root", &vault.to_string_lossy())?;
     }
-    if let Ok(root) = crate::commands::docs::resolve_root(&conn) {
+    if let Some(root) = integration_root
+        .is_none()
+        .then(|| crate::commands::docs::resolve_root(&conn))
+        .and_then(Result::ok)
+    {
         if crate::commands::docs::rebuild_wikilink_index_if_needed(&conn, &root).is_err() {
             eprintln!("wikilink index rebuild will retry next launch");
         }
@@ -54,7 +58,12 @@ pub fn initialize(
     // watcher 생성 후 루트에 연결 (앱 재시작 시 외부 편집 계속 반영)
     let watcher = KnowledgeWatcher::new(app.clone(), state.clone());
     if let Ok(root) = crate::commands::docs::resolve_root(&state.db.lock().unwrap()) {
-        watcher.restore_root(&root);
+        if integration_root.is_some() {
+            let watcher = watcher.clone();
+            tauri::async_runtime::spawn_blocking(move || watcher.restore_root(&root));
+        } else {
+            watcher.restore_root(&root);
+        }
     }
     // integration snapshot producer (두 번째, §10.1)
     let _ = crate::integration::write_snapshot(
@@ -85,6 +94,15 @@ pub fn create_empty_store(path: &std::path::Path, vault: &std::path::Path) -> Re
     let conn = crate::core::db::init(path).map_err(|_| "component_storage_unavailable")?;
     crate::core::db::set_setting(&conn, "root", &vault.to_string_lossy())
         .map_err(|_| "component_storage_unavailable".to_owned())
+}
+
+pub const IMPORT_TEMPLATE_LIMIT: usize = crate::core::templates::MAX_TEMPLATES;
+pub fn validate_import_template(name: &str, content: &str) -> Result<(), String> {
+    crate::core::templates::validate_draft(&crate::core::templates::TemplateDraft {
+        name: name.into(),
+        content: content.into(),
+    })
+    .map_err(|_| "import_row_invalid".into())
 }
 
 pub const COMMANDS: &[&str] = &[

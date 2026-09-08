@@ -12,6 +12,7 @@ on:
       - 'crates/product-*/**'
       - 'packages/product-shell/**'
       - 'packages/api-studio-features/**'
+      - 'packages/knowledge-features/**'
       - 'crates/api-protocols/**'
       - 'crates/data-migration/**'
       - 'crates/webhook-core/**'
@@ -19,11 +20,15 @@ on:
       - 'apps/api-playground/src-tauri/**'
       - 'apps/webhook-lab/src-tauri/**'
       - 'apps/developer-toolbox/src-tauri/**'
+      - 'apps/knowledge-base/src-tauri/**'
+      - 'apps/life-log/src-tauri/**'
+      - 'apps/everything-plus/src-tauri/**'
       - 'Cargo.toml'
       - 'Cargo.lock'
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-api-migration.mjs'
+      - '.github/scripts/windows-knowledge-migration.mjs'
       - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-api-workflow.mjs'
       - '.github/scripts/check-api-studio-routes.mjs'
@@ -78,7 +83,7 @@ jobs:
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
       - name: Run native authority and WAL fixtures on Windows
-        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p api-playground -p webhook-lab -p developer-toolbox -- --test-threads=2
+        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
         run: node .github/scripts/windows-product-foundation.mjs
       - name: Verify API Studio migration from pinned legacy storage
@@ -92,7 +97,13 @@ jobs:
       - name: Verify API Studio end-to-end local workflow
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-workflow.mjs
+      - name: Verify Knowledge migration, vault ownership and window lifetime
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: node .github/scripts/windows-knowledge-migration.mjs
       - name: Verify anchor and product installer coexistence
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}

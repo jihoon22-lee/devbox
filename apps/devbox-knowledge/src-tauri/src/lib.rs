@@ -1,7 +1,10 @@
 mod component;
 mod core;
 mod lifecycle;
+mod migration;
 mod startup;
+mod storage_space;
+mod vault_owner;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

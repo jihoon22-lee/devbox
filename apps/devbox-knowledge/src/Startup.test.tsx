@@ -22,9 +22,10 @@ it("preserves a future store without offering a reset or mounting features", asy
   rpc.mockRejectedValue(error);
   render(<Startup><p>domain mounted</p></Startup>);
   await screen.findByRole("alert");
-  const button = screen.getByRole("button", { name: "새 저장소로 시작" });
-  expect(button.hasAttribute("disabled")).toBe(true);
-  fireEvent.click(button);
+  for (const button of screen.getAllByRole("button")) {
+    expect(button.hasAttribute("disabled")).toBe(true);
+    fireEvent.click(button);
+  }
   expect(rpc).toHaveBeenCalledTimes(1);
   expect(screen.queryByText("domain mounted")).toBeNull();
 });

@@ -79,6 +79,7 @@ pub fn on_event(app: &tauri::AppHandle, event: &tauri::RunEvent) {
             }
         }
         tauri::RunEvent::ExitRequested { .. } => {
+            crate::migration::cancel_on_exit(app);
             let _ = life_log_lib::component::shutdown(app);
         }
         _ => {}
