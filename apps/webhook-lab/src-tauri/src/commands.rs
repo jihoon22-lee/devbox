@@ -22,6 +22,7 @@ use devbox_applink::{
 use serde::Serialize;
 use serde_json::to_value;
 use std::collections::HashMap;
+use std::io::{self, Read, Write};
 use std::net::{Shutdown, TcpListener, TcpStream};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -339,10 +340,73 @@ fn configure_connection(stream: &TcpStream) -> Result<(), std::io::Error> {
     // bounded HTTP parser waits on socket timeouts, so restore blocking IO
     // before either the first request byte or a split body arrives.
     stream.set_nonblocking(false)?;
-    let timeout = Some(Duration::from_millis(http::REQUEST_IO_TIMEOUT_MS));
+    // A cloned Winsock socket's shutdown does not necessarily wake an already
+    // blocked synchronous read. Short socket waits let the IO adapter observe
+    // cancellation while preserving the complete five-second request budget.
+    let timeout = Some(Duration::from_millis(100));
     stream.set_read_timeout(timeout)?;
     stream.set_write_timeout(timeout)?;
     stream.set_nodelay(true)
+}
+
+struct ConnectionIo<'a> {
+    stream: &'a mut TcpStream,
+    running: &'a AtomicBool,
+    read_deadline: Instant,
+    write_deadline: Option<Instant>,
+}
+impl<'a> ConnectionIo<'a> {
+    fn new(stream: &'a mut TcpStream, running: &'a AtomicBool) -> Self {
+        Self {
+            stream,
+            running,
+            read_deadline: Instant::now() + Duration::from_millis(http::REQUEST_IO_TIMEOUT_MS),
+            write_deadline: None,
+        }
+    }
+    fn check(&self, deadline: Instant) -> io::Result<()> {
+        if !self.running.load(Ordering::Acquire) {
+            return Err(io::ErrorKind::ConnectionAborted.into());
+        }
+        if Instant::now() >= deadline {
+            return Err(io::ErrorKind::TimedOut.into());
+        }
+        Ok(())
+    }
+}
+fn retryable(error: &io::Error) -> bool {
+    matches!(
+        error.kind(),
+        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock | io::ErrorKind::Interrupted
+    )
+}
+impl Read for ConnectionIo<'_> {
+    fn read(&mut self, bytes: &mut [u8]) -> io::Result<usize> {
+        loop {
+            self.check(self.read_deadline)?;
+            match self.stream.read(bytes) {
+                Err(error) if retryable(&error) => continue,
+                result => return result,
+            }
+        }
+    }
+}
+impl Write for ConnectionIo<'_> {
+    fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+        let deadline = *self.write_deadline.get_or_insert_with(|| {
+            Instant::now() + Duration::from_millis(http::REQUEST_IO_TIMEOUT_MS)
+        });
+        loop {
+            self.check(deadline)?;
+            match self.stream.write(bytes) {
+                Err(error) if retryable(&error) => continue,
+                result => return result,
+            }
+        }
+    }
+    fn flush(&mut self) -> io::Result<()> {
+        self.stream.flush()
+    }
 }
 
 fn next_connection_id(state: &Arc<ServerState>) -> Option<u64> {
@@ -385,18 +449,18 @@ fn clear_active_connections(state: &Arc<ServerState>) {
     }
 }
 
-fn write_parse_error(stream: &mut TcpStream, error: ParseError) {
+fn write_parse_error<W: Write>(stream: &mut W, error: ParseError) {
     if let Some((status, body)) = parse_error_response(error) {
         let _ = http::write_response(stream, status, &[], body);
     }
 }
 
-fn handle_request(
+fn handle_request<W: Write>(
     state: &Arc<ServerState>,
     request: ParsedRequest,
     received_at: i64,
     running: &AtomicBool,
-    stream: &mut TcpStream,
+    stream: &mut W,
 ) {
     if !running.load(Ordering::Acquire) {
         return;
@@ -471,7 +535,8 @@ fn serve_connection(
 ) {
     let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
         let received_at = now_ms();
-        let parsed = http::read_request(&mut stream, running, || {
+        let mut connection = ConnectionIo::new(&mut stream, running);
+        let parsed = http::read_request(&mut connection, running, || {
             state
                 .history
                 .lock()
@@ -479,8 +544,11 @@ fn serve_connection(
                 .unwrap_or(false)
         });
         match parsed {
-            Ok(request) => handle_request(state, request, received_at, running, &mut stream),
-            Err(error) => write_parse_error(&mut stream, error),
+            Ok(request) => handle_request(state, request, received_at, running, &mut connection),
+            Err(error) if running.load(Ordering::Acquire) => {
+                write_parse_error(&mut connection, error)
+            }
+            Err(_) => {}
         }
     }));
     if result.is_err() {
@@ -1749,12 +1817,16 @@ mod tests {
         let (send, receive) = mpsc::channel();
         let worker = thread::spawn(move || {
             let running = AtomicBool::new(true);
-            let parsed = http::read_request(&mut accepted, &running, || true);
+            let parsed = http::read_request(
+                &mut ConnectionIo::new(&mut accepted, &running),
+                &running,
+                || true,
+            );
             send.send(parsed).unwrap();
         });
         assert!(
             matches!(
-                receive.recv_timeout(Duration::from_millis(30)),
+                receive.recv_timeout(Duration::from_millis(250)),
                 Err(mpsc::RecvTimeoutError::Timeout)
             ),
             "request parsing must wait for bytes within the existing socket timeout"
@@ -1764,7 +1836,7 @@ mod tests {
             .unwrap();
         assert!(
             matches!(
-                receive.recv_timeout(Duration::from_millis(30)),
+                receive.recv_timeout(Duration::from_millis(250)),
                 Err(mpsc::RecvTimeoutError::Timeout)
             ),
             "a partial body must keep the same bounded read contract"
@@ -1779,6 +1851,35 @@ mod tests {
         worker.join().unwrap();
     }
 
+    #[test]
+    fn cancellation_interrupts_pending_reads_without_socket_shutdown() {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let mut client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
+        let (mut accepted, _) = listener.accept().unwrap();
+        configure_connection(&accepted).unwrap();
+        let running = Arc::new(AtomicBool::new(true));
+        let worker_running = running.clone();
+        let (admitted_tx, admitted_rx) = mpsc::channel();
+        let (finished_tx, finished_rx) = mpsc::channel();
+        let worker = thread::spawn(move || {
+            let mut connection = ConnectionIo::new(&mut accepted, &worker_running);
+            let result = http::read_request(&mut connection, &worker_running, || {
+                admitted_tx.send(()).unwrap();
+                true
+            });
+            finished_tx.send(result).unwrap();
+        });
+        client
+            .write_all(b"POST /cancel HTTP/1.1\r\nContent-Length: 3\r\n\r\nx")
+            .unwrap();
+        admitted_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        running.store(false, Ordering::Release);
+        assert!(finished_rx
+            .recv_timeout(Duration::from_millis(500))
+            .unwrap()
+            .is_err());
+        worker.join().unwrap();
+    }
     #[test]
     fn native_listener_records_a_bounded_request_and_returns_rule_response() {
         let (state, running, address, thread) = spawn_test_listener();

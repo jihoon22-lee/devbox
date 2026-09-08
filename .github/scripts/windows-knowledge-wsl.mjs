@@ -18,7 +18,12 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   // to rename the vault directory while native Notes watchers hold it open.
   const corpus = `${root}-indexed`;
   const alternateCorpus = `${alternate}-indexed`;
-  const moved = `${corpus}-temporarily-unavailable`;
+  const posixCorpus = "/home/devbox-fixture/한글 project-indexed";
+  const posixMoved = `${posixCorpus}-temporarily-unavailable`;
+  const moveCorpus = (from, to) => {
+    const moved = spawnSync("wsl.exe", ["--distribution", distro, "--user", "root", "--exec", "/bin/mv", "-T", "--", from, to], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
+    assert.equal(moved.status, 0, "Owned WSL corpus move failed");
+  };
   mkdirSync(root); mkdirSync(notes); mkdirSync(corpus);
   writeFileSync(path.join(notes, "Case.md"), "# Upper case\nWSL preserved content\n", { flag: "wx" });
   writeFileSync(path.join(notes, "case.md"), "# Lower case\nSeparate Linux file\n", { flag: "wx" });
@@ -26,7 +31,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   const identity = p => { const s = lstatSync(p, { bigint: true }); return `${s.dev}:${s.ino}`; };
   assert.equal(identity(root), identity(alternate));
   assert.notEqual(identity(path.join(notes, "Case.md")), identity(path.join(notes, "case.md")));
-  evidence.wsl = { version: 1, boundary: "Actual WSL1 UNC; independent Search directory rename models root unavailability, not vault/VM suspension", result: "running" };
+  evidence.wsl = { version: 1, boundary: "Actual WSL1 UNC; native Linux move of independent Search directory models root unavailability, not vault/VM suspension", result: "running" };
   const succeeded = response => { assert.equal(response.operation.outcome.state, "succeeded", JSON.stringify(response.operation.outcome)); return response.value; };
   const query = async (text, mode = "name", limit = 2000) => sourceQuery(item, "files", text, { sourceRootId: rootId }, limit, mode);
   const cancel = async result => command(item, "knowledge.search", "source_cancel", { generation: result.generation });
@@ -107,7 +112,10 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   evidence.wsl.outsideSymlinkRejected = true;
 
   progress("wsl-unavailable-last-good-and-reconnect");
-  renameSync(corpus, moved);
+  // Move inside the owned distro: Windows UNC directory rename can fail with
+  // EPERM while previously verified remote objects are being retired. A Linux
+  // move models the source changing independently of the Windows client.
+  moveCorpus(posixCorpus, posixMoved);
   try {
     succeeded(await command(item, "knowledge.search-settings", "index_now"));
     await eventually(async () => {
@@ -126,7 +134,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
     const local = await sourceQuery(item, "files", "fixturesearch0001");
     assert.ok(local.rows.some(r => r.availability === "available")); await cancel(local);
     evidence.wsl.unavailableRootKeptLastGoodAndLocalSource = true;
-  } finally { renameSync(moved, corpus); }
+  } finally { moveCorpus(posixMoved, posixCorpus); }
   unlinkSync(path.join(corpus, "wslfixture0001.txt"));
   writeFileSync(path.join(corpus, "wslfixture0500.txt"), "reconnected fixture\n", { flag: "wx" });
   // No explicit index_now: the existing WSL polling owner must reconcile the
