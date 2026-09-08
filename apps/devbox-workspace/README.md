@@ -57,9 +57,10 @@ file editing cannot rewrite the products' native Registry/approval stores.
 Source changes and diff lines open the retained Files editor. Worktree creation
 uses a one-time native target review, then proposes Registry registration and
 selection separately. Cancellation begins before queueing/evidence capture, and
-local drive aliases are resolved before filesystem IO. Broader approved worktree
-cleanup, legacy import, complete Windows LSP integration and WSL-native Git/LSP
-remain incomplete. Current Source,
+local drive aliases are resolved before filesystem IO. Cleanup has a separate native review of explicitly selected registered siblings.
+Its preview/apply checks preserve existing safety rules and block folders with
+open native documents. Revocation works without contacting a sibling. Legacy
+import, complete Windows LSP integration and WSL-native Git/LSP remain incomplete. Current Source,
 Dependencies and Files packaged behavior still requires Windows acceptance.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)

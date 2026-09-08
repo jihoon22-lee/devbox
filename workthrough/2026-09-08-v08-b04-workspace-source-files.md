@@ -337,8 +337,8 @@ the shared 8 GiB cap (cgroup peak **6,444,761,088 bytes**).
 
 ## Remaining acceptance
 
-Broader approved worktree cleanup, importer mappings, Windows LSP integration and
-WSL-native transport remain incomplete. Files currently serializes native IO under
+Reviewed sibling cleanup awaits Windows acceptance. Importer mappings, Windows
+LSP integration and WSL-native transport remain incomplete. Files currently serializes native IO under
 one state mutex; remote independent cancellation needs work before WSL acceptance.
 Native file-dialog selection is implemented but has no actual Windows dialog
 fixture yet. Strict metadata parsing is an activation prerequisite, not a completed
@@ -357,3 +357,40 @@ peak. The notice package rows remained unchanged; only the pnpm lockfile digest
 changed. Full affected
 verification with the updated test runner passed in **546.214 seconds**, with a
 **6,446,292,992-byte** cgroup peak under the shared 8 GiB limit.
+
+
+## Explicit sibling cleanup scope
+
+Cleanup now reviews registered sibling IDs separately from selected-root Git
+permission. Metadata enumeration does not probe siblings; chosen members bind
+native contexts, Git/config/hook/tool evidence and project definitions to a
+one-time approval, with eight-member/64 MiB evidence limits and the shared preview
+bound. Invalid/future metadata is preserved. Basic Source operations never load
+this broader scope; private revocation works when a sibling is offline or removed.
+
+The native policy rejects unknown Git-returned paths before IO. Open Files grants
+block worktree admission by physical ancestor identity, including OS-picker files;
+the existing write permit excludes new opens during cleanup apply. The shared
+cleanup safety/revision/final-confirmation behavior remains in charge of deletion.
+Scope changes clear only the cleanup panel's previous preview, preserving commit
+and editor drafts. A removed worktree leaves its committed branch and Registry
+record intact for separate review.
+
+The first focused run passed **82 Workspace Rust tests**, then failed only a
+Clippy style check in a new test. After correction, **82 Rust tests, strict Clippy,
+21 product UI tests and build passed in 36.412 seconds** (cgroup peak
+**3,427,184,640 bytes**). The UI regressions cover default-unselected explicit
+review, token-only approval, cancellation, offline revocation and late-preview
+retirement; the native tests cover foreign/stale/duplicate IDs and native picker
+document protection. The final pass after removing duplicate evidence
+revalidation and disabling scope changes during another Source action passed
+**82 Rust tests, strict Clippy, 320 shared UI + 21 product UI tests, build and
+fixture syntax in 59.131 seconds**, with a **3,617,853,440-byte** cgroup peak.
+
+The extended Windows fixture checks missing scope, cancelled/replayed approval,
+changed sibling-only execution evidence, continuing basic Git, reapproval and
+final UI cleanup while preserving the branch. All **37 literal renderer
+expressions** parse successfully. Actual Windows cleanup execution remains pending.
+
+Final affected verification selected all and passed in **364.856 seconds**,
+with a **5,667,094,528-byte** cgroup peak under the shared 8 GiB limit.

@@ -219,6 +219,15 @@ pub struct FileOwner {
     protected: Option<ProtectedStorage>,
 }
 impl FileOwner {
+    pub(crate) fn has_documents_under(&self, root: FilesystemIdentity) -> bool {
+        self.documents.values().any(|document| {
+            document
+                .grant
+                .parents
+                .iter()
+                .any(|parent| parent.identity == root)
+        })
+    }
     pub(crate) fn protect_native_storage(
         &mut self,
         app: &tauri::AppHandle,
@@ -690,6 +699,31 @@ mod tests {
             revision: 1,
             target: lease.binding().target.clone(),
         }
+    }
+    #[test]
+    fn picker_documents_protect_their_physical_root_until_closed() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().join("sibling");
+        let other = directory.path().join("other");
+        fs::create_dir(&root).unwrap();
+        fs::create_dir(&other).unwrap();
+        let nested = root.join("nested");
+        fs::create_dir(&nested).unwrap();
+        let path = nested.join("draft.txt");
+        fs::write(&path, b"on disk").unwrap();
+        let root_id = filesystem_identity(&root, true).unwrap();
+        let other_id = filesystem_identity(&other, true).unwrap();
+        let mut owner = FileOwner::default();
+        let selected = owner.approve_native_selection(&path).unwrap();
+        assert!(!owner.has_documents_under(root_id));
+        let opened = owner
+            .open(None, open_request(Path::new(&selected)))
+            .unwrap();
+        assert!(owner.has_documents_under(root_id));
+        assert!(!owner.has_documents_under(other_id));
+        owner.close(&opened.path).unwrap();
+        assert!(!owner.has_documents_under(root_id));
+        assert_eq!(fs::read(&path).unwrap(), b"on disk");
     }
     #[test]
     fn native_choice_is_required_and_saves_retain_the_engine_encoding_contract() {

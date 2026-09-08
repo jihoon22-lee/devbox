@@ -122,6 +122,9 @@ pub fn resolve(project: &Path, base: &Path, value: &Path, deadline: u64) -> Resu
     Ok(path)
 }
 impl GitFiles {
+    pub fn bytes(&self) -> usize {
+        self.total
+    }
     fn pin(&mut self, path: &Path, directory: bool, deadline: u64) -> Result<()> {
         boundary(deadline)?;
         super::windows_path::admit(path).map_err(|_| "git_source_transport_denied")?;

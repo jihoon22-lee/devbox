@@ -124,6 +124,9 @@ pub struct FilesHost {
     watched: HashMap<String, PathBuf>,
 }
 impl FilesHost {
+    pub(crate) fn has_documents_under(&self, root: devbox_filesystem::FilesystemIdentity) -> bool {
+        self.owner.has_documents_under(root)
+    }
     fn document_value<T: serde::Serialize>(&self, path: &str, document: T) -> Result<Value> {
         let mut result = value(document)?;
         result["nativeRevision"] = json!(self.owner.document_revision(path).ok());

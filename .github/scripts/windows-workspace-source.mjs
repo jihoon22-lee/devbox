@@ -159,6 +159,48 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   assert.equal(git(["show","source-fixture-worktree:tracked.txt"]),linkedText.trim());
   assert.equal(git(["show","HEAD:tracked.txt"]),"edited in the selected root");
   await selectTree(originalTree);
+  // The earlier redirect test is complete; restore the owned fixture's ordinary
+  // primary worktree reporting before exercising legacy cleanup classification.
+  git(["config","--unset","core.worktree"]);
+  const cleanupRootTrust=success(await source("preview_trust"));
+  success(await source("approve_trust",{previewId:cleanupRootTrust.previewId}));
+  const scopeStatus=success(await source("cleanup_scope_status"));
+  assert.equal(scopeStatus.hasApproval,false);assert.deepEqual(scopeStatus.selectedIds,[]);
+  assert.ok(scopeStatus.available.some(tree=>tree.id===linked.id));
+  const noScope=success(await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-without-scope"}}));
+  assert.equal(noScope.worktrees.find(tree=>realpathSync.native(tree.path)===realpathSync.native(linkedTarget)).eligible,false);
+  const scopeCancelled=success(await source("preview_cleanup_scope",{worktreeIds:[linked.id]}));
+  success(await source("cancel_cleanup_scope",{previewId:scopeCancelled.previewId}));
+  failed(await source("approve_cleanup_scope",{previewId:scopeCancelled.previewId}));
+  assert.equal(existsSync(linkedTarget),true);
+  await click("정리 범위 확인",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-source-cleanup-scope input[type=checkbox]")',"Registered cleanup sibling missing");
+  await cdp.evaluate(`Array.from(document.querySelectorAll(".workspace-source-cleanup-scope label")).find(label=>label.textContent===${JSON.stringify(linked.binding.root)}).querySelector("input").click()`);
+  await click("선택한 정리 범위 검토",".workspace-source-cleanup-scope");
+  await click("검토한 정리 범위 승인",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.textContent.includes("검토한 정리 범위를 승인했습니다.")',"Native cleanup scope did not finish");
+  assert.equal(existsSync(linkedTarget),true,"Scope approval must not remove a worktree");
+  const linkedGit=git(["-C",linkedTarget,"rev-parse","--absolute-git-dir"]);
+  writeFileSync(path.join(linkedGit,"config.worktree"),"# changed sibling execution evidence\n",{flag:"wx"});
+  const staleScope=await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-stale-scope"}});
+  failed(staleScope);assert.equal(staleScope.value.issue,"source_cleanup_scope_changed");
+  success(await source("repo_changes",{request:{path:root}}));
+  await click("선택한 정리 범위 검토",".workspace-source-cleanup-scope");
+  await click("검토한 정리 범위 승인",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.getAttribute("aria-busy")==="false"&&!document.querySelector(".workspace-source-cleanup-scope > section")',"Refreshed cleanup scope did not settle");
+  await click("정리 후보 검사",".cleanup-panel");
+  const linkedCheckbox=`Array.from(document.querySelectorAll(".cleanup-panel input[type=checkbox]")).find(input=>input.getAttribute("aria-label")===${JSON.stringify(`worktree ${linked.binding.root}`)})`;
+  await waitForRenderer(cdp,`!!(${linkedCheckbox})&&!(${linkedCheckbox}).matches(":disabled")`,"Approved clean sibling was not eligible");
+  await cdp.evaluate(`${linkedCheckbox}.click()`);
+  await click("선택 항목 정리 (1)",".cleanup-panel");
+  await waitForRenderer(cdp,'!!document.querySelector(".cleanup-panel [role=dialog]")',"Final worktree cleanup confirmation missing");
+  assert.equal(existsSync(linkedTarget),true);
+  await click("정리 실행",".cleanup-panel");
+  await waitForRenderer(cdp,'document.querySelector(".cleanup-panel .cleanup-result")?.textContent.includes("1개 제거")',"Reviewed worktree cleanup did not finish");
+  assert.equal(existsSync(linkedTarget),false);
+  assert.equal(git(["show","source-fixture-worktree:tracked.txt"]),linkedText.trim(),"Worktree removal must preserve its committed branch");
+  await click("정리 범위 승인 철회",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.textContent.includes("다른 작업 폴더의 정리 승인을 철회했습니다.")',"Removed sibling scope could not be revoked without IO");
   const afterLinked=success(await call("workspace.registry","snapshot"));
   success(await call("workspace.registry","remove",{revision:afterLinked.revision,context:{projectId:linked.projectId,worktreeId:linked.id,revision:linked.revision,target:linked.binding.target}}));
   unlinkSync(monitorMarker);appendFileSync(monitor,"# changed hook source\n");
@@ -193,5 +235,5 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   success(await call("workspace.registry","remove",{revision:registry.revision,context:registered.context}));
   await cdp.command("Page.reload");
   await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Original context did not reload");
-  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,gitBlocksFileWritesButKeepsRecovery:true,ownedGitCancellationReleasesEditor:true};
+  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,cleanupRequiresSeparateSiblingScope:true,changedSiblingEvidenceRevokesOnlyCleanup:true,uiReviewedSiblingCleanupPreservesBranch:true,gitBlocksFileWritesButKeepsRecovery:true,ownedGitCancellationReleasesEditor:true};
 }

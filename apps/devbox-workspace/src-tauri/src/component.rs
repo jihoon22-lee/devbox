@@ -342,7 +342,12 @@ async fn execute_source(
     }
     let filesystem = if matches!(
         request.method.as_str(),
-        "cancel_trust" | "revoke_trust" | "cancel_worktree"
+        "cancel_trust"
+            | "revoke_trust"
+            | "cancel_worktree"
+            | "cancel_cleanup_scope"
+            | "revoke_cleanup_scope"
+            | "cleanup_scope_status"
     ) {
         None
     } else {
@@ -403,6 +408,7 @@ async fn execute_source(
     }
     let worker_admission = admitted.clone();
     let worker_method = method.clone();
+    let files = runtime.files.clone();
     let worker = tauri::async_runtime::spawn_blocking(move || {
         worker_admission.check()?;
         let retained = (
@@ -421,6 +427,7 @@ async fn execute_source(
             host,
             &mut definitions,
             crate::source_host::Invocation {
+                files,
                 context,
                 method: worker_method,
                 args,
@@ -621,6 +628,8 @@ async fn execute(
             | "apply_registration"
             | "remove"
             | "apply_edit"
+            | "approve_cleanup_scope"
+            | "revoke_cleanup_scope"
             | "approve_trust"
             | "revoke_trust"
     );

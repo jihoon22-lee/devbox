@@ -8,9 +8,9 @@ import CleanupPanel from "./components/CleanupPanel";
 import {WorkspaceOperationError} from "../transport";
 import "./App.css";
 
-interface Props {repo:RepoEntry; onBusyChange:(busy:boolean)=>void; onDirtyChange:(dirty:boolean)=>void; onOpenFile?:(path:string,line:number|null)=>void; onProposeWorktree?:(path:string)=>void}
+interface Props {repo:RepoEntry; cleanupRevision?:number; onBusyChange:(busy:boolean)=>void; onDirtyChange:(dirty:boolean)=>void; onOpenFile?:(path:string,line:number|null)=>void; onProposeWorktree?:(path:string)=>void}
 /** Product composition consumes the selected native Registry projection. */
-export default function SourcePanel({repo,onBusyChange,onDirtyChange,onOpenFile,onProposeWorktree}:Props) {
+export default function SourcePanel({repo,cleanupRevision=0,onBusyChange,onDirtyChange,onOpenFile,onProposeWorktree}:Props) {
   const [busy,setBusy]=useState(false);
   const [panels,setPanels]=useState<Record<string,boolean>>({});
   const [snapshot,setSnapshot]=useState<RepoSnapshot|null>(null);
@@ -38,6 +38,6 @@ export default function SourcePanel({repo,onBusyChange,onDirtyChange,onOpenFile,
     <HistoryDiffPanel repo={repo} onBusyChange={callbacks.history} onOpenFile={onOpenFile}/>
     <StageCommitPanel repo={repo} onBusyChange={callbacks.stage} onDirtyChange={onDirtyChange} onOpenFile={onOpenFile}/>
     <RemoteSyncPanel repo={repo} onBusyChange={callbacks.remote}/>
-    <CleanupPanel repo={repo} onBusyChange={callbacks.cleanup}/>
+    <CleanupPanel key={cleanupRevision} repo={repo} onBusyChange={callbacks.cleanup}/>
   </div>;
 }

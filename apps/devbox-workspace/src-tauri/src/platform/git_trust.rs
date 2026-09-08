@@ -413,6 +413,15 @@ impl GitTrust {
             digest,
         })
     }
+    pub fn bytes(&self) -> usize {
+        self.files.bytes()
+    }
+    pub fn native_root_identity(&self) -> devbox_filesystem::FilesystemIdentity {
+        self.lease.native_root_identity()
+    }
+    pub fn matches(&self, target: &devbox_git::GitTarget) -> bool {
+        !target.is_wsl() && same_repository_path(&self.lease.binding().root, target.cwd())
+    }
     pub fn digest(&self) -> &str {
         &self.digest
     }
@@ -429,7 +438,7 @@ impl GitTrust {
         target: &devbox_git::GitTarget,
         deadline: u64,
     ) -> Result<devbox_git::execution::NativeRepository> {
-        if target.is_wsl() || !same_repository_path(&self.lease.binding().root, target.cwd()) {
+        if !self.matches(target) {
             return Err("source_context_changed");
         }
         self.revalidate(deadline)?;

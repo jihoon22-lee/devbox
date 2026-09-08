@@ -1,5 +1,6 @@
 //! Source owns its execution approval separately from task/LSP permissions.
 //! All methods run in bounded native workers after product/session admission.
+mod cleanup_scope;
 use crate::{
     definitions::{self, Definitions, ExecutionDefinitions},
     host::Host,
@@ -184,6 +185,7 @@ struct PendingWorktree {
     created: Instant,
 }
 pub(crate) struct Invocation {
+    pub files: Arc<std::sync::Mutex<crate::files_host::FilesHost>>,
     pub context: ProjectContext,
     pub method: String,
     pub args: Value,
@@ -193,12 +195,14 @@ pub(crate) struct Invocation {
 #[derive(Default)]
 pub(crate) struct SourceHost {
     pending: HashMap<String, Pending>,
+    cleanup: cleanup_scope::Owner,
     worktrees: HashMap<String, PendingWorktree>,
     storage: Option<ProtectedStorage>,
     common: Option<PathBuf>,
 }
 impl SourceHost {
     pub(crate) fn expire(&mut self) {
+        self.cleanup.expire();
         self.pending
             .retain(|_, pending| pending.created.elapsed() < TTL);
         self.worktrees
@@ -231,6 +235,16 @@ impl SourceHost {
         budget.check()?;
         let deadline = budget.deadline_ms;
         self.expire();
+        if cleanup_scope::management(method) {
+            if method == "preview_cleanup_scope"
+                && self.pending.len() + self.worktrees.len() + self.cleanup.len() >= MAX_PREVIEWS
+            {
+                return Err("project_preview_limit");
+            }
+            return self
+                .cleanup
+                .manage(host, definitions, context, method, args, budget);
+        }
         #[derive(Deserialize)]
         #[serde(rename_all = "camelCase", deny_unknown_fields)]
         struct Id {
@@ -259,7 +273,7 @@ impl SourceHost {
                 if !repo_manager_lib::component::source_branch_valid(&input.branch) {
                     return Err("worktree_branch_invalid");
                 }
-                if self.pending.len() + self.worktrees.len() >= MAX_PREVIEWS {
+                if self.pending.len() + self.worktrees.len() + self.cleanup.len() >= MAX_PREVIEWS {
                     return Err("project_preview_limit");
                 }
                 let snapshot = Snapshot::capture(host, definitions, context, deadline)?;
@@ -356,7 +370,7 @@ impl SourceHost {
                 if method == "trust_status" {
                     return Ok(view);
                 }
-                if self.pending.len() + self.worktrees.len() >= MAX_PREVIEWS {
+                if self.pending.len() + self.worktrees.len() + self.cleanup.len() >= MAX_PREVIEWS {
                     return Err("project_preview_limit");
                 }
                 let preview_id = uuid::Uuid::new_v4().to_string();
@@ -380,6 +394,7 @@ impl SourceHost {
         retained: T,
     ) -> Result<(repo_manager_lib::component::SourceAccess, Value)> {
         let Invocation {
+            files,
             context,
             method,
             mut args,
@@ -425,6 +440,11 @@ impl SourceHost {
                 .ok_or("source_owner_unavailable")?
                 .ensure_user_path(pending.target.path())?;
         }
+        let cleanup = if matches!(method.as_str(), "repo_cleanup_preview" | "repo_cleanup") {
+            cleanup_scope::Execution::capture(&host, definitions, &snapshot, files, budget)?
+        } else {
+            None
+        };
         let target_boundary = creation.as_ref().map(|(pending, _)| pending.target.clone());
         let program = snapshot.git.environment.program.clone();
         let environment = snapshot.git.environment.environment.clone();
@@ -441,19 +461,30 @@ impl SourceHost {
                 if let Some(target) = &target_boundary {
                     target.revalidate(deadline).map_err(str::to_string)?;
                 }
-                // Reject unapproved Git-returned roots before any IO, and
-                // revalidate the selected Git evidence only once per boundary.
-                let repository = snapshot
-                    .git
-                    .repository(target, deadline)
-                    .map_err(str::to_string)?;
+                // Unknown Git-returned roots are rejected before any filesystem IO.
+                let selected = snapshot.git.matches(target);
+                if !selected && !cleanup.as_ref().is_some_and(|scope| scope.matches(target)) {
+                    return Err("source_context_changed".into());
+                }
                 snapshot
                     .revalidate_metadata(&host, deadline)
                     .map_err(str::to_string)?;
                 if !snapshot.approved().map_err(str::to_string)? {
                     return Err("source_review_required".into());
                 }
-                Ok(repository)
+                if selected {
+                    snapshot
+                        .git
+                        .repository(target, deadline)
+                        .map_err(str::to_string)
+                } else {
+                    snapshot.git.revalidate(deadline).map_err(str::to_string)?;
+                    cleanup
+                        .as_ref()
+                        .ok_or("source_context_changed")?
+                        .repository(&host, target, budget)
+                        .map_err(str::to_string)
+                }
             },
         )
         .map_err(|_| "source_context_changed")?;
@@ -479,19 +510,23 @@ impl SourceHost {
 }
 
 pub(crate) fn management(method: &str) -> bool {
-    matches!(
-        method,
-        "trust_status"
-            | "preview_trust"
-            | "approve_trust"
-            | "revoke_trust"
-            | "cancel_trust"
-            | "preview_worktree"
-            | "cancel_worktree"
-    )
+    cleanup_scope::management(method)
+        || matches!(
+            method,
+            "trust_status"
+                | "preview_trust"
+                | "approve_trust"
+                | "revoke_trust"
+                | "cancel_trust"
+                | "preview_worktree"
+                | "cancel_worktree"
+        )
 }
 pub(crate) fn issue(error: &str) -> &'static str {
     match error {
+        "source_cleanup_scope_invalid" => "source_cleanup_scope_invalid",
+        "source_cleanup_scope_changed" => "source_cleanup_scope_changed",
+        "source_cleanup_open_files" => "source_cleanup_open_files",
         "worktree_branch_invalid" => "worktree_branch_invalid",
         "worktree_preview_stale" => "worktree_preview_stale",
         "worktree_target_invalid" => "worktree_target_invalid",
