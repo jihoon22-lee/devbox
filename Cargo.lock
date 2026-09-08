@@ -1398,9 +1398,17 @@ dependencies = [
 name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
+ "filesystem",
+ "product-contract",
  "product-shell-tauri",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
  "tauri",
  "tauri-build",
+ "tempfile",
+ "uuid",
+ "wsl",
 ]
 
 [[package]]

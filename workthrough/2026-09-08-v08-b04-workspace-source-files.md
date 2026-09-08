@@ -65,3 +65,30 @@ editor/catalog regression expectations include all reverse consumers. The scope
 regression passed. The all-scope affected run covered this verifier adjustment
 and the extraction/component changes together; Windows product startup remains
 unimplemented and is not represented as passing.
+
+The initial draft CI exposed a retained-entry accessibility contract omission:
+the three legacy apps' CSS and axe smoke test had moved entirely into the shared
+package. Their entry CSS/smokes are now restored; the 19-app accessibility checker
+passes. The new smoke tests still require execution. No gate was relaxed.
+
+Project Registry model code now separates UUID identities, native root/common-Git
+evidence, target/distro, reviewed moves, revisions, legacy mappings and trust.
+Its six focused tests and strict Clippy passed in 11.145 seconds. The final registry, single-writer persistent storage and strict manifest/local
+overlay models passed 17 focused Rust tests and strict Clippy. The [architecture](../docs/architecture/v0.8-workspace.md)
+defines precedence/removal/conflicts, source-digest trust and pending native gates.
+These models do not expose renderer commands or establish actual project startup.
+
+
+All three restored standalone entry axe tests passed in **4.852 seconds** after
+using the native API's asynchronous rejection shape in the browser stub. The
+17 Registry/store/manifest tests and strict Clippy passed in the preceding focused
+run; that combined run then failed the old synchronous browser stub, so it is not
+represented as a completely passing combined run. Native Windows execution and
+product host admission remain pending. Generated notices track the updated
+Cargo.lock digest without adding an external dependency family.
+
+The final Registry/store/manifest and restored entry state passed affected all in
+**702.074 seconds** under the shared 8 GiB cap (cgroup peak 6,444,834,816 bytes).
+All frontend build/test/typecheck and Rust check/Clippy/test/fmt gates passed.
+Notice regeneration passed in 2.055 seconds and changed only the Cargo.lock digest.
+This does not complete native host/platform admission, importer or LSP integration.
