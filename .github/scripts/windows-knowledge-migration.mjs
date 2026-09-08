@@ -196,7 +196,8 @@ try {
       // The pinned v0.7 SQLite allocator may reuse the last deleted ID. Keep
       // a second root alive before deletion to create a genuinely dangling ref.
       await legacy(item, "add_root", { path: indexed, indexContent: true });
-      const root = (await legacy(item, "list_roots")).find(root => path.normalize(root.path) === path.normalize(indexed));
+      const legacyRoots = await legacy(item, "list_roots"); assert.equal(legacyRoots.length, 2);
+      const root = legacyRoots.find(root => root.id !== first.id);
       assert.ok(root); assert.notEqual(root.id, first.id);
       await legacy(item, "remove_root", { path: unused });
       await legacy(item, "save_saved_query", { request: { id: null, name: "live fixture", query: "allowed", filter: { sourceRootId: root.id } } });
@@ -310,7 +311,9 @@ try {
     if (fileQuery.rows.some(row => row.reference)) break;
     await delay(250);
   }
-  const fileRow = fileQuery.rows.find(row => row.reference && path.normalize(row.value.path) === path.normalize(opaqueFile)); assert.ok(fileRow);
+  const fileRow = fileQuery.rows.find(row => row.reference && row.value.name === "opaque-search.txt"); assert.ok(fileRow);
+  const actualFile = lstatSync(fileRow.value.path, { bigint: true }), expectedFile = lstatSync(opaqueFile, { bigint: true });
+  assert.equal(actualFile.dev, expectedFile.dev); assert.equal(actualFile.ino, expectedFile.ino);
   assert.equal(fileRow.source, "files"); assert.ok(fileRow.rootIdentity.startsWith("files:")); assert.equal(fileQuery.storeGeneration, active.generation);
   assert.equal((await command(item, "knowledge.opener", "open_file", { path: opaqueFile })).operation.outcome.state, "failed");
   renameSync(opaqueFile, path.join(additional, "previous-object.txt")); writeFileSync(opaqueFile, "replacement object", { flag: "wx" });
@@ -341,6 +344,57 @@ try {
   assert.equal((await command(item, "knowledge.search", "list_saved_queries")).value.length, 2);
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   assert.equal(logicalSources(), frozen); assert.equal(digest(path.join(vault, "Notes/original.md")), originalNote); assert.equal(digest(path.join(vault, "Notes/second.md")), originalSecond); assert.equal(digest(path.join(vault, "Notes/assets/pixel.png")), originalImage);
+  progress("reviewed-vault-rebinding");
+  const selectedVault = path.join(directory, "selected-vault"); mkdirSync(selectedVault); mkdirSync(path.join(selectedVault, "Notes"));
+  writeFileSync(path.join(selectedVault, "Notes/existing.md"), "# Existing selected note", { flag: "wx" });
+  const selectedOriginal = digest(path.join(selectedVault, "Notes/existing.md"));
+  const selectedBefore = readdirSync(selectedVault, { recursive: true }).sort();
+  const sameDirectory = (left, right) => { const a=lstatSync(left,{bigint:true}), b=lstatSync(right,{bigint:true}); return a.dev===b.dev && a.ino===b.ino; };
+  // The preceding repeat import used the native job API. Reload to observe its
+  // active state through the actual product UI before scheduling a folder change.
+  await item.cdp.send("Page.reload");
+  await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "Notes did not observe repeated activation");
+  const scheduleVault = async () => {
+    await click(item.cdp, "노트 폴더");
+    await wait(item.cdp, '!!document.querySelector("#vault-settings-title")', "vault settings missing");
+    await item.cdp.evaluate(`(() => { const input=document.querySelector('[aria-label="연결할 노트 폴더"]'); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(selectedVault)}); input.dispatchEvent(new Event("input",{bubbles:true})); })()`);
+    await click(item.cdp, "다음 시작에서 폴더 확인");
+    await wait(item.cdp, 'document.body.innerText.includes("다음 시작에서 확인할 폴더")', "vault choice was not scheduled");
+    assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,vault));
+  };
+  await scheduleVault();
+  assert.equal((await command(item,"knowledge.notes","create_file",{rel:"Notes/still-old.md",content:"# Still in original vault"})).operation.outcome.state,"succeeded");
+  assert.ok(existsSync(path.join(vault,"Notes/still-old.md"))); assert.equal(existsSync(path.join(selectedVault,"Notes/still-old.md")),false);
+  await stop(item); item=await product(executable,profile);
+  await wait(item.cdp, '!!document.querySelector("#vault-setup-title")', "next-start vault review missing");
+  assert.equal((await command(item,"knowledge.migration","status")).value.active,false);
+  await click(item.cdp,"폴더 연결 미리보기");
+  await wait(item.cdp,'!!document.querySelector("#vault-preview-title")',"vault preview missing");
+  assert.deepEqual(readdirSync(selectedVault,{recursive:true}).sort(),selectedBefore);
+  await click(item.cdp,"현재 폴더 유지하고 계속");
+  await wait(item.cdp,'!!document.querySelector(".knowledge-feature-notes .app")',"cancel did not restore original editor");
+  assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,vault));
+  await scheduleVault();
+  const vaultPlan=(await command(item,"knowledge.migration","vault_change_status")).value.schedule;
+  await stop(item); item=await product(executable,profile);
+  await wait(item.cdp,'!!document.querySelector("#vault-setup-title")',"second vault review missing");
+  await click(item.cdp,"폴더 연결 미리보기");
+  await wait(item.cdp,'!!document.querySelector("#vault-preview-title")',"second vault preview missing");
+  assert.deepEqual(readdirSync(selectedVault,{recursive:true}).sort(),selectedBefore);
+  await click(item.cdp,"이 폴더로 변경하고 시작");
+  await wait(item.cdp,'!!document.querySelector(".knowledge-feature-notes .app")',"explicit vault activation missing");
+  assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,selectedVault));
+  assert.equal((await command(item,"knowledge.notes","list_templates")).value[0].content,"new product edit");
+  assert.equal((await command(item,"knowledge.notes","read_file",{rel:"Notes/existing.md"})).value,"# Existing selected note");
+  assert.equal((await command(item,"knowledge.notes","create_file",{rel:"Notes/new-selected.md",content:"# Selected vault"})).operation.outcome.state,"succeeded");
+  assert.ok(existsSync(path.join(selectedVault,"Notes/new-selected.md"))); assert.equal(existsSync(path.join(vault,"Notes/new-selected.md")),false);
+  let selectedQuery;
+  for(let i=0;i<40;i++){ selectedQuery=await sourceQuery(item,"notes","Selected"); if(selectedQuery.rows.some(row=>row.rootIdentity===`notes:${vaultPlan.id}`)) break; await delay(150); }
+  assert.ok(selectedQuery.rows.some(row=>row.rootIdentity===`notes:${vaultPlan.id}`));
+  assert.equal(digest(path.join(selectedVault,"Notes/existing.md")),selectedOriginal);
+  assert.equal(digest(path.join(vault,"Notes/original.md")),originalNote); assert.equal(logicalSources(),frozen);
+  evidence.vaultScheduleKeptLiveBinding=true; evidence.vaultPreviewDidNotWrite=true; evidence.vaultCancellationKeptOriginal=true;
+  evidence.vaultExplicitRebindPreservedFilesAndTemplates=true; evidence.vaultSourceIdentityChanged=true;
   progress("explicit-close-policy");
   assert.equal((await command(item, "knowledge.activity", "set_close_policy", { closeToTray: true })).value.closeToTray, true);
   const hidden = closeWindow(item); await delay(500); assert.equal(running(item), true); assert.equal(visible(hidden), false);

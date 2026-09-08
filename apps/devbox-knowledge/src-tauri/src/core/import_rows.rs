@@ -538,6 +538,17 @@ pub fn verify_legacy_binding(connection: &Connection, path: &str) -> Result<(), 
     Ok(())
 }
 
+/// Configuration mutations must not reinterpret a future store's tables as
+/// today's derived cache. This validation performs no migration or row writes.
+pub fn validate_owned_store(connection: &Connection, source: Source) -> Result<(), String> {
+    inventory(connection, source, true)?;
+    let version: i64 = sql(connection.query_row("PRAGMA user_version", [], |row| row.get(0)))?;
+    if version != 0 {
+        return Err("import_schema_unsupported".into());
+    }
+    Ok(())
+}
+
 /// Rollback fingerprints omit derived indexes while retaining all user-owned
 /// rows and logical ID receipts. The newer generation is kept after rollback.
 pub fn authoritative_fingerprint(

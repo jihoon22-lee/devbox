@@ -51,6 +51,12 @@ fn key(raw: &str) -> Result<String, String> {
         .map(|key| key.to_ascii_lowercase())
         .map_err(|_| "vault_binding_invalid".into())
 }
+pub fn same_vault(left: &Path, right: &Path) -> bool {
+    key(&left.to_string_lossy())
+        .ok()
+        .zip(key(&right.to_string_lossy()).ok())
+        .is_some_and(|(left, right)| left == right)
+}
 fn directories(base: &Path) -> Result<PathBuf, String> {
     devbox_filesystem::ensure_no_links(base).map_err(|_| "vault_owner_unavailable")?;
     let mut path = base.to_owned();

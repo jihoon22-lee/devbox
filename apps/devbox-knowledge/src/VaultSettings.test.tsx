@@ -1,0 +1,20 @@
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, expect, it, vi } from "vitest";
+const rpc=vi.hoisted(()=>vi.fn());
+vi.mock("./vaultApi",()=>({vaultInvoke:rpc}));
+vi.mock("@devbox/product-shell/api",()=>({nativeMode:true}));
+import VaultSettings from "./VaultSettings";
+afterEach(cleanup);
+it("schedules a next-start folder review without switching the live binding",async()=>{
+  rpc.mockReset().mockImplementation(async(method:string,args:{path?:string}={})=>({schedule:method==="schedule_vault_change"?{id:"native-plan",target:args.path,previousRoot:"C:/old"}:null}));
+  render(<VaultSettings/>);
+  const input=screen.getByRole("textbox",{name:"연결할 노트 폴더"});
+  await waitFor(()=>expect((input as HTMLInputElement).disabled).toBe(false));
+  fireEvent.change(input,{target:{value:"C:/new"}});
+  fireEvent.click(screen.getByRole("button",{name:"다음 시작에서 폴더 확인"}));
+  expect((await screen.findByRole("status")).textContent).toContain("C:/new");
+  expect(rpc.mock.calls.map(([method])=>method)).toEqual(["vault_change_status","schedule_vault_change"]);
+  expect(rpc).toHaveBeenLastCalledWith("schedule_vault_change",{path:"C:/new"});
+  fireEvent.click(screen.getByRole("button",{name:"폴더 변경 예약 취소"}));
+  await waitFor(()=>expect(screen.queryByRole("status")).toBeNull());
+});

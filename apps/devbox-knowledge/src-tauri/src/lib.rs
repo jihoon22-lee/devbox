@@ -17,3 +17,5 @@ pub fn run() {
     })
     .expect("error while running Devbox Knowledge");
 }
+
+mod vault_binding;

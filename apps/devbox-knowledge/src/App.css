@@ -29,3 +29,6 @@
 .knowledge-migration th, .knowledge-migration td { padding: 8px 12px; text-align: left; border: 1px solid var(--db-color-border); }
 .knowledge-migration caption { text-align: left; font-weight: 600; }
 .knowledge-migration-path { overflow-wrap: anywhere; }
+
+.knowledge-vault-choice { display: grid; gap: 8px; max-width: 720px; margin: 16px 0; }
+.knowledge-vault-choice input { box-sizing: border-box; width: 100%; min-width: 0; padding: 8px 10px; color: var(--db-color-text); background: var(--db-color-surface); border: 1px solid var(--db-color-border); border-radius: 6px; font: inherit; }

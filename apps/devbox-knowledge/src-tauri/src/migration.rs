@@ -213,6 +213,14 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
     let state = app
         .try_state::<Migration>()
         .ok_or("import_storage_unavailable")?;
+    if crate::vault_binding::pending(app)
+        && matches!(
+            method,
+            "prepare_import" | "activate_import" | "rollback_import"
+        )
+    {
+        return Err("vault_change_conflict".into());
+    }
     match method {
         "list_import_sources" => {
             empty(&value)?;
@@ -233,9 +241,14 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
             empty(&value)?;
             crate::startup::require_active(app)?;
             let requested = method == "schedule_import";
-            save_schedule(&state.root, requested)?;
-            state.scheduled.store(requested, Ordering::Release);
-            Ok(json!({"scheduled":requested}))
+            crate::startup::configure(app, || {
+                if requested && crate::vault_binding::pending(app) {
+                    return Err("vault_change_conflict".into());
+                }
+                save_schedule(&state.root, requested)?;
+                state.scheduled.store(requested, Ordering::Release);
+                Ok(json!({"scheduled":requested}))
+            })
         }
         "import_job" | "cancel_import_job" => {
             let JobId { job_id } = args(value)?;

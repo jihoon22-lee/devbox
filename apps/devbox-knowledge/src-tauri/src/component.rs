@@ -49,7 +49,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "knowledge.migration" => {
             route == "notes"
                 && (crate::startup::COMMANDS.contains(&method)
-                    || crate::migration::METHODS.contains(&method))
+                    || crate::migration::METHODS.contains(&method)
+                    || crate::vault_binding::METHODS.contains(&method))
         }
         "knowledge.notes" => {
             matches!(route, "notes" | "daily")
@@ -82,6 +83,23 @@ pub(crate) fn issue(error: &str) -> &'static str {
         "setup_required" => "setup_required",
         "store_busy" | "digest_busy" | "search_busy" => "busy",
         "search_stale" => "search_stale",
+        "vault_change_invalid"
+        | "vault_change_save_failed"
+        | "vault_change_stale"
+        | "vault_change_unavailable"
+        | "vault_change_conflict"
+        | "vault_change_same"
+        | "vault_change_timeout" => match error {
+            "vault_change_invalid" => "vault_change_invalid",
+            "vault_change_save_failed" => "vault_change_save_failed",
+            "vault_change_stale" => "vault_change_stale",
+            "vault_change_unavailable" => "vault_change_unavailable",
+            "vault_change_conflict" => "vault_change_conflict",
+            "vault_change_same" => "vault_change_same",
+            _ => "vault_change_timeout",
+        },
+        "vault_change_future" => "future_schema",
+        "vault_change_cancelled" => "cancelled",
         "store_future_schema" => "future_schema",
         "store_manifest_invalid" | "store_path_invalid" => "store_invalid",
         "activity_consent_save_failed" => "consent_save_failed",
@@ -297,6 +315,8 @@ mod tests {
         for method in [
             "search_files",
             "search_content",
+            "schedule_vault_change",
+            "apply_vault_change",
             "write_file",
             "set_root",
             "start_tracking",

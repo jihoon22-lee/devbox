@@ -18,6 +18,10 @@ it("retains the actual template draft and ignores background Escape across Activ
   await act(async () => { await vi.dynamicImportSettled(); });
   fireEvent.keyDown(window, { key: "Escape" });
   fireEvent.click(within(nav).getByRole("button", { name: "노트" }));
+  fireEvent.click(screen.getByRole("button", { name: "노트 폴더" }));
+  await screen.findByRole("heading", { name: "노트 폴더 연결" });
+  fireEvent.keyDown(window, { key: "Escape" });
+  fireEvent.click(screen.getByRole("button", { name: "노트로 돌아가기" }));
   expect((within(await screen.findByRole("dialog", { name: "노트 템플릿" })).getByRole("textbox", { name: "Markdown" }) as HTMLTextAreaElement).value).toBe("# Unsaved template across routes");
 });
 it("shares the selected civil date between Daily and Activity without creating a note", async () => {

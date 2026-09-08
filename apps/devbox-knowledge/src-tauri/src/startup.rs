@@ -22,6 +22,7 @@ struct Startup {
     operation: Arc<AtomicBool>,
     owner: Mutex<Option<VaultOwner>>,
     failure: Mutex<Option<String>>,
+    configuration: Mutex<()>,
 }
 pub struct Reservation(Arc<AtomicBool>);
 impl Drop for Reservation {
@@ -45,18 +46,22 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
     if !app.manage(Startup {
         root: root.clone(),
         legacy: legacy.clone(),
-        lease_base,
+        lease_base: lease_base.clone(),
         active: AtomicBool::new(false),
         initialized: AtomicBool::new(false),
         operation: Arc::new(AtomicBool::new(false)),
         owner: Mutex::new(None),
         failure: Mutex::new(None),
+        configuration: Mutex::new(()),
     }) {
         return Err("component_state_conflict".into());
     }
     let result = (|| {
-        let paused = crate::migration::initialize(app, root.clone(), legacy)?;
-        if !paused {
+        let migration = crate::migration::initialize(app, root.clone(), legacy);
+        let binding = crate::vault_binding::initialize(app, root.clone(), lease_base);
+        let paused_migration = migration?;
+        let paused_binding = binding?;
+        if !paused_migration && !paused_binding {
             if let Some(manifest) = stores::read(&root)? {
                 let _reservation = reserve(app)?;
                 let owner = owner(app, &manifest)?;
@@ -76,6 +81,14 @@ fn failure(app: &tauri::AppHandle, error: String) -> Result<(), String> {
         .lock()
         .map_err(|_| "store_unavailable")? = Some(error);
     Ok(())
+}
+pub fn configure<T>(
+    app: &tauri::AppHandle,
+    action: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let state = app.state::<Startup>();
+    let _guard = state.configuration.lock().map_err(|_| "store_busy")?;
+    action()
 }
 pub fn require_active(app: &tauri::AppHandle) -> Result<(), String> {
     if app.state::<Startup>().active.load(Ordering::Acquire) {
@@ -130,8 +143,9 @@ pub fn binding(root: &Path, manifest: &stores::Manifest) -> Result<(PathBuf, boo
         return Err("vault_binding_invalid".into());
     }
     let vault = PathBuf::from(&raw);
-    let legacy = vault != root.join("notes-vault");
-    if legacy {
+    let legacy = !vault_owner::same_vault(&vault, &root.join("notes-vault"));
+    let approval = crate::core::vault_binding::approval_id(&connection, &raw)?;
+    if legacy && approval.is_none() {
         import_rows::verify_legacy_binding(&connection, &raw)?;
     }
     Ok((vault, legacy))
@@ -146,10 +160,23 @@ pub fn owner(app: &tauri::AppHandle, manifest: &stores::Manifest) -> Result<Vaul
         .legacy
         .join("com.devbox.knowledgebase")
         .join("data.db");
+    // Imported bindings retain their source guard contract. A user-selected
+    // vault may have no legacy installation, but still guards one when present.
+    if legacy && !legacy_path.exists() {
+        let connection = Connection::open_with_flags(
+            stores::directory(&state.root, manifest, "notes")?.join("data.db"),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|_| "vault_binding_invalid")?;
+        if crate::core::vault_binding::approval_id(&connection, &vault.to_string_lossy())?.is_none()
+        {
+            return Err("vault_binding_invalid".into());
+        }
+    }
     vault_owner::acquire(
         &state.lease_base,
         &vault,
-        legacy.then_some(legacy_path.as_path()),
+        (legacy && legacy_path.exists()).then_some(legacy_path.as_path()),
     )
 }
 pub fn activate_with_owner(
@@ -193,6 +220,9 @@ pub fn activate_with_owner(
     Ok(())
 }
 pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
+    if crate::vault_binding::METHODS.contains(&method) {
+        return crate::vault_binding::dispatch(app, method, args);
+    }
     if crate::migration::METHODS.contains(&method) {
         return crate::migration::dispatch(app, method, args);
     }
@@ -208,16 +238,24 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 .map_err(|_| "store_unavailable")?
                 .clone()
             {
+                if error == "vault_binding_unavailable" {
+                    return Ok(
+                        json!({"active":false,"hasExisting":stores::read(&state.root)?.is_some(),"bindingUnavailable":true,"vaultChange":crate::vault_binding::pending(app)}),
+                    );
+                }
                 return Err(error);
             }
             Ok(
-                json!({"active":state.active.load(Ordering::Acquire),"scheduled":crate::migration::scheduled(app),"hasExisting":stores::read(&state.root)?.is_some()}),
+                json!({"active":state.active.load(Ordering::Acquire),"scheduled":crate::migration::scheduled(app),"hasExisting":stores::read(&state.root)?.is_some(),"vaultChange":crate::vault_binding::pending(app)}),
             )
         }
         "start_empty" | "continue_existing" => {
             if state.active.load(Ordering::Acquire) {
                 crate::migration::finish_recovery(app)?;
                 return Ok(json!({"active":true}));
+            }
+            if crate::vault_binding::pending(app) {
+                return Err("vault_change_conflict".into());
             }
             let _reservation = reserve(app)?;
             let manifest = if method == "start_empty" {

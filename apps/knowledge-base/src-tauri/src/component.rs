@@ -16,6 +16,29 @@ pub fn product_index_health(app: &tauri::AppHandle) -> (bool, bool) {
     )
 }
 
+/// Native-only preview retains the validated directory object. The product
+/// host owns scheduling/quiescence and never serializes this authority.
+#[derive(Clone)]
+pub struct ProductVault(crate::core::vault::VaultIdentity);
+impl ProductVault {
+    pub fn inspect(path: &std::path::Path) -> Result<Self, String> {
+        crate::core::vault::VaultIdentity::inspect(path)
+            .map(Self)
+            .map_err(|_| "vault_change_unavailable".into())
+    }
+    pub fn path(&self) -> &std::path::Path {
+        self.0.canonical_path()
+    }
+    pub fn revalidate(&self) -> Result<(), String> {
+        self.0.revalidate().map_err(|_| "vault_change_stale".into())
+    }
+    pub fn prepare_layout(&self) -> Result<(), String> {
+        self.revalidate()?;
+        crate::core::store::ensure_layout(self.path()).map_err(|_| "vault_change_unavailable")?;
+        self.revalidate()
+    }
+}
+
 /// The product opener has already resolved and checked an opaque reference.
 /// Notes still performs its normal inbound validation and dirty-editor prompt.
 pub fn offer_product_path(app: &tauri::AppHandle, path: &std::path::Path) -> Result<(), String> {

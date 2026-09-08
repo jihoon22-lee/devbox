@@ -38,7 +38,18 @@ a shared exclusive vault lease prevents two product installations from writing t
 same vault. Windows/WSL spelling aliases share the lease; Linux path case is preserved.
 WSL availability checks and watcher restoration run away from startup, and note file
 operations run away from the shared IPC executor. Per-write vault identity checks
-remain in the existing engine. Direct live vault rebinding is still unavailable.
+remain in the existing engine.
+
+The Notes folder setting schedules a review for the next start, preserving live
+editors and the current binding. With engines stopped, preview inspects an existing
+folder without creating anything; explicit apply acquires ownership, prepares only
+fixed layout directories and atomically changes the binding/approval receipt while
+clearing derived note indexes. Templates/settings and both vaults' files remain.
+A crash between database commit and schedule cleanup is recognized by the receipt.
+Five-second jobs, one retained worker and expiring previews bound remote probes;
+cancelled late probes cannot change the binding. A missing native folder can be
+replaced from startup without initializing the unavailable note engine. Unsupported
+schemas and substituted previews fail closed. Unsafe live `set_root` stays blocked.
 
 Git activity shares the same exact-range collector across calendar and digest/export.
 Canonical common Git directory plus commit ID deduplicates linked worktrees; shared
@@ -91,8 +102,11 @@ only the latest query. Product regex runs in a cancellable 500 ms worker.
 
 Only rows with an issued opaque reference can open. The separate opener checks the
 current store generation, registered/deepest root, indexed row and actual root/file
-identity; raw renderer paths are rejected. References expire after three minutes or
-cancellation. Two opener permits and a two-second response deadline bound slow
+identity; raw renderer paths are rejected. Object leases prevent deleted/recreated
+files from reusing a captured identity. They expire after three minutes or
+cancellation; bounded background retirement keeps slow close operations off IPC
+locks. Source-specific pools cap active and retiring object pairs at 8,000; folder
+previews have a separate two-object pool. Two opener permits and a two-second response deadline bound slow
 probes and prevent late launches. Notes results open through the editor's existing
 dirty confirmation. Query services cannot launch a process or mutate a file.
 
@@ -101,10 +115,11 @@ collection OFF, independent Search and owner/replay/installation rejection in tw
 installations. The pinned legacy migration fixture additionally covers import,
 source preservation, writer/installation denial, ID mapping, repeat/recovery,
 summary preview/cancel/save/replay, regex deadline/recovery and opaque search opens.
-2953c62 passed general CI, including Windows vault-rename regression. Its migration
-fixture passed old-writer rejection, then found that the pinned legacy app had reused
-the fixture's deleted root ID. The fixture now keeps another root alive before deletion
-and asserts the IDs differ. Current migration, summary and Search execution remain
-pending past that stage. See the single B03 workthrough for
-exact runs and portable evidence. Session-summary input, project attribution, live
-vault rebinding and final Windows/WSL acceptance remain in this PR.
+f8f9f87 passed its Windows Rust checks, but its general CI hit a five-second API
+Studio route-test timeout under CI contention. That test now has a 15-second case
+budget; native performance measurements remain separate. Its migration fixture
+stopped on a normalized Windows-path string comparison. Root setup now uses native
+IDs, and file assertions compare actual object IDs. Current native import, summary,
+Search and folder-rebinding execution remain pending past that stage. See the B03
+workthrough for exact runs and portable evidence. Session-summary/provider and
+Project Registry contracts plus final Windows/WSL acceptance remain in this PR.

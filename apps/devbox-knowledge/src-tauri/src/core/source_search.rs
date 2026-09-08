@@ -1,7 +1,9 @@
 //! Bounded, cancellable read jobs. Blocking filesystem probes retain their
 //! worker permit until they return; cancellation never starts replacement
 //! workers without accounting for the old OS call.
+use super::retirement::{Lease, Pool};
 use devbox_filesystem::FilesystemIdentity;
+type Objects = (std::fs::File, std::fs::File);
 use serde::Serialize;
 use serde_json::Value;
 use std::{
@@ -37,6 +39,9 @@ pub struct Reference {
     pub root_identity: FilesystemIdentity,
     pub source: String,
     pub store_generation: String,
+    // Object IDs cannot be recycled while this bounded lease is alive.
+    // Its final close is deferred, including when a job expires under a lock.
+    _objects: Lease<Objects>,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -69,6 +74,7 @@ struct Job {
 struct Inner {
     jobs: HashMap<String, Job>,
     workers: HashMap<String, usize>,
+    pools: HashMap<String, Arc<Pool<Objects>>>,
 }
 #[derive(Clone, Default)]
 pub struct SearchJobs(Arc<Mutex<Inner>>);
@@ -79,6 +85,7 @@ pub struct Work {
     pub store_generation: String,
     pub cancelled: Arc<AtomicBool>,
     pub deadline: Instant,
+    pool: Option<Arc<Pool<Objects>>>,
 }
 impl Drop for Work {
     fn drop(&mut self) {
@@ -90,6 +97,24 @@ impl Drop for Work {
     }
 }
 impl SearchJobs {
+    fn expire(&self) {
+        if let Ok(mut inner) = self.0.lock() {
+            inner.jobs.retain(|_, job| job.started.elapsed() < TTL);
+        }
+    }
+    pub fn start_expiry(&self) -> Result<(), String> {
+        let weak = Arc::downgrade(&self.0);
+        std::thread::Builder::new()
+            .name("knowledge-search-expiry".into())
+            .spawn(move || {
+                while let Some(inner) = weak.upgrade() {
+                    SearchJobs(inner).expire();
+                    std::thread::sleep(Duration::from_secs(1));
+                }
+            })
+            .map_err(|_| "search_unavailable".to_owned())?;
+        Ok(())
+    }
     pub fn begin(&self, source: &str, store_generation: &str) -> Result<Work, String> {
         let mut inner = self.0.lock().map_err(|_| "search_unavailable")?;
         inner.jobs.retain(|_, job| job.started.elapsed() < TTL);
@@ -110,6 +135,16 @@ impl SearchJobs {
                 }
             }
         }
+        let pool = if matches!(source, "files" | "notes") {
+            if !inner.pools.contains_key(source) {
+                inner
+                    .pools
+                    .insert(source.into(), Pool::new(MAX_JOBS * MAX_ROWS)?);
+            }
+            inner.pools.get(source).cloned()
+        } else {
+            None
+        };
         let generation = uuid::Uuid::new_v4().to_string();
         let cancelled = Arc::new(AtomicBool::new(false));
         let started = Instant::now();
@@ -123,7 +158,7 @@ impl SearchJobs {
                     state: "running".into(),
                     partial: false,
                     rows: Vec::new(),
-                    bounds: serde_json::json!({"maxRows":MAX_ROWS,"maxBytes":MAX_BYTES,"timeoutMs":QUERY_TIME.as_millis(),"referenceTtlSeconds":TTL.as_secs()}),
+                    bounds: serde_json::json!({"maxRows":MAX_ROWS,"maxBytes":MAX_BYTES,"timeoutMs":QUERY_TIME.as_millis(),"referenceTtlSeconds":TTL.as_secs(),"maxObjectLeasesPerSource":MAX_JOBS*MAX_ROWS}),
                 },
                 started,
                 cancelled: cancelled.clone(),
@@ -138,6 +173,7 @@ impl SearchJobs {
             store_generation: store_generation.into(),
             cancelled,
             deadline: started + QUERY_TIME,
+            pool,
         })
     }
     pub fn snapshot(&self, generation: &str) -> Result<Snapshot, String> {
@@ -220,7 +256,7 @@ impl Work {
             return;
         }
         let identities = (|| {
-            if candidate.offline {
+            if candidate.offline || !self.pool.as_ref().is_some_and(|pool| pool.available()) {
                 return None;
             }
             if !candidate.path.is_absolute()
@@ -237,10 +273,16 @@ impl Work {
             }
             devbox_filesystem::ensure_no_links(&candidate.path).ok()?;
             Some((
-                devbox_filesystem::filesystem_identity(&candidate.root, true).ok()?,
-                devbox_filesystem::filesystem_identity(&candidate.path, false).ok()?,
+                devbox_filesystem::open_filesystem_object(&candidate.root, true).ok()?,
+                devbox_filesystem::open_filesystem_object(&candidate.path, false).ok()?,
             ))
         })();
+        let identities = identities.and_then(|((root, root_identity), (file, file_identity))| {
+            self.pool
+                .as_ref()?
+                .hold((file, root))
+                .map(|objects| (root_identity, file_identity, objects))
+        });
         // A late filesystem reply can neither publish rows nor revive refs.
         if self.stopped() {
             return;
@@ -251,7 +293,7 @@ impl Work {
             }
             if let Some(job) = inner.jobs.get_mut(&self.generation) {
                 if let Some(row) = job.snapshot.rows.get_mut(index) {
-                    if let Some((root_identity, file_identity)) = identities {
+                    if let Some((root_identity, file_identity, objects)) = identities {
                         let reference = uuid::Uuid::new_v4().to_string();
                         row.reference = Some(reference.clone());
                         row.availability = "available".into();
@@ -263,6 +305,7 @@ impl Work {
                                 file_identity,
                                 source: self.source.clone(),
                                 store_generation: self.store_generation.clone(),
+                                _objects: objects,
                             },
                         );
                     } else {
@@ -360,5 +403,46 @@ mod tests {
         let result = jobs.snapshot(&work.generation).unwrap();
         assert_eq!(result.state, "timed_out");
         assert!(result.rows[0].reference.is_none());
+    }
+    #[test]
+    fn expiry_releases_object_leases_and_delete_recreate_cannot_recycle_identity() {
+        let root = tempfile::tempdir().unwrap();
+        let candidate = candidate(root.path());
+        std::fs::write(&candidate.path, "old").unwrap();
+        let jobs = SearchJobs::default();
+        let work = jobs.begin("notes", "store").unwrap();
+        work.publish_candidates(std::slice::from_ref(&candidate), false)
+            .unwrap();
+        work.verify(0, &candidate);
+        let snapshot = jobs.snapshot(&work.generation).unwrap();
+        let token = snapshot.rows[0].reference.as_ref().unwrap();
+        let reference = jobs.resolve(token).unwrap();
+        let pool = jobs.0.lock().unwrap().pools["notes"].clone();
+        #[cfg(unix)]
+        {
+            std::fs::remove_file(&candidate.path).unwrap();
+            std::fs::write(&candidate.path, "new").unwrap();
+            assert_ne!(
+                reference.file_identity,
+                devbox_filesystem::filesystem_identity(&candidate.path, false).unwrap()
+            );
+        }
+        drop(reference);
+        jobs.0
+            .lock()
+            .unwrap()
+            .jobs
+            .get_mut(&work.generation)
+            .unwrap()
+            .started = Instant::now() - TTL;
+        jobs.expire();
+        for _ in 0..100 {
+            if pool.usage() == 0 {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(2));
+        }
+        assert_eq!(pool.usage(), 0);
+        assert!(jobs.resolve(token).is_err());
     }
 }

@@ -29,10 +29,12 @@ pub fn initialize(
     root: &Path,
     manifest: &stores::Manifest,
 ) -> Result<(), String> {
+    let jobs = SearchJobs::default();
+    jobs.start_expiry()?;
     if !app.manage(Host {
         root: root.into(),
         manifest: manifest.clone(),
-        jobs: SearchJobs::default(),
+        jobs,
         openers: Arc::default(),
     }) {
         return Err("component_state_conflict".into());
@@ -110,8 +112,9 @@ fn candidates(conn: &Connection, request: &Query, limit: i64) -> Result<Vec<Cand
             let (root, revision) = revision(conn, "notes", &path)?;
             let absolute = root.join(&path);
             if Path::new(&path).is_absolute() || path.len() > 32768 || title.len() > 8192 { return Err("search_limit".into()); }
+            let root_key = format!("notes:{}", crate::core::vault_binding::approval_id(conn, &root.to_string_lossy())?.unwrap_or_else(|| "vault".into()));
             let value = json!({"id": revision[1], "path": absolute, "notePath": path, "name": title, "ext":"md", "size":0, "modified_ts":revision[2], "snippet":snippet, "content_status":"indexed"});
-            Ok(Candidate { path:absolute, root, root_key:"notes:vault".into(), revision, value, index_stale: false, offline: false })
+            Ok(Candidate { path:absolute, root, root_key, revision, value, index_stale: false, offline: false })
         }).collect()
     } else {
         let values = if request.mode == "content" {
