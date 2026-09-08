@@ -193,15 +193,23 @@ try {
     } else {
       await legacy(item, "add_root", { path: unused, indexContent: false });
       const first = (await legacy(item, "list_roots"))[0];
-      // The pinned v0.7 SQLite allocator may reuse the last deleted ID. Keep
-      // a second root alive before deletion to create a genuinely dangling ref.
+      // Keep a second root alive so the fixture has a live and a dangling ID.
+      // Commands must use the native registered path (Windows temp aliases
+      // can differ from the canonical path returned by the legacy app).
       await legacy(item, "add_root", { path: indexed, indexContent: true });
       const legacyRoots = await legacy(item, "list_roots"); assert.equal(legacyRoots.length, 2);
       const root = legacyRoots.find(root => root.id !== first.id);
       assert.ok(root); assert.notEqual(root.id, first.id);
-      await legacy(item, "remove_root", { path: unused });
+      await legacy(item, "remove_root", { path: first.path });
+      const remainingRoots = await legacy(item, "list_roots");
+      assert.deepEqual(remainingRoots.map(entry => entry.id), [root.id]);
+      evidence.legacyRegisteredRootRemovalConfirmed = true;
       await legacy(item, "save_saved_query", { request: { id: null, name: "live fixture", query: "allowed", filter: { sourceRootId: root.id } } });
       await legacy(item, "save_saved_query", { request: { id: null, name: "deleted fixture", query: "allowed", filter: { sourceRootId: first.id } } });
+      const savedQueries = await legacy(item, "list_saved_queries");
+      assert.equal(savedQueries.length, 2);
+      assert.equal(savedQueries.find(query => query.name === "live fixture").filter.sourceRootId, root.id);
+      assert.equal(savedQueries.find(query => query.name === "deleted fixture").filter.sourceRootId, first.id);
       evidence.sourceRootId = root.id; evidence.deletedSourceRootId = first.id; await stop(item);
     }
   }
@@ -222,6 +230,7 @@ try {
   await click(item.cdp, "시작 화면으로"); await click(item.cdp, "기존 앱 데이터 가져오기"); await click(item.cdp, "가져오기 미리보기 준비");
   await wait(item.cdp, '!!document.querySelector("#import-preview-title")', "new migration preview missing");
   const plan = (await command(item, "knowledge.migration", "list_imports")).value.find(plan => plan.phase === "prepared");
+  evidence.previewSourceReports = plan.sources.map(source => ({ source: source.source, report: source.report }));
   assert.ok(plan.sources.some(source => source.report.reservedRootIds === 1));
   await click(item.cdp, "미리보기를 확인하고 적용");
   await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "imported Notes did not mount after explicit UI approval");

@@ -49,6 +49,7 @@ const preview: TemplatePreview = {
 };
 
 beforeEach(() => {
+  vi.resetAllMocks();
   listMock.mockResolvedValue([template]);
   createMock.mockResolvedValue(template);
   updateMock.mockResolvedValue(template);
@@ -71,10 +72,17 @@ function renderManager(onClose = vi.fn(), onSaved = vi.fn()) {
   };
 }
 
+async function readyManager() {
+  const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+  // The dialog mounts before its asynchronous template selection is loaded.
+  await waitFor(() => expect(within(dialog).getByRole("button", { name: "적용 전 미리보기" })).toBeEnabled());
+  return dialog;
+}
+
 describe("Knowledge template manager", () => {
   it("exposes labelled nested dialogs and consumes a confirmed preview", async () => {
     const { onSaved } = renderManager();
-    const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+    const dialog = await readyManager();
     expect(dialog).toHaveAttribute("aria-modal", "true");
     expect(dialog).toHaveAttribute("aria-describedby", "template-manager-description");
     expect(within(dialog).getByLabelText("이름")).toHaveValue("Daily");
@@ -95,7 +103,7 @@ describe("Knowledge template manager", () => {
       resolvePreview = resolve;
     }));
     const { unmount } = renderManager();
-    const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+    const dialog = await readyManager();
     fireEvent.click(within(dialog).getByRole("button", { name: "적용 전 미리보기" }));
     await waitFor(() => expect(previewMock).toHaveBeenCalledTimes(1));
     unmount();
@@ -107,7 +115,7 @@ describe("Knowledge template manager", () => {
   it("keeps the approval visible when cancellation fails", async () => {
     discardMock.mockRejectedValueOnce(new Error("temporary discard failure"));
     renderManager();
-    const dialog = await screen.findByRole("dialog", { name: "노트 템플릿" });
+    const dialog = await readyManager();
     fireEvent.click(within(dialog).getByRole("button", { name: "적용 전 미리보기" }));
     const previewDialog = await screen.findByRole("dialog", { name: /미리보기 · Notes\/today\.md/u });
 
