@@ -26,3 +26,34 @@ test("native registration probe executes generated requests with the described c
     });
   }
 });
+
+// node --check validates the harness itself, not JavaScript strings sent to
+// Runtime.evaluate. Parse literals with the already-pinned Workspace compiler,
+// then compile the actual decoded expression the browser will receive.
+import {readFileSync} from "node:fs";
+import {createRequire} from "node:module";
+import {Script} from "node:vm";
+const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
+test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
+  let checked=0;
+  for(const name of ["registration","definitions","files"]){
+    const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
+    const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
+    const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));
+    function visit(node){
+      if(ts.isCallExpression(node)){
+        const callee=node.expression;
+        const argument=ts.isIdentifier(callee)&&callee.text==="waitForRenderer"?node.arguments[1]
+          :ts.isPropertyAccessExpression(callee)&&callee.name.text==="evaluate"?node.arguments[0]:undefined;
+        if(literal(argument)){
+          const location=tree.getLineAndCharacterOfPosition(argument.getStart(tree));
+          assert.doesNotThrow(()=>new Script(argument.text),`${filename.pathname}:${location.line+1}`);
+          checked++;
+        }
+      }
+      ts.forEachChild(node,visit);
+    }
+    visit(tree);
+  }
+  assert.ok(checked>=20,"the browser expression regression must inspect the actual fixture call sites");
+});

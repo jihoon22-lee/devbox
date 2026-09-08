@@ -24,10 +24,10 @@ export async function exerciseWorkspaceDefinitions({cdp,root,call,success,waitFo
   };
   await click("프로젝트 설정");
   await click("실행 정의 검토");
-  await waitForRenderer(cdp,'!!document.querySelector(".workspace-definitions [aria-label=\"실행 정의 승인 확인\"]")',"Definition review missing");
+  await waitForRenderer(cdp,`!!document.querySelector('.workspace-definitions [aria-label="실행 정의 승인 확인"]')`,"Definition review missing");
   assert.equal(success(await call("workspace.registry","snapshot")).worktrees[0].trustedDigest,null);
   await click("승인 취소");
-  await waitForRenderer(cdp,'!document.querySelector(".workspace-definitions [aria-label=\"실행 정의 승인 확인\"]")',"Definition cancel missing");
+  await waitForRenderer(cdp,`!document.querySelector('.workspace-definitions [aria-label="실행 정의 승인 확인"]')`,"Definition cancel missing");
   const stale=success(await definitions("preview_trust"));
   writeSource("changed");
   assert.equal((await definitions("approve_trust",{previewId:stale.previewId})).operation.outcome.state,"failed");
@@ -62,7 +62,7 @@ export async function exerciseWorkspaceDefinitions({cdp,root,call,success,waitFo
   await waitForRenderer(cdp,'!!document.querySelector(".workspace-definition-editor textarea")',"Definition editor missing");
   await cdp.evaluate(`(()=>{const input=document.querySelector(".workspace-definition-editor textarea");Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(input,${JSON.stringify(JSON.stringify({...refreshed.project,expectedPorts:[8080]}))});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
   await click("저장 변경 검토");
-  await waitForRenderer(cdp,'!!document.querySelector(".workspace-definition-editor [aria-label=\"설정 저장 확인\"]")',"Definition save review missing");
+  await waitForRenderer(cdp,`!!document.querySelector('.workspace-definition-editor [aria-label="설정 저장 확인"]')`,"Definition save review missing");
   assert.equal(readFileSync(manifestPath,"utf8"),external);
   await click("검토한 설정 저장");
   await waitForRenderer(cdp,'document.querySelector(".workspace-definition-editor")?.textContent.includes("설정을 저장했습니다.")',"Definition UI save missing");

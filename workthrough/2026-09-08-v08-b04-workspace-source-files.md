@@ -163,6 +163,20 @@ rejection, UI save and local precedence; this authoring version has not run on
 Windows yet. Final affected all passed in **411.265 seconds** under the shared
 8 GiB cap (cgroup peak **5,826,940,928 bytes**).
 
+The [f21e13f general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34243283346)
+passed all jobs, including Windows Rust. Its [Windows product run](https://github.com/jihoon22-lee/devbox/actions/runs/34243283401)
+passed native Rust, API Studio/Knowledge workflows and installer coexistence, but
+the packaged shell fixture failed at the first definition-review selector: a quoted
+Korean `aria-label` produced invalid JavaScript inside `Runtime.evaluate`. It stopped
+before the Files scenario, so this does not establish native Files acceptance.
+
+The selector now uses unambiguous quote boundaries. A regression parses actual
+fixture call sites with the pinned Workspace TypeScript parser and compiles their
+decoded browser expressions. It reproduced the old failure and passes after the
+fix, together with the existing generated-request test. `node --check` alone did
+not inspect those nested strings. Corrected final affected all passed in
+**323.806 seconds** under the shared 8 GiB cap (cgroup peak **1,620,996,096 bytes**).
+
 ## Remaining acceptance
 
 Source/Dependencies routing, complete Git/LSP execution-trust evidence, importer mappings,
