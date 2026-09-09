@@ -77,6 +77,94 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
         owner.admit(&context),
         Err("wsl_admission_required")
     ));
+    let bridge_path = format!("{root}/bridge.txt");
+    let bridge_file = Path::new(&unc).join("bridge.txt");
+    std::fs::write(&bridge_file, b"bridge baseline\r\n").unwrap();
+    let admitted = owner.admit_selection(&resources, &context).unwrap();
+    assert_eq!(admitted, binding);
+    let mut bridge =
+        devbox_workspace_lib::platform::wsl_files::WslFiles::open(&owner, &resources, &context)
+            .unwrap();
+    let bridge_opened = bridge
+        .execute(
+            &owner,
+            &context,
+            "open_file",
+            serde_json::json!({"request":{"path":bridge_path,"encoding":null}}),
+            u64::MAX,
+        )
+        .unwrap();
+    bridge
+        .execute(
+            &owner,
+            &context,
+            "watch_file",
+            serde_json::json!({"path":bridge_path}),
+            u64::MAX,
+        )
+        .unwrap();
+    assert_eq!(bridge.poll(&owner, &context).unwrap().len(), 1);
+    assert!(bridge.poll(&owner, &context).unwrap().is_empty());
+    std::fs::write(&bridge_file, b"external bridge\r\n").unwrap();
+    assert_eq!(bridge.poll(&owner, &context).unwrap().len(), 1);
+    assert_eq!(
+        bridge.documents.revision(&bridge_path).unwrap(),
+        bridge_opened["nativeRevision"].as_str().unwrap()
+    );
+    assert!(bridge
+        .recover(
+            &owner,
+            &context,
+            &bridge_path,
+            "stale recovery\n",
+            bridge_opened["nativeRevision"].as_str().unwrap(),
+            u64::MAX
+        )
+        .is_err());
+    let bridge_current = bridge
+        .execute(
+            &owner,
+            &context,
+            "open_file",
+            serde_json::json!({"request":{"path":bridge_path,"encoding":null}}),
+            u64::MAX,
+        )
+        .unwrap();
+    bridge
+        .recover(
+            &owner,
+            &context,
+            &bridge_path,
+            "검토한 복구\n",
+            bridge_current["nativeRevision"].as_str().unwrap(),
+            u64::MAX,
+        )
+        .unwrap();
+    assert_eq!(
+        std::fs::read_to_string(&bridge_file).unwrap(),
+        "검토한 복구\r\n"
+    );
+    bridge
+        .documents
+        .validate_paths(std::slice::from_ref(&bridge_path))
+        .unwrap();
+    let mut wrong_context = context.clone();
+    wrong_context.revision += 1;
+    assert!(bridge
+        .execute(
+            &owner,
+            &wrong_context,
+            "open_file",
+            serde_json::json!({"request":{"path":bridge_path,"encoding":null}}),
+            u64::MAX
+        )
+        .is_err());
+    bridge.close(&bridge_path).unwrap();
+    assert!(!bridge.documents.has_documents());
+    bridge.shutdown().unwrap();
+    bridge.shutdown().unwrap();
+    drop(bridge);
+    std::fs::remove_file(&bridge_file).unwrap();
     first
         .file_request(
             "files_attach",

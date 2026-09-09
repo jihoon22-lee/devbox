@@ -60,6 +60,7 @@ export interface WorkspaceCapabilities {
 }
 
 export interface FileChangedEvent {
+  contextKey?: string;
   path: string;
   mtimeNanos: string;
   contentHash: string;

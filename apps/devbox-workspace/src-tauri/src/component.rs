@@ -85,6 +85,76 @@ impl Default for Runtime {
     }
 }
 impl Runtime {
+    #[cfg(windows)]
+    fn start_wsl_poll(&self, app: tauri::AppHandle) {
+        use tauri::Emitter;
+        let runtime = self.clone();
+        tauri::async_runtime::spawn(async move {
+            loop {
+                tokio::time::sleep(Duration::from_secs(5)).await;
+                if runtime.shutdown_started.load(Ordering::Acquire) {
+                    continue;
+                }
+                let (Ok(host), Some(window)) = (runtime.host(), app.get_webview_window("main"))
+                else {
+                    continue;
+                };
+                let Ok(context_permit) = runtime.context_activity.enter(false) else {
+                    continue;
+                };
+                let Ok(Some(context)) = product_shell_tauri::workspace_context(&window) else {
+                    continue;
+                };
+                if !matches!(
+                    context.target,
+                    product_contract::ExecutionTarget::Wsl { .. }
+                ) {
+                    continue;
+                }
+                let (Ok(queued), Ok(worker), Ok(filesystem)) = (
+                    runtime.file_requests.reserve_with_limit(1),
+                    runtime.file_workers.clone().try_acquire_owned(),
+                    runtime.filesystem_activity.enter(false),
+                ) else {
+                    continue;
+                };
+                let files = runtime.files.clone();
+                let _ = tauri::async_runtime::spawn_blocking(move || {
+                    let _retained = (context_permit, queued, worker, filesystem);
+                    let Ok(mut files) = files.try_lock() else { return };
+                    let result = files.poll_wsl(&host, &context);
+                    if product_shell_tauri::workspace_context(&window).ok().flatten().as_ref() != Some(&context) { return; }
+                    let Ok(context_key) = serde_json::to_string(&context) else { return };
+                    match result {
+                        Ok(snapshots) => for snapshot in snapshots {
+                            let _ = window.emit("file-changed", json!({"path":snapshot.path,"mtimeNanos":snapshot.mtime_nanos,"size":snapshot.size,"contentHash":snapshot.content_hash,"contextKey":context_key}));
+                        },
+                        Err(issue) => { let _ = window.emit("workspace-file-watch-issue", json!({"contextKey":context_key,"issue":issue})); },
+                    }
+                }).await;
+            }
+        });
+    }
+    #[cfg(windows)]
+    async fn retire_files(&self) -> Result<(), &'static str> {
+        tokio::time::timeout(Duration::from_secs(30), async {
+            while self.file_requests.0.load(Ordering::Acquire) != 0 {
+                tokio::time::sleep(Duration::from_millis(20)).await;
+            }
+        })
+        .await
+        .map_err(|_| "files_busy")?;
+        let files = self.files.clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            files
+                .lock()
+                .map_err(|_| "files_unavailable")?
+                .retire_wsl()?;
+            Ok(())
+        })
+        .await
+        .map_err(|_| "worker_unavailable")?
+    }
     async fn retire_lsp(&self) -> Result<(), &'static str> {
         let owner = self.lsp.lock().map_err(|_| "lsp_unavailable")?.clone();
         if let Some(owner) = owner {
@@ -947,8 +1017,17 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         }
         "select_project" => {
             let value: Select = input(args)?;
-            let lease = host.projects()?.admit(&value.context)?;
-            Ok(json!({"context":value.context,"binding":lease.binding()}))
+            let binding = if cfg!(windows)
+                && matches!(
+                    value.context.target,
+                    product_contract::ExecutionTarget::Wsl { .. }
+                ) {
+                host.projects()?
+                    .admit_selection(host.helper_directory()?, &value.context)?
+            } else {
+                host.projects()?.admit(&value.context)?.binding().clone()
+            };
+            Ok(json!({"context":value.context,"binding":binding}))
         }
         "list_wsl_distros" => {
             empty(&args)?;
@@ -1317,6 +1396,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .setup(|app, _| {
             let runtime = Runtime::default();
             app.manage(runtime.clone());
+            #[cfg(windows)]
+            runtime.start_wsl_poll(app.clone());
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
                 let result = tauri::async_runtime::spawn_blocking(move || {
@@ -1407,7 +1488,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     Some(manager) => manager.shutdown_for_exit().await.is_ok(),
                     None => true,
                 };
-                if retired && stopped && actor_stopped {
+                #[cfg(windows)]
+                let files_stopped = runtime.retire_files().await.is_ok();
+                #[cfg(not(windows))]
+                let files_stopped = true;
+                if retired && stopped && actor_stopped && files_stopped {
                     runtime.exit_authorized.store(true, Ordering::Release);
                     app.exit(exit_code);
                 } else {

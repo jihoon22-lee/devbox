@@ -501,7 +501,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const unregisterWatch = (path: string) =>
     enqueueWatchOperation(path, async () => {
       try {
-        await unwatchFile(path);
+        if (isProductHosted()) await unwatchFile(path, contextKey);
+        else await unwatchFile(path);
       } catch {
         // Closing a document remains successful even if its watcher was
         // already unavailable; no native resources are held by the UI.
@@ -1488,6 +1489,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const handleEvent = (payload: FileChangedEvent) => {
+      if (payload.contextKey !== undefined && payload.contextKey !== contextRef.current) return;
       if (renameApplyBusyRef.current) {
         // The native transaction owns its snapshot boundary while applying.
         // Queue watcher evidence without replacing the editor buffer; a
@@ -1546,6 +1548,18 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       unlisten?.();
     };
   }, [hydrated]);
+
+  useEffect(() => {
+    if (!isProductHosted()) return;
+    let disposed = false;
+    let unlisten: (() => void) | undefined;
+    void listen<{contextKey: string}>("workspace-file-watch-issue", event => {
+      if (!disposed && event.payload.contextKey === contextRef.current) {
+        setError("WSL 파일 변경 감시가 중단됐습니다. 배포판 연결을 확인해 주세요. 미저장 내용은 편집기에 유지됩니다.");
+      }
+    }).then(stop => { if (disposed) stop(); else unlisten = stop; }).catch(() => undefined);
+    return () => { disposed = true; unlisten?.(); };
+  }, []);
 
   // Inbound cross-app open requests (§3): a cold-start argv parse is pulled
   // once via take_pending_open, and a relaunch of this same running instance

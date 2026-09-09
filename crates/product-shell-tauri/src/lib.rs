@@ -149,8 +149,24 @@ pub fn authorize(
     Ok(provenance)
 }
 
-/// Called by the Workspace owner only after authenticated, fresh Registry
-/// admission. This is a native API, not a renderer command or trust grant.
+/// Native context for Workspace-owned background notifications. The owner
+/// retains its context permit through observation and delivery.
+pub fn workspace_context(window: &WebviewWindow) -> Result<Option<ProjectContext>, &'static str> {
+    let state = window.state::<ShellState>();
+    if state.product != "workspace" || !local_main(window) {
+        return Err("unauthorized_context_owner");
+    }
+    let context = state
+        .session
+        .try_lock()
+        .map_err(|_| "context_busy")?
+        .context()
+        .cloned();
+    Ok(context)
+}
+
+/// Called only after authenticated, fresh Registry admission. This native API
+/// changes selection; it grants no execution trust and is not a renderer command.
 pub fn replace_project_context(
     window: &WebviewWindow,
     expected: Option<&ProjectContext>,

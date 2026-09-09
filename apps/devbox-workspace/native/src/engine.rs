@@ -55,6 +55,18 @@ impl RootLease for NativeFileLease<'_> {
     deny_unknown_fields
 )]
 enum FileMethod {
+    #[serde(rename = "files_poll")]
+    Poll {
+        context: ProjectContext,
+        paths: Vec<String>,
+    },
+    #[serde(rename = "files_recover")]
+    Recover {
+        context: ProjectContext,
+        path: String,
+        content: String,
+        native_revision: String,
+    },
     #[serde(rename = "files_list")]
     List {
         context: ProjectContext,
@@ -106,7 +118,9 @@ enum FileMethod {
 impl FileMethod {
     fn context(&self) -> &ProjectContext {
         match self {
-            Self::List { context, .. }
+            Self::Poll { context, .. }
+            | Self::Recover { context, .. }
+            | Self::List { context, .. }
             | Self::Preview { context, .. }
             | Self::Open { context, .. }
             | Self::Save { context, .. }
@@ -252,6 +266,48 @@ impl Engine {
             target: &access.context.target,
         };
         match method {
+            FileMethod::Poll { paths, .. } => {
+                if paths.len() > 64 || paths.iter().any(|path| path.len() > 32768) {
+                    return Err("file_limit");
+                }
+                access
+                    .owner
+                    .validate_open_paths(Some(&access.context), &paths)?;
+                let mut snapshots = Vec::new();
+                for path in paths {
+                    guard()?;
+                    // Like the standalone watcher, a missing/unreadable leaf
+                    // cannot publish content evidence. Root loss still fails
+                    // the entire request at the final lease check.
+                    if let Ok(snapshot) = access
+                        .owner
+                        .watch_snapshot(Some((&access.context, &lease)), &path)
+                    {
+                        snapshots.push(snapshot);
+                    }
+                }
+                guard()?;
+                lease.revalidate()?;
+                serde_json::to_value(snapshots).map_err(|_| "wsl_response_invalid")
+            }
+            FileMethod::Recover {
+                path,
+                content,
+                native_revision,
+                ..
+            } => {
+                let saved = access.owner.apply_recovery_guarded(
+                    Some((&access.context, &lease)),
+                    &path,
+                    &content,
+                    &native_revision,
+                    guard,
+                )?;
+                let revision = access.owner.document_revision(&saved.path).ok();
+                let mut result = serde_json::to_value(saved).map_err(|_| "wsl_response_invalid")?;
+                result["nativeRevision"] = json!(revision);
+                Ok(result)
+            }
             FileMethod::Preview {
                 path,
                 content,
@@ -379,7 +435,9 @@ impl Engine {
             .retain(|_, root| root.files.is_some() || root.touched.elapsed() < ROOT_TTL);
         if matches!(
             request.method.as_str(),
-            "files_list"
+            "files_poll"
+                | "files_recover"
+                | "files_list"
                 | "files_preview"
                 | "files_open"
                 | "files_save"

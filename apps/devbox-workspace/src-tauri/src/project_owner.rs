@@ -268,6 +268,42 @@ impl ProjectOwner {
             .map(|tree| tree.binding)
             .ok_or("stale_context")
     }
+    #[cfg(windows)]
+    pub fn admit_wsl(
+        &self,
+        resources: &Path,
+        context: &ProjectContext,
+    ) -> Result<crate::platform::wsl_project::WslProjectLease> {
+        let binding = self.binding(context)?;
+        let product_contract::ExecutionTarget::Wsl { distro_id } = &binding.target else {
+            return Err("wsl_context_invalid");
+        };
+        // Selection/opening does not grant permission to start a stopped distro.
+        let lease = crate::platform::wsl_project::WslProjectLease::observe(
+            resources,
+            distro_id,
+            &binding.root,
+            false,
+        )?;
+        if self.binding(context)? != *lease.binding() {
+            return Err("project_binding_changed");
+        }
+        lease.revalidate()?;
+        Ok(lease)
+    }
+    pub fn admit_selection(&self, resources: &Path, context: &ProjectContext) -> Result<Binding> {
+        #[cfg(windows)]
+        if matches!(
+            context.target,
+            product_contract::ExecutionTarget::Wsl { .. }
+        ) {
+            return self
+                .admit_wsl(resources, context)
+                .map(|lease| lease.binding().clone());
+        }
+        let _ = resources;
+        self.admit(context).map(|lease| lease.binding().clone())
+    }
     fn admit_lease(&self, context: &ProjectContext, lease: ProjectLease) -> Result<ProjectLease> {
         // Read again after the potentially slow probe. Rebind/removal changes
         // must not enter the previous context. Execution owners check trust separately.

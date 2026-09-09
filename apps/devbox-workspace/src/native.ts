@@ -129,6 +129,7 @@ const issues: Record<string, string> = {
   legacy_session_review_limit: "진행 중인 세션 가져오기 검토를 완료하거나 취소해 주세요.",
   legacy_session_review_stale: "세션 검토가 만료되었거나 이미 사용되었습니다. 다시 검토해 주세요.",
   files_initialize_failed: "편집기 저장소를 준비하지 못했습니다. 저장된 정보를 확인해 주세요.",
+  file_context_limit: "이전 프로젝트의 편집 탭을 닫은 뒤 새 WSL 프로젝트를 열어 주세요.",
   files_recovery_changed: "복구 버퍼가 다른 작업에서 변경되었습니다. 현재 버퍼를 유지하고 다시 검토해 주세요.",
   legacy_recovery_unavailable: "확인한 보관본에서 미저장 버퍼를 읽지 못했습니다.",
   legacy_recovery_no_files: "현재 프로젝트나 직접 선택한 파일에 해당하는 미저장 버퍼가 없습니다. 원본은 보관했습니다.",

@@ -23,6 +23,8 @@ use std::{
 use tauri::Manager;
 
 mod recovery_import;
+#[cfg(windows)]
+mod wsl;
 
 type Result<T> = std::result::Result<T, &'static str>;
 const CHOICES: &str = "native-file-choices.json";
@@ -191,6 +193,8 @@ struct SessionImportPreview {
 #[derive(Default)]
 pub struct FilesHost {
     owner: FileOwner,
+    #[cfg(windows)]
+    wsl: Vec<crate::platform::wsl_files::WslFiles>,
     data: Option<MetadataRoot>,
     views: Option<MetadataRoot>,
     previews: HashMap<String, RecoveryPreview>,
@@ -200,7 +204,71 @@ pub struct FilesHost {
 }
 impl FilesHost {
     pub(crate) fn has_documents(&self) -> bool {
-        self.owner.has_documents()
+        self.document_count() != 0
+    }
+    fn document_count(&self) -> usize {
+        let count = self.owner.document_count();
+        #[cfg(windows)]
+        let count = count
+            + self
+                .wsl
+                .iter()
+                .map(|owner| owner.documents.len())
+                .sum::<usize>();
+        count
+    }
+    fn has_document(&self, context: Option<&ProjectContext>, path: &str) -> bool {
+        #[cfg(windows)]
+        if wsl::posix(path) {
+            return self
+                .wsl_owner(context)
+                .is_ok_and(|owner| owner.documents.has(path));
+        }
+        let _ = context;
+        self.owner.has_document(path)
+    }
+    fn revision_for(&self, context: Option<&ProjectContext>, path: &str) -> Result<String> {
+        #[cfg(windows)]
+        if wsl::posix(path) {
+            return self
+                .wsl_owner(context)?
+                .documents
+                .revision(path)
+                .map(str::to_owned);
+        }
+        let _ = context;
+        self.owner.document_revision(path)
+    }
+    fn close_document(&mut self, context: Option<&ProjectContext>, path: &str) -> Result<()> {
+        #[cfg(windows)]
+        if wsl::posix(path) {
+            return self.close_wsl(context, path);
+        }
+        self.owner.close_for_context(context, path).map(|_| ())
+    }
+    fn session_path_eligible(&self, root: Option<&str>, path: &str) -> bool {
+        #[cfg(windows)]
+        if wsl::posix(path) {
+            return root.is_some_and(|root| crate::core::wsl_files::eligible(root, path));
+        }
+        self.owner.session_path_eligible(root, path)
+    }
+    fn validate_metadata_paths(
+        &self,
+        context: Option<&ProjectContext>,
+        paths: &[String],
+    ) -> Result<()> {
+        #[cfg(windows)]
+        {
+            let (linux, windows): (Vec<_>, Vec<_>) =
+                paths.iter().cloned().partition(|path| wsl::posix(path));
+            if !linux.is_empty() {
+                self.wsl_owner(context)?.documents.validate_paths(&linux)?;
+            }
+            self.owner.validate_open_paths(context, &windows)
+        }
+        #[cfg(not(windows))]
+        self.owner.validate_open_paths(context, paths)
     }
     #[cfg(test)]
     pub(crate) fn from_editor_fixture(owner: FileOwner) -> Self {
@@ -294,10 +362,13 @@ impl FilesHost {
     fn cancel_preview(&mut self, id: &str) {
         if let Some(preview) = self.previews.remove(id) {
             if preview.temporary
-                && self.owner.document_revision(&preview.path).ok().as_deref()
+                && self
+                    .revision_for(preview.context.as_ref(), &preview.path)
+                    .ok()
+                    .as_deref()
                     == Some(&preview.document_revision)
             {
-                let _ = self.owner.close(&preview.path);
+                let _ = self.close_document(preview.context.as_ref(), &preview.path);
             }
         }
     }
@@ -326,7 +397,7 @@ impl FilesHost {
             .write(CHOICES, &self.owner.native_choices()?)
     }
     pub fn approve_native_selection(&mut self, paths: &[PathBuf]) -> Result<Value> {
-        if paths.len() > 16 {
+        if paths.len() > 16 || paths.len() + self.document_count() > 64 {
             return Err("file_limit");
         }
         let mut selected = Vec::new();
@@ -375,7 +446,7 @@ impl FilesHost {
             })
             .transpose()?;
         let candidate = legacy_sessions::candidate(snapshot_id, &source, root.clone(), |path| {
-            self.owner.session_path_eligible(root.as_deref(), path)
+            self.session_path_eligible(root.as_deref(), path)
         })?;
         if candidate.session.docs.is_empty() && candidate.session.recent_files.is_empty() {
             return Err("legacy_session_no_files");
@@ -389,7 +460,7 @@ impl FilesHost {
         candidate: Candidate,
         restore: Option<StoredSession>,
     ) -> Result<Value> {
-        if self.owner.has_documents() {
+        if self.has_documents() {
             return Err("legacy_session_documents_open");
         }
         self.session_imports
@@ -465,7 +536,7 @@ impl FilesHost {
             .transpose()?;
         let candidate =
             legacy_sessions::candidate(id.into(), &stored.session, root.clone(), |path| {
-                self.owner.session_path_eligible(root.as_deref(), path)
+                self.session_path_eligible(root.as_deref(), path)
             })?;
         stored.session = candidate.session.clone();
         self.session_preview(host, context, candidate, Some(stored))
@@ -487,7 +558,7 @@ impl FilesHost {
         {
             return Err("legacy_session_review_stale");
         }
-        if self.owner.has_documents() {
+        if self.has_documents() {
             return Err("legacy_session_documents_open");
         }
         current_deadline(deadline)?;
@@ -539,13 +610,36 @@ impl FilesHost {
             json!({"importedDocuments":preview.candidate.session.docs.len(),"importedRecentFiles":preview.candidate.session.recent_files.len(),"reused":false,"restored":restoring}),
         )
     }
-    fn prepare_recovery(
+    fn open_recovery_document(
         &mut self,
         host: &Host,
         context: Option<&ProjectContext>,
         raw: &str,
         deadline: u64,
-    ) -> Result<Value> {
+    ) -> Result<(String, String)> {
+        if !self.has_document(context, raw) && self.document_count() >= 64 {
+            return Err("file_limit");
+        }
+        #[cfg(windows)]
+        if wsl::posix(raw) {
+            let opened = self.execute_wsl(
+                host,
+                context,
+                "open_file",
+                json!({"request":{"path":raw,"encoding":null}}),
+                deadline,
+            )?;
+            return Ok((
+                opened["path"]
+                    .as_str()
+                    .ok_or("wsl_protocol_invalid")?
+                    .into(),
+                opened["text"]
+                    .as_str()
+                    .ok_or("wsl_protocol_invalid")?
+                    .into(),
+            ));
+        }
         let projects = host.projects()?;
         let lease = if self.owner.needs_project(raw)? {
             Some(projects.admit(context.ok_or("project_selection_required")?)?)
@@ -557,6 +651,23 @@ impl FilesHost {
                 .as_ref()
                 .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
         );
+        current_deadline(deadline)?;
+        let opened = self.owner.open(
+            scope,
+            file::OpenFileRequest {
+                path: raw.into(),
+                encoding: None,
+            },
+        )?;
+        Ok((opened.path, opened.text))
+    }
+    fn prepare_recovery(
+        &mut self,
+        host: &Host,
+        context: Option<&ProjectContext>,
+        raw: &str,
+        deadline: u64,
+    ) -> Result<Value> {
         current_deadline(deadline)?;
         let expired = self
             .previews
@@ -575,23 +686,16 @@ impl FilesHost {
             .into_iter()
             .find(|entry| entry.path == raw)
             .ok_or("recovery_unavailable")?;
-        let temporary = !self.owner.has_document(raw);
-        let opened = self.owner.open(
-            scope,
-            file::OpenFileRequest {
-                path: raw.to_owned(),
-                encoding: None,
-            },
-        )?;
+        let temporary = !self.has_document(context, raw);
+        let (path, text) = self.open_recovery_document(host, context, raw, deadline)?;
         let id = uuid::Uuid::new_v4().to_string();
-        let result =
-            json!({"previewId":id,"path":opened.path,"before":opened.text,"after":source.content});
+        let result = json!({"previewId":id,"path":path,"before":text,"after":source.content});
         self.previews.insert(
             id,
             RecoveryPreview {
-                path: opened.path.clone(),
+                path: path.clone(),
                 content: source.content.clone(),
-                document_revision: self.owner.document_revision(&opened.path)?,
+                document_revision: self.revision_for(context, &path)?,
                 source,
                 context: context.cloned(),
                 temporary,
@@ -610,7 +714,7 @@ impl FilesHost {
         let projects = host.projects()?;
         let preview = self.previews.remove(id).ok_or("recovery_preview_stale")?;
         let owns_temporary = preview.temporary
-            && self.owner.document_revision(&preview.path).ok().as_deref()
+            && self.revision_for(context, &preview.path).ok().as_deref()
                 == Some(&preview.document_revision);
         let result = (|| {
             if preview.created.elapsed() >= Duration::from_secs(180)
@@ -622,29 +726,44 @@ impl FilesHost {
             if !Self::recovery(&view)?.entries.contains(&preview.source) {
                 return Err("recovery_preview_stale");
             }
+            current_deadline(deadline)?;
+            #[cfg(windows)]
+            if wsl::posix(&preview.path) {
+                return self.wsl_owner_mut(context)?.recover(
+                    &projects,
+                    context.ok_or("file_context_changed")?,
+                    &preview.path,
+                    &preview.content,
+                    &preview.document_revision,
+                    deadline,
+                );
+            }
             let project_lease = if self.owner.needs_project(&preview.path)? {
                 Some(projects.admit(context.ok_or("project_selection_required")?)?)
             } else {
                 None
             };
             current_deadline(deadline)?;
-            self.owner.apply_recovery(
-                context.zip(
-                    project_lease
-                        .as_ref()
-                        .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
-                ),
-                &preview.path,
-                &preview.content,
-                &preview.document_revision,
+            value(
+                self.owner.apply_recovery_guarded(
+                    context.zip(
+                        project_lease
+                            .as_ref()
+                            .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
+                    ),
+                    &preview.path,
+                    &preview.content,
+                    &preview.document_revision,
+                    &|| current_deadline(deadline),
+                )?,
             )
         })();
         if owns_temporary {
-            let _ = self.owner.close(&preview.path);
+            let _ = self.close_document(context, &preview.path);
         }
         let saved = result?;
         let _ = self.persist_choices();
-        value(saved)
+        Ok(saved)
     }
     pub fn execute(
         &mut self,
@@ -679,11 +798,62 @@ impl FilesHost {
                 .get("request")
                 .and_then(|request| request.get("path"))
                 .and_then(Value::as_str),
-            "watch_file" | "reveal_file_action" | "render_preview" => {
+            "watch_file" | "reveal_file_action" | "render_preview" | "sync_editor_document" => {
                 args.get("path").and_then(Value::as_str)
             }
             _ => None,
         };
+        if method == "open_file"
+            && requested_path.is_some_and(|path| !self.has_document(context, path))
+            && self.document_count() >= 64
+        {
+            return Err("file_limit");
+        }
+        if method == "unwatch_file" {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Cleanup {
+                path: String,
+                document_context: Option<ProjectContext>,
+            }
+            let explicit_context = args.get("documentContext").is_some();
+            let request: Cleanup = input(args)?;
+            let cleanup_context = if explicit_context {
+                request.document_context.as_ref()
+            } else {
+                context
+            };
+            #[cfg(windows)]
+            if wsl::posix(&request.path) {
+                self.close_wsl(cleanup_context, &request.path)?;
+                return Ok(Value::Null);
+            }
+            if self
+                .owner
+                .close_for_context(cleanup_context, &request.path)?
+            {
+                if let Some(known) = self.watched.remove(&request.path) {
+                    app.state::<Arc<code_pad_lib::watcher::WatcherManager>>()
+                        .unregister(&known)
+                        .map_err(|_| "file_action_unavailable")?;
+                }
+            }
+            return Ok(Value::Null);
+        }
+        #[cfg(windows)]
+        if requested_path.is_some_and(wsl::posix)
+            || matches!(
+                method,
+                "list_workspace_files" | "canonicalize_workspace" | "workspace_capabilities"
+            ) && context.is_some_and(|context| {
+                matches!(
+                    context.target,
+                    product_contract::ExecutionTarget::Wsl { .. }
+                )
+            })
+        {
+            return self.execute_wsl(host, context, method, args, deadline);
+        }
         let needs_project = matches!(
             method,
             "list_workspace_files"
@@ -924,19 +1094,6 @@ impl FilesHost {
                 }
                 Ok(result)
             }
-            "unwatch_file" => {
-                let request: PathArg = input(args)?;
-                // Cleanup must not depend on a root still being online/current.
-                // Resolve a native registration before any filesystem lookup;
-                // an arbitrary cleanup path must not start a stopped distro.
-                if let Some(known) = self.watched.remove(&request.path) {
-                    app.state::<Arc<code_pad_lib::watcher::WatcherManager>>()
-                        .unregister(&known)
-                        .map_err(|_| "file_action_unavailable")?;
-                }
-                self.owner.close(&request.path)?;
-                Ok(Value::Null)
-            }
             "list_workspace_files" | "canonicalize_workspace" | "workspace_capabilities" => {
                 let request: PathArg = input(args)?;
                 let lease = lease.as_ref().ok_or("project_selection_required")?;
@@ -1021,7 +1178,7 @@ impl FilesHost {
                     native_revision: String,
                 }
                 let request: Input = input(args)?;
-                self.owner.validate_open_paths(
+                self.validate_metadata_paths(
                     context,
                     &request
                         .session
@@ -1051,7 +1208,7 @@ impl FilesHost {
                     native_revision: String,
                 }
                 let request: Input = input(args)?;
-                self.owner.validate_open_paths(
+                self.validate_metadata_paths(
                     context,
                     &request
                         .entries

@@ -7,6 +7,8 @@ mod native {
         platform::wsl_helper::Connection,
     };
     use product_contract::ExecutionTarget;
+    use product_contract::ProjectContext;
+    use serde_json::Value;
     use std::{path::Path, sync::Mutex};
     type Result<T> = std::result::Result<T, &'static str>;
     pub struct WslProjectLease {
@@ -58,6 +60,44 @@ mod native {
                 .lock()
                 .map_err(|_| "wsl_connection_busy")?
                 .validate(&self.token)
+        }
+        pub fn shutdown(&self) -> Result<()> {
+            self.connection
+                .lock()
+                .map_err(|_| "wsl_connection_busy")?
+                .shutdown()
+        }
+        pub fn is_open(&self) -> bool {
+            self.connection
+                .lock()
+                .is_ok_and(|connection| connection.is_open())
+        }
+        pub fn file_request(
+            &self,
+            context: &ProjectContext,
+            method: &str,
+            args: Value,
+        ) -> Result<Value> {
+            self.file_request_until(context, method, args, u64::MAX)
+        }
+        pub fn file_request_until(
+            &self,
+            context: &ProjectContext,
+            method: &str,
+            mut args: Value,
+            deadline: u64,
+        ) -> Result<Value> {
+            context.validate().map_err(|_| "wsl_context_invalid")?;
+            if context.target != self.binding.target
+                || !args.is_object()
+                || args.get("context").is_some()
+            {
+                return Err("wsl_context_invalid");
+            }
+            args["context"] = serde_json::to_value(context).map_err(|_| "wsl_context_invalid")?;
+            let mut connection = self.connection.lock().map_err(|_| "wsl_connection_busy")?;
+            connection.validate(&self.token)?;
+            connection.file_request_until(method, &self.token, args, deadline)
         }
     }
 }

@@ -80,6 +80,95 @@ impl Drop for Helper {
     }
 }
 #[test]
+fn actual_helper_poll_preserves_dirty_authority_and_recovery_requires_fresh_review() {
+    let directory = tempfile::Builder::new()
+        .prefix(".wsl-watch-fixture-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let path = directory.path().join("문서.txt");
+    std::fs::write(&path, b"baseline\r\n").unwrap();
+    let mut helper = Helper::start();
+    helper.call("hello", None, json!({})).result.unwrap();
+    let report = helper
+        .call("observe_root", None, json!({"path":directory.path()}))
+        .result
+        .unwrap();
+    let root = report["token"].as_str().unwrap();
+    let context = json!({"projectId":"project","worktreeId":"tree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}});
+    helper
+        .call("files_attach", Some(root), json!({"context":context}))
+        .result
+        .unwrap();
+    let opened = helper
+        .call(
+            "files_open",
+            Some(root),
+            json!({"context":context,"request":{"path":path,"encoding":null}}),
+        )
+        .result
+        .unwrap();
+    let sync = json!({"context":context,"path":path,"nativeRevision":opened["nativeRevision"],"text":"unsaved"});
+    assert_eq!(
+        helper
+            .call("files_sync_editor", Some(root), sync.clone())
+            .result
+            .unwrap()["dirty"],
+        true
+    );
+    std::fs::rename(&path, directory.path().join("previous.txt")).unwrap();
+    std::fs::write(&path, b"external replacement\r\n").unwrap();
+    let snapshots = helper
+        .call(
+            "files_poll",
+            Some(root),
+            json!({"context":context,"paths":[path]}),
+        )
+        .result
+        .unwrap();
+    assert_eq!(snapshots.as_array().unwrap().len(), 1);
+    assert_ne!(snapshots[0]["contentHash"], opened["contentHash"]);
+    assert_eq!(
+        helper
+            .call("files_sync_editor", Some(root), sync)
+            .result
+            .unwrap()["dirty"],
+        true
+    );
+    assert!(helper.call("files_recover", Some(root), json!({"context":context,"path":path,"content":"reviewed\n","nativeRevision":opened["nativeRevision"]})).result.is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), b"external replacement\r\n");
+    let current = helper
+        .call(
+            "files_open",
+            Some(root),
+            json!({"context":context,"request":{"path":path,"encoding":null}}),
+        )
+        .result
+        .unwrap();
+    assert_ne!(current["nativeRevision"], opened["nativeRevision"]);
+    let restored = helper.call("files_recover", Some(root), json!({"context":context,"path":path,"content":"한글 recovery\n","nativeRevision":current["nativeRevision"]})).result.unwrap();
+    assert_ne!(restored["nativeRevision"], current["nativeRevision"]);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "한글 recovery\r\n");
+    assert!(helper
+        .call(
+            "files_poll",
+            Some(root),
+            json!({"context":context,"paths":[directory.path().join("previous.txt")]})
+        )
+        .result
+        .is_err());
+    helper
+        .call(
+            "files_close",
+            Some(root),
+            json!({"context":context,"path":path}),
+        )
+        .result
+        .unwrap();
+    helper.input.take();
+    helper.exited(0);
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), "한글 recovery\r\n");
+}
+#[test]
 fn actual_helper_pipe_binds_file_reads_and_eof_retires_open_grants() {
     let directory = tempfile::Builder::new()
         .prefix(".wsl-pipe-fixture-")

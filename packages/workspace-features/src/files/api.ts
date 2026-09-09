@@ -142,8 +142,8 @@ export function watchFile(path: string): Promise<void> {
   return invoke<void>("watch_file", { path });
 }
 
-export function unwatchFile(path: string): Promise<void> {
-  return invoke<void>("unwatch_file", { path });
+export function unwatchFile(path: string, contextKey?: string): Promise<void> {
+  return invoke<void>("unwatch_file", { path, ...(isProductHosted() && contextKey && contextKey !== "standalone" ? {documentContext: JSON.parse(contextKey)} : {}) });
 }
 
 export function loadSession(): Promise<LoadedSession> {

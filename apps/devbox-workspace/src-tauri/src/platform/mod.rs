@@ -11,4 +11,6 @@ pub mod wsl_distro;
 
 pub mod wsl_helper;
 
+#[cfg(windows)]
+pub mod wsl_files;
 pub mod wsl_project;

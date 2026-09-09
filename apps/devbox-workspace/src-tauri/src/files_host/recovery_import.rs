@@ -71,7 +71,7 @@ impl FilesHost {
             })
             .transpose()?;
         let candidate = legacy_recovery::candidate(snapshot_id, &source, |path| {
-            self.owner.session_path_eligible(root.as_deref(), path)
+            self.session_path_eligible(root.as_deref(), path)
         })?;
         if candidate.recovery.entries.is_empty() {
             return Err("legacy_recovery_no_files");
@@ -85,7 +85,7 @@ impl FilesHost {
         candidate: Candidate,
         restore: Option<StoredRecovery>,
     ) -> Result<Value> {
-        if self.owner.has_documents() {
+        if self.has_documents() {
             return Err("legacy_recovery_documents_open");
         }
         self.recovery_imports
@@ -164,7 +164,7 @@ impl FilesHost {
             })
             .transpose()?;
         let candidate = legacy_recovery::candidate(id.into(), &stored.recovery, |path| {
-            self.owner.session_path_eligible(root.as_deref(), path)
+            self.session_path_eligible(root.as_deref(), path)
         })?;
         stored.recovery = candidate.recovery.clone();
         self.recovery_preview(host, context, candidate, Some(stored))
@@ -186,7 +186,7 @@ impl FilesHost {
         {
             return Err("legacy_recovery_review_stale");
         }
-        if self.owner.has_documents() {
+        if self.has_documents() {
             return Err("legacy_recovery_documents_open");
         }
         current_deadline(deadline)?;

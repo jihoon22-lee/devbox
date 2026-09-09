@@ -43,7 +43,9 @@ metadata only. Explicit saves rotate the native revision; old revisions cannot
 repeat the mutation. Dropping a connection during a save may leave its complete
 replacement committed without acknowledgement, so the caller must reopen/reconcile
 before another save. Dropping a connection never saves buffered text on its own.
-These helper methods are not yet connected to the product's WSL Files route.
+The product WSL Files owner now delegates these methods and retains only acknowledged
+revision/path metadata in Windows. Its sessions and recovery buffers remain in the
+private Windows store; native Windows chooser files retain their own grants.
 
 Quick Open and Markdown/Mermaid preview reuse the Code Pad core without Tauri.
 The guarded listing is also used by Windows Files: it admits each directory before
@@ -63,3 +65,11 @@ The Windows owner selects the native resource directory, verifies the compiled
 size/hash, pins it read-only and pins every ancestor against replacement, then launches by distro GUID with structured argv.
 Stopped distributions require an explicit start choice. Source-only Rust builds
 have no executable helper unless the artifact was staged before compilation.
+
+`files_poll` accepts only opened paths and uses fresh leaf evidence under the original
+parent/root authority. It reports metadata without replacing the editor's file grant
+or acknowledging dirty text. `files_recover` consumes the currently reviewed native
+revision and uses the same guarded encoding/CRLF save. The Windows owner forwards
+the remaining user deadline; metadata-only cleanup never creates a helper. Explicit
+shutdown confirms launcher exit and can be retried; application exit retains any
+owner whose retirement could not be confirmed.

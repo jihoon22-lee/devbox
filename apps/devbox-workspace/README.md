@@ -206,8 +206,8 @@ and installed-resource-path probes passed; the packaged Rust client and hosted
 WSL1 observation fixture await CI. A lazy WSL folder form now lists registered
 GUIDs without startup, requires an explicit stopped-distro start choice, and uses
 the existing native registration/rebind review and byte CAS. Late UI results are
-cancelled. Files/Git/LSP delegation remains incomplete; their native admission
-gates remain closed. Resource-file and ancestor leases prevent launch-path
+cancelled. Selected WSL Files operations now have a separate native admission
+path; Git and language-server delegation remain incomplete. Resource-file and ancestor leases prevent launch-path
 substitution. Backing-image checks request metadata only, without reading disk
 contents.
 
@@ -225,7 +225,8 @@ Cancellation rechecks precede atomic replacement; owned staging files retain nat
 parent/file identities. Unacknowledged saves require reconciliation and are never
 replayed automatically. It restricts file content to the selected distro's root filesystem;
 Windows aliases and other mounts are not admitted through a POSIX spelling. The
-WSL Files route, Git and language servers remain unconnected. LSP text updates
+WSL Files route now delegates to the helper while Git and language servers remain
+unconnected. LSP text updates
 now stay in the server document owner: NativeEditorMirror alone acknowledges UI
 buffer hashes, so an older queued notification cannot clear a newer unsaved buffer.
 
@@ -234,3 +235,17 @@ image admission. Rejected directories are not traversed, changed roots and expir
 requests abort publication, and bounded output reports incomplete/truncated scans.
 Linux rename uses one non-overwriting namespace syscall; unsupported filesystems
 fail without a partial hard-link move.
+
+WSL Files keeps helper-owned document revisions beside private Windows session and
+recovery metadata. Windows native chooser grants remain independent of POSIX paths.
+The selected context is revalidated for file IO; metadata persistence accepts only
+acknowledged documents. Five-second polling observes external leaf replacement
+without changing the dirty buffer or save revision. Events and delayed tab cleanup
+carry their original context, so equal POSIX names in another distro do not match.
+Reviewed buffer recovery uses the helper's native encoding/snapshot and guarded
+atomic save. User request deadlines bound the remaining pipe request. The app waits
+for confirmed helper retirement on exit; failed retirement retains the owner.
+The hosted Windows-to-WSL flow is not yet accepted: `c10bbea` still failed during
+prelaunch registry capture. WSL reveal, reconnecting open documents, Git and LSP
+remain incomplete. The Windows native suite and actual UI didSave/second hover
+passed at `c10bbea`; journal recovery UI remains under investigation.

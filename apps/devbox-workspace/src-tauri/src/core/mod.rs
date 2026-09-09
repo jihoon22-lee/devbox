@@ -18,3 +18,4 @@ pub mod legacy_templates;
 pub mod legacy_workspace;
 
 pub mod template_editor;
+pub mod wsl_files;

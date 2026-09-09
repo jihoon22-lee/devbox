@@ -40,6 +40,7 @@ import {
   workspaceCapabilities,
 } from "./api";
 import type {
+  FileChangedEvent,
   LanguageServerStatus,
   LspDiagnosticsEvent,
   LspRenamePreview,
@@ -47,7 +48,7 @@ import type {
 } from "./types";
 
 const fileChangedHandlerRef: {
-  current: ((event: { payload: { path: string; mtimeNanos: string; contentHash: string; size: number } }) => void) | null;
+  current: ((event: { payload: FileChangedEvent }) => void) | null;
 } = { current: null };
 const lspDiagnosticsHandlerRef: {
   current: ((event: { payload: LspDiagnosticsEvent }) => void) | null;
@@ -513,6 +514,17 @@ describe("App editor shell operations", () => {
     expect(loadSessionMock).toHaveBeenCalledTimes(1);
     expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!");
     expect(view.getByText(/프로젝트가 변경되어도 미저장 내용은 보존됩니다/)).toBeTruthy();
+  });
+
+  it("ignores a previous distro's watcher event for the same POSIX spelling", async () => {
+    const view = await openOne();
+    const before = openFileMock.mock.calls.length;
+    const payload = {path:"/tmp/one.ts",mtimeNanos:"2",contentHash:"changed",size:9,contextKey:"another-distro"};
+    await act(async()=>fileChangedHandlerRef.current?.({payload}));
+    expect(openFileMock).toHaveBeenCalledTimes(before);
+    expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before");
+    await act(async()=>fileChangedHandlerRef.current?.({payload:{...payload,contextKey:"standalone"}}));
+    await waitFor(()=>expect(openFileMock).toHaveBeenCalledTimes(before+1));
   });
 
   it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {

@@ -206,6 +206,14 @@ pub struct EditorSnapshot {
     pub revision: String,
     baseline_text_hash: [u8; 32],
 }
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct WatchSnapshot {
+    pub path: String,
+    pub mtime_nanos: String,
+    pub size: u64,
+    pub content_hash: String,
+}
 impl EditorSnapshot {
     pub fn dirty(&self, text: &str) -> bool {
         text_hash(text) != self.baseline_text_hash
@@ -265,6 +273,9 @@ impl FileOwner {
 
     pub fn has_documents(&self) -> bool {
         !self.documents.is_empty()
+    }
+    pub fn document_count(&self) -> usize {
+        self.documents.len()
     }
     /// Only decides which metadata belongs in a view. Restoring it later must
     /// still use open(), including its canonical object/grant checks.
@@ -492,6 +503,61 @@ impl FileOwner {
         self.ensure_user_path(&document.grant.file.path)?;
         Ok(document.grant.file.path.clone())
     }
+    /// Observe a watched leaf replacement without acknowledging it as the
+    /// editor's new save snapshot. The original parent/root authority survives.
+    pub fn watch_snapshot(&self, scope: Scope<'_>, raw: &str) -> Result<WatchSnapshot> {
+        let path = native_path(raw)?;
+        self.ensure_user_path(&path)?;
+        let document = self
+            .documents
+            .get(&key(&path)?)
+            .ok_or("file_selection_required")?;
+        check_scope(scope, &document.grant.context, &path)?;
+        for parent in &document.grant.parents {
+            parent.revalidate(true)?;
+        }
+        let grant = Grant::open(&path, document.grant.context.clone(), self.admission)?;
+        grant.admit(scope)?;
+        let metadata = grant
+            .file
+            ._handle
+            .metadata()
+            .map_err(|_| "file_unavailable")?;
+        let mtime = metadata
+            .modified()
+            .ok()
+            .and_then(|time| time.duration_since(std::time::UNIX_EPOCH).ok())
+            .and_then(|time| i64::try_from(time.as_nanos()).ok())
+            .ok_or("file_unavailable")?;
+        let (mtime_nanos, size, content_hash) = if grant.file.identity
+            == document.grant.file.identity
+            && mtime == document.mtime
+            && metadata.len() == document.size
+        {
+            (
+                document.mtime.to_string(),
+                document.size,
+                document.hash.clone(),
+            )
+        } else {
+            let opened = file::open_path_with_encoding(&grant.file.path, None)
+                .map_err(|_| "file_read_failed")?;
+            if opened.native_identity() != grant.file.identity {
+                return Err("file_changed");
+            }
+            (opened.mtime.to_string(), opened.size, opened.content_hash)
+        };
+        grant.admit(scope)?;
+        for parent in &document.grant.parents {
+            parent.revalidate(true)?;
+        }
+        Ok(WatchSnapshot {
+            path: raw.into(),
+            mtime_nanos,
+            size,
+            content_hash,
+        })
+    }
     pub fn save(&mut self, scope: Scope<'_>, request: SaveFileRequest) -> Result<SavedFileWire> {
         self.save_guarded(scope, request, &|| Ok(()))
     }
@@ -672,6 +738,25 @@ impl FileOwner {
         self.approvals.remove(&id);
         Ok(())
     }
+    pub fn close_for_context(
+        &mut self,
+        context: Option<&ProjectContext>,
+        raw: &str,
+    ) -> Result<bool> {
+        let id = key(&native_path(raw)?)?;
+        if self.documents.get(&id).is_some_and(|document| {
+            document
+                .grant
+                .context
+                .as_ref()
+                .is_some_and(|expected| Some(expected) != context)
+        }) {
+            return Ok(false);
+        }
+        self.documents.remove(&id);
+        self.approvals.remove(&id);
+        Ok(true)
+    }
     pub fn validate_open_paths(
         &self,
         context: Option<&ProjectContext>,
@@ -823,6 +908,16 @@ impl FileOwner {
         content: &str,
         revision: &str,
     ) -> Result<SavedFileWire> {
+        self.apply_recovery_guarded(scope, raw, content, revision, &|| Ok(()))
+    }
+    pub fn apply_recovery_guarded(
+        &mut self,
+        scope: Scope<'_>,
+        raw: &str,
+        content: &str,
+        revision: &str,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<SavedFileWire> {
         let document = self
             .documents
             .get(&key(&native_path(raw)?)?)
@@ -840,7 +935,7 @@ impl FileOwner {
             expected_content_hash: document.hash.clone(),
             source_lossy: document.lossy,
         };
-        self.save(scope, request)
+        self.save_guarded(scope, request, guard)
     }
 }
 
@@ -881,6 +976,54 @@ mod tests {
             )?,
             target,
         })
+    }
+    #[test]
+    fn watching_replacement_preserves_dirty_revision_and_stale_context_cleanup_cannot_close_it() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = display_path(&fs::canonicalize(directory.path()).unwrap()).unwrap();
+        let path = root.join("watch.txt");
+        fs::write(&path, b"baseline\r\n").unwrap();
+        let lease = probe_fixture(&root).unwrap();
+        let context = ProjectContext {
+            project_id: "project".into(),
+            worktree_id: "tree".into(),
+            revision: 1,
+            target: lease.target().clone(),
+        };
+        let mut owner = FileOwner::default();
+        let scope = Some((&context, &lease as &dyn RootLease));
+        let opened = owner.open(scope, open_request(&path)).unwrap();
+        let revision = owner.document_revision(&opened.path).unwrap();
+        owner
+            .sync_editor_document(Some(&context), &opened.path, &revision, "unsaved")
+            .unwrap();
+        assert_eq!(
+            owner
+                .watch_snapshot(scope, &opened.path)
+                .unwrap()
+                .content_hash,
+            opened.content_hash
+        );
+        fs::rename(&path, root.join("previous.txt")).unwrap();
+        fs::write(&path, b"external replacement\r\n").unwrap();
+        let snapshot = owner.watch_snapshot(scope, &opened.path).unwrap();
+        assert_ne!(snapshot.content_hash, opened.content_hash);
+        assert_eq!(owner.document_revision(&opened.path).unwrap(), revision);
+        assert!(owner
+            .sync_editor_document(Some(&context), &opened.path, &revision, "unsaved")
+            .unwrap());
+        assert!(owner
+            .apply_recovery(scope, &opened.path, "recovery", &revision)
+            .is_err());
+        assert_eq!(fs::read(&path).unwrap(), b"external replacement\r\n");
+        let mut other = context.clone();
+        other.revision += 1;
+        assert!(!owner.close_for_context(Some(&other), &opened.path).unwrap());
+        assert!(owner.has_document(&opened.path));
+        assert!(owner
+            .close_for_context(Some(&context), &opened.path)
+            .unwrap());
+        assert!(!owner.has_documents());
     }
     #[test]
     fn editor_hashes_preserve_unsaved_buffers_and_reject_old_save_revisions() {

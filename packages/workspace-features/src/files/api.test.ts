@@ -1,9 +1,20 @@
 import {beforeEach, expect, it, vi} from "vitest";
 const {invoke, hosted} = vi.hoisted(() => ({invoke:vi.fn(), hosted:{value:false}}));
 vi.mock("../transport", () => ({componentInvoke:() => invoke, isProductHosted:() => hosted.value}));
-import {deleteFileAction, renameFileAction, loadRecovery, loadRecoveryState, discardRecovery, saveRecovery, saveSession} from "./api";
+import {deleteFileAction, renameFileAction, loadRecovery, loadRecoveryState, discardRecovery, saveRecovery, saveSession, unwatchFile} from "./api";
 import type {SessionState} from "./types";
 beforeEach(() => {invoke.mockReset();hosted.value=false;});
+
+it("keeps cleanup bound to the previous product context even after selection changes", async () => {
+  const context={projectId:"project",worktreeId:"tree",revision:1,target:{kind:"wsl",distroId:"first"}};
+  await unwatchFile("/home/project/file.txt",JSON.stringify(context));
+  expect(invoke).toHaveBeenLastCalledWith("unwatch_file",{path:"/home/project/file.txt"});
+  hosted.value=true;
+  await unwatchFile("/home/project/file.txt",JSON.stringify(context));
+  expect(invoke).toHaveBeenLastCalledWith("unwatch_file",{path:"/home/project/file.txt",documentContext:context});
+  await unwatchFile("C:/single.txt","null");
+  expect(invoke).toHaveBeenLastCalledWith("unwatch_file",{path:"C:/single.txt",documentContext:null});
+});
 
 it("sends session revisions only to the product owner and returns the committed revision", async () => {
   const session:SessionState={version:1,workspace_folder:null,docs:[],views:[[],[]],active_view:0,active_doc_by_view:[null,null],recent_files:[]};

@@ -112,6 +112,7 @@ mod native {
         session: String,
         sequence: u64,
         failed: bool,
+        retired: bool,
     }
     impl Connection {
         /// `directory` comes from AppHandle's native resource directory. The
@@ -175,6 +176,7 @@ mod native {
                 session,
                 sequence: 0,
                 failed: false,
+                retired: false,
             };
             let hello = connection.request("hello", None, serde_json::json!({}), 5000)?;
             if hello["version"] != VERSION {
@@ -184,6 +186,9 @@ mod native {
         }
         pub fn lease(&self) -> &Lease {
             &self.lease
+        }
+        pub fn is_open(&self) -> bool {
+            !self.failed && !self.retired
         }
         pub fn observe(&mut self, path: &str) -> Result<RootReport> {
             let value = self.request(
@@ -215,9 +220,20 @@ mod native {
         /// Private file methods require the registered distro context on every
         /// call. No arbitrary helper command or native picker is exposed.
         pub fn file_request(&mut self, method: &str, token: &str, args: Value) -> Result<Value> {
+            self.file_request_until(method, token, args, u64::MAX)
+        }
+        pub fn file_request_until(
+            &mut self,
+            method: &str,
+            token: &str,
+            args: Value,
+            deadline: u64,
+        ) -> Result<Value> {
             if !matches!(
                 method,
                 "files_attach"
+                    | "files_poll"
+                    | "files_recover"
                     | "files_list"
                     | "files_preview"
                     | "files_open"
@@ -234,7 +250,15 @@ mod native {
             {
                 return Err("wsl_context_invalid");
             }
-            self.request(method, Some(token), args, 15000)
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "wsl_timeout")?
+                .as_millis();
+            let remaining = u128::from(deadline).saturating_sub(now).min(15000) as u32;
+            if remaining == 0 {
+                return Err("wsl_timeout");
+            }
+            self.request(method, Some(token), args, remaining)
         }
         fn request(
             &mut self,
@@ -328,8 +352,11 @@ mod native {
             })
         }
         fn retire(&mut self) {
-            if self.failed {
-                return;
+            let _ = self.shutdown();
+        }
+        pub fn shutdown(&mut self) -> Result<()> {
+            if self.retired {
+                return Ok(());
             }
             self.failed = true;
             // EOF cancels at the helper's precommit boundary. Drain an abandoned
@@ -338,7 +365,7 @@ mod native {
             self.input.take();
             let output = self.output.take();
             let child = &mut self.child;
-            self.runtime.block_on(async {
+            let stopped = self.runtime.block_on(async {
                 let complete = async {
                     let drain = async move {
                         if let Some(mut output) = output {
@@ -357,17 +384,25 @@ mod native {
                             }
                         }
                     };
-                    let _ = tokio::join!(child.wait(), drain);
+                    let (status, _) = tokio::join!(child.wait(), drain);
+                    status.map(|_| ()).map_err(|_| "wsl_shutdown_unconfirmed")
                 };
                 // The helper has five seconds to retire blocked atomic/read IO.
-                if tokio::time::timeout(Duration::from_secs(8), complete)
-                    .await
-                    .is_err()
-                {
-                    let _ = child.kill().await;
+                match tokio::time::timeout(Duration::from_secs(8), complete).await {
+                    Ok(Ok(())) => Ok(()),
+                    _ => {
+                        let killed = child.kill().await;
+                        if killed.is_ok() || child.try_wait().ok().flatten().is_some() {
+                            Ok(())
+                        } else {
+                            Err("wsl_shutdown_unconfirmed")
+                        }
+                    }
                 }
             });
             self.stderr.abort();
+            self.retired = stopped.is_ok();
+            stopped
         }
     }
     impl Drop for Connection {
