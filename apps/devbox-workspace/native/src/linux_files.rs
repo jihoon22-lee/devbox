@@ -104,7 +104,7 @@ fn metadata_object(path: &Path) -> Result<File> {
         .open(path)
         .map_err(|_| "wsl_filesystem_unavailable")
 }
-fn fsid(file: &File) -> Result<Vec<u8>> {
+fn fsid(file: &File) -> Result<(Vec<u8>, bool)> {
     let mut info = std::mem::MaybeUninit::<libc::statfs>::zeroed();
     if unsafe { libc::fstatfs(file.as_raw_fd(), info.as_mut_ptr()) } != 0 {
         return Err("wsl_filesystem_unavailable");
@@ -118,7 +118,35 @@ fn fsid(file: &File) -> Result<Vec<u8>> {
     }
     .to_vec();
     id.extend_from_slice(&info.f_type.to_le_bytes());
-    Ok(id)
+    Ok((id, info.f_type == 0x5346_4846))
+}
+fn mount_id(file: &File, wslfs: bool) -> Result<Option<u64>> {
+    let path = format!("/proc/self/fdinfo/{}", file.as_raw_fd());
+    let input = match File::open(path) {
+        Ok(input) => input,
+        // WSL1 exposes mountinfo, but no per-descriptor fdinfo files. The
+        // retained descriptor's device/fsid plus unambiguous mountinfo remain
+        // mandatory. Other filesystems cannot use this compatibility branch.
+        Err(error) if wslfs && error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(_) => return Err("wsl_filesystem_unavailable"),
+    };
+    let mut bytes = Vec::new();
+    input
+        .take(4097)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "wsl_filesystem_unavailable")?;
+    if bytes.len() > 4096 {
+        return Err("wsl_filesystem_unavailable");
+    }
+    let info = String::from_utf8(bytes).map_err(|_| "wsl_filesystem_unavailable")?;
+    info.lines()
+        .find_map(|line| line.strip_prefix("mnt_id:"))
+        .map(|id| {
+            id.trim()
+                .parse::<u64>()
+                .map_err(|_| "wsl_filesystem_unavailable")
+        })
+        .transpose()
 }
 pub fn admit(path: &Path) -> Result<()> {
     super::engine::admit(path)?;
@@ -143,28 +171,17 @@ pub fn admit(path: &Path) -> Result<()> {
         return Err("wsl_native_filesystem_required");
     }
     let root = metadata_object(Path::new("/"))?;
+    let filesystem = fsid(&object)?;
     if metadata.dev()
         != root
             .metadata()
             .map_err(|_| "wsl_filesystem_unavailable")?
             .dev()
-        || fsid(&object)? != fsid(&root)?
+        || filesystem != fsid(&root)?
     {
         return Err("wsl_native_filesystem_required");
     }
-    let fdinfo = bounded_file(
-        Path::new(&format!("/proc/self/fdinfo/{}", object.as_raw_fd())),
-        4096,
-    )?;
-    let mount_id = fdinfo
-        .lines()
-        .find_map(|line| line.strip_prefix("mnt_id:"))
-        .map(|id| {
-            id.trim()
-                .parse::<u64>()
-                .map_err(|_| "wsl_filesystem_unavailable")
-        })
-        .transpose()?;
+    let mount_id = mount_id(&object, filesystem.1)?;
     let mounts = bounded_file(Path::new("/proc/self/mountinfo"), MAX_MOUNTS_BYTES)?;
     native_mount(&mounts, existing, metadata.dev(), mount_id)?;
     if devbox_filesystem::filesystem_identity(existing, metadata.is_dir())

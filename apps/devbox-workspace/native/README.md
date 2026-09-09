@@ -10,8 +10,15 @@ attaching one native project context to an observed root. It executes no Git,
 language server or package manager. Explicit saves require the current native
 revision and disk snapshot and reuse Code Pad's encoding/CRLF atomic replacement.
 Rename/delete require the same native revision and precommit authority/cancellation
-checks. Linux rename uses `renameat2(RENAME_NOREPLACE)`; unsupported filesystems
-return an error without a hard-link/unlink fallback or overwritten destination.
+checks. Linux rename uses `renameat2(RENAME_NOREPLACE)` where available. WSL1's
+native wslfs returns ENOSYS; only that filesystem uses non-overwriting hard-link
+publication followed by guarded removal of the original name, relative to the
+retained parent descriptor. It checks authority, bytes and both identities again
+between steps. Cancellation or failure preserves both names and reports that
+reconciliation is required; hard process termination can likewise leave two names
+for the same file. This compatibility path is not an atomic namespace rename and
+never automatically retries or deletes the destination during rollback. Other
+unsupported Linux filesystems still fail before publication.
 
 The inherited stdin/stdout protocol uses versioned, size-limited frames, random
 session/request/root tokens, exact monotonic request sequences, deadlines and
@@ -29,8 +36,16 @@ a corresponding process-retirement owner.
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,
 root ancestry and Git pointer/backlink bytes. Windows binds this evidence to the
-registered distro GUID, backing-directory object and WSL2 backing-image object. Missing birth-time evidence
-fails closed. Windows retains the registration key and compares a bounded digest
+registered distro GUID, backing-directory object and WSL2 backing-image object.
+WSL1 wslfs (`0x53464846`) has no statx. Only ENOSYS on that filesystem admits its
+native NTFS file ID, including the nonzero sequence in the high 16 bits, instead
+of birth time. Other missing/invalid birth-time evidence fails closed. An owned
+Windows/WSL1 probe verified that this inode equals the backing file's Windows ID,
+survives a distro restart and differs after replacement. Native WSL1 also lacks
+`/proc/self/fdinfo`; exact device/fsid/root checks and unambiguous mountinfo remain
+required when descriptor mount IDs are absent. See [NTFS references](https://learn.microsoft.com/en-us/windows/win32/devnotes/mft-segment-reference)
+and [wslfs identification](https://www.gnu.org/software/coreutils/filesystems.html).
+Windows retains the registration key and compares a bounded digest
 of all its values; LastWriteTime only checks read consistency. Identical value
 rewrites do not replace identity, but changed policy values or a deleted key do. Names and paths alone are not persistent object identities.
 

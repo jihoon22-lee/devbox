@@ -672,7 +672,14 @@ impl FileOwner {
         };
         let mut wire =
             file::rename_path_guarded(&path, &request.new_name, document.expected(), &check)
-                .map_err(|_| issue.get().unwrap_or("file_rename_conflict"))?;
+                .map_err(|error| match error {
+                    file::FileError::Io { source, .. }
+                        if source.kind() == std::io::ErrorKind::Interrupted =>
+                    {
+                        "file_rename_unconfirmed"
+                    }
+                    _ => issue.get().unwrap_or("file_rename_conflict"),
+                })?;
         let next_path = path.with_file_name(&request.new_name);
         wire.path = next_path.to_str().ok_or("invalid_file_path")?.to_owned();
         let next = Grant::open(&next_path, document.grant.context.clone(), self.admission);

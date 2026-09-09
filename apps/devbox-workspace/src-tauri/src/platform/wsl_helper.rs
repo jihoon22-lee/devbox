@@ -334,6 +334,7 @@ mod native {
                 "file_snapshot_changed" => "file_snapshot_changed",
                 "file_save_conflict" => "file_save_conflict",
                 "file_rename_conflict" => "file_rename_conflict",
+                "file_rename_unconfirmed" => "file_rename_unconfirmed",
                 "file_delete_conflict" => "file_delete_conflict",
                 "wsl_request_cancelled" => "wsl_request_cancelled",
                 "wsl_timeout" => "wsl_timeout",

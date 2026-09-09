@@ -233,8 +233,10 @@ buffer hashes, so an older queued notification cannot clear a newer unsaved buff
 Windows Files and the helper share guarded directory traversal and local preview
 image admission. Rejected directories are not traversed, changed roots and expired
 requests abort publication, and bounded output reports incomplete/truncated scans.
-Linux rename uses one non-overwriting namespace syscall; unsupported filesystems
-fail without a partial hard-link move.
+Linux rename uses one non-overwriting namespace syscall where supported. WSL1
+instead publishes a hard link and rechecks authority/snapshots before removing
+the old name. Interruption can preserve both names and requires reconciliation;
+it never overwrites a concurrently-created destination or replays the move.
 
 WSL Files keeps helper-owned document revisions beside private Windows session and
 recovery metadata. Windows native chooser grants remain independent of POSIX paths.
@@ -256,7 +258,11 @@ capability checks fail.
 The hosted Windows-to-WSL flow is not yet accepted. Registry mode detection now
 uses the VM flag independently of filesystem format. The `c34bdac` WSL runtime
 step passed Registry capture and helper launch/hello, then failed at the first
-root observation with `wsl_identity_unavailable`. WSL reveal, definitions, Git
+root observation with `wsl_identity_unavailable`. The helper now handles WSL1's
+missing statx/fdinfo with native file-ID and mountinfo evidence, while retaining
+the stricter checks on other filesystems. WSL reveal, definitions, Git
 and LSP remain incomplete. Actual Windows UI didSave/second hover and full journal
 preview/cancel/review/apply passed at `1ad2e1d`; its later context clear failed.
-Context admission now waits for active workers; packaged acceptance is pending.
+Context admission now waits for active workers. The complete `c34bdac` packaged
+Windows shell, API Studio/Knowledge and installer coexistence checks passed;
+its only product workflow failure was the WSL root identity check.

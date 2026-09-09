@@ -906,7 +906,11 @@ fn windows_sibling_paths(source: &Path, target: &Path) -> io::Result<(PathBuf, P
 }
 
 #[cfg(windows)]
-fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
+fn rename_without_replace(
+    source: &Path,
+    destination: &Path,
+    _guard: &dyn Fn() -> io::Result<()>,
+) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::MoveFileW;
@@ -923,15 +927,20 @@ fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
 }
 
 #[cfg(target_os = "linux")]
-fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
+fn rename_without_replace(
+    source: &Path,
+    destination: &Path,
+    guard: &dyn Fn() -> io::Result<()>,
+) -> io::Result<()> {
+    use std::os::fd::AsRawFd;
     use std::os::unix::ffi::OsStrExt;
+    let source_path = source;
+    let destination_path = destination;
     let source = std::ffi::CString::new(source.as_os_str().as_bytes())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid source path"))?;
     let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
         .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid destination path"))?;
-    // One namespace syscall: helper EOF/crash cannot leave the intermediate
-    // source+destination pair of a hard-link/unlink sequence. Unsupported
-    // filesystems return an error instead of falling back to a partial move.
+    // Prefer one namespace syscall wherever it exists.
     let result = unsafe {
         libc::syscall(
             libc::SYS_renameat2,
@@ -945,12 +954,92 @@ fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
     if result == 0 {
         Ok(())
     } else {
-        Err(io::Error::last_os_error())
+        let error = io::Error::last_os_error();
+        if error.raw_os_error() != Some(libc::ENOSYS) {
+            return Err(error);
+        }
+        let (file, _) = devbox_filesystem::open_filesystem_object(source_path, false)?;
+        let mut filesystem = std::mem::MaybeUninit::<libc::statfs>::zeroed();
+        if unsafe { libc::fstatfs(file.as_raw_fd(), filesystem.as_mut_ptr()) } != 0 {
+            return Err(io::Error::last_os_error());
+        }
+        if unsafe { filesystem.assume_init() }.f_type != 0x5346_4846 {
+            return Err(error);
+        }
+        // WSL1 has no renameat2. Publishing a hard link is non-overwriting;
+        // interruption may preserve both names, never delete an unknown path.
+        recoverable_link_move(source_path, destination_path, guard)
     }
 }
 
+#[cfg(target_os = "linux")]
+fn recoverable_link_move(
+    source: &Path,
+    destination: &Path,
+    guard: &dyn Fn() -> io::Result<()>,
+) -> io::Result<()> {
+    use std::os::{fd::AsRawFd, unix::ffi::OsStrExt};
+    let parent = source
+        .parent()
+        .ok_or_else(|| io::Error::other("missing parent"))?;
+    if destination.parent() != Some(parent) {
+        return Err(io::Error::other("different parent"));
+    }
+    let (parent_handle, parent_id) = devbox_filesystem::open_filesystem_object(parent, true)?;
+    let (_source_handle, source_id) = devbox_filesystem::open_filesystem_object(source, false)?;
+    let leaf = |path: &Path| {
+        std::ffi::CString::new(
+            path.file_name()
+                .ok_or_else(|| io::Error::other("missing filename"))?
+                .as_bytes(),
+        )
+        .map_err(|_| io::Error::other("invalid filename"))
+    };
+    let from = leaf(source)?;
+    let to = leaf(destination)?;
+    guard()?;
+    if unsafe {
+        libc::linkat(
+            parent_handle.as_raw_fd(),
+            from.as_ptr(),
+            parent_handle.as_raw_fd(),
+            to.as_ptr(),
+            0,
+        )
+    } != 0
+    {
+        return Err(io::Error::last_os_error());
+    }
+    let finish = || {
+        // Keep both names if authority, bytes or either object changed. An
+        // automatic rollback could remove an externally adopted destination.
+        guard()?;
+        if filesystem_identity(parent, true)? != parent_id
+            || filesystem_identity(source, false)? != source_id
+            || filesystem_identity(destination, false)? != source_id
+        {
+            return Err(io::Error::other("rename objects changed"));
+        }
+        if unsafe { libc::unlinkat(parent_handle.as_raw_fd(), from.as_ptr(), 0) } != 0 {
+            Err(io::Error::last_os_error())
+        } else {
+            Ok(())
+        }
+    };
+    finish().map_err(|_| {
+        io::Error::new(
+            io::ErrorKind::Interrupted,
+            "rename incomplete; reconcile both names",
+        )
+    })
+}
+
 #[cfg(not(any(windows, target_os = "linux")))]
-fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
+fn rename_without_replace(
+    source: &Path,
+    destination: &Path,
+    _guard: &dyn Fn() -> io::Result<()>,
+) -> io::Result<()> {
     // `std::fs::rename` may replace a concurrently-created destination on Unix.
     // A sibling hard link is create-new, so the move can never clobber data.
     fs::hard_link(source, destination)?;
@@ -992,7 +1081,12 @@ pub fn rename_path_guarded(
     // a stale tab can never rename a replaced file merely because metadata is equal.
     let canonical = validate_file_snapshot(&canonical, expected)?;
     guard()?;
-    rename_without_replace(&canonical, &destination).map_err(|source| FileError::Io {
+    rename_without_replace(&canonical, &destination, &|| {
+        guard().map_err(io::Error::other)?;
+        validate_file_snapshot(&canonical, expected).map_err(io::Error::other)?;
+        Ok(())
+    })
+    .map_err(|source| FileError::Io {
         operation: "rename file without replacement",
         source,
     })?;
@@ -1462,7 +1556,7 @@ fn publish_private_temp(
     let result = if target_identity.is_some() {
         replace_file(&temporary.path, target)
     } else {
-        rename_without_replace(&temporary.path, target)
+        rename_without_replace(&temporary.path, target, &|| Ok(()))
     };
     if let Err(source) = result {
         return Err(FileError::Io {
@@ -1662,6 +1756,36 @@ pub(crate) async fn __component_validate_encoding(
 
 #[cfg(test)]
 mod tests {
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn interrupted_compatibility_move_preserves_both_names_without_overwriting() {
+        use super::*;
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source.txt");
+        let target = root.path().join("target.txt");
+        fs::write(&source, b"original").unwrap();
+        fs::write(&target, b"unrelated").unwrap();
+        assert!(recoverable_link_move(&source, &target, &|| Ok(())).is_err());
+        assert_eq!(fs::read(&target).unwrap(), b"unrelated");
+        fs::remove_file(&target).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let error = recoverable_link_move(&source, &target, &|| {
+            calls.set(calls.get() + 1);
+            if calls.get() == 2 {
+                Err(io::Error::other("authority revoked"))
+            } else {
+                Ok(())
+            }
+        })
+        .unwrap_err();
+        assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+        assert_eq!(fs::read(&source).unwrap(), b"original");
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+        fs::remove_file(&target).unwrap();
+        recoverable_link_move(&source, &target, &|| Ok(())).unwrap();
+        assert!(!source.exists());
+        assert_eq!(fs::read(&target).unwrap(), b"original");
+    }
     use super::*;
     use crate::core::encoding::EncodingKind;
     use std::fs;

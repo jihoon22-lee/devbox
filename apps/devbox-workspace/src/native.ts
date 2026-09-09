@@ -112,6 +112,7 @@ const issues: Record<string, string> = {
   file_changed: "디스크의 파일이 변경되었습니다. 다시 불러오거나 파일을 다시 선택해 주세요.",
   file_save_conflict: "파일이 변경되었거나 저장할 수 없습니다. 현재 내용을 보존한 채 파일 상태를 확인해 주세요.",
   file_rename_conflict: "파일 상태나 새 이름을 확인한 뒤 다시 시도해 주세요.",
+  file_rename_unconfirmed: "이름 변경이 중단되어 원본과 대상이 함께 남아 있을 수 있습니다. 두 경로를 확인한 뒤 다시 시도해 주세요.",
   file_delete_conflict: "파일이 변경되어 삭제하지 않았습니다. 상태를 다시 확인해 주세요.",
   file_read_failed: "파일을 읽지 못했습니다. 연결 상태와 파일 크기·인코딩을 확인해 주세요.",
   file_target_unavailable: "이 파일의 실행 환경을 아직 연결하지 못했습니다.",

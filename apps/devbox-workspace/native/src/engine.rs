@@ -176,6 +176,33 @@ struct Statx {
 const _: () = assert!(std::mem::size_of::<Statx>() == 256);
 const _: () = assert!(std::mem::offset_of!(Statx, inode) == 32);
 const _: () = assert!(std::mem::offset_of!(Statx, btime) == 80);
+fn persistent_object(
+    inode: u64,
+    wslfs: bool,
+    extended: std::result::Result<&Statx, i32>,
+) -> Result<Vec<u8>> {
+    match extended {
+        // WSL1's native wslfs exposes the NT file ID (including its sequence)
+        // as st_ino, but does not implement statx. The Windows owner separately
+        // binds this filesystem to the retained distro/backing-directory IDs.
+        Err(libc::ENOSYS) if wslfs && inode >> 48 != 0 => {
+            let mut object = b"wslfs-file-id-v1\0".to_vec();
+            object.extend_from_slice(&inode.to_le_bytes());
+            Ok(object)
+        }
+        Ok(extended)
+            if extended.mask & 0x0900 == 0x0900
+                && extended.inode == inode
+                && extended.btime.nsec < 1_000_000_000 =>
+        {
+            let mut object = inode.to_le_bytes().to_vec();
+            object.extend_from_slice(&extended.btime.sec.to_le_bytes());
+            object.extend_from_slice(&extended.btime.nsec.to_le_bytes());
+            Ok(object)
+        }
+        _ => Err("wsl_identity_unavailable"),
+    }
+}
 fn stamp(handle: &File) -> Result<ObjectStamp> {
     let metadata = handle
         .metadata()
@@ -195,16 +222,13 @@ fn stamp(handle: &File) -> Result<ObjectStamp> {
             extended.as_mut_ptr(),
         )
     };
-    if status != 0 {
-        return Err("wsl_identity_unavailable");
-    }
-    let extended = unsafe { extended.assume_init() };
-    if extended.mask & required != required
-        || extended.inode != metadata.ino()
-        || extended.btime.nsec >= 1_000_000_000
-    {
-        return Err("wsl_identity_unavailable");
-    }
+    let extended = if status == 0 {
+        Ok(unsafe { extended.assume_init() })
+    } else {
+        Err(std::io::Error::last_os_error()
+            .raw_os_error()
+            .unwrap_or(libc::EIO))
+    };
     let mut filesystem = std::mem::MaybeUninit::<libc::statfs>::zeroed();
     // fstatfs writes this fixed native structure for the retained descriptor.
     if unsafe { libc::fstatfs(handle.as_raw_fd(), filesystem.as_mut_ptr()) } != 0 {
@@ -222,9 +246,11 @@ fn stamp(handle: &File) -> Result<ObjectStamp> {
     }
     let mut scope = fsid.to_vec();
     scope.extend_from_slice(&filesystem.f_type.to_le_bytes());
-    let mut object = metadata.ino().to_le_bytes().to_vec();
-    object.extend_from_slice(&extended.btime.sec.to_le_bytes());
-    object.extend_from_slice(&extended.btime.nsec.to_le_bytes());
+    let object = persistent_object(
+        metadata.ino(),
+        filesystem.f_type == 0x5346_4846,
+        extended.as_ref().map_err(|error| *error),
+    )?;
     Ok(ObjectStamp {
         scope: short_digest(&scope),
         object: short_digest(&object),
@@ -578,6 +604,30 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn wsl1_native_file_ids_do_not_enable_a_generic_birth_time_fallback() {
+        let inode = 0x0005_0000_0000_0042;
+        let first = persistent_object(inode, true, Err(libc::ENOSYS)).unwrap();
+        assert_eq!(
+            first,
+            persistent_object(inode, true, Err(libc::ENOSYS)).unwrap()
+        );
+        assert_ne!(
+            first,
+            persistent_object(inode + (1 << 48), true, Err(libc::ENOSYS)).unwrap()
+        );
+        assert!(persistent_object(inode, false, Err(libc::ENOSYS)).is_err());
+        assert!(persistent_object(inode, true, Err(libc::EIO)).is_err());
+        assert!(persistent_object(42, true, Err(libc::ENOSYS)).is_err());
+        let mut extended = unsafe { std::mem::MaybeUninit::<Statx>::zeroed().assume_init() };
+        extended.inode = inode;
+        extended.mask = 0x0100;
+        assert!(persistent_object(inode, false, Ok(&extended)).is_err());
+        extended.mask = 0x0900;
+        assert!(persistent_object(inode, false, Ok(&extended)).is_ok());
+        extended.inode += 1;
+        assert!(persistent_object(inode, false, Ok(&extended)).is_err());
+    }
     fn request(method: &str, root: Option<String>, args: Value) -> Request {
         Request {
             version: crate::VERSION,
