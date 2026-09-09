@@ -253,12 +253,12 @@ async function exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,
   const records=success(await lsp("lsp_recovery_list")).records,index=records.findIndex(record=>record.journalId===journalId);
   assert.ok(index>=0);assert.equal(records[index].available,true);
   await click(`기록 ${index+1} 복구 검토`,'document.querySelector(".lsp-panel")');
-  await waitForRenderer(cdp,'document.querySelector("section[aria-label=\"이름 변경 복구\"]")?.textContent.includes("let before")',"Native recovery preview omitted original bytes");
+  await waitForRenderer(cdp,`document.querySelector('section[aria-label="이름 변경 복구"]')?.textContent.includes("let before")`,"Native recovery preview omitted original bytes");
   await click("복구 검토 취소",'document.querySelector(".lsp-panel")');
   assert.equal(readFileSync(target,"utf8"),after);
   await click(`기록 ${index+1} 복구 검토`,'document.querySelector(".lsp-panel")');
   await click("검토한 원본 복원",'document.querySelector(".lsp-panel")');
-  await waitForRenderer(cdp,'document.querySelector("section[aria-label=\"이름 변경 복구\"]")?.textContent.includes("원본 복원이 완료되었습니다")',"Native recovery did not complete");
+  await waitForRenderer(cdp,`document.querySelector('section[aria-label="이름 변경 복구"]')?.textContent.includes("원본 복원이 완료되었습니다")`,"Native recovery did not complete");
   assert.equal(readFileSync(target,"utf8"),before);assert.equal(existsSync(journalDir),false);
   assert.deepEqual(success(await lsp("language_server_statuses")),[]);
   await click("닫기",'document.querySelector(".lsp-panel")');

@@ -4,6 +4,16 @@ WP #546 / R02–06, R08, R13, R16–21, R24–25 and S01. This bundle owns
 Project/Worktree Registry, manifest/local trust, Overview/Source/Files/Dependencies,
 legacy import and WSL-native LSP. Runtime and Terminal/session owners remain B05/B06.
 
+## Recovery fixture syntax checkpoint
+
+[732e4d0 Windows acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34315608299)
+failed before product build: two recovery renderer expressions lost their nested
+selector quotes during string decoding. Both now use template literals with a
+single-quoted selector. All five generated-request/renderer/proxy regressions pass.
+The final affected run selected all and passed in **371.739 seconds**, with a
+**1,728,090,112-byte** cgroup peak under the shared 8 GiB limit. The prior Source
+environment and native recovery changes still await packaged Windows execution.
+
 ## Behavior and ownership
 
 Workbench, Repo Manager and Code Pad share their UI/tests through
