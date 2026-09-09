@@ -26,6 +26,8 @@ pub struct ExecutionPolicy {
     deadline: Instant,
     cancelled: Arc<AtomicBool>,
     admit: Box<Admission>,
+    #[cfg(target_os = "linux")]
+    pub(crate) supervisor: Option<PathBuf>,
 }
 thread_local! {
     static CURRENT: RefCell<Option<Arc<ExecutionPolicy>>> = const { RefCell::new(None) };
@@ -94,7 +96,19 @@ impl ExecutionPolicy {
             deadline,
             cancelled,
             admit: Box::new(admit),
+            #[cfg(target_os = "linux")]
+            supervisor: None,
         }))
+    }
+    /// The private static Linux helper reexecutes its already mapped image.
+    /// Call only on a fresh policy, before sharing it with any worker. The
+    /// supervisor must implement --supervise -- <program> <argv...> and exit
+    /// only after reaping its complete owned tree, including detached children.
+    #[cfg(target_os = "linux")]
+    pub fn with_linux_supervisor(mut self: Arc<Self>) -> Result<Arc<Self>, String> {
+        let policy = Arc::get_mut(&mut self).ok_or("git_execution_invalid")?;
+        policy.supervisor = Some(PathBuf::from("/proc/self/exe"));
+        Ok(self)
     }
     pub fn scope<T>(self: &Arc<Self>, action: impl FnOnce() -> T) -> T {
         let previous = CURRENT.with(|slot| slot.borrow_mut().replace(self.clone()));
@@ -245,6 +259,51 @@ mod tests {
             .is_err());
         });
         assert!(current().is_none());
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn linux_supervision_requires_an_unshared_native_policy_and_preserves_admission() {
+        let shared = policy();
+        assert!(shared.clone().with_linux_supervisor().is_err());
+        let root = std::env::temp_dir().join("supervised-root");
+        let expected = root.clone();
+        let policy = ExecutionPolicy::new(
+            PathBuf::from("/usr/bin/git"),
+            vec![],
+            Instant::now() + Duration::from_secs(5),
+            move |target| {
+                if target.cwd() != expected.to_string_lossy() {
+                    return Err("not_admitted".into());
+                }
+                Ok(NativeRepository {
+                    worktree: expected.clone(),
+                    git_dir: expected.join(".git"),
+                    common_dir: expected.join(".git"),
+                })
+            },
+        )
+        .unwrap()
+        .with_linux_supervisor()
+        .unwrap();
+        policy.scope(|| {
+            let command = crate::command_for_target(
+                &GitTarget::native(root.to_string_lossy()),
+                &["status"],
+                Duration::from_secs(5),
+            )
+            .unwrap();
+            assert_eq!(command.get_program(), "/proc/self/exe");
+            let args = command.get_args().collect::<Vec<_>>();
+            assert_eq!(&args[..3], &["--supervise", "--", "/usr/bin/git"]);
+            assert_eq!(args.last().unwrap(), &"status");
+            assert!(crate::command_for_target(
+                &GitTarget::native("unregistered"),
+                &["status"],
+                Duration::from_secs(5),
+            )
+            .is_err());
+        });
     }
 
     #[test]

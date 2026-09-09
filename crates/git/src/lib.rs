@@ -209,33 +209,94 @@ impl Drop for ProcessTree {
 
 #[cfg(unix)]
 struct ProcessTree {
-    process_group: i32,
+    process_group: Option<i32>,
+    #[cfg(target_os = "linux")]
+    supervised: bool,
 }
 
 #[cfg(unix)]
 impl ProcessTree {
     fn assign_to(child: &Child) -> Result<Self, ()> {
         Ok(Self {
-            process_group: i32::try_from(child.id()).map_err(|_| ())?,
+            process_group: Some(i32::try_from(child.id()).map_err(|_| ())?),
+            #[cfg(target_os = "linux")]
+            supervised: execution::current().is_some_and(|policy| policy.supervisor.is_some()),
         })
     }
 
     fn terminate(&mut self, child: &mut Child) {
+        #[cfg(target_os = "linux")]
+        if self.supervised {
+            if let Some(pid) = self.process_group.take() {
+                // The direct supervisor is still unreaped. TERM requests its
+                // own descendant retirement; killing its group would kill the
+                // reaper before it can collect detached descendants.
+                let _ = unsafe { libc::kill(pid, libc::SIGTERM) };
+            }
+            let _ = child.wait();
+            return;
+        }
         self.terminate_group();
         let _ = child.wait();
     }
 
     fn terminate_descendants(&mut self) {
+        #[cfg(target_os = "linux")]
+        if self.supervised {
+            // A normally exited supervisor has already confirmed ECHILD.
+            self.process_group.take();
+            return;
+        }
         self.terminate_group();
     }
 
     fn close(self) {}
 
-    fn terminate_group(&self) {
+    fn terminate_group(&mut self) {
         // The child is spawned as its own process-group leader below. A
         // negative pid therefore addresses Git and every hook/helper child
         // without touching the desktop application's process group.
-        let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
+        if let Some(group) = self.process_group.take() {
+            let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
+        }
+    }
+}
+
+fn poll_child(
+    child: &mut Child,
+    tree: &mut ProcessTree,
+) -> std::io::Result<Option<std::process::ExitStatus>> {
+    #[cfg(target_os = "linux")]
+    {
+        let mut info = unsafe { std::mem::zeroed::<libc::siginfo_t>() };
+        let result = unsafe {
+            libc::waitid(
+                libc::P_PID,
+                child.id(),
+                &mut info,
+                libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+            )
+        };
+        if result != 0 {
+            let error = std::io::Error::last_os_error();
+            return if error.kind() == ErrorKind::Interrupted {
+                Ok(None)
+            } else {
+                Err(error)
+            };
+        }
+        if unsafe { info.si_pid() } == 0 {
+            return Ok(None);
+        }
+        // Keep the root PID reserved until the group's final signal. try_wait
+        // would reap it first, letting a reused group ID target another job.
+        tree.terminate_descendants();
+        child.wait().map(Some)
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = tree;
+        child.try_wait()
     }
 }
 
@@ -750,7 +811,7 @@ fn run_bounded_inner(
             let _ = reader.join();
             return Err("git_output_read_failed".into());
         }
-        match child.try_wait() {
+        match poll_child(&mut child, &mut process_tree) {
             Ok(Some(status)) => break status,
             Ok(None) => {
                 if let Some(error) = policy.as_ref().and_then(|policy| policy.boundary().err()) {
@@ -790,7 +851,8 @@ fn run_bounded_inner(
     // pipe. Tear down the owned Job Object/process group once, then tell the
     // Unix nonblocking reader to stop after draining currently available
     // bytes. No Drop implementation sends a second signal after the root PID
-    // has been reaped.
+    // has been reaped. On Linux poll_child already retires the group while the
+    // root is still unreaped; this is then a no-op.
     process_tree.terminate_descendants();
     reader_stop.store(true, Ordering::Release);
     process_tree.close();
@@ -823,6 +885,15 @@ fn command_for_target(
         GitTarget::Native { cwd } => {
             let mut command = if let Some(policy) = execution::current() {
                 let repository = policy.admit(target)?;
+                #[cfg(target_os = "linux")]
+                let mut command = if let Some(supervisor) = &policy.supervisor {
+                    let mut command = Command::new(supervisor);
+                    command.args(["--supervise", "--"]).arg(&policy.program);
+                    command
+                } else {
+                    Command::new(&policy.program)
+                };
+                #[cfg(not(target_os = "linux"))]
                 let mut command = Command::new(&policy.program);
                 command.env_clear().envs(policy.environment.iter().cloned());
                 let mut git_dir = std::ffi::OsString::from("--git-dir=");

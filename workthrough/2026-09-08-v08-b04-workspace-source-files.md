@@ -245,6 +245,37 @@ SIGTERM delivery/reaping on WSL1 and WSL2. WSL1 lacks `/proc/self/task/<pid>/chi
 as well as pidfd, so the future process owner must not depend on either. Both
 probe distributions and owned directories were removed.
 
+## Linux native process ownership
+
+The private helper now has a per-job `--supervise` entry point, outside its pipe
+method allowlist. It sets subreaper/parent-death handling before creating threads,
+preserves stdio/cwd/environment and observes root exit without reaping. Retirement
+proves each direct-child PID using waitid WNOWAIT before signalling/reaping, then
+collects adopted double-fork/setsid descendants until ECHILD. WSL1's missing pidfd
+and children file do not weaken ownership. An unconfirmed tree keeps its owner.
+
+Native Git policies can opt into mapped-image `/proc/self/exe` reexecution before
+sharing their capability. Cancellation sends TERM to that still-unreaped owner
+and waits for retirement. Ordinary Linux Git groups now receive their final signal
+before root reaping, closing the PID reuse window. Windows Job behavior is unchanged.
+WSL Source/LSP methods and child-aware session shutdown are not yet enabled.
+
+Git **25** and supervisor **5** regressions plus Linux Clippy PASS; the additional
+ignored parent-death fixture is actually executed by its isolated subprocess test.
+Static musl helper and full Workspace MSVC all-target strict Clippy PASS
+(**101.081 s**, sampled RSS **1,474,158,592 B**). An initial combined invocation
+passed tests/Clippy but failed static build because the local musl compiler path
+was omitted; restoring the existing private toolchain resolved it.
+
+Actual Windows→WSL1 **1.922 s** and WSL2 **2.523 s** ran the built Rust owner with
+synthetic native children: normal root exit/status, double-fork/setsid retirement,
+cancellation/other-job preservation, parent-death adoption, mapped-image reexecution,
+invalid argv and final ECHILD all PASS. Owned distributions/directories were removed.
+The combined fixture run used **4.989 s**, sampled RSS **40,435,712 B**. These are
+process-owner observations, not project Git/LSP or packaged WebView acceptance.
+Final `pnpm verify:affected` selected all and PASS (**570.759 s**, sampled RSS
+**4,950,102,016 B**, cgroup peak **6,444,773,376 B** within the 8 GiB limit).
+
 ## Remaining acceptance and rollback limits
 
 - WSL template instantiation, reveal, native Git/LSP and full WSL2 Rust host/WebView

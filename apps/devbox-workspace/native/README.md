@@ -6,7 +6,7 @@ The `files` feature contains the file grants, conflict checks, definition schema
 and snapshots, Windows path admission and protected-storage policy shared by the Windows host and Linux
 helper. Tauri storage discovery stays in the Windows host.
 The executable observes/revalidates root/Git objects and opens files only after
-attaching one native project context to an observed root. It executes no Git,
+attaching one native project context to an observed root. Its pipe methods execute no Git,
 language server or package manager. Explicit saves require the current native
 revision and disk snapshot and reuse Code Pad's encoding/CRLF atomic replacement.
 Rename/delete require the same native revision and precommit authority/cancellation
@@ -32,6 +32,25 @@ deadline: disk contents remain either the original or the complete replacement,
 but a hard exit may leave staging data. The Windows owner drains abandoned replies
 while retiring the helper and never replays a save. Adding child processes requires
 a corresponding process-retirement owner.
+
+The private `--supervise -- <absolute program> <argv...>` entry point now provides
+that owner for upcoming Git/LSP execution. It starts before helper threads, sets
+Linux subreaper and parent-death notification, and inherits the caller's explicit
+cwd/environment/stdio. Each job has its own owner. After root exit or cancellation,
+it discovers candidates through `/proc`, proves direct-child ownership with
+`waitid(WNOWAIT)`, signals only still-unreaped children and collects adopted detached
+descendants. It exits only after `ECHILD` confirms retirement; failures retain the
+owner rather than killing unrelated processes. It needs neither pidfd nor WSL2's
+children file. This CLI is not exposed through the pipe protocol. Native Git's
+opt-in execution policy can reexecute the mapped `/proc/self/exe` image and request
+SIGTERM retirement. Its ordinary Linux process-group path also keeps the root PID
+unreaped until the final group signal. Windows Job ownership is unchanged.
+
+Actual owned WSL1 and WSL2 fixtures verified normal exit, double-fork/setsid cleanup,
+cancellation without touching another job, parent death and mapped-image reexecution.
+The Rust integration tests cover these behaviors locally and in the helper CI job.
+Git/LSP pipe admission and cancellation-aware helper shutdown remain required before
+project execution is enabled; the file-only session watchdog is unchanged.
 
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,

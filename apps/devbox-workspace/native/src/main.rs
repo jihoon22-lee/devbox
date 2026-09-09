@@ -1,5 +1,7 @@
 //! A private inherited-pipe helper. EOF cancels work before atomic replacement.
 #[cfg(target_os = "linux")]
+mod supervisor;
+#[cfg(target_os = "linux")]
 fn main() {
     use std::{
         io,
@@ -10,6 +12,10 @@ fn main() {
         time::{Duration, Instant},
     };
     use workspace_wsl::{read_frame, write_frame, Request, Response};
+    let native_args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if native_args.first().is_some_and(|arg| arg == "--supervise") {
+        std::process::exit(supervisor::run(&native_args[1..]));
+    }
     let args = std::env::args().skip(1).collect::<Vec<_>>();
     if args.len() != 2 || args[0] != "--session" || !workspace_wsl::token(&args[1]) {
         std::process::exit(2);
