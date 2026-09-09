@@ -163,24 +163,42 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
 }
 
 
+// Tauri defines invoke/ipc as non-writable properties. Observe its actual fetch
+// transport in the disposable renderer instead; retain no body, headers or URL.
+export function installWorkspaceEditorTrace() {
+  const original = window.fetch, rows = [];
+  const wrapped = function(input, init) {
+    let request;
+    try {
+      const url = new URL(typeof input === "string" ? input : input.url);
+      if (url.hostname === "ipc.localhost" && decodeURIComponent(url.pathname) === "/plugin:workspace|execute" && typeof init?.body === "string") request = JSON.parse(init.body).request;
+    } catch { /* Non-IPC fetches remain untouched. */ }
+    const method = request?.method;
+    const tracked = request?.component === "workspace.lsp" && /^(open|change|reload|save|close)_lsp_document$/.test(method)
+      || request?.component === "workspace.files" && ["save_file", "sync_editor_document"].includes(method);
+    if (!tracked) return original.call(this, input, init);
+    const row = {method, phase:"pending", elapsedMs:0}, started = performance.now();
+    rows.push(row); if (rows.length > 128) rows.shift();
+    return original.call(this, input, init).then(response => {
+      // Clone before Tauri consumes the body; return the original immediately.
+      void response.clone().json().then(result => {
+        row.phase = result?.operation?.outcome?.state ?? "unknown";
+        const issue = result?.value?.issue;
+        if (typeof issue === "string" && /^[a-z_]{1,80}$/.test(issue)) row.issue = issue;
+      }).catch(() => {row.phase="invalid_response";}).finally(() => {row.elapsedMs=Math.round(performance.now()-started);});
+      return response;
+    }, error => {row.phase="rejected";row.elapsedMs=Math.round(performance.now()-started);throw error;});
+  };
+  window.fetch = wrapped;
+  if (window.fetch !== wrapped) throw new Error("Native editor trace transport is unavailable");
+  window.__workspaceLspTrace = {rows, restore:()=>{window.fetch=original;}};
+}
+
 async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRenderer}) {
   const lsp=(method,args={})=>call("workspace.lsp",method,args);
   // Record only bounded method/outcome metadata from this disposable renderer.
   // Capture UI notifications too; fixture-only calls cannot diagnose a lost save.
-  await cdp.evaluate(`(()=>{
-    const internals=window.__TAURI_INTERNALS__, original=internals.invoke;
-    const rows=[];window.__workspaceLspTrace={rows,restore:()=>{internals.invoke=original;}};
-    internals.invoke=async function(command,args,...rest){
-      const request=args?.request, method=request?.method;
-      const tracked=request?.component==="workspace.lsp"&&/^(open|change|reload|save|close)_lsp_document$/.test(method)
-        ||request?.component==="workspace.files"&&["save_file","sync_editor_document"].includes(method);
-      if(!tracked)return original.call(this,command,args,...rest);
-      const row={method,phase:"pending",elapsedMs:0};rows.push(row);if(rows.length>128)rows.shift();const started=performance.now();
-      try {const result=await original.call(this,command,args,...rest);row.phase=result?.operation?.outcome?.state??"unknown";
-        const issue=result?.value?.issue;if(typeof issue==="string"&&/^[a-z_]{1,80}$/.test(issue))row.issue=issue;return result;
-      } catch(error){row.phase="rejected";throw error;}finally{row.elapsedMs=Math.round(performance.now()-started);}
-    };
-  })()`);
+  await cdp.evaluate(`(${installWorkspaceEditorTrace.toString()})()`);
   try {
   const owned=path.join(root,"lsp-owned-fixture");mkdirSync(owned);
   const script=path.join(owned,"server.mjs"), marker=path.join(owned,"child.pid"), file=path.join(owned,"lsp-owner-main.rs");
@@ -225,6 +243,7 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
     throw new Error("Native editor document did not synchronize");
   };
   assert.equal((await hover()).stale,false);
+  await waitForRenderer(cdp,'window.__workspaceLspTrace.rows.length>0',"Native editor trace did not observe IPC fetches");
   await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").focus()');
   await cdp.command("Input.insertText",{text:"// editor\n"});
   const dirty='Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs")&&tab.textContent.includes("●"))';

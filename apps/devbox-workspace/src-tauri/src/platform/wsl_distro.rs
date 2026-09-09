@@ -205,11 +205,11 @@ mod native {
     fn registration(key: &Key, id: &str) -> Result<Registration> {
         for attempt in 0..3 {
             match registration_snapshot(key, id) {
-                Err("wsl_registry_changed") if attempt < 2 => continue,
+                Err("wsl_registry_read_changed") if attempt < 2 => continue,
                 result => return result,
             }
         }
-        Err("wsl_registry_changed")
+        Err("wsl_registry_read_changed")
     }
     fn registration_snapshot(key: &Key, id: &str) -> Result<Registration> {
         let before = revision(key)?;
@@ -243,8 +243,11 @@ mod native {
             None
         };
         let values_digest = values_digest(key)?;
-        if !base.is_absolute() || revision(key)? != before {
-            return Err("wsl_registry_changed");
+        if !base.is_absolute() {
+            return Err("wsl_registry_invalid");
+        }
+        if revision(key)? != before {
+            return Err("wsl_registry_read_changed");
         }
         Ok(Registration {
             id: id.into(),
@@ -454,20 +457,20 @@ mod native {
             // The key itself must still exist. LastWriteTime is a snapshot
             // consistency check, not identity: WSL can rewrite identical values.
             if registration(&self.key, self.id())? != self.registration {
-                return Err("wsl_registry_changed");
+                return Err("wsl_retained_registration_changed");
             }
             let current = registrations()?
                 .into_iter()
                 .find(|entry| entry.id == self.registration.id)
                 .ok_or("wsl_distro_missing")?;
             if current != self.registration {
-                return Err("wsl_registry_changed");
+                return Err("wsl_registration_changed");
             }
             ensure_no_links(&current.base).map_err(|_| "wsl_storage_path_unsafe")?;
             if filesystem_identity(&current.base, true).map_err(|_| "wsl_storage_unavailable")?
                 != self.identity
             {
-                return Err("wsl_registry_changed");
+                return Err("wsl_storage_object_changed");
             }
             if let Some(path) = &current.backing {
                 ensure_no_links(path).map_err(|_| "wsl_registry_changed")?;

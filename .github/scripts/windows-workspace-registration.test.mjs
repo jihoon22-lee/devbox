@@ -129,3 +129,37 @@ test("busy retries are bounded and never repeat accepted or ambiguous failures",
   }),accepted);
   assert.equal(calls,1);
 });
+
+test("native editor trace observes IPC with Tauri's immutable invoke and preserves original responses", async () => {
+  const {installWorkspaceEditorTrace} = await import("./windows-workspace-lsp.mjs");
+  const originalInvoke=()=>"immutable", internals={};
+  Object.defineProperty(internals,"invoke",{value:originalInvoke});
+  const value={operation:{outcome:{state:"succeeded"}},value:{}};
+  const fetch=async()=>new Response(JSON.stringify(value),{headers:{"content-type":"application/json"}});
+  const window={fetch,__TAURI_INTERNALS__:internals};
+  runInNewContext(`(${installWorkspaceEditorTrace.toString()})()`,{window,URL,performance});
+  assert.equal(internals.invoke,originalInvoke);
+  const response=await window.fetch("http://ipc.localhost/plugin%3Aworkspace%7Cexecute",{body:JSON.stringify({request:{component:"workspace.lsp",method:"save_lsp_document",args:{text:"synthetic private buffer"}}})});
+  assert.deepEqual(await response.json(),value);
+  const deadline=Date.now()+1000;
+  while(window.__workspaceLspTrace.rows[0]?.phase==="pending"&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
+  const rows=JSON.parse(JSON.stringify(window.__workspaceLspTrace.rows));
+  assert.equal(rows.length,1);assert.equal(rows[0].phase,"succeeded");assert.equal(rows[0].method,"save_lsp_document");
+  assert.deepEqual(Object.keys(rows[0]).sort(),["elapsedMs","method","phase"]);
+  assert.ok(!JSON.stringify(rows).includes("private"));
+  window.__workspaceLspTrace.restore();assert.equal(window.fetch,fetch);
+});
+
+test("native editor trace ignores unrelated bodies and retains only static failure metadata", async () => {
+  const {installWorkspaceEditorTrace} = await import("./windows-workspace-lsp.mjs");
+  const value={operation:{outcome:{state:"failed"}},value:{issue:"file_snapshot_changed",private:"synthetic response"}};
+  const window={fetch:async()=>new Response(JSON.stringify(value))};
+  runInNewContext(`(${installWorkspaceEditorTrace.toString()})()`,{window,URL,performance});
+  const body=JSON.stringify({request:{component:"workspace.files",method:"save_file",args:{text:"synthetic input"}}});
+  await window.fetch("https://example.test/",{body});assert.equal(window.__workspaceLspTrace.rows.length,0);
+  await window.fetch("http://ipc.localhost/plugin%3Aworkspace%7Cexecute",{body});
+  const deadline=Date.now()+1000;
+  while(window.__workspaceLspTrace.rows[0]?.phase==="pending"&&Date.now()<deadline)await new Promise(resolve=>setTimeout(resolve,5));
+  const row=window.__workspaceLspTrace.rows[0];assert.equal(row.phase,"failed");assert.equal(row.issue,"file_snapshot_changed");
+  assert.ok(!JSON.stringify(row).includes("synthetic"));window.__workspaceLspTrace.restore();
+});

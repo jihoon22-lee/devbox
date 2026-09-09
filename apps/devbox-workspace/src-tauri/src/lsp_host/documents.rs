@@ -288,6 +288,10 @@ impl Documents {
     async fn apply_rename(&mut self, manager: &LspManager, plan_id: &str) -> Result<Value> {
         let _permit = self.snapshot.document_permit(true)?;
         let result = manager.apply_rename(plan_id).await.map_err(control_error)?;
+        #[cfg(test)]
+        if let Some(error) = &result.error {
+            eprintln!("Synthetic native rename fixture failure: {error}");
+        }
         let mut wire = super::actor::value(&result)?;
         if result.error.is_some() {
             wire["error"] =

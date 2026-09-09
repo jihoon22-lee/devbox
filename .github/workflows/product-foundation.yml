@@ -154,10 +154,32 @@ jobs:
           retention-days: 7
       - name: Exercise packaged Workspace helper on owned WSL
         if: ${{ !cancelled() }}
-        run: cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture
+        shell: pwsh
+        run: |
+          cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-native.log
+          exit $LASTEXITCODE
+      - name: Preserve native WSL results before independent acceptance
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl-runtime-${{ github.run_id }}
+          path: product-foundation-evidence/workspace-wsl-*
+          if-no-files-found: error
+          retention-days: 7
       - name: Run native authority and WAL fixtures on Windows
         if: ${{ !cancelled() }}
-        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2
+        shell: pwsh
+        run: |
+          cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2 2>&1 | Tee-Object -FilePath product-foundation-evidence/native-authority.log
+          exit $LASTEXITCODE
+      - name: Preserve authority results before product packaging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-native-authority-${{ github.run_id }}
+          path: product-foundation-evidence/native-authority.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Build unpublished product installers
         id: product-build
         if: ${{ !cancelled() }}
@@ -170,6 +192,14 @@ jobs:
       - name: Exercise packaged shell and installation namespace isolation
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
+      - name: Preserve packaged shell results before migration acceptance
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaged-shell-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify API Studio migration from pinned legacy storage
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:
