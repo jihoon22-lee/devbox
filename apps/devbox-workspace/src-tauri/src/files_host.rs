@@ -264,6 +264,7 @@ impl FilesHost {
         self.owner
             .editor_snapshot(scope, path, revision, verify_disk)
     }
+    #[cfg(test)]
     pub(crate) fn sync_editor(
         &mut self,
         context: &ProjectContext,

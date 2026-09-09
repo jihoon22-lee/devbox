@@ -243,39 +243,22 @@ impl Documents {
             verify_disk,
         )
     }
-    fn sync(&self, snapshot: &EditorSnapshot, text: &str) -> Result<()> {
-        self.files
-            .try_lock()
-            .map_err(|_| "files_unavailable")?
-            .sync_editor(
-                self.snapshot.context(),
-                snapshot.path.to_str().ok_or("lsp_document_denied")?,
-                &snapshot.revision,
-                text,
-            )
-            .map(|_| ())
-    }
     fn prepare_document(
         &self,
         path: &str,
         revision: &str,
         verify_disk: bool,
-        buffer: Option<(&str, bool)>,
     ) -> Result<(crate::core::context_activity::ContextPermit, EditorSnapshot)> {
         let permit = self.snapshot.document_permit(false)?;
-        let mut files = self.files.try_lock().map_err(|error| match error {
+        let files = self.files.try_lock().map_err(|error| match error {
             std::sync::TryLockError::WouldBlock => "lsp_busy",
             std::sync::TryLockError::Poisoned(_) => "files_unavailable",
         })?;
         let native = self
             .snapshot
             .document_snapshot(&files, path, revision, verify_disk)?;
-        if let Some((text, require_clean)) = buffer {
-            if require_clean && native.dirty(text) {
-                return Err("file_snapshot_changed");
-            }
-            files.sync_editor(self.snapshot.context(), path, revision, text)?;
-        }
+        // NativeEditorMirror is the only writer of UI buffer hashes. LSP
+        // queues own server text and may lag behind a newer editor transaction.
         Ok((permit, native))
     }
     async fn admit_document(
@@ -283,7 +266,6 @@ impl Documents {
         path: &str,
         revision: &str,
         verify_disk: bool,
-        buffer: Option<(&str, bool)>,
         deadline: u64,
     ) -> Result<(crate::core::context_activity::ContextPermit, EditorSnapshot)> {
         loop {
@@ -297,7 +279,7 @@ impl Documents {
             }
             // Retry only admission before any LSP notification or mutation.
             // Both the permit and metadata lock are released before sleeping.
-            match self.prepare_document(path, revision, verify_disk, buffer) {
+            match self.prepare_document(path, revision, verify_disk) {
                 Err("lsp_busy") => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
                 result => return result,
             }
@@ -426,13 +408,7 @@ impl Documents {
         } = method
         {
             let (_permit, native) = self
-                .admit_document(
-                    &path,
-                    &native_revision,
-                    true,
-                    Some((&text, false)),
-                    deadline,
-                )
+                .admit_document(&path, &native_revision, true, deadline)
                 .await?;
             let dirty = native.dirty(&text);
             let mut opened = manager
@@ -474,11 +450,6 @@ impl Documents {
             } => native_revision,
             _ => &binding.snapshot.revision,
         };
-        let buffer = match &method {
-            Method::ChangeLspDocument { text, .. } => Some((text.as_str(), false)),
-            Method::ReloadLspDocument { text, .. } => Some((text.as_str(), true)),
-            _ => None,
-        };
         let (_permit, native) = self
             .admit_document(
                 &path,
@@ -487,7 +458,6 @@ impl Documents {
                     method,
                     Method::ReloadLspDocument { .. } | Method::SaveLspDocument { .. }
                 ),
-                buffer,
                 deadline,
             )
             .await?;
@@ -640,7 +610,6 @@ impl Documents {
                     if document.uri != uri {
                         return Err("lsp_document_denied");
                     }
-                    self.sync(&native, &document.text)?;
                     self.bindings.insert(
                         key.clone(),
                         Binding {

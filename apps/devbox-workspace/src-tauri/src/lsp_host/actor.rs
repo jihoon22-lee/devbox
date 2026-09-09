@@ -672,6 +672,18 @@ mod tests {
         // A newer editor acknowledgement can reach LSP while an earlier disk
         // save is still in progress. Publishing the save must retain that buffer.
         actor.request("change_lsp_document",json!({"languageId":"rust","uri":uri,"text":"let value = 99;\n","dirty":true,"nativeRevision":revision}),u64::MAX,None).await.unwrap();
+        // The native editor mirror, including non-LSP documents, owns buffer
+        // acknowledgement independently of queued language-server notifications.
+        files
+            .lock()
+            .unwrap()
+            .sync_editor(
+                &fixture.context,
+                &opened.path,
+                &revision,
+                "let value = 99;\n",
+            )
+            .unwrap();
         // The native Files owner commits and rotates its revision before didSave.
         let saved = {
             let mut files = files.lock().unwrap();
@@ -747,6 +759,25 @@ mod tests {
             Err("lsp_dirty_editor_document")
         );
         actor.request("change_lsp_document",json!({"languageId":"rust","uri":uri,"text":"let value = 2;\n","dirty":false,"nativeRevision":saved}),u64::MAX,None).await.unwrap();
+        assert_eq!(
+            files
+                .lock()
+                .unwrap()
+                .guard_editor_write(&fixture.context, &opened.path),
+            Err("lsp_dirty_editor_document")
+        );
+        files
+            .lock()
+            .unwrap()
+            .sync_editor(&fixture.context, &opened.path, &saved, "let value = 2;\n")
+            .unwrap();
+        assert_eq!(
+            files
+                .lock()
+                .unwrap()
+                .guard_editor_write(&fixture.context, &opened.path),
+            Ok(())
+        );
         assert_eq!(actor.request("change_lsp_document",json!({"languageId":"rust","uri":uri,"text":"old","dirty":true,"nativeRevision":revision}),u64::MAX,None).await.unwrap_err(),"file_snapshot_changed");
         actor
             .request(
