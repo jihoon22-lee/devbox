@@ -728,8 +728,17 @@ impl RuntimeResolver {
             tokio::pin!(stderr_future);
             let mut stdout_bytes = None;
             let mut stderr_bytes = None;
-            while stdout_bytes.is_none() || stderr_bytes.is_none() {
+            let mut status = None;
+            while stdout_bytes.is_none() || stderr_bytes.is_none() || status.is_none() {
                 tokio::select! {
+                    result = child.wait(), if status.is_none() => {
+                        status = Some(result.map_err(|_| RuntimeError::RuntimeProbeFailed)?);
+                        // A descendant can inherit a pipe handle even when its
+                        // own standard output is redirected. Reap the root
+                        // concurrently, then retire its Job to release EOF.
+                        #[cfg(windows)]
+                        job.terminate().map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+                    }
                     result = &mut stdout_future, if stdout_bytes.is_none() => {
                         stdout_bytes = Some(result?);
                     }
@@ -739,10 +748,7 @@ impl RuntimeResolver {
                 }
             }
             let stdout = stdout_bytes.ok_or(RuntimeError::RuntimeProbeFailed)?;
-            let status = child
-                .wait()
-                .await
-                .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+            let status = status.ok_or(RuntimeError::RuntimeProbeFailed)?;
             if !status.success() {
                 return Err(RuntimeError::RuntimeProbeFailed);
             }

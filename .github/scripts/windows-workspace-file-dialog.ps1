@@ -15,6 +15,7 @@ Add-Type -AssemblyName UIAutomationClient
 Add-Type -AssemblyName UIAutomationTypes
 Add-Type @'
 using System;
+using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
@@ -25,6 +26,11 @@ public static class WorkspaceFixturePath {
     static extern uint GetFinalPathNameByHandleW(SafeFileHandle handle, StringBuilder path, uint capacity, uint flags);
     [DllImport("user32.dll", SetLastError=true)]
     static extern uint GetWindowThreadProcessId(IntPtr window, out uint processId);
+    delegate bool EnumWindowCallback(IntPtr window, IntPtr parameter);
+    [DllImport("user32.dll")]
+    static extern bool EnumWindows(EnumWindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")]
+    static extern bool IsWindowVisible(IntPtr window);
     [DllImport("user32.dll")]
     static extern bool IsChild(IntPtr parent, IntPtr child);
     [DllImport("user32.dll", CharSet=CharSet.Unicode)]
@@ -33,6 +39,20 @@ public static class WorkspaceFixturePath {
     static extern int GetDlgCtrlID(IntPtr window);
     [DllImport("user32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern IntPtr SendMessageTimeoutW(IntPtr window, uint message, UIntPtr wparam, IntPtr lparam, uint flags, uint timeout, out UIntPtr result);
+    public static IntPtr[] FindDialogs(int processId) {
+        var dialogs = new List<IntPtr>();
+        EnumWindows((window, parameter) => {
+            uint owner;
+            GetWindowThreadProcessId(window, out owner);
+            if(owner == (uint)processId && IsWindowVisible(window)) {
+                var name = new StringBuilder(128);
+                GetClassNameW(window, name, name.Capacity);
+                if(name.ToString() == "#32770") dialogs.Add(window);
+            }
+            return true;
+        }, IntPtr.Zero);
+        return dialogs.ToArray();
+    }
     static void VerifyControl(int dialogHandle, int controlHandle, int processId, string expectedClass) {
         var dialog = new IntPtr(dialogHandle);
         var control = new IntPtr(controlHandle);
@@ -105,19 +125,21 @@ if ($Action -eq 'Open') {
         $selectedPaths += $selectedPath
     }
 }
-$processCondition = [System.Windows.Automation.PropertyCondition]::new(
-    [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $TargetProcessId)
-$classCondition = [System.Windows.Automation.PropertyCondition]::new(
-    [System.Windows.Automation.AutomationElement]::ClassNameProperty, '#32770')
-$dialogCondition = [System.Windows.Automation.AndCondition]::new($processCondition, $classCondition)
 $deadline = [DateTime]::UtcNow.AddSeconds(15)
 $dialog = $null
 while ([DateTime]::UtcNow -lt $deadline) {
     Assert-OwnedProcess
-    $windows = [System.Windows.Automation.AutomationElement]::RootElement.FindAll(
-        [System.Windows.Automation.TreeScope]::Children, $dialogCondition)
+    # Owned modal windows may be nested beneath their parent in the UIA tree.
+    # Enumerate native top-level HWNDs before using UIA for their controls.
+    $windows = @([WorkspaceFixturePath]::FindDialogs($TargetProcessId))
     if ($windows.Count -gt 1) { throw 'More than one owned dialog is open.' }
-    if ($windows.Count -eq 1) { $dialog = $windows[0]; break }
+    if ($windows.Count -eq 1) {
+        $dialog = [System.Windows.Automation.AutomationElement]::FromHandle($windows[0])
+        if ($dialog.Current.ProcessId -ne $TargetProcessId -or $dialog.Current.ClassName -ne '#32770') {
+            throw 'The owned chooser changed.'
+        }
+        break
+    }
     Start-Sleep -Milliseconds 100
 }
 if ($null -eq $dialog) { throw 'The owned file chooser did not appear.' }
