@@ -47,6 +47,20 @@ pub struct ProjectOwner {
     pending: Mutex<HashMap<String, Pending>>,
 }
 impl ProjectOwner {
+    #[cfg(test)]
+    pub(crate) fn preview_fixture(&self, root: &Path) -> Result<RegistrationPreview> {
+        #[cfg(windows)]
+        {
+            self.preview_windows(root.to_str().ok_or("invalid_root")?)
+        }
+        #[cfg(not(windows))]
+        {
+            self.prepare(
+                self.snapshot()?.revision,
+                crate::platform::project_probe::probe_fixture(root)?,
+            )
+        }
+    }
     pub fn open(generation: &Path) -> Result<Self> {
         Ok(Self {
             store: RegistryStore::open(generation)?,

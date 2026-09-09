@@ -24,6 +24,10 @@ selected source objects are checked before bounded private snapshots reach the
 existing digest/dependency-lock verifier. Product shutdown cancels downloads and
 waits for active LSP workers to retire. Context-specific LSP approval and editing
 remain pending.
+LSP settings now load and save separately for each registered context without
+accessing its project files or resolving a server. Native revisions prevent stale
+writes; explicit corrupt-file recovery preserves the original bytes, and future
+schemas remain untouched. Offline project settings remain available.
 The shared LSP engine retains native document authority across cloned sessions,
 rename previews, disk apply and rollback. It checks incoming paths before resolution
 and their canonical targets afterward. Revoked access preserves pending recovery

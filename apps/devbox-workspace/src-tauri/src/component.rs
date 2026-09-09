@@ -162,6 +162,7 @@ async fn execute_lsp(
     window: &WebviewWindow,
     runtime: &Runtime,
     request: Request,
+    context_permit: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
     use tauri_plugin_dialog::DialogExt;
     let queued = runtime.lsp_requests.reserve_with_limit(8)?;
@@ -215,7 +216,7 @@ async fn execute_lsp(
     let app = window.app_handle().clone();
     let host = runtime.host()?;
     tauri::async_runtime::spawn_blocking(move || {
-        let (_queued, _worker) = (queued, worker);
+        let (_queued, _worker, _context) = (queued, worker, context_permit);
         crate::files_host::current_deadline(deadline)?;
         if runtime.lsp_shutdown.is_cancelled() {
             return Err("lsp_operation_cancelled");
@@ -241,8 +242,12 @@ async fn execute_lsp(
             tauri::async_runtime::block_on(owner.execute(
                 &app,
                 &host,
-                &request.method,
-                request.args,
+                crate::lsp_host::Invocation {
+                    method: &request.method,
+                    args: request.args,
+                    context: request.header.context.as_ref(),
+                    deadline,
+                },
                 &runtime.lsp_shutdown,
             ))
         }
@@ -448,6 +453,7 @@ async fn execute_source(
         request.method.as_str(),
         "cancel_trust"
             | "revoke_trust"
+            | "save_lsp_config"
             | "cancel_worktree"
             | "cancel_cleanup_scope"
             | "revoke_cleanup_scope"
@@ -740,7 +746,13 @@ async fn execute(
     );
     // Acquire before checking the session, and retain through queued/native
     // work. Worker clones keep the boundary after caller timeout/cancellation.
-    let context_permit = if files || definitions || dependencies || source || context_change {
+    let context_permit = if files
+        || definitions
+        || dependencies
+        || source
+        || context_change
+        || (lsp && crate::lsp_host::contextual(&request.method))
+    {
         Some(
             runtime
                 .context_activity
@@ -755,7 +767,7 @@ async fn execute(
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
     let mut result = if lsp {
-        execute_lsp(&window, &runtime, request).await
+        execute_lsp(&window, &runtime, request, context_permit.clone()).await
     } else if files {
         execute_files(
             &window,

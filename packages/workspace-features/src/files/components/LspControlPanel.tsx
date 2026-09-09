@@ -342,9 +342,13 @@ export default function LspControlPanel({
       enabled: config.enabled && Boolean(config.workspace_root) && lspAvailable,
       workspace_root: workspaceRoot ?? config.workspace_root,
     };
-    await saveLspConfig(next, loaded?.persist_allowed === false);
+    if (loaded?.nativeRevision) {
+      await saveLspConfig(next, loaded.persist_allowed === false, loaded.nativeRevision);
+    } else {
+      await saveLspConfig(next, loaded?.persist_allowed === false);
+    }
     setConfig(next);
-    setLoaded({ config: next, persist_allowed: true, error: null });
+    setLoaded(loaded?.nativeRevision ? await loadLspConfig() : { config: next, persist_allowed: true, error: null });
     setStatuses([]);
     setHasUnsavedChanges(false);
     onConfigChanged?.(next);
@@ -407,7 +411,9 @@ export default function LspControlPanel({
           {error && <p className="lsp-error" role="alert">{error}</p>}
           {loaded?.error && (
             <p className="lsp-warning" role="alert">
-              저장된 설정이 손상되었습니다. 저장하면 기존 파일을 명시적으로 복구합니다.
+              {loaded.recoveryAllowed === false
+                ? "이 설정은 현재 버전에서 저장하거나 복구할 수 없습니다."
+                : "저장된 설정이 손상되었습니다. 저장하면 기존 파일을 명시적으로 복구합니다."}
             </p>
           )}
         {!workspaceRoot && (
@@ -621,7 +627,7 @@ export default function LspControlPanel({
         <footer className="lsp-panel-footer">
           <span>{formDirty ? "먼저 이 언어 설정을 적용하세요." : hasUnsavedChanges ? "변경 사항을 저장해야 서버를 시작할 수 있습니다." : "설정을 저장하면 실행 중인 서버는 안전하게 종료됩니다."}</span>
           <button type="button" className="toolbar-button" onClick={onClose}>닫기</button>
-          <button type="button" className="toolbar-button selected" disabled={busy || !loaded || formDirty} onClick={handleSave}>
+          <button type="button" className="toolbar-button selected" disabled={busy || !loaded || formDirty || (!loaded.persist_allowed && loaded.recoveryAllowed === false)} onClick={handleSave}>
             설정 저장
           </button>
         </footer>

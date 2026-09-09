@@ -436,6 +436,8 @@ export interface LspConfig {
 }
 
 export interface LoadedLspConfig {
+  nativeRevision?: string | null;
+  recoveryAllowed?: boolean;
   config: LspConfig;
   persist_allowed: boolean;
   error: string | null;

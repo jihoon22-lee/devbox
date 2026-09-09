@@ -150,6 +150,41 @@ under 8 GiB. An initial test-only missing import was fixed before this passing r
 Final affected all passed in **392.420 seconds**, cgroup peak **6,200,475,648 bytes**
 under the shared 8 GiB limit.
 
+Context-specific LSP configuration now uses private per-worktree metadata and
+native revision checks through atomic replacement. Load/save remain usable when
+the project is offline and perform no executable or project-definition IO. Explicit
+corrupt recovery preserves raw bytes before writing complete UTF-8 JSON; recursive
+future-schema detection prevents destructive downgrade. The shared dialog reloads
+the native revision after saving. Initial focused verification passed **92 Workspace
+Rust tests, strict Clippy, 26 LSP UI tests and product build** in **26.278 seconds**
+with a **2,114,584,576-byte** cgroup peak. Final focused settings verification passed
+**92 Rust tests, strict Clippy, 28 LSP UI tests and product build** in **36.068 seconds**,
+with a **3,868,147,712-byte** cgroup peak. It includes native revision round trips
+and disabling recovery for future schemas. The preceding run passed **130 LSP unit
+and 6 process tests plus both Rust Clippy checks** but failed a test-only JSX path
+literal, corrected before the passing UI run. Final affected all passed in
+**385.208 seconds**, cgroup peak **6,443,745,280 bytes** under the shared 8 GiB limit.
+
+[General CI at `2eb2bf0`](https://github.com/jihoon22-lee/devbox/actions/runs/34297918376)
+failed both new Windows descendant checks. A disposable local Windows harness using
+the actual Job module reproduced inherited-pipe EOF timeout and zero accounting
+before the descendant process handle was signaled. Version probes now wait for the
+root concurrently and retire its Job before draining EOF. Completion uses a private
+port associated before child admission and the
+[Windows tree-completion notification](https://devblogs.microsoft.com/oldnewthing/20130405-00/?p=4743).
+Ten disposable Windows runs using the actual revised Job module confirmed EOF and
+an already-signaled descendant handle in **21.759–36.5554 ms** after fixture release.
+This validates the Job/pipeline reproduction; full Windows process tests remain pending. The first local cross-build attempt was
+blocked by a missing `clang-cl` tool, not reported as a test pass.
+
+[Windows acceptance at `2eb2bf0`](https://github.com/jihoon22-lee/devbox/actions/runs/34297918386)
+passed history and reached the sibling-document picker, then failed to find its
+owned dialog. A parented disposable Windows Forms chooser reproduced the failure.
+The driver now discovers visible native HWNDs for the exact fixture process before
+using UI Automation for controls; existing process/path/control checks remain.
+The parented fixture's Cancel and Open both passed with the revised driver.
+The packaged cleanup and installer steps still require a successful retry.
+
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,
 no protected product stores and no editor grant. Import validates all tokens before

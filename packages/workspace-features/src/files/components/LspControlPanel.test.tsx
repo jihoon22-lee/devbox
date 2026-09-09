@@ -187,6 +187,24 @@ afterEach(() => {
 });
 
 describe("LspControlPanel", () => {
+  it("reloads the native revision after saving before the next configuration write", async () => {
+    loadMock.mockResolvedValueOnce(loadedConfig({ nativeRevision: "revision-one" }))
+      .mockResolvedValue(loadedConfig({ nativeRevision: "revision-two" }));
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    const save = await rendered.findByRole("button", { name: "설정 저장" });
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(saveMock).toHaveBeenNthCalledWith(
+      1, expect.objectContaining({ workspace_root: "C:\\work" }), false, "revision-one",
+    ));
+    await waitFor(() => expect(loadMock).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect((save as HTMLButtonElement).disabled).toBe(false));
+    fireEvent.click(save);
+    await waitFor(() => expect(saveMock).toHaveBeenNthCalledWith(
+      2, expect.objectContaining({ workspace_root: "C:\\work" }), false, "revision-two",
+    ));
+  });
+
   it("keeps WSL editing available while explicitly disabling host LSP", async () => {
     const rendered = render(
       <LspControlPanel
@@ -258,6 +276,18 @@ describe("LspControlPanel", () => {
       expect.objectContaining({ workspace_root: "/work/project" }),
       true,
     ));
+  });
+
+  it("preserves a native future schema without offering a recovery write", async () => {
+    loadMock.mockResolvedValue(loadedConfig({
+      persist_allowed: false, recoveryAllowed: false, error: "future schema", nativeRevision: "future",
+    }));
+    const rendered = render(<LspControlPanel workspaceRoot={"C:\\work"} onClose={() => undefined} />);
+    expect(await rendered.findByText(/현재 버전에서 저장하거나 복구할 수 없습니다/u)).toBeTruthy();
+    const save = rendered.getByRole("button", { name: "설정 저장" });
+    expect((save as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(save);
+    expect(saveMock).not.toHaveBeenCalled();
   });
 
   it("stores local server arguments as argv lines without shell parsing", async () => {

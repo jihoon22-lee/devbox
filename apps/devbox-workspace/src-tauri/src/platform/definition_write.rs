@@ -52,6 +52,23 @@ impl DefinitionTarget {
         bytes: &[u8],
         validate: impl FnOnce() -> Result<()>,
     ) -> Result<Option<String>> {
+        self.write_inner(bytes, validate, false)
+    }
+    /// Native JSON stores use UTF-8 even when explicitly recovering a corrupt
+    /// file originally encoded differently. The caller preserves original bytes.
+    pub(crate) fn write_utf8(
+        self,
+        bytes: &[u8],
+        validate: impl FnOnce() -> Result<()>,
+    ) -> Result<Option<String>> {
+        self.write_inner(bytes, validate, true)
+    }
+    fn write_inner(
+        self,
+        bytes: &[u8],
+        validate: impl FnOnce() -> Result<()>,
+        force_utf8: bool,
+    ) -> Result<Option<String>> {
         if bytes.len() as u64 > LIMIT {
             return Err("project_definition_limit");
         }
@@ -64,15 +81,25 @@ impl DefinitionTarget {
             let saved = file::save_path_limited(
                 &self.path,
                 std::str::from_utf8(bytes).map_err(|_| "invalid_manifest")?,
-                opened.encoding,
-                opened.line_ending,
+                if force_utf8 {
+                    code_pad_lib::core::encoding::Encoding::utf8()
+                } else {
+                    opened.encoding
+                },
+                if force_utf8 {
+                    code_pad_lib::core::line_ending::LineEnding::Lf
+                } else {
+                    opened.line_ending
+                },
                 ExpectedFileSnapshot {
                     mtime: opened.mtime,
                     size: opened.size,
                     content_hash: &opened.content_hash,
                     identity: Some(opened.native_identity()),
                 },
-                opened.lossy,
+                // UTF-8 metadata replaces the entire value with validated JSON;
+                // it never derives edits from the lossy decoded old contents.
+                opened.lossy && !force_utf8,
                 Some(LIMIT),
             )
             .map_err(|_| "project_definition_changed")?;

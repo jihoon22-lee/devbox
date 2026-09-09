@@ -1,6 +1,7 @@
 //! Independent native LSP metadata/installer owner. Installing a reviewed
 //! artifact never grants language-server execution or editor file access.
 mod archives;
+mod settings;
 use crate::{
     host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
 };
@@ -14,6 +15,12 @@ use std::{
 };
 use tauri::Manager;
 type Result<T> = std::result::Result<T, &'static str>;
+pub(crate) struct Invocation<'a> {
+    pub method: &'a str,
+    pub args: Value,
+    pub context: Option<&'a product_contract::ProjectContext>,
+    pub deadline: u64,
+}
 
 pub(crate) fn allowed(method: &str) -> bool {
     matches!(
@@ -27,12 +34,16 @@ pub(crate) fn allowed(method: &str) -> bool {
             | "pick_lsp_archives"
             | "discard_lsp_archives"
             | "load_lsp_config"
+            | "save_lsp_config"
             | "language_server_statuses"
             | "language_server_logs"
             | "stop_language_server"
             | "stop_all_language_servers"
             | "close_lsp_document"
     )
+}
+pub(crate) fn contextual(method: &str) -> bool {
+    matches!(method, "load_lsp_config" | "save_lsp_config")
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -114,15 +125,36 @@ impl LspHost {
         &self,
         app: &tauri::AppHandle,
         host: &Host,
-        method: &str,
-        args: Value,
+        invocation: Invocation<'_>,
         shutdown: &RequestCancellation,
     ) -> Result<Value> {
+        let Invocation {
+            method,
+            args,
+            context,
+            deadline,
+        } = invocation;
         self.storage.revalidate(host)?;
         if shutdown.is_cancelled() {
             return Err("lsp_operation_cancelled");
         }
         let result = match method {
+            "load_lsp_config" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                if let Some(context) = context {
+                    settings::Settings::open(host, context)?.view()
+                } else {
+                    Ok(
+                        json!({"config":code_pad_lib::lsp::LspConfig::default(),"persist_allowed":false,"recoveryAllowed":false,"error":null,"nativeRevision":null}),
+                    )
+                }
+            }
+            "save_lsp_config" => {
+                settings::Settings::open(host, context.ok_or("project_selection_required")?)?
+                    .save(host, args, deadline)
+            }
             "discard_lsp_archives" => {
                 let choices: Choices = input(args)?;
                 self.selections
@@ -206,13 +238,13 @@ mod tests {
             "lsp_import_archive",
             "lsp_recover_installed",
             "stop_language_server",
+            "save_lsp_config",
         ] {
             assert!(allowed(method));
         }
         for method in [
             "start_language_server",
             "restart_language_server",
-            "save_lsp_config",
             "apply_lsp_rename",
         ] {
             assert!(!allowed(method));

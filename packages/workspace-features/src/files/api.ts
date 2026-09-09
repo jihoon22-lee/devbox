@@ -170,8 +170,8 @@ export function loadLspConfig(): Promise<LoadedLspConfig> {
   return invoke<LoadedLspConfig>("load_lsp_config");
 }
 
-export function saveLspConfig(config: LspConfig, recoverInvalid = false): Promise<void> {
-  return invoke<void>("save_lsp_config", { config, recoverInvalid });
+export function saveLspConfig(config: LspConfig, recoverInvalid = false, nativeRevision?: string | null): Promise<void> {
+  return invoke<void>("save_lsp_config", { config, recoverInvalid, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
 export function startLanguageServer(languageId: string): Promise<void> {
