@@ -195,7 +195,7 @@ async fn execute(
         Method::Document(method) => {
             let mut documents = documents.lock().await;
             crate::files_host::current_deadline(deadline)?;
-            documents.execute(manager, method).await
+            documents.execute(manager, method, deadline).await
         }
         Method::StartLanguageServer {
             language_id,
@@ -704,15 +704,41 @@ mod tests {
             "file_snapshot_changed"
         );
         assert_eq!(actor.request("save_lsp_document",json!({"languageId":"rust","uri":uri,"nativeRevision":saved,"text":"forged saved text"}),u64::MAX,None).await.unwrap_err(),"file_snapshot_changed");
-        actor
-            .request(
-                "save_lsp_document",
-                json!({"languageId":"rust","uri":uri,"nativeRevision":saved,"text":"let value = 2;\n"}),
-                u64::MAX,
-                None,
-            )
-            .await
-            .unwrap();
+        // An editor mirror/session write may hold Files metadata after disk save.
+        // Expired admission must not publish didSave; a live one waits for release.
+        let (locked_tx, locked_rx) = std::sync::mpsc::channel();
+        let (release_tx, release_rx) = std::sync::mpsc::channel();
+        let held_files = files.clone();
+        let holder = std::thread::spawn(move || {
+            let _guard = held_files.lock().unwrap();
+            locked_tx.send(()).unwrap();
+            let _ = release_rx.recv_timeout(Duration::from_secs(5));
+        });
+        locked_rx.recv_timeout(Duration::from_secs(5)).unwrap();
+        let save_args =
+            json!({"languageId":"rust","uri":uri,"nativeRevision":saved,"text":"let value = 2;\n"});
+        let deadline = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 75;
+        assert_eq!(
+            actor
+                .request("save_lsp_document", save_args.clone(), deadline, None)
+                .await
+                .unwrap_err(),
+            "request_expired"
+        );
+        let pending_save = actor.request("save_lsp_document", save_args, u64::MAX, None);
+        tokio::pin!(pending_save);
+        assert!(
+            tokio::time::timeout(Duration::from_millis(75), &mut pending_save)
+                .await
+                .is_err()
+        );
+        release_tx.send(()).unwrap();
+        holder.join().unwrap();
+        pending_save.await.unwrap();
         assert_eq!(
             files
                 .lock()

@@ -302,3 +302,11 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 오류 메시지 lazy load를 포함한 최종 집중 검사: artifact 거부 회귀, dependency/notices 및 카탈로그 계약, UI 11개·접근성·build·bundle PASS(**22.837초 / peak 1,572,782,080 bytes / 8 GiB**). Windows 통합 fixture는 실행하지 않았다.
 
 - WSL 등록 최종 `pnpm verify:affected` all PASS(**663.243초 / peak 6,444,986,368 bytes / 8 GiB**). 초기 bundle **278,634/280,000 bytes**. 앞선 `f3c9642`의 일반 [CI](https://github.com/jihoon22-lee/devbox/actions/runs/34353884389)는 통과했지만 [Windows 제품 검사](https://github.com/jihoon22-lee/devbox/actions/runs/34353884387)는 저장 후 두 번째 LSP hover에서 여전히 실패했다. 새 WSL 코드는 해당 실행에 포함되지 않았으며 LSP 경합은 별도로 수정·검증한다.
+
+## Windows LSP 저장 알림의 파일 상태 경합
+
+- Files metadata mirror/session 작업이 잠금을 가진 동안 native `didSave`가 `files_unavailable`로 즉시 실패하는 회귀를 재현했다(**52.747초 FAIL**). 파일 read permit·metadata lock을 알림 전 단계에서 원래 요청 만료 시각까지 기다리고, 그 사이 context retirement를 확인한다. snapshot 검증과 buffer 동기화는 같은 lock 안에서 처리한다. LSP 전송·파일 변경을 재실행하지 않는다.
+- 같은 actor 회귀가 만료 요청 거부, 유효 요청의 잠금 대기·해제 후 성공, 저장 뒤 새 dirty buffer 보존과 rename 경계를 확인했다. 집중 actor test·all-target strict Clippy·Windows fixture 구문 검사 PASS(**45.690초 / peak 3,933,020,160 bytes / 8 GiB**). 중간 첫 compile은 formatting 후처리의 기존 sync 호출 누락으로 실패해 복원했다.
+- Windows fixture는 전용 renderer의 문서 알림·파일 mirror에 대해 method/outcome/issue code/소요 시간만 최대 128개 남긴다. 파일 내용·경로·인자·임의 error message는 기록하지 않는다. 두 번째 hover 전에 실제 UI didSave 성공을 확인한다. Windows에서 이전 실패의 원인이 이 경합과 일치하는지는 다음 실행으로 확인한다.
+
+- 저장 경합 수정과 trace를 포함한 최종 `pnpm verify:affected` all PASS(**433.335초 / peak 6,443,667,456 bytes / 8 GiB**). 실제 Windows와 WSL1 검증은 새 head의 CI에서 확인한다.

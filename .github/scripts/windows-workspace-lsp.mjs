@@ -165,6 +165,23 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
 
 async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRenderer}) {
   const lsp=(method,args={})=>call("workspace.lsp",method,args);
+  // Record only bounded method/outcome metadata from this disposable renderer.
+  // Capture UI notifications too; fixture-only calls cannot diagnose a lost save.
+  await cdp.evaluate(`(()=>{
+    const internals=window.__TAURI_INTERNALS__, original=internals.invoke;
+    const rows=[];window.__workspaceLspTrace={rows,restore:()=>{internals.invoke=original;}};
+    internals.invoke=async function(command,args,...rest){
+      const request=args?.request, method=request?.method;
+      const tracked=request?.component==="workspace.lsp"&&/^(open|change|reload|save|close)_lsp_document$/.test(method)
+        ||request?.component==="workspace.files"&&["save_file","sync_editor_document"].includes(method);
+      if(!tracked)return original.call(this,command,args,...rest);
+      const row={method,phase:"pending",elapsedMs:0};rows.push(row);if(rows.length>128)rows.shift();const started=performance.now();
+      try {const result=await original.call(this,command,args,...rest);row.phase=result?.operation?.outcome?.state??"unknown";
+        const issue=result?.value?.issue;if(typeof issue==="string"&&/^[a-z_]{1,80}$/.test(issue))row.issue=issue;return result;
+      } catch(error){row.phase="rejected";throw error;}finally{row.elapsedMs=Math.round(performance.now()-started);}
+    };
+  })()`);
+  try {
   const owned=path.join(root,"lsp-owned-fixture");mkdirSync(owned);
   const script=path.join(owned,"server.mjs"), marker=path.join(owned,"child.pid"), file=path.join(owned,"lsp-owner-main.rs");
   writeFileSync(script,readFileSync(".github/fixtures/workspace-lsp-server.mjs"),{flag:"wx"});
@@ -215,6 +232,7 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
   await click("저장",'document.querySelector(".workspace-feature-files")');
   await waitForRenderer(cdp,`!(${dirty})`,"LSP editor save did not settle");
   assert.ok(readFileSync(file,"utf8").includes("// editor"));
+  await waitForRenderer(cdp,'window.__workspaceLspTrace.rows.some(row=>row.method==="save_lsp_document"&&row.phase==="succeeded")',"Native editor didSave did not complete");
   assert.equal((await hover()).stale,false);
   await click("언어 서버",'document.querySelector(".workspace-feature-files")');
   await click("실행 승인 해제",'document.querySelector(".lsp-panel")');
@@ -226,6 +244,10 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
   await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files .document-tab")).find(tab=>tab.textContent.includes("lsp-owner-main.rs"))?.querySelector(".tab-action").click()');
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs"))',"LSP editor fixture did not close");
   return {explicitNativeExecutionReview:true,approvalDoesNotAutoStart:true,actualNodeLspInitialize:true,codeMirrorDidOpenChangeSaveHover:true,revocationConfirmsNativeShutdown:true};
+  } finally {
+    const trace=await cdp.evaluate('(()=>{const trace=window.__workspaceLspTrace;trace.restore();delete window.__workspaceLspTrace;return trace.rows;})()');
+    writeFileSync("product-foundation-evidence/workspace-lsp-editor-sync.json",JSON.stringify(trace,null,2));
+  }
 }
 
 async function exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,success,waitForRenderer}) {

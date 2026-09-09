@@ -255,6 +255,54 @@ impl Documents {
             )
             .map(|_| ())
     }
+    fn prepare_document(
+        &self,
+        path: &str,
+        revision: &str,
+        verify_disk: bool,
+        buffer: Option<(&str, bool)>,
+    ) -> Result<(crate::core::context_activity::ContextPermit, EditorSnapshot)> {
+        let permit = self.snapshot.document_permit(false)?;
+        let mut files = self.files.try_lock().map_err(|error| match error {
+            std::sync::TryLockError::WouldBlock => "lsp_busy",
+            std::sync::TryLockError::Poisoned(_) => "files_unavailable",
+        })?;
+        let native = self
+            .snapshot
+            .document_snapshot(&files, path, revision, verify_disk)?;
+        if let Some((text, require_clean)) = buffer {
+            if require_clean && native.dirty(text) {
+                return Err("file_snapshot_changed");
+            }
+            files.sync_editor(self.snapshot.context(), path, revision, text)?;
+        }
+        Ok((permit, native))
+    }
+    async fn admit_document(
+        &self,
+        path: &str,
+        revision: &str,
+        verify_disk: bool,
+        buffer: Option<(&str, bool)>,
+        deadline: u64,
+    ) -> Result<(crate::core::context_activity::ContextPermit, EditorSnapshot)> {
+        loop {
+            crate::files_host::current_deadline(deadline)?;
+            if !self
+                .snapshot
+                .active
+                .load(std::sync::atomic::Ordering::Acquire)
+            {
+                return Err("lsp_operation_cancelled");
+            }
+            // Retry only admission before any LSP notification or mutation.
+            // Both the permit and metadata lock are released before sleeping.
+            match self.prepare_document(path, revision, verify_disk, buffer) {
+                Err("lsp_busy") => tokio::time::sleep(std::time::Duration::from_millis(10)).await,
+                result => return result,
+            }
+        }
+    }
     async fn apply_rename(&mut self, manager: &LspManager, plan_id: &str) -> Result<Value> {
         let _permit = self.snapshot.document_permit(true)?;
         let result = manager.apply_rename(plan_id).await.map_err(control_error)?;
@@ -350,7 +398,12 @@ impl Documents {
         wire["documents"] = json!(documents);
         Ok(wire)
     }
-    pub(super) async fn execute(&mut self, manager: &LspManager, method: Method) -> Result<Value> {
+    pub(super) async fn execute(
+        &mut self,
+        manager: &LspManager,
+        method: Method,
+        deadline: u64,
+    ) -> Result<Value> {
         if let Method::ApplyLspRename { plan_id } = method {
             return self.apply_rename(manager, &plan_id).await;
         }
@@ -365,7 +418,6 @@ impl Documents {
                     .map_err(control_error)?,
             );
         }
-        let _permit = self.snapshot.document_permit(false)?;
         if let Method::OpenLspDocument {
             language_id,
             path,
@@ -373,8 +425,15 @@ impl Documents {
             native_revision,
         } = method
         {
-            let native = self.native(&path, &native_revision, true)?;
-            self.sync(&native, &text)?;
+            let (_permit, native) = self
+                .admit_document(
+                    &path,
+                    &native_revision,
+                    true,
+                    Some((&text, false)),
+                    deadline,
+                )
+                .await?;
             let dirty = native.dirty(&text);
             let mut opened = manager
                 .open_document(&language_id, &native.path, text.clone())
@@ -415,14 +474,23 @@ impl Documents {
             } => native_revision,
             _ => &binding.snapshot.revision,
         };
-        let native = self.native(
-            &path,
-            revision,
-            matches!(
-                method,
-                Method::ReloadLspDocument { .. } | Method::SaveLspDocument { .. }
-            ),
-        )?;
+        let buffer = match &method {
+            Method::ChangeLspDocument { text, .. } => Some((text.as_str(), false)),
+            Method::ReloadLspDocument { text, .. } => Some((text.as_str(), true)),
+            _ => None,
+        };
+        let (_permit, native) = self
+            .admit_document(
+                &path,
+                revision,
+                matches!(
+                    method,
+                    Method::ReloadLspDocument { .. } | Method::SaveLspDocument { .. }
+                ),
+                buffer,
+                deadline,
+            )
+            .await?;
         match method {
             Method::RequestLspRename {
                 language_id,
@@ -443,7 +511,6 @@ impl Documents {
                 ..
             } => {
                 let _ = dirty; // Only the native disk baseline decides dirty state.
-                self.sync(&native, &text)?;
                 let changed = manager
                     .change_document(&language_id, &uri, text.clone(), native.dirty(&text))
                     .await
@@ -466,7 +533,6 @@ impl Documents {
                 if native.dirty(&text) {
                     return Err("file_snapshot_changed");
                 }
-                self.sync(&native, &text)?;
                 let changed = manager
                     .reload_document(&language_id, &uri, text.clone())
                     .await
