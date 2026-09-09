@@ -1,5 +1,5 @@
 import {afterEach, beforeEach, expect, it, vi} from "vitest";
-import {cleanup, fireEvent, render, screen, waitFor} from "@testing-library/react";
+import {cleanup, fireEvent, render, screen, waitFor, within} from "@testing-library/react";
 import {assertNoA11yViolations} from "@devbox/a11y/testing";
 import RegistryGate from "./RegistryGate";
 import {nativeCall} from "./native";
@@ -134,7 +134,7 @@ it("reviews a concrete template profile and registers only after explicit approv
   });
   const {container}=render(<RegistryGate/>);
   fireEvent.change(await screen.findByRole("combobox",{name:"프로젝트 템플릿"}),{target:{value:imported.id}});
-  expect(screen.getByText("4321")).toBeTruthy();
+  expect(within(screen.getByRole("combobox",{name:"프로젝트 템플릿"}).closest("form")!).getByText("4321")).toBeTruthy();
   expect(call.mock.calls.some(([,method])=>/preview_|apply_|select_project|trust/.test(method))).toBe(false);
   fireEvent.change(screen.getByLabelText("Windows 프로젝트 폴더"),{target:{value:preview.binding.root}});
   fireEvent.click(screen.getByRole("button",{name:"폴더 확인"}));

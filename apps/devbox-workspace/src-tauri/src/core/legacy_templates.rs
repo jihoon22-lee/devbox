@@ -1,6 +1,8 @@
-//! Immutable copies of validated Workbench templates. Creating a concrete
+//! Destination copies of validated Workbench templates. Creating a concrete
 //! project requires a separate native registration preview.
-use super::legacy_profiles::{snapshot_id, Applied, Choice, Decision, Disposition, Mapping};
+use super::legacy_profiles::{
+    is_false, snapshot_id, valid_origin, Applied, Choice, Decision, Disposition, Mapping,
+};
 use super::{legacy_inventory::digest, registry::Registry};
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
@@ -12,13 +14,18 @@ type Result<T> = std::result::Result<T, &'static str>;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportedTemplate {
     pub id: String,
-    pub source_snapshot_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_snapshot_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub local: bool,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub archived: bool,
     pub template: ProfileTemplate,
 }
 impl ImportedTemplate {
     pub fn validate(&self) -> Result<()> {
         if uuid::Uuid::parse_str(&self.id).is_err()
-            || !snapshot_id(&self.source_snapshot_id)
+            || !valid_origin(self.source_snapshot_id.as_deref(), self.local)
             || self.template.validate().is_err()
         {
             return Err("invalid_imported_template");
@@ -32,6 +39,7 @@ pub struct Row {
     pub template: ProfileTemplate,
     pub disposition: Disposition,
     pub existing_ids: Vec<String>,
+    pub already_imported: bool,
 }
 #[derive(Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -65,10 +73,16 @@ impl Plan {
             .templates
             .into_iter()
             .map(|template| {
-                let identical = registry
-                    .imported_templates
-                    .iter()
-                    .find(|saved| saved.template == template);
+                let previous = registry.imported_templates.iter().find(|saved| {
+                    saved.source_snapshot_id.as_deref() == Some(source_snapshot_id.as_str())
+                        && saved.template.id == template.id
+                });
+                let identical = previous.or_else(|| {
+                    registry
+                        .imported_templates
+                        .iter()
+                        .find(|saved| saved.template == template)
+                });
                 let (disposition, existing_ids) = if let Some(saved) = identical {
                     (Disposition::Identical, vec![saved.id.clone()])
                 } else {
@@ -91,6 +105,7 @@ impl Plan {
                     template,
                     disposition,
                     existing_ids,
+                    already_imported: previous.is_some(),
                 }
             })
             .collect();
@@ -149,7 +164,9 @@ impl Plan {
                     let id = uuid::Uuid::new_v4().to_string();
                     next.imported_templates.push(ImportedTemplate {
                         id: id.clone(),
-                        source_snapshot_id: self.source_snapshot_id.clone(),
+                        source_snapshot_id: Some(self.source_snapshot_id.clone()),
+                        local: false,
+                        archived: false,
                         template: row.template.clone(),
                     });
                     result.added += 1;

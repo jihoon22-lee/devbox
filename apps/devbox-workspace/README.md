@@ -162,14 +162,22 @@ dialog driver failures. New installer/cache and multi-file picker acceptance is
 pending; local Windows disposable dialog cancel/single/multi selection passed.
 
 Workbench template imports reuse the original strict schema and preserve empty-path
-presets, old IDs and service/port defaults as separate immutable Registry records.
+presets, old IDs and service/port defaults as separate Registry records.
+The original bytes remain in the immutable legacy snapshot.
 Reviewed choices add, reuse or keep conflicting copies without replacing v0.8 data.
 The project form can instantiate an imported template against an explicitly checked
 Windows folder; registration, a fresh profile with its template provenance and its
 folder binding share the Registry commit. Environment data is absent and selection
-and execution trust remain separate. Template editing and WSL instantiation remain
-pending. The hosted template fixture covers the native import and actual creation UI;
-it passed in the `870f8a8` hosted Windows run.
+and execution trust remain separate. Opening template management lazily loads its
+editor and validation code. Overview can create, edit and archive templates,
+then explicitly restore archived defaults. Edits use the opening Registry revision
+and preserve the draft on conflict. Existing profiles and bindings remain unchanged;
+repeat import from the same snapshot preserves destination edits and archive state.
+New templates use native IDs and an explicit local origin without an invented
+snapshot ID. Prior imported record JSON remains compatible; older parsers reject
+new local/archive fields while preserving the store. The hosted original import and
+creation UI passed at `870f8a8`; expanded editing acceptance and WSL instantiation
+remain pending.
 
 Verified main-window state from Workbench, Code Pad and Repo Manager now has an
 explicit current/adjusted review using the existing monitor/DPI restoration logic.
@@ -182,7 +190,8 @@ the UI thread and uses the existing coalescing window writer. A partial OS failu
 can leave intermediate geometry; the saved previous state remains available.
 This is not a transaction between window APIs and disk persistence. Only the
 compatible main-to-main mapping is implemented; secondary-window roles belong to
-B07. The new hosted window UI/native fixture awaits Windows execution.
+B07. The hosted window UI/native fixture passed at `161d2af`, including explicit
+apply, cancellation/replay rejection and restoration of previous native geometry.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.

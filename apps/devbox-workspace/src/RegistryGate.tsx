@@ -1,6 +1,7 @@
-import { useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
+const WorkspaceTemplateManager=lazy(()=>import("./WorkspaceTemplateManager"));
 import LegacyImports from "./LegacyImports";
 import {TemplateMetadata,type ImportedTemplate} from "./LegacyTemplateImport";
 import {ProfileMetadata,type ImportedProfile,type ProfileBinding} from "./LegacyProfileImport";
@@ -19,7 +20,10 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const [root, setRoot] = useState("");
   const [name, setName] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
-  const [busy, setBusy] = useState(false);
+  const [operationBusy, setBusy] = useState(false);
+  const [templateBusy,setTemplateBusy]=useState(false);
+  const [templatesOpen,setTemplatesOpen]=useState(false);
+  const busy=operationBusy||templateBusy;
   const [error, setError] = useState("");
   const [rename, setRename] = useState<{id: string; name: string} | null>(null);
   const [remove, setRemove] = useState<Worktree | null>(null);
@@ -84,6 +88,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
     // A user clicked a Source proposal. Native Registry still validates its path.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   },[suggestedRoot,busy,status.phase]);
+  useEffect(()=>{if(templateId&&!registry?.importedTemplates?.some(entry=>entry.id===templateId&&!entry.archived))setTemplateId("");},[registry,templateId]);
   async function cancelPreview() {
     if (!preview) return;
     await registryCall("cancel_registration", {previewId:preview.previewId});
@@ -109,7 +114,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
         if(next.templateProfile)setName(next.templateProfile.profile.name);
         currentPreview.current = next.previewId; setPreview(next);
       });}}>
-        {!!registry?.importedTemplates?.length&&<label>프로젝트 템플릿 <select aria-label="프로젝트 템플릿" value={templateId} disabled={busy||!!preview} onChange={event=>setTemplateId(event.target.value)}><option value="">사용하지 않음</option>{registry.importedTemplates.map((imported,index)=><option key={imported.id} value={imported.id}>{imported.template.name}{registry.importedTemplates!.filter(entry=>entry.template.name===imported.template.name).length>1?` · 보관 항목 ${index+1}`:""}</option>)}</select></label>}
+        {!!registry?.importedTemplates?.length&&<label>프로젝트 템플릿 <select aria-label="프로젝트 템플릿" value={templateId} disabled={busy||!!preview} onChange={event=>setTemplateId(event.target.value)}><option value="">사용하지 않음</option>{registry.importedTemplates.filter(entry=>!entry.archived).map((imported,index)=><option key={imported.id} value={imported.id}>{imported.template.name}{registry.importedTemplates!.filter(entry=>entry.template.name===imported.template.name).length>1?` · 보관 항목 ${index+1}`:""}</option>)}</select></label>}
         {registry?.importedTemplates?.find(imported=>imported.id===templateId)&&<TemplateMetadata template={registry.importedTemplates.find(imported=>imported.id===templateId)!.template}/>}
         <label htmlFor="workspace-project-path">Windows 프로젝트 폴더</label>
         <input id="workspace-project-path" value={root} maxLength={32768} disabled={busy || !!preview} onChange={event => setRoot(event.target.value)} required />
@@ -149,8 +154,12 @@ export default function RegistryGate({context = null, onContextChanged = async (
             })}>해제 확인</button><button disabled={busy} onClick={() => setRemove(null)}>취소</button></section>}
         </div>)}
       </section>)}
-      {(registry?.importedProfiles??[]).map(imported=><section key={imported.id} aria-label={`가져온 프로필 ${imported.profile.name}`}>
-        <h2>가져온 프로필: {imported.profile.name}</h2>
+      {registry&&<>
+        <button aria-expanded={templatesOpen} disabled={busy||editing||!!preview} onClick={()=>setTemplatesOpen(value=>!value)}>{templatesOpen?"템플릿 관리 닫기":"템플릿 관리 열기"}</button>
+        {templatesOpen&&<Suspense fallback={<p role="status">템플릿 관리 화면을 불러오고 있습니다…</p>}><WorkspaceTemplateManager registry={registry} disabled={operationBusy||editing||!!preview||!!rename||!!remove||!!unlinkProfile} onSaved={refresh} onBusyChange={setTemplateBusy}/></Suspense>}
+      </>}
+      {(registry?.importedProfiles??[]).map(imported=><section key={imported.id} aria-label={`${imported.local?"프로필":"가져온 프로필"} ${imported.profile.name}`}>
+        <h2>{imported.local?"프로필":"가져온 프로필"}: {imported.profile.name}</h2>
         <ProfileMetadata profile={imported.profile}/>
         <p>환경 설정과 서비스 참조는 보관되었습니다. 실행 연결은 해당 기능에서 확인해야 합니다.</p>
         {!(registry?.importedProfileBindings??[]).some(binding=>binding.importedId===imported.id)&&<p>아직 프로젝트 폴더에 연결하지 않았습니다.</p>}

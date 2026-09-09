@@ -149,6 +149,25 @@ impl ProjectOwner {
                 pending.plan.apply(registry, choices)
             })
     }
+    pub(crate) fn save_template(
+        &self,
+        revision: u64,
+        id: Option<&str>,
+        template: workbench_lib::component::ProfileTemplate,
+    ) -> Result<Registry> {
+        self.store
+            .update(revision, |registry| {
+                super::core::template_editor::save(registry, revision, id, template)
+            })
+            .map(|(registry, _)| registry)
+    }
+    pub(crate) fn archive_template(&self, revision: u64, id: &str) -> Result<Registry> {
+        self.store
+            .update(revision, |registry| {
+                super::core::template_editor::archive(registry, revision, id)
+            })
+            .map(|(registry, ())| registry)
+    }
     pub(crate) fn preview_template_import(
         &self,
         snapshot_id: String,
@@ -274,7 +293,7 @@ impl ProjectOwner {
         let template = registry
             .imported_templates
             .iter()
-            .find(|template| template.id == template_id)
+            .find(|template| template.id == template_id && !template.archived)
             .ok_or("unknown_imported_template")?;
         // Validate the concrete input before opening an external filesystem.
         let mut profile = workbench_lib::component::ProjectProfile::new(name);
@@ -300,6 +319,7 @@ impl ProjectOwner {
         let candidate = legacy_profiles::ImportedProfile {
             id: uuid::Uuid::new_v4().to_string(),
             source_snapshot_id: template.source_snapshot_id.clone(),
+            local: template.local,
             source_template_id: Some(template.id.clone()),
             profile,
         };
@@ -494,6 +514,84 @@ impl ProjectOwner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn local_template_edit_and_archive_preserve_instantiated_profiles_across_restart() {
+        use workbench_lib::component::{ProfileTemplate, ProjectProfile};
+        let directory = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let owner = ProjectOwner::open(directory.path()).unwrap();
+        let mut template = ProfileTemplate::new("로컬");
+        template.id.clear();
+        template.expected_ports = vec![4321];
+        if cfg!(unix) {
+            template.wsl = Some(workbench_lib::component::WslProfile {
+                distro: "native-test-fixture".into(),
+                path: "/fixture".into(),
+            });
+        }
+        let saved = owner.save_template(1, None, template).unwrap();
+        let entry = saved.imported_templates[0].clone();
+        let mut profile = ProjectProfile::new("만든 프로젝트");
+        profile.windows_path = Some(if cfg!(windows) {
+            root.path().to_string_lossy().into_owned()
+        } else {
+            "C:\\fixture".into()
+        });
+        let profile = entry.template.apply_to_profile(profile).unwrap();
+        let pending = owner
+            .prepare_template_binding(
+                saved.revision,
+                crate::platform::project_probe::probe_fixture(root.path()).unwrap(),
+                &entry,
+                profile,
+            )
+            .unwrap();
+        let (registered, context) = owner
+            .apply(
+                &pending.preview_id,
+                "만든 프로젝트",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        let profile = registered.imported_profile_for(&context).unwrap().unwrap();
+        assert!(profile.local && profile.source_snapshot_id.is_none());
+        let mut edited = entry.template.clone();
+        edited.expected_ports = vec![9090];
+        let changed = owner
+            .save_template(registered.revision, Some(&entry.id), edited.clone())
+            .unwrap();
+        assert_eq!(changed.imported_profiles, registered.imported_profiles);
+        assert_eq!(changed.worktrees, registered.worktrees);
+        assert_eq!(
+            changed.imported_profile_bindings,
+            registered.imported_profile_bindings
+        );
+        assert!(matches!(
+            owner.save_template(registered.revision, Some(&entry.id), entry.template),
+            Err("stale_registry")
+        ));
+        let archived = owner.archive_template(changed.revision, &entry.id).unwrap();
+        assert!(matches!(
+            owner.preview_template_profile_windows(&entry.id, "C:\\fixture", "archived"),
+            Err("unknown_imported_template")
+        ));
+        assert_eq!(
+            archived.imported_profile_for(&context).unwrap().unwrap(),
+            profile
+        );
+        let restored = owner
+            .save_template(archived.revision, Some(&entry.id), edited)
+            .unwrap();
+        assert!(!restored.imported_templates[0].archived);
+        drop(owner);
+        assert_eq!(
+            ProjectOwner::open(directory.path())
+                .unwrap()
+                .snapshot()
+                .unwrap(),
+            restored
+        );
+    }
     #[test]
     fn template_tokens_and_concrete_profile_creation_share_the_native_registry_commit() {
         use legacy_profiles::{Choice, Decision};

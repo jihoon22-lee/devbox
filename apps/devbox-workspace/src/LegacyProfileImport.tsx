@@ -2,7 +2,7 @@ import {useEffect,useRef,useState} from "react";
 import type {ProjectProfile} from "@devbox/workspace-features/overview-types";
 import {nativeCall} from "./native";
 
-export type ImportedProfile={id:string;sourceSnapshotId:string;sourceTemplateId?:string|null;profile:ProjectProfile};
+export type ImportedProfile={id:string;sourceSnapshotId?:string|null;local?:boolean;sourceTemplateId?:string|null;profile:ProjectProfile};
 export type ProfileBinding={importedId:string;target:"windows"|"wsl";worktreeId:string};
 type Decision="skip"|"import"|"keep-both"|"reuse";
 type Row={profile:ProjectProfile;disposition:"new"|"identical"|"conflict";existingIds:string[]};

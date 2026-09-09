@@ -175,21 +175,24 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                             | "legacy_workspace"
                     ))
         }
-        "workspace.registry" => matches!(
-            method,
-            "snapshot"
-                | "preview_windows"
-                | "preview_imported_profile_windows"
-                | "preview_template_profile_windows"
-                | "preview_legacy_workspace_windows"
-                | "unbind_imported_profile"
-                | "cancel_registration"
-                | "apply_registration"
-                | "rename"
-                | "remove"
-                | "select_project"
-                | "clear_project"
-        ),
+        "workspace.registry" => {
+            (route == "overview" && matches!(method, "save_template" | "archive_template"))
+                || matches!(
+                    method,
+                    "snapshot"
+                        | "preview_windows"
+                        | "preview_imported_profile_windows"
+                        | "preview_template_profile_windows"
+                        | "preview_legacy_workspace_windows"
+                        | "unbind_imported_profile"
+                        | "cancel_registration"
+                        | "apply_registration"
+                        | "rename"
+                        | "remove"
+                        | "select_project"
+                        | "clear_project"
+                )
+        }
         _ => false,
     }
 }
@@ -796,6 +799,33 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 .ok_or("legacy_workspace_unsupported")?;
             Ok(json!(host.projects()?.preview_windows(&proposal.path)?))
         }
+        "save_template" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct SaveTemplate {
+                revision: u64,
+                id: Option<String>,
+                template: workbench_lib::component::ProfileTemplate,
+            }
+            let value: SaveTemplate = input(args)?;
+            Ok(json!(host.projects()?.save_template(
+                value.revision,
+                value.id.as_deref(),
+                value.template
+            )?))
+        }
+        "archive_template" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct ArchiveTemplate {
+                revision: u64,
+                id: String,
+            }
+            let value: ArchiveTemplate = input(args)?;
+            Ok(json!(host
+                .projects()?
+                .archive_template(value.revision, &value.id)?))
+        }
         "preview_template_profile_windows" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1365,6 +1395,18 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn template_writes_are_overview_registry_only() {
+        for method in ["save_template", "archive_template"] {
+            assert!(allowed("workspace.registry", "overview", method));
+            for route in ["source", "files", "dependencies", "runtime"] {
+                assert!(!allowed("workspace.registry", route, method));
+            }
+            for component in ["workspace.migration", "workspace.source", "workspace.files"] {
+                assert!(!allowed(component, "overview", method));
+            }
+        }
+    }
     #[test]
     fn initialized_host_is_shared_without_rejecting_concurrent_metadata_readers() {
         let runtime = Runtime::default();

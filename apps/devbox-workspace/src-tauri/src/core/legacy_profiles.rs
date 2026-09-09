@@ -11,7 +11,10 @@ type Result<T> = std::result::Result<T, &'static str>;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct ImportedProfile {
     pub id: String,
-    pub source_snapshot_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_snapshot_id: Option<String>,
+    #[serde(default, skip_serializing_if = "is_false")]
+    pub local: bool,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_template_id: Option<String>,
     pub profile: ProjectProfile,
@@ -40,13 +43,21 @@ impl ProfileTarget {
 impl ImportedProfile {
     pub fn validate(&self) -> Result<()> {
         if uuid::Uuid::parse_str(&self.id).is_err()
-            || !snapshot_id(&self.source_snapshot_id)
+            || !valid_origin(self.source_snapshot_id.as_deref(), self.local)
+            || (self.local && self.source_template_id.is_none())
             || self.profile.validate().is_err()
         {
             return Err("invalid_imported_profile");
         }
         Ok(())
     }
+}
+pub(super) fn is_false(value: &bool) -> bool {
+    !value
+}
+pub(super) fn valid_origin(snapshot: Option<&str>, local: bool) -> bool {
+    matches!((snapshot, local), (None, true))
+        || matches!((snapshot, local), (Some(id), false) if snapshot_id(id))
 }
 pub(super) fn snapshot_id(value: &str) -> bool {
     value.len() == 64
@@ -229,7 +240,8 @@ impl Plan {
                     let id = uuid::Uuid::new_v4().to_string();
                     next.imported_profiles.push(ImportedProfile {
                         id: id.clone(),
-                        source_snapshot_id: self.source_snapshot_id.clone(),
+                        source_snapshot_id: Some(self.source_snapshot_id.clone()),
+                        local: false,
                         profile: row.profile.clone(),
                         source_template_id: None,
                     });

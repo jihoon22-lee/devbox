@@ -5,6 +5,7 @@
   "type": "module",
   "exports": {
     "./overview": "./src/overview/App.tsx",
+    "./overview-template-editor": "./src/overview/lib/profileTemplateEditor.ts",
     "./overview-types": "./src/overview/api.ts",
     "./dependencies": "./src/source/Dependencies.tsx",
     "./source": "./src/source/App.tsx",

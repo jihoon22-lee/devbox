@@ -59,6 +59,8 @@ const issues: Record<string, string> = {
   window_history_limit: "창 상태 기록이 32개 한도에 도달했습니다. 기존 기록을 유지합니다.",
   legacy_import_busy: "기존 설정을 보관하는 작업이 진행 중입니다.",
   legacy_templates_unavailable: "검증을 마친 Workbench 프로젝트 템플릿이 필요합니다. 보관 내용을 다시 확인해 주세요.",
+  template_identity_changed: "템플릿 식별자가 바뀌었습니다. 편집을 다시 시작해 주세요.",
+  template_name_conflict: "같은 이름의 활성 템플릿이 있습니다. 다른 이름을 사용해 주세요.",
   invalid_imported_template: "가져온 템플릿 형식을 확인하지 못했습니다. 저장된 내용은 유지됩니다.",
   duplicate_imported_template: "같은 보관본의 템플릿이 이미 있습니다. 가져오기 검토를 다시 시작해 주세요.",
   legacy_template_review_limit: "진행 중인 템플릿 가져오기 검토를 완료하거나 취소해 주세요.",

@@ -50,7 +50,7 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
     const expression=`Array.from(document.querySelectorAll(${JSON.stringify(`${scope} button`)})).find(button=>button.textContent.trim()===${JSON.stringify(label)}&&!button.matches(":disabled"))`;
     // React can replace or disable the action between separate CDP requests.
     // Resolve and click in the same renderer turn; retry only before a click.
-    await waitForRenderer(cdp,`(()=>{const button=${expression};if(!button)return false;button.click();return true;})()`,"Source action unavailable");
+    await waitForRenderer(cdp,`(()=>{const button=${expression};if(!button)return false;button.click();return true;})()`,`Source action unavailable: ${label}`);
   };
   const navigate=async route=>cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route===${JSON.stringify(route)}).label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button=>button.textContent.trim()===label).click();})()`);
   const fill=async(id,value)=>cdp.evaluate(`(()=>{const input=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);

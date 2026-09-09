@@ -15,7 +15,8 @@ interface Props {description:Description; root:string; editorPending?:boolean; o
 export default function Source({description,root,editorPending=false,onBusyChange,onDirtyChange,onOpenFile,onProposeWorktree}:Props) {
   const [status,setStatus]=useState<Status|null>(null);
   const [preview,setPreview]=useState<Preview|null>(null);
-  const [busy,setBusy]=useState(false);
+  // Block clicks from the first committed frame until initial inspection finishes.
+  const [busy,setBusy]=useState(true);
   const [panelsBusy,setPanelsBusy]=useState(false);
   const [panelsVisited,setPanelsVisited]=useState(false);
   const [dirty,setDirty]=useState(false);

@@ -3,9 +3,9 @@ import type {ProjectProfile} from "@devbox/workspace-features/overview-types";
 import {nativeCall} from "./native";
 import {ProfileMetadata} from "./LegacyProfileImport";
 export type ProfileTemplate=Omit<ProjectProfile,"environment">;
-export type ImportedTemplate={id:string;sourceSnapshotId:string;template:ProfileTemplate};
+export type ImportedTemplate={id:string;sourceSnapshotId?:string|null;local?:boolean;archived?:boolean;template:ProfileTemplate};
 type Decision="skip"|"import"|"keep-both"|"reuse";
-type Row={template:ProfileTemplate;disposition:"new"|"identical"|"conflict";existingIds:string[]};
+type Row={template:ProfileTemplate;disposition:"new"|"identical"|"conflict";existingIds:string[];alreadyImported?:boolean};
 type Preview={previewId:string;plan:{sourceSnapshotId:string;registryRevision:number;rows:Row[]}};
 type Applied={added:number;reused:number;skipped:number};
 const call=<T,>(method:string,args:Record<string,unknown>)=>nativeCall<T>("workspace.migration",method,args);
@@ -37,7 +37,7 @@ export default function LegacyTemplateImport({jobId,existing,onImported,onBusyCh
       <p>가져올 항목과 처리 방법을 선택하세요. 기존 항목은 유지됩니다.</p>
       {preview.plan.rows.length===0&&<p>가져올 템플릿이 없습니다.</p>}
       {preview.plan.rows.map(row=><fieldset key={row.template.id} disabled={busy||disabled}>
-        <legend>{row.template.name}</legend><p>{disposition[row.disposition]}</p>
+        <legend>{row.template.name}</legend><p>{row.alreadyImported?"이미 가져온 템플릿 · Workspace 변경 유지":disposition[row.disposition]}</p>
         <TemplateMetadata template={row.template}/>
         {row.existingIds.map(id=>{const saved=existing.find(entry=>entry.id===id);return saved?<details key={id}><summary>기존 항목: {saved.template.name}</summary><TemplateMetadata template={saved.template}/></details>:null;})}
         <label>처리 방법 <select aria-label={`${row.template.name} 처리 방법`} value={choices[row.template.id]??"skip"} onChange={event=>setChoices({...choices,[row.template.id]:event.target.value as Decision})}>

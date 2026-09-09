@@ -1,4 +1,4 @@
-import {StrictMode} from "react";
+import {StrictMode,useLayoutEffect} from "react";
 import {act,cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {describe as describeProduct,type Description} from "@devbox/product-shell/api";
@@ -68,4 +68,21 @@ it("can revoke stored permission when external Git configuration cannot be inspe
   await click("Git 실행 승인 철회");
   await screen.findByText("Git 실행 승인을 철회했습니다.");
   expect(call.mock.calls.filter(([, ,method])=>method==="trust_status")).toHaveLength(1);
+});
+
+it("blocks review in the first committed frame while initial inspection is pending",async()=>{
+  let finish!:(value:unknown)=>void;
+  call.mockImplementation(async(_description,_component,method)=>method==="trust_status"?new Promise(resolve=>{finish=resolve;}):{previewId:"native-preview",status:status()});
+  let firstFrameDisabled=false;
+  function FirstFrame() {
+    useLayoutEffect(()=>{firstFrameDisabled=(screen.getByRole("button",{name:"Git 실행 검토"}) as HTMLButtonElement).disabled;},[]);
+    return <Source description={description} root="C:\\fixture" onBusyChange={vi.fn()} onDirtyChange={vi.fn()}/>;
+  }
+  render(<FirstFrame/>);
+  expect(firstFrameDisabled).toBe(true);
+  expect(screen.getByRole("button",{name:"Git 실행 검토"})).toHaveProperty("disabled",true);
+  await act(async()=>finish(status()));
+  await click("Git 실행 검토");
+  expect(await screen.findByRole("heading",{name:"이 Git 실행 근거를 신뢰할까요?"})).toBeTruthy();
+  expect(call.mock.calls.filter(([, ,method])=>method==="preview_trust")).toHaveLength(1);
 });

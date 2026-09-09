@@ -42,3 +42,12 @@ it("cancels a preview that arrives after the view has closed",async()=>{
   await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.migration","cancel_template_import",{previewId:"native-preview"}));
   expect(call.mock.calls.some(([,method])=>method==="apply_template_import")).toBe(false);
 });
+
+it("describes reuse of an edited archived destination without promising identical content",async()=>{
+  call.mockResolvedValue({...preview,plan:{...preview.plan,rows:[{template,disposition:"identical",existingIds:["existing-id"],alreadyImported:true}]}});
+  render(<LegacyTemplateImport jobId="verified-job" existing={[{id:"existing-id",sourceSnapshotId:"previous",archived:true,template:{...template,name:"수정한 이름",expectedPorts:[9090]}}]} onImported={async()=>{}} onBusyChange={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"템플릿 가져오기 검토"}));
+  expect(await screen.findByText("이미 가져온 템플릿 · Workspace 변경 유지")).toBeTruthy();
+  expect(screen.queryByText("같은 내용이 이미 있습니다")).toBeNull();
+  expect(screen.getByRole("option",{name:"기존 항목 사용"})).toBeTruthy();
+});

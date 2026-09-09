@@ -242,6 +242,7 @@ impl Registry {
                 if !self.imported_templates.iter().any(|template| {
                     template.id == *template_id
                         && template.source_snapshot_id == profile.source_snapshot_id
+                        && template.local == profile.local
                 }) {
                     return Err("invalid_imported_template_reference");
                 }

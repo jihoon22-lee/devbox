@@ -189,7 +189,7 @@ not changed. Earlier detailed checkpoints and intermediate failures are retained
 
 ## Remaining acceptance and rollback limits
 
-Template editing/WSL instantiation,
+Template editing Windows acceptance and WSL instantiation,
 older references and provider handoff remain incomplete. WSL-native Git/LSP,
 remote Files IO/cancellation and Windows/WSL end-to-end acceptance remain required.
 Native filesystem cancellation is cooperative; current Files IO is serialized.
@@ -205,7 +205,7 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 기존 `ProfileTemplateStore`의 bounded strict 검증을 재사용한다. 검증 완료한 Workbench 보관 작업 ID로만 읽으며 원래 ID·이름·빈 경로·WSL·Git·포트·서비스 기본값을 Registry의 독립 사본으로 보관한다. import/reuse/keep-both/skip은 revision·원본 사본 digest·one-use 만료 token과 최종 byte CAS를 확인하고 기존 프로필·프로젝트를 유지한다.
 - 프로젝트 관리에서 템플릿과 실제 Windows 폴더를 선택하고 native probe 결과를 검토한다. 등록, 새 프로필 ID와 실제 템플릿 출처 기록, 폴더 연결을 하나의 Registry 저장으로 반영한다. 환경 데이터는 비어 있고 현재 선택·실행 신뢰는 별도다. 취소·기존 폴더 연결 충돌은 저장을 남기지 않는다.
 - Rust template/owner/route 검증과 strict Clippy, Workspace UI **44개**, build, 생성된 Windows fixture 표현식 **5개** PASS(44.074초, peak 3,887,083,520 bytes/8 GiB). 후속 UI 상태 표시 정리까지 포함한 최종 `pnpm verify:affected`는 all을 선택해 **445.250초 / peak 6,198,820,864 bytes / 8 GiB**로 PASS했다. 초기 집중 실행에서 잘못된 pnpm filter로 UI가 선택되지 않은 결과는 UI PASS에서 제외하고 올바른 `devbox-workspace` filter로 위 검증을 실행했다.
-- `.github/scripts/windows-workspace-template-import.mjs`는 hosted 전용 원본의 byte 보존·원본 없이 보관본 읽기·repeat/replay·실제 템플릿 생성 UI·출처/원자적 연결·선택/신뢰 미변경·해제 후 데이터 보존을 검사한다. `870f8a8`의 hosted Windows fixture는 실제 템플릿 생성과 9개 보존/권한 검사를 통과했다. 템플릿 편집·WSL 생성은 미완료다. 앞선 `7d857f8` [Windows 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34332819276)은 native authority/WAL 테스트 단계 실패로 packaged shell/복구/LSP 실행을 건너뛰었다. 실패는 `settings_import.rs`의 history 변조 단계에서 발생했다. 이전 import/repeat/restore는 통과했으며 아래 긴 경로 수정으로 후속 검증한다.
+- `.github/scripts/windows-workspace-template-import.mjs`는 hosted 전용 원본의 byte 보존·원본 없이 보관본 읽기·repeat/replay·실제 템플릿 생성 UI·출처/원자적 연결·선택/신뢰 미변경·해제 후 데이터 보존을 검사한다. `870f8a8`의 hosted Windows fixture는 실제 템플릿 생성과 9개 보존/권한 검사를 통과했다. 템플릿 편집은 아래 후속 구현에 포함하며 WSL 생성은 미완료다. 앞선 `7d857f8` [Windows 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34332819276)은 native authority/WAL 테스트 단계 실패로 packaged shell/복구/LSP 실행을 건너뛰었다. 실패는 `settings_import.rs`의 history 변조 단계에서 발생했다. 이전 import/repeat/restore는 통과했으며 아래 긴 경로 수정으로 후속 검증한다.
 
 ## Windows 긴 보관 경로 교체
 
@@ -237,3 +237,21 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 
 - `161d2af` CI 의존성 정책은 취약점이 아닌 `THIRD_PARTY_NOTICES.md`의 오래된 Cargo.lock fingerprint 때문에 실패했다. 창 adapter의 직접 의존성 두 줄 추가 후 생성 파일 동기화가 빠져 있었다. CI의 pnpm audit는 알려진 취약점 없음으로 통과했다.
 - 저장소 생성기로 고지 파일을 다시 생성했다. diff는 Cargo.lock SHA-256 한 줄뿐이며 외부 의존성·버전·license 목록은 같다. 위 최종 affected all은 생성 이후 Rust compile/test까지 통과했다. 독립 dependency policy check도 PASS(2.326초)하여 Cargo.lock/pnpm-lock과 고지 파일 일치를 확인했다. 다음 CI에서 최종 결과를 확인한다.
+
+
+## Workspace 템플릿 생성·수정·보관
+
+- Overview에서 기존 순수 템플릿 검증기를 재사용하여 새 템플릿 작성, 목적지 사본 수정, 보관 확인, 수정 후 복원을 제공한다. native 생성 ID와 명시적인 local origin을 사용하며 가져온 사본의 snapshot/template 출처를 유지한다. snapshot ID 누락을 local로 오인하지 않도록 origin 조합을 strict 검증한다. 새 local/archive 필드를 모르는 이전 버전은 읽기를 거부하고 기존 bytes를 보존한다.
+- 편집 시작 당시 Registry revision과 최종 byte CAS를 확인한다. stale/식별자 변경/활성 이름 중복/크기 한도는 저장을 남기지 않고 UI 초안을 보존한다. 같은 내용 저장·이미 보관된 항목은 revision을 늘리지 않는다. 보관은 record와 기존 프로필 연결을 유지하고 신규 생성 선택에서 제외한다. 동일 snapshot의 반복 가져오기는 Workspace에서 수정·보관한 상태를 그대로 재사용한다.
+- 프로젝트/작업 폴더/기존 프로필/실행 신뢰는 템플릿 편집으로 바뀌지 않는다. 실제 생성은 기존 native 폴더 검토와 원자적 프로필 연결을 사용한다. 새 IPC는 Overview Registry에만 허용하고 source/local/archive 메타데이터는 renderer 입력으로 받지 않는다.
+- 최종 집중 검증: native template/import/owner/route **9개**, UI template/Registry/Source **17개**, strict Clippy, Workspace build, generated Windows 요청 **7개** PASS(**22.014초 / peak 1,725,837,312 bytes / 8 GiB**). owner fixture는 Linux에서 명시적인 test WSL target metadata를 사용한다. 이는 실제 WSL 연결 PASS가 아니다. 기존 Registry UI assertion은 새 template details와 프로젝트 form의 동일 포트를 구분하도록 범위를 지정했다.
+- hosted fixture에 실제 수정·stale 저장 거부·보관 취소/확인/복원·반복 가져오기와 기존 프로필 보존·새 local 템플릿 생성/프로젝트 연결을 추가했다. 실제 Windows 실행은 아직 하지 않았다.
+
+## 후속 Windows 결과와 Source 초기 화면
+
+- [161d2af 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34339636174)은 native authority/WAL, 템플릿, 새 기본 창 UI 가져오기/이전 native geometry 복원 **7개**, API/Knowledge, installer coexistence를 통과했다. artifact source는 PR merge SHA `61a4853313c76fd83bd5e1807560dc7c750d2945`다. packaged shell은 이후 Source의 Git 승인 버튼 대기에서 실패해 이 실행의 Files/복구/LSP는 PASS로 계산하지 않는다.
+- Source의 첫 commit frame에서 초기 조회 effect가 실행되기 전에 버튼이 활성화되는 구간을 제거했다. 처음부터 busy로 표시하고 조회 종료 후 허용한다. layout-phase 회귀 테스트가 초기 비활성화 및 조회 후 한 번의 검토 요청을 확인한다. Windows 실패의 정확한 버튼 이름을 다음 artifact에 남기도록 fixture label도 보완했다. 이 변경이 위 Windows 경합을 해결했는지는 다음 패키지 실행으로 확인한다.
+
+- 전체 affected 첫 실행은 초기 bundle **291,317 > 280,000 bytes**에서 실패해 Rust 검증까지 진행하지 않았다. 템플릿 관리 버튼을 열 때 editor/validation 모듈을 lazy load하도록 변경했다. 후속 UI 17개·build·generated 요청 7개는 통과했고, 올바른 `--scope all`로 실행한 bundle checker가 19개 앱 모두 PASS했다(0.776초). 처음 scope 없는 checker 호출은 인자 오류로 실패했으며 PASS에 포함하지 않는다. 한도는 변경하지 않았다.
+
+- lazy 변경을 포함한 최종 `pnpm verify:affected` all **442.866초 / peak 6,443,999,232 bytes / 8 GiB** PASS. Workspace 초기 bundle은 **277,925 bytes / 280,000 bytes**, gzip **82,039 / 90,000 bytes**다.
