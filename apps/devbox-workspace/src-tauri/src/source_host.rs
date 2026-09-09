@@ -263,7 +263,7 @@ impl SourceHost {
             Some(previous) if previous == &common => Ok(()),
             Some(_) => Err("source_context_changed"),
             None => {
-                let storage = ProtectedStorage::from_host(app, host)?;
+                let storage = crate::platform::storage_paths::from_host(app, host)?;
                 repo_manager_lib::component::initialize(app, &common)
                     .map_err(|_| "source_owner_unavailable")?;
                 self.common = Some(common);

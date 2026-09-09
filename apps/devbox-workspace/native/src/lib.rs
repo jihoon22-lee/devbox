@@ -237,3 +237,10 @@ mod tests {
         assert!(serde_json::from_value::<Request>(unknown).is_err());
     }
 }
+
+#[cfg(feature = "files")]
+pub mod files;
+#[cfg(feature = "files")]
+pub mod storage_paths;
+#[cfg(feature = "files")]
+pub mod windows_path;

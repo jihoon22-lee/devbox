@@ -8347,13 +8347,17 @@ dependencies = [
 name = "workspace-wsl"
 version = "0.1.0"
 dependencies = [
+ "code-pad",
  "filesystem",
  "libc",
+ "product-contract",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tempfile",
  "uuid",
+ "windows 0.61.3",
+ "wsl",
 ]
 
 [[package]]

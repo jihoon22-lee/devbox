@@ -171,7 +171,7 @@ impl LspHost {
     ) -> Result<Self> {
         let data = Arc::new(MetadataRoot::open(&host.component("files")?)?);
         let archives = Arc::new(data.child("native-lsp-archives")?);
-        let protected = ProtectedStorage::from_host(app, host)?;
+        let protected = crate::platform::storage_paths::from_host(app, host)?;
         Ok(Self {
             storage: Storage { data, archives },
             files,

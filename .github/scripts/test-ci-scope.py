@@ -96,7 +96,7 @@ secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == [
     "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
     "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
-    "secrets", "workbench",
+    "secrets", "workbench", "workspace-wsl",
 ]
 
 native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")

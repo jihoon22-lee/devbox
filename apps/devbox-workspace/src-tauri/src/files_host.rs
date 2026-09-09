@@ -309,7 +309,8 @@ impl FilesHost {
             return data.revalidate();
         }
         let data = MetadataRoot::open(&path)?;
-        self.owner.protect_native_storage(app, host)?;
+        self.owner
+            .protect_storage(crate::platform::storage_paths::from_host(app, host)?);
         if let Some(bytes) = data.read(CHOICES)? {
             self.owner.restore_native_choices(&bytes)?;
         }
@@ -550,7 +551,11 @@ impl FilesHost {
         } else {
             None
         };
-        let scope = context.zip(lease.as_ref());
+        let scope = context.zip(
+            lease
+                .as_ref()
+                .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
+        );
         current_deadline(deadline)?;
         let expired = self
             .previews
@@ -623,7 +628,11 @@ impl FilesHost {
             };
             current_deadline(deadline)?;
             self.owner.apply_recovery(
-                context.zip(project_lease.as_ref()),
+                context.zip(
+                    project_lease
+                        .as_ref()
+                        .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
+                ),
                 &preview.path,
                 &preview.content,
                 &preview.document_revision,
@@ -690,7 +699,11 @@ impl FilesHost {
         } else {
             None
         };
-        let scope = context.zip(lease.as_ref());
+        let scope = context.zip(
+            lease
+                .as_ref()
+                .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
+        );
         current_deadline(deadline)?;
         match method {
             "list_session_history" => {

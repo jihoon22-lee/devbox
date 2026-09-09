@@ -6,7 +6,8 @@ edition.workspace = true
 
 [features]
 default = ["helper"]
-helper = ["dep:devbox-filesystem", "dep:sha2", "dep:libc"]
+helper = ["files", "dep:libc"]
+files = ["dep:code-pad", "dep:product-contract", "dep:devbox-wsl", "dep:devbox-filesystem", "dep:sha2", "dep:windows"]
 
 [lib]
 name = "workspace_wsl"
@@ -25,6 +26,23 @@ sha2 = { version = "0.11.0", optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
 libc = { version = "0.2", optional = true }
+
+[dependencies.code-pad]
+path = "../../code-pad/src-tauri"
+default-features = false
+optional = true
+
+[dependencies.product-contract]
+path = "../../../crates/product-contract"
+optional = true
+
+[dependencies.devbox-wsl]
+package = "wsl"
+path = "../../../crates/wsl"
+optional = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"], optional = true }
 
 [dev-dependencies]
 tempfile = "3"
