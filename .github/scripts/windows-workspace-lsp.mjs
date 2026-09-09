@@ -174,7 +174,7 @@ export function installWorkspaceEditorTrace() {
       if (url.hostname === "ipc.localhost" && decodeURIComponent(url.pathname) === "/plugin:workspace|execute" && typeof init?.body === "string") request = JSON.parse(init.body).request;
     } catch { /* Non-IPC fetches remain untouched. */ }
     const method = request?.method;
-    const tracked = request?.component === "workspace.lsp" && /^(open|change|reload|save|close)_lsp_document$/.test(method)
+    const tracked = request?.component === "workspace.lsp" && (/^(open|change|reload|save|close)_lsp_document$/.test(method) || /^lsp_recovery_(list|preview|apply|cancel)$/.test(method))
       || request?.component === "workspace.files" && ["save_file", "sync_editor_document"].includes(method);
     if (!tracked) return original.call(this, input, init);
     const row = {method, phase:"pending", elapsedMs:0}, started = performance.now();
@@ -270,6 +270,8 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
 }
 
 async function exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,success,waitForRenderer}) {
+  await cdp.evaluate(`(${installWorkspaceEditorTrace.toString()})()`);
+  try {
   const lsp=(method,args={})=>call("workspace.lsp",method,args);
   const rejected=result=>assert.equal(result.operation.outcome.state,"failed");
   const description=await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
@@ -310,7 +312,7 @@ async function exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,
   writeFileSync(target,after);
   const click=async(label,scope="document")=>{
     const predicate=`Array.from((${scope})?.querySelectorAll("button")??[]).find(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`;
-    await waitForRenderer(cdp,`!!(${predicate})`,"Native recovery action unavailable");await cdp.evaluate(`(${predicate}).click()`);
+    await waitForRenderer(cdp,`!!(${predicate})`,`Native recovery action unavailable: ${label}`);await cdp.evaluate(`(${predicate}).click()`);
   };
   await click("언어 서버",'document.querySelector(".workspace-feature-files")');
   await click("복구 기록 확인",'document.querySelector(".lsp-panel")');
@@ -327,4 +329,8 @@ async function exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,
   assert.deepEqual(success(await lsp("language_server_statuses")),[]);
   await click("닫기",'document.querySelector(".lsp-panel")');
   return {nativeJournalPreviewDoesNotWrite:true,recoveryRejectsOpenEditorAndChangedBytes:true,recoveryCancelAndReplayRejected:true,explicitUiRecoveryRestoresCrlfWithoutServerApproval:true};
+  } finally {
+    const trace=await cdp.evaluate('(()=>{const trace=window.__workspaceLspTrace;trace.restore();delete window.__workspaceLspTrace;return trace.rows;})()');
+    writeFileSync("product-foundation-evidence/workspace-lsp-recovery-trace.json",JSON.stringify(trace,null,2));
+  }
 }

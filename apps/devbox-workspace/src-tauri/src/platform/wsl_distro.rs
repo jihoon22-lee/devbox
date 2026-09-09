@@ -259,9 +259,24 @@ mod native {
         })
     }
     fn registrations() -> Result<Vec<Registration>> {
+        for attempt in 0..3 {
+            match registration_list_snapshot() {
+                Err("wsl_registry_entry_missing" | "wsl_registry_list_changed") if attempt < 2 => {
+                    continue
+                }
+                result => return result,
+            }
+        }
+        Err("wsl_registry_list_changed")
+    }
+    fn registration_list_snapshot() -> Result<Vec<Registration>> {
         let Some(root) = open(HKEY_CURRENT_USER, ROOT)? else {
             return Ok(vec![]);
         };
+        registrations_under(&root)
+    }
+    fn registrations_under(root: &Key) -> Result<Vec<Registration>> {
+        let before = revision(root)?;
         let mut result = Vec::new();
         for index in 0..=LIMIT {
             let mut name = [0_u16; 256];
@@ -279,6 +294,9 @@ mod native {
                 )
             };
             if status == ERROR_NO_MORE_ITEMS {
+                if revision(root)? != before {
+                    return Err("wsl_registry_list_changed");
+                }
                 return Ok(result);
             }
             if status != ERROR_SUCCESS || index == LIMIT {
@@ -289,7 +307,7 @@ mod native {
             let id = uuid::Uuid::parse_str(&key_name)
                 .map_err(|_| "wsl_registry_invalid")?
                 .to_string();
-            let key = open(root.0, &key_name)?.ok_or("wsl_registry_changed")?;
+            let key = open(root.0, &key_name)?.ok_or("wsl_registry_entry_missing")?;
             result.push(registration(&key, &id)?);
         }
         Err("wsl_registry_limit")
@@ -431,8 +449,9 @@ mod native {
                 .as_ref()
                 .map(|path| {
                     super::super::windows_path::admit(path)?;
-                    ensure_no_links(path).map_err(|_| "wsl_registry_changed")?;
-                    open_filesystem_metadata_object(path, false).map_err(|_| "wsl_registry_changed")
+                    ensure_no_links(path).map_err(|_| "wsl_backing_path_unsafe")?;
+                    open_filesystem_metadata_object(path, false)
+                        .map_err(|_| "wsl_backing_unavailable")
                 })
                 .transpose()?;
             let key = open(HKEY_CURRENT_USER, &format!("{ROOT}\\{{{id}}}"))?
@@ -473,11 +492,13 @@ mod native {
                 return Err("wsl_storage_object_changed");
             }
             if let Some(path) = &current.backing {
-                ensure_no_links(path).map_err(|_| "wsl_registry_changed")?;
+                ensure_no_links(path).map_err(|_| "wsl_backing_path_unsafe")?;
                 if self.backing.as_ref().map(|(_, id)| *id)
-                    != Some(filesystem_identity(path, false).map_err(|_| "wsl_registry_changed")?)
+                    != Some(
+                        filesystem_identity(path, false).map_err(|_| "wsl_backing_unavailable")?,
+                    )
                 {
-                    return Err("wsl_registry_changed");
+                    return Err("wsl_backing_object_changed");
                 }
             }
             Ok(())
@@ -586,6 +607,21 @@ mod native {
             let owned = Owned(path);
             let key = create(&owned.0);
             let directory = tempfile::tempdir().unwrap();
+            assert!(registrations_under(&key).unwrap().is_empty());
+            let child_id = uuid::Uuid::new_v4().to_string();
+            let child_name = format!("{}\\{{{child_id}}}", owned.0);
+            let child = create(&child_name);
+            initialize(&child, directory.path());
+            let listed = registrations_under(&key).unwrap();
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].id, child_id);
+            drop(child);
+            let child_name = wide(&child_name);
+            assert_eq!(
+                unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(child_name.as_ptr())) },
+                ERROR_SUCCESS
+            );
+            assert!(registrations_under(&key).unwrap().is_empty());
             initialize(&key, directory.path());
             let before = registration(&key, "fixture").unwrap();
             set(&key, "State", REG_DWORD, &1u32.to_le_bytes());

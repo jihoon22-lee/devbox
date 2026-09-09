@@ -22,7 +22,10 @@ use std::{
     collections::HashMap,
     fs,
     path::Path,
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex, MutexGuard, TryLockError,
+    },
     time::{Duration, Instant},
 };
 
@@ -68,8 +71,26 @@ struct Scope {
     lease: ProjectLease,
     protected: ProtectedStorage,
     files: Arc<Mutex<FilesHost>>,
+    deadline: AtomicU64,
 }
 impl Scope {
+    fn file_owner(&self) -> Result<MutexGuard<'_, FilesHost>> {
+        let started = Instant::now();
+        loop {
+            crate::files_host::current_deadline(self.deadline.load(Ordering::Acquire))?;
+            match self.files.try_lock() {
+                Ok(files) => return Ok(files),
+                Err(TryLockError::Poisoned(_)) => return Err("files_unavailable"),
+                Err(TryLockError::WouldBlock) if started.elapsed() < Duration::from_secs(5) => {
+                    // Session/recovery autosaves use this same metadata owner.
+                    // Wait in the bounded native IO worker before deciding if
+                    // a target is open; contention is not file evidence.
+                    std::thread::sleep(Duration::from_millis(5));
+                }
+                Err(TryLockError::WouldBlock) => return Err("files_unavailable"),
+            }
+        }
+    }
     fn check(&self) -> Result<()> {
         self.store.check()?;
         self.lease.revalidate()
@@ -96,7 +117,7 @@ impl Scope {
             return Err("lsp_document_denied");
         }
         if write {
-            let files = self.files.try_lock().map_err(|_| "files_unavailable")?;
+            let files = self.file_owner()?;
             files.guard_recovery_write(
                 &self.store.context,
                 path.to_str().ok_or("lsp_document_denied")?,
@@ -173,6 +194,7 @@ impl Recovery {
             lease,
             protected,
             files,
+            deadline: AtomicU64::new(deadline),
         });
         let workspace =
             WorkspaceRoot::with_authority(&scope.store.binding.root, Some(scope.clone()))
@@ -225,6 +247,7 @@ impl Recovery {
         if !apply {
             return Ok(Value::Null);
         }
+        pending.scope.deadline.store(deadline, Ordering::Release);
         let result = pending
             .plan
             .apply(&|| {
@@ -329,6 +352,31 @@ mod tests {
                 .unwrap();
             *self.files.lock().unwrap() = FilesHost::from_editor_fixture(owner);
         }
+    }
+    #[test]
+    fn unrelated_file_metadata_contention_does_not_invent_a_recovery_conflict() {
+        let fixture = Fixture::new();
+        let files = fixture.files.clone();
+        let (ready, receive) = std::sync::mpsc::channel();
+        let metadata = std::thread::spawn(move || {
+            let _files = files.lock().unwrap();
+            ready.send(()).unwrap();
+            std::thread::sleep(Duration::from_millis(150));
+        });
+        receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        let mut recovery = Recovery::default();
+        let preview = fixture.preview(&mut recovery).unwrap();
+        metadata.join().unwrap();
+        assert_eq!(fs::read(&fixture.target).unwrap(), b"after\r\n");
+        recovery
+            .consume(
+                &fixture.context,
+                json!({"previewId":preview["previewId"]}),
+                false,
+                u64::MAX,
+            )
+            .unwrap();
+        assert!(fixture.journal.exists());
     }
     #[test]
     fn recovery_is_independent_of_lsp_config_and_uses_one_time_native_approval() {
