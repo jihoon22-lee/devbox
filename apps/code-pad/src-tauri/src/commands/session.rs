@@ -135,6 +135,19 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
 
+    // Rust filesystem APIs add the verbatim prefix for long Windows paths,
+    // but raw Win32 calls do not. Canonicalize the existing parent (the target
+    // itself may not exist) and retain both leaf names, including target links.
+    let parent = fs::canonicalize(target.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "session path has no parent")
+    })?)?;
+    let leaf = |path: &Path| -> io::Result<std::ffi::OsString> {
+        path.file_name().map(ToOwned::to_owned).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "session path has no filename")
+        })
+    };
+    let temporary = parent.join(leaf(temporary)?);
+    let target = parent.join(leaf(target)?);
     let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
     unsafe {
@@ -216,6 +229,19 @@ pub(crate) async fn __component_save_session(
 mod tests {
     use super::*;
     use crate::core::session::{SessionDoc, SESSION_VERSION};
+
+    #[cfg(windows)]
+    #[test]
+    fn long_parent_supports_first_publication_and_complete_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("generation-component-".repeat(10));
+        fs::create_dir_all(&parent).unwrap();
+        let path = parent.join("session.json");
+        atomic_write(&path, br#"{"first":true}"#).unwrap();
+        atomic_write(&path, br#"{"second":true}"#).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), br#"{"second":true}"#);
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    }
 
     #[test]
     fn corrupt_or_version_mismatched_files_are_empty_without_rewrite() {
