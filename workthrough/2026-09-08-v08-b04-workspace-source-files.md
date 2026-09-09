@@ -310,3 +310,23 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - Windows fixture는 전용 renderer의 문서 알림·파일 mirror에 대해 method/outcome/issue code/소요 시간만 최대 128개 남긴다. 파일 내용·경로·인자·임의 error message는 기록하지 않는다. 두 번째 hover 전에 실제 UI didSave 성공을 확인한다. Windows에서 이전 실패의 원인이 이 경합과 일치하는지는 다음 실행으로 확인한다.
 
 - 저장 경합 수정과 trace를 포함한 최종 `pnpm verify:affected` all PASS(**433.335초 / peak 6,443,667,456 bytes / 8 GiB**). 실제 Windows와 WSL1 검증은 새 head의 CI에서 확인한다.
+
+## 공용 파일 owner와 WSL 읽기 경계
+
+- `FileOwner`, Windows 경로 판별과 순수 protected-storage 검사를 private native library로 이동했다. Windows host와 Linux helper가 같은 encoding/CRLF·snapshot·alias·dirty-buffer 검사를 사용한다. Tauri의 보호 경로 수집은 host에 남기고 native root lease와 path admission만 주입한다. 기존 파일 회귀 **10개**를 함께 이동했다. 초기 trait-object Scope 변환 누락을 수정한 뒤 check/test/strict Clippy PASS(**36.434초 / peak 2,307,178,496 bytes / 8 GiB**).
+- helper의 `files_attach/open/close/sync_editor`는 root token에 고정된 문맥을 요구한다. Windows client도 distro GUID를 확인한다. 아직 product Files route와 write/Git/LSP로 연결하지 않았다. root-filesystem device/ID와 실제 mount type을 함께 검사해 POSIX 경로의 drvfs/9p·다른 파일시스템·다른 배포판을 통한 Windows owner 우회를 막는다. `/tmp` tmpfs가 올바르게 거부돼 실제 fixture 위치를 기본 Linux 파일시스템으로 옮겼다. mount 구문/alias·실제 객체·context/범위/revision 및 기존 회귀 19개와 Clippy PASS(**7.752초 / peak 1,106,939,904 bytes / 8 GiB**). 첫 enum naming Clippy 실패도 수정했다.
+- 실제 subprocess pipe의 문맥·파일 읽기·버퍼 원본 보존·EOF·replay 검사를 추가했다. 새 테스트의 Rust pattern 오류를 수정한 뒤 이 2개와 MSVC platform compile/Clippy, Workspace/helper all-target Clippy PASS(**8.818초 / peak 1,213,272,064 bytes / 8 GiB**).
+- musl C compiler가 없어 첫 build가 실패했다. 시스템 설치 권한을 요구하지 않고 Ubuntu 저장소의 고정 `musl{,-dev,-tools}` 1.2.5-3build1 패키지를 전용 도구 경로에 풀어 사용했다. musl/gnu의 statfs type 차이는 byte stamp로 통일했다. 이후 musl 19개 테스트와 static release build PASS(**123.165초 / peak 1,264,128,000 bytes / 8 GiB**). Cargo는 Code Pad의 미지원 cdylib를 제외하고 rlib를 사용한다고 경고하며 static helper를 정상 생성했다. EOF는 현재 읽기/metadata 범위에서만 검증했고 mutation/child retirement는 다음 단계다.
+
+## 편집 버퍼 단일 writer와 WSL 등록 값 검증
+
+- 늦은 LSP change가 NativeEditorMirror의 더 최신 미저장 hash를 지우는 회귀를 재현했다(**71.310초 FAIL**). LSP open/change/format 결과가 UI buffer hash를 쓰지 않도록 분리했다. 서버의 document/dirty 상태는 기존 LSP manager가 소유하고 모든 UI buffer의 native acknowledgement는 기존 mirror가 담당한다. 지원 언어가 없는 dirty 문서·stale save·rename 전후 회귀를 포함한 actor/Clippy PASS(**50.457초 / peak 3,849,076,736 bytes / 8 GiB**). 중간 rename 후처리 lock의 mut 누락도 수정했다.
+- `5a9ed93` [Windows 제품 검사](https://github.com/jihoon22-lee/devbox/actions/runs/34359477964)는 실제 Rust client의 첫 connect에서 `wsl_registry_changed`로 실패했다. 이후 Windows 편집 검사도 기본 순서 때문에 건너뛰었으므로 LSP 수용으로 보고하지 않는다. 독립 native/packaged 검사는 제품 build 성공 시 계속 실행해 각 실패 근거를 남기도록 고쳤다.
+- Registry LastWriteTime 전체를 identity로 저장하던 부분을 등록 값 전체의 bounded sorted digest와 유지 중인 read-only key handle로 바꿨다. 같은 값 rewrite는 유지하지만 DefaultUid/Flags/unknown value 변경, 키 삭제·재생성과 backing object 교체는 거부한다. 시각은 일관된 snapshot 확인에만 쓰고 최대 3번 metadata read를 시도한다. Microsoft [DistributionRegistration](https://github.com/microsoft/WSL/blob/master/src/windows/service/exe/DistributionRegistration.cpp)와 [LxssUserSession](https://github.com/microsoft/WSL/blob/master/src/windows/service/exe/LxssUserSession.cpp)의 등록 값 갱신 경로를 확인했다. 실제 실패와의 일치는 다음 Windows 실행에서 확인한다.
+- Windows의 전용 HKCU fixture로 identical rewrite·DefaultUid/unknown policy·key replacement 검사를 추가했다. 실제 Windows 실행은 아직 하지 않았다. native platform MSVC compile/Clippy, shared/helper/Workspace Clippy, notices 생성과 카탈로그 검사 PASS(**9.022초 / peak 1,172,197,376 bytes / 8 GiB**). 다음 WSL1 fixture는 capture/launch 단계를 구분하고 실제 helper 파일 읽기·wrong context 거부도 확인한다.
+
+- musl 실제 subprocess pipe 2개·ELF 구조/크기 검사·dependency/notices PASS(**5.424초 / peak 1,155,100,672 bytes / 8 GiB**). static ELF는 **1,127,168 bytes**, SHA-256 `18004fac338b5d45087a077f8b6a76b5ded643b3a7a366a4ba1698e565e93c29`다. 로컬 작업 트리 산출물이므로 exact-source CI/릴리스 증거로 사용하지 않는다.
+
+- 첫 최종 affected는 scope 회귀가 새 `product-contract → workspace-wsl` 역의존 소비자를 예상 목록에 포함하지 않아 **3.098초 FAIL**했다. 실제 dependency graph에 맞게 `secrets` 소비자 기대값에 helper를 추가했다.
+
+- 이번 묶음의 최종 `pnpm verify:affected` all PASS(**661.307초 / peak 6,445,309,952 bytes / 8 GiB**). 초기 bundle **278,634/280,000 bytes**, gzip 82,204/90,000 bytes. `5a9ed93` 일반 CI 34359478236은 전체 PASS; 제품 34359477964는 WSL connect 실패와 Windows editor skip 때문에 FAIL이며 새 변경의 Windows 결과는 아직 없다.

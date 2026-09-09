@@ -244,3 +244,6 @@ pub mod files;
 pub mod storage_paths;
 #[cfg(feature = "files")]
 pub mod windows_path;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+pub mod linux_files;

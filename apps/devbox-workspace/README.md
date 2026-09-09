@@ -215,3 +215,11 @@ Saving an LSP document now carries the exact successfully saved text and native
 revision. A delayed change from the previous disk revision cannot leave the
 server at the old snapshot. The host checks the saved bytes against current disk;
 newer unsaved editor text remains dirty and is synchronized after didSave.
+
+The Windows host and Linux helper now share the file grant/conflict implementation.
+The helper can attach an observed native project context, read a file and retain
+buffer metadata. It restricts file content to the selected distro's root filesystem;
+Windows aliases and other mounts are not admitted through a POSIX spelling. The
+WSL Files route, mutations and language servers remain unconnected. LSP text updates
+now stay in the server document owner: NativeEditorMirror alone acknowledges UI
+buffer hashes, so an older queued notification cannot clear a newer unsaved buffer.

@@ -75,6 +75,37 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
         owner.admit(&context),
         Err("wsl_admission_required")
     ));
+    first
+        .file_request(
+            "files_attach",
+            &report.token,
+            serde_json::json!({"context":context}),
+        )
+        .expect("native Linux file admission");
+    let request = serde_json::json!({"context":context,"request":{"path":format!("{root}/original.txt"),"encoding":null}});
+    assert!(first
+        .file_request("files_open", "invalid", request.clone())
+        .is_err());
+    let opened = first
+        .file_request("files_open", &report.token, request.clone())
+        .expect("actual native WSL file read");
+    assert_eq!(opened["text"], "unchanged synthetic fixture\n");
+    assert!(workspace_wsl::token(
+        opened["nativeRevision"].as_str().unwrap()
+    ));
+    let mut foreign = request;
+    foreign["context"]["revision"] = serde_json::json!(context.revision + 1);
+    assert!(matches!(
+        first.file_request("files_open", &report.token, foreign),
+        Err("file_context_changed")
+    ));
+    first
+        .file_request(
+            "files_close",
+            &report.token,
+            serde_json::json!({"context":context,"path":opened["path"]}),
+        )
+        .unwrap();
     drop(first); // EOF must retire the Linux helper before restart.
     let mut second = Connection::connect(&resources, &distro.id, false).unwrap();
     let repeated = second.observe(&root).unwrap();

@@ -1,7 +1,9 @@
 //! Linux filesystem observations. Root inspection executes no Git, hook, server
 //! or package manager; only the Windows owner can turn the report into Registry state.
+use crate::files::{FileOwner, RootLease};
 use crate::{ObjectStamp, Request, RootReport, MAX_ROOTS};
 use devbox_filesystem::{ensure_no_links, project::ProjectObservation};
+use product_contract::{ExecutionTarget, ProjectContext};
 use serde::Deserialize;
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
@@ -20,6 +22,65 @@ struct Root {
     observation: ProjectObservation,
     report: RootReport,
     touched: Instant,
+    files: Option<FileAccess>,
+}
+struct FileAccess {
+    context: ProjectContext,
+    owner: FileOwner,
+}
+struct NativeFileLease<'a> {
+    observation: &'a ProjectObservation,
+    target: &'a ExecutionTarget,
+}
+impl RootLease for NativeFileLease<'_> {
+    fn root(&self) -> &Path {
+        self.observation.root()
+    }
+    fn target(&self) -> &ExecutionTarget {
+        self.target
+    }
+    fn native_root_identity(&self) -> devbox_filesystem::FilesystemIdentity {
+        self.observation.root_identity()
+    }
+    fn revalidate(&self) -> Result<()> {
+        self.observation.revalidate()
+    }
+}
+#[derive(Deserialize)]
+#[serde(
+    tag = "method",
+    content = "args",
+    rename_all = "snake_case",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
+enum FileMethod {
+    #[serde(rename = "files_open")]
+    Open {
+        context: ProjectContext,
+        request: code_pad_lib::commands::file::OpenFileRequest,
+    },
+    #[serde(rename = "files_close")]
+    Close {
+        context: ProjectContext,
+        path: String,
+    },
+    #[serde(rename = "files_sync_editor")]
+    SyncEditor {
+        context: ProjectContext,
+        path: String,
+        native_revision: String,
+        text: String,
+    },
+}
+impl FileMethod {
+    fn context(&self) -> &ProjectContext {
+        match self {
+            Self::Open { context, .. }
+            | Self::Close { context, .. }
+            | Self::SyncEditor { context, .. } => context,
+        }
+    }
 }
 #[derive(Default)]
 pub struct Engine {
@@ -139,10 +200,100 @@ pub fn admit(path: &Path) -> Result<()> {
     Ok(())
 }
 impl Engine {
+    fn file_request(&mut self, request: &Request) -> Result<Value> {
+        let method: FileMethod = input(&json!({"method":request.method,"args":request.args}))?;
+        let root = self
+            .roots
+            .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+            .ok_or("wsl_root_expired")?;
+        root.observation.revalidate()?;
+        let access = root.files.as_mut().ok_or("wsl_context_required")?;
+        if &access.context != method.context() {
+            return Err("file_context_changed");
+        }
+        root.touched = Instant::now();
+        let lease = NativeFileLease {
+            observation: &root.observation,
+            target: &access.context.target,
+        };
+        match method {
+            FileMethod::Open { request, .. } => {
+                let opened = access
+                    .owner
+                    .open(Some((&access.context, &lease)), request)?;
+                let revision = access.owner.document_revision(&opened.path)?;
+                let mut value = serde_json::to_value(opened).map_err(|_| "wsl_response_invalid")?;
+                value["nativeRevision"] = json!(revision);
+                Ok(value)
+            }
+            FileMethod::Close { path, .. } => {
+                access.owner.close(&path)?;
+                Ok(Value::Null)
+            }
+            FileMethod::SyncEditor {
+                path,
+                native_revision,
+                text,
+                ..
+            } => access
+                .owner
+                .sync_editor_document(Some(&access.context), &path, &native_revision, &text)
+                .map(|dirty| json!({"dirty":dirty})),
+        }
+    }
     pub fn dispatch(&mut self, request: &Request) -> Result<Value> {
         self.roots
             .retain(|_, root| root.touched.elapsed() < ROOT_TTL);
+        if matches!(
+            request.method.as_str(),
+            "files_open" | "files_close" | "files_sync_editor"
+        ) {
+            return self.file_request(request);
+        }
         match request.method.as_str() {
+            "files_attach" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Attach {
+                    context: ProjectContext,
+                }
+                let args: Attach = input(&request.args)?;
+                args.context.validate().map_err(|_| "wsl_context_invalid")?;
+                if !matches!(&args.context.target, ExecutionTarget::Wsl {distro_id} if crate::token(distro_id))
+                {
+                    return Err("wsl_context_invalid");
+                }
+                let root = self
+                    .roots
+                    .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+                    .ok_or("wsl_root_expired")?;
+                if let Some(access) = &root.files {
+                    return if access.context == args.context {
+                        root.observation.revalidate()?;
+                        Ok(Value::Null)
+                    } else {
+                        Err("file_context_changed")
+                    };
+                }
+                root.observation.revalidate()?;
+                let guarded = ProjectObservation::capture(
+                    root.observation.root(),
+                    crate::linux_files::admit,
+                )?;
+                if guarded.root_identity() != root.observation.root_identity()
+                    || guarded.repository_identity() != root.observation.repository_identity()
+                {
+                    return Err("project_object_changed");
+                }
+                root.observation.revalidate()?;
+                root.observation = guarded;
+                root.files = Some(FileAccess {
+                    context: args.context,
+                    owner: FileOwner::with_admission(crate::linux_files::admit),
+                });
+                root.touched = Instant::now();
+                Ok(Value::Null)
+            }
             "hello" => {
                 let _: Empty = input(&request.args)?;
                 if request.root_token.is_some() {
@@ -200,6 +351,7 @@ impl Engine {
                         observation,
                         report,
                         touched: Instant::now(),
+                        files: None,
                     },
                 );
                 Ok(value)
@@ -239,6 +391,113 @@ mod tests {
             root_token: root,
             args,
         }
+    }
+    #[test]
+    fn file_reads_require_native_root_context_and_reject_scope_changes() {
+        let directory = tempfile::Builder::new()
+            .prefix(".wsl-engine-fixture-")
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        let root = directory.path().join("한글 project");
+        std::fs::create_dir(&root).unwrap();
+        let file = root.join("한글.txt");
+        std::fs::write(&file, b"original\r\n").unwrap();
+        let outside = directory.path().join("outside.txt");
+        std::fs::write(&outside, b"outside").unwrap();
+        let mut engine = Engine::default();
+        let report: RootReport = serde_json::from_value(
+            engine
+                .dispatch(&request("observe_root", None, json!({"path":root})))
+                .unwrap(),
+        )
+        .unwrap();
+        let context = ProjectContext {
+            project_id: uuid::Uuid::new_v4().to_string(),
+            worktree_id: uuid::Uuid::new_v4().to_string(),
+            revision: 1,
+            target: ExecutionTarget::Wsl {
+                distro_id: uuid::Uuid::new_v4().to_string(),
+            },
+        };
+        let open = request(
+            "files_open",
+            Some(report.token.clone()),
+            json!({"context":context,"request":{"path":file,"encoding":null}}),
+        );
+        assert_eq!(engine.dispatch(&open), Err("wsl_context_required"));
+        let attach = request(
+            "files_attach",
+            Some(report.token.clone()),
+            json!({"context":context}),
+        );
+        engine.dispatch(&attach).unwrap();
+        engine.dispatch(&attach).unwrap();
+        let opened = engine.dispatch(&open).unwrap();
+        assert_eq!(opened["text"], "original\n");
+        assert!(crate::token(opened["nativeRevision"].as_str().unwrap()));
+        let mut foreign = context.clone();
+        foreign.revision += 1;
+        assert_eq!(
+            engine.dispatch(&request(
+                "files_attach",
+                Some(report.token.clone()),
+                json!({"context":foreign})
+            )),
+            Err("file_context_changed")
+        );
+        assert_eq!(
+            engine.dispatch(&request(
+                "files_open",
+                Some(report.token.clone()),
+                json!({"context":foreign,"request":{"path":file,"encoding":null}})
+            )),
+            Err("file_context_changed")
+        );
+        assert_eq!(
+            engine.dispatch(&request(
+                "files_open",
+                Some(report.token.clone()),
+                json!({"context":context,"request":{"path":outside,"encoding":null}})
+            )),
+            Err("file_context_changed")
+        );
+        let sync = |revision: &str| {
+            request(
+                "files_sync_editor",
+                Some(report.token.clone()),
+                json!({"context":context,"path":opened["path"],"nativeRevision":revision,"text":"unsaved"}),
+            )
+        };
+        assert_eq!(
+            engine.dispatch(&sync("stale")),
+            Err("file_snapshot_changed")
+        );
+        assert_eq!(
+            engine
+                .dispatch(&sync(opened["nativeRevision"].as_str().unwrap()))
+                .unwrap()["dirty"],
+            true
+        );
+        assert_eq!(std::fs::read(&file).unwrap(), b"original\r\n");
+        let close = request(
+            "files_close",
+            Some(report.token.clone()),
+            json!({"context":context,"path":opened["path"]}),
+        );
+        engine.dispatch(&close).unwrap();
+        assert_eq!(
+            engine.dispatch(&sync(opened["nativeRevision"].as_str().unwrap())),
+            Err("file_selection_required")
+        );
+        engine
+            .dispatch(&request(
+                "release_root",
+                Some(report.token.clone()),
+                json!({}),
+            ))
+            .unwrap();
+        assert_eq!(engine.dispatch(&open), Err("wsl_root_expired"));
+        assert_eq!(std::fs::read(&outside).unwrap(), b"outside");
     }
     #[test]
     fn root_ids_survive_helper_restart_and_reject_replacement_links_and_new_git() {

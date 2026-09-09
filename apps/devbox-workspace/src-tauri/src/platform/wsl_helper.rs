@@ -212,6 +212,22 @@ mod native {
             self.request("release_root", Some(token), serde_json::json!({}), 5000)
                 .map(|_| ())
         }
+        /// Private file methods require the registered distro context on every
+        /// call. No arbitrary helper command or native picker is exposed.
+        pub fn file_request(&mut self, method: &str, token: &str, args: Value) -> Result<Value> {
+            if !matches!(
+                method,
+                "files_attach" | "files_open" | "files_close" | "files_sync_editor"
+            ) {
+                return Err("wsl_request_invalid");
+            }
+            if args["context"]["target"]["kind"] != "wsl"
+                || args["context"]["target"]["distroId"] != self.lease.id()
+            {
+                return Err("wsl_context_invalid");
+            }
+            self.request(method, Some(token), args, 15000)
+        }
         fn request(
             &mut self,
             method: &str,
@@ -223,18 +239,19 @@ mod native {
                 return Err("wsl_connection_closed");
             }
             self.lease.revalidate()?;
-            self.sequence = self.sequence.checked_add(1).ok_or("wsl_protocol_invalid")?;
+            let sequence = self.sequence.checked_add(1).ok_or("wsl_protocol_invalid")?;
             let request = Request {
                 version: VERSION,
                 session_id: self.session.clone(),
                 request_id: uuid::Uuid::new_v4().to_string(),
-                sequence: self.sequence,
+                sequence,
                 budget_ms: budget,
                 method: method.into(),
                 root_token: root.map(str::to_owned),
                 args,
             };
             request.validate(&self.session)?;
+            self.sequence = sequence;
             let mut frame = Vec::new();
             workspace_wsl::write_frame(&mut frame, &request).map_err(|_| "wsl_protocol_invalid")?;
             let input = self.input.as_mut().ok_or("wsl_connection_closed")?;
@@ -276,6 +293,22 @@ mod native {
                 "wsl_root_expired" => "wsl_root_expired",
                 "wsl_root_changed" => "wsl_root_changed",
                 "wsl_identity_unavailable" => "wsl_identity_unavailable",
+                "project_object_changed" => "wsl_root_changed",
+                "wsl_context_invalid" => "wsl_context_invalid",
+                "wsl_context_required" => "wsl_context_required",
+                "wsl_native_filesystem_required" => "wsl_native_filesystem_required",
+                "wsl_filesystem_unavailable" => "wsl_filesystem_unavailable",
+                "file_context_changed" => "file_context_changed",
+                "file_snapshot_changed" => "file_snapshot_changed",
+                "file_selection_required" => "file_selection_required",
+                "unsafe_file_path" => "unsafe_file_path",
+                "file_target_unavailable" => "file_target_unavailable",
+                "file_path_limit" => "file_path_limit",
+                "file_limit" => "file_limit",
+                "file_owner_path" => "file_owner_path",
+                "file_read_failed" => "file_read_failed",
+                "file_unavailable" => "file_unavailable",
+                "file_changed" => "file_changed",
                 _ => "wsl_operation_failed",
             })
         }
