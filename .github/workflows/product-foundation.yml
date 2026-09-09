@@ -135,24 +135,38 @@ jobs:
           path: apps/devbox-workspace/src-tauri/resources/wsl
       - name: Verify helper belongs to this product source
         run: node .github/scripts/workspace-wsl-artifact.mjs verify "${{ github.sha }}"
+      - name: Prepare dedicated WSL1 filesystem fixture
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Inspect only the owned WSL backing path
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: .github/scripts/windows-workspace-wsl-storage.ps1
+      - name: Preserve WSL storage metadata before native tests
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl-preflight-${{ github.run_id }}
+          path: product-foundation-evidence/workspace-wsl-storage.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Exercise packaged Workspace helper on owned WSL
+        if: ${{ !cancelled() }}
+        run: cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture
+      - name: Run native authority and WAL fixtures on Windows
+        if: ${{ !cancelled() }}
+        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2
       - name: Build unpublished product installers
         id: product-build
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: |
           foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
             pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
-      - name: Prepare dedicated WSL1 filesystem fixture
-        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
-        timeout-minutes: 10
-        shell: pwsh
-        run: .github/scripts/windows-knowledge-wsl.ps1
-      - name: Exercise packaged Workspace helper on owned WSL
-        run: cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture
-      - name: Run native authority and WAL fixtures on Windows
-        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
-        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs

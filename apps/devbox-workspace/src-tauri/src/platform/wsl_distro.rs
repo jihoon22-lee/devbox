@@ -420,9 +420,9 @@ mod native {
                 return Err("wsl_distro_stopped");
             }
             super::super::windows_path::admit(&registration.base)?;
-            ensure_no_links(&registration.base).map_err(|_| "wsl_registry_changed")?;
+            ensure_no_links(&registration.base).map_err(|_| "wsl_storage_path_unsafe")?;
             let (directory, identity) = open_filesystem_object(&registration.base, true)
-                .map_err(|_| "wsl_registry_changed")?;
+                .map_err(|_| "wsl_storage_unavailable")?;
             let backing = registration
                 .backing
                 .as_ref()
@@ -463,8 +463,8 @@ mod native {
             if current != self.registration {
                 return Err("wsl_registry_changed");
             }
-            ensure_no_links(&current.base).map_err(|_| "wsl_registry_changed")?;
-            if filesystem_identity(&current.base, true).map_err(|_| "wsl_registry_changed")?
+            ensure_no_links(&current.base).map_err(|_| "wsl_storage_path_unsafe")?;
+            if filesystem_identity(&current.base, true).map_err(|_| "wsl_storage_unavailable")?
                 != self.identity
             {
                 return Err("wsl_registry_changed");
@@ -585,10 +585,11 @@ mod native {
             let directory = tempfile::tempdir().unwrap();
             initialize(&key, directory.path());
             let before = registration(&key, "fixture").unwrap();
-            let stamp = revision(&key).unwrap();
-            std::thread::sleep(Duration::from_millis(20));
             set(&key, "State", REG_DWORD, &1u32.to_le_bytes());
-            assert_ne!(stamp, revision(&key).unwrap());
+            assert!(before == registration(&key, "fixture").unwrap());
+            set(&key, "State", REG_DWORD, &2u32.to_le_bytes());
+            assert!(before != registration(&key, "fixture").unwrap());
+            set(&key, "State", REG_DWORD, &1u32.to_le_bytes());
             assert!(before == registration(&key, "fixture").unwrap());
             set(&key, "DefaultUid", REG_DWORD, &0u32.to_le_bytes());
             assert!(before != registration(&key, "fixture").unwrap());
