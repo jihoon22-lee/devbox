@@ -526,14 +526,19 @@ pub(crate) fn encode_for_save(
 }
 
 fn create_directory_tree_no_follow(path: &Path) -> Result<(), FileError> {
-    if path.as_os_str().is_empty() {
+    if !path.is_absolute() {
         return Err(FileError::InvalidPath(
-            "empty private directory path".into(),
+            "private directory path must be absolute".into(),
         ));
     }
     let mut current = PathBuf::new();
     for component in path.components() {
         current.push(component.as_os_str());
+        // A Windows drive/verbatim prefix alone is not a filesystem root.
+        // Inspect it only once the following RootDir completes the path.
+        if matches!(component, std::path::Component::Prefix(_)) {
+            continue;
+        }
         match fs::symlink_metadata(&current) {
             Ok(metadata) if metadata.file_type().is_symlink() || !metadata.is_dir() => {
                 return Err(FileError::BackupIntegrity);
@@ -552,6 +557,7 @@ fn create_directory_tree_no_follow(path: &Path) -> Result<(), FileError> {
                 });
             }
         }
+        devbox_filesystem::ensure_no_links(&current).map_err(|_| FileError::BackupIntegrity)?;
     }
     Ok(())
 }
