@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{
     atomic::{AtomicBool, AtomicUsize, Ordering},
-    Arc, Mutex,
+    Arc, Mutex, OnceLock,
 };
 use std::time::Duration;
 use tauri::{Manager, State, WebviewWindow};
@@ -42,7 +42,7 @@ struct Runtime {
     source_requests: Pool,
     source_operations: crate::core::source_operations::Operations,
     source_workers: Arc<tokio::sync::Semaphore>,
-    host: Arc<Mutex<Result<Arc<Host>, &'static str>>>,
+    host: Arc<OnceLock<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
     probes: Pool,
     files: Arc<Mutex<crate::files_host::FilesHost>>,
@@ -67,7 +67,7 @@ impl Default for Runtime {
             source_requests: Pool::default(),
             source_operations: Default::default(),
             source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            host: Arc::new(Mutex::new(Err("initializing"))),
+            host: Arc::default(),
             metadata: Pool::default(),
             probes: Pool::default(),
             files: Arc::default(),
@@ -91,7 +91,9 @@ impl Runtime {
         Ok(())
     }
     fn host(&self) -> Result<Arc<Host>, &'static str> {
-        self.host.try_lock().map_err(|_| "busy")?.clone()
+        // Initialization publishes once. Concurrent metadata readers must not
+        // compete for a mutable lock or become spurious admission failures.
+        self.host.get().cloned().unwrap_or(Err("initializing"))
     }
     fn status(&self) -> Value {
         match self.host().and_then(|host| host.status()) {
@@ -1152,9 +1154,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 })
                 .await
                 .unwrap_or(Err("worker_unavailable"));
-                if let Ok(mut state) = runtime.host.lock() {
-                    *state = result;
-                }
+                let _ = runtime.host.set(result);
                 loop {
                     tokio::time::sleep(Duration::from_secs(10)).await;
                     if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
@@ -1246,6 +1246,34 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn initialized_host_is_shared_without_rejecting_concurrent_metadata_readers() {
+        let runtime = Runtime::default();
+        assert!(matches!(runtime.host(), Err("initializing")));
+        let directory = tempfile::tempdir().unwrap();
+        let host = Arc::new(Host::open(directory.path()).unwrap());
+        assert!(runtime.host.set(Ok(host.clone())).is_ok());
+        let barrier = Arc::new(std::sync::Barrier::new(4));
+        let workers = (0..4)
+            .map(|_| {
+                let runtime = runtime.clone();
+                let expected = host.clone();
+                let barrier = barrier.clone();
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    for _ in 0..128 {
+                        assert!(Arc::ptr_eq(&runtime.host().unwrap(), &expected));
+                    }
+                })
+            })
+            .collect::<Vec<_>>();
+        for worker in workers {
+            worker.join().unwrap();
+        }
+        assert!(runtime.host.set(Err("store_unavailable")).is_err());
+        assert!(Arc::ptr_eq(&runtime.host().unwrap(), &host));
+    }
+
     #[test]
     fn lsp_settings_write_excludes_another_save_and_running_context_operation() {
         let runtime = Runtime::default();
