@@ -1,65 +1,24 @@
 //! Context-owned configuration only. Saving settings performs no project IO,
 //! executable resolution, runtime probe or execution approval.
 use super::{input, Result};
+use crate::core::legacy_lsp::{decode, StoredConfig};
 use crate::{
     core::registry::Binding, definitions::digest, host::Host,
     platform::definition_write::DefinitionTarget, private_metadata::MetadataRoot,
 };
-use code_pad_lib::lsp::{LspConfig, LSP_CONFIG_SCHEMA_VERSION};
+use code_pad_lib::lsp::LspConfig;
 use product_contract::ProjectContext;
 use serde::Deserialize;
 use serde_json::{json, Value};
 
 const FILE: &str = "config.json";
-const MAX_BYTES: usize = 64 * 1024;
-
-// Ignore no unknown field, including nested runtime/server metadata. Missing
-// optional fields may still take the legacy schema's documented defaults.
-fn known_shape(raw: &Value, normalized: &Value) -> bool {
-    match (raw, normalized) {
-        (Value::Object(raw), Value::Object(normalized)) => raw.iter().all(|(key, value)| {
-            normalized
-                .get(key)
-                .is_some_and(|expected| known_shape(value, expected))
-        }),
-        (Value::Array(raw), Value::Array(normalized)) => {
-            raw.len() == normalized.len()
-                && raw
-                    .iter()
-                    .zip(normalized)
-                    .all(|(value, expected)| known_shape(value, expected))
-        }
-        _ => raw == normalized,
-    }
-}
-fn decode(bytes: &[u8]) -> Result<LspConfig> {
-    if bytes.len() > MAX_BYTES {
-        return Err("lsp_config_invalid");
-    }
-    let raw: Value = serde_json::from_slice(bytes).map_err(|_| "lsp_config_invalid")?;
-    if raw
-        .get("version")
-        .and_then(Value::as_u64)
-        .is_some_and(|v| v != u64::from(LSP_CONFIG_SCHEMA_VERSION))
-    {
-        return Err("lsp_config_future");
-    }
-    let config: LspConfig =
-        serde_json::from_value(raw.clone()).map_err(|_| "lsp_config_invalid")?;
-    config.validate().map_err(|_| "lsp_config_invalid")?;
-    let normalized = serde_json::to_value(&config).map_err(|_| "lsp_config_invalid")?;
-    if !known_shape(&raw, &normalized) {
-        return Err("lsp_config_future");
-    }
-    Ok(config)
-}
 
 pub(super) struct Settings {
     pub(super) context: ProjectContext,
     binding: Binding,
     data: MetadataRoot,
     private: MetadataRoot,
-    original: Option<Vec<u8>>,
+    pub(super) original: Option<Vec<u8>>,
 }
 impl Settings {
     pub(super) fn open(host: &Host, context: &ProjectContext) -> Result<Self> {
@@ -106,20 +65,25 @@ impl Settings {
         &self.private
     }
     pub(super) fn execution_config(&self) -> Result<LspConfig> {
-        let config = decode(
+        let config = StoredConfig::decode(
             self.original
                 .as_deref()
                 .ok_or("lsp_settings_save_required")?,
-        )?;
+        )?
+        .config;
         if !config.enabled || config.workspace_root != self.binding.root {
             return Err("lsp_settings_save_required");
         }
         Ok(config)
     }
     pub(super) fn view(&self) -> Result<Value> {
-        let loaded = self.original.as_deref().map(decode).transpose();
+        let loaded = self
+            .original
+            .as_deref()
+            .map(StoredConfig::decode)
+            .transpose();
         let issue = loaded.as_ref().err().copied();
-        let mut config = loaded.unwrap_or(None).unwrap_or_default();
+        let mut config = loaded.unwrap_or(None).unwrap_or_default().config;
         // A new/rebound context never inherits activation from the former root.
         // Keep the original bytes until an explicit revision-checked save.
         if config.workspace_root != self.binding.root {
@@ -147,7 +111,12 @@ impl Settings {
         if config.workspace_root != self.binding.root {
             return Err("lsp_context_changed");
         }
-        let invalid = self.original.as_deref().map(decode).transpose().err();
+        let invalid = self
+            .original
+            .as_deref()
+            .map(StoredConfig::decode)
+            .transpose()
+            .err();
         if invalid == Some("lsp_config_future") {
             return Err("lsp_config_future");
         }
@@ -168,7 +137,15 @@ impl Settings {
                 None => self.private.write(&backup, original)?,
             }
         }
-        let bytes = serde_json::to_vec_pretty(&config).map_err(|_| "lsp_config_invalid")?;
+        let mut stored = self
+            .original
+            .as_deref()
+            .map(StoredConfig::decode)
+            .transpose()
+            .unwrap_or(None)
+            .unwrap_or_default();
+        stored.config = config;
+        let bytes = stored.encode()?;
         target.write_utf8(&bytes, || {
             crate::files_host::current_deadline(deadline)?;
             self.revalidate(host)

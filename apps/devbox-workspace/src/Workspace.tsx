@@ -13,6 +13,7 @@ const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
+const LegacyLspImport = lazy(() => import("./LegacyLspImport"));
 const LegacyRecoveryImport = lazy(() => import("./LegacyRecoveryImport"));
 const LegacySessionImport = lazy(() => import("./LegacySessionImport"));
 let displayed: Description | undefined;
@@ -43,6 +44,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [editing, setEditing] = useState(false);
   const [sessionImportBusy,setSessionImportBusy]=useState(false);
   const [recoveryImportBusy,setRecoveryImportBusy]=useState(false);
+  const [lspImportBusy,setLspImportBusy]=useState(false);
   const [sessionRevision,setSessionRevision]=useState(0);
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
@@ -70,7 +72,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || sessionImportBusy || recoveryImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
     </div>
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
@@ -88,10 +90,11 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     </div>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
-        <LegacySessionImport key={JSON.stringify(description.context)} description={description} disabled={editing||recoveryImportBusy} onBusyChange={setSessionImportBusy} onApplied={reloadImportedSession}/>
-        <LegacyRecoveryImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy} onBusyChange={setRecoveryImportBusy} onApplied={reloadImportedSession}/>
-        <div inert={sessionImportBusy||recoveryImportBusy}>
-          <Files key={sessionRevision} contextKey={JSON.stringify(description.context)} active={route === "files"&&!sessionImportBusy&&!recoveryImportBusy} onDirtyChange={setEditing} openRequest={fileRequest}/>
+        <LegacySessionImport key={JSON.stringify(description.context)} description={description} disabled={editing||recoveryImportBusy||lspImportBusy} onBusyChange={setSessionImportBusy} onApplied={reloadImportedSession}/>
+        <LegacyRecoveryImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy||lspImportBusy} onBusyChange={setRecoveryImportBusy} onApplied={reloadImportedSession}/>
+        <LegacyLspImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy||recoveryImportBusy} onBusyChange={setLspImportBusy} onApplied={reloadImportedSession}/>
+        <div inert={sessionImportBusy||recoveryImportBusy||lspImportBusy}>
+          <Files key={sessionRevision} contextKey={JSON.stringify(description.context)} active={route === "files"&&!sessionImportBusy&&!recoveryImportBusy&&!lspImportBusy} onDirtyChange={setEditing} openRequest={fileRequest}/>
         </div>
       </Suspense>
     </div>}

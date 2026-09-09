@@ -671,7 +671,12 @@ fn file_access(method: &str) -> Option<bool> {
         | "validate_encoding"
         | "lsp_catalog"
         | "lsp_installed"
-        | "load_lsp_config" => None,
+        | "load_lsp_config"
+        | "preview_lsp_config_import"
+        | "apply_lsp_config_import"
+        | "cancel_lsp_config_import"
+        | "list_lsp_config_history"
+        | "preview_lsp_config_restore" => None,
         _ => Some(false),
     }
 }
@@ -880,6 +885,7 @@ fn changes_context(method: &str) -> bool {
             | "approve_trust"
             | "revoke_trust"
             | "save_lsp_config"
+            | "apply_lsp_config_import"
             | "lsp_execution_approve"
             | "lsp_execution_revoke"
     )
@@ -1283,6 +1289,18 @@ mod tests {
             .enter(changes_context("save_lsp_config"))
             .is_err());
         drop(reading);
+        for method in [
+            "preview_lsp_config_import",
+            "apply_lsp_config_import",
+            "cancel_lsp_config_import",
+            "list_lsp_config_history",
+            "preview_lsp_config_restore",
+        ] {
+            assert!(crate::lsp_host::allowed(method));
+            assert!(crate::lsp_host::contextual(method));
+            assert_eq!(file_access(method), None);
+        }
+        assert!(changes_context("apply_lsp_config_import"));
         let writing = runtime
             .context_activity
             .enter(changes_context("save_lsp_config"))
@@ -1292,6 +1310,10 @@ mod tests {
             .enter(changes_context("save_lsp_config"))
             .is_err());
         assert!(runtime.context_activity.enter(false).is_err());
+        assert!(runtime
+            .context_activity
+            .enter(changes_context("apply_lsp_config_import"))
+            .is_err());
         drop(writing);
         assert!(runtime.context_activity.enter(false).is_ok());
     }

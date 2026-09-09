@@ -93,6 +93,29 @@ write. Actual buffer recovery remains a separate Files preview/apply action.
 Normal metadata publication and a preserved preimage are separate atomic steps;
 no transaction across arbitrary files, registry or external vault is claimed.
 
+## Reviewed LSP configuration import
+
+Verified Code Pad LSP settings now reach current-project native configuration and
+its actual management dialog. Before/after review shows preserved server/runtime
+preferences with the current root and forced disabled state; history restoration
+also disables execution. Closed native tabs, one-use context/expiry/preimage tokens
+and the same exclusive context permit as normal saves guard replacement. Normal
+settings saves retain receipts; repeated imports preserve later choices. Exact
+bounded preimages are preserved before atomic configuration/receipt publication.
+Unknown/future/corrupt source or destination data remains untouched. Import does
+not resolve a command, probe a runtime, open project files or inherit execution
+approval. Offline-root metadata remains accessible.
+
+Initial focused checks passed five portable config/import tests and strict Clippy
+in **38.762 seconds**, peak **4,021,374,976 bytes**. Product **37 UI tests** and build
+passed in **23.087 seconds**, peak **1,576,886,272 bytes**. Final focused validation passed **139 Workspace Rust tests**, strict Clippy and
+five generated-fixture checks in **34.211 seconds**, peak **2,052,390,912 bytes**,
+including token expiry/foreign context/offline metadata and disabled restoration.
+Final affected verification selected all and passed in **429.869 seconds**,
+cgroup peak **5,043,556,352 bytes** under 8 GiB. The new Windows actual-control/
+repeat/restore fixture has not run on Windows yet. The active Windows runs still target the earlier
+`3dc56c6` recovery/host/path changes, not this configuration import.
+
 ## Windows corrections and verification
 
 Code Pad's direct link-count probe now uses Rust extended-path handling. The added
@@ -121,6 +144,7 @@ shared 8 GiB budget.
 | [3db1a59 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34326324526) | FAIL: real debounce tests exceeded CI's five-second default and the Windows long-cache regression failed while publishing the installed index. Time budgets and the second direct Win32 path are corrected locally; new Windows results pending. |
 | [3db1a59 product](https://github.com/jihoon22-lee/devbox/actions/runs/34326324514) | Native authority/WAL, API/Knowledge and coexistence PASS. Linked-worktree Source history returned busy before a diff, so downstream Files/session/LSP checks were not reached. Empty invoke probes do not establish the exact native admission cause. |
 | 3db1a59 baseline | 14/15 runtime cases passed; WSL Desktop startup failed and baseline pnpm download hit TLS ECONNRESET. Run Manager's known owned-task baseline failure still misses its performance budget. R24 remains incomplete. |
+| [3dc56c6 baseline](https://github.com/jihoon22-lee/devbox/actions/runs/34329557848) | Public v0.7 assets and all 15 runtime cases PASS; six measured budgets PASS. Run Manager's known owned-task spawn failure remains, and live PTY restore/integrated comparison are unmeasured: `r24Passed=false`. |
 
 The generated Windows session fixture now owns an exclusive synthetic Code Pad
 folder, verifies the snapshot, removes only that owned source, and exercises real
@@ -137,7 +161,7 @@ not changed. Earlier detailed checkpoints and intermediate failures are retained
 
 ## Remaining acceptance and rollback limits
 
-LSP configuration conversion, recent-workspace onboarding, templates/window state,
+Recent-workspace onboarding, templates/window state,
 older references and provider handoff remain incomplete. WSL-native Git/LSP,
 remote Files IO/cancellation and Windows/WSL end-to-end acceptance remain required.
 Native filesystem cancellation is cooperative; current Files IO is serialized.

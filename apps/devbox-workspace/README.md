@@ -36,7 +36,14 @@ raw metadata is preserved before commit and can be reviewed/restored. Hosted sav
 and discards carry native revisions; the dialog chains them while preserving
 unavailable entries and backups on conflict. Import itself never writes a source
 file; applying its normal recovery preview remains a separate action.
-Configuration conversion, recent-workspace onboarding, templates, window mapping and WSL bindings remain incomplete. Repo Manager's
+Verified LSP settings now have a separate current-project before/after review.
+Import and history restoration preserve server/runtime preferences while retargeting
+the current root and forcing LSP disabled. Closed tabs and the native context write
+permit prevent editor replacement or overlapping settings writes/starts. Receipts
+survive normal settings saves; repeat import preserves later changes. Exact
+preimages support checked history restoration, including offline roots. No command
+is resolved, runtime installed or execution approval inherited by conversion.
+Recent-workspace onboarding, templates, window mapping and WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
 file to migrate. Native window-state mapping and older identifier diagnostics
 remain part of the unfinished importer.

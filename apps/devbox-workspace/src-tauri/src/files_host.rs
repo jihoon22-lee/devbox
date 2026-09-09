@@ -199,6 +199,9 @@ pub struct FilesHost {
     recovery_imports: HashMap<String, recovery_import::ImportPreview>,
 }
 impl FilesHost {
+    pub(crate) fn has_documents(&self) -> bool {
+        self.owner.has_documents()
+    }
     #[cfg(test)]
     pub(crate) fn from_editor_fixture(owner: FileOwner) -> Self {
         Self {

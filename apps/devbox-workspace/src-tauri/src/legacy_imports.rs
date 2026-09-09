@@ -170,6 +170,34 @@ impl LegacyImports {
         let session = serde_json::from_slice(bytes).map_err(|_| "legacy_recovery_unavailable")?;
         Ok((snapshot.id()?, session))
     }
+    pub(crate) fn lsp_source(
+        &self,
+        job_id: &str,
+    ) -> Result<(String, code_pad_lib::lsp::LspConfig)> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
+            current
+                .as_ref()
+                .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+                .and_then(|job| job.snapshot.clone())
+                .ok_or("legacy_import_stale")?
+        };
+        if snapshot.manifest.source != Source::CodePad
+            || !snapshot
+                .manifest
+                .files
+                .iter()
+                .any(|file| file.name == "lsp/config.json" && file.issue.is_none())
+        {
+            return Err("legacy_lsp_unavailable");
+        }
+        let config = crate::core::legacy_lsp::decode(
+            snapshot
+                .bytes("lsp/config.json")
+                .ok_or("legacy_lsp_unavailable")?,
+        )?;
+        Ok((snapshot.id()?, config))
+    }
     pub(crate) fn catalog(&self) -> Result<Catalog> {
         self.stores.read()?;
         let root = MetadataRoot::open(self.stores.root())?;

@@ -7,6 +7,7 @@ mod documents;
 mod evidence;
 mod recovery;
 mod settings;
+mod settings_import;
 use crate::{
     host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
 };
@@ -59,6 +60,11 @@ pub(crate) fn allowed(method: &str) -> bool {
                 | "discard_lsp_archives"
                 | "load_lsp_config"
                 | "save_lsp_config"
+                | "preview_lsp_config_import"
+                | "apply_lsp_config_import"
+                | "cancel_lsp_config_import"
+                | "list_lsp_config_history"
+                | "preview_lsp_config_restore"
                 | "lsp_recovery_list"
                 | "lsp_recovery_preview"
                 | "lsp_recovery_apply"
@@ -80,6 +86,11 @@ pub(crate) fn contextual(method: &str) -> bool {
             method,
             "load_lsp_config"
                 | "save_lsp_config"
+                | "preview_lsp_config_import"
+                | "apply_lsp_config_import"
+                | "cancel_lsp_config_import"
+                | "list_lsp_config_history"
+                | "preview_lsp_config_restore"
                 | "lsp_recovery_list"
                 | "lsp_recovery_preview"
                 | "lsp_recovery_apply"
@@ -141,6 +152,7 @@ pub(crate) struct LspHost {
     selections: Mutex<archives::Selections>,
     approvals: Mutex<approval::Approvals>,
     recovery: Mutex<recovery::Recovery>,
+    config_imports: Mutex<settings_import::Imports>,
     protected: ProtectedStorage,
     actor: Mutex<Option<Arc<actor::Actor>>>,
     preparing: std::sync::atomic::AtomicBool,
@@ -166,6 +178,7 @@ impl LspHost {
             selections: Mutex::new(archives::Selections::new(protected.clone())),
             approvals: Mutex::new(Default::default()),
             recovery: Mutex::new(Default::default()),
+            config_imports: Mutex::new(Default::default()),
             protected,
             actor: Mutex::new(None),
             preparing: Default::default(),
@@ -177,6 +190,9 @@ impl LspHost {
         })
     }
     pub(crate) fn expire(&self) {
+        if let Ok(mut imports) = self.config_imports.try_lock() {
+            imports.expire();
+        }
         if let Ok(mut recovery) = self.recovery.try_lock() {
             recovery.expire();
         }
@@ -445,6 +461,79 @@ impl LspHost {
                     Ok(
                         json!({"config":code_pad_lib::lsp::LspConfig::default(),"persist_allowed":false,"recoveryAllowed":false,"error":null,"nativeRevision":null}),
                     )
+                }
+            }
+            "preview_lsp_config_import"
+            | "apply_lsp_config_import"
+            | "cancel_lsp_config_import"
+            | "list_lsp_config_history"
+            | "preview_lsp_config_restore" => {
+                let context = context.ok_or("project_selection_required")?;
+                if method == "apply_lsp_config_import" {
+                    self.retire().await?;
+                }
+                // Apply also owns the exclusive component context permit. Keep
+                // Files checked until publication; importing cannot drop a tab.
+                let files = self.files.lock().map_err(|_| "lsp_busy")?;
+                if matches!(
+                    method,
+                    "preview_lsp_config_import" | "preview_lsp_config_restore"
+                ) && files.has_documents()
+                {
+                    return Err("legacy_lsp_documents_open");
+                }
+                let mut imports = self.config_imports.lock().map_err(|_| "lsp_busy")?;
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Source {
+                    job_id: String,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Token {
+                    preview_id: String,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Apply {
+                    preview_id: String,
+                    replace_existing: bool,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Backup {
+                    backup_id: String,
+                }
+                match method {
+                    "preview_lsp_config_import" => {
+                        imports.preview(host, context, &input::<Source>(args)?.job_id)
+                    }
+                    "apply_lsp_config_import" => {
+                        let value: Apply = input(args)?;
+                        if files.has_documents() {
+                            imports.cancel(context, &value.preview_id)?;
+                            return Err("legacy_lsp_documents_open");
+                        }
+                        imports.apply(
+                            host,
+                            context,
+                            &value.preview_id,
+                            value.replace_existing,
+                            deadline,
+                        )
+                    }
+                    "cancel_lsp_config_import" => {
+                        imports.cancel(context, &input::<Token>(args)?.preview_id)
+                    }
+                    "preview_lsp_config_restore" => {
+                        imports.restore(host, context, &input::<Backup>(args)?.backup_id)
+                    }
+                    _ => {
+                        if args.as_object().is_none_or(|args| !args.is_empty()) {
+                            return Err("invalid_request");
+                        }
+                        settings_import::Imports::history(host, context)
+                    }
                 }
             }
             "save_lsp_config" => {
