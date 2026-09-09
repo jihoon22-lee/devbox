@@ -22,6 +22,8 @@ use std::{
 };
 use tauri::Manager;
 
+mod recovery_import;
+
 type Result<T> = std::result::Result<T, &'static str>;
 const CHOICES: &str = "native-file-choices.json";
 
@@ -119,6 +121,11 @@ pub fn allowed(component: &str, method: &str) -> bool {
                 | "cancel_session_import"
                 | "list_session_history"
                 | "preview_session_restore"
+                | "preview_recovery_import"
+                | "apply_recovery_import"
+                | "cancel_recovery_import"
+                | "list_recovery_history"
+                | "preview_recovery_restore"
                 | "load_recovery"
                 | "save_recovery"
                 | "discard_recovery"
@@ -189,6 +196,7 @@ pub struct FilesHost {
     previews: HashMap<String, RecoveryPreview>,
     watched: HashMap<String, PathBuf>,
     session_imports: HashMap<String, SessionImportPreview>,
+    recovery_imports: HashMap<String, recovery_import::ImportPreview>,
 }
 impl FilesHost {
     #[cfg(test)]
@@ -344,12 +352,9 @@ impl FilesHost {
             .child(&name)
     }
     fn recovery(view: &MetadataRoot) -> Result<RecoveryFile> {
-        let Some(bytes) = view.read("recovery.json")? else {
-            return Ok(RecoveryFile::empty());
-        };
-        code_pad_lib::component::validate_persistent_file("recovery.json", &bytes)?;
-        serde_json::from_slice(&bytes).map_err(|_| "invalid_files_store")
+        Ok(recovery_import::read_recovery(view)?.0.recovery)
     }
+
     fn preview_session_import(
         &mut self,
         host: &Host,
@@ -735,6 +740,56 @@ impl FilesHost {
                     .remove(&request.preview_id)
                     .is_some()))
             }
+            "list_recovery_history" => {
+                empty(&args)?;
+                self.recovery_history(host, context)
+            }
+            "preview_recovery_restore" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    backup_id: String,
+                }
+                let request: Input = input(args)?;
+                self.preview_recovery_restore(host, context, &request.backup_id)
+            }
+            "preview_recovery_import" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    job_id: String,
+                }
+                let request: Input = input(args)?;
+                self.preview_recovery_import(host, context, &request.job_id)
+            }
+            "apply_recovery_import" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    preview_id: String,
+                    replace_existing: bool,
+                }
+                let request: Input = input(args)?;
+                self.apply_recovery_import(
+                    host,
+                    context,
+                    &request.preview_id,
+                    request.replace_existing,
+                    deadline,
+                )
+            }
+            "cancel_recovery_import" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    preview_id: String,
+                }
+                let request: Input = input(args)?;
+                Ok(json!(self
+                    .recovery_imports
+                    .remove(&request.preview_id)
+                    .is_some()))
+            }
             "sync_editor_document" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -965,13 +1020,16 @@ impl FilesHost {
             }
             "load_recovery" => {
                 empty(&args)?;
-                value(Self::recovery(&self.view(host, context)?)?.entries)
+                let (stored, revision) =
+                    recovery_import::read_recovery(&self.view(host, context)?)?;
+                Ok(json!({"entries":stored.recovery.entries,"nativeRevision":revision}))
             }
             "save_recovery" => {
                 #[derive(Deserialize)]
-                #[serde(deny_unknown_fields)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
                 struct Input {
                     entries: Vec<RecoveryEntry>,
+                    native_revision: String,
                 }
                 let request: Input = input(args)?;
                 self.owner.validate_open_paths(
@@ -983,48 +1041,45 @@ impl FilesHost {
                         .collect::<Vec<_>>(),
                 )?;
                 let view = self.view(host, context)?;
-                let mut recovery = Self::recovery(&view)?;
-                for entry in request.entries {
-                    recovery.upsert(entry);
-                }
-                let bytes = serde_json::to_vec(&recovery).map_err(|_| "invalid_files_store")?;
-                code_pad_lib::component::validate_persistent_file("recovery.json", &bytes)?;
-                view.write("recovery.json", &bytes)?;
-                Ok(Value::Null)
+                let (stored, _) = recovery_import::read_recovery(&view)?;
+                let next = stored.merge(&request.entries)?;
+                let revision =
+                    recovery_import::write_recovery(&view, &next, &request.native_revision)?;
+                Ok(json!({"nativeRevision":revision}))
             }
             "discard_recovery" => {
                 #[derive(Deserialize)]
-                #[serde(deny_unknown_fields)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
                 struct Input {
                     path: Option<String>,
+                    native_revision: String,
                 }
                 let request: Input = input(args)?;
                 let view = self.view(host, context)?;
-                let mut recovery = Self::recovery(&view)?;
+                let (mut stored, _) = recovery_import::read_recovery(&view)?;
                 if let Some(path) = &request.path {
-                    recovery.remove(path);
+                    stored.recovery.remove(path);
                 } else {
-                    recovery = RecoveryFile::empty();
+                    stored.recovery.entries.clear();
                 }
-                view.write(
-                    "recovery.json",
-                    &serde_json::to_vec(&recovery).map_err(|_| "invalid_files_store")?,
-                )?;
+                let revision =
+                    recovery_import::write_recovery(&view, &stored, &request.native_revision)?;
                 let invalidated = self
                     .previews
                     .iter()
                     .filter(|(_, preview)| {
-                        request
-                            .path
-                            .as_ref()
-                            .is_none_or(|path| &preview.source.path == path)
+                        preview.context.as_ref() == context
+                            && request
+                                .path
+                                .as_ref()
+                                .is_none_or(|path| &preview.source.path == path)
                     })
                     .map(|(id, _)| id.clone())
                     .collect::<Vec<_>>();
                 for id in invalidated {
                     self.cancel_preview(&id);
                 }
-                Ok(Value::Null)
+                Ok(json!({"nativeRevision":revision}))
             }
             "prepare_recovery" => {
                 let request: PathArg = input(args)?;

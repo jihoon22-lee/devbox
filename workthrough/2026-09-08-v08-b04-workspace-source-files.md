@@ -4,6 +4,54 @@ WP #546 / R02–06, R08, R13, R16–21, R24–25 and S01. This bundle owns
 Project/Worktree Registry, manifest/local trust, Overview/Source/Files/Dependencies,
 legacy import and WSL-native LSP. Runtime and Terminal/session owners remain B05/B06.
 
+## Reviewed recovery buffers and destination revision
+
+Verified Code Pad recovery snapshots now reach the actual Files recovery dialog.
+Metadata import filters eligible paths without opening files, retains buffer text,
+base hash and timestamp, and merges with existing buffers. Only conflicting paths
+need explicit replacement; unrelated buffers remain. Capacity overflow rejects the
+whole change, without the legacy upsert's oldest-buffer eviction. Tokens bind the
+native view and exact preimage; source loss after verification is supported.
+
+The recovery store commits receipts alongside entries and preserves them through
+normal writes/discards, so repeated import retains later edits and discards. Exact
+preimages are durably preserved before replacement with bounded history and explicit
+restoration. Changed/unknown history and future/corrupt schemas remain untouched.
+Hosted load/save/discard now thread native revisions while standalone wire formats
+remain compatible. The recovery dialog chains discard revisions, reports unavailable
+entries individually, and keeps backups when a write conflicts. Import never grants
+file authority or writes repository content; the usual native file preview and
+explicit recovery action own the later disk change.
+
+Focused validation passed **135 Workspace Rust tests**, strict Clippy, **34 product
+UI tests**, **47 Files UI/API tests**, five generated-fixture checks and product
+build in **69.905 seconds**, cgroup peak **2,541,629,440 bytes**. A first check command
+failed before execution because the resource wrapper lacked its required separator;
+the corrected initial subset passed in 33.316 seconds. The extended Windows fixture
+now verifies actual imported-buffer recovery, stale discard rejection, repeat after
+discard and preimage restoration. Its static check passed. The first affected-all run was stopped when the final
+call-site review found Source's Git-cancellation fixture also needed recovery
+revisions; that caller was corrected. Final affected-all passed in **425.804 seconds**,
+cgroup peak **5,494,153,216 bytes** under 8 GiB. Windows recovery-import execution
+is not yet claimed.
+
+[3db1a59 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34326324526)
+failed a new autosave regression's five-second test deadline. The test waits through
+three real debounce intervals; the timeout then contaminated four following renders.
+Those two session tests now allow 15 seconds and bounded five-second assertions.
+The [Windows baseline job](https://github.com/jihoon22-lee/devbox/actions/runs/34326324514/job/102384308592)
+recorded the known Run Manager `spawn-failed` baseline and an unclassified WSL
+Desktop startup failure (14/15 app smoke passes). Owned processes/data residues
+were cleaned. Subsequent baseline pnpm setup hit a TLS connection reset. These
+are separate from the still-running B04 product acceptance.
+The 3db1a59 product run passed native authority/WAL, API/Knowledge and installer
+coexistence, but stopped during linked-worktree history: commit detail/diff reported
+`busy`. Session and LSP packaged fixtures were not reached. Windows general CI also
+failed the new long-cache test while committing the installed index: the underlying
+session atomic writer still passed an ordinary long temporary path to `MoveFileExW`.
+Both native concurrency and index publication corrections follow this recovery commit.
+LSP settings import, recent-workspace onboarding and the remaining B04 work continue.
+
 ## Reviewed Code Pad session import and autosave ownership
 
 Files now converts a verified snapshot into a review for the selected view. It

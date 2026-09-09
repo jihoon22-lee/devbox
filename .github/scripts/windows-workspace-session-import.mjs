@@ -19,12 +19,17 @@ export async function exerciseWorkspaceSessionImport({cdp,root,call,success,wait
   const session={version:1,workspace_folder:root,docs:[{id:"original-codepad-document",path:file,cursor:7,bookmarks:[1,2]}],views:[[],["original-codepad-document"]],active_view:1,active_doc_by_view:[null,"original-codepad-document"],recent_files:[file]};
   const bytes=JSON.stringify(session);
   writeFileSync(path.join(sourceRoot,"session.json"),bytes,{flag:"wx"});
+  const recovery={version:1,entries:[{path:file,content:"recovered 첫줄\nsecond\nthird\nfourth\n",base_hash:null,snapshot_at_ms:1}]};
+  const recoveryBytes=JSON.stringify(recovery);
+  writeFileSync(path.join(sourceRoot,"recovery.json"),recoveryBytes,{flag:"wx"});
   let removed=false;
   const removeOwnedSource=()=>{
     assert.equal(realpathSync.native(sourceRoot),ownedRoot);
     assert.equal(readFileSync(marker,"utf8"),nonce);
     assert.equal(readFileSync(path.join(sourceRoot,"session.json"),"utf8"),bytes);
-    assert.deepEqual(readdirSync(sourceRoot).sort(),[".workspace-fixture-owner","session.json"]);
+    assert.equal(readFileSync(path.join(sourceRoot,"recovery.json"),"utf8"),recoveryBytes);
+    assert.deepEqual(readdirSync(sourceRoot).sort(),[".workspace-fixture-owner","recovery.json","session.json"]);
+    unlinkSync(path.join(sourceRoot,"recovery.json"));
     unlinkSync(path.join(sourceRoot,"session.json"));unlinkSync(marker);rmdirSync(sourceRoot);removed=true;
   };
   const files=(method,args={})=>call("workspace.files",method,args);
@@ -69,6 +74,28 @@ export async function exerciseWorkspaceSessionImport({cdp,root,call,success,wait
     await waitForRenderer(cdp,`Array.from(document.querySelectorAll('section[aria-label="Code Pad 세션 가져오기"] [role=status]')).some(node=>node.textContent.includes("복원했습니다"))`,"Session preimage was not restored");
     assert.deepEqual(success(await files("load_session")).session,before.session);
     assert.equal(readFileSync(file,"utf8"),text);
-    return {verifiedSnapshotSurvivesSourceRemoval:true,explicitConflictReview:true,originalDocumentIdAndTwoViews:true,actualEditorBookmarks:true,staleAutosaveRejected:true,repeatPreservesCurrentSession:true,previousSessionRestored:true,repositoryBytesUnchanged:true};
+    const previousRecovery=success(await files("load_recovery"));
+    assert.equal(previousRecovery.entries.length,0);
+    await click("복구 버퍼 가져오기 검토");
+    await click("검토한 복구 버퍼 가져오기");
+    await waitForRenderer(cdp,'!!document.querySelector(".workspace-feature-files .recovery-dialog")',"Imported buffer did not reach the recovery dialog");
+    assert.equal((await files("discard_recovery",{path:null,nativeRevision:previousRecovery.nativeRevision})).value.issue,"files_recovery_changed");
+    assert.equal(readFileSync(file,"utf8"),text);
+    await click("복구 (1)");
+    await waitForRenderer(cdp,'!document.querySelector(".workspace-feature-files .recovery-dialog") && !!document.querySelector(".workspace-feature-files .document-tab")',"Actual recovery did not reopen the editor");
+    assert.equal(readFileSync(file,"utf8"),recovery.entries[0].content.replaceAll("\n","\r\n"));
+    assert.equal(success(await files("load_recovery")).entries.length,0);
+    await cdp.evaluate('document.querySelector(".workspace-feature-files .document-tab .tab-action").click()');
+    await waitForRenderer(cdp,'!document.querySelector(".workspace-feature-files [role=tab]")',"Recovered tab did not close");
+    await delay(1300);
+    const repeatedRecovery=success(await files("preview_recovery_import",{jobId:job.id}));
+    assert.equal(repeatedRecovery.alreadyImported,true);
+    assert.equal(success(await files("apply_recovery_import",{previewId:repeatedRecovery.previewId,replaceExisting:false})).reused,true);
+    const recoveryHistory=success(await files("list_recovery_history"));
+    assert.equal(recoveryHistory.items.length,1);assert.equal(recoveryHistory.items[0].issue,null);
+    const restoreRecovery=success(await files("preview_recovery_restore",{backupId:recoveryHistory.items[0].id}));
+    success(await files("apply_recovery_import",{previewId:restoreRecovery.previewId,replaceExisting:true}));
+    assert.deepEqual(success(await files("load_recovery")).entries,previousRecovery.entries);
+    return {actualImportedRecoveryDialogAndDiskApply:true,staleRecoveryDiscardRejected:true,repeatKeepsDiscardedRecovery:true,recoveryMetadataHistoryRestored:true,verifiedSnapshotSurvivesSourceRemoval:true,explicitConflictReview:true,originalDocumentIdAndTwoViews:true,actualEditorBookmarks:true,staleAutosaveRejected:true,repeatPreservesCurrentSession:true,previousSessionRestored:true,repositoryBytesUnchangedUntilExplicitRecovery:true};
   } finally {if(!removed)removeOwnedSource();}
 }

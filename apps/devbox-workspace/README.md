@@ -28,8 +28,15 @@ commit together; repeated imports retain subsequent edits. A checked, bounded
 history preserves the exact previous bytes before replacement and provides
 explicit restoration. Editor autosave carries native revisions and stops on
 conflict without discarding buffers. Imported paths still use normal Files
-authorization when reopened. Recovery/configuration conversion, recent-workspace
-onboarding, templates, window mapping and WSL bindings remain incomplete. Repo Manager's
+authorization when reopened. Verified recovery buffers now merge into the same
+view's real recovery store. Explicit conflict review replaces only matching paths;
+other buffers remain, and capacity overflow rejects the entire merge. Original
+hash/time/content and import receipts survive normal writes and discards. Previous
+raw metadata is preserved before commit and can be reviewed/restored. Hosted saves
+and discards carry native revisions; the dialog chains them while preserving
+unavailable entries and backups on conflict. Import itself never writes a source
+file; applying its normal recovery preview remains a separate action.
+Configuration conversion, recent-workspace onboarding, templates, window mapping and WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
 file to migrate. Native window-state mapping and older identifier diagnostics
 remain part of the unfinished importer.

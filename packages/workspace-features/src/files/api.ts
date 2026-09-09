@@ -419,16 +419,24 @@ export interface RecoveryEntry {
 }
 interface RecoveryWire {path:string; content:string; base_hash:string | null; snapshot_at_ms:number}
 
-export function saveRecovery(entries: RecoveryEntry[]): Promise<void> {
-  return invoke<void>("save_recovery", { entries:entries.map(entry => ({path:entry.path, content:entry.content, base_hash:entry.baseHash, snapshot_at_ms:entry.snapshotAtMs})) });
+export interface LoadedRecovery { entries: RecoveryEntry[]; nativeRevision?: string }
+export async function saveRecovery(entries: RecoveryEntry[], nativeRevision?: string): Promise<string | undefined> {
+  const args = { entries:entries.map(entry => ({path:entry.path, content:entry.content, base_hash:entry.baseHash, snapshot_at_ms:entry.snapshotAtMs})) };
+  if (isProductHosted()) return (await invoke<{nativeRevision:string}>("save_recovery", {...args,nativeRevision})).nativeRevision;
+  await invoke<void>("save_recovery", args);
 }
-
-export function loadRecovery(): Promise<RecoveryEntry[]> {
-  return invoke<RecoveryWire[]>("load_recovery").then(entries => entries.map(entry => ({path:entry.path, content:entry.content, baseHash:entry.base_hash, snapshotAtMs:entry.snapshot_at_ms})));
+export async function loadRecoveryState(): Promise<LoadedRecovery> {
+  const hosted = isProductHosted();
+  const result = await invoke<RecoveryWire[] | {entries:RecoveryWire[];nativeRevision:string}>("load_recovery");
+  const state = hosted ? result as {entries:RecoveryWire[];nativeRevision:string} : {entries:result as RecoveryWire[],nativeRevision:undefined};
+  return {entries:state.entries.map(entry => ({path:entry.path, content:entry.content, baseHash:entry.base_hash, snapshotAtMs:entry.snapshot_at_ms})),nativeRevision:state.nativeRevision};
 }
-
-export function discardRecovery(path: string | null): Promise<void> {
-  return invoke<void>("discard_recovery", { path });
+export async function loadRecovery(): Promise<RecoveryEntry[]> {
+  return (await loadRecoveryState()).entries;
+}
+export async function discardRecovery(path: string | null, nativeRevision?: string): Promise<string | undefined> {
+  if (isProductHosted()) return (await invoke<{nativeRevision:string}>("discard_recovery", {path,nativeRevision})).nativeRevision;
+  await invoke<void>("discard_recovery", { path });
 }
 
 export function applyRecovery(path: string, content: string): Promise<void> {

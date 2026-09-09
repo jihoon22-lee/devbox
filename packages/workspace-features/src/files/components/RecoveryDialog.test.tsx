@@ -1,15 +1,15 @@
 import {act, cleanup, fireEvent, render, waitFor} from "@testing-library/react";
 import {afterEach, beforeEach, expect, it, vi} from "vitest";
-const api = vi.hoisted(() => ({loadRecovery:vi.fn(), prepareRecovery:vi.fn(), applyRecoveryPreview:vi.fn(), cancelRecoveryPreview:vi.fn(), discardRecovery:vi.fn(), applyRecovery:vi.fn(), openFile:vi.fn()}));
+const api = vi.hoisted(() => ({loadRecoveryState:vi.fn(), prepareRecovery:vi.fn(), applyRecoveryPreview:vi.fn(), cancelRecoveryPreview:vi.fn(), discardRecovery:vi.fn(), applyRecovery:vi.fn(), openFile:vi.fn()}));
 vi.mock("../api", () => api);
 vi.mock("../../transport", () => ({isProductHosted:() => true}));
 import RecoveryDialog from "./RecoveryDialog";
 beforeEach(() => {
   vi.resetAllMocks();
-  api.loadRecovery.mockResolvedValue([{path:"C:/fixture.txt", content:"unsaved", baseHash:"hash", snapshotAtMs:1}]);
+  api.loadRecoveryState.mockResolvedValue({nativeRevision:"r1",entries:[{path:"C:/fixture.txt", content:"unsaved", baseHash:"hash", snapshotAtMs:1}]});
   api.prepareRecovery.mockResolvedValue({previewId:"native-preview", path:"C:/fixture.txt", before:"disk", after:"unsaved"});
   api.cancelRecoveryPreview.mockResolvedValue(undefined);
-  api.discardRecovery.mockResolvedValue(undefined);
+  api.discardRecovery.mockResolvedValue("r2");
 });
 afterEach(cleanup);
 
@@ -36,7 +36,7 @@ it("applies only the native token and disables duplicate approval until it compl
   expect(api.applyRecoveryPreview).toHaveBeenCalledExactlyOnceWith("native-preview");
   expect(api.discardRecovery).not.toHaveBeenCalled();
   await act(async () => finish());
-  expect(api.discardRecovery).toHaveBeenCalledWith("C:/fixture.txt");
+  expect(api.discardRecovery).toHaveBeenCalledWith("C:/fixture.txt","r1");
   expect(done).toHaveBeenCalledWith(["C:/fixture.txt"]);
   expect(api.applyRecovery).not.toHaveBeenCalled();
   expect(api.openFile).not.toHaveBeenCalled();
@@ -52,4 +52,24 @@ it("retires a preview that arrives after the dialog unmounts", async () => {
   expect(api.cancelRecoveryPreview).toHaveBeenCalledWith("late-preview");
   expect(api.applyRecoveryPreview).not.toHaveBeenCalled();
   expect(api.discardRecovery).not.toHaveBeenCalled();
+});
+
+it("preserves unavailable entries while applying another entry with the loaded revision",async()=>{
+  api.loadRecoveryState.mockResolvedValue({nativeRevision:"r1",entries:[{path:"missing",content:"keep",baseHash:null,snapshotAtMs:1},{path:"available",content:"unsaved",baseHash:null,snapshotAtMs:2}]});
+  api.prepareRecovery.mockRejectedValueOnce(new Error("file unavailable")).mockResolvedValueOnce({previewId:"available-token",before:"disk",after:"unsaved"});
+  const done=vi.fn(),view=render(<RecoveryDialog onDone={done}/>);
+  fireEvent.click(await view.findByRole("button",{name:"복구 (1)"}));
+  await waitFor(()=>expect(done).toHaveBeenCalledWith(["available"]));
+  expect(api.discardRecovery).toHaveBeenCalledExactlyOnceWith("available","r1");
+  expect(view.getByText(/file unavailable/)).toBeTruthy();
+});
+it("chains discard revisions and retains backups when a later discard conflicts",async()=>{
+  api.loadRecoveryState.mockResolvedValue({nativeRevision:"r1",entries:[{path:"a",content:"unsaved",baseHash:null,snapshotAtMs:1},{path:"b",content:"unsaved",baseHash:null,snapshotAtMs:2}]});
+  api.prepareRecovery.mockImplementation(async(path:string)=>({previewId:path,before:"disk",after:"unsaved"}));
+  api.discardRecovery.mockResolvedValueOnce("r2").mockRejectedValueOnce(new Error("files_recovery_changed"));
+  const done=vi.fn(),view=render(<RecoveryDialog onDone={done}/>);
+  fireEvent.click(await view.findByRole("button",{name:"복구 (2)"}));
+  await view.findByRole("alert");
+  expect(api.discardRecovery.mock.calls).toEqual([["a","r1"],["b","r2"]]);
+  expect(done).not.toHaveBeenCalled();
 });

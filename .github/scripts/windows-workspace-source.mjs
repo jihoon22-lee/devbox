@@ -260,12 +260,12 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   assert.equal(existsSync(cancellationMarker),true,"owned pre-commit did not start");
   const blockedSave=await call("workspace.files","save_file",{request:nativeFileSave(doc,"must wait for Git\n")});
   failed(blockedSave);assert.equal(blockedSave.value.issue,"context_busy");
-  success(await call("workspace.files","save_recovery",{entries:[{path:doc.path,content:"editor buffer survives Git",base_hash:doc.contentHash,snapshot_at_ms:Date.now()}]}));
+  const recoverySaved=success(await call("workspace.files","save_recovery",{nativeRevision:success(await call("workspace.files","load_recovery",{})).nativeRevision,entries:[{path:doc.path,content:"editor buffer survives Git",base_hash:doc.contentHash,snapshot_at_ms:Date.now()}]}));
   assert.equal(success(await source("repo_local_cancel",{request:{operationId}})),true);
   failed(await committing);
   success(await call("workspace.files","save_file",{request:nativeFileSave(doc,"editor saved after Git cancellation\n")}));
   assert.equal(readFileSync(path.join(folder,"tracked.txt"),"utf8"),"editor saved after Git cancellation\n");
-  success(await call("workspace.files","discard_recovery",{path:doc.path}));
+  success(await call("workspace.files","discard_recovery",{path:doc.path,nativeRevision:recoverySaved.nativeRevision}));
   success(await call("workspace.files","unwatch_file",{path:doc.path}));
   await click("Git 실행 승인 철회");
   await waitForRenderer(cdp,'document.querySelector(".workspace-source-trust")?.textContent.includes("Git 실행 승인을 철회했습니다.")',"Source revocation did not finish");

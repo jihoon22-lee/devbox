@@ -143,6 +143,33 @@ impl LegacyImports {
         .map_err(|_| "legacy_session_unavailable")?;
         Ok((snapshot.id()?, session))
     }
+    pub(crate) fn recovery_source(
+        &self,
+        job_id: &str,
+    ) -> Result<(String, code_pad_lib::core::recovery::RecoveryFile)> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
+            current
+                .as_ref()
+                .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+                .and_then(|job| job.snapshot.clone())
+                .ok_or("legacy_import_stale")?
+        };
+        if snapshot.manifest.source != Source::CodePad
+            || !snapshot
+                .manifest
+                .files
+                .iter()
+                .any(|file| file.name == "recovery.json" && file.issue.is_none())
+        {
+            return Err("legacy_recovery_unavailable");
+        }
+        let bytes = snapshot
+            .bytes("recovery.json")
+            .ok_or("legacy_recovery_unavailable")?;
+        let session = serde_json::from_slice(bytes).map_err(|_| "legacy_recovery_unavailable")?;
+        Ok((snapshot.id()?, session))
+    }
     pub(crate) fn catalog(&self) -> Result<Catalog> {
         self.stores.read()?;
         let root = MetadataRoot::open(self.stores.root())?;

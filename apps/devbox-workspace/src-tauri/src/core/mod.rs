@@ -3,6 +3,7 @@ pub mod registry;
 
 pub mod legacy_inventory;
 pub mod legacy_profiles;
+pub mod legacy_recovery;
 pub mod legacy_sessions;
 pub mod legacy_snapshot;
 pub mod manifest;

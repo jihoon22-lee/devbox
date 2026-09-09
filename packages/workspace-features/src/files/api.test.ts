@@ -1,7 +1,7 @@
 import {beforeEach, expect, it, vi} from "vitest";
 const {invoke, hosted} = vi.hoisted(() => ({invoke:vi.fn(), hosted:{value:false}}));
 vi.mock("../transport", () => ({componentInvoke:() => invoke, isProductHosted:() => hosted.value}));
-import {deleteFileAction, renameFileAction, loadRecovery, saveRecovery, saveSession} from "./api";
+import {deleteFileAction, renameFileAction, loadRecovery, loadRecoveryState, discardRecovery, saveRecovery, saveSession} from "./api";
 import type {SessionState} from "./types";
 beforeEach(() => {invoke.mockReset();hosted.value=false;});
 
@@ -33,4 +33,20 @@ it("preserves the native recovery schema while exposing camel-case UI fields", a
   expect(entries).toEqual([{path:wire.path, content:"unsaved", baseHash:"base", snapshotAtMs:1234}]);
   await saveRecovery(entries);
   expect(invoke).toHaveBeenLastCalledWith("save_recovery", {entries:[wire]});
+});
+
+it("threads recovery revisions only through the product owner",async()=>{
+  hosted.value=true;
+  invoke.mockResolvedValueOnce({entries:[],nativeRevision:"loaded"});
+  const state=await loadRecoveryState();
+  expect(state).toEqual({entries:[],nativeRevision:"loaded"});
+  invoke.mockResolvedValueOnce({nativeRevision:"saved"});
+  expect(await saveRecovery([],state.nativeRevision)).toBe("saved");
+  expect(invoke).toHaveBeenLastCalledWith("save_recovery",{entries:[],nativeRevision:"loaded"});
+  invoke.mockResolvedValueOnce({nativeRevision:"discarded"});
+  expect(await discardRecovery(null,"saved")).toBe("discarded");
+  expect(invoke).toHaveBeenLastCalledWith("discard_recovery",{path:null,nativeRevision:"saved"});
+  hosted.value=false;
+  await discardRecovery(null,"ignored");
+  expect(invoke).toHaveBeenLastCalledWith("discard_recovery",{path:null});
 });
