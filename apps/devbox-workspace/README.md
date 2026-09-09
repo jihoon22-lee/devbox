@@ -281,3 +281,11 @@ mutex and never retries an executed operation. Expiry/shutdown rejects the wait;
 the original context and snapshot checks still precede IO. This addresses the
 `5571786` packaged save rejection during an LSP read; the forced-overlap Windows
 fixture awaits its next run.
+
+WSL Source review now reads Git tools/config/includes/hooks in the native helper,
+shares Windows' bounded evidence checks and binds their digests to the Windows
+private approval plus project definitions. Reading/approving runs no Git. Changed
+sources invalidate approval, and transient launcher variables do not invalidate
+an unchanged review on reconnect. Native command execution remains gated while
+its process-retirement and cancellation bridge is completed. The new hosted WSL
+review/approval/revoke fixture is pending actual Windows execution.

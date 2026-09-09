@@ -132,3 +132,23 @@ cancellation removes only unchanged owned staging files. Failure can leave an
 empty .devbox directory or a complete, unacknowledged manifest; it never retries.
 The Windows host revokes execution trust before writing and coordinates definition
 IO with Git/editor filesystem permits. New trust still requires a fresh review.
+
+The `git` feature now shares the bounded Git configuration/include/hook/executable
+snapshot traversal between the Windows host and native helper. Windows keeps its
+captured native environment resolver; Linux uses a frozen, case-sensitive
+snapshot, skips relative/linked/foreign PATH candidates and reads an executable
+without probing it. HOME and optional global/XDG configuration are native paths.
+Absent explicit overrides, system configuration is pinned through GIT_CONFIG_SYSTEM
+to /etc/gitconfig for /usr, or the selected local prefix's etc/gitconfig. Transient
+launcher cwd/depth/interop variables are omitted; their values never enter approval
+records. The approved command environment otherwise remains frozen.
+
+Private `source_capture` and `source_validate` retain at most four 48-MiB Git
+snapshots per pipe, with the existing object/include/hook limits. File, definition
+and Git owners must share the same context; reattaching cannot erase changed
+sources. Windows stores only the combined native Git/definition approval digest
+and display projection, then revalidates both owners before approval. Changed
+hooks/configs/tools require fresh review. No Git command runs from these methods.
+Source execution still requires the child-aware session retirement/cancel bridge.
+The hosted Windows fixture provisions Git only in its owned disposable distro and
+checks review/approval/revoke/reconnect evidence with synthetic repositories.

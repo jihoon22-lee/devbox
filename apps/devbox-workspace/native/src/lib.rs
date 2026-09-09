@@ -258,3 +258,16 @@ mod definitions;
 
 #[cfg(all(feature = "helper", target_os = "linux"))]
 mod definition_write;
+
+#[cfg(feature = "git")]
+pub mod git_config;
+#[cfg(feature = "git")]
+pub mod git_files;
+#[cfg(feature = "git")]
+pub mod git_trust;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod git_environment;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod git_review;

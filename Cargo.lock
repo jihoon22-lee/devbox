@@ -1419,7 +1419,6 @@ dependencies = [
  "code-pad",
  "filesystem",
  "git",
- "gix-config",
  "product-contract",
  "product-shell-tauri",
  "repo-manager",
@@ -8350,6 +8349,8 @@ version = "0.1.0"
 dependencies = [
  "code-pad",
  "filesystem",
+ "git",
+ "gix-config",
  "libc",
  "product-contract",
  "serde",

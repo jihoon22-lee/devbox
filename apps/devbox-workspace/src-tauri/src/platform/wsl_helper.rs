@@ -231,7 +231,9 @@ mod native {
         ) -> Result<Value> {
             if !matches!(
                 method,
-                "definitions_attach"
+                "source_capture"
+                    | "source_validate"
+                    | "definitions_attach"
                     | "definitions_read"
                     | "definitions_validate"
                     | "definitions_write"
@@ -334,6 +336,19 @@ mod native {
                 "wsl_context_required" => "wsl_context_required",
                 "wsl_native_filesystem_required" => "wsl_native_filesystem_required",
                 "wsl_filesystem_unavailable" => "wsl_filesystem_unavailable",
+                "git_sources_changed" => "git_sources_changed",
+                "source_requires_repository" => "source_requires_repository",
+                "source_context_changed" => "source_context_changed",
+                "git_home_unavailable" => "git_home_unavailable",
+                "git_source_transport_denied" => "git_source_transport_denied",
+                "git_source_path_invalid" => "git_source_path_invalid",
+                "git_source_path_unsupported" => "git_source_path_unsupported",
+                "git_source_limit" => "git_source_limit",
+                "git_config_invalid" => "git_config_invalid",
+                "git_config_limit" => "git_config_limit",
+                "git_installation_unavailable" => "git_installation_unavailable",
+                "git_source_unavailable" => "git_source_unavailable",
+                "request_expired" => "request_expired",
                 "project_definition_changed" => "project_definition_changed",
                 "project_definition_unavailable" => "project_definition_unavailable",
                 "project_definition_limit" => "project_definition_limit",

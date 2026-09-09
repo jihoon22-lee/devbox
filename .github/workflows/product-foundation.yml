@@ -152,11 +152,17 @@ jobs:
           path: product-foundation-evidence/workspace-wsl-storage.json
           if-no-files-found: error
           retention-days: 7
+      - name: Provision Git only in the owned WSL fixture
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: .github/scripts/windows-workspace-wsl-git.ps1
       - name: Exercise packaged Workspace helper on owned WSL
         if: ${{ !cancelled() }}
         shell: pwsh
         run: |
           cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-native.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p devbox-workspace --lib source_host::tests::owned_wsl_source_review_preserves_native_approval_and_changed_evidence -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source.log
           exit $LASTEXITCODE
       - name: Preserve native WSL results before independent acceptance
         if: ${{ !cancelled() }}

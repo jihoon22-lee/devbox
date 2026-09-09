@@ -6,8 +6,9 @@ use crate::{
     host::Host,
     platform::{
         definition_write::DefinitionTarget,
-        git_trust::{GitEnvironment, GitTrust},
+        git_trust::{native_environment, GitTrust},
         git_worktree::WorktreeTarget,
+        source_git::SourceGit,
         storage_paths::ProtectedStorage,
     },
     private_metadata::MetadataRoot,
@@ -97,7 +98,7 @@ fn approval(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<App
 struct Snapshot {
     context: ProjectContext,
     binding: crate::core::registry::Binding,
-    git: GitTrust,
+    git: SourceGit,
     definitions: ExecutionDefinitions,
     common: MetadataRoot,
     private: MetadataRoot,
@@ -111,18 +112,7 @@ impl Snapshot {
         context: &ProjectContext,
         deadline: u64,
     ) -> Result<Self> {
-        let projects = host.projects()?;
-        let lease = projects.admit(context)?;
-        let binding = lease.binding().clone();
-        if lease.git_directories().is_none() {
-            return Err("source_requires_repository");
-        }
-        let environment = GitEnvironment::native(
-            std::path::Path::new(&binding.root),
-            host.source_environment(),
-            deadline,
-        )?;
-        let git = GitTrust::capture(lease, environment, deadline)?;
+        let (binding, git) = SourceGit::capture(host, context, deadline)?;
         let definitions = definitions.execution_evidence(host, context, deadline)?;
         let common = MetadataRoot::open(&host.component("common")?)?;
         let private = private(host, context)?;
@@ -187,7 +177,7 @@ impl Snapshot {
             }
         }
         Ok(
-            json!({"approved":self.approved()?,"hasApproval":approval.is_some(),"review":self.git.review,"changedEvidence":changed}),
+            json!({"approved":self.approved()?,"hasApproval":approval.is_some(),"review":self.git.review(),"changedEvidence":changed}),
         )
     }
     fn write_approval(&self, host: &Host, approved: bool, budget: Budget) -> Result<()> {
@@ -331,6 +321,7 @@ impl SourceHost {
                 }
                 let (git, common) = snapshot
                     .git
+                    .native()?
                     .directories()
                     .ok_or("source_requires_repository")?;
                 let storage = self.storage.as_ref().ok_or("source_owner_unavailable")?;
@@ -495,8 +486,8 @@ impl SourceHost {
             None
         };
         let target_boundary = creation.as_ref().map(|(pending, _)| pending.target.clone());
-        let program = snapshot.git.environment.program.clone();
-        let environment = snapshot.git.environment.environment.clone();
+        let program = snapshot.git.native()?.environment.program.clone();
+        let environment = snapshot.git.native()?.environment.environment.clone();
         let root = PathBuf::from(&snapshot.binding.root);
         let key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
         let policy = devbox_git::execution::ExecutionPolicy::new_cancellable(
@@ -612,6 +603,115 @@ pub(crate) fn issue(error: &str) -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(windows)]
+    #[test]
+    #[ignore = "requires the current GitHub run-owned WSL distro and packaged helper"]
+    fn owned_wsl_source_review_preserves_native_approval_and_changed_evidence() {
+        use crate::project_owner::RegistrationAction;
+        use std::{fs, path::Path};
+        assert_eq!(std::env::var("GITHUB_ACTIONS").unwrap(), "true");
+        assert_eq!(
+            std::env::var("RUNNER_ENVIRONMENT").unwrap(),
+            "github-hosted"
+        );
+        let run = std::env::var("GITHUB_RUN_ID").unwrap();
+        let name = std::env::var("DEVBOX_KNOWLEDGE_WSL_DISTRO").unwrap();
+        assert!(name.starts_with(&format!("DevboxKnowledgeFixture-{run}-")));
+        let distro = crate::platform::wsl_distro::list()
+            .unwrap()
+            .into_iter()
+            .find(|d| d.name == name)
+            .unwrap();
+        let nonce = uuid::Uuid::new_v4();
+        let root = format!("/home/devbox-fixture/source 한글 {nonce}");
+        let unc = format!(r"\\wsl.localhost\{name}\home\devbox-fixture\source 한글 {nonce}");
+        let path = Path::new(&unc);
+        fs::create_dir(path).unwrap();
+        fs::create_dir_all(path.join(".git/objects")).unwrap();
+        fs::create_dir(path.join(".git/hooks")).unwrap();
+        fs::write(path.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+        fs::write(
+            path.join(".git/config"),
+            b"[core]\nrepositoryformatversion=0\n",
+        )
+        .unwrap();
+        fs::write(
+            path.join(".git/hooks/pre-commit"),
+            b"#!/bin/sh\ntouch must-not-exist\n",
+        )
+        .unwrap();
+        let original = fs::read(path.join(".git/config")).unwrap();
+        let store = tempfile::tempdir().unwrap();
+        let host =
+            Host::open_with_resources(store.path(), Path::new(env!("CARGO_MANIFEST_DIR")).into())
+                .unwrap();
+        host.start_empty().unwrap();
+        let projects = host.projects().unwrap();
+        let preview = projects
+            .preview_wsl(host.helper_directory().unwrap(), &distro.id, &root, false)
+            .unwrap();
+        let (_, context) = projects
+            .apply(
+                &preview.preview_id,
+                "Source fixture",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        let mut source = SourceHost::default();
+        let mut definitions = Definitions::default();
+        let mut call = |method, args| {
+            source.manage(
+                &host,
+                &mut definitions,
+                &context,
+                method,
+                args,
+                Budget {
+                    deadline_ms: u64::MAX,
+                    expires: Instant::now() + Duration::from_secs(30),
+                },
+            )
+        };
+        let status = call("trust_status", json!({})).unwrap();
+        assert_eq!(status["approved"], false);
+        assert_eq!(status["review"]["executable"], "/usr/bin/git");
+        assert!(!path.join("must-not-exist").exists());
+        let preview = call("preview_trust", json!({})).unwrap();
+        let stale_id = preview["previewId"].clone();
+        fs::write(
+            path.join(".git/hooks/pre-commit"),
+            b"#!/bin/sh\ntouch changed-must-not-exist\n",
+        )
+        .unwrap();
+        assert!(call("approve_trust", json!({"previewId":stale_id})).is_err());
+        let preview = call("preview_trust", json!({})).unwrap();
+        call("approve_trust", json!({"previewId":preview["previewId"]})).unwrap();
+        // A new helper connection retains the effective environment digest.
+        assert_eq!(call("trust_status", json!({})).unwrap()["approved"], true);
+        fs::write(
+            path.join(".git/hooks/pre-commit"),
+            b"changed reviewed file\n",
+        )
+        .unwrap();
+        let changed = call("trust_status", json!({})).unwrap();
+        assert_eq!(changed["approved"], false);
+        assert!(changed["changedEvidence"]
+            .as_array()
+            .unwrap()
+            .contains(&json!("execution_files")));
+        let preview = call("preview_trust", json!({})).unwrap();
+        call("approve_trust", json!({"previewId":preview["previewId"]})).unwrap();
+        call("revoke_trust", json!({})).unwrap();
+        assert_eq!(call("trust_status", json!({})).unwrap()["approved"], false);
+        assert_eq!(fs::read(path.join(".git/config")).unwrap(), original);
+        assert!(!path.join("must-not-exist").exists());
+        assert!(!path.join("changed-must-not-exist").exists());
+        assert!(!path.join(".devbox").exists());
+        drop(source);
+        drop(definitions);
+        drop(host);
+        fs::remove_dir_all(path).unwrap();
+    }
     #[test]
     fn monotonic_expiry_cannot_be_extended_by_a_future_wall_clock_deadline() {
         let budget = Budget {

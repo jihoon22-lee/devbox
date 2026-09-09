@@ -24,6 +24,7 @@ struct Root {
     touched: Instant,
     files: Option<FileAccess>,
     definitions: Option<crate::definitions::Definitions>,
+    source: Option<crate::git_review::Review>,
 }
 struct FileAccess {
     context: ProjectContext,
@@ -134,6 +135,7 @@ impl FileMethod {
 }
 #[derive(Default)]
 pub struct Engine {
+    source_environment: crate::git_environment::SourceEnvironment,
     roots: BTreeMap<String, Root>,
 }
 #[derive(Deserialize)]
@@ -276,6 +278,89 @@ pub fn admit(path: &Path) -> Result<()> {
     Ok(())
 }
 impl Engine {
+    fn source_request(
+        &mut self,
+        request: &Request,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<Value> {
+        use crate::git_review::{Method, Review};
+        let method: Method = input(&json!({"method":request.method,"args":request.args}))?;
+        method
+            .context()
+            .validate()
+            .map_err(|_| "wsl_context_invalid")?;
+        if !matches!(&method.context().target, ExecutionTarget::Wsl { distro_id } if crate::token(distro_id))
+        {
+            return Err("wsl_context_invalid");
+        }
+        let count = self
+            .roots
+            .values()
+            .filter(|root| root.source.is_some())
+            .count();
+        let root = self
+            .roots
+            .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+            .ok_or("wsl_root_expired")?;
+        if root
+            .files
+            .as_ref()
+            .is_some_and(|access| &access.context != method.context())
+            || root
+                .definitions
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+            || root
+                .source
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+        {
+            return Err("source_context_changed");
+        }
+        root.observation.revalidate()?;
+        let deadline = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis()
+            .saturating_add(u128::from(request.budget_ms))
+            .min(u128::from(u64::MAX)) as u64;
+        let result = match method {
+            Method::Capture { context } => {
+                // Each pipe retains at most four 48-MiB Git snapshots. A second
+                // attach never replaces reviewed sources or clears a conflict.
+                if root.source.is_none() {
+                    if count >= 4 {
+                        return Err("git_source_limit");
+                    }
+                    root.source = Some(Review::capture(
+                        &root.observation,
+                        context,
+                        &self.source_environment,
+                        deadline,
+                        guard,
+                    )?);
+                }
+                let access = root.source.as_ref().ok_or("wsl_context_required")?;
+                let view = access.view();
+                access.revalidate(
+                    view["digest"].as_str().ok_or("wsl_response_invalid")?,
+                    deadline,
+                )?;
+                view
+            }
+            Method::Validate { digest, .. } => {
+                root.source
+                    .as_ref()
+                    .ok_or("wsl_context_required")?
+                    .revalidate(&digest, deadline)?;
+                Value::Null
+            }
+        };
+        guard()?;
+        root.observation.revalidate()?;
+        root.touched = Instant::now();
+        Ok(result)
+    }
     fn definition_request(
         &mut self,
         request: &Request,
@@ -302,6 +387,10 @@ impl Engine {
             .is_some_and(|access| &access.context != method.context())
             || root
                 .definitions
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+            || root
+                .source
                 .as_ref()
                 .is_some_and(|access| access.context() != method.context())
         {
@@ -530,6 +619,7 @@ impl Engine {
             .retain(|_, root| {
                 root.files.is_some()
                     || root.definitions.is_some()
+                    || root.source.is_some()
                     || root.touched.elapsed() < ROOT_TTL
             });
         if matches!(
@@ -556,6 +646,12 @@ impl Engine {
         ) {
             return self.definition_request(request, guard);
         }
+        if matches!(
+            request.method.as_str(),
+            "source_capture" | "source_validate"
+        ) {
+            return self.source_request(request, guard);
+        }
         match request.method.as_str() {
             "files_attach" => {
                 #[derive(Deserialize)]
@@ -575,6 +671,13 @@ impl Engine {
                     .ok_or("wsl_root_expired")?;
                 if root
                     .definitions
+                    .as_ref()
+                    .is_some_and(|access| access.context() != &args.context)
+                {
+                    return Err("file_context_changed");
+                }
+                if root
+                    .source
                     .as_ref()
                     .is_some_and(|access| access.context() != &args.context)
                 {
@@ -666,6 +769,7 @@ impl Engine {
                         touched: Instant::now(),
                         files: None,
                         definitions: None,
+                        source: None,
                     },
                 );
                 Ok(value)
@@ -694,6 +798,120 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn source_review_is_context_bound_and_never_executes_the_discovered_tool() {
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = tempfile::Builder::new()
+            .prefix(".wsl-source-fixture-")
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        let root = fixture.path();
+        std::fs::create_dir_all(root.join(".git/objects")).unwrap();
+        std::fs::create_dir(root.join(".git/hooks")).unwrap();
+        std::fs::create_dir(root.join("bin")).unwrap();
+        std::fs::write(root.join(".git/HEAD"), b"ref: refs/heads/main\n").unwrap();
+        std::fs::write(
+            root.join(".git/config"),
+            b"[core]\nrepositoryformatversion=0\n",
+        )
+        .unwrap();
+        std::fs::write(root.join(".git/hooks/pre-commit"), b"not executed").unwrap();
+        let program = root.join("bin/git");
+        let marker = root.join("must-not-exist");
+        std::fs::write(
+            &program,
+            format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+        )
+        .unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let source_environment = crate::git_environment::SourceEnvironment::from_values(vec![
+            ("HOME".into(), root.into()),
+            ("PATH".into(), root.join("bin").into_os_string()),
+        ]);
+        let mut engine = Engine {
+            source_environment,
+            ..Engine::default()
+        };
+        let report = engine
+            .dispatch(&request("observe_root", None, json!({"path":root})))
+            .unwrap();
+        let token = report["token"].as_str().unwrap().to_owned();
+        let context = ProjectContext {
+            project_id: "fixture-project".into(),
+            worktree_id: "fixture-worktree".into(),
+            revision: 1,
+            target: ExecutionTarget::Wsl {
+                distro_id: uuid::Uuid::new_v4().to_string(),
+            },
+        };
+        let capture = request(
+            "source_capture",
+            Some(token.clone()),
+            json!({"context":context}),
+        );
+        let view = engine.dispatch(&capture).unwrap();
+        assert_eq!(
+            view["review"]["executable"],
+            program.to_string_lossy().as_ref()
+        );
+        assert!(!marker.exists());
+        let validate = request(
+            "source_validate",
+            Some(token.clone()),
+            json!({"context":context,"digest":view["digest"]}),
+        );
+        engine.dispatch(&validate).unwrap();
+        let mut foreign = context.clone();
+        foreign.revision += 1;
+        assert_eq!(
+            engine
+                .dispatch(&request(
+                    "source_capture",
+                    Some(token.clone()),
+                    json!({"context":foreign})
+                ))
+                .unwrap_err(),
+            "source_context_changed"
+        );
+        assert!(engine
+            .dispatch(&request(
+                "definitions_attach",
+                Some(token.clone()),
+                json!({"context":foreign})
+            ))
+            .is_err());
+        assert!(engine
+            .dispatch(&request(
+                "files_attach",
+                Some(token.clone()),
+                json!({"context":foreign})
+            ))
+            .is_err());
+        assert_eq!(
+            engine
+                .dispatch(&request(
+                    "source_execute",
+                    Some(token),
+                    json!({"context":context})
+                ))
+                .unwrap_err(),
+            "wsl_request_invalid"
+        );
+        std::fs::write(
+            root.join(".git/hooks/pre-commit"),
+            b"changed without execution",
+        )
+        .unwrap();
+        assert_eq!(
+            engine.dispatch(&validate).unwrap_err(),
+            "git_sources_changed"
+        );
+        assert_eq!(
+            engine.dispatch(&capture).unwrap_err(),
+            "git_sources_changed"
+        );
+        assert!(!marker.exists());
+    }
     #[test]
     fn wsl1_native_file_ids_do_not_enable_a_generic_birth_time_fallback() {
         let inode = 0x0005_0000_0000_0042;
