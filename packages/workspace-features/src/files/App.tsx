@@ -305,6 +305,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const sessionSaveTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const pendingSessionRef = useRef<SessionState | null>(null);
   const sessionSaveInFlightRef = useRef<Promise<void> | null>(null);
+  const sessionRevisionRef = useRef<string | undefined>(undefined);
+  const sessionWriteBlockedRef = useRef(false);
   const watchOperationRef = useRef(new Map<string, Promise<void>>());
   const externalChangeVersionRef = useRef(new Map<string, number>());
   const workspaceChangeTokenRef = useRef(0);
@@ -1370,6 +1372,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     }
     hydratedRef.current = false;
     setHydrated(false);
+    sessionRevisionRef.current = undefined;
+    sessionWriteBlockedRef.current = false;
     pendingSessionRef.current = null;
     if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
     sessionSaveTimerRef.current = null;
@@ -1381,6 +1385,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     void loadSession()
       .then(async (loaded) => {
         if (cancelled) return;
+        sessionRevisionRef.current = loaded.nativeRevision;
         persistenceAllowedRef.current = loaded.persistAllowed;
         setSessionPersistenceAllowed(loaded.persistAllowed);
         const restoreDocument = async (metadata: SessionState["docs"][number]): Promise<Doc | null> => {
@@ -1632,7 +1637,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   // A single debounced, serialized writer means a slow save cannot let an old
   // request finish after a newer request and overwrite the newest session.
   useEffect(() => {
-    if (!hydrated || !hydratedRef.current || !sessionPersistenceAllowed) return;
+    if (!hydrated || !hydratedRef.current || !sessionPersistenceAllowed || sessionWriteBlockedRef.current) return;
     if (sessionSaveTimerRef.current) clearTimeout(sessionSaveTimerRef.current);
     pendingSessionRef.current = stateToSession(state);
     const startDrain = () => {
@@ -1644,12 +1649,22 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         return;
       }
       const drain = async () => {
-        while (contextRef.current === contextKey && pendingSessionRef.current) {
+        while (contextRef.current === contextKey && pendingSessionRef.current && !sessionWriteBlockedRef.current) {
           const next = pendingSessionRef.current;
           pendingSessionRef.current = null;
           try {
-            await saveSession(next);
+            const revision = await saveSession(next, sessionRevisionRef.current);
+            if (contextRef.current === contextKey) sessionRevisionRef.current = revision;
           } catch (cause) {
+            if (contextRef.current !== contextKey) return;
+            // A failed product write may be a stale revision or a committed
+            // write whose reply was lost. Never retry with the old snapshot.
+            if (isProductHosted() || sessionRevisionRef.current !== undefined) {
+              sessionWriteBlockedRef.current = true;
+              pendingSessionRef.current = null;
+              persistenceAllowedRef.current = false;
+              setSessionPersistenceAllowed(false);
+            }
             setError(safeCodePadError(cause, "편집 세션을 저장하지 못했습니다."));
           }
         }

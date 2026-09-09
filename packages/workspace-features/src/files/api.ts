@@ -150,8 +150,13 @@ export function loadSession(): Promise<LoadedSession> {
   return invoke<LoadedSession>("load_session");
 }
 
-export function saveSession(session: SessionState): Promise<void> {
-  return invoke<void>("save_session", { session });
+export async function saveSession(session: SessionState, nativeRevision?: string): Promise<string | undefined> {
+  if (!isProductHosted()) {
+    await invoke<void>("save_session", { session });
+    return undefined;
+  }
+  const result = await invoke<{nativeRevision:string}>("save_session", {session, nativeRevision});
+  return result.nativeRevision;
 }
 
 export function renderPreview(

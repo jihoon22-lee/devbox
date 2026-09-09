@@ -3,8 +3,8 @@ use devbox_filesystem::{
     ensure_no_links, filesystem_identity, open_filesystem_object, FilesystemIdentity,
 };
 use std::{
-    fs::{self, File},
-    io::{ErrorKind, Read},
+    fs::{self, File, OpenOptions},
+    io::{ErrorKind, Read, Write},
     path::{Path, PathBuf},
 };
 type Result<T> = std::result::Result<T, &'static str>;
@@ -84,6 +84,49 @@ impl MetadataRoot {
             Err(_) => return Err("invalid_files_store"),
         }
         devbox_filesystem::atomic_write(&path, bytes).map_err(|_| "files_store_unavailable")?;
+        self.revalidate()
+    }
+    pub(crate) fn preserve(&self, name: &str, bytes: &[u8]) -> Result<()> {
+        if bytes.len() as u64 > MAX_METADATA {
+            return Err("files_store_limit");
+        }
+        if let Some(existing) = self.read(name)? {
+            return if existing == bytes {
+                Ok(())
+            } else {
+                Err("files_store_changed")
+            };
+        }
+        self.revalidate()?;
+        let temporary = self
+            .path
+            .join(format!(".preserve-{}.tmp", uuid::Uuid::new_v4()));
+        let mut file = OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
+            .map_err(|_| "files_store_unavailable")?;
+        let identity = filesystem_identity(&temporary, false).map_err(|_| "files_store_changed")?;
+        let result = (|| {
+            file.write_all(bytes)
+                .and_then(|_| file.sync_all())
+                .map_err(|_| "files_store_unavailable")?;
+            self.revalidate()?;
+            if filesystem_identity(&temporary, false).ok() != Some(identity) {
+                return Err("files_store_changed");
+            }
+            fs::hard_link(&temporary, self.path.join(name)).map_err(|_| "files_store_changed")
+        })();
+        drop(file);
+        if self.revalidate().is_ok()
+            && filesystem_identity(&temporary, false).ok() == Some(identity)
+        {
+            let _ = fs::remove_file(&temporary);
+        }
+        result?;
+        if self.read(name)?.as_deref() != Some(bytes) {
+            return Err("files_store_changed");
+        }
         self.revalidate()
     }
 }

@@ -334,6 +334,7 @@ function diagnosticEvent(version: number, message: string): LspDiagnosticsEvent 
 }
 
 beforeEach(() => {
+  vi.mocked(saveSession).mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset();
   saveFileMock.mockReset();
   validateEncodingMock.mockReset().mockResolvedValue(undefined);
@@ -439,6 +440,38 @@ function fileName(path: string): string {
 }
 
 describe("App editor shell operations", () => {
+  it("chains native session revisions and stops stale autosave without discarding edits", async () => {
+    const loaded = await loadSessionMock();
+    loadSessionMock.mockResolvedValue({...loaded, nativeRevision:"loaded-revision"});
+    vi.mocked(saveSession).mockResolvedValueOnce("saved-revision");
+    const view = await openOne();
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), {timeout:2500});
+    expect(vi.mocked(saveSession).mock.calls[0][1]).toBe("loaded-revision");
+    vi.mocked(saveSession).mockRejectedValueOnce(new Error("files_session_changed"));
+    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(2), {timeout:2500});
+    expect(vi.mocked(saveSession).mock.calls[1][1]).toBe("saved-revision");
+    fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));
+    await act(async () => {await new Promise(resolve => setTimeout(resolve, 1100));});
+    expect(saveSession).toHaveBeenCalledTimes(2);
+    expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before!!");
+  });
+
+  it("does not carry a late save revision into the next native view", async () => {
+    const loaded = await loadSessionMock();
+    loadSessionMock.mockResolvedValueOnce({...loaded,nativeRevision:"first-view"});
+    const saving = deferred<Awaited<ReturnType<typeof saveSession>>>();
+    vi.mocked(saveSession).mockReturnValueOnce(saving.promise).mockResolvedValue("second-saved");
+    const view = await openOne();
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(1), {timeout:2500});
+    loadSessionMock.mockResolvedValueOnce({...loaded,nativeRevision:"second-view"});
+    view.rerender(<App contextKey="second-project"/>);
+    await waitFor(() => expect(view.queryByRole("tab")).toBeNull());
+    await act(async () => {saving.resolve("late-first-view");await saving.promise;});
+    await waitFor(() => expect(saveSession).toHaveBeenCalledTimes(2), {timeout:2500});
+    expect(vi.mocked(saveSession).mock.calls[1][1]).toBe("second-view");
+  });
+
   it("retains a dirty hidden route without handling another route's save shortcut", async () => {
     const view = await openOne();
     fireEvent.click(view.getByRole("button", {name:"edit /tmp/one.ts"}));

@@ -4,6 +4,7 @@ import {mkdirSync, writeFileSync, readFileSync, realpathSync} from "node:fs";
 import path from "node:path";
 import {exerciseWorkspaceLspInstaller} from "./windows-workspace-lsp.mjs";
 import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
+import {exerciseWorkspaceSessionImport} from "./windows-workspace-session-import.mjs";
 import {exerciseWorkspaceDependencies} from "./windows-workspace-dependencies.mjs";
 import {exerciseWorkspaceDefinitions} from "./windows-workspace-definitions.mjs";
 import {exerciseWorkspaceSource} from "./windows-workspace-source.mjs";
@@ -107,6 +108,8 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   registry = success(await call("workspace.registry","snapshot"));
   const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer, processId, executable});
   record("files", files);
+  const sessionImport=await exerciseWorkspaceSessionImport({cdp,root:canonicalRoot,call,success,waitForRenderer});
+  record("session-import",sessionImport);
   const lspInstaller = await exerciseWorkspaceLspInstaller({cdp,root:canonicalRoot,directory,call,success,waitForRenderer,processId,executable,network});
   record("lsp-installer",lspInstaller);
   await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="overview").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);

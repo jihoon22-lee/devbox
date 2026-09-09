@@ -167,6 +167,7 @@ export interface SessionState {
 export interface LoadedSession {
   session: SessionState;
   persistAllowed: boolean;
+  nativeRevision?: string;
 }
 
 export type LspClientStatus = "starting" | "ready" | "degraded" | "stopped" | "crashed";

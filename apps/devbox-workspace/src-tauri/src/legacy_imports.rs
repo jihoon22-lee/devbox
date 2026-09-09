@@ -113,6 +113,36 @@ impl LegacyImports {
         .map_err(|_| "legacy_profiles_unavailable")?;
         Ok((snapshot.id()?, profiles))
     }
+    pub(crate) fn session_source(
+        &self,
+        job_id: &str,
+    ) -> Result<(String, code_pad_lib::core::session::Session)> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
+            current
+                .as_ref()
+                .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+                .and_then(|job| job.snapshot.clone())
+                .ok_or("legacy_import_stale")?
+        };
+        if snapshot.manifest.source != Source::CodePad
+            || !snapshot
+                .manifest
+                .files
+                .iter()
+                .any(|file| file.name == "session.json" && file.issue.is_none())
+        {
+            return Err("legacy_session_unavailable");
+        }
+        let bytes = snapshot
+            .bytes("session.json")
+            .ok_or("legacy_session_unavailable")?;
+        let session = code_pad_lib::core::session::Session::from_json(
+            std::str::from_utf8(bytes).map_err(|_| "legacy_session_unavailable")?,
+        )
+        .map_err(|_| "legacy_session_unavailable")?;
+        Ok((snapshot.id()?, session))
+    }
     pub(crate) fn catalog(&self) -> Result<Catalog> {
         self.stores.read()?;
         let root = MetadataRoot::open(self.stores.root())?;

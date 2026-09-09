@@ -20,8 +20,16 @@ preserved. Verified Workbench profiles can be reviewed and imported with explici
 keep-both/skip choices. Their original IDs and complete metadata remain alongside
 new Workspace IDs. A separate native Windows folder review commits registration
 and profile binding together; imported ports are defaults below project/local
-values. Unlink preserves both records. Templates, Code Pad destination application,
-window mapping and WSL bindings remain incomplete. Repo Manager's
+values. Unlink preserves both records. Files now reviews a verified Code Pad
+session for the current project/native file choices and preserves original IDs,
+cursor/bookmarks and both views. Closed tabs, a current native revision and an
+explicit replacement choice protect existing state. Session and import receipt
+commit together; repeated imports retain subsequent edits. A checked, bounded
+history preserves the exact previous bytes before replacement and provides
+explicit restoration. Editor autosave carries native revisions and stops on
+conflict without discarding buffers. Imported paths still use normal Files
+authorization when reopened. Recovery/configuration conversion, recent-workspace
+onboarding, templates, window mapping and WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
 file to migrate. Native window-state mapping and older identifier diagnostics
 remain part of the unfinished importer.

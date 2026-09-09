@@ -4,6 +4,53 @@ WP #546 / R02–06, R08, R13, R16–21, R24–25 and S01. This bundle owns
 Project/Worktree Registry, manifest/local trust, Overview/Source/Files/Dependencies,
 legacy import and WSL-native LSP. Runtime and Terminal/session owners remain B05/B06.
 
+## Reviewed Code Pad session import and autosave ownership
+
+Files now converts a verified snapshot into a review for the selected view. It
+retains original document IDs, cursor/bookmarks, two-view placement and eligible
+recent files. Other paths remain in the original snapshot; metadata import does
+not grant access or read repository files. Existing session replacement requires
+an explicit choice with every native tab closed. Preview tokens expire, bind the
+context and exact destination bytes, and are consumed once even on failure.
+
+The destination session and import receipt publish atomically in one private file.
+Normal editor saves preserve receipts, so repeating the same import does not
+erase later edits. Before replacement, exact destination bytes are preserved with
+no-clobber publication in a bounded history. Explicit history review/restore checks
+the filename/content digest; changed entries remain untouched. Old raw sessions
+remain readable; corrupt/future/unknown schemas are rejected. The live editor now
+chains native session revisions and stops failed/stale autosave without discarding
+buffers. Successful import remounts the clean editor and clears consumed Source
+open requests. These are single-session commits, not a cross-file transaction.
+
+Portable verification passed **132 Workspace Rust tests**, **29 installer tests**,
+strict Clippy, **31 product UI tests** and **41 Files UI/API tests**. The intermediate
+combined command failed on pnpm argument placement after its Rust checks; the next
+UI run passed before the fixture parser caught nested selector quoting. The corrected
+five fixture checks and product build passed in **13.698 seconds**, peak
+**1,582,227,456 bytes**. Final affected verification selected all and passed in
+**446.449 seconds**, cgroup peak **6,443,978,752 bytes** under 8 GiB. The new
+hosted Windows fixture exclusively creates a synthetic legacy folder, verifies
+the snapshot, removes only that owned source, then exercises real editor bookmarks,
+stale autosave, repeated import and previous-session restoration. Windows session
+import execution remains pending. Recovery/config import, recent-workspace
+onboarding, templates, window mapping and WSL/provider work are still incomplete.
+
+## Latest Windows result and long LSP cache paths
+
+[0066509 general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34322593145)
+passed, including Windows tests and the recovery-directory prefix correction.
+[Product acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34322593106)
+passed native ownership/WAL, packaged Source/Files, API/Knowledge and coexistence,
+but failed after successful Rust archive import: `lsp_installed` returned
+`lsp_install_path_unsafe`. Its nonce-owned index shows that the SHA-named cache path
+is **264 characters** without a verbatim prefix. The remaining direct `CreateFileW`
+link-count check lacked Rust's extended-path conversion. It now uses an attributes-only
+no-follow `OpenOptions` handle, retaining reparse rejection and the exact one-link
+requirement. A Windows test installs/verifies a long cache path and then proves
+that adding a hard link is still rejected. This correction and full packaged LSP
+acceptance await the next Windows run; no LSP PASS is claimed.
+
 ## Reviewed Workbench profile import
 
 A fully verified native snapshot can now produce a one-time profile import review.
@@ -34,7 +81,7 @@ installer command regressions, 28 product UI tests, five generated Windows fixtu
 checks, strict Clippy and build in **116.793 seconds** (5,063,368,704-byte cgroup
 peak). Final affected verification selected all and passed in **454.471 seconds**,
 with a **6,401,130,496-byte** cgroup peak under 8 GiB. New Windows validation
-remains pending. Template conversion, Code Pad destination application, window mapping,
+is recorded in the newer checkpoints above. Template conversion, remaining Code Pad settings, window mapping,
 WSL binding and remaining importer/provider acceptance are unfinished.
 
 ## Additional CI corrections

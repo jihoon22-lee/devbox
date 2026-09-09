@@ -237,6 +237,21 @@ pub struct FileOwner {
     protected: Option<ProtectedStorage>,
 }
 impl FileOwner {
+    pub(crate) fn has_documents(&self) -> bool {
+        !self.documents.is_empty()
+    }
+    /// Only decides which metadata belongs in a view. Restoring it later must
+    /// still use open(), including its canonical object/grant checks.
+    pub(crate) fn session_path_eligible(&self, root: Option<&str>, raw: &str) -> bool {
+        let Ok(path) = native_path(raw) else {
+            return false;
+        };
+        if self.ensure_user_path(&path).is_err() {
+            return false;
+        }
+        self.choices.contains(&path)
+            || root.is_some_and(|root| within(std::path::Path::new(root), &path).unwrap_or(false))
+    }
     pub(crate) fn has_documents_under(&self, root: FilesystemIdentity) -> bool {
         self.documents.values().any(|document| {
             document
