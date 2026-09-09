@@ -1,0 +1,30 @@
+[package]
+name = "workspace-wsl"
+version = "0.1.0"
+publish = false
+edition.workspace = true
+
+[features]
+default = ["helper"]
+helper = ["dep:devbox-filesystem", "dep:sha2", "dep:libc"]
+
+[lib]
+name = "workspace_wsl"
+
+[[bin]]
+name = "devbox-workspace-wsl"
+path = "src/main.rs"
+required-features = ["helper"]
+
+[dependencies]
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem", optional = true }
+sha2 = { version = "0.11.0", optional = true }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[dev-dependencies]
+tempfile = "3"

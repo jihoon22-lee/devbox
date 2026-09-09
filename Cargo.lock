@@ -1438,6 +1438,7 @@ dependencies = [
  "window-state-tauri",
  "windows 0.61.3",
  "workbench",
+ "workspace-wsl",
  "wsl",
 ]
 
@@ -8340,6 +8341,19 @@ dependencies = [
  "windows 0.61.3",
  "wsl",
  "zeroize",
+]
+
+[[package]]
+name = "workspace-wsl"
+version = "0.1.0"
+dependencies = [
+ "filesystem",
+ "libc",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tempfile",
+ "uuid",
 ]
 
 [[package]]

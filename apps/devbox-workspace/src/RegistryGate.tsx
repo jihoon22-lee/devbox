@@ -2,6 +2,7 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
 const WorkspaceTemplateManager=lazy(()=>import("./WorkspaceTemplateManager"));
+const WslProjectForm=lazy(()=>import("./WslProjectForm"));
 import LegacyImports from "./LegacyImports";
 import {TemplateMetadata,type ImportedTemplate} from "./LegacyTemplateImport";
 import {ProfileMetadata,type ImportedProfile,type ProfileBinding} from "./LegacyProfileImport";
@@ -9,7 +10,7 @@ import {ProfileMetadata,type ImportedProfile,type ProfileBinding} from "./Legacy
 type Status = {phase: "loading" | "setup" | "selected" | "failed"; issue?: string};
 export interface Worktree {id: string; projectId: string; revision: number; binding: {root: string; target: ProjectContext["target"]}; trustedDigest: string | null}
 export interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[];importedProfiles?:ImportedProfile[];importedTemplates?:ImportedTemplate[];importedProfileBindings?:ProfileBinding[]}
-interface Preview {previewId: string; binding: Worktree["binding"]; importedProfileId?:string|null;templateProfile?:ImportedProfile|null;discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
+export interface Preview {previewId: string; binding: Worktree["binding"]; importedProfileId?:string|null;templateProfile?:ImportedProfile|null;discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
@@ -23,7 +24,9 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const [operationBusy, setBusy] = useState(false);
   const [templateBusy,setTemplateBusy]=useState(false);
   const [templatesOpen,setTemplatesOpen]=useState(false);
-  const busy=operationBusy||templateBusy;
+  const [wslOpen,setWslOpen]=useState(false);
+  const [wslBusy,setWslBusy]=useState(false);
+  const busy=operationBusy||templateBusy||wslBusy;
   const [error, setError] = useState("");
   const [rename, setRename] = useState<{id: string; name: string} | null>(null);
   const [remove, setRemove] = useState<Worktree | null>(null);
@@ -120,6 +123,8 @@ export default function RegistryGate({context = null, onContextChanged = async (
         <input id="workspace-project-path" value={root} maxLength={32768} disabled={busy || !!preview} onChange={event => setRoot(event.target.value)} required />
         <button disabled={busy || !root.trim() || !!preview}>폴더 확인</button>
       </form>
+      <button disabled={busy||!!preview||editing} aria-expanded={wslOpen} onClick={()=>{if(!wslOpen)setWslBusy(true);setWslOpen(value=>!value);}}>{wslOpen?"WSL 폴더 입력 닫기":"WSL 프로젝트 추가"}</button>
+      {wslOpen&&<Suspense fallback={<p role="status">WSL 폴더 입력 화면을 불러오고 있습니다…</p>}><WslProjectForm disabled={operationBusy||templateBusy||!!preview||editing} onBusyChange={setWslBusy} onReviewed={(next,suggestedName)=>{currentPreview.current=next.previewId;setPreview(next);setName(suggestedName);setTemplateId("");setWslOpen(false);}}/></Suspense>}
       {preview && <section aria-label="프로젝트 등록 확인">
         <h2>등록 확인</h2><p>{discoveryLabels[preview.discovery.kind]}</p><p>{preview.binding.root}</p>
         <p>명령 실행에 대한 신뢰는 별도로 확인합니다.</p>

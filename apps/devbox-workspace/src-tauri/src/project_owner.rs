@@ -39,8 +39,29 @@ pub enum RegistrationAction {
     Rebind,
 }
 
+enum RegistrationLease {
+    Local(Box<ProjectLease>),
+    #[cfg(windows)]
+    Wsl(Box<crate::platform::wsl_project::WslProjectLease>),
+}
+impl RegistrationLease {
+    fn binding(&self) -> &Binding {
+        match self {
+            Self::Local(lease) => lease.binding(),
+            #[cfg(windows)]
+            Self::Wsl(lease) => lease.binding(),
+        }
+    }
+    fn revalidate(&self) -> Result<()> {
+        match self {
+            Self::Local(lease) => lease.revalidate(),
+            #[cfg(windows)]
+            Self::Wsl(lease) => lease.revalidate(),
+        }
+    }
+}
 struct Pending {
-    lease: ProjectLease,
+    lease: RegistrationLease,
     revision: u64,
     discovery: Discovery,
     created: Instant,
@@ -262,6 +283,35 @@ impl ProjectOwner {
         let revision = self.store.read()?.revision;
         self.prepare(revision, probe_windows(root)?)
     }
+    pub fn preview_wsl(
+        &self,
+        resources: &Path,
+        distro: &str,
+        root: &str,
+        start_stopped: bool,
+    ) -> Result<RegistrationPreview> {
+        #[cfg(windows)]
+        {
+            let revision = self.snapshot()?.revision;
+            let lease = crate::platform::wsl_project::WslProjectLease::observe(
+                resources,
+                distro,
+                root,
+                start_stopped,
+            )?;
+            self.prepare_observed(
+                revision,
+                RegistrationLease::Wsl(Box::new(lease)),
+                None,
+                None,
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (resources, distro, root, start_stopped);
+            Err("windows_required")
+        }
+    }
     pub(crate) fn preview_imported_profile_windows(
         &self,
         imported_id: &str,
@@ -353,6 +403,20 @@ impl ProjectOwner {
         &self,
         revision: u64,
         lease: ProjectLease,
+        imported_profile_id: Option<String>,
+        template_profile: Option<legacy_profiles::ImportedProfile>,
+    ) -> Result<RegistrationPreview> {
+        self.prepare_observed(
+            revision,
+            RegistrationLease::Local(Box::new(lease)),
+            imported_profile_id,
+            template_profile,
+        )
+    }
+    fn prepare_observed(
+        &self,
+        revision: u64,
+        lease: RegistrationLease,
         imported_profile_id: Option<String>,
         template_profile: Option<legacy_profiles::ImportedProfile>,
     ) -> Result<RegistrationPreview> {

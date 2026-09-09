@@ -190,7 +190,7 @@ def load_rust_graph(root: Path = ROOT) -> WorkspaceGraph:
         if not isinstance(name, str) or not name or name in nodes:
             raise ScopeError(f"invalid or duplicate Cargo package name in {manifest.relative_to(root)}")
         directory = manifest.parent.relative_to(root).as_posix()
-        kind = "app" if directory.startswith("apps/") else "crate"
+        kind = "app" if directory.startswith("apps/") and directory.endswith("/src-tauri") else "crate"
         nodes[name] = WorkspaceNode(name=name, directory=directory, kind=kind)
         package_data[name] = data
         by_directory[directory] = name
@@ -383,8 +383,8 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
 
         if len(parts) >= 2 and parts[0] == "apps":
             app_directory = "/".join(parts[:2])
-            if len(parts) >= 3 and parts[2] == "src-tauri":
-                rust_directory = f"{app_directory}/src-tauri"
+            if len(parts) >= 3 and parts[2] in {"src-tauri", "native"}:
+                rust_directory = f"{app_directory}/{parts[2]}"
                 node_name = rust.by_directory.get(rust_directory)
                 if node_name is None:
                     rust_all = True

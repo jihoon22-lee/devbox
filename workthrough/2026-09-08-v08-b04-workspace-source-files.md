@@ -275,4 +275,30 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 집중 native LSP actor 회귀, TS save/change ordering와 API 테스트, 두 consumer build PASS(**55.063초 / peak 2,779,910,144 bytes / 8 GiB**). 실제 두 번째 hover와 전체 journal 복구는 다음 Windows run으로 확인한다.
 - 같은 head의 [일반 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34345048518)는 카탈로그의 정규식이 Code Pad의 optional dependency 표기를 놓쳐 FAIL했다. 검사기는 해당 TOML 선언과 default feature의 전이 의존성을 읽어 기본 desktop의 단일 인스턴스 플러그인을 확인한다. 다른 Cargo 의존성의 TOML 1.1 multiline table은 Python TOML 1.0 parser에 넣지 않는다.
 
+## WSL native observation과 배포 연결 준비
+
+- `filesystem::project::ProjectObservation`을 Windows와 새 private Linux helper가 함께 사용한다. 경로 transport 검사 후 root/Git/common-dir/backlink의 retained object 및 pointer bytes를 검증한다. Linux는 retained descriptor의 filesystem ID/type + inode/birthtime을 사용한다. Rust musl의 `Metadata::created`가 지원되지 않아 고정 Linux statx ABI를 직접 사용하며 evidence가 없을 때 완화하지 않는다.
+- helper는 metadata 전용 `hello/observe_root/validate_root/release_root`만 제공한다. version/session/request/sequence, 64 MiB frame, 최대 16 root, 180초 root expiry, 최대 30초 deadline을 검사한다. EOF/잘못된 frame/timeout은 metadata worker를 종료한다. write/Git/LSP를 추가하기 전 owned child retirement와 mutation recovery가 필요하다.
+- Windows는 등록 GUID·등록 정보와 backing-directory File ID를 고정한다. native system WSL의 running 목록은 distro를 시작하지 않는다. explicit start 허용 전에는 stopped 오류를 반환한다. static ELF는 같은 CI source SHA에서 빌드하고 manifest 크기/hash/ELF 구조를 확인해 제품 resource에 넣는다. build script가 검증 digest를 컴파일하며 client는 실행 전에 다시 hash와 read-only file lease를 유지한다. native `--cd <Windows resource directory> --exec ./devbox-workspace-wsl`을 사용해 Linux mount root를 가정하지 않는다.
+- GUI 없는 helper/shared-root/기존 Windows probe 및 strict Clippy PASS(**65.908초 / peak 4,704,894,976 bytes / 8 GiB**). musl static build와 실제 musl 3개 테스트 PASS(**6.704초 / peak 337,575,936 bytes / 8 GiB**). 최초 musl birthtime와 libc statx 노출 실패를 수정한 뒤 다시 검증했다.
+- 현재 실행 중인 로컬 WSL에 한정한 실제 Windows pipe probe 7개, Windows 전용 임시 resource copy/hash/read lease와 그 directory에서의 실행을 포함한 probe **9개 PASS**. root 재검증, foreign token/replay 거부, helper 재실행의 stable identity/new token, EOF 종료, 원본 marker 보존을 확인하고 전용 임시 파일을 제거했다. 이는 Tauri 앱의 WSL 기능 완료나 WSL1/WSL2 suspend 수용을 의미하지 않는다.
+- 최신 native Windows MSVC compile/strict Clippy(실제 platform source의 독립 harness), helper 테스트와 카탈로그 검사 PASS(**7.205초 / peak 500,142,080 bytes / 8 GiB**). 제품 CI에 같은 artifact를 사용한 Rust client의 owned WSL1 fixture와 stopped/start 검사를 추가했다. 아직 실행하지 않았다. Registry/Files/Git/LSP admission은 기존 제한을 유지한다.
+
+- artifact staging의 source SHA 불일치·bytes 변조·동적 interpreter·잘못된 ELF header 거부 회귀와 helper check, notices 생성 PASS(**2.319초 / peak 208,187,392 bytes / 8 GiB**). 첫 affected 실행은 scope 회귀에서 native helper를 20번째 앱으로 계산해 **3.348초에 FAIL**했다. helper를 private crate로 분류하고 `apps/*/native` 수정이 frontend 대신 native package와 Windows consumer를 선택하도록 고쳤다. manifest/dependency 범위 회귀도 추가해 PASS했다.
+
 - 현재 작업 트리의 최종 `pnpm verify:affected` all **976.231초 / peak 6,445,092,864 bytes / 8 GiB PASS**. 공유 Cargo feature 변경으로 기존 앱 테스트 바이너리도 재빌드했다. Windows 실행 결과는 다음 CI에서 확인한다.
+
+
+## WSL 등록 검토와 실행 파일·배포판 식별 보완
+
+- WSL helper 파일뿐 아니라 volume root부터 resource directory까지 native handle을 유지하고 delete sharing을 허용하지 않는다. 각 열린 대상에서 reparse/type을 확인해 hash 검사와 실행 사이의 부모 폴더 교체도 차단한다. WSL2는 GUID/등록 정보/BasePath 외에 실제 backing image의 File ID를 유지·재검증해 같은 directory 안의 VHD 교체를 구분한다. image 내용은 읽지 않는다. 경로는 Microsoft [DistributionRegistration](https://github.com/microsoft/WSL/blob/master/src/windows/service/exe/DistributionRegistration.cpp)의 BasePath/VhdFileName 계약을 따른다.
+- 실제 Windows API flags로 helper 파일 write/rename와 부모 directory rename 거부를 확인한 채 Windows resource path에서 WSL helper를 실행했다. 현재 WSL2 backing image의 metadata-only 반복 식별, token/replay/restart/EOF와 원본 marker 보존까지 **10개 PASS**. 전용 Windows/Linux 임시 리소스와 handle을 정리했다. 이는 Rust client/Tauri WSL 기능이나 WSL1 실행 PASS가 아니다.
+- Windows-only resource lease 회귀의 Clippy 위치 경고를 수정했다. 후속 MSVC platform compile/strict Clippy, filesystem tests, Workspace Clippy PASS(**12.145초 / peak 1,204,297,728 bytes / 8 GiB**). 최초 경고 실행과 수정이 적용되지 않은 중간 재시도는 FAIL로 기록한다.
+- Host가 native resource directory를 선택하고 WSL 프로젝트 검토를 기존 Registry writer에 연결한다. native distro GUID/실제 Linux root 객체를 확인한 expiring token만 등록·재연결에 사용한다. 기존 metadata CAS·duplicate discovery·취소는 공유하며 등록은 선택/실행 신뢰를 주지 않는다. `list_wsl_distros`/`preview_wsl`은 Overview의 별도 bounded probe pool을 사용한다.
+- WSL 폴더 입력은 명시적으로 열 때 lazy load하고 배포판 목록 조회만 수행한다. 중지 배포판은 시작 선택을 요구한다. 닫힌 화면의 늦은 결과는 native 검토를 취소한다. 초기 busy와 refresh generation이 다른 등록 동작·오래된 목록 게시를 막는다. WSL 오류 문자열도 실제 해당 오류가 발생할 때 불러온다.
+- native Registry owner 7개·Clippy PASS(**95.706초 / peak 5,475,811,328 bytes / 8 GiB**). 후속 route/owner/UI 검증에서 11 UI 테스트는 통과했지만 기존 TS target의 `Array.at` 미지원으로 build가 실패해 `pop`으로 수정했다. MSVC platform all-target Clippy, helper 4개, Workspace all-target Clippy, UI 11개·접근성·build·bundle PASS(**28.711초 / peak 2,034,245,632 bytes / 8 GiB**). 당시 초기 bundle은 279,726/280,000 bytes였다. 후속 오류 문자열 lazy 변경의 최종 build/affected는 별도로 확인한다.
+- hosted `tests/wsl_native.rs`는 원본 marker를 유지하면서 등록 preview/cancel/replay·실제 untrusted Registry 등록·stopped/start 후 동일 binding·repeat discovery를 검사한다. **실제 Windows 실행은 아직 하지 않았다.** Files/Git/LSP admission은 계속 WSL 전용 구현을 요구하며 Windows 파일 접근으로 대체하지 않는다.
+
+- 오류 메시지 lazy load를 포함한 최종 집중 검사: artifact 거부 회귀, dependency/notices 및 카탈로그 계약, UI 11개·접근성·build·bundle PASS(**22.837초 / peak 1,572,782,080 bytes / 8 GiB**). Windows 통합 fixture는 실행하지 않았다.
+
+- WSL 등록 최종 `pnpm verify:affected` all PASS(**663.243초 / peak 6,444,986,368 bytes / 8 GiB**). 초기 bundle **278,634/280,000 bytes**. 앞선 `f3c9642`의 일반 [CI](https://github.com/jihoon22-lee/devbox/actions/runs/34353884389)는 통과했지만 [Windows 제품 검사](https://github.com/jihoon22-lee/devbox/actions/runs/34353884387)는 저장 후 두 번째 LSP hover에서 여전히 실패했다. 새 WSL 코드는 해당 실행에 포함되지 않았으며 LSP 경합은 별도로 수정·검증한다.

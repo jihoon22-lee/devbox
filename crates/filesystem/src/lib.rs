@@ -28,6 +28,7 @@
 //!   구현한다.
 
 pub mod ignore;
+pub mod project;
 pub mod project_path;
 pub mod walk;
 
@@ -55,6 +56,13 @@ pub struct FilesystemIdentity {
     scope: u64,
     object: u64,
 }
+impl FilesystemIdentity {
+    /// OS-supplied evidence components. They cannot reconstruct an open handle
+    /// or admit access; consumers must compare a fresh native observation.
+    pub fn components(self) -> (u64, u64) {
+        (self.scope, self.object)
+    }
+}
 
 /// Resolve the identity of the exact final path component without following a
 /// final symlink/reparse point.
@@ -80,6 +88,16 @@ pub fn open_filesystem_object(
     directory: bool,
 ) -> io::Result<(File, FilesystemIdentity)> {
     open_object(path.as_ref(), directory, true)
+}
+
+/// Retain native identity without requesting file-content access. On Windows
+/// this can inspect an in-use backing image without reading its contents.
+/// The caller must still check the pathname's fresh identity before reuse.
+pub fn open_filesystem_metadata_object(
+    path: impl AsRef<Path>,
+    directory: bool,
+) -> io::Result<(File, FilesystemIdentity)> {
+    open_object(path.as_ref(), directory, false)
 }
 
 fn open_object(

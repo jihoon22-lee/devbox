@@ -6,3 +6,9 @@ pub mod project_files;
 pub mod project_probe;
 pub(crate) mod storage_paths;
 pub mod windows_path;
+
+pub mod wsl_distro;
+
+pub mod wsl_helper;
+
+pub mod wsl_project;

@@ -48,6 +48,7 @@ pub struct Host {
     stores: Arc<StoreRoot>,
     pub(crate) legacy: crate::legacy_imports::LegacyImports,
     source_environment: crate::platform::git_trust::SourceEnvironment,
+    helper_directory: Option<std::path::PathBuf>,
     selected: RwLock<Option<Selected>>,
 }
 impl Host {
@@ -58,6 +59,17 @@ impl Host {
         self.stores.root()
     }
     pub fn open(root: &Path) -> Result<Self> {
+        Self::open_inner(root, None)
+    }
+    pub fn open_with_resources(root: &Path, resources: std::path::PathBuf) -> Result<Self> {
+        Self::open_inner(root, Some(resources.join("resources/wsl")))
+    }
+    pub fn helper_directory(&self) -> Result<&Path> {
+        self.helper_directory
+            .as_deref()
+            .ok_or("wsl_helper_unavailable")
+    }
+    fn open_inner(root: &Path, helper_directory: Option<std::path::PathBuf>) -> Result<Self> {
         let stores = Arc::new(StoreRoot::open(root)?);
         let selected = stores
             .read()?
@@ -67,6 +79,7 @@ impl Host {
             legacy: crate::legacy_imports::LegacyImports::new(stores.clone())?,
             stores,
             source_environment: crate::platform::git_trust::SourceEnvironment::capture(),
+            helper_directory,
             selected: RwLock::new(selected),
         })
     }

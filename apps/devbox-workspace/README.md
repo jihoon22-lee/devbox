@@ -195,3 +195,23 @@ apply, cancellation/replay rejection and restoration of previous native geometry
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.
+
+The private [WSL helper](native/README.md) now reuses root/Git filesystem
+observations and has a bounded Windows pipe client. Its static ELF resource is
+built in the product workflow from the same source SHA, checked before packaging,
+and checked against the compiled digest before native launch. The client binds a
+registered GUID/backing-directory and WSL2 backing-image objects, requires explicit stopped-distro start,
+and retires the metadata helper on EOF/timeouts. Actual local Windows-to-WSL pipe
+and installed-resource-path probes passed; the packaged Rust client and hosted
+WSL1 observation fixture await CI. A lazy WSL folder form now lists registered
+GUIDs without startup, requires an explicit stopped-distro start choice, and uses
+the existing native registration/rebind review and byte CAS. Late UI results are
+cancelled. Files/Git/LSP delegation remains incomplete; their native admission
+gates remain closed. Resource-file and ancestor leases prevent launch-path
+substitution. Backing-image checks request metadata only, without reading disk
+contents.
+
+Saving an LSP document now carries the exact successfully saved text and native
+revision. A delayed change from the previous disk revision cannot leave the
+server at the old snapshot. The host checks the saved bytes against current disk;
+newer unsaved editor text remains dirty and is synchronized after didSave.

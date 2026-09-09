@@ -28,6 +28,7 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-workspace-*'
+      - '.github/scripts/workspace-wsl-*'
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-knowledge-migration.mjs'
       - '.github/scripts/windows-knowledge-wsl.*'
@@ -62,7 +63,46 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workspace-wsl-helper:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    name: Workspace static WSL helper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-wsl-musl
+      - name: Prepare static Linux compiler
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Test and build native helper
+        run: |
+          node --test .github/scripts/workspace-wsl-artifact.test.mjs
+          cargo test --locked -p workspace-wsl --target x86_64-unknown-linux-musl
+          cargo build --locked --release -p workspace-wsl --target x86_64-unknown-linux-musl
+          node .github/scripts/workspace-wsl-artifact.mjs prepare target/x86_64-unknown-linux-musl/release/devbox-workspace-wsl "$GITHUB_SHA"
+          node .github/scripts/workspace-wsl-artifact.mjs verify "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl-${{ github.sha }}
+          path: |
+            apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl
+            apps/devbox-workspace/src-tauri/resources/wsl/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+
   windows:
+    needs: workspace-wsl-helper
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
     name: Hidden products (Windows native)
     runs-on: windows-2025
@@ -89,6 +129,12 @@ jobs:
       - name: Check native Workspace chooser driver
         shell: powershell
         run: .github/scripts/windows-workspace-file-dialog.test.ps1
+      - uses: actions/download-artifact@v8
+        with:
+          name: workspace-wsl-${{ github.sha }}
+          path: apps/devbox-workspace/src-tauri/resources/wsl
+      - name: Verify helper belongs to this product source
+        run: node .github/scripts/workspace-wsl-artifact.mjs verify "${{ github.sha }}"
       - name: Build unpublished product installers
         id: product-build
         shell: pwsh
@@ -97,6 +143,13 @@ jobs:
             pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
+      - name: Prepare dedicated WSL1 filesystem fixture
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Exercise packaged Workspace helper on owned WSL
+        run: cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture
       - name: Run native authority and WAL fixtures on Windows
         run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
@@ -112,11 +165,6 @@ jobs:
       - name: Verify API Studio end-to-end local workflow
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-workflow.mjs
-      - name: Prepare dedicated WSL1 filesystem fixture
-        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
-        timeout-minutes: 10
-        shell: pwsh
-        run: .github/scripts/windows-knowledge-wsl.ps1
       - name: Verify Knowledge migration, vault ownership and window lifetime
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:

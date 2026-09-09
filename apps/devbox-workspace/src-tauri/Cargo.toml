@@ -11,9 +11,12 @@ name = "devbox_workspace_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
 [build-dependencies]
+sha2 = "0.11.0"
+serde_json = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+workspace-wsl = { path = "../native", default-features = false }
 tauri = { version = "2", features = [] }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 product-contract = { path = "../../../crates/product-contract" }
@@ -30,14 +33,14 @@ code-pad = { path = "../../code-pad/src-tauri", default-features = false, featur
 repo-manager = { path = "../../repo-manager/src-tauri", default-features = false }
 
 sha2 = "0.11.0"
-tokio = { version = "1", features = ["time", "sync"] }
+tokio = { version = "1", features = ["time", "sync", "process", "io-util", "rt", "macros"] }
 tauri-plugin-dialog = "2"
 tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"
 gix-config = { version = "=0.60.0", default-features = false, features = ["sha1"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_Storage_FileSystem", "Win32_System_Registry", "Win32_System_SystemInformation"] }
 
 [dev-dependencies]
 tempfile = "3"

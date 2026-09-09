@@ -104,3 +104,9 @@ Launcher의 전체 job/service action을 제공한다. 정확한 v0.5.1 package 
 기존 ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험은 이 보완 범위에 포함하지 않는다.
 기존 앱의 P1·P2·선택 P3 강화, 앱별 목표 version, 신규 앱의 안전 경계와 acceptance는
 [v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
+
+`apps/devbox-workspace/native` is Workspace's private Linux helper, not another
+catalog application. Its protocol-only library is consumed by the Windows host;
+the static executable currently shares root/Git observation with `crates/filesystem`.
+Product CI builds and verifies the helper resource from the same source commit.
+Files/Git/LSP delegation remains under B04 acceptance.

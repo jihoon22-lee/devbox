@@ -176,7 +176,11 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                     ))
         }
         "workspace.registry" => {
-            (route == "overview" && matches!(method, "save_template" | "archive_template"))
+            (route == "overview"
+                && matches!(
+                    method,
+                    "save_template" | "archive_template" | "list_wsl_distros" | "preview_wsl"
+                ))
                 || matches!(
                     method,
                     "snapshot"
@@ -946,6 +950,26 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             let lease = host.projects()?.admit(&value.context)?;
             Ok(json!({"context":value.context,"binding":lease.binding()}))
         }
+        "list_wsl_distros" => {
+            empty(&args)?;
+            Ok(json!(crate::platform::wsl_distro::list()?))
+        }
+        "preview_wsl" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct WslRoot {
+                distro_id: String,
+                root: String,
+                start_stopped: bool,
+            }
+            let value: WslRoot = input(args)?;
+            Ok(json!(host.projects()?.preview_wsl(
+                host.helper_directory()?,
+                &value.distro_id,
+                &value.root,
+                value.start_stopped
+            )?))
+        }
         "preview_windows" => {
             let value: Root = input(args)?;
             Ok(json!(host.projects()?.preview_windows(&value.root)?))
@@ -983,6 +1007,8 @@ fn project_probe(method: &str) -> bool {
     matches!(
         method,
         "preview_windows"
+            | "list_wsl_distros"
+            | "preview_wsl"
             | "preview_imported_profile_windows"
             | "preview_template_profile_windows"
             | "preview_legacy_workspace_windows"
@@ -1299,7 +1325,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                         .app_local_data_dir()
                         .map_err(|_| "store_unavailable")?;
                     std::fs::create_dir_all(&root).map_err(|_| "store_unavailable")?;
-                    Host::open(&root).map(Arc::new)
+                    let resources = app.path().resource_dir().map_err(|_| "store_unavailable")?;
+                    Host::open_with_resources(&root, resources).map(Arc::new)
                 })
                 .await
                 .unwrap_or(Err("worker_unavailable"));
@@ -1620,6 +1647,12 @@ mod tests {
     #[test]
     fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
         assert!(allowed("workspace.registry", "overview", "preview_windows"));
+        for method in ["list_wsl_distros", "preview_wsl"] {
+            assert!(allowed("workspace.registry", "overview", method));
+            assert!(!allowed("workspace.registry", "files", method));
+            assert!(!allowed("workspace.registry", "source", method));
+            assert!(project_probe(method));
+        }
         for method in [
             "preview_windows",
             "preview_imported_profile_windows",

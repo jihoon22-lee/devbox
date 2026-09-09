@@ -5,6 +5,7 @@ import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
+
   source_cleanup_scope_invalid: "저장된 정리 범위를 확인하지 못했습니다. 기존 파일을 보존했습니다.",
   source_cleanup_scope_changed: "정리 범위의 프로젝트나 Git 실행 근거가 바뀌었습니다. 범위를 다시 검토하거나 철회해 주세요.",
   source_cleanup_open_files: "해당 작업 폴더에 열린 파일 탭이 있습니다. 탭을 닫은 뒤 정리 후보를 다시 검사해 주세요.",
@@ -103,7 +104,6 @@ const issues: Record<string, string> = {
   project_binding_changed: "등록한 폴더가 교체되었습니다. 폴더를 확인하고 경로를 다시 연결해 주세요.",
   context_selection_expired: "프로젝트 확인 시간이 초과되었습니다. 다시 선택해 주세요.",
   project_has_legacy_references: "이 프로젝트를 참조하는 항목이 있어 등록을 해제할 수 없습니다.",
-  wsl_admission_required: "WSL 프로젝트 연결은 아직 사용할 수 없습니다.",
   file_selection_required: "파일 선택 버튼에서 열 파일을 선택해 주세요.",
   file_owner_path: "제품이 관리하는 설정과 승인 파일은 일반 편집기로 변경할 수 없습니다. 해당 설정 화면을 사용해 주세요.",
   project_selection_required: "개요에서 작업할 프로젝트를 선택해 주세요.",
@@ -202,12 +202,16 @@ export async function nativeCall<T>(component: string, method: string, args: Rec
 export async function componentCall<T>(description: Description, component: string, method: string, args: Record<string, unknown>, route: string): Promise<T> {
   const header = makeRequest(description.handshake, route, Date.now(), description.context);
   // Stay inside the native 30-second ceiling across renderer/native clock precision.
-  if (component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp") header.deadlineMs += 24_000;
+  if (component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp" || (component === "workspace.registry" && ["list_wsl_distros","preview_wsl","apply_registration","cancel_registration"].includes(method))) header.deadlineMs += 24_000;
   const provenance = { product: "workspace", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: {operation: unknown; value: T & {issue?: string}};
   try {response = await invoke("plugin:workspace|execute", {request:{header, component, method, args}});}
   catch (problem) {throw new WorkspaceOperationError(problemMessage(problem, provenance));}
   if (!response || !isOperation(response.operation, provenance)) throw new Error("응답을 확인하지 못했습니다.");
-  if (response.operation.outcome.state !== "succeeded") throw new WorkspaceOperationError(issueMessage(response.value?.issue ?? "operation_failed"));
+  if (response.operation.outcome.state !== "succeeded") {
+    const issue=response.value?.issue??"operation_failed";
+    const message=issue.startsWith("wsl_")?await import("./wslIssues").then(module=>module.wslIssueMessage(issue)).catch(()=>undefined):undefined;
+    throw new WorkspaceOperationError(message??issueMessage(issue));
+  }
   return response.value;
 }

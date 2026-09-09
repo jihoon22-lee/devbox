@@ -145,3 +145,16 @@ it("reviews a concrete template profile and registers only after explicit approv
   fireEvent.click(screen.getByRole("button",{name:/^등록$/}));
   await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","apply_registration",{previewId:preview.previewId,name:template.name,action:"register"}));
 });
+
+
+it("loads WSL discovery only after opening its folder form",async()=>{
+  const original=call.getMockImplementation()!;
+  call.mockImplementation(async(component,method,...args)=>method==="list_wsl_distros"?[]:original(component,method,...args));
+  render(<RegistryGate/>);
+  const open=await screen.findByRole("button",{name:"WSL 프로젝트 추가"});
+  expect(call.mock.calls.some(([,method])=>method==="list_wsl_distros")).toBe(false);
+  fireEvent.click(open);
+  await screen.findByText("등록된 WSL 배포판이 없습니다.");
+  expect(call.mock.calls.filter(([,method])=>method==="list_wsl_distros")).toHaveLength(1);
+  expect(call.mock.calls.some(([,method])=>method==="preview_wsl")).toBe(false);
+});

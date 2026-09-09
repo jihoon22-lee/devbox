@@ -99,7 +99,14 @@ assert secrets.rust_packages == [
     "secrets", "workbench",
 ]
 
+native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
+assert native_helper.frontend_scope == "none"
+assert native_helper.rust_packages == ["devbox-workspace", "workspace-wsl"]
+helper_manifest = resolve("apps/devbox-workspace/native/Cargo.toml")
+assert helper_manifest.dependency_scope == "all"
+assert helper_manifest.rust_packages == native_helper.rust_packages
 rust_graph = module.load_rust_graph(ROOT)
+assert rust_graph.nodes["workspace-wsl"].kind == "crate"
 wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
