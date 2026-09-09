@@ -436,8 +436,27 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
 
-    let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
-    let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    // Rust's file creation supports long paths, but the direct Win32 call
+    // below also needs an extended-length parent. Resolve that existing
+    // parent once and keep both sibling names, including an absent target.
+    let parent = fs::canonicalize(
+        target
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?,
+    )?;
+    let sibling = |path: &Path| -> io::Result<Vec<u16>> {
+        let name = path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
+        Ok(parent
+            .join(name)
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect())
+    };
+    let temporary = sibling(temporary)?;
+    let target = sibling(target)?;
     const MAX_REPLACE_ATTEMPTS: usize = 16;
     for attempt in 0..MAX_REPLACE_ATTEMPTS {
         let result = unsafe {
@@ -747,6 +766,27 @@ mod atomic_write_tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn long_generation_paths_create_and_replace_hashed_history_without_temp_leaks() {
+        let root = new_test_dir();
+        let mut parent = root.clone();
+        for _ in 0..8 {
+            parent.push("generation-0123456789-한글 space");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let name = format!("{}.json", "a".repeat(64));
+        let target = parent.join(&name);
+        atomic_write(&target, b"before").unwrap();
+        atomic_write(&target, b"after").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"after");
+        let names: Vec<_> = fs::read_dir(&parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from(name)]);
+        fs::remove_dir_all(root).unwrap();
     }
 }
 
