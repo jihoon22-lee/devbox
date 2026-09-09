@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
+import LegacyImports from "./LegacyImports";
 
 type Status = {phase: "loading" | "setup" | "selected" | "failed"; issue?: string};
 export interface Worktree {id: string; projectId: string; revision: number; binding: {root: string; target: ProjectContext["target"]}; trustedDigest: string | null}
@@ -140,5 +141,6 @@ export default function RegistryGate({context = null, onContextChanged = async (
         </div>)}
       </section>)}
     </>}
+    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports/>}
   </section>;
 }

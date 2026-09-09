@@ -4,6 +4,7 @@ mod definitions;
 pub mod file_owner;
 mod files_host;
 pub mod host;
+mod legacy_imports;
 mod lsp_host;
 pub mod platform;
 mod private_metadata;

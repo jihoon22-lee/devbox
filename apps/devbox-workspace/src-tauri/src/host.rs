@@ -46,6 +46,7 @@ impl Selected {
 }
 pub struct Host {
     stores: Arc<StoreRoot>,
+    pub(crate) legacy: crate::legacy_imports::LegacyImports,
     source_environment: crate::platform::git_trust::SourceEnvironment,
     selected: RwLock<Option<Selected>>,
 }
@@ -63,6 +64,7 @@ impl Host {
             .map(|generation| Selected::open(&stores, generation))
             .transpose()?;
         Ok(Self {
+            legacy: crate::legacy_imports::LegacyImports::new(stores.clone())?,
             stores,
             source_environment: crate::platform::git_trust::SourceEnvironment::capture(),
             selected: RwLock::new(selected),

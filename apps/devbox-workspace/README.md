@@ -4,7 +4,19 @@ Hidden v0.8 B04 development product. The shared Overview/Source/Files UI and nat
 
 `pnpm --filter devbox-workspace dev` opens the explicitly labelled browser fixture. On Windows, `pnpm --filter devbox-workspace tauri dev` runs the native shell. Browser `?route=overview` selects a preview route. The Windows debug executable accepts `--route=overview` and validates it against this product’s registered routes before creating its webview. Native requests are restricted to the local main webview and validated by `product-shell-tauri`; route selection does not grant domain authority.
 
-Uses a new `com.devbox.v08.workspace` identity; no legacy data root is opened. Navigation retains mounted route drafts in memory, with bounded history. Native runtime and installer identity proof remain separate from the focused Registry/storage checks.
+Uses a new `com.devbox.v08.workspace` identity; startup does not open legacy data roots. Navigation retains mounted route drafts in memory, with bounded history. Native runtime and installer identity proof remain separate from the focused Registry/storage checks.
+
+Overview now provides explicit backup of fixed v0.7 Workbench profile/template and
+Code Pad session/recovery/LSP JSON files. A bounded native background job validates
+schemas and records, checks source identity/content again, and preserves exact
+bytes under a content-addressed product-local snapshot. Unknown/future/corrupt
+files have diagnostics without success counts. Cancellation leaves incomplete
+snapshots uncommitted; retries verify existing bytes without overwriting changed
+files. This step does not activate imported data or grant project/file/LSP access.
+The snapshot-to-Registry/editor mapping is still being implemented. Repo Manager's
+scan root and selection are transient React state, with no persistent preference
+file to migrate. Native window-state mapping and older identifier diagnostics
+remain part of the unfinished importer.
 
 The existing Workbench, Repo Manager and Code Pad UI/tests live in
 `packages/workspace-features` and are consumed by their legacy entry points too.

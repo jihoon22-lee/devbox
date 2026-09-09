@@ -4,6 +4,15 @@ WP #546 / R02–06, R08, R13, R16–21, R24–25 and S01. This bundle owns
 Project/Worktree Registry, manifest/local trust, Overview/Source/Files/Dependencies,
 legacy import and WSL-native LSP. Runtime and Terminal/session owners remain B05/B06.
 
+## Windows fixture checkpoint
+
+[c865fb6 Windows acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34316489082)
+passed native authority/WAL tests, API/Knowledge migration and installer coexistence.
+The packaged Workspace flow failed before Git approval: React replaced an action
+between the fixture’s separate button lookup and click requests. Source actions
+now resolve and click within one renderer turn, retrying only before a click.
+Packaged Source/LSP/recovery acceptance remains pending.
+
 ## Recovery fixture syntax checkpoint
 
 [732e4d0 Windows acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34315608299)
@@ -15,6 +24,39 @@ The final affected run selected all and passed in **371.739 seconds**, with a
 environment and native recovery changes still await packaged Windows execution.
 
 ## Behavior and ownership
+
+Explicit legacy JSON preservation now runs in one cancellable native background
+job, using fixed sibling identifiers from native startup. The compiled inventory
+contains Workbench profiles/templates and Code Pad session/recovery/LSP settings;
+Repo Manager's root/selection are transient React state, not an invented settings
+file. Counts use the existing validators with a strict unknown-field check for
+Code Pad. Cursor aliases, bookmarks and unsaved CRLF buffers remain intact.
+Snapshot reads pin directory/file objects, size, modification time and SHA-256,
+then recheck the full inventory. This detects observed concurrent changes without
+claiming an app-wide JSON transaction. No SQLite store is copied by this reader.
+
+Exact source bytes, including corrupt/future JSON, remain separate from activated
+stores. Complete files are published without clobbering an existing destination;
+the manifest is the final completion marker. Cancellation preserves incomplete
+snapshots, same-source retries verify each existing byte, and changed snapshots
+are refused. Preparation is bounded to one job/30 seconds/32 retained snapshots
+with per-file size limits; native filesystem waits remain cooperative. The UI
+distinguishes preservation, cancellation and unsupported contents. It neither
+claims these records are imported nor grants paths or execution authority.
+
+Focused snapshot regressions and Clippy passed after correcting SHA-256 hex
+formatting. The first UI run exposed an outdated Registry mock; the new UI test
+then exposed a mock returned as a Vitest hook cleanup. Both fixtures were fixed.
+Workspace Rust checks, strict Clippy and product build passed; all **24 product UI
+tests** passed in the final UI run (**5.954 seconds / 558,268,416-byte cgroup peak**).
+The final focused authority/snapshot run passed **11 tests and strict Clippy in
+22.979 seconds**, with a **3,784,282,112-byte** cgroup peak. A dangling destination
+link is rejected before existence/quota decisions. The preceding affected run
+was cancelled to fix this issue. Final affected verification selected all and
+passed in **449.736 seconds**, with a **6,444,445,696-byte** cgroup peak under
+the shared 8 GiB limit. All five generated renderer fixture regressions also pass. Actual Windows execution of this new snapshot owner is also pending. Applying snapshot
+records, old-to-new IDs/conflicts, window state and older identifier diagnostics
+remain unfinished; preserving files alone is not importer completion.
 
 Workbench, Repo Manager and Code Pad share their UI/tests through
 `packages/workspace-features`; legacy entries consume the same components.

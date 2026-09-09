@@ -151,7 +151,16 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         "workspace.files" => route == "files" && crate::files_host::allowed(component, method),
         "workspace.lsp" => route == "files" && crate::lsp_host::allowed(method),
-        "workspace.migration" => matches!(method, "status" | "start_empty"),
+        "workspace.migration" => {
+            matches!(method, "status" | "start_empty")
+                || (route == "overview"
+                    && matches!(
+                        method,
+                        "prepare_legacy_snapshot"
+                            | "legacy_snapshot_job"
+                            | "cancel_legacy_snapshot"
+                    ))
+        }
         "workspace.registry" => matches!(
             method,
             "snapshot"
@@ -695,6 +704,29 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         context: product_contract::ProjectContext,
     }
     match method {
+        "prepare_legacy_snapshot" => {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Source {
+                source: crate::core::legacy_inventory::Source,
+            }
+            let value: Source = input(args)?;
+            Ok(json!(host.legacy.start(value.source)?))
+        }
+        "legacy_snapshot_job" => {
+            empty(&args)?;
+            Ok(json!(host.legacy.status()?))
+        }
+        "cancel_legacy_snapshot" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Job {
+                job_id: String,
+            }
+            let value: Job = input(args)?;
+            host.legacy.cancel(&value.job_id)?;
+            Ok(Value::Null)
+        }
         "start_empty" => {
             empty(&args)?;
             host.start_empty()?;
@@ -1200,6 +1232,7 @@ mod tests {
         for (component, route, method) in [
             ("workspace.registry", "overview", "snapshot"),
             ("workspace.migration", "overview", "status"),
+            ("workspace.migration", "overview", "prepare_legacy_snapshot"),
             ("workspace.definitions", "overview", "load"),
             (
                 "workspace.dependencies",
@@ -1218,6 +1251,38 @@ mod tests {
                 "the product shell would reject {component} before its domain adapter"
             );
         }
+    }
+    #[test]
+    fn legacy_snapshot_admission_rejects_renderer_paths_and_foreign_roles() {
+        let root = tempfile::tempdir().unwrap();
+        let host = Host::open(root.path()).unwrap();
+        for args in [
+            json!({"source":"workbench","path":"C:\\foreign"}),
+            json!({"source":"unknown"}),
+            json!({"source":"code-pad","destination":"C:\\foreign"}),
+        ] {
+            assert_eq!(
+                dispatch(&host, "prepare_legacy_snapshot", args),
+                Err("invalid_request")
+            );
+        }
+        assert!(host.legacy.status().unwrap().is_none());
+        assert!(!root.path().join("legacy-imports").exists());
+        assert!(!allowed(
+            "workspace.source",
+            "overview",
+            "prepare_legacy_snapshot"
+        ));
+        assert!(!allowed(
+            "workspace.migration",
+            "files",
+            "prepare_legacy_snapshot"
+        ));
+        assert!(!allowed(
+            "workspace.migration",
+            "overview",
+            "apply_registration"
+        ));
     }
     #[test]
     fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
