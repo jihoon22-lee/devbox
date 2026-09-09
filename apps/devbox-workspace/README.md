@@ -202,8 +202,8 @@ built in the product workflow from the same source SHA, checked before packaging
 and checked against the compiled digest before native launch. The client binds a
 registered GUID/backing-directory and WSL2 backing-image objects, requires explicit stopped-distro start,
 and retires the helper on EOF/timeouts. Actual local Windows-to-WSL pipe
-and installed-resource-path probes passed; the packaged Rust client and hosted
-WSL1 observation fixture await CI. A lazy WSL folder form now lists registered
+and installed-resource-path probes passed. At `01db848`, the packaged Rust client
+and hosted WSL1 Registry/Files/reconnect fixture also passed. A lazy WSL folder form now lists registered
 GUIDs without startup, requires an explicit stopped-distro start choice, and uses
 the existing native registration/rebind review and byte CAS. Late UI results are
 cancelled. Selected WSL Files operations now have a separate native admission
@@ -255,14 +255,22 @@ changed dirty files to external-change review. Failed reads retain buffers; save
 are never replayed. Late watcher reads from a retired connection cannot replace
 the reconciled buffer. The reconnect button remains available when offline root
 capability checks fail.
-The hosted Windows-to-WSL flow is not yet accepted. Registry mode detection now
-uses the VM flag independently of filesystem format. The `c34bdac` WSL runtime
-step passed Registry capture and helper launch/hello, then failed at the first
-root observation with `wsl_identity_unavailable`. The helper now handles WSL1's
-missing statx/fdinfo with native file-ID and mountinfo evidence, while retaining
-the stricter checks on other filesystems. WSL reveal, definitions, Git
-and LSP remain incomplete. Actual Windows UI didSave/second hover and full journal
-preview/cancel/review/apply passed at `1ad2e1d`; its later context clear failed.
-Context admission now waits for active workers. The complete `c34bdac` packaged
-Windows shell, API Studio/Knowledge and installer coexistence checks passed;
-its only product workflow failure was the WSL root identity check.
+The `01db848` general and Windows product workflows passed: native Workspace
+141 tests, actual WSL1 Rust/helper, full packaged shell/journal/context clear,
+API Studio/Knowledge and installer coexistence. Registry mode detection uses the
+VM flag independently of filesystem format. WSL1's missing statx/fdinfo use native
+file-ID and mountinfo evidence while other filesystems retain the stricter checks.
+Local Windows-to-WSL2 file pipe checks also passed; actual WSL2 Rust host/WebView
+and the complete WSL Git/LSP workflow remain separate acceptance work.
+
+WSL project definitions now reuse the Windows schema and bounded native snapshot
+logic. The Linux helper owns manifest/source reads, exact-byte revalidation and
+reviewed writes. The Windows generation owns local overlays and one-use Registry
+trust. First creation never overwrites a concurrent file; changed source contents,
+parent replacement and cancellation reject publication. Existing manifest edits
+preserve encoding/CRLF through the shared Code Pad writer. Trust is revoked before
+writing, and an unacknowledged write requires reopening rather than replay.
+The host excludes concurrent Git/editor writes during definition operations.
+Actual local WSL1/WSL2 pipe checks passed for definition creation/read/change/replay
+boundaries. The expanded Windows Registry/overlay fixture awaits its new CI run.
+WSL reveal, Git/LSP, references/providers and remaining R24 acceptance are incomplete.

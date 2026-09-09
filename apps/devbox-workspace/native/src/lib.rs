@@ -252,3 +252,9 @@ pub mod linux_files;
 pub mod manifest;
 #[cfg(feature = "files")]
 pub mod project_files;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod definitions;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod definition_write;

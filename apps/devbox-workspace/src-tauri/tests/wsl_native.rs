@@ -81,6 +81,7 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
         owner.admit(&context),
         Err("wsl_admission_required")
     ));
+    verify_owned_definitions(&distro.id, &name, &nonce.to_string());
     let bridge_path = format!("{root}/bridge.txt");
     let bridge_file = Path::new(&unc).join("bridge.txt");
     std::fs::write(&bridge_file, b"bridge baseline\r\n").unwrap();
@@ -364,4 +365,177 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
     assert!(!editable.exists());
     assert!(!Path::new(&unc).join("review 한글.md").exists());
     std::fs::remove_dir(&unc).unwrap();
+}
+
+/// Synthetic Windows host/Registry -> packaged helper -> Linux definitions.
+/// Shares only the explicitly owned distro, with a separate owned project root.
+fn verify_owned_definitions(distro_id: &str, name: &str, nonce: &str) {
+    use devbox_workspace_lib::{
+        definitions::Definitions, host::Host, project_owner::RegistrationAction,
+    };
+    use serde_json::{json, Value};
+    use std::fs;
+    let root = format!("/home/devbox-fixture/definitions 한글 {nonce}");
+    let unc = format!(r"\\wsl.localhost\{name}\home\devbox-fixture\definitions 한글 {nonce}");
+    let path = Path::new(&unc);
+    fs::create_dir(path).unwrap();
+    let store = tempfile::tempdir().unwrap();
+    let host =
+        Host::open_with_resources(store.path(), Path::new(env!("CARGO_MANIFEST_DIR")).into())
+            .unwrap();
+    host.start_empty().unwrap();
+    let projects = host.projects().unwrap();
+    let proposal = projects
+        .preview_wsl(host.helper_directory().unwrap(), distro_id, &root, false)
+        .unwrap();
+    let (_, context) = projects
+        .apply(
+            &proposal.preview_id,
+            "Definitions fixture",
+            RegistrationAction::Register,
+        )
+        .unwrap();
+    let mut definitions = Definitions::default();
+    let value = |value| serde_json::to_value(value).unwrap();
+    let view = value(definitions.load(&host, &context, u64::MAX).unwrap());
+    assert_eq!(view["definitionsTrusted"], false);
+    assert!(!path.join(".devbox").exists());
+    let preview = serde_json::to_value(
+        definitions
+            .preview_trust(&host, &context, u64::MAX)
+            .unwrap(),
+    )
+    .unwrap();
+    fs::create_dir(path.join(".devbox")).unwrap();
+    assert!(matches!(
+        definitions.approve_trust(
+            &host,
+            &context,
+            preview["previewId"].as_str().unwrap(),
+            u64::MAX
+        ),
+        Err("project_definition_changed")
+    ));
+    assert!(projects.snapshot().unwrap().worktrees[0]
+        .trusted_digest
+        .is_none());
+    fs::remove_dir(path.join(".devbox")).unwrap();
+
+    fs::write(
+        path.join("package.json"),
+        br#"{"scripts":{"dev":"do not execute synthetic source"}}"#,
+    )
+    .unwrap();
+    let content = r#"{"schemaVersion":1,"expectedPorts":[8080],"tasks":{"dev":{"kind":"package-script","source":"package.json","selector":"dev"}}}"#;
+    let request = json!({"target":"project","content":content,"editRevision":view["editRevision"]});
+    let cancelled = serde_json::to_value(
+        definitions
+            .preview_edit(
+                &host,
+                &context,
+                serde_json::from_value(request.clone()).unwrap(),
+                u64::MAX,
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    let id = cancelled["previewId"].as_str().unwrap();
+    definitions.cancel(id);
+    assert!(!path.join(".devbox").exists());
+    assert!(matches!(
+        definitions.apply_edit(&host, &context, id, u64::MAX),
+        Err("definition_preview_stale")
+    ));
+    let preview = serde_json::to_value(
+        definitions
+            .preview_edit(
+                &host,
+                &context,
+                serde_json::from_value(request).unwrap(),
+                u64::MAX,
+            )
+            .unwrap(),
+    )
+    .unwrap();
+    let id = preview["previewId"].as_str().unwrap();
+    definitions
+        .apply_edit(&host, &context, id, u64::MAX)
+        .unwrap();
+    assert!(matches!(
+        definitions.apply_edit(&host, &context, id, u64::MAX),
+        Err("definition_preview_stale")
+    ));
+    let shared = fs::read(path.join(".devbox/project.json")).unwrap();
+    let parsed: Value = serde_json::from_slice(&shared).unwrap();
+    assert_eq!(parsed["expectedPorts"], json!([8080]));
+    assert_eq!(fs::read_dir(path.join(".devbox")).unwrap().count(), 1);
+    let view = value(definitions.load(&host, &context, u64::MAX).unwrap());
+    assert_eq!(view["sources"], json!(["package.json"]));
+    let preview = serde_json::to_value(
+        definitions
+            .preview_trust(&host, &context, u64::MAX)
+            .unwrap(),
+    )
+    .unwrap();
+    fs::write(
+        path.join("package.json"),
+        br#"{"scripts":{"dev":"changed source"}}"#,
+    )
+    .unwrap();
+    assert!(matches!(
+        definitions.approve_trust(
+            &host,
+            &context,
+            preview["previewId"].as_str().unwrap(),
+            u64::MAX
+        ),
+        Err("project_definition_changed")
+    ));
+    let preview = serde_json::to_value(
+        definitions
+            .preview_trust(&host, &context, u64::MAX)
+            .unwrap(),
+    )
+    .unwrap();
+    definitions
+        .approve_trust(
+            &host,
+            &context,
+            preview["previewId"].as_str().unwrap(),
+            u64::MAX,
+        )
+        .unwrap();
+    let view = value(definitions.load(&host, &context, u64::MAX).unwrap());
+    assert_eq!(view["definitionsTrusted"], true);
+    let mut local = view["local"].clone();
+    local["expectedPorts"] = json!([9090]);
+    let preview = serde_json::to_value(definitions.preview_edit(&host, &context, serde_json::from_value(json!({"target":"local","content":serde_json::to_string(&local).unwrap(),"editRevision":view["editRevision"]})).unwrap(), u64::MAX).unwrap()).unwrap();
+    definitions
+        .apply_edit(
+            &host,
+            &context,
+            preview["previewId"].as_str().unwrap(),
+            u64::MAX,
+        )
+        .unwrap();
+    assert_eq!(fs::read(path.join(".devbox/project.json")).unwrap(), shared);
+    assert!(host
+        .component("overview")
+        .unwrap()
+        .join("definitions")
+        .join(format!("worktree-{}", context.worktree_id))
+        .join("local-overlay.json")
+        .is_file());
+    let view = value(definitions.load(&host, &context, u64::MAX).unwrap());
+    assert_eq!(view["effective"]["expectedPorts"], json!([9090]));
+    assert_eq!(view["project"]["expectedPorts"], json!([8080]));
+    assert_eq!(view["definitionsTrusted"], false);
+    assert_eq!(fs::read_dir(path).unwrap().count(), 2);
+    drop(definitions);
+    drop(projects);
+    drop(host);
+    fs::remove_file(path.join("package.json")).unwrap();
+    fs::remove_file(path.join(".devbox/project.json")).unwrap();
+    fs::remove_dir(path.join(".devbox")).unwrap();
+    fs::remove_dir(path).unwrap();
 }

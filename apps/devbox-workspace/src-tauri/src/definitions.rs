@@ -6,7 +6,7 @@ use crate::{
         registry::Registry,
     },
     host::Host,
-    platform::project_files::ProjectFiles,
+    platform::definition_files::{DefinitionFiles, EditDestination},
     private_metadata::MetadataRoot,
 };
 use product_contract::ProjectContext;
@@ -53,7 +53,7 @@ struct Snapshot {
     sources: BTreeMap<String, String>,
     unavailable_sources: Vec<String>,
     digest: String,
-    files: ProjectFiles,
+    files: DefinitionFiles,
     private: MetadataRoot,
     overlay_bytes: Option<Vec<u8>>,
     project_bytes: Option<Vec<u8>>,
@@ -74,13 +74,13 @@ impl Snapshot {
     fn capture(
         context: &ProjectContext,
         registry_revision: u64,
-        mut files: ProjectFiles,
+        mut files: DefinitionFiles,
         private: MetadataRoot,
         defaults: Manifest,
         deadline: u64,
     ) -> Result<Self> {
         crate::files_host::current_deadline(deadline)?;
-        let project_bytes = files.read(MANIFEST, true)?;
+        let project_bytes = files.read(MANIFEST, true, deadline)?;
         let project = project_bytes
             .as_ref()
             .map(|bytes| Manifest::parse(bytes))
@@ -108,7 +108,7 @@ impl Snapshot {
         let mut unavailable_sources = Vec::new();
         for path in paths {
             crate::files_host::current_deadline(deadline)?;
-            match files.read(&path, false) {
+            match files.read(&path, false, deadline) {
                 Ok(Some(bytes)) => {
                     sources.insert(path, digest(&bytes));
                 }
@@ -135,12 +135,15 @@ impl Snapshot {
             overlay_bytes,
             project_bytes,
         };
-        snapshot.revalidate()?;
+        snapshot.revalidate_until(deadline)?;
         crate::files_host::current_deadline(deadline)?;
         Ok(snapshot)
     }
     fn revalidate(&self) -> Result<()> {
-        self.files.revalidate()?;
+        self.revalidate_until(u64::MAX)
+    }
+    fn revalidate_until(&self, deadline: u64) -> Result<()> {
+        self.files.revalidate(deadline)?;
         if self.private.read(OVERLAY)? != self.overlay_bytes {
             return Err("project_definition_changed");
         }
@@ -209,7 +212,7 @@ pub struct EditPreview {
 }
 struct PendingEdit {
     snapshot: Snapshot,
-    target: crate::platform::definition_write::DefinitionTarget,
+    target: EditDestination,
     bytes: Vec<u8>,
     created: Instant,
 }
@@ -269,13 +272,13 @@ impl Definitions {
     ) -> Result<Snapshot> {
         let projects = host.projects()?;
         let registry = projects.snapshot()?;
-        let lease = projects.admit(context)?;
+        let files = DefinitionFiles::open(host, context, deadline)?;
         crate::files_host::current_deadline(deadline)?;
         let private = self.private(host, context)?;
         let snapshot = Snapshot::capture(
             context,
             registry.revision,
-            ProjectFiles::new(lease)?,
+            files,
             private,
             Manifest {
                 expected_ports: registry
@@ -340,7 +343,7 @@ impl Definitions {
         }
         let snapshot = pending.snapshot;
         let projects = host.projects()?;
-        if projects.binding(context)? != *snapshot.files.lease().binding() {
+        if projects.binding(context)? != *snapshot.files.binding() {
             return Err("stale_context");
         }
         // This is a definitions digest only. Source/Git and LSP admission must
@@ -350,7 +353,7 @@ impl Definitions {
             context,
             &snapshot.digest,
             || {
-                snapshot.revalidate()?;
+                snapshot.revalidate_until(deadline)?;
                 crate::files_host::current_deadline(deadline)
             },
         )
@@ -380,7 +383,7 @@ impl Definitions {
         if snapshot.edit_revision()? != request.edit_revision {
             return Err("project_definition_changed");
         }
-        let (before, after, effective, bytes, path, expected) = match request.target {
+        let (before, after, effective, bytes, target) = match request.target {
             EditTarget::Project => {
                 let next = Manifest::parse(request.content.as_bytes())?;
                 let effective =
@@ -390,8 +393,9 @@ impl Definitions {
                     serde_json::to_value(&next),
                     effective,
                     next.encode()?,
-                    std::path::Path::new(&snapshot.files.lease().binding().root).join(MANIFEST),
-                    snapshot.project_bytes.as_deref(),
+                    snapshot
+                        .files
+                        .prepare_project_write(snapshot.project_bytes.as_deref())?,
                 )
             }
             EditTarget::Local => {
@@ -407,16 +411,19 @@ impl Definitions {
                     serde_json::to_value(&next),
                     effective,
                     bytes,
-                    snapshot.private.path().join(OVERLAY),
-                    snapshot.overlay_bytes.as_deref(),
+                    EditDestination::Native(
+                        crate::platform::definition_write::DefinitionTarget::capture(
+                            &snapshot.private.path().join(OVERLAY),
+                            snapshot.overlay_bytes.as_deref(),
+                        )?,
+                    ),
                 )
             }
         };
         if bytes.len() > 256 * 1024 {
             return Err("project_definition_limit");
         }
-        let target = crate::platform::definition_write::DefinitionTarget::capture(&path, expected)?;
-        snapshot.revalidate()?;
+        snapshot.revalidate_until(deadline)?;
         crate::files_host::current_deadline(deadline)?;
         let preview_id = uuid::Uuid::new_v4().to_string();
         let preview = EditPreview {
@@ -450,12 +457,12 @@ impl Definitions {
         }
         let snapshot = pending.snapshot;
         let projects = host.projects()?;
-        if projects.binding(context)? != *snapshot.files.lease().binding()
+        if projects.binding(context)? != *snapshot.files.binding()
             || projects.snapshot()?.revision != snapshot.registry_revision
         {
             return Err("stale_context");
         }
-        snapshot.revalidate()?;
+        snapshot.revalidate_until(deadline)?;
         crate::files_host::current_deadline(deadline)?;
         // Revoke durably before file IO. If writing fails, the old definitions
         // remain available but require review; no partial write grants trust.
@@ -464,10 +471,14 @@ impl Definitions {
             .retain(|_, value| value.snapshot.context != *context);
         self.edits
             .retain(|_, value| value.snapshot.context != *context);
-        let warning = pending.target.write(&pending.bytes, || {
-            snapshot.revalidate()?;
-            crate::files_host::current_deadline(deadline)
-        })?;
+        let warning = match pending.target {
+            EditDestination::Native(target) => target.write(&pending.bytes, || {
+                snapshot.revalidate_until(deadline)?;
+                crate::files_host::current_deadline(deadline)
+            })?,
+            #[cfg(windows)]
+            EditDestination::Wsl => snapshot.files.write_project(&pending.bytes, deadline)?,
+        };
         Ok(EditSaved {
             saved: true,
             warning,
@@ -495,7 +506,7 @@ fn validate_local_edit(before: &LocalOverlay, after: &LocalOverlay) -> Result<()
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::platform::project_probe::probe_fixture;
+    use crate::platform::{project_files::ProjectFiles, project_probe::probe_fixture};
     use std::fs;
     fn snapshot(root: &std::path::Path, private: &std::path::Path) -> (Snapshot, Registry) {
         let lease = probe_fixture(root).unwrap();
@@ -506,7 +517,7 @@ mod tests {
         let snapshot = Snapshot::capture(
             &context,
             registry.revision,
-            ProjectFiles::new(lease).unwrap(),
+            ProjectFiles::new(lease).unwrap().into(),
             MetadataRoot::open(private).unwrap(),
             Manifest::default(),
             u64::MAX,
@@ -523,7 +534,9 @@ mod tests {
             Snapshot::capture(
                 &original.context,
                 original.registry_revision,
-                ProjectFiles::new(probe_fixture(root.path()).unwrap()).unwrap(),
+                ProjectFiles::new(probe_fixture(root.path()).unwrap())
+                    .unwrap()
+                    .into(),
                 MetadataRoot::open(private.path()).unwrap(),
                 Manifest {
                     expected_ports: Some(vec![3000]),
@@ -588,7 +601,7 @@ mod tests {
         assert!(Snapshot::capture(
             &snapshot.context,
             2,
-            ProjectFiles::new(lease).unwrap(),
+            ProjectFiles::new(lease).unwrap().into(),
             MetadataRoot::open(private.path()).unwrap(),
             Manifest::default(),
             u64::MAX
@@ -620,7 +633,9 @@ mod tests {
         let changed = Snapshot::capture(
             &original.context,
             original.registry_revision,
-            ProjectFiles::new(probe_fixture(root.path()).unwrap()).unwrap(),
+            ProjectFiles::new(probe_fixture(root.path()).unwrap())
+                .unwrap()
+                .into(),
             MetadataRoot::open(private.path()).unwrap(),
             Manifest::default(),
             u64::MAX,

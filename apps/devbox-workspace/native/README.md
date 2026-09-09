@@ -2,8 +2,8 @@
 
 Private Linux executable `devbox-workspace-wsl`, packaged with the Windows product.
 The library without default features contains only the bounded pipe protocol.
-The `files` feature contains the file grants, conflict checks, Windows path
-admission and protected-storage policy shared by the Windows host and Linux
+The `files` feature contains the file grants, conflict checks, definition schema
+and snapshots, Windows path admission and protected-storage policy shared by the Windows host and Linux
 helper. Tauri storage discovery stays in the Windows host.
 The executable observes/revalidates root/Git objects and opens files only after
 attaching one native project context to an observed root. It executes no Git,
@@ -22,8 +22,8 @@ unsupported Linux filesystems still fail before publication.
 
 The inherited stdin/stdout protocol uses versioned, size-limited frames, random
 session/request/root tokens, exact monotonic request sequences, deadlines and
-expiring preview observations. Attached editor roots remain owned until release
-or EOF so idle time cannot discard open document revisions. Every operation still
+expiring preview observations. Attached file/definition roots remain owned until release
+or EOF; Windows preview expiry releases its owner. Every operation still
 revalidates the native objects. EOF, malformed input and deadline expiry cancel active
 work. Saves check cancellation and native authority before staging and immediately
 before replacement. Temporary files retain their parent/file identities; cleanup
@@ -94,3 +94,22 @@ Mode and VHD admission use `Flags & 0x8` (`LXSS_DISTRO_FLAGS_VM_MODE`), matching
 [Microsoft's enumeration implementation](https://github.com/microsoft/WSL/blob/03f6b0e5dd8bdbcb90406813699f616534a25eb3/src/windows/service/exe/LxssUserSession.cpp#L1049).
 A modern WSL1 registration has filesystem Version 2 without a VHD. WSL2 still
 requires the registered/default VHD filename and its retained native identity.
+
+Project definition reads and trust review now retain native Linux bytes and objects
+through `definitions_attach/read/validate`. They share the Windows manifest schema,
+130-file/1,024-object bounds, 2-MiB source limit and 8-MiB total snapshot limit.
+Each ancestor/content read checks native filesystem admission and cancellation;
+validation checks exact bytes and the first absent component of optional files.
+Windows keeps local overlays in its private generation and compares both owners
+before committing one-use Registry trust. Reading/approving does not execute sources.
+
+`definitions_write` consumes the reviewed manifest owner before IO. The candidate
+must pass the shared 256-KiB strict schema. Existing manifests use Code Pad's
+bounded encoding/CRLF conflict checks with a source/authority precommit guard.
+First creation uses retained directory descriptors, exclusive parent creation and
+non-overwriting complete-file publication. Only a newly created parent's retained
+identity can replace the reviewed absence. Concurrent creators and links fail;
+cancellation removes only unchanged owned staging files. Failure can leave an
+empty .devbox directory or a complete, unacknowledged manifest; it never retries.
+The Windows host revokes execution trust before writing and coordinates definition
+IO with Git/editor filesystem permits. New trust still requires a fresh review.

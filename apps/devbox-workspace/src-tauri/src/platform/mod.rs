@@ -1,3 +1,4 @@
+pub(crate) mod definition_files;
 pub mod definition_write;
 pub mod git_files;
 pub mod git_trust;

@@ -411,11 +411,13 @@ pub fn save_path_guarded(
         },
     )
 }
-struct SavePolicy<'a> {
-    max_bytes: Option<u64>,
-    guard: &'a dyn Fn() -> Result<(), FileError>,
+/// Native owners combine a strict file-size bound with their retained
+/// authority/cancellation guard. Renderer requests cannot supply this policy.
+pub struct SavePolicy<'a> {
+    pub max_bytes: Option<u64>,
+    pub guard: &'a dyn Fn() -> Result<(), FileError>,
 }
-fn save_path_with_policy(
+pub fn save_path_with_policy(
     path: &Path,
     text: &str,
     encoding: Encoding,

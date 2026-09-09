@@ -732,6 +732,13 @@ fn source_mutation(method: &str) -> bool {
 }
 /// Private editor recovery/session writes remain available while Git owns the
 /// worktree. User-file reads/writes coordinate with Git until workers retire.
+fn definition_access(method: &str) -> Option<bool> {
+    match method {
+        "apply_edit" => Some(true),
+        "load" | "preview_edit" | "preview_trust" | "approve_trust" => Some(false),
+        _ => None,
+    }
+}
 fn file_access(method: &str) -> Option<bool> {
     match method {
         "save_file" | "rename_file_action" | "delete_file_action" | "apply_recovery_preview" => {
@@ -1264,11 +1271,14 @@ async fn execute(
         let host = runtime.host();
         let owner = runtime.definitions.clone();
         let permit = runtime.probes.reserve();
-        match (host, permit) {
-            (Ok(host), Ok(permit)) => {
+        let filesystem = definition_access(&request.method)
+            .map(|write| runtime.filesystem_activity.enter(write))
+            .transpose();
+        match (host, permit, filesystem) {
+            (Ok(host), Ok(permit), Ok(filesystem)) => {
                 let worker_context = context_permit.clone();
                 tauri::async_runtime::spawn_blocking(move || {
-                    let (_permit, _context) = (permit, worker_context);
+                    let (_permit, _context, _filesystem) = (permit, worker_context, filesystem);
                     crate::files_host::current_deadline(deadline)?;
                     let mut owner = owner.lock().map_err(|_| "definition_owner_busy")?;
                     crate::files_host::current_deadline(deadline)?;
@@ -1339,7 +1349,7 @@ async fn execute(
                 .await
                 .unwrap_or(Err("worker_unavailable"))
             }
-            (Err(issue), _) | (_, Err(issue)) => Err(issue),
+            (Err(issue), _, _) | (_, Err(issue), _) | (_, _, Err(issue)) => Err(issue),
         }
     } else if request.component == "workspace.migration"
         && crate::window_import::WindowImports::allowed(&request.method)
@@ -1668,6 +1678,16 @@ mod tests {
             .enter(file_access("save_file").unwrap())
             .is_err());
         assert!(file_access("save_recovery").is_none());
+        assert!(runtime
+            .filesystem_activity
+            .enter(definition_access("load").unwrap())
+            .is_err());
+        assert!(runtime
+            .filesystem_activity
+            .enter(definition_access("apply_edit").unwrap())
+            .is_err());
+        assert!(definition_access("cancel").is_none());
+        assert!(definition_access("revoke_trust").is_none());
         let recovery = runtime.context_activity.enter(false).unwrap();
         assert!(runtime.context_activity.enter(true).is_err());
         drop(git);
@@ -1677,6 +1697,19 @@ mod tests {
             .unwrap();
         assert!(runtime.filesystem_activity.enter(true).is_err());
         drop(status);
+        let definition = runtime
+            .filesystem_activity
+            .enter(definition_access("apply_edit").unwrap())
+            .unwrap();
+        assert!(runtime
+            .filesystem_activity
+            .enter(file_access("open_file").unwrap())
+            .is_err());
+        assert!(runtime
+            .filesystem_activity
+            .enter(source_mutation("repo_stage"))
+            .is_err());
+        drop(definition);
         drop(recovery);
         drop(context);
         assert!(runtime.filesystem_activity.enter(true).is_ok());

@@ -231,7 +231,11 @@ mod native {
         ) -> Result<Value> {
             if !matches!(
                 method,
-                "files_attach"
+                "definitions_attach"
+                    | "definitions_read"
+                    | "definitions_validate"
+                    | "definitions_write"
+                    | "files_attach"
                     | "files_poll"
                     | "files_recover"
                     | "files_list"
@@ -330,6 +334,14 @@ mod native {
                 "wsl_context_required" => "wsl_context_required",
                 "wsl_native_filesystem_required" => "wsl_native_filesystem_required",
                 "wsl_filesystem_unavailable" => "wsl_filesystem_unavailable",
+                "project_definition_changed" => "project_definition_changed",
+                "project_definition_unavailable" => "project_definition_unavailable",
+                "project_definition_limit" => "project_definition_limit",
+                "unsafe_project_definition" => "unsafe_project_definition",
+                "definition_preview_stale" => "definition_preview_stale",
+                "invalid_manifest" => "invalid_manifest",
+                "manifest_limit" => "manifest_limit",
+                "unsupported_manifest_version" => "unsupported_manifest_version",
                 "file_context_changed" => "file_context_changed",
                 "file_snapshot_changed" => "file_snapshot_changed",
                 "file_save_conflict" => "file_save_conflict",

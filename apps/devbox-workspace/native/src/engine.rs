@@ -23,6 +23,7 @@ struct Root {
     report: RootReport,
     touched: Instant,
     files: Option<FileAccess>,
+    definitions: Option<crate::definitions::Definitions>,
 }
 struct FileAccess {
     context: ProjectContext,
@@ -275,6 +276,74 @@ pub fn admit(path: &Path) -> Result<()> {
     Ok(())
 }
 impl Engine {
+    fn definition_request(
+        &mut self,
+        request: &Request,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<Value> {
+        use crate::definitions::{Definitions, Method};
+        let method: Method = input(&json!({"method":request.method,"args":request.args}))?;
+        method
+            .context()
+            .validate()
+            .map_err(|_| "wsl_context_invalid")?;
+        if !matches!(&method.context().target, ExecutionTarget::Wsl {distro_id} if crate::token(distro_id))
+        {
+            return Err("wsl_context_invalid");
+        }
+        let root = self
+            .roots
+            .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+            .ok_or("wsl_root_expired")?;
+        root.observation.revalidate()?;
+        if root
+            .files
+            .as_ref()
+            .is_some_and(|access| &access.context != method.context())
+            || root
+                .definitions
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+        {
+            return Err("file_context_changed");
+        }
+        let result = match method {
+            Method::Attach { context } => {
+                if let Some(access) = &root.definitions {
+                    // Reattaching never replaces reviewed bytes or clears a conflict.
+                    access.revalidate(guard)?;
+                } else {
+                    root.definitions =
+                        Some(Definitions::capture(&root.observation, context, guard)?);
+                }
+                Value::Null
+            }
+            Method::Read { path, optional, .. } => {
+                let access = root.definitions.as_mut().ok_or("wsl_context_required")?;
+                serde_json::to_value(access.read(&path, optional, guard)?)
+                    .map_err(|_| "wsl_response_invalid")?
+            }
+            Method::Write { content, .. } => {
+                let warning = root
+                    .definitions
+                    .as_mut()
+                    .ok_or("wsl_context_required")?
+                    .write(&content, guard)?;
+                json!({"warning": warning})
+            }
+            Method::Validate { .. } => {
+                root.definitions
+                    .as_ref()
+                    .ok_or("wsl_context_required")?
+                    .revalidate(guard)?;
+                Value::Null
+            }
+        };
+        guard()?;
+        root.observation.revalidate()?;
+        root.touched = Instant::now();
+        Ok(result)
+    }
     fn file_request(&mut self, request: &Request, guard: &dyn Fn() -> Result<()>) -> Result<Value> {
         let method: FileMethod = input(&json!({"method":request.method,"args":request.args}))?;
         let root = self
@@ -455,10 +524,14 @@ impl Engine {
     ) -> Result<Value> {
         guard()?;
         self.roots
-            // Preview leases expire, but an attached editor keeps its bounded
-            // root owner until explicit release/EOF. Idle editing must not lose
-            // its native document revisions. Every operation still revalidates.
-            .retain(|_, root| root.files.is_some() || root.touched.elapsed() < ROOT_TTL);
+            // Attached native owners retain their bounded roots until release
+            // or EOF. The Windows preview owner enforces its separate TTL;
+            // idle editor/execution evidence must not lose its root by itself.
+            .retain(|_, root| {
+                root.files.is_some()
+                    || root.definitions.is_some()
+                    || root.touched.elapsed() < ROOT_TTL
+            });
         if matches!(
             request.method.as_str(),
             "files_poll"
@@ -473,6 +546,15 @@ impl Engine {
                 | "files_sync_editor"
         ) {
             return self.file_request(request, guard);
+        }
+        if matches!(
+            request.method.as_str(),
+            "definitions_attach"
+                | "definitions_read"
+                | "definitions_validate"
+                | "definitions_write"
+        ) {
+            return self.definition_request(request, guard);
         }
         match request.method.as_str() {
             "files_attach" => {
@@ -491,6 +573,13 @@ impl Engine {
                     .roots
                     .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
                     .ok_or("wsl_root_expired")?;
+                if root
+                    .definitions
+                    .as_ref()
+                    .is_some_and(|access| access.context() != &args.context)
+                {
+                    return Err("file_context_changed");
+                }
                 if let Some(access) = &root.files {
                     return if access.context == args.context {
                         root.observation.revalidate()?;
@@ -576,6 +665,7 @@ impl Engine {
                         report,
                         touched: Instant::now(),
                         files: None,
+                        definitions: None,
                     },
                 );
                 Ok(value)
@@ -909,5 +999,208 @@ mod tests {
             .dispatch(&request("release_root", Some(report.token), json!({})))
             .unwrap();
         assert!(engine.roots.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod definition_tests {
+    use super::*;
+    use std::fs;
+    fn request(method: &str, token: Option<&str>, args: Value) -> Request {
+        Request {
+            version: crate::VERSION,
+            session_id: uuid::Uuid::new_v4().to_string(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            sequence: 1,
+            budget_ms: 5000,
+            method: method.into(),
+            root_token: token.map(str::to_owned),
+            args,
+        }
+    }
+    fn context() -> ProjectContext {
+        ProjectContext {
+            project_id: "project".into(),
+            worktree_id: "tree".into(),
+            revision: 1,
+            target: ExecutionTarget::Wsl {
+                distro_id: uuid::Uuid::new_v4().to_string(),
+            },
+        }
+    }
+    fn root(engine: &mut Engine, path: &Path) -> String {
+        engine
+            .dispatch(&request("observe_root", None, json!({"path":path})))
+            .unwrap()["token"]
+            .as_str()
+            .unwrap()
+            .into()
+    }
+    fn fixture() -> tempfile::TempDir {
+        tempfile::Builder::new()
+            .prefix(".wsl-definitions-fixture-")
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap()
+    }
+    #[test]
+    fn reviewed_source_changes_invalidate_without_execution_or_reattachment_reset() {
+        let directory = fixture();
+        fs::create_dir(directory.path().join(".devbox")).unwrap();
+        let manifest = br#"{"schemaVersion":1,"tasks":{"dev":{"kind":"package-script","source":"package.json","selector":"dev"}}}"#;
+        fs::write(directory.path().join(".devbox/project.json"), manifest).unwrap();
+        fs::write(
+            directory.path().join("package.json"),
+            br#"{"scripts":{"dev":"must never run"}}"#,
+        )
+        .unwrap();
+        let mut engine = Engine::default();
+        let token = root(&mut engine, directory.path());
+        let context = context();
+        let read = |path: &str, optional| {
+            request(
+                "definitions_read",
+                Some(&token),
+                json!({"context":context,"path":path,"optional":optional}),
+            )
+        };
+        assert_eq!(
+            engine.dispatch(&read("package.json", false)),
+            Err("wsl_context_required")
+        );
+        let attach = request(
+            "definitions_attach",
+            Some(&token),
+            json!({"context":context}),
+        );
+        engine.dispatch(&attach).unwrap();
+        let bytes: Option<Vec<u8>> = serde_json::from_value(
+            engine
+                .dispatch(&read(".devbox/project.json", true))
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(bytes.unwrap(), manifest);
+        engine.dispatch(&read("package.json", false)).unwrap();
+        let validate = request(
+            "definitions_validate",
+            Some(&token),
+            json!({"context":context}),
+        );
+        engine.roots.get_mut(&token).unwrap().touched =
+            Instant::now() - ROOT_TTL - Duration::from_secs(1);
+        engine.dispatch(&validate).unwrap();
+        fs::write(
+            directory.path().join("package.json"),
+            br#"{"scripts":{"dev":"external edit"}}"#,
+        )
+        .unwrap();
+        assert_eq!(
+            engine.dispatch(&validate),
+            Err("project_definition_changed")
+        );
+        assert_eq!(engine.dispatch(&attach), Err("project_definition_changed"));
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 2);
+    }
+    #[test]
+    fn absent_manifest_parent_and_context_are_part_of_the_snapshot() {
+        let directory = fixture();
+        let mut engine = Engine::default();
+        let token = root(&mut engine, directory.path());
+        let context = context();
+        engine
+            .dispatch(&request(
+                "definitions_attach",
+                Some(&token),
+                json!({"context":context}),
+            ))
+            .unwrap();
+        assert_eq!(
+            engine
+                .dispatch(&request(
+                    "definitions_read",
+                    Some(&token),
+                    json!({"context":context,"path":".devbox/project.json","optional":true})
+                ))
+                .unwrap(),
+            Value::Null
+        );
+        let mut stale = context.clone();
+        stale.revision += 1;
+        for method in ["definitions_attach", "definitions_validate", "files_attach"] {
+            assert_eq!(
+                engine.dispatch(&request(method, Some(&token), json!({"context":stale}))),
+                Err("file_context_changed")
+            );
+        }
+        let validate = request(
+            "definitions_validate",
+            Some(&token),
+            json!({"context":context}),
+        );
+        engine.dispatch(&validate).unwrap();
+        fs::create_dir(directory.path().join(".devbox")).unwrap();
+        assert_eq!(
+            engine.dispatch(&validate),
+            Err("project_definition_changed")
+        );
+    }
+    #[test]
+    fn links_escape_unknown_fields_and_cancelled_reads_never_return_source_contents() {
+        let directory = fixture();
+        let outside = fixture();
+        fs::write(
+            outside.path().join("source.json"),
+            b"outside synthetic data",
+        )
+        .unwrap();
+        std::os::unix::fs::symlink(outside.path(), directory.path().join("linked")).unwrap();
+        fs::write(
+            directory.path().join("source.json"),
+            b"inside synthetic data",
+        )
+        .unwrap();
+        let mut engine = Engine::default();
+        let token = root(&mut engine, directory.path());
+        let context = context();
+        engine
+            .dispatch(&request(
+                "definitions_attach",
+                Some(&token),
+                json!({"context":context}),
+            ))
+            .unwrap();
+        for path in [
+            "linked/source.json",
+            "../source.json",
+            "/etc/passwd",
+            "C:/file",
+            "source.json:stream",
+        ] {
+            assert!(
+                engine
+                    .dispatch(&request(
+                        "definitions_read",
+                        Some(&token),
+                        json!({"context":context,"path":path,"optional":true})
+                    ))
+                    .is_err(),
+                "{path}"
+            );
+        }
+        let mut read = request(
+            "definitions_read",
+            Some(&token),
+            json!({"context":context,"path":"source.json","optional":false}),
+        );
+        assert_eq!(
+            engine.dispatch_guarded(&read, &|| Err("wsl_request_cancelled")),
+            Err("wsl_request_cancelled")
+        );
+        read.args["command"] = "forbidden".into();
+        assert_eq!(engine.dispatch(&read), Err("wsl_request_invalid"));
+        assert_eq!(
+            fs::read(directory.path().join("source.json")).unwrap(),
+            b"inside synthetic data"
+        );
     }
 }

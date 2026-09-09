@@ -1,6 +1,6 @@
 mod component;
 pub mod core;
-mod definitions;
+pub mod definitions;
 pub mod file_owner;
 mod files_host;
 pub mod host;
