@@ -118,6 +118,8 @@ fn installer_error(error: InstallError) -> &'static str {
         InstallError::Cancelled => "lsp_operation_cancelled",
         InstallError::InstallBusy => "lsp_install_busy",
         InstallError::IndexCorrupt => "lsp_index_corrupt",
+        InstallError::UnsafeArchivePath => "lsp_install_path_unsafe",
+        InstallError::Io { .. } => "lsp_install_io_unavailable",
         _ => "lsp_install_failed",
     }
 }
@@ -457,6 +459,19 @@ impl LspHost {
                     .map_err(|_| "lsp_unavailable")?
                     .discard(&choices.archive_paths)?;
                 Ok(Value::Null)
+            }
+            "lsp_installed" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Empty {}
+                let _: Empty = input(args)?;
+                let installer = app
+                    .try_state::<Arc<ManagedInstaller>>()
+                    .ok_or("lsp_unavailable")?;
+                let statuses =
+                    code_pad_lib::commands::installer::public_installed_status(&installer)
+                        .map_err(installer_error)?;
+                serde_json::to_value(statuses).map_err(|_| "lsp_install_status_invalid")
             }
             "lsp_install" => {
                 let key: Key = input(args)?;

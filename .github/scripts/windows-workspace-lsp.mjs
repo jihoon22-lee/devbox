@@ -61,7 +61,30 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
   const rust=catalog.find(item=>item.id==="rust-analyzer"), node=catalog.find(item=>item.id==="typescript-language-server");
   assert.ok(rust&&node);
   const key=item=>({manifestId:item.id,version:item.version,platform:item.platform});
-  const state=async item=>success(await lsp("lsp_installed")).find(entry=>entry.manifest_id===item.id&&entry.version===item.version);
+  const state=async item=>{
+    const deadline=performance.now()+15_000;
+    let result;
+    do {
+      result=await lsp("lsp_installed");
+      if(result.value?.issue!=="lsp_install_busy")break;
+      await delay(100);
+    }while(performance.now()<deadline);
+    if(result.operation.outcome.state!=="succeeded") {
+      const description=await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
+      const canonicalExe=realpathSync.native(executable);
+      assert.equal(path.dirname(canonicalExe),realpathSync.native(directory));
+      const namespace=createHash("sha256").update(path.toNamespacedPath(canonicalExe)).digest("hex");
+      assert.equal(description.handshake.installationId,namespace);
+      const privateRoot=path.join(process.env.LOCALAPPDATA,`com.devbox.v08.workspace.i${namespace}`);
+      const pointer=JSON.parse(readFileSync(path.join(privateRoot,"active-stores.json"),"utf8"));
+      assert.equal(pointer.schemaVersion,1);assert.match(pointer.id,/^[a-f0-9-]{36}$/);
+      // Only this nonce-owned fixture's index is retained for schema diagnosis.
+      // It contains synthetic catalog installation metadata, never user data.
+      const index=path.join(privateRoot,"stores",pointer.id,"files","lsp","installed.json");
+      if(existsSync(index))writeFileSync(path.join("product-foundation-evidence","workspace-lsp-owned-index.json"),readFileSync(index));
+    }
+    return success(result).find(entry=>entry.manifest_id===item.id&&entry.version===item.version);
+  };
   assert.equal((await state(rust)).state,"not_installed");
   assert.equal((await state(node)).state,"not_installed");
 
@@ -107,7 +130,7 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
   const card=`Array.from(document.querySelectorAll(".lsp-installer-card")).find(card=>card.querySelector("strong")?.textContent==="rust-analyzer")`;
   const click=async(label,scope="document")=>{
     const predicate=`Array.from((${scope})?.querySelectorAll("button")??[]).find(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`;
-    await waitForRenderer(cdp,`!!(${predicate})`,"LSP installer action unavailable");await cdp.evaluate(`(${predicate}).click()`);
+    await waitForRenderer(cdp,`(()=>{const button=${predicate};if(!button)return false;button.click();return true;})()`,"LSP installer action unavailable");
   };
   await click("제거",card);await click("제거 확인");
   await waitForRenderer(cdp,`!!(${card})?.querySelector(".lsp-state.not_installed")`,"Native LSP uninstall did not settle");

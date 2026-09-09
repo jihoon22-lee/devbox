@@ -22,10 +22,17 @@ pub fn lsp_catalog() -> Result<Vec<ServerManifest>, String> {
 pub fn lsp_installed(
     installer: State<'_, Arc<ManagedInstaller>>,
 ) -> Result<Vec<ManagedInstallStatus>, String> {
+    public_installed_status(&installer).map_err(public_install_error)
+}
+
+/// Preserve typed failures for product owners while sanitizing entry diagnostics
+/// exactly as the standalone command does. No installed filesystem paths leak.
+pub fn public_installed_status(
+    installer: &ManagedInstaller,
+) -> Result<Vec<ManagedInstallStatus>, InstallError> {
     installer
         .installed_status()
         .map(|statuses| statuses.into_iter().map(public_install_status).collect())
-        .map_err(public_install_error)
 }
 
 #[tauri::command]
@@ -242,6 +249,18 @@ pub(crate) async fn __component_lsp_uninstall(
 mod tests {
     use super::{public_install_error, public_install_status};
     use crate::lsp::{InstallError, ManagedInstallState, ManagedInstallStatus};
+    #[test]
+    fn typed_status_preserves_a_corrupt_index_for_explicit_recovery() {
+        let root = tempfile::tempdir().unwrap();
+        let installer = crate::lsp::ManagedInstaller::new(root.path()).unwrap();
+        let index = installer.lsp_root().join("installed.json");
+        std::fs::write(&index, b"{corrupt fixture index").unwrap();
+        assert!(matches!(
+            super::public_installed_status(&installer),
+            Err(InstallError::IndexCorrupt)
+        ));
+        assert_eq!(std::fs::read(&index).unwrap(), b"{corrupt fixture index");
+    }
 
     #[test]
     fn installer_error_detail_is_replaced_before_ipc() {
