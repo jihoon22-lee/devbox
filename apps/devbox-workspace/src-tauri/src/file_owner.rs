@@ -12,6 +12,7 @@ use devbox_filesystem::{
 };
 use product_contract::ProjectContext;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 use std::{
     collections::HashMap,
     fs::File,
@@ -184,6 +185,23 @@ struct Document {
     encoding: code_pad_lib::core::encoding::Encoding,
     line_ending: code_pad_lib::core::line_ending::LineEnding,
     revision: String,
+    baseline_text_hash: [u8; 32],
+    buffer_text_hash: [u8; 32],
+}
+
+fn text_hash(text: &str) -> [u8; 32] {
+    Sha256::digest(text.as_bytes()).into()
+}
+
+pub(crate) struct EditorSnapshot {
+    pub(crate) path: PathBuf,
+    pub(crate) revision: String,
+    baseline_text_hash: [u8; 32],
+}
+impl EditorSnapshot {
+    pub(crate) fn dirty(&self, text: &str) -> bool {
+        text_hash(text) != self.baseline_text_hash
+    }
 }
 
 #[derive(Deserialize, Serialize)]
@@ -403,6 +421,13 @@ impl FileOwner {
             })
             .map(|previous| previous.revision.clone())
             .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
+        let baseline_text_hash = text_hash(&opened.text);
+        let buffer_text_hash = self
+            .documents
+            .get(&canonical_key)
+            .filter(|previous| previous.revision == revision)
+            .map(|previous| previous.buffer_text_hash)
+            .unwrap_or(baseline_text_hash);
         self.documents.insert(
             canonical_key,
             Document {
@@ -414,6 +439,8 @@ impl FileOwner {
                 encoding: opened.encoding,
                 line_ending: opened.line_ending,
                 revision,
+                baseline_text_hash,
+                buffer_text_hash,
             },
         );
         let mut wire = OpenedFileWire::from(opened);
@@ -471,6 +498,15 @@ impl FileOwner {
                         encoding: request.encoding,
                         line_ending: request.line_ending,
                         revision: uuid::Uuid::new_v4().to_string(),
+                        baseline_text_hash: text_hash(&request.text),
+                        // A save may finish after another acknowledged edit.
+                        buffer_text_hash: if document.buffer_text_hash
+                            == document.baseline_text_hash
+                        {
+                            text_hash(&request.text)
+                        } else {
+                            document.buffer_text_hash
+                        },
                     },
                 );
             }
@@ -563,6 +599,116 @@ impl FileOwner {
         }
         Ok(())
     }
+    pub(crate) fn refresh_after_rename(
+        &mut self,
+        scope: Scope<'_>,
+        raw: &str,
+        mtime: &str,
+        size: u64,
+        hash: &str,
+    ) -> Result<Option<OpenedFileWire>> {
+        let path = display_path(Path::new(raw))?;
+        let id = key(&path)?;
+        let Some(previous) = self.documents.get(&id) else {
+            return Ok(None);
+        };
+        if previous.buffer_text_hash != previous.baseline_text_hash {
+            return Err("lsp_dirty_editor_document");
+        }
+        check_scope(scope, &previous.grant.context, &path)?;
+        for parent in &previous.grant.parents {
+            parent.revalidate(true)?;
+        }
+        let encoding = previous.encoding;
+        self.documents.remove(&id);
+        let opened = self.open(
+            scope,
+            OpenFileRequest {
+                path: path.to_str().ok_or("invalid_file_path")?.into(),
+                encoding: Some(encoding),
+            },
+        )?;
+        if opened.mtime_nanos != mtime || opened.size != size || opened.content_hash != hash {
+            self.documents.remove(&id);
+            return Err("file_snapshot_changed");
+        }
+        Ok(Some(opened))
+    }
+    /// Open buffers of every language participate in disk-rename admission.
+    /// Atomic replacement changes file identity; the engine owns disk snapshots
+    /// and rollback identities while this guard retains the editor baseline.
+    pub(crate) fn guard_editor_write(&self, context: &ProjectContext, raw: &str) -> Result<()> {
+        let path = display_path(Path::new(raw))?;
+        if let Some(document) = self.documents.get(&key(&path)?) {
+            if document
+                .grant
+                .context
+                .as_ref()
+                .is_some_and(|expected| expected != context)
+            {
+                return Err("file_context_changed");
+            }
+            if document.baseline_text_hash != document.buffer_text_hash {
+                return Err("lsp_dirty_editor_document");
+            }
+        }
+        Ok(())
+    }
+    pub(crate) fn editor_snapshot(
+        &self,
+        scope: Scope<'_>,
+        raw: &str,
+        revision: &str,
+        verify_disk: bool,
+    ) -> Result<EditorSnapshot> {
+        let path = self.admitted_path(scope, raw)?;
+        let document = self
+            .documents
+            .get(&key(&path)?)
+            .ok_or("file_selection_required")?;
+        if document.revision != revision {
+            return Err("file_snapshot_changed");
+        }
+        if verify_disk {
+            let opened = file::open_path_with_encoding(&path, Some(document.encoding))
+                .map_err(|_| "file_read_failed")?;
+            document.matches(&opened.mtime.to_string(), opened.size, &opened.content_hash)?;
+            if opened.native_identity() != document.grant.file.identity
+                || text_hash(&opened.text) != document.baseline_text_hash
+            {
+                return Err("file_snapshot_changed");
+            }
+            document.grant.admit(scope)?;
+        }
+        Ok(EditorSnapshot {
+            path,
+            revision: document.revision.clone(),
+            baseline_text_hash: document.baseline_text_hash,
+        })
+    }
+    /// Metadata-only acknowledgement of every editor buffer, including files
+    /// with no language server. Text never grants path or disk-write authority.
+    pub fn sync_editor_document(
+        &mut self,
+        context: Option<&ProjectContext>,
+        raw: &str,
+        revision: &str,
+        text: &str,
+    ) -> Result<bool> {
+        if text.len() > 32 * 1024 * 1024 {
+            return Err("file_limit");
+        }
+        self.validate_open_paths(context, &[raw.to_owned()])?;
+        let document = self
+            .documents
+            .get_mut(&key(&native_path(raw)?)?)
+            .ok_or("file_selection_required")?;
+        if document.revision != revision {
+            return Err("file_snapshot_changed");
+        }
+        document.buffer_text_hash = text_hash(text);
+        Ok(document.buffer_text_hash != document.baseline_text_hash)
+    }
     pub fn document_revision(&self, raw: &str) -> Result<String> {
         self.documents
             .get(&key(&native_path(raw)?)?)
@@ -608,6 +754,81 @@ impl FileOwner {
 mod tests {
     use super::*;
     use std::fs;
+    #[test]
+    fn editor_hashes_preserve_unsaved_buffers_and_reject_old_save_revisions() {
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("notes.txt");
+        fs::write(&path, b"baseline\r\n").unwrap();
+        let mut owner = FileOwner::default();
+        let path = PathBuf::from(owner.approve_native_selection(&path).unwrap());
+        let opened = owner.open(None, open_request(&path)).unwrap();
+        let revision = owner.document_revision(&opened.path).unwrap();
+        assert!(!owner
+            .sync_editor_document(None, &opened.path, &revision, "baseline\n")
+            .unwrap());
+        assert!(owner
+            .sync_editor_document(None, &opened.path, &revision, "draft\n")
+            .unwrap());
+        owner.open(None, open_request(&path)).unwrap();
+        let current = &owner.documents[&key(&path).unwrap()];
+        assert_eq!(current.revision, revision);
+        assert_ne!(current.baseline_text_hash, current.buffer_text_hash);
+        owner.save(None, save_request(&opened, "draft\n")).unwrap();
+        assert_eq!(
+            owner
+                .sync_editor_document(None, &opened.path, &revision, "old")
+                .unwrap_err(),
+            "file_snapshot_changed"
+        );
+        let saved_revision = owner.document_revision(&opened.path).unwrap();
+        assert!(!owner
+            .sync_editor_document(None, &opened.path, &saved_revision, "draft\n")
+            .unwrap());
+        assert!(owner
+            .sync_editor_document(None, &opened.path, &saved_revision, "later edit\n")
+            .unwrap());
+        owner.close(&opened.path).unwrap();
+        assert_eq!(
+            owner
+                .sync_editor_document(None, &opened.path, &saved_revision, "later edit\n")
+                .unwrap_err(),
+            "file_selection_required"
+        );
+    }
+
+    #[test]
+    fn editor_metadata_rejects_another_context_without_project_io() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = display_path(&fs::canonicalize(directory.path()).unwrap()).unwrap();
+        let path = root.join("other.py");
+        fs::write(&path, b"value = 1").unwrap();
+        let lease = crate::platform::project_probe::probe_fixture(&root).unwrap();
+        let context = ProjectContext {
+            project_id: "project".into(),
+            worktree_id: "tree".into(),
+            revision: 1,
+            target: lease.binding().target.clone(),
+        };
+        let mut owner = FileOwner::default();
+        let opened = owner
+            .open(Some((&context, &lease)), open_request(&path))
+            .unwrap();
+        let revision = owner.document_revision(&opened.path).unwrap();
+        let mut other = context.clone();
+        other.revision += 1;
+        assert_eq!(
+            owner
+                .sync_editor_document(Some(&other), &opened.path, &revision, "draft")
+                .unwrap_err(),
+            "file_context_changed"
+        );
+        // No disk read is needed to acknowledge an already-open buffer.
+        fs::remove_file(&path).unwrap();
+        assert!(owner
+            .sync_editor_document(Some(&context), &opened.path, &revision, "draft")
+            .unwrap());
+    }
+
     #[test]
     fn broad_project_and_picker_access_cannot_rewrite_product_authority_stores() {
         let directory = tempfile::tempdir().unwrap();

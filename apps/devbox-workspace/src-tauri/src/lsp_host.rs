@@ -3,6 +3,7 @@
 mod actor;
 mod approval;
 mod archives;
+mod documents;
 mod evidence;
 mod settings;
 use crate::{
@@ -26,6 +27,9 @@ pub(crate) struct Invocation<'a> {
     pub start: Option<crate::core::source_operations::Request>,
 }
 
+pub(crate) fn text_request(method: &str) -> bool {
+    documents::text_request(method)
+}
 pub(crate) fn worker_required(method: &str) -> bool {
     !actor::allowed(method) || actor::starts(method)
 }
@@ -129,6 +133,7 @@ pub(crate) struct LspHost {
     actor: Mutex<Option<Arc<actor::Actor>>>,
     preparing: std::sync::atomic::AtomicBool,
     activities: approval::Activities,
+    files: Arc<Mutex<crate::files_host::FilesHost>>,
 }
 impl LspHost {
     /// The shared component manager/installer must already have been initialized
@@ -138,12 +143,14 @@ impl LspHost {
         host: &Host,
         context: crate::core::context_activity::ContextActivity,
         filesystem: crate::core::context_activity::ContextActivity,
+        files: Arc<Mutex<crate::files_host::FilesHost>>,
     ) -> Result<Self> {
         let data = Arc::new(MetadataRoot::open(&host.component("files")?)?);
         let archives = Arc::new(data.child("native-lsp-archives")?);
         let protected = ProtectedStorage::from_host(app, host)?;
         Ok(Self {
             storage: Storage { data, archives },
+            files,
             selections: Mutex::new(archives::Selections::new(protected.clone())),
             approvals: Mutex::new(Default::default()),
             protected,
@@ -280,6 +287,7 @@ impl LspHost {
                 snapshot,
                 installer,
                 shutdown.clone(),
+                self.files.clone(),
             )?);
             *self.actor.lock().map_err(|_| "lsp_unavailable")? = Some(instance.clone());
             instance
@@ -520,10 +528,13 @@ mod tests {
             "save_lsp_config",
             "start_language_server",
             "restart_language_server",
+            "apply_lsp_rename",
+            "open_lsp_document",
+            "request_lsp_hover",
         ] {
             assert!(allowed(method));
         }
-        for method in ["apply_lsp_rename", "unknown_lsp_command"] {
+        for method in ["recover_rename_journals", "unknown_lsp_command"] {
             assert!(!allowed(method));
         }
         assert!(input::<Key>(json!({"manifestId":"rust-analyzer", "version":"1", "platform":"windows-x86_64", "url":"https://unreviewed.invalid"})).is_err());

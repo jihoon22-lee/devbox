@@ -211,8 +211,9 @@ export function openLspDocument(
   languageId: string,
   path: string,
   text: string,
+  nativeRevision?: string | null,
 ): Promise<LspDidOpen> {
-  return invoke<LspDidOpen>("open_lsp_document", { languageId, path, text });
+  return invoke<LspDidOpen>("open_lsp_document", { languageId, path, text, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
 export function changeLspDocument(
@@ -220,20 +221,22 @@ export function changeLspDocument(
   uri: string,
   text: string,
   dirty: boolean,
+  nativeRevision?: string | null,
 ): Promise<LspDidChange> {
-  return invoke<LspDidChange>("change_lsp_document", { languageId, uri, text, dirty });
+  return invoke<LspDidChange>("change_lsp_document", { languageId, uri, text, dirty, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
 export function reloadLspDocument(
   languageId: string,
   uri: string,
   text: string,
+  nativeRevision?: string | null,
 ): Promise<LspDidChange> {
-  return invoke<LspDidChange>("reload_lsp_document", { languageId, uri, text });
+  return invoke<LspDidChange>("reload_lsp_document", { languageId, uri, text, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
-export function saveLspDocument(languageId: string, uri: string): Promise<LspDidSave> {
-  return invoke<LspDidSave>("save_lsp_document", { languageId, uri });
+export function saveLspDocument(languageId: string, uri: string, nativeRevision?: string | null): Promise<LspDidSave> {
+  return invoke<LspDidSave>("save_lsp_document", { languageId, uri, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
 export function closeLspDocument(languageId: string, uri: string): Promise<LspDidClose> {
@@ -430,3 +433,30 @@ export interface RecoveryPreview {previewId:string; path:string; before:string; 
 export function prepareRecovery(path:string): Promise<RecoveryPreview> { return invoke("prepare_recovery", {path}); }
 export function applyRecoveryPreview(previewId:string): Promise<SavedFile> { return invoke("apply_recovery_preview", {previewId}); }
 export function cancelRecoveryPreview(previewId:string): Promise<void> { return invoke("cancel_recovery_preview", {previewId}); }
+
+/** Hosted metadata mirror; standalone editing has no product document owner. */
+export function syncEditorDocument(path: string, nativeRevision: string, text: string): Promise<boolean> {
+  return isProductHosted() ? invoke<boolean>("sync_editor_document", { path, nativeRevision, text }) : Promise.resolve(false);
+}
+
+export interface LspExecutionPreview {
+  previewId: string;
+  approved: boolean;
+  workspaceRoot: string;
+  configRevision: string;
+  commands: Array<{ languageId: string; executable: string; args: string[]; runtime: string | null }>;
+  environment: Record<string, string>;
+  definitionsDigest: string;
+}
+export function previewLspExecution(): Promise<LspExecutionPreview> {
+  return componentInvoke("workspace.lsp")<LspExecutionPreview>("lsp_execution_preview");
+}
+export function approveLspExecution(previewId: string): Promise<void> {
+  return componentInvoke("workspace.lsp")<void>("lsp_execution_approve", { previewId });
+}
+export function cancelLspExecutionReview(previewId: string): Promise<void> {
+  return componentInvoke("workspace.lsp")<void>("lsp_execution_cancel", { previewId });
+}
+export function revokeLspExecution(): Promise<void> {
+  return componentInvoke("workspace.lsp")<void>("lsp_execution_revoke");
+}

@@ -31,6 +31,15 @@ function withDocs(...docs: Doc[]) {
 }
 
 describe("document registry transitions", () => {
+  it("refreshes native rename revisions for unsupported documents and rejects stale editor versions", () => {
+    const original = { ...doc("notes", "/workspace/notes.txt"), nativeRevision: "native-1" };
+    const before = withDocs(original);
+    const action = { type: "applyLspRename" as const, documents: [{ docId: "notes", version: 0, text: "renamed", nativeRevision: "native-2", mtimeNanos: "101", size: 7, contentHash: "new" }], expectedRevisions: { notes: 0 } };
+    const after = editorReducer(before, action);
+    expect(after.docs[0]).toMatchObject({ text: "renamed", nativeRevision: "native-2", dirty: false, revision: 1, contentHash: "new" });
+    expect(editorReducer(after, action)).toBe(after);
+  });
+
   it("blocks duplicate document IDs without changing docs or adding a second placement", () => {
     const first = withDocs(doc("one"));
     const duplicate = editorReducer(first, { type: "addDoc", doc: { ...doc("one"), text: "new" }, view: 1 });

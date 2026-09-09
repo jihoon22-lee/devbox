@@ -274,6 +274,7 @@ async fn execute_lsp(
                     &host,
                     runtime.context_activity.clone(),
                     runtime.filesystem_activity.clone(),
+                    runtime.files.clone(),
                 )?));
             }
             slot.as_ref().ok_or("lsp_unavailable")?.clone()
@@ -630,7 +631,8 @@ fn file_access(method: &str) -> Option<bool> {
         "save_file" | "rename_file_action" | "delete_file_action" | "apply_recovery_preview" => {
             Some(true)
         }
-        "load_session"
+        "sync_editor_document"
+        | "load_session"
         | "save_session"
         | "load_recovery"
         | "save_recovery"
@@ -779,7 +781,10 @@ async fn execute(
         || !request.args.is_object()
         || serde_json::to_vec(&request.args).map_or(true, |bytes| {
             bytes.len()
-                > if request.component == "workspace.files" {
+                > if request.component == "workspace.files"
+                    || (request.component == "workspace.lsp"
+                        && crate::lsp_host::text_request(&request.method))
+                {
                     64 * 1024 * 1024
                 } else if request.component == "workspace.definitions" {
                     2 * 1024 * 1024

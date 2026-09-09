@@ -91,6 +91,9 @@ impl From<PositionError> for DocumentError {
 /// The same authority follows cloned stores and pending disk transactions.
 pub trait LspDocumentAuthority: Send + Sync {
     fn validate_path(&self, path: &Path) -> Result<(), DocumentError>;
+    fn validate_write_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.validate_path(path)
+    }
 }
 
 #[derive(Clone)]
@@ -175,6 +178,13 @@ impl WorkspaceRoot {
     pub fn validate_access(&self, path: &Path) -> Result<(), DocumentError> {
         if let Some(authority) = &self.authority {
             authority.validate_path(path)?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_write_access(&self, path: &Path) -> Result<(), DocumentError> {
+        if let Some(authority) = &self.authority {
+            authority.validate_write_path(path)?;
         }
         Ok(())
     }

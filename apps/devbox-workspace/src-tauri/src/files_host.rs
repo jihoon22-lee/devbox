@@ -37,6 +37,7 @@ pub fn allowed(component: &str, method: &str) -> bool {
             method,
             "pick_files"
                 | "open_file"
+                | "sync_editor_document"
                 | "save_file"
                 | "rename_file_action"
                 | "delete_file_action"
@@ -113,8 +114,70 @@ pub struct FilesHost {
     watched: HashMap<String, PathBuf>,
 }
 impl FilesHost {
+    #[cfg(test)]
+    pub(crate) fn from_editor_fixture(owner: FileOwner) -> Self {
+        Self {
+            owner,
+            ..Self::default()
+        }
+    }
     pub(crate) fn has_documents_under(&self, root: devbox_filesystem::FilesystemIdentity) -> bool {
         self.owner.has_documents_under(root)
+    }
+    #[cfg(test)]
+    pub(crate) fn execute_editor_save_fixture(
+        &mut self,
+        scope: crate::file_owner::Scope<'_>,
+        request: file::SaveFileRequest,
+    ) -> Result<String> {
+        let saved = self.owner.save(scope, request)?;
+        self.owner.document_revision(&saved.path)
+    }
+    pub(crate) fn refresh_after_rename(
+        &mut self,
+        scope: crate::file_owner::Scope<'_>,
+        path: &str,
+        file: &code_pad_lib::lsp::RenameFileResult,
+    ) -> Result<Option<(file::OpenedFileWire, String)>> {
+        let opened = self.owner.refresh_after_rename(
+            scope,
+            path,
+            file.mtime_nanos.as_deref().ok_or("file_snapshot_changed")?,
+            file.size.ok_or("file_snapshot_changed")?,
+            file.content_hash
+                .as_deref()
+                .ok_or("file_snapshot_changed")?,
+        )?;
+        opened
+            .map(|opened| {
+                self.owner
+                    .document_revision(&opened.path)
+                    .map(|revision| (opened, revision))
+            })
+            .transpose()
+    }
+    pub(crate) fn guard_editor_write(&self, context: &ProjectContext, path: &str) -> Result<()> {
+        self.owner.guard_editor_write(context, path)
+    }
+    pub(crate) fn editor_snapshot(
+        &self,
+        scope: crate::file_owner::Scope<'_>,
+        path: &str,
+        revision: &str,
+        verify_disk: bool,
+    ) -> Result<crate::file_owner::EditorSnapshot> {
+        self.owner
+            .editor_snapshot(scope, path, revision, verify_disk)
+    }
+    pub(crate) fn sync_editor(
+        &mut self,
+        context: &ProjectContext,
+        path: &str,
+        revision: &str,
+        text: &str,
+    ) -> Result<bool> {
+        self.owner
+            .sync_editor_document(Some(context), path, revision, text)
     }
     fn document_value<T: serde::Serialize>(&self, path: &str, document: T) -> Result<Value> {
         let mut result = value(document)?;
@@ -359,6 +422,22 @@ impl FilesHost {
         let scope = context.zip(lease.as_ref());
         current_deadline(deadline)?;
         match method {
+            "sync_editor_document" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct EditorBuffer {
+                    path: String,
+                    native_revision: String,
+                    text: String,
+                }
+                let buffer: EditorBuffer = input(args)?;
+                value(self.owner.sync_editor_document(
+                    context,
+                    &buffer.path,
+                    &buffer.native_revision,
+                    &buffer.text,
+                )?)
+            }
             "open_file" => {
                 let request: Nested = input(args)?;
                 let opened = self
@@ -486,7 +565,7 @@ impl FilesHost {
                 }
                 if method == "workspace_capabilities" {
                     return Ok(
-                        json!({"path":lease.binding().root,"sourceKind":"native","watchMode":"native","editSupported":true,"lspSupported":false,"lspReason":"project_untrusted"}),
+                        json!({"path":lease.binding().root,"sourceKind":"native","watchMode":"native","editSupported":true,"lspSupported":lease.binding().target == product_contract::ExecutionTarget::Windows,"lspReason":if lease.binding().target == product_contract::ExecutionTarget::Windows {None} else {Some("host_lsp_wsl_unsupported")}}),
                     );
                 }
                 let mut result = tauri::async_runtime::block_on(code_pad_lib::component::dispatch(

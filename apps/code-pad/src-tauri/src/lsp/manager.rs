@@ -476,12 +476,18 @@ pub trait LspExecutionAuthority: Send + Sync {
     fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
         Err(DocumentError::AccessDenied)
     }
+    fn validate_document_write_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.validate_document_path(path)
+    }
 }
 
 struct ExecutionDocumentAuthority(Arc<dyn LspExecutionAuthority>);
 impl LspDocumentAuthority for ExecutionDocumentAuthority {
     fn validate_path(&self, path: &Path) -> Result<(), DocumentError> {
         self.0.validate_document_path(path)
+    }
+    fn validate_write_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.0.validate_document_write_path(path)
     }
 }
 
@@ -3014,7 +3020,7 @@ fn load_rename_documents(
 }
 
 fn validate_rename_access(workspace: &WorkspaceRoot, path: &Path) -> Result<(), LspManagerError> {
-    workspace.validate_access(path).map_err(|_| {
+    workspace.validate_write_access(path).map_err(|_| {
         LspManagerError::Protocol("LSP 문서 접근 권한이 변경되어 작업을 중단했습니다".into())
     })
 }
@@ -3564,7 +3570,7 @@ fn apply_pending_rename_files(
     for (index, file) in files.iter().enumerate() {
         if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
             workspace_root
-                .validate_access(&file.path)
+                .validate_write_access(&file.path)
                 .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
         }) {
             results[index].error = Some(error.into());
@@ -3643,7 +3649,7 @@ fn apply_pending_rename_files(
     for (index, file) in files.iter().enumerate() {
         if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
             workspace_root
-                .validate_access(&file.path)
+                .validate_write_access(&file.path)
                 .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
         }) {
             results[index].error = Some(error.into());
@@ -3709,7 +3715,7 @@ fn apply_pending_rename_files(
     for (index, file) in files.iter().enumerate() {
         if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
             workspace_root
-                .validate_access(&file.path)
+                .validate_write_access(&file.path)
                 .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
         }) {
             let _ = fs::remove_dir_all(&directory);
@@ -3793,7 +3799,7 @@ fn apply_pending_rename_files(
     for (index, file) in files.iter().enumerate() {
         if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
             workspace_root
-                .validate_access(&file.path)
+                .validate_write_access(&file.path)
                 .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
         }) {
             let mut outcome = DiskRenameOutcome {
@@ -3935,7 +3941,11 @@ fn rollback_rename_backups(backups: &[RenameBackup], count: usize) -> bool {
         ) else {
             continue;
         };
-        if backup.workspace.validate_access(&backup.target).is_err() {
+        if backup
+            .workspace
+            .validate_write_access(&backup.target)
+            .is_err()
+        {
             success = false;
             continue;
         }
@@ -3969,7 +3979,11 @@ fn rollback_rename_backups(backups: &[RenameBackup], count: usize) -> bool {
             success = false;
             continue;
         }
-        if backup.workspace.validate_access(&backup.target).is_err() {
+        if backup
+            .workspace
+            .validate_write_access(&backup.target)
+            .is_err()
+        {
             success = false;
             continue;
         }

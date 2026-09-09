@@ -167,6 +167,27 @@ describe("LSP document language mapping", () => {
 });
 
 describe("LspDocumentSync", () => {
+  it("carries native revisions and reopens buffers after a manually stopped session becomes ready", async () => {
+    const transport = transportFor([]);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work");
+    await sync.setConfig(config());
+    const first = document("baseline", { nativeRevision: "native-1" });
+    await sync.open(first);
+    expect(transport.open).toHaveBeenLastCalledWith("rust", first.path, "baseline", "native-1");
+    await sync.change({ ...first, text: "edited", dirty: true });
+    expect(transport.change).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "edited", true, "native-1");
+    await sync.save(first.id, { ...first, text: "edited", dirty: false, nativeRevision: "native-2" });
+    expect(transport.save).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "native-2");
+    sync.acceptStatusEvent({ languageId: "rust", status: readyStatus({ status: "stopped" }), restarting: false, reason: null });
+    expect(sync.documentUri(first.id)).toBeNull();
+    sync.acceptStatusEvent({ languageId: "rust", status: readyStatus(), restarting: false, reason: null });
+    await sync.flush();
+    expect(transport.open).toHaveBeenLastCalledWith("rust", first.path, "edited", "native-2");
+    expect(transport.open).toHaveBeenCalledTimes(2);
+    await sync.close(first.id);
+  });
+
   it("falls back without invoking native LSP when disabled, unconfigured, or outside the workspace", async () => {
     const calls: string[] = [];
     const transport = transportFor(calls, config({ enabled: false }));

@@ -25,12 +25,18 @@ existing digest/dependency-lock verifier. Product shutdown cancels downloads and
 waits for active LSP workers to retire.
 Native lifecycle commands now use per-context execution review and an owned LSP
 thread, including automatic retries. Review pins saved configuration, exact argv,
-filtered PATH, executable/runtime files and project execution definitions. Starts
+filtered PATH, native Windows SystemRoot, executable/runtime files and project execution definitions. Starts
 retain context/filesystem/installation permits through initialization; installation
 waits use their own lock. Cancellation retains probes and initializing children until
 termination is confirmed. Configuration writes, revocation and context retirement
-stop the owner before mutation. Approval UI, editor document synchronization and
-WorkspaceEdit integration remain pending; Files still advertises LSP as unavailable.
+stop the owner before mutation. Windows Files now connects explicit execution review,
+manual start/stop and document/WorkspaceEdit commands. Opening a document requires
+an existing native Files grant and revision; save/reload additionally verify current
+disk bytes and encoding. A native hash mirror includes every opened editor buffer,
+even unsupported languages, and rejects dirty rename targets before preview/apply
+and rollback. Successful atomic rename refreshes native grants and all affected open
+buffers. Events are filtered by native project/worktree/revision/target. Explicit
+journal recovery and WSL-native transport remain incomplete.
 LSP settings now load and save separately for each registered context without
 accessing its project files or resolving a server. Native revisions prevent stale
 writes; explicit corrupt-file recovery preserves the original bytes, and future

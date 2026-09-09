@@ -1621,3 +1621,14 @@
   font-size: 10px;
   line-height: 1.4;
 }
+
+.workspace-feature-files .lsp-execution-review pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.workspace-feature-files .lsp-execution-review code {
+  overflow-wrap: anywhere;
+}
+.workspace-feature-files .lsp-execution-review dd {
+  margin-inline-start: 0;
+}

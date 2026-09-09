@@ -165,6 +165,7 @@ vi.mock("./api", () => ({
   reloadLspDocument: vi.fn(),
   changeLspDocument: vi.fn(),
   saveLspDocument: vi.fn(),
+  syncEditorDocument: vi.fn().mockResolvedValue(false),
   closeLspDocument: vi.fn(),
   deleteFileAction: vi.fn(),
   pullLspDiagnostics: vi.fn().mockResolvedValue({ metadata: { uri: "", version: 1 }, value: { uri: "", version: 1, diagnostics: [], origin: "pull" }, stale: false }),

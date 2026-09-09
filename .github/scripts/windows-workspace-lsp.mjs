@@ -4,6 +4,7 @@ import {createServer} from "node:net";
 import {createHash} from "node:crypto";
 import {mkdirSync,readFileSync,writeFileSync} from "node:fs";
 import path from "node:path";
+import {pathToFileURL} from "node:url";
 import {setTimeout as delay} from "node:timers/promises";
 import {nativeFileDialog,nativeFileSave} from "./windows-workspace-files.mjs";
 
@@ -133,5 +134,72 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
   assert.equal((await state(node)).state,"installed");
   assert.deepEqual(success(await lsp("language_server_statuses")),[]);
   const config=success(await lsp("load_lsp_config"));assert.equal(config.config.enabled,false);
-  return {blockedDownloadLeavesFilesUsable:true,nativeCancelAndOpaqueChoices:true,arbitraryPathAndReplayRejected:true,verifiedNativeArchiveImported:true,confirmedUiUninstallAndOfflineCacheInstall:true,reviewedNodeClosureImportedWithNativeMultiPicker:true,installationNeverStartsLanguageServers:true,offlineProxyAttempts:network.attempts()};
+  const execution=await exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRenderer});
+  return {...execution,blockedDownloadLeavesFilesUsable:true,nativeCancelAndOpaqueChoices:true,arbitraryPathAndReplayRejected:true,verifiedNativeArchiveImported:true,confirmedUiUninstallAndOfflineCacheInstall:true,reviewedNodeClosureImportedWithNativeMultiPicker:true,installationNeverStartsLanguageServers:true,offlineProxyAttempts:network.attempts()};
+}
+
+
+async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRenderer}) {
+  const lsp=(method,args={})=>call("workspace.lsp",method,args);
+  const owned=path.join(root,"lsp-owned-fixture");mkdirSync(owned);
+  const script=path.join(owned,"server.mjs"), marker=path.join(owned,"child.pid"), file=path.join(owned,"lsp-owner-main.rs");
+  writeFileSync(script,readFileSync(".github/fixtures/workspace-lsp-server.mjs"),{flag:"wx"});
+  writeFileSync(file,"let value = 1;\r\n",{flag:"wx"});
+  const original=success(await lsp("load_lsp_config"));
+  const configured={...original.config,enabled:true,server_by_language:{},custom_servers:[{language_ids:["rust"],executable:script,args:[marker,"documents"],runtime:{kind:"node",executable:process.execPath,min_version:null},source:"synthetic Windows fixture",version:"1",license:"UNLICENSED"}]};
+  success(await lsp("save_lsp_config",{config:configured,nativeRevision:original.nativeRevision,recoverInvalid:false}));
+  const denied=await lsp("start_language_server",{languageId:"rust",operationId:"unapproved-server-proof"});
+  assert.equal(denied.operation.outcome.state,"failed");assert.equal(denied.value.issue,"lsp_execution_approval_required");
+  const click=async(label,scope="document")=>{
+    const predicate=`Array.from((${scope})?.querySelectorAll("button")??[]).find(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`;
+    await waitForRenderer(cdp,`!!(${predicate})`,"Native LSP action unavailable");await cdp.evaluate(`(${predicate}).click()`);
+  };
+  await cdp.evaluate(`(()=>{const input=document.getElementById("path-input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(file)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
+  await click("파일 열기",'document.querySelector(".workspace-feature-files")');
+  await waitForRenderer(cdp,'Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs"))',"LSP editor fixture did not open");
+  await click("언어 서버",'document.querySelector(".workspace-feature-files")');
+  await click("설정 저장",'document.querySelector(".lsp-panel")');
+  await click("실행 설정 검토",'document.querySelector(".lsp-panel")');
+  await waitForRenderer(cdp,'document.querySelector(".lsp-execution-review")?.textContent.includes("server.mjs")',"Native execution review omitted the script");
+  assert.ok((await cdp.evaluate('document.querySelector(".lsp-execution-review").textContent')).includes("SystemRoot"));
+  await click("검토 취소",'document.querySelector(".lsp-panel")');
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  await click("실행 설정 검토",'document.querySelector(".lsp-panel")');
+  await click("이 설정의 실행 승인",'document.querySelector(".lsp-panel")');
+  await waitForRenderer(cdp,'document.querySelector(".lsp-panel").textContent.includes("검토한 설정의 실행을 승인했습니다")',"Native LSP approval did not settle");
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  await click("시작",'document.querySelector(".lsp-panel")');
+  await waitForRenderer(cdp,'document.querySelector(".lsp-panel").textContent.includes("준비됨")',"Native language server did not initialize");
+  await click("닫기",'document.querySelector(".lsp-panel")');
+  const opened=success(await call("workspace.files","open_file",{request:{path:file,encoding:null}}));
+  const uri=pathToFileURL(opened.path).href;
+  const hover=async()=>{
+    const deadline=performance.now()+15_000;
+    while(performance.now()<deadline){
+      const result=await lsp("request_lsp_hover",{languageId:"rust",uri,position:{line:0,character:1}});
+      if(result.operation.outcome.state==="succeeded")return success(result);
+      assert.ok(["lsp_document_denied","file_snapshot_changed","lsp_busy","files_unavailable"].includes(result.value.issue),"Unexpected document synchronization failure");
+      await delay(100);
+    }
+    throw new Error("Native editor document did not synchronize");
+  };
+  assert.equal((await hover()).stale,false);
+  await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").focus()');
+  await cdp.command("Input.insertText",{text:"// editor\n"});
+  const dirty='Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs")&&tab.textContent.includes("●"))';
+  await waitForRenderer(cdp,dirty,"LSP editor change did not remain dirty");
+  await click("저장",'document.querySelector(".workspace-feature-files")');
+  await waitForRenderer(cdp,`!(${dirty})`,"LSP editor save did not settle");
+  assert.ok(readFileSync(file,"utf8").includes("// editor"));
+  assert.equal((await hover()).stale,false);
+  await click("언어 서버",'document.querySelector(".workspace-feature-files")');
+  await click("실행 승인 해제",'document.querySelector(".lsp-panel")');
+  await waitForRenderer(cdp,'document.querySelector(".lsp-panel").textContent.includes("실행 승인을 해제했습니다")',"Native LSP revocation did not settle");
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  await click("닫기",'document.querySelector(".lsp-panel")');
+  const current=success(await lsp("load_lsp_config"));
+  success(await lsp("save_lsp_config",{config:original.config,nativeRevision:current.nativeRevision,recoverInvalid:false}));
+  await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files .document-tab")).find(tab=>tab.textContent.includes("lsp-owner-main.rs"))?.querySelector(".tab-action").click()');
+  await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs"))',"LSP editor fixture did not close");
+  return {explicitNativeExecutionReview:true,approvalDoesNotAutoStart:true,actualNodeLspInitialize:true,codeMirrorDidOpenChangeSaveHover:true,revocationConfirmsNativeShutdown:true};
 }

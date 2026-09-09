@@ -212,7 +212,7 @@ changes and context retirement stop the owner before mutation. Exit waits for wo
 thread and process retirement. Native startup IDs are published before the first
 renderer await, with bounded native cancellation intent and deadline checks. Probes
 and initializing children complete cleanup before cancellation returns. Events carry
-the native context; the approval UI and native editor/document bridge remain pending.
+the native context; the next section connects the native editor/document bridge and review controls.
 
 Focused portable verification passed **132 LSP unit + 15 manager integration tests**.
 After correcting a test-only empty argv value, startup wait budget and old allowlist
@@ -225,6 +225,49 @@ checks. Final startup/installation exclusion verification passed **132 LSP unit,
 **107.545 seconds**, cgroup peak **5,121,277,952 bytes** under 8 GiB. Final affected
 verification selected all and passed in **467.721 seconds**, cgroup peak
 **6,442,582,016 bytes** under 8 GiB. These new actor checks have not yet passed Windows CI.
+
+### Native LSP editor and Windows runtime follow-up
+
+Windows Files now exposes explicit execution review and manual lifecycle controls.
+Reviews display exact command arguments, workspace and child environment; settings
+mount performs no executable inspection. Revision changes/unmount retire pending
+reviews, and approval does not auto-start. Native events are matched by all context
+fields. Manual stop clears document mirrors; ready events reopen current buffers.
+
+Document commands require native Files grants/revisions. Save/reload verify disk
+identity, encoding and mtime/size/hash, and native baseline hashes decide dirty state.
+An ordered mirror acknowledges every editor buffer, including unsupported languages;
+failed flushes block rename. Native rename preview, disk apply and rollback retain
+this whole-editor guard. Atomic writes refresh grants/revisions and all affected open
+buffers, including other languages. Committed results survive a failed editor refresh.
+Cancel/discard bypass the document mutex. Explicit journal recovery and WSL-native
+execution remain incomplete; this is still draft B04.
+
+The [b913c9a Windows product run](https://github.com/jihoon22-lee/devbox/actions/runs/34308418112)
+and [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34308418104) failed
+three new native LSP tests; the product run did not reach Source/installer acceptance.
+Local Windows probes reproduced Node initialization abort without SystemRoot and a
+Node entrypoint failure with a verbatim path. The shared resolver now obtains
+SystemRoot from the Windows API and checks canonical equivalence before passing
+ordinary script spelling. The document approval fixture now uses the canonical path
+returned by native project registration instead of TEMP's short-path alias.
+A small MSVC executable using the actual runtime/process/transport/Job modules passed
+Node version probing, initialize, shutdown and confirmed process exit on Windows.
+Its cross-build passed in **24.009 seconds**, peak **872,325,120 bytes**. This does
+not replace the pending full Windows product retry or resolve Source cleanup yet.
+
+Portable checks passed **104 Workspace Rust, 132 LSP unit, 15 manager integration
+and both strict Clippy checks**. The real Node document fixture checks missing/stale
+grants, false clean claims, save revision rotation, hover/diagnostics, dirty unsupported
+target rejection before/after preview, CRLF disk rename, refreshed grants and replay
+rejection. Its focused run passed in **69.659 seconds**, peak **2,968,313,856 bytes**.
+The first full UI run found an incomplete test mock for the new mirror API; adding
+that mock fixed it. **337 shared UI tests, product build and both strict Clippy checks**
+then passed in **50.930 seconds**, peak **1,638,375,424 bytes**. All checks used the
+shared 8 GiB limit. The packaged fixture now exercises review/cancel/approve, manual
+Node start, CodeMirror document sync/edit/save/hover and explicit revocation.
+Final affected verification selected all and passed in **496.966 seconds**,
+cgroup peak **6,444,388,352 bytes** under 8 GiB. Full Windows retry remains pending.
 
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,

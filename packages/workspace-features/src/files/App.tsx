@@ -40,6 +40,8 @@ import { completionOptions, diagnosticsForCodeMirror, hoverText, offsetForPositi
 import type { BookmarkCommands } from "./editor/bookmarks";
 import { normalizeBookmarkLines } from "./editor/bookmarks";
 import { LspDocumentSync } from "./lspDocumentSync";
+import { NativeEditorMirror } from "./nativeEditorMirror";
+import { matchesLspEventContext } from "./lspEventContext";
 import {
   createInitialEditorState,
   docIdForPath,
@@ -251,6 +253,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const [navForward, setNavForward] = useState<NavEntry[]>([]);
   const [recoveryOpen, setRecoveryOpen] = useState(false);
   const [recoveryChecked, setRecoveryChecked] = useState(false);
+  const [editorMirror] = useState(() => new NativeEditorMirror());
+  editorMirror.setContext(contextKey);
+  useEffect(() => { editorMirror.update(state.docs); }, [editorMirror, state.docs]);
   const [lspSync] = useState(() => new LspDocumentSync());
   const [lspSyncState, setLspSyncState] = useState(lspSync.getState());
   const [lspDiagnostics, setLspDiagnostics] = useState<Record<DocId, import("@codemirror/lint").Diagnostic[]>>({});
@@ -355,14 +360,18 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     let stopStatus: (() => void) | undefined;
     void listen<LspDiagnosticsEvent>(
       "lsp/diagnostics",
-      (event) => lspSync.acceptDiagnosticsEvent(event.payload),
+      (event) => {
+        if (!isProductHosted() || matchesLspEventContext(contextRef.current, event.payload.nativeContext)) lspSync.acceptDiagnosticsEvent(event.payload);
+      },
     ).then((stop) => {
       if (disposed) stop();
       else stopDiagnostics = stop;
     }).catch(() => undefined);
     void listen<LspStatusEvent>(
       "lsp/status",
-      (event) => lspSync.acceptStatusEvent(event.payload),
+      (event) => {
+        if (!isProductHosted() || matchesLspEventContext(contextRef.current, event.payload.nativeContext)) lspSync.acceptStatusEvent(event.payload);
+      },
     ).then((stop) => {
       if (disposed) stop();
       else stopStatus = stop;
@@ -585,7 +594,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       durabilityWarning: saved.durabilityWarning,
       ...(saved.nativeRevision !== undefined ? {nativeRevision:saved.nativeRevision} : {}),
     });
-    void lspSync.save(docId);
+    void lspSync.save(docId, stateRef.current.docs.find(doc => doc.id === docId));
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
     return {
       saved,
@@ -843,11 +852,13 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         throw new Error("이름 변경 결과의 파일 스냅샷이 없습니다.");
       }
       const uri = lspSync.documentUri(docId);
-      if (!uri) throw new Error("이름 변경 결과의 LSP 문서가 열려 있지 않습니다.");
+      if (!uri && !isProductHosted()) throw new Error("이름 변경 결과의 LSP 문서가 열려 있지 않습니다.");
+      if (isProductHosted() && !file.nativeRevision) throw new Error("이름 변경은 저장됐지만 파일을 다시 열어야 합니다.");
       return {
         ...edited,
         docId,
-        uri,
+        ...(uri ? { uri } : {}),
+        ...(file.nativeRevision !== undefined ? { nativeRevision: file.nativeRevision } : {}),
         mtimeNanos: file.mtimeNanos,
         size: file.size,
         contentHash: file.contentHash,
@@ -888,6 +899,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       // A local edit may still be queued behind the editor event. Let the
       // mirror observe it before the native plan is consumed, otherwise the
       // disk commit could race a just-typed change.
+      await editorMirror.flush(stateRef.current.docs);
       await lspSync.flush();
       if (renameCancelRequestedRef.current) {
         // The native plan is still pending until applyRename is called. Drop
@@ -941,6 +953,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     }
     const revisions = new Map(stateRef.current.docs.map((doc) => [doc.id, doc.revision]));
     void runLspOperation(async () => {
+      await editorMirror.flush(stateRef.current.docs);
       const preview = await lspSync.requestRename(
         requestedDocumentId,
         requestedCursor,

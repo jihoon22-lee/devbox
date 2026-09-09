@@ -84,6 +84,11 @@ export interface LspDocumentSnapshot {
   path: string;
   text: string;
   dirty: boolean;
+  nativeRevision?: string | null;
+}
+
+function nativeRevision(document: LspDocumentSnapshot): [] | [string | null] {
+  return document.nativeRevision === undefined ? [] : [document.nativeRevision];
 }
 
 export interface LspDocumentTransport {
@@ -91,10 +96,10 @@ export interface LspDocumentTransport {
   statuses: () => Promise<LanguageServerStatus[]>;
   start: (languageId: string) => Promise<void>;
   stop: (languageId: string) => Promise<void>;
-  open: (languageId: string, path: string, text: string) => Promise<LspDidOpen>;
-  change: (languageId: string, uri: string, text: string, dirty: boolean) => Promise<LspDidChange>;
-  reload: (languageId: string, uri: string, text: string) => Promise<LspDidChange>;
-  save: (languageId: string, uri: string) => Promise<LspDidSave>;
+  open: (languageId: string, path: string, text: string, nativeRevision?: string | null) => Promise<LspDidOpen>;
+  change: (languageId: string, uri: string, text: string, dirty: boolean, nativeRevision?: string | null) => Promise<LspDidChange>;
+  reload: (languageId: string, uri: string, text: string, nativeRevision?: string | null) => Promise<LspDidChange>;
+  save: (languageId: string, uri: string, nativeRevision?: string | null) => Promise<LspDidSave>;
   close: (languageId: string, uri: string) => Promise<LspDidClose>;
   pullDiagnostics: (languageId: string, uri: string) => Promise<LspFeatureResponse<LspDiagnosticResult>>;
   completion: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspCompletionResult>>;
@@ -245,6 +250,7 @@ function relativeWorkspacePath(path: string, workspaceRoot: string | null): stri
 export class LspDocumentSync {
   private readonly transport: LspDocumentTransport;
   private readonly documents = new Map<string, DocumentState>();
+  private readonly serverEpochs = new Map<string, number>();
   private readonly listeners = new Set<(state: LspDocumentSyncState) => void>();
   private readonly diagnosticsListeners = new Set<(snapshot: LspDiagnosticsSnapshot) => void>();
   private readonly diagnostics = new Map<string, LspDiagnosticsSnapshot>();
@@ -324,6 +330,16 @@ export class LspDocumentSync {
   }
 
   acceptStatusEvent(event: LspStatusEvent): void {
+    if (event.status.status === "stopped" && !event.restarting) {
+      this.serverEpochs.set(event.languageId, (this.serverEpochs.get(event.languageId) ?? 0) + 1);
+      for (const state of this.documents.values()) {
+        if (state.languageId === event.languageId) {
+          state.opened = null;
+          this.nextFeatureToken(state.doc.id);
+          this.invalidateDiagnostics(state.doc.id);
+        }
+      }
+    }
     const index = this.statusesSnapshot.findIndex((status) => status.languageId === event.languageId);
     if (index === -1) this.statusesSnapshot = [...this.statusesSnapshot, event.status];
     else {
@@ -333,6 +349,11 @@ export class LspDocumentSync {
     }
     if (event.reason) this.recordError(event.reason);
     else this.publishState();
+    if (event.status.status === "ready") {
+      for (const state of this.documents.values()) {
+        if (state.active && !state.closing && !state.opened && state.languageId === event.languageId) void this.open(state.doc);
+      }
+    }
   }
 
   acceptDiagnosticsEvent(event: LspDiagnosticsEvent): void {
@@ -495,8 +516,8 @@ export class LspDocumentSync {
         const opened = await this.ensureOpen(state, generation, languageId, text);
         if (!opened || !this.isCurrent(state, generation, true)) return;
         const changed = dirty
-          ? await this.transport.change(languageId, opened.uri, text, true)
-          : await this.transport.reload(languageId, opened.uri, text);
+          ? await this.transport.change(languageId, opened.uri, text, true, ...nativeRevision(document))
+          : await this.transport.reload(languageId, opened.uri, text, ...nativeRevision(document));
         opened.version = changed.version;
         opened.text = text;
         this.scheduleDiagnostics(document.id, generation);
@@ -507,8 +528,9 @@ export class LspDocumentSync {
   }
 
   /** Queue didSave only after the caller has completed the native file save. */
-  save(documentId: string): Promise<void> {
+  save(documentId: string, document?: LspDocumentSnapshot): Promise<void> {
     const state = this.documents.get(documentId);
+    if (state && document) state.doc = document;
     if (!state || !state.active || state.closing || !state.languageId) return Promise.resolve();
     const languageId = state.languageId;
     const generation = state.generation;
@@ -517,7 +539,7 @@ export class LspDocumentSync {
       try {
         const opened = await this.ensureOpen(state, generation, languageId, state.doc.text);
         if (!opened || !this.isCurrent(state, generation, true)) return;
-        const saved = await this.transport.save(languageId, opened.uri);
+        const saved = await this.transport.save(languageId, opened.uri, ...nativeRevision(state.doc));
         opened.version = saved.version;
         this.scheduleDiagnostics(documentId, generation);
       } catch (cause) {
@@ -650,10 +672,13 @@ export class LspDocumentSync {
       const state = [...this.documents.values()].find((candidate) =>
         relativeWorkspacePath(candidate.doc.path, workspaceRoot) === edited.path,
       );
-      if (!state?.opened) continue;
-      state.opened.version = edited.version;
-      state.opened.text = edited.text;
-      state.doc = { ...state.doc, text: edited.text, dirty: !saved };
+      if (!state) continue;
+      if (state.opened) {
+        state.opened.version = edited.version;
+        state.opened.text = edited.text;
+      }
+      state.doc = { ...state.doc, text: edited.text, dirty: !saved,
+        ...(edited.nativeRevision !== undefined ? { nativeRevision: edited.nativeRevision } : {}) };
     }
     for (const documentId of this.diagnostics.keys()) {
       if (documents.some((edited) =>
@@ -915,8 +940,9 @@ export class LspDocumentSync {
       await this.closeWithoutReporting(state.opened);
       state.opened = null;
     }
-    const opened = await this.transport.open(languageId, state.doc.path, text);
-    if (!this.isCurrent(state, generation, true) || state.languageId !== languageId) {
+    const serverEpoch = this.serverEpochs.get(languageId) ?? 0;
+    const opened = await this.transport.open(languageId, state.doc.path, text, ...nativeRevision(state.doc));
+    if (!this.isCurrent(state, generation, true) || state.languageId !== languageId || serverEpoch !== (this.serverEpochs.get(languageId) ?? 0)) {
       await this.closeWithoutReporting({
         languageId,
         uri: opened.uri,

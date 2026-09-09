@@ -33,7 +33,9 @@ export type EditorAction =
     }
   | {
       type: "applyLspRename";
-      documents: Array<EditedLspDocument & {
+      documents: Array<Omit<EditedLspDocument, "uri"> & {
+        uri?: string;
+        nativeRevision?: string | null;
         docId: DocId;
         mtimeNanos: string;
         size: number;
@@ -500,6 +502,7 @@ export function editorReducer(state: EditorState, action: EditorAction): EditorS
                 mtimeNanos: edited.mtimeNanos,
                 size: edited.size,
                 contentHash: edited.contentHash,
+                ...(edited.nativeRevision !== undefined ? { nativeRevision: edited.nativeRevision } : {}),
                 durabilityWarning: null,
               }
             : doc;

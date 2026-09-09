@@ -22,6 +22,8 @@ import type {
   WorkspaceCapabilities,
 } from "../types";
 import ManagedInstallerPanel from "./ManagedInstallerPanel";
+import LspExecutionReview from "./LspExecutionReview";
+import { isProductHosted } from "../../transport";
 
 const LANGUAGE_OPTIONS = [
   ["rust", "Rust"],
@@ -525,6 +527,11 @@ export default function LspControlPanel({
           <button type="button" className="toolbar-button selected" disabled={!loaded} onClick={updateServer}>이 언어 설정 적용</button>
         </div>
 
+        {isProductHosted() && <LspExecutionReview
+          key={`${loaded?.nativeRevision}:${hasUnsavedChanges}:${formDirty}`}
+          nativeRevision={loaded?.nativeRevision ?? null}
+          disabled={busy || hasUnsavedChanges || formDirty || !config.enabled || !lspAvailable}
+        />}
         <section className="lsp-status-section" aria-label="언어 서버 상태">
           <h3>현재 상태</h3>
           {configuredLanguageIds.length === 0 && (

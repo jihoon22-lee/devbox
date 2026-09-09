@@ -220,6 +220,9 @@ fn resolver(
             std::env::join_paths(&paths).map_err(|_| "lsp_source_path_invalid")?,
         )
     };
+    let environment = environment
+        .with_native_platform()
+        .map_err(|_| "lsp_source_unavailable")?;
     Ok((RuntimeResolver::new().with_environment(environment), paths))
 }
 
@@ -250,6 +253,7 @@ pub(super) struct Snapshot {
     pub(super) active: AtomicBool,
     owner_shutdown: std::sync::OnceLock<code_pad_lib::lsp::RequestCancellation>,
     activities: std::sync::OnceLock<Activities>,
+    files: std::sync::OnceLock<Arc<std::sync::Mutex<crate::files_host::FilesHost>>>,
 }
 impl Snapshot {
     pub(super) fn capture(
@@ -395,6 +399,7 @@ impl Snapshot {
             active: AtomicBool::new(true),
             owner_shutdown: Default::default(),
             activities: Default::default(),
+            files: Default::default(),
         };
         snapshot.revalidate_metadata()?;
         snapshot
@@ -410,6 +415,9 @@ impl Snapshot {
     }
     pub(super) fn bind_owner(&self, shutdown: code_pad_lib::lsp::RequestCancellation) {
         let _ = self.owner_shutdown.set(shutdown);
+    }
+    pub(super) fn bind_files(&self, files: Arc<std::sync::Mutex<crate::files_host::FilesHost>>) {
+        let _ = self.files.set(files);
     }
     pub(super) fn bind_activities(&self, activities: Activities) {
         let _ = self.activities.set(activities);
@@ -491,6 +499,41 @@ impl Snapshot {
             processes: self.processes.clone(),
             environment: self.environment.clone(),
         }
+    }
+    pub(super) fn refresh_after_rename(
+        &self,
+        files: &mut crate::files_host::FilesHost,
+        path: &str,
+        file: &code_pad_lib::lsp::RenameFileResult,
+    ) -> Result<Option<(code_pad_lib::commands::file::OpenedFileWire, String)>> {
+        self.validate_document(Path::new(path))?;
+        files.refresh_after_rename(Some((self.context(), &self.lease)), path, file)
+    }
+    pub(super) fn document_snapshot(
+        &self,
+        files: &crate::files_host::FilesHost,
+        path: &str,
+        revision: &str,
+        verify_disk: bool,
+    ) -> Result<crate::file_owner::EditorSnapshot> {
+        self.validate_document(Path::new(path))?;
+        files.editor_snapshot(
+            Some((self.context(), &self.lease)),
+            path,
+            revision,
+            verify_disk,
+        )
+    }
+    pub(super) fn document_permit(
+        &self,
+        write: bool,
+    ) -> Result<crate::core::context_activity::ContextPermit> {
+        self.activities
+            .get()
+            .ok_or("lsp_unavailable")?
+            .filesystem
+            .enter(write)
+            .map_err(|_| "lsp_busy")
     }
     pub(super) fn validate_document(&self, path: &Path) -> Result<()> {
         self.revalidate_metadata()?;
@@ -638,6 +681,18 @@ impl LspExecutionAuthority for Snapshot {
             self.revalidate_metadata()
         };
         validate().map_err(|_| LspManagerError::ExecutionApprovalRequired)
+    }
+    fn validate_document_write_path(&self, path: &Path) -> std::result::Result<(), DocumentError> {
+        let validate = || -> Result<()> {
+            self.validate_document(path)?;
+            self.files
+                .get()
+                .ok_or("lsp_document_denied")?
+                .try_lock()
+                .map_err(|_| "files_unavailable")?
+                .guard_editor_write(self.context(), path.to_str().ok_or("lsp_document_denied")?)
+        };
+        validate().map_err(|_| DocumentError::AccessDenied)
     }
     fn validate_document_path(&self, path: &Path) -> std::result::Result<(), DocumentError> {
         self.validate_document(path)
@@ -866,7 +921,7 @@ pub(super) mod tests {
         pending.approve(u64::MAX).unwrap();
         drop(pending);
         let approved = fixture.capture(true).unwrap();
-        let document = fixture.root.path().join("main.rs");
+        let document = Path::new(&approved.config.workspace_root).join("main.rs");
         fs::write(&document, b"fn main() {}\n").unwrap();
         approved.validate_document(&document).unwrap();
         assert!(approved

@@ -212,6 +212,7 @@ export type LspRenameFileStatus =
   | "rollbackFailed";
 
 export interface LspRenameFileResult {
+  nativeRevision?: string | null;
   path: string;
   status: LspRenameFileStatus;
   mtimeNanos: string | null;
@@ -230,6 +231,7 @@ export interface LspRenameApplyResult {
 }
 
 export interface RenamedLspDocument {
+  nativeRevision?: string | null;
   /** Workspace-relative path; native absolute URIs stay out of this result. */
   path: string;
   version: number;
@@ -355,11 +357,13 @@ export interface LspFilteredLocations {
 }
 
 export interface LspDiagnosticsEvent {
+  nativeContext?: unknown;
   languageId: string;
   response: LspFeatureResponse<LspDiagnosticResult>;
 }
 
 export interface LspStatusEvent {
+  nativeContext?: unknown;
   languageId: string;
   status: LanguageServerStatus;
   reason: string | null;

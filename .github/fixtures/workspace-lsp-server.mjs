@@ -14,11 +14,20 @@ process.stdin.on("data",chunk=>{
     const end=boundary+4+Number(length);if(buffer.length<end)return;
     const message=JSON.parse(buffer.subarray(boundary+4,end));buffer=buffer.subarray(end);
     if(message.method==="initialize"){
-      if(mode!=="hang-initialize")send(message.id,{capabilities:{textDocumentSync:1},serverInfo:{name:"Workspace fixture",version:"1"}});
-    }else if(message.method==="shutdown")send(message.id,null);
+      if(mode!=="hang-initialize")send(message.id,{capabilities:{textDocumentSync:{openClose:true,change:1,save:true},hoverProvider:true,renameProvider:true,completionProvider:{},definitionProvider:true,referencesProvider:true,documentFormattingProvider:true,diagnosticProvider:{interFileDependencies:false,workspaceDiagnostics:false}},serverInfo:{name:"Workspace fixture",version:"1"}});
+    }else if(message.method==="textDocument/hover")send(message.id,{contents:{kind:"plaintext",value:"fixture hover"}});
+    else if(message.method==="textDocument/rename"){
+      const uri=message.params.textDocument.uri;
+      const edit={range:{start:{line:0,character:4},end:{line:0,character:9}},newText:message.params.newName};
+      send(message.id,{changes:{[uri]:[edit],[new URL("notes.txt",uri).href]:[edit]}});
+    }
+    else if(message.method==="textDocument/completion")send(message.id,[{label:"fixture",kind:6}]);
+    else if(message.method==="textDocument/diagnostic")send(message.id,{kind:"full",items:[]});
+    else if(message.method==="textDocument/definition"||message.method==="textDocument/references"||message.method==="textDocument/formatting")send(message.id,[]);
+    else if(message.method==="shutdown")send(message.id,null);
     else if(message.method==="exit")process.exit(0);
     else if(message.id!==undefined)send(message.id,null);
   }
 });
 // An assertion failure must not leave a detached fixture indefinitely.
-setTimeout(()=>process.exit(3),20_000).unref();
+setTimeout(()=>process.exit(3),60_000).unref();

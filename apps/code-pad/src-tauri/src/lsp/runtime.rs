@@ -26,7 +26,8 @@ const RUNTIME_PROBE_REAP_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Environment values that may cross the child-process boundary.
 ///
-/// The allowlist starts empty.  `system()` copies only `PATH`; all other
+/// The allowlist starts empty. `system()` copies PATH and the native Windows
+/// system directory required by process initialization; all other
 /// values require an explicit `allow` call.  In particular, this type never
 /// snapshots the parent environment wholesale, so secrets such as tokens and
 /// credentials cannot be forwarded accidentally.
@@ -40,7 +41,7 @@ impl EnvironmentAllowlist {
         Self::default()
     }
 
-    /// Copy the system `PATH` only.  Missing PATH is valid; a resolver will
+    /// Copy PATH and the native platform directory. Missing PATH is valid; a resolver will
     /// report a program-not-found error if it needs PATH lookup.
     pub fn system() -> Self {
         let mut allowlist = Self::new();
@@ -49,6 +50,38 @@ impl EnvironmentAllowlist {
             let _ = allowlist.insert("PATH", path);
         }
         allowlist
+            .clone()
+            .with_native_platform()
+            .unwrap_or(allowlist)
+    }
+
+    /// Windows Node/OpenSSL needs SystemRoot to initialize its secure RNG.
+    /// Query Windows directly rather than accepting a parent-provided override.
+    pub fn with_native_platform(self) -> Result<Self, RuntimeError> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            let mut value = self;
+            let mut buffer = vec![0u16; 32768];
+            let length = unsafe {
+                windows::Win32::System::SystemInformation::GetWindowsDirectoryW(Some(&mut buffer))
+            } as usize;
+            if length == 0 || length >= buffer.len() {
+                return Err(RuntimeError::InvalidSpec(
+                    "native Windows directory unavailable".into(),
+                ));
+            }
+            value.values.retain(|key, _| {
+                !key.to_str()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("SystemRoot"))
+            });
+            value.insert("SystemRoot", OsString::from_wide(&buffer[..length]))?;
+            Ok(value)
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(self)
+        }
     }
 
     pub fn with_path(path: impl Into<OsString>) -> Self {
@@ -349,6 +382,34 @@ impl ResolvedProcess {
     }
 }
 
+/// Node's entrypoint resolver does not accept Win32 verbatim path prefixes.
+/// Remove that spelling only after proving it still resolves to the pinned file.
+fn node_script_argument(path: &Path) -> Result<OsString, RuntimeError> {
+    #[cfg(windows)]
+    {
+        let raw = path
+            .to_str()
+            .ok_or_else(|| RuntimeError::InvalidSpec("Node script path must be Unicode".into()))?;
+        let ordinary = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{unc}"))
+        } else {
+            PathBuf::from(raw.strip_prefix(r"\\?\").unwrap_or(raw))
+        };
+        let canonical = canonical_file_or_directory(&ordinary, "Node script")?;
+        if canonical != path {
+            return Err(RuntimeError::PathEscape {
+                base: path.into(),
+                path: canonical,
+            });
+        }
+        Ok(ordinary.into_os_string())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(path.as_os_str().to_owned())
+    }
+}
+
 /// Resolves local paths and system PATH entries without executing anything.
 #[derive(Debug, Clone)]
 pub struct RuntimeResolver {
@@ -524,7 +585,7 @@ impl RuntimeResolver {
             RuntimeKind::Native => (server_executable, custom_args),
             RuntimeKind::Node => {
                 let mut args = Vec::with_capacity(custom_args.len() + 1);
-                args.push(server_executable.into_os_string());
+                args.push(node_script_argument(&server_executable)?);
                 args.extend(custom_args);
                 (runtime.executable.clone(), args)
             }
@@ -660,7 +721,7 @@ impl RuntimeResolver {
             }
         };
         let mut process_args = Vec::with_capacity(args.len() + 1);
-        process_args.push(command_path.into_os_string());
+        process_args.push(node_script_argument(&command_path)?);
         process_args.extend(args);
         Ok(ResolvedProcess {
             executable: runtime.executable.clone(),
@@ -1488,6 +1549,20 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn native_platform_environment_replaces_parent_systemroot_with_windows_api_value() {
+        let environment = EnvironmentAllowlist::with_path("C:/fixture")
+            .allow("SYSTEMROOT", "C:/untrusted-parent-override")
+            .unwrap()
+            .with_native_platform()
+            .unwrap();
+        let system = environment.get(OsStr::new("SystemRoot")).unwrap();
+        assert_ne!(system, OsStr::new("C:/untrusted-parent-override"));
+        assert!(Path::new(system).is_absolute());
+        assert_eq!(environment.as_map().len(), 2);
+        assert!(!environment.contains_key(OsStr::new("SYSTEMROOT")));
+    }
     #[test]
     fn environment_allowlist_does_not_copy_unlisted_values() {
         let allowlist = EnvironmentAllowlist::with_path("/safe/bin")
@@ -1579,13 +1654,13 @@ mod tests {
         };
         let resolved = resolver.resolve_custom(&custom, &workspace).unwrap();
         assert_eq!(resolved.executable, fs::canonicalize(node).unwrap());
+        assert_eq!(resolved.args.len(), 2);
         assert_eq!(
-            resolved.args,
-            vec![
-                fs::canonicalize(server).unwrap().into_os_string(),
-                OsString::from("--stdio")
-            ]
+            fs::canonicalize(&resolved.args[0]).unwrap(),
+            fs::canonicalize(server).unwrap()
         );
+        assert!(!resolved.args[0].to_string_lossy().starts_with(r"\\?\"));
+        assert_eq!(resolved.args[1], OsString::from("--stdio"));
         assert_eq!(resolved.env.len(), 1);
         assert!(resolved.env.contains_key(OsStr::new("PATH")));
         assert!(resolved
