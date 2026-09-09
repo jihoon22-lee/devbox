@@ -700,9 +700,19 @@ impl RuntimeResolver {
         for (key, value) in self.environment.iter() {
             command.env(key, value);
         }
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000 | 0x0000_0004);
         let mut child = command
             .spawn()
             .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        #[cfg(windows)]
+        let job = match super::process::windows_job::WindowsJobObject::assign_to(&child) {
+            Ok(job) => job,
+            Err(_) => {
+                kill_and_reap(&mut child).await;
+                return Err(RuntimeError::RuntimeProbeFailed);
+            }
+        };
         let Some(stdout) = child.stdout.take() else {
             kill_and_reap(&mut child).await;
             return Err(RuntimeError::RuntimeProbeFailed);
@@ -753,7 +763,7 @@ impl RuntimeResolver {
             }
             Ok(())
         };
-        match timeout(RUNTIME_PROBE_TIMEOUT, probe).await {
+        let result = match timeout(RUNTIME_PROBE_TIMEOUT, probe).await {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => {
                 kill_and_reap(&mut child).await;
@@ -763,7 +773,12 @@ impl RuntimeResolver {
                 kill_and_reap(&mut child).await;
                 Err(RuntimeError::RuntimeProbeTimeout)
             }
-        }
+        };
+        #[cfg(windows)]
+        job.terminate_and_wait()
+            .await
+            .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        result
     }
 
     /// Resolve a `custom` reference from the compact `server_by_language`

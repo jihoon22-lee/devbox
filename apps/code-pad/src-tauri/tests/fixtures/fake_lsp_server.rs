@@ -31,6 +31,35 @@ async fn main() {
         env::args().find_map(|argument| argument.strip_prefix("--fake-marker=").map(PathBuf::from));
     let fake_log =
         env::args().find_map(|argument| argument.strip_prefix("--fake-log=").map(PathBuf::from));
+    if mode == "owned_descendant" {
+        // Bounded fallback lifetime keeps a failing test from leaving a helper.
+        tokio::time::sleep(Duration::from_secs(12)).await;
+        return;
+    }
+    if env::args().any(|argument| argument == "--version") {
+        let root = env::current_dir().unwrap();
+        let behavior = fs::read_to_string(root.join("probe-mode")).unwrap();
+        spawn_owned_descendant(&root.join("descendant.pid"));
+        // Give the test time to retain the exact process handle before exit.
+        let deadline = std::time::Instant::now() + Duration::from_secs(8);
+        while !root.join("probe-release").exists() && std::time::Instant::now() < deadline {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+        match behavior.as_str() {
+            "success" => println!("v20.11.1"),
+            "output-limit" => println!("{}", "x".repeat(9000)),
+            "hang" => tokio::time::sleep(Duration::from_secs(12)).await,
+            _ => std::process::exit(19),
+        }
+        return;
+    }
+    if let Some(marker) = env::args().find_map(|argument| {
+        argument
+            .strip_prefix("--fake-descendant-marker=")
+            .map(PathBuf::from)
+    }) {
+        spawn_owned_descendant(&marker);
+    }
     if mode == "stderr" {
         let mut stderr = tokio::io::stderr();
         let bytes = vec![b'x'; 100 * 1024];
@@ -498,4 +527,18 @@ fn valid_initialize_params(params: Option<&Value>) -> bool {
 async fn send(writer: &Writer, message: JsonRpcMessage) {
     let mut writer = writer.lock().await;
     let _ = writer.write_message(&message).await;
+}
+
+// This fixture intentionally tests OS-owned cleanup when the parent exits.
+#[allow(clippy::zombie_processes)]
+fn spawn_owned_descendant(marker: &std::path::Path) {
+    let child = std::process::Command::new(env::current_exe().unwrap())
+        .arg("--fake-mode=owned_descendant")
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .unwrap();
+    fs::write(marker, child.id().to_string()).unwrap();
+    // Ownership deliberately remains with the parent's OS Job/process group.
 }

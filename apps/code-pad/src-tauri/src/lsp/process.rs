@@ -16,7 +16,6 @@ use std::fmt;
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-#[cfg(unix)]
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -27,7 +26,7 @@ use tokio::time::sleep;
 
 #[cfg(windows)]
 #[path = "windows_job.rs"]
-mod windows_job;
+pub(super) mod windows_job;
 #[cfg(windows)]
 use windows_job::WindowsJobObject;
 
@@ -350,12 +349,18 @@ impl ProcessTreeCleanup {
     }
 }
 
+#[derive(Default)]
+struct ExitSignal {
+    notify: Notify,
+    root_reaped: AtomicBool,
+}
+
 struct ProcessInner {
     writer: Mutex<JsonRpcWriter<ChildStdin>>,
     pending: PendingRequests,
     child_commands: mpsc::Sender<ChildCommand>,
     state: Arc<Mutex<ProcessState>>,
-    exit_notify: Arc<Notify>,
+    exit: Arc<ExitSignal>,
     messages: broadcast::Sender<IncomingMessage>,
     stderr: Arc<Mutex<BoundedStderr>>,
     stderr_events: broadcast::Sender<StderrEvent>,
@@ -413,7 +418,8 @@ impl LspProcess {
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            command.creation_flags(CREATE_NO_WINDOW);
+            const CREATE_SUSPENDED: u32 = 0x0000_0004;
+            command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
         }
         let mut child = command.spawn().map_err(ProcessError::Spawn)?;
         #[cfg(unix)]
@@ -469,7 +475,7 @@ impl LspProcess {
             pending: PendingRequests::new(),
             child_commands,
             state: Arc::new(Mutex::new(ProcessState::Running)),
-            exit_notify: Arc::new(Notify::new()),
+            exit: Arc::new(ExitSignal::default()),
             messages,
             stderr: Arc::clone(&stderr),
             stderr_events,
@@ -495,7 +501,7 @@ impl LspProcess {
             inner.pending.clone(),
             inner.state.clone(),
             inner.messages.clone(),
-            inner.exit_notify.clone(),
+            inner.exit.clone(),
             cleanup,
         );
         Ok(Self { inner })
@@ -674,7 +680,7 @@ impl LspProcess {
     pub async fn shutdown_with_timeout(&self, timeout: Duration) -> Result<(), ProcessError> {
         {
             let mut state = self.inner.state.lock().await;
-            if matches!(*state, ProcessState::Exited { .. }) {
+            if self.exit_confirmed() {
                 return Ok(());
             }
             *state = ProcessState::Stopping;
@@ -722,16 +728,35 @@ impl LspProcess {
         Ok(())
     }
 
+    fn exit_confirmed(&self) -> bool {
+        if !self.inner.exit.root_reaped.load(Ordering::Acquire) {
+            return false;
+        }
+        #[cfg(windows)]
+        {
+            self.inner.cleanup.job.is_empty().unwrap_or(false)
+        }
+        #[cfg(not(windows))]
+        {
+            true
+        }
+    }
+
     pub async fn wait_for_exit(&self, timeout: Duration) -> bool {
-        if is_finished(&self.state().await) {
-            return true;
+        let deadline = Instant::now() + timeout;
+        loop {
+            if self.exit_confirmed() {
+                return true;
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            if remaining.is_zero() {
+                return false;
+            }
+            tokio::select! {
+                _ = self.inner.exit.notify.notified() => {},
+                _ = sleep(remaining.min(Duration::from_millis(10))) => {},
+            }
         }
-        let notified = self.inner.exit_notify.notified();
-        if timeout.is_zero() {
-            return is_finished(&self.state().await);
-        }
-        let _ = tokio::time::timeout(timeout, notified).await;
-        is_finished(&self.state().await)
     }
 
     fn force_kill(&self) {
@@ -761,13 +786,6 @@ fn map_pending_result(
         },
         Err(_) => Err(RequestError::Disconnected),
     }
-}
-
-fn is_finished(state: &ProcessState) -> bool {
-    matches!(
-        state,
-        ProcessState::Exited { .. } | ProcessState::Failed { .. }
-    )
 }
 
 fn spawn_stdout_task<R>(
@@ -847,7 +865,7 @@ fn spawn_wait_task(
     pending: PendingRequests,
     state: Arc<Mutex<ProcessState>>,
     messages: broadcast::Sender<IncomingMessage>,
-    exit_notify: Arc<Notify>,
+    exit: Arc<ExitSignal>,
     cleanup: ProcessTreeCleanup,
 ) {
     tokio::spawn(async move {
@@ -877,6 +895,7 @@ fn spawn_wait_task(
             // process group has been marked inactive.
             cleanup.terminate();
         }
+        let root_reaped = status.is_ok();
         match status {
             Ok(status) => {
                 let code = status.code();
@@ -899,7 +918,10 @@ fn spawn_wait_task(
                 let _ = messages.send(IncomingMessage::ProtocolError(reason));
             }
         }
-        exit_notify.notify_one();
+        if root_reaped {
+            exit.root_reaped.store(true, Ordering::Release);
+        }
+        exit.notify.notify_waiters();
     });
 }
 

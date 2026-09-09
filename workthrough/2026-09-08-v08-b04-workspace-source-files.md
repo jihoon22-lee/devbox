@@ -111,6 +111,24 @@ before product builds and watches all Workspace fixture scripts. Final affected 
 passed in **314.733 seconds**, cgroup peak **1,576,943,616 bytes** under 8 GiB.
 The packaged retry remains pending.
 
+The shared Windows LSP process owner now creates servers and managed Node version
+probes [suspended](https://learn.microsoft.com/en-us/windows/win32/procthread/process-creation-flags),
+assigns the kill-on-close Job, then resumes the exact child's sole thread. Failed
+assignment/resume reaps the child without a process-only fallback. Probe success,
+errors and timeout terminate and confirm the Job; cancellation closes its owned Job.
+Server exit confirmation requires a reaped root and an empty Job. A protocol failure
+state alone no longer makes manager shutdown report success. The existing Git
+Windows implementation supplied the validated thread-resume pattern; no new runtime
+or dependency package was introduced.
+
+Windows fixtures verify that a suspended child cannot write before assignment, then
+use retained descendant process handles to check normal/hung server shutdown and
+probe success/output limit/failure/timeout/cancellation. Those Windows checks await
+CI. Portable LSP **125 unit + 6 process tests** and strict Clippy passed. Final
+process tests, Workspace **83 Rust tests** and both strict Clippy checks passed in
+**60.332 seconds**, cgroup peak **5,522,358,272 bytes** under 8 GiB. Final affected
+all passed in **392.131 seconds**, cgroup peak **6,443,929,600 bytes** under 8 GiB.
+
 ## Actual verification
 
 The extracted shared UI passed 307 tests and the original native suites passed
