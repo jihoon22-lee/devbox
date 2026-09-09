@@ -167,6 +167,26 @@ describe("LSP document language mapping", () => {
 });
 
 describe("LspDocumentSync", () => {
+  it("publishes a completed native save after an old change failed and retains a newer buffer", async () => {
+    const transport = transportFor([]);
+    const sync = new LspDocumentSync(transport);
+    await sync.setWorkspace("/work"); await sync.setConfig(config());
+    const first = document("baseline", { nativeRevision: "native-1" });
+    await sync.open(first);
+    let reject!: (reason: Error) => void;
+    vi.mocked(transport.change).mockImplementationOnce(() => new Promise((_resolve, rejectChange) => { reject = rejectChange; }));
+    const changing = sync.change({ ...first, text: "saved text", dirty: true });
+    await vi.waitFor(() => expect(reject).toBeTypeOf("function"));
+    const saved = { ...first, text: "saved text", dirty: false, nativeRevision: "native-2" };
+    const current = { ...saved, text: "newer unsaved text", dirty: true };
+    const saving = sync.save(first.id, saved, current);
+    reject(new Error("old native revision"));
+    await Promise.all([changing, saving]);
+    expect(transport.save).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "native-2", "saved text");
+    expect(transport.change).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "newer unsaved text", true, "native-2");
+    await sync.close(first.id);
+  });
+
   it("carries native revisions and reopens buffers after a manually stopped session becomes ready", async () => {
     const transport = transportFor([]);
     const sync = new LspDocumentSync(transport);
@@ -178,7 +198,7 @@ describe("LspDocumentSync", () => {
     await sync.change({ ...first, text: "edited", dirty: true });
     expect(transport.change).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "edited", true, "native-1");
     await sync.save(first.id, { ...first, text: "edited", dirty: false, nativeRevision: "native-2" });
-    expect(transport.save).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "native-2");
+    expect(transport.save).toHaveBeenLastCalledWith("rust", `file://${first.path}`, "native-2", "edited");
     sync.acceptStatusEvent({ languageId: "rust", status: readyStatus({ status: "stopped" }), restarting: false, reason: null });
     expect(sync.documentUri(first.id)).toBeNull();
     sync.acceptStatusEvent({ languageId: "rust", status: readyStatus(), restarting: false, reason: null });

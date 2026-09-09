@@ -240,8 +240,8 @@ export function reloadLspDocument(
   return invoke<LspDidChange>("reload_lsp_document", { languageId, uri, text, ...(isProductHosted() ? { nativeRevision } : {}) });
 }
 
-export function saveLspDocument(languageId: string, uri: string, nativeRevision?: string | null): Promise<LspDidSave> {
-  return invoke<LspDidSave>("save_lsp_document", { languageId, uri, ...(isProductHosted() ? { nativeRevision } : {}) });
+export function saveLspDocument(languageId: string, uri: string, nativeRevision?: string | null, text?: string): Promise<LspDidSave> {
+  return invoke<LspDidSave>("save_lsp_document", { languageId, uri, ...(isProductHosted() ? { nativeRevision, ...(text !== undefined ? { text } : {}) } : {}) });
 }
 
 export function closeLspDocument(languageId: string, uri: string): Promise<LspDidClose> {

@@ -596,8 +596,11 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       durabilityWarning: saved.durabilityWarning,
       ...(saved.nativeRevision !== undefined ? {nativeRevision:saved.nativeRevision} : {}),
     });
-    void lspSync.save(docId, stateRef.current.docs.find(doc => doc.id === docId));
     const latestDoc = stateRef.current.docs.find((item) => item.id === docId);
+    if (latestDoc) void lspSync.save(docId, {
+      ...doc, text: submittedText, dirty: false,
+      ...(saved.nativeRevision !== undefined ? { nativeRevision: saved.nativeRevision } : {}),
+    }, latestDoc);
     return {
       saved,
       matchedSnapshot:

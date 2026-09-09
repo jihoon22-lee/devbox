@@ -99,7 +99,7 @@ export interface LspDocumentTransport {
   open: (languageId: string, path: string, text: string, nativeRevision?: string | null) => Promise<LspDidOpen>;
   change: (languageId: string, uri: string, text: string, dirty: boolean, nativeRevision?: string | null) => Promise<LspDidChange>;
   reload: (languageId: string, uri: string, text: string, nativeRevision?: string | null) => Promise<LspDidChange>;
-  save: (languageId: string, uri: string, nativeRevision?: string | null) => Promise<LspDidSave>;
+  save: (languageId: string, uri: string, nativeRevision?: string | null, text?: string) => Promise<LspDidSave>;
   close: (languageId: string, uri: string) => Promise<LspDidClose>;
   pullDiagnostics: (languageId: string, uri: string) => Promise<LspFeatureResponse<LspDiagnosticResult>>;
   completion: (languageId: string, uri: string, position: LspPosition) => Promise<LspFeatureResponse<LspCompletionResult>>;
@@ -527,20 +527,32 @@ export class LspDocumentSync {
     });
   }
 
-  /** Queue didSave only after the caller has completed the native file save. */
-  save(documentId: string, document?: LspDocumentSnapshot): Promise<void> {
+  /** Publish the exact completed save, then retain a newer editor buffer. */
+  save(documentId: string, document?: LspDocumentSnapshot, currentDocument?: LspDocumentSnapshot): Promise<void> {
     const state = this.documents.get(documentId);
-    if (state && document) state.doc = document;
     if (!state || !state.active || state.closing || !state.languageId) return Promise.resolve();
+    const savedDocument = document ?? state.doc;
+    const current = currentDocument ?? savedDocument;
+    state.doc = current;
     const languageId = state.languageId;
     const generation = state.generation;
     return this.enqueue(state, async () => {
       if (!this.isCurrent(state, generation, true) || state.languageId !== languageId) return;
+      if (savedDocument.nativeRevision !== undefined && state.doc.nativeRevision !== savedDocument.nativeRevision) return;
       try {
-        const opened = await this.ensureOpen(state, generation, languageId, state.doc.text);
+        const opened = await this.ensureOpen(state, generation, languageId, savedDocument.text);
         if (!opened || !this.isCurrent(state, generation, true)) return;
-        const saved = await this.transport.save(languageId, opened.uri, ...nativeRevision(state.doc));
+        const saved = savedDocument.nativeRevision === undefined
+          ? await this.transport.save(languageId, opened.uri)
+          : await this.transport.save(languageId, opened.uri, savedDocument.nativeRevision, savedDocument.text);
         opened.version = saved.version;
+        opened.text = savedDocument.text;
+        if (current.text !== savedDocument.text && this.isCurrent(state, generation, true)
+          && current.nativeRevision === state.doc.nativeRevision) {
+          const changed = await this.transport.change(languageId, opened.uri, current.text, current.dirty, ...nativeRevision(current));
+          opened.version = changed.version;
+          opened.text = current.text;
+        }
         this.scheduleDiagnostics(documentId, generation);
       } catch (cause) {
         if (this.isCurrent(state, generation, true)) this.recordError(cause);

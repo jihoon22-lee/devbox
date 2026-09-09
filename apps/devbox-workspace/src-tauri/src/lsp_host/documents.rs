@@ -33,7 +33,7 @@ pub(super) fn allowed(method: &str) -> bool {
 pub(super) fn text_request(method: &str) -> bool {
     matches!(
         method,
-        "open_lsp_document" | "change_lsp_document" | "reload_lsp_document"
+        "open_lsp_document" | "change_lsp_document" | "reload_lsp_document" | "save_lsp_document"
     )
 }
 
@@ -84,6 +84,8 @@ pub(super) enum Method {
         language_id: String,
         uri: String,
         native_revision: String,
+        #[serde(default)]
+        text: Option<String>,
     },
     CloseLspDocument {
         language_id: String,
@@ -161,6 +163,16 @@ impl Method {
                 || native_revision.is_empty() =>
             {
                 return Err("invalid_request")
+            }
+            Self::SaveLspDocument {
+                text: Some(text),
+                native_revision,
+                ..
+            } if text.len() > 16 * 1024 * 1024
+                || native_revision.is_empty()
+                || native_revision.len() > 128 =>
+            {
+                return Err("invalid_request");
             }
             _ => {}
         }
@@ -469,12 +481,25 @@ impl Documents {
                 super::actor::value(changed)
             }
             Method::SaveLspDocument {
-                language_id, uri, ..
+                language_id,
+                uri,
+                text,
+                ..
             } => {
-                if native.dirty(&binding.text) {
+                // A disk save can rotate its native revision before an older
+                // queued didChange arrives. Only exact saved baseline text may
+                // repair that LSP snapshot. Keep the Files owner's newer buffer
+                // acknowledgement intact while publishing this earlier save.
+                let text = text.unwrap_or_else(|| binding.text.clone());
+                if native.dirty(&text) {
                     return Err("file_snapshot_changed");
                 }
-                let text = binding.text.clone();
+                if binding.text != text {
+                    manager
+                        .reload_document(&language_id, &uri, text.clone())
+                        .await
+                        .map_err(control_error)?;
+                }
                 let saved = manager
                     .save_document(&language_id, &uri)
                     .await

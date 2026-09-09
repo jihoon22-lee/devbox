@@ -266,3 +266,13 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 같은 Windows run의 Knowledge WSL1 fixture는 검색 작업 retirement 후 전용 corpus를 Linux에서 옮길 때 Permission denied로 실패했다. Windows redirector handle 지연을 고려해 동일한 전용 `mv -T`의 명시적 permission-denied 결과만 10초 내 재시도한다. timeout/signal/다른 결과는 반복하지 않으며 실제 이동과 후속 offline/reconnect 검사는 계속 필수다. 성공 시 시도 횟수를 artifact에 남긴다. JavaScript syntax check PASS; 실제 재실행은 아직 하지 않았다.
 
 - 위 변경의 최종 `pnpm verify:affected` all **485.173초 / peak 5,443,448,832 bytes / 8 GiB** PASS. GUI를 포함한 기존 desktop consumer들도 이 실행에서 검증했다. `4dda0c5`의 [일반 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34341801216)는 Windows Rust와 dependency policy를 포함해 PASS했다. 수정한 설치 UI/WSL1 fixture 및 템플릿 편집은 다음 Windows head에서 확인한다.
+
+
+## 저장 완료와 LSP 문서 revision 동기화
+
+- `df28e1c` [제품 Windows 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34345048429)은 템플릿 편집 15개, 창 상태 7개, Source 22개·Files 9개, 이전 Code Pad와 세션/복구/LSP 설정 import/repeat/restore, Rust·Node archive import/cache, 실제 LSP 실행 승인·초기 hover를 통과했다. Knowledge의 전용 WSL corpus 이동과 후속 검증도 통과했다. artifact source는 `cd22645fa13838c84090edb8049cd708c286bbd7`다. 실제 편집/저장 후 두 번째 hover가 `file_snapshot_changed`로 실패해 전체 packaged 수용은 FAIL이다.
+- 저장 완료는 실제 제출한 text A와 반환된 native revision을 고정한다. 이전 revision의 didChange가 늦게 거부되어도 didSave에서 현재 disk/hash와 일치하는 A를 재동기화한다. 이후 입력 B가 있으면 didSave 뒤에 보내며 Files의 dirty hash를 중간에 지우지 않는다. stale/위조 saved text와 더 최신 native revision은 거부하거나 오래된 알림을 건너뛴다.
+- 집중 native LSP actor 회귀, TS save/change ordering와 API 테스트, 두 consumer build PASS(**55.063초 / peak 2,779,910,144 bytes / 8 GiB**). 실제 두 번째 hover와 전체 journal 복구는 다음 Windows run으로 확인한다.
+- 같은 head의 [일반 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34345048518)는 카탈로그의 정규식이 Code Pad의 optional dependency 표기를 놓쳐 FAIL했다. 검사기는 해당 TOML 선언과 default feature의 전이 의존성을 읽어 기본 desktop의 단일 인스턴스 플러그인을 확인한다. 다른 Cargo 의존성의 TOML 1.1 multiline table은 Python TOML 1.0 parser에 넣지 않는다.
+
+- 현재 작업 트리의 최종 `pnpm verify:affected` all **976.231초 / peak 6,445,092,864 bytes / 8 GiB PASS**. 공유 Cargo feature 변경으로 기존 앱 테스트 바이너리도 재빌드했다. Windows 실행 결과는 다음 CI에서 확인한다.

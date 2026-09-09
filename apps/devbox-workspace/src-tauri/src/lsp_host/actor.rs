@@ -669,6 +669,9 @@ mod tests {
             .await
             .unwrap();
         assert!(!hover["stale"].as_bool().unwrap());
+        // A newer editor acknowledgement can reach LSP while an earlier disk
+        // save is still in progress. Publishing the save must retain that buffer.
+        actor.request("change_lsp_document",json!({"languageId":"rust","uri":uri,"text":"let value = 99;\n","dirty":true,"nativeRevision":revision}),u64::MAX,None).await.unwrap();
         // The native Files owner commits and rotates its revision before didSave.
         let saved = {
             let mut files = files.lock().unwrap();
@@ -688,15 +691,36 @@ mod tests {
                 )
                 .unwrap()
         };
+        assert_eq!(
+            actor
+                .request(
+                    "save_lsp_document",
+                    json!({"languageId":"rust","uri":uri,"nativeRevision":saved}),
+                    u64::MAX,
+                    None
+                )
+                .await
+                .unwrap_err(),
+            "file_snapshot_changed"
+        );
+        assert_eq!(actor.request("save_lsp_document",json!({"languageId":"rust","uri":uri,"nativeRevision":saved,"text":"forged saved text"}),u64::MAX,None).await.unwrap_err(),"file_snapshot_changed");
         actor
             .request(
                 "save_lsp_document",
-                json!({"languageId":"rust","uri":uri,"nativeRevision":saved}),
+                json!({"languageId":"rust","uri":uri,"nativeRevision":saved,"text":"let value = 2;\n"}),
                 u64::MAX,
                 None,
             )
             .await
             .unwrap();
+        assert_eq!(
+            files
+                .lock()
+                .unwrap()
+                .guard_editor_write(&fixture.context, &opened.path),
+            Err("lsp_dirty_editor_document")
+        );
+        actor.request("change_lsp_document",json!({"languageId":"rust","uri":uri,"text":"let value = 2;\n","dirty":false,"nativeRevision":saved}),u64::MAX,None).await.unwrap();
         assert_eq!(actor.request("change_lsp_document",json!({"languageId":"rust","uri":uri,"text":"old","dirty":true,"nativeRevision":revision}),u64::MAX,None).await.unwrap_err(),"file_snapshot_changed");
         actor
             .request(
