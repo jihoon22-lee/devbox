@@ -26,7 +26,7 @@ devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 devbox-git = { package = "git", path = "../../../crates/git" }
 workbench = { path = "../../workbench/src-tauri", default-features = false }
-code-pad = { path = "../../code-pad/src-tauri", default-features = false }
+code-pad = { path = "../../code-pad/src-tauri", default-features = false, features = ["desktop"] }
 repo-manager = { path = "../../repo-manager/src-tauri", default-features = false }
 
 sha2 = "0.11.0"

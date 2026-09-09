@@ -8,8 +8,11 @@ use crate::core::session::Session;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "desktop")]
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "desktop")]
 use tauri::AppHandle;
 
 #[cfg(unix)]
@@ -27,6 +30,7 @@ pub struct LoadedSession {
     pub persist_allowed: bool,
 }
 
+#[cfg(feature = "desktop")]
 pub fn session_path(app: &AppHandle) -> Result<PathBuf, String> {
     crate::component::data_root(app)
         .map(|directory| directory.join(SESSION_FILE_NAME))
@@ -174,6 +178,7 @@ fn sync_parent(_path: &Path) -> io::Result<()> {
 }
 
 /// Tauri command for restoring persisted metadata.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
     let path = session_path(&app)?;
@@ -184,6 +189,7 @@ pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
 
 /// Tauri command for writing persisted metadata.  The core validator rejects
 /// malformed view/document relationships before anything reaches disk.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String> {
     session.validate().map_err(|error| error.to_string())?;
@@ -198,6 +204,7 @@ pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_load_session(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -211,6 +218,7 @@ pub(crate) async fn __component_load_session(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_save_session(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,

@@ -1,10 +1,16 @@
 pub mod file;
+#[cfg(feature = "desktop")]
 pub mod folder;
+#[cfg(feature = "desktop")]
 pub mod installer;
+#[cfg(feature = "desktop")]
 pub mod lsp;
+#[cfg(feature = "desktop")]
 pub mod preview;
+#[cfg(feature = "desktop")]
 pub mod recovery;
 pub mod session;
+#[cfg(feature = "desktop")]
 pub mod watch {
     use crate::watcher::WatcherManager;
     use std::path::Path;

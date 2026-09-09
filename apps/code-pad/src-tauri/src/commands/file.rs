@@ -15,6 +15,7 @@ use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
+#[cfg(feature = "desktop")]
 use tauri_plugin_opener::OpenerExt;
 
 #[derive(Debug, Clone, Serialize)]
@@ -770,6 +771,7 @@ pub fn parse_epoch_nanos(value: &str) -> Result<i64, FileError> {
     i64::try_from(parsed).map_err(|_| FileError::InvalidMtime(value.to_string()))
 }
 
+#[cfg(feature = "desktop")]
 fn expected_snapshot(request: &FileActionRequest) -> Result<ExpectedFileSnapshot<'_>, FileError> {
     Ok(ExpectedFileSnapshot {
         mtime: parse_epoch_nanos(&request.expected_mtime_nanos)?,
@@ -913,6 +915,7 @@ pub fn delete_path(path: &Path, expected: ExpectedFileSnapshot<'_>) -> Result<()
 }
 
 /// Tauri command for opening one file.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -926,6 +929,7 @@ pub async fn open_file(request: OpenFileRequest) -> Result<OpenedFileWire, Strin
 
 /// Tauri command for saving one file. The timestamp is intentionally a decimal
 /// string (`expectedMtimeNanos`) so JavaScript cannot round an epoch `i64`.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -954,6 +958,7 @@ pub async fn save_file(request: SaveFileRequest) -> Result<SavedFileWire, String
 /// Rename only the currently-open file, after an exact disk snapshot check.
 /// Error strings are deliberately generic so arbitrary paths and OS details do
 /// not cross the command boundary.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFileWire, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -967,6 +972,7 @@ pub async fn rename_file_action(request: RenameFileRequest) -> Result<RenamedFil
 }
 
 /// Delete only the currently-open regular file after an exact snapshot check.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -981,6 +987,7 @@ pub async fn delete_file_action(request: FileActionRequest) -> Result<(), String
 
 /// Reveal a canonical existing regular file without returning its path or the
 /// platform opener's detailed error to the frontend.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let canonical =
@@ -993,6 +1000,7 @@ pub async fn reveal_file_action(app: tauri::AppHandle, path: String) -> Result<(
 /// Validates a prospective save encoding without touching the target file.
 /// This is used by the status-bar conversion control so a metadata change is
 /// only committed after CP949 (or another strict encoder) accepts the buffer.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn validate_encoding(request: ValidateEncodingRequest) -> Result<(), String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -1394,6 +1402,7 @@ fn sync_parent(_target: &Path) -> Result<(), FileError> {
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_open_file(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -1409,6 +1418,7 @@ pub(crate) async fn __component_open_file(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_save_file(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -1424,6 +1434,7 @@ pub(crate) async fn __component_save_file(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_rename_file_action(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -1439,6 +1450,7 @@ pub(crate) async fn __component_rename_file_action(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_delete_file_action(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -1454,6 +1466,7 @@ pub(crate) async fn __component_delete_file_action(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_reveal_file_action(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -1469,6 +1482,7 @@ pub(crate) async fn __component_reveal_file_action(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_validate_encoding(
     _component_app: &tauri::AppHandle,
     args: serde_json::Value,
@@ -1559,6 +1573,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "desktop")]
     fn open_wire_timestamp_roundtrips_into_save_without_number_conversion() {
         let (_directory, path) = temp_file("wire.txt", b"one\n");
         let opened = tauri::async_runtime::block_on(open_file(OpenFileRequest {
@@ -1884,6 +1899,7 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "desktop")]
     fn mutation_commands_do_not_echo_untrusted_paths_in_errors() {
         let untrusted = "/secret/example.txt";
         let request = FileActionRequest {

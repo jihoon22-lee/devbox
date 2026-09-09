@@ -85,3 +85,13 @@ Its shared frontend and tests now live in `packages/workspace-features/src/files
 The optional native `standalone` feature is enabled by default; Workspace can
 reuse the typed component adapter without embedding the legacy frontend or calling
 its startup. B04 product integration and platform acceptance remain in progress.
+
+
+### GUI 없이 native 코어 재사용
+
+기본 `standalone`은 `desktop`을 포함해 기존 Windows 앱을 유지한다. 제품의 Tauri
+component 사용자는 `default-features = false, features = ["desktop"]`을 지정한다.
+`--no-default-features`는 파일 encoding/atomic save·세션 codec과 LSP native 코어만
+컴파일하며 Tauri/GTK/WebKit·window/app-link adapter를 포함하지 않는다. WSL 내부
+실행 파일에서 같은 저장·WorkspaceEdit 규칙을 재사용하기 위한 경계이며, 이 feature만으로
+WSL 연결이나 배포판 실행을 제공하지 않는다.
