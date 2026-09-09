@@ -36,7 +36,7 @@ import {Script} from "node:vm";
 const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
 test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
   let checked=0;
-  for(const name of ["registration","definitions","dependencies","source","files","session-import","lsp"]){
+  for(const name of ["registration","definitions","dependencies","source","files","session-import","template-import","lsp"]){
     const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
     const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));

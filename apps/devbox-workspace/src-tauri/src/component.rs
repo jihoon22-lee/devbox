@@ -166,6 +166,9 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                             | "preview_profile_import"
                             | "cancel_profile_import"
                             | "apply_profile_import"
+                            | "preview_template_import"
+                            | "cancel_template_import"
+                            | "apply_template_import"
                             | "legacy_workspace"
                     ))
         }
@@ -174,6 +177,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
             "snapshot"
                 | "preview_windows"
                 | "preview_imported_profile_windows"
+                | "preview_template_profile_windows"
                 | "preview_legacy_workspace_windows"
                 | "unbind_imported_profile"
                 | "cancel_registration"
@@ -759,6 +763,18 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 .projects()?
                 .preview_profile_import(snapshot_id, profiles)?))
         }
+        "preview_template_import" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Job {
+                job_id: String,
+            }
+            let value: Job = input(args)?;
+            let (snapshot_id, templates) = host.legacy.template_source(&value.job_id)?;
+            Ok(json!(host
+                .projects()?
+                .preview_template_import(snapshot_id, templates)?))
+        }
         "legacy_workspace" | "preview_legacy_workspace_windows" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -776,6 +792,21 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 })
                 .ok_or("legacy_workspace_unsupported")?;
             Ok(json!(host.projects()?.preview_windows(&proposal.path)?))
+        }
+        "preview_template_profile_windows" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Template {
+                template_id: String,
+                root: String,
+                name: String,
+            }
+            let value: Template = input(args)?;
+            Ok(json!(host.projects()?.preview_template_profile_windows(
+                &value.template_id,
+                &value.root,
+                &value.name
+            )?))
         }
         "preview_imported_profile_windows" => {
             #[derive(Deserialize)]
@@ -824,6 +855,29 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             }
             let value: Cancel = input(args)?;
             host.projects()?.cancel_profile_import(&value.preview_id)?;
+            Ok(Value::Null)
+        }
+        "apply_template_import" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Apply {
+                preview_id: String,
+                choices: Vec<crate::core::legacy_profiles::Choice>,
+            }
+            let value: Apply = input(args)?;
+            let (registry, result) = host
+                .projects()?
+                .apply_template_import(&value.preview_id, value.choices)?;
+            Ok(json!({"registry":registry,"result":result}))
+        }
+        "cancel_template_import" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Cancel {
+                preview_id: String,
+            }
+            let value: Cancel = input(args)?;
+            host.projects()?.cancel_template_import(&value.preview_id)?;
             Ok(Value::Null)
         }
         "verify_legacy_snapshot" => {
@@ -897,6 +951,7 @@ fn project_probe(method: &str) -> bool {
         method,
         "preview_windows"
             | "preview_imported_profile_windows"
+            | "preview_template_profile_windows"
             | "preview_legacy_workspace_windows"
             | "select_project"
     )
@@ -1482,11 +1537,22 @@ mod tests {
         for method in [
             "preview_windows",
             "preview_imported_profile_windows",
+            "preview_template_profile_windows",
             "preview_legacy_workspace_windows",
             "select_project",
         ] {
             assert!(project_probe(method));
             assert!(allowed("workspace.registry", "overview", method));
+        }
+        for method in [
+            "preview_template_import",
+            "apply_template_import",
+            "cancel_template_import",
+        ] {
+            assert!(allowed("workspace.migration", "overview", method));
+            assert!(!allowed("workspace.migration", "files", method));
+            assert!(!allowed("workspace.registry", "overview", method));
+            assert!(!project_probe(method));
         }
         assert!(!project_probe("legacy_workspace"));
         assert!(allowed(

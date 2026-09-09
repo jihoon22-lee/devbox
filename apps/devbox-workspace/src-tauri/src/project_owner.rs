@@ -3,7 +3,7 @@
 //! the host calls blocking methods only inside its bounded IO worker.
 use crate::{
     core::{
-        legacy_profiles,
+        legacy_profiles, legacy_templates,
         registry::{Binding, Discovery, Registry},
         registry_store::RegistryStore,
     },
@@ -30,6 +30,7 @@ pub struct RegistrationPreview {
     pub binding: Binding,
     pub discovery: Discovery,
     pub imported_profile_id: Option<String>,
+    pub template_profile: Option<legacy_profiles::ImportedProfile>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -44,6 +45,7 @@ struct Pending {
     discovery: Discovery,
     created: Instant,
     imported_profile_id: Option<String>,
+    template_profile: Option<legacy_profiles::ImportedProfile>,
 }
 struct PendingProfileImport {
     plan: legacy_profiles::Plan,
@@ -55,10 +57,21 @@ pub struct ProfileImportPreview {
     preview_id: String,
     plan: legacy_profiles::Plan,
 }
+struct PendingTemplateImport {
+    plan: legacy_templates::Plan,
+    created: Instant,
+}
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TemplateImportPreview {
+    preview_id: String,
+    plan: legacy_templates::Plan,
+}
 pub struct ProjectOwner {
     store: RegistryStore,
     pending: Mutex<HashMap<String, Pending>>,
     pending_profile_imports: Mutex<HashMap<String, PendingProfileImport>>,
+    pending_template_imports: Mutex<HashMap<String, PendingTemplateImport>>,
 }
 impl ProjectOwner {
     #[cfg(test)]
@@ -80,6 +93,7 @@ impl ProjectOwner {
             store: RegistryStore::open(generation)?,
             pending: Mutex::new(HashMap::new()),
             pending_profile_imports: Mutex::new(HashMap::new()),
+            pending_template_imports: Mutex::new(HashMap::new()),
         })
     }
     pub fn snapshot(&self) -> Result<Registry> {
@@ -129,6 +143,56 @@ impl ProjectOwner {
             .ok_or("legacy_profile_review_stale")?;
         if pending.created.elapsed() >= PREVIEW_TTL {
             return Err("legacy_profile_review_stale");
+        }
+        self.store
+            .update(pending.plan.registry_revision, |registry| {
+                pending.plan.apply(registry, choices)
+            })
+    }
+    pub(crate) fn preview_template_import(
+        &self,
+        snapshot_id: String,
+        source: workbench_lib::component::ProfileTemplateStore,
+    ) -> Result<TemplateImportPreview> {
+        self.expire()?;
+        let plan = legacy_templates::Plan::build(snapshot_id, source, &self.snapshot()?)?;
+        let mut pending = self
+            .pending_template_imports
+            .lock()
+            .map_err(|_| "registry_owner_busy")?;
+        if pending.len() >= 4 {
+            return Err("legacy_template_review_limit");
+        }
+        let preview_id = uuid::Uuid::new_v4().to_string();
+        pending.insert(
+            preview_id.clone(),
+            PendingTemplateImport {
+                plan: plan.clone(),
+                created: Instant::now(),
+            },
+        );
+        Ok(TemplateImportPreview { preview_id, plan })
+    }
+    pub(crate) fn cancel_template_import(&self, preview_id: &str) -> Result<()> {
+        self.pending_template_imports
+            .lock()
+            .map_err(|_| "registry_owner_busy")?
+            .remove(preview_id);
+        Ok(())
+    }
+    pub(crate) fn apply_template_import(
+        &self,
+        preview_id: &str,
+        choices: Vec<legacy_profiles::Choice>,
+    ) -> Result<(Registry, legacy_profiles::Applied)> {
+        let pending = self
+            .pending_template_imports
+            .lock()
+            .map_err(|_| "registry_owner_busy")?
+            .remove(preview_id)
+            .ok_or("legacy_template_review_stale")?;
+        if pending.created.elapsed() >= PREVIEW_TTL {
+            return Err("legacy_template_review_stale");
         }
         self.store
             .update(pending.plan.registry_revision, |registry| {
@@ -200,6 +264,48 @@ impl ProjectOwner {
             Some(imported_id.into()),
         )
     }
+    pub(crate) fn preview_template_profile_windows(
+        &self,
+        template_id: &str,
+        root: &str,
+        name: &str,
+    ) -> Result<RegistrationPreview> {
+        let registry = self.snapshot()?;
+        let template = registry
+            .imported_templates
+            .iter()
+            .find(|template| template.id == template_id)
+            .ok_or("unknown_imported_template")?;
+        // Validate the concrete input before opening an external filesystem.
+        let mut profile = workbench_lib::component::ProjectProfile::new(name);
+        profile.windows_path = Some(root.into());
+        let profile = template
+            .template
+            .apply_to_profile(profile)
+            .map_err(|_| "invalid_imported_profile")?;
+        let lease = probe_windows(root)?;
+        self.prepare_template_binding(registry.revision, lease, template, profile)
+    }
+    fn prepare_template_binding(
+        &self,
+        revision: u64,
+        lease: ProjectLease,
+        template: &legacy_templates::ImportedTemplate,
+        mut profile: workbench_lib::component::ProjectProfile,
+    ) -> Result<RegistrationPreview> {
+        // The native probe, not the supplied spelling, owns the actual binding.
+        if lease.binding().target == product_contract::ExecutionTarget::Windows {
+            profile.windows_path = Some(lease.binding().root.clone());
+        }
+        let candidate = legacy_profiles::ImportedProfile {
+            id: uuid::Uuid::new_v4().to_string(),
+            source_snapshot_id: template.source_snapshot_id.clone(),
+            source_template_id: Some(template.id.clone()),
+            profile,
+        };
+        candidate.validate()?;
+        self.prepare_candidate(revision, lease, None, Some(candidate))
+    }
     pub(crate) fn unbind_imported_profile(
         &self,
         revision: u64,
@@ -221,6 +327,15 @@ impl ProjectOwner {
         lease: ProjectLease,
         imported_profile_id: Option<String>,
     ) -> Result<RegistrationPreview> {
+        self.prepare_candidate(revision, lease, imported_profile_id, None)
+    }
+    fn prepare_candidate(
+        &self,
+        revision: u64,
+        lease: ProjectLease,
+        imported_profile_id: Option<String>,
+        template_profile: Option<legacy_profiles::ImportedProfile>,
+    ) -> Result<RegistrationPreview> {
         let registry = self.store.read()?;
         if revision != registry.revision {
             return Err("stale_registry");
@@ -234,6 +349,7 @@ impl ProjectOwner {
             binding: lease.binding().clone(),
             discovery: discovery.clone(),
             imported_profile_id: imported_profile_id.clone(),
+            template_profile: template_profile.clone(),
         };
         self.expire()?;
         let mut pending = self.pending.lock().map_err(|_| "registry_owner_busy")?;
@@ -248,6 +364,7 @@ impl ProjectOwner {
                 discovery,
                 created: Instant::now(),
                 imported_profile_id,
+                template_profile,
             },
         );
         Ok(preview)
@@ -275,6 +392,10 @@ impl ProjectOwner {
         };
         drop(expired);
         self.pending_profile_imports
+            .lock()
+            .map_err(|_| "registry_owner_busy")?
+            .retain(|_, value| value.created.elapsed() < PREVIEW_TTL);
+        self.pending_template_imports
             .lock()
             .map_err(|_| "registry_owner_busy")?
             .retain(|_, value| value.created.elapsed() < PREVIEW_TTL);
@@ -315,6 +436,13 @@ impl ProjectOwner {
                 ) => registry.rebind(pending.revision, context, binding)?,
                 _ => return Err("project_review_action_mismatch"),
             };
+            if let Some(mut candidate) = pending.template_profile {
+                candidate.profile.name = name.into();
+                candidate.validate()?;
+                let id = candidate.id.clone();
+                registry.imported_profiles.push(candidate);
+                registry.bind_imported_profile(registry.revision, &id, &context)?;
+            }
             if let Some(imported_id) = &pending.imported_profile_id {
                 registry.bind_imported_profile(registry.revision, imported_id, &context)?;
             }
@@ -366,6 +494,143 @@ impl ProjectOwner {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn template_tokens_and_concrete_profile_creation_share_the_native_registry_commit() {
+        use legacy_profiles::{Choice, Decision};
+        use workbench_lib::component::{
+            ProfileTemplate, ProfileTemplateStore, ProjectProfile, WslProfile,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let owner = ProjectOwner::open(directory.path()).unwrap();
+        let mut template = ProfileTemplate::new("보관한 기본값");
+        template.expected_ports = vec![4321];
+        template.run_manager_service_ids = vec!["old-service".into()];
+        template.wsl = Some(WslProfile {
+            distro: "Missing fixture distro".into(),
+            path: "/fixture".into(),
+        });
+        let source = || ProfileTemplateStore {
+            version: 1,
+            templates: vec![template.clone()],
+        };
+        let choices = || {
+            vec![Choice {
+                source_id: template.id.clone(),
+                decision: Decision::Import,
+            }]
+        };
+        let cancelled = owner
+            .preview_template_import("a".repeat(64), source())
+            .unwrap();
+        owner.cancel_template_import(&cancelled.preview_id).unwrap();
+        assert!(matches!(
+            owner.apply_template_import(&cancelled.preview_id, choices()),
+            Err("legacy_template_review_stale")
+        ));
+        let expired = owner
+            .preview_template_import("a".repeat(64), source())
+            .unwrap();
+        owner
+            .pending_template_imports
+            .lock()
+            .unwrap()
+            .get_mut(&expired.preview_id)
+            .unwrap()
+            .created = Instant::now() - PREVIEW_TTL;
+        assert!(matches!(
+            owner.apply_template_import(&expired.preview_id, choices()),
+            Err("legacy_template_review_stale")
+        ));
+        let preview = owner
+            .preview_template_import("a".repeat(64), source())
+            .unwrap();
+        let stale = owner
+            .preview_template_import("a".repeat(64), source())
+            .unwrap();
+        let (saved, _) = owner
+            .apply_template_import(&preview.preview_id, choices())
+            .unwrap();
+        assert!(matches!(
+            owner.apply_template_import(&preview.preview_id, choices()),
+            Err("legacy_template_review_stale")
+        ));
+        assert!(matches!(
+            owner.apply_template_import(&stale.preview_id, choices()),
+            Err("stale_registry")
+        ));
+        assert!(saved.projects.is_empty() && saved.imported_profiles.is_empty());
+        let imported = &saved.imported_templates[0];
+        let create_preview = || {
+            let mut profile = ProjectProfile::new("구체적인 프로젝트");
+            profile.windows_path = Some(if cfg!(windows) {
+                root.path().to_string_lossy().into_owned()
+            } else {
+                "C:\\fixture".into()
+            });
+            let profile = imported.template.apply_to_profile(profile).unwrap();
+            owner
+                .prepare_template_binding(
+                    owner.snapshot().unwrap().revision,
+                    crate::platform::project_probe::probe_fixture(root.path()).unwrap(),
+                    imported,
+                    profile,
+                )
+                .unwrap()
+        };
+        let cancelled = create_preview();
+        assert!(cancelled
+            .template_profile
+            .as_ref()
+            .unwrap()
+            .profile
+            .environment
+            .is_none());
+        owner.cancel(&cancelled.preview_id).unwrap();
+        assert_eq!(owner.snapshot().unwrap(), saved);
+        let preview = create_preview();
+        let (registered, context) = owner
+            .apply(
+                &preview.preview_id,
+                "검토한 이름",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        let profile = registered.imported_profile_for(&context).unwrap().unwrap();
+        assert_eq!(
+            profile.source_template_id.as_deref(),
+            Some(imported.id.as_str())
+        );
+        assert_eq!(profile.source_snapshot_id, imported.source_snapshot_id);
+        assert_ne!(profile.profile.id, template.id);
+        assert_eq!(profile.profile.name, "검토한 이름");
+        assert_eq!(profile.profile.expected_ports, vec![4321]);
+        assert!(profile.profile.environment.is_none());
+        assert!(registered.worktrees[0].trusted_digest.is_none());
+        assert_eq!(registered.imported_templates, saved.imported_templates);
+        let conflicting = create_preview();
+        assert!(matches!(
+            owner.apply(
+                &conflicting.preview_id,
+                "conflict",
+                RegistrationAction::Register
+            ),
+            Err("legacy_profile_binding_conflict")
+        ));
+        assert_eq!(owner.snapshot().unwrap(), registered);
+        drop(owner);
+        let reopened = ProjectOwner::open(directory.path())
+            .unwrap()
+            .snapshot()
+            .unwrap();
+        assert_eq!(reopened, registered);
+        let mut invalid = reopened;
+        invalid.imported_templates.clear();
+        assert_eq!(
+            invalid.validate(),
+            Err("invalid_imported_template_reference")
+        );
+    }
     #[test]
     fn imported_registration_commits_its_binding_atomically_and_keeps_conflicting_metadata() {
         use crate::core::legacy_profiles::{Choice, Decision};

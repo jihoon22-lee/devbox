@@ -14,4 +14,5 @@ pub mod git_config;
 pub(crate) mod source_operations;
 
 pub mod legacy_lsp;
+pub mod legacy_templates;
 pub mod legacy_workspace;

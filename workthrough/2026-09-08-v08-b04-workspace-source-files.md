@@ -198,3 +198,10 @@ Reverting product code does not delete legacy snapshots, imported destination da
 preimages or new user edits. Native journal recovery owns filesystem rollback and
 may preserve partial results. Suite migration/activation/installer rollback and
 exact-main stable promotion belong to B08/B09; this draft provides no release claim.
+
+## Workbench 템플릿 가져오기와 프로젝트 생성
+
+- 기존 `ProfileTemplateStore`의 bounded strict 검증을 재사용한다. 검증 완료한 Workbench 보관 작업 ID로만 읽으며 원래 ID·이름·빈 경로·WSL·Git·포트·서비스 기본값을 Registry의 독립 사본으로 보관한다. import/reuse/keep-both/skip은 revision·원본 사본 digest·one-use 만료 token과 최종 byte CAS를 확인하고 기존 프로필·프로젝트를 유지한다.
+- 프로젝트 관리에서 템플릿과 실제 Windows 폴더를 선택하고 native probe 결과를 검토한다. 등록, 새 프로필 ID와 실제 템플릿 출처 기록, 폴더 연결을 하나의 Registry 저장으로 반영한다. 환경 데이터는 비어 있고 현재 선택·실행 신뢰는 별도다. 취소·기존 폴더 연결 충돌은 저장을 남기지 않는다.
+- Rust template/owner/route 검증과 strict Clippy, Workspace UI **44개**, build, 생성된 Windows fixture 표현식 **5개** PASS(44.074초, peak 3,887,083,520 bytes/8 GiB). 후속 UI 상태 표시 정리까지 포함한 최종 `pnpm verify:affected`는 all을 선택해 **445.250초 / peak 6,198,820,864 bytes / 8 GiB**로 PASS했다. 초기 집중 실행에서 잘못된 pnpm filter로 UI가 선택되지 않은 결과는 UI PASS에서 제외하고 올바른 `devbox-workspace` filter로 위 검증을 실행했다.
+- `.github/scripts/windows-workspace-template-import.mjs`는 hosted 전용 원본의 byte 보존·원본 없이 보관본 읽기·repeat/replay·실제 템플릿 생성 UI·출처/원자적 연결·선택/신뢰 미변경·해제 후 데이터 보존을 검사한다. 새 fixture의 Windows 실행, 템플릿 편집·WSL 생성, 기존 window mapping은 미완료다. 앞선 `7d857f8` [Windows 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34332819276)은 native authority/WAL 테스트 단계 실패로 packaged shell/복구/LSP 실행을 건너뛰었다. 실패 상세는 해당 job 로그 완료 후 확인한다.

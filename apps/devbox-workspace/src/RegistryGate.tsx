@@ -2,18 +2,20 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
 import LegacyImports from "./LegacyImports";
+import {TemplateMetadata,type ImportedTemplate} from "./LegacyTemplateImport";
 import {ProfileMetadata,type ImportedProfile,type ProfileBinding} from "./LegacyProfileImport";
 
 type Status = {phase: "loading" | "setup" | "selected" | "failed"; issue?: string};
 export interface Worktree {id: string; projectId: string; revision: number; binding: {root: string; target: ProjectContext["target"]}; trustedDigest: string | null}
-export interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[];importedProfiles?:ImportedProfile[];importedProfileBindings?:ProfileBinding[]}
-interface Preview {previewId: string; binding: Worktree["binding"]; importedProfileId?:string|null;discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
+export interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[];importedProfiles?:ImportedProfile[];importedTemplates?:ImportedTemplate[];importedProfileBindings?:ProfileBinding[]}
+interface Preview {previewId: string; binding: Worktree["binding"]; importedProfileId?:string|null;templateProfile?:ImportedProfile|null;discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
 export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot, suggestedRoot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void; suggestedRoot?: {id:string;path:string;name:string}|null}) {
   const [status, setStatus] = useState<Status>({phase:"loading"});
   const [registry, setRegistry] = useState<Registry | null>(null);
+  const [templateId,setTemplateId]=useState("");
   const [root, setRoot] = useState("");
   const [name, setName] = useState("");
   const [preview, setPreview] = useState<Preview | null>(null);
@@ -73,7 +75,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
     handledSuggestion.current=suggestedRoot.id;
     void act(async()=>{
       if(preview)await cancelPreview();
-      setRoot(suggestedRoot.path);setName(suggestedRoot.name);
+      setRoot(suggestedRoot.path);setName(suggestedRoot.name);setTemplateId("");
       const next=await registryCall<Preview>("preview_windows",{root:suggestedRoot.path});
       if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
       currentPreview.current=next.previewId;setPreview(next);
@@ -102,10 +104,13 @@ export default function RegistryGate({context = null, onContextChanged = async (
       <button disabled={busy} onClick={() => void act(refresh)}>목록 새로 고침</button>
       <form onSubmit={event => {event.preventDefault(); void act(async () => {
         if (preview) await cancelPreview();
-        const next = await registryCall<Preview>("preview_windows", {root});
+        const next = templateId?await registryCall<Preview>("preview_template_profile_windows",{templateId,root,name:name||registry?.importedTemplates?.find(template=>template.id===templateId)?.template.name||"새 프로젝트"}):await registryCall<Preview>("preview_windows", {root});
         if (!alive.current) {await registryCall("cancel_registration", {previewId:next.previewId}); return;}
+        if(next.templateProfile)setName(next.templateProfile.profile.name);
         currentPreview.current = next.previewId; setPreview(next);
       });}}>
+        {!!registry?.importedTemplates?.length&&<label>프로젝트 템플릿 <select aria-label="프로젝트 템플릿" value={templateId} disabled={busy||!!preview} onChange={event=>setTemplateId(event.target.value)}><option value="">사용하지 않음</option>{registry.importedTemplates.map((imported,index)=><option key={imported.id} value={imported.id}>{imported.template.name}{registry.importedTemplates!.filter(entry=>entry.template.name===imported.template.name).length>1?` · 보관 항목 ${index+1}`:""}</option>)}</select></label>}
+        {registry?.importedTemplates?.find(imported=>imported.id===templateId)&&<TemplateMetadata template={registry.importedTemplates.find(imported=>imported.id===templateId)!.template}/>}
         <label htmlFor="workspace-project-path">Windows 프로젝트 폴더</label>
         <input id="workspace-project-path" value={root} maxLength={32768} disabled={busy || !!preview} onChange={event => setRoot(event.target.value)} required />
         <button disabled={busy || !root.trim() || !!preview}>폴더 확인</button>
@@ -113,12 +118,13 @@ export default function RegistryGate({context = null, onContextChanged = async (
       {preview && <section aria-label="프로젝트 등록 확인">
         <h2>등록 확인</h2><p>{discoveryLabels[preview.discovery.kind]}</p><p>{preview.binding.root}</p>
         <p>명령 실행에 대한 신뢰는 별도로 확인합니다.</p>
+        {preview.templateProfile&&<><p>선택한 템플릿으로 아래 프로필을 만들고 이 폴더에 연결합니다.</p><ProfileMetadata profile={preview.templateProfile.profile}/></>}
         {preview.importedProfileId&&<p>가져온 프로필을 이 폴더에 연결합니다. 프로필의 포트 설정은 프로젝트·로컬 설정이 없는 경우 기본값으로 사용합니다.</p>}
         <label htmlFor="workspace-project-name">프로젝트 이름</label>
         <input id="workspace-project-name" value={name} maxLength={120} disabled={busy} onChange={event => setName(event.target.value)} />
         <button disabled={busy || !name.trim() || (editing && ["aliasOrMove","replacedRoot"].includes(preview.discovery.kind))} onClick={() => void act(async () => {
           await registryCall("apply_registration", {previewId:preview.previewId, name, action:["aliasOrMove","replacedRoot"].includes(preview.discovery.kind) ? "rebind" : "register"});
-          currentPreview.current = null; setPreview(null); setRoot(""); setName(""); await refresh();
+          currentPreview.current = null; setPreview(null); setRoot(""); setName(""); setTemplateId(""); await refresh();
         })}>{["aliasOrMove","replacedRoot"].includes(preview.discovery.kind) ? "경로 다시 연결" : "등록"}</button>
         <button disabled={busy} onClick={() => void act(cancelPreview)}>취소</button>
       </section>}
@@ -152,7 +158,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
           if(preview)await cancelPreview();
           const next=await registryCall<Preview>("preview_imported_profile_windows",{importedId:imported.id});
           if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
-          currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName(imported.profile.name);
+          currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName(imported.profile.name);setTemplateId("");
           document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});
         })}>Windows 폴더 연결 검토</button>
         {imported.profile.wsl&&<p>WSL 폴더는 보관되어 있으며 연결 기능을 준비 중입니다.</p>}
@@ -166,12 +172,12 @@ export default function RegistryGate({context = null, onContextChanged = async (
         </div>)}
       </section>)}
     </>}
-    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports selected={status.phase==="selected"} existingProfiles={registry?.importedProfiles??[]} onImported={refresh} disabled={busy||editing} onWorkspaceReview={jobId=>void act(async()=>{
+    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports selected={status.phase==="selected"} existingProfiles={registry?.importedProfiles??[]} existingTemplates={registry?.importedTemplates??[]} onImported={refresh} disabled={busy||editing} onWorkspaceReview={jobId=>void act(async()=>{
       if(editing)return;
       if(preview)await cancelPreview();
       const next=await registryCall<Preview>("preview_legacy_workspace_windows",{jobId});
       if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
-      currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName("Code Pad 작업 폴더");
+      currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName("Code Pad 작업 폴더");setTemplateId("");
       document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});
     })}/>}
   </section>;

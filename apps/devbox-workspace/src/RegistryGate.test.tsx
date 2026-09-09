@@ -115,3 +115,29 @@ it("reviews the saved Code Pad workspace through native job identity before regi
   fireEvent.click(screen.getByRole("button",{name:"취소"}));
   await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","cancel_registration",{previewId:preview.previewId}));
 });
+
+it("reviews a concrete template profile and registers only after explicit approval",async()=>{
+  const template={id:"legacy-template",name:"웹 기본값",windowsPath:null,wsl:null,gitRoot:null,expectedPorts:[4321],runManagerServiceIds:["saved-service"]};
+  const imported={id:"native-template",sourceSnapshotId:"snapshot",template};
+  const candidate={id:"new-native-profile",sourceSnapshotId:"snapshot",sourceTemplateId:imported.id,profile:{...template,id:"new-profile-id",windowsPath:preview.binding.root,environment:null}};
+  call.mockImplementation(async(_component,method)=>{
+    if(method==="status")return {phase:"selected"};
+    if(method==="snapshot")return {...emptyRegistry,importedTemplates:[imported]};
+    if(method==="legacy_snapshot_job")return null;
+    if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
+    if(method==="preview_template_profile_windows")return {...preview,templateProfile:candidate};
+    return {};
+  });
+  const {container}=render(<RegistryGate/>);
+  fireEvent.change(await screen.findByRole("combobox",{name:"프로젝트 템플릿"}),{target:{value:imported.id}});
+  expect(screen.getByText("4321")).toBeTruthy();
+  expect(call.mock.calls.some(([,method])=>/preview_|apply_|select_project|trust/.test(method))).toBe(false);
+  fireEvent.change(screen.getByLabelText("Windows 프로젝트 폴더"),{target:{value:preview.binding.root}});
+  fireEvent.click(screen.getByRole("button",{name:"폴더 확인"}));
+  await screen.findByText("선택한 템플릿으로 아래 프로필을 만들고 이 폴더에 연결합니다.");
+  expect(call).toHaveBeenCalledWith("workspace.registry","preview_template_profile_windows",{templateId:imported.id,root:preview.binding.root,name:template.name});
+  expect(call.mock.calls.some(([,method])=>/apply_|select_project|trust/.test(method))).toBe(false);
+  await assertNoA11yViolations(container);
+  fireEvent.click(screen.getByRole("button",{name:/^등록$/}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","apply_registration",{previewId:preview.previewId,name:template.name,action:"register"}));
+});

@@ -4,7 +4,7 @@
 // Explicit importer/discovery consumers reuse the original bounded validators.
 pub use crate::commands::workspace::{absorb_life_log_projects_in, LifeLogAbsorbReport};
 pub use crate::core::profile::{ProfileStore, ProjectProfile, WslProfile};
-pub use crate::core::templates::ProfileTemplateStore;
+pub use crate::core::templates::{ProfileTemplate, ProfileTemplateStore};
 
 /// Validate copied settings before a product generation can be selected.
 /// This parses bytes only; profile paths, services and distro names are not run.

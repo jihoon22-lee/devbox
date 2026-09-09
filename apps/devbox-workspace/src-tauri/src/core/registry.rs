@@ -81,6 +81,8 @@ pub struct Registry {
     pub worktrees: Vec<Worktree>,
     pub legacy_references: Vec<LegacyReference>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_templates: Vec<super::legacy_templates::ImportedTemplate>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_profiles: Vec<super::legacy_profiles::ImportedProfile>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub imported_profile_bindings: Vec<super::legacy_profiles::ProfileBinding>,
@@ -183,6 +185,7 @@ impl Default for Registry {
             projects: vec![],
             worktrees: vec![],
             legacy_references: vec![],
+            imported_templates: vec![],
             imported_profiles: vec![],
             imported_profile_bindings: vec![],
         }
@@ -215,15 +218,34 @@ impl Registry {
         if self.projects.len() > MAX_ITEMS
             || self.worktrees.len() > MAX_ITEMS
             || self.legacy_references.len() > MAX_ITEMS * 8
+            || self.imported_templates.len() > MAX_ITEMS
             || self.imported_profiles.len() > MAX_ITEMS
             || self.imported_profile_bindings.len() > MAX_ITEMS * 2
         {
             return Err("registry_limit");
         }
+        let mut template_ids = BTreeSet::new();
+        let mut template_sources = BTreeSet::new();
+        for template in &self.imported_templates {
+            template.validate()?;
+            if !template_ids.insert(&template.id)
+                || !template_sources.insert((&template.source_snapshot_id, &template.template.id))
+            {
+                return Err("duplicate_imported_template");
+            }
+        }
         let mut imported_ids = BTreeSet::new();
         let mut imported_sources = BTreeSet::new();
         for profile in &self.imported_profiles {
             profile.validate()?;
+            if let Some(template_id) = &profile.source_template_id {
+                if !self.imported_templates.iter().any(|template| {
+                    template.id == *template_id
+                        && template.source_snapshot_id == profile.source_snapshot_id
+                }) {
+                    return Err("invalid_imported_template_reference");
+                }
+            }
             if !imported_ids.insert(&profile.id)
                 || !imported_sources.insert((&profile.source_snapshot_id, &profile.profile.id))
             {

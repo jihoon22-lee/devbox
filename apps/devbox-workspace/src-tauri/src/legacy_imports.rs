@@ -113,6 +113,37 @@ impl LegacyImports {
         .map_err(|_| "legacy_profiles_unavailable")?;
         Ok((snapshot.id()?, profiles))
     }
+    pub(crate) fn template_source(
+        &self,
+        job_id: &str,
+    ) -> Result<(String, workbench_lib::component::ProfileTemplateStore)> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
+            current
+                .as_ref()
+                .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+                .and_then(|job| job.snapshot.clone())
+                .ok_or("legacy_import_stale")?
+        };
+        if snapshot.manifest.source != Source::Workbench {
+            return Err("legacy_templates_unavailable");
+        }
+        let inventory = snapshot
+            .manifest
+            .files
+            .iter()
+            .find(|file| file.name == "profile-templates.json")
+            .filter(|file| file.issue.is_none())
+            .ok_or("legacy_templates_unavailable")?;
+        let bytes = snapshot
+            .bytes(&inventory.name)
+            .ok_or("legacy_templates_unavailable")?;
+        let templates = workbench_lib::component::ProfileTemplateStore::load(
+            std::str::from_utf8(bytes).map_err(|_| "legacy_templates_unavailable")?,
+        )
+        .map_err(|_| "legacy_templates_unavailable")?;
+        Ok((snapshot.id()?, templates))
+    }
     pub(crate) fn session_source(
         &self,
         job_id: &str,
@@ -394,6 +425,50 @@ mod tests {
         owner.start(Source::RepoManager).unwrap();
         assert_eq!(owner.workspace(&job.id).unwrap_err(), "legacy_import_stale");
         wait(&owner);
+    }
+    #[test]
+    fn template_source_requires_a_ready_verified_workbench_job_and_keeps_original_bytes() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let source = base.path().join(Source::Workbench.identifier());
+        std::fs::create_dir(&source).unwrap();
+        let mut template = workbench_lib::component::ProfileTemplate::new("빈 경로 기본값");
+        template.expected_ports = vec![4321];
+        let templates = workbench_lib::component::ProfileTemplateStore {
+            version: 1,
+            templates: vec![template],
+        };
+        let bytes = templates.to_json_checked().unwrap();
+        std::fs::write(source.join("profile-templates.json"), &bytes).unwrap();
+        let stores = Arc::new(StoreRoot::open(&root).unwrap());
+        let owner = LegacyImports::new(stores.clone()).unwrap();
+        assert_eq!(
+            owner.template_source("foreign").unwrap_err(),
+            "legacy_import_stale"
+        );
+        owner.start(Source::Workbench).unwrap();
+        let job = wait(&owner);
+        assert!(job.phase == Phase::Ready);
+        assert_eq!(
+            std::fs::read_to_string(source.join("profile-templates.json")).unwrap(),
+            bytes
+        );
+        std::fs::remove_dir_all(source).unwrap();
+        let (snapshot_id, saved) = owner.template_source(&job.id).unwrap();
+        assert_eq!(Some(&snapshot_id), job.snapshot_id.as_ref());
+        assert_eq!(saved, templates);
+        assert!(stores.read().unwrap().is_none());
+        owner.start(Source::RepoManager).unwrap();
+        assert_eq!(
+            owner.template_source(&job.id).unwrap_err(),
+            "legacy_import_stale"
+        );
+        let next = wait(&owner);
+        assert_eq!(
+            owner.template_source(&next.id).unwrap_err(),
+            "legacy_templates_unavailable"
+        );
     }
     fn wait(owner: &LegacyImports) -> Job {
         let start = Instant::now();

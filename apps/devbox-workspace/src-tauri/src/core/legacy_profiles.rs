@@ -12,6 +12,8 @@ type Result<T> = std::result::Result<T, &'static str>;
 pub struct ImportedProfile {
     pub id: String,
     pub source_snapshot_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_template_id: Option<String>,
     pub profile: ProjectProfile,
 }
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -46,7 +48,7 @@ impl ImportedProfile {
         Ok(())
     }
 }
-fn snapshot_id(value: &str) -> bool {
+pub(super) fn snapshot_id(value: &str) -> bool {
     value.len() == 64
         && value
             .bytes()
@@ -229,6 +231,7 @@ impl Plan {
                         id: id.clone(),
                         source_snapshot_id: self.source_snapshot_id.clone(),
                         profile: row.profile.clone(),
+                        source_template_id: None,
                     });
                     result.added += 1;
                     Some(id)

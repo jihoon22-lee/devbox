@@ -160,5 +160,15 @@ but timed out waiting for a later native request. The fixture now allows the nat
 dialog driver failures. New installer/cache and multi-file picker acceptance is
 pending; local Windows disposable dialog cancel/single/multi selection passed.
 
+Workbench template imports reuse the original strict schema and preserve empty-path
+presets, old IDs and service/port defaults as separate immutable Registry records.
+Reviewed choices add, reuse or keep conflicting copies without replacing v0.8 data.
+The project form can instantiate an imported template against an explicitly checked
+Windows folder; registration, a fresh profile with its template provenance and its
+folder binding share the Registry commit. Environment data is absent and selection
+and execution trust remain separate. Template editing and WSL instantiation remain
+pending. The hosted template fixture covers the native import and actual creation UI;
+its Windows result is pending for this change.
+
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.
