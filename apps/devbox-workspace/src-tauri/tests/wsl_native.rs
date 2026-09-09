@@ -19,6 +19,10 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
         .into_iter()
         .find(|d| d.name == name)
         .unwrap();
+    assert_eq!(
+        distro.version, 1,
+        "owned fixture uses WSL1, independently of its filesystem format version"
+    );
     let resources = Path::new(env!("CARGO_MANIFEST_DIR")).join("resources/wsl");
     let nonce = uuid::Uuid::new_v4();
     let root = format!("/home/devbox-fixture/workspace 한글 {nonce}");

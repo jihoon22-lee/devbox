@@ -6,6 +6,10 @@ if ((Get-Content -LiteralPath (Join-Path $state.install 'devbox-fixture-owner.tx
 $keys = @(Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Lxss' | Where-Object { $_.GetValue('DistributionName') -eq $state.name })
 if ($keys.Count -ne 1) { throw 'Owned registration missing or ambiguous' }
 $raw = [string]$keys[0].GetValue('BasePath')
+$filesystemVersion = [uint32]$keys[0].GetValue('Version')
+$flags = [uint32]$keys[0].GetValue('Flags')
+$wslVersion = if (($flags -band 8) -ne 0) { 2 } else { 1 }
+if ($wslVersion -ne 1) { throw 'The exclusively owned fixture must use WSL1' }
 $base = if ($raw.StartsWith('\??\')) { $raw.Substring(4) } else { $raw }
 $plain = if ($base.StartsWith('\\?\')) { $base.Substring(4) } else { $base }
 $plain = [IO.Path]::GetFullPath($plain)
@@ -53,5 +57,5 @@ foreach ($path in $paths) {
   $rows += $row
   if ($row.ContainsKey('error') -or $row['reparse']) { break }
 }
-@{ version = 1; boundary = 'Only the nonce-owned distro backing path; metadata only'; basePath = $raw; ancestors = $rows } |
+@{ version = 1; filesystemVersion = $filesystemVersion; flags = $flags; wslVersion = $wslVersion; boundary = 'Only the nonce-owned distro backing path; metadata only'; basePath = $raw; ancestors = $rows } |
   ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 (Join-Path $env:GITHUB_WORKSPACE 'product-foundation-evidence/workspace-wsl-storage.json')

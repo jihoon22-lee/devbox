@@ -197,6 +197,7 @@ mod native {
     struct Registration {
         id: String,
         name: String,
+        filesystem_version: u32,
         version: u32,
         base: PathBuf,
         backing: Option<PathBuf>,
@@ -214,13 +215,18 @@ mod native {
     fn registration_snapshot(key: &Key, id: &str) -> Result<Registration> {
         let before = revision(key)?;
         let name = text(key, "DistributionName")?;
-        let version = number(key, "Version")?;
+        // Registry Version names the distribution filesystem format. WSL's
+        // own EnumerateDistributions selects WSL 1/2 from Flags' VM_MODE bit;
+        // a modern WSL1 registration also has filesystem Version=2.
+        let filesystem_version = number(key, "Version")?;
+        let flags = number(key, "Flags")?;
+        let version = if flags & 0x8 != 0 { 2 } else { 1 };
         let raw = text(key, "BasePath")?;
         if name.is_empty()
             || name.trim() != name
             || name.chars().count() > 128
             || name.chars().any(char::is_control)
-            || !matches!(version, 1 | 2)
+            || !matches!(filesystem_version, 1 | 2)
         {
             return Err("wsl_registry_invalid");
         }
@@ -252,6 +258,7 @@ mod native {
         Ok(Registration {
             id: id.into(),
             name,
+            filesystem_version,
             version,
             base,
             backing,
@@ -583,7 +590,7 @@ mod native {
             set_text(key, "DistributionName", "native-registry-fixture");
             set_text(key, "BasePath", base.to_str().unwrap());
             for (name, value) in [
-                ("Version", 1u32),
+                ("Version", 2u32),
                 ("DefaultUid", 1000),
                 ("Flags", 7),
                 ("State", 1),
@@ -624,6 +631,19 @@ mod native {
             assert!(registrations_under(&key).unwrap().is_empty());
             initialize(&key, directory.path());
             let before = registration(&key, "fixture").unwrap();
+            assert_eq!(before.filesystem_version, 2);
+            assert_eq!(before.version, 1);
+            assert!(before.backing.is_none());
+            set(&key, "Flags", REG_DWORD, &15u32.to_le_bytes());
+            let vm = registration(&key, "fixture").unwrap();
+            assert_eq!(vm.filesystem_version, 2);
+            assert_eq!(vm.version, 2);
+            assert_eq!(
+                vm.backing.as_deref(),
+                Some(directory.path().join("ext4.vhdx").as_path())
+            );
+            set(&key, "Flags", REG_DWORD, &7u32.to_le_bytes());
+            assert!(before == registration(&key, "fixture").unwrap());
             set(&key, "State", REG_DWORD, &1u32.to_le_bytes());
             assert!(before == registration(&key, "fixture").unwrap());
             set(&key, "State", REG_DWORD, &2u32.to_le_bytes());

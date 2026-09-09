@@ -73,3 +73,9 @@ revision and uses the same guarded encoding/CRLF save. The Windows owner forward
 the remaining user deadline; metadata-only cleanup never creates a helper. Explicit
 shutdown confirms launcher exit and can be retried; application exit retains any
 owner whose retirement could not be confirmed.
+
+Registry `Version` is the distribution filesystem format, not WSL1 versus WSL2.
+Mode and VHD admission use `Flags & 0x8` (`LXSS_DISTRO_FLAGS_VM_MODE`), matching
+[Microsoft's enumeration implementation](https://github.com/microsoft/WSL/blob/03f6b0e5dd8bdbcb90406813699f616534a25eb3/src/windows/service/exe/LxssUserSession.cpp#L1049).
+A modern WSL1 registration has filesystem Version 2 without a VHD. WSL2 still
+requires the registered/default VHD filename and its retained native identity.
