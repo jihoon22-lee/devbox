@@ -255,3 +255,14 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 전체 affected 첫 실행은 초기 bundle **291,317 > 280,000 bytes**에서 실패해 Rust 검증까지 진행하지 않았다. 템플릿 관리 버튼을 열 때 editor/validation 모듈을 lazy load하도록 변경했다. 후속 UI 17개·build·generated 요청 7개는 통과했고, 올바른 `--scope all`로 실행한 bundle checker가 19개 앱 모두 PASS했다(0.776초). 처음 scope 없는 checker 호출은 인자 오류로 실패했으며 PASS에 포함하지 않는다. 한도는 변경하지 않았다.
 
 - lazy 변경을 포함한 최종 `pnpm verify:affected` all **442.866초 / peak 6,443,999,232 bytes / 8 GiB** PASS. Workspace 초기 bundle은 **277,925 bytes / 280,000 bytes**, gzip **82,039 / 90,000 bytes**다.
+
+
+## GUI 없는 파일·LSP 코어와 설치 상태 조회
+
+- Code Pad의 기존 기본 standalone은 desktop을 포함하며 Workspace component는 desktop을 명시한다. 기본 feature 없이 파일/세션/LSP 코어를 컴파일할 때만 Tauri·플러그인·watcher·window adapter를 제외한다. 기존 native 구현을 복사하지 않으며 standalone의 WSL 경로 저장/Windows LSP 설치 기능은 유지한다. 실제 WSL helper/배포 경로 연결은 다음 단계다.
+- GUI 없는 core check, 파일 회귀와 strict Clippy를 수행했다. 첫 Clippy에서 UI wrapper 전용 함수의 미사용 경고를 발견해 같은 desktop 경계에 넣었다. 후속 **181개 native core 테스트와 strict Clippy PASS(12.119초 / peak 621,592,576 bytes / 8 GiB)**. normal/build dependency tree에 Tauri/GTK/WebKit이 없음을 확인했다.
+- [4dda0c5 제품 Windows 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34341801214)은 native authority/WAL, 템플릿/창 상태, Source 22개, Files 9개, 이전 Code Pad identifier 4개와 전체 세션·미저장 복구·LSP 설정 import/repeat/restore를 통과했다. artifact source는 `5a3d4401ecf3f63f5790d136a25f6f6f4781c732`다. 관리형 Rust archive의 실제 picker/import/cache 확인까지 진행한 뒤 LSP 설치 UI의 초기 조회 오류로 packaged 단계가 실패했다.
+- `LspControlPanel`과 `ManagedInstallerPanel`이 같은 설치 상태를 동시에 조회하고 있었다. 설치된 archive/tree digest를 확인하는 동안 native installer의 단일 operation lock이 두 번째 조회를 거부할 수 있다. 부모의 중복 조회를 제거하고 기존 자식 `onChanged` snapshot을 선택 UI와 공유한다. 조회 실패에는 명시적 새로 고침을 제공한다. 집중 UI 및 두 consumer build PASS(23.549초 / peak 1,631,207,424 bytes / 8 GiB). 느린 초기 조회가 한 번만 호출되는 회귀와 실패 후 새로 고침이 설정·설치를 변경하지 않는 회귀를 추가했다.
+- 같은 Windows run의 Knowledge WSL1 fixture는 검색 작업 retirement 후 전용 corpus를 Linux에서 옮길 때 Permission denied로 실패했다. Windows redirector handle 지연을 고려해 동일한 전용 `mv -T`의 명시적 permission-denied 결과만 10초 내 재시도한다. timeout/signal/다른 결과는 반복하지 않으며 실제 이동과 후속 offline/reconnect 검사는 계속 필수다. 성공 시 시도 횟수를 artifact에 남긴다. JavaScript syntax check PASS; 실제 재실행은 아직 하지 않았다.
+
+- 위 변경의 최종 `pnpm verify:affected` all **485.173초 / peak 5,443,448,832 bytes / 8 GiB** PASS. GUI를 포함한 기존 desktop consumer들도 이 실행에서 검증했다. `4dda0c5`의 [일반 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34341801216)는 Windows Rust와 dependency policy를 포함해 PASS했다. 수정한 설치 UI/WSL1 fixture 및 템플릿 편집은 다음 Windows head에서 확인한다.
