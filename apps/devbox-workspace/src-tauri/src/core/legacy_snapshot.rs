@@ -65,6 +65,57 @@ pub struct Snapshot {
     pub manifest: Manifest,
     files: Vec<Captured>,
 }
+/// Catalog entries describe completion markers only. A caller must load and
+/// verify all snapshot bytes before using any record from a listed entry.
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CatalogEntry {
+    pub id: String,
+    pub manifest: Option<Manifest>,
+    pub issue: Option<&'static str>,
+}
+#[derive(Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct Catalog {
+    pub snapshots: Vec<CatalogEntry>,
+    pub unrecognized: usize,
+}
+
+fn valid_id(id: &str) -> bool {
+    id.len() == 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+}
+
+fn manifest(root: &Directory, id: &str) -> Result<Manifest> {
+    let (_, bytes) = read(root, "snapshot.json", 64 * 1024)?.ok_or("legacy_snapshot_incomplete")?;
+    let manifest: Manifest =
+        serde_json::from_slice(&bytes).map_err(|_| "invalid_legacy_snapshot")?;
+    let specs = manifest.source.files();
+    let names = manifest
+        .files
+        .iter()
+        .map(|file| file.name.as_str())
+        .chain(manifest.missing.iter().map(String::as_str))
+        .collect::<std::collections::BTreeSet<_>>();
+    if manifest.schema_version != 1
+        || digest(&serde_json::to_vec(&manifest).map_err(|_| "invalid_legacy_snapshot")?) != id
+        || manifest.files.len() + manifest.missing.len() != specs.len()
+        || names.len() != specs.len()
+        || specs.iter().any(|spec| !names.contains(spec.name))
+        || manifest.files.iter().any(|file| {
+            !valid_id(&file.sha256)
+                || file.records.is_some() != file.issue.is_none()
+                || !specs
+                    .iter()
+                    .any(|spec| spec.name == file.name && file.bytes <= spec.limit)
+        })
+    {
+        return Err("invalid_legacy_snapshot");
+    }
+    Ok(manifest)
+}
 
 fn read(root: &Directory, name: &str, limit: usize) -> Result<Option<(Stamp, Vec<u8>)>> {
     root.check()?;
@@ -115,30 +166,72 @@ fn read(root: &Directory, name: &str, limit: usize) -> Result<Option<(Stamp, Vec
     )))
 }
 impl Snapshot {
-    pub fn load(destination: &Path, id: &str) -> Result<Self> {
-        if id.len() != 64
-            || !id
-                .bytes()
-                .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+    pub fn catalog(destination: &Path, check: impl Fn() -> Result<()>) -> Result<Catalog> {
+        check()?;
+        let destination = Directory::open(destination)?;
+        let mut result = Catalog::default();
+        for (index, entry) in fs::read_dir(&destination.path)
+            .map_err(|_| "legacy_snapshot_unavailable")?
+            .enumerate()
         {
+            check()?;
+            if index >= 32 {
+                return Err("legacy_snapshot_limit");
+            }
+            let entry = entry.map_err(|_| "legacy_snapshot_unavailable")?;
+            let name = entry.file_name();
+            let Some(id) = name.to_str().filter(|id| valid_id(id)) else {
+                result.unrecognized += 1;
+                continue;
+            };
+            let described = Self::describe(&destination.path, id);
+            let (manifest, issue) = match described {
+                Ok(value) => (Some(value), None),
+                Err(issue) => (None, Some(issue)),
+            };
+            result.snapshots.push(CatalogEntry {
+                id: id.into(),
+                manifest,
+                issue,
+            });
+        }
+        result.snapshots.sort_by(|a, b| a.id.cmp(&b.id));
+        destination.check()?;
+        check()?;
+        Ok(result)
+    }
+    pub fn describe(destination: &Path, id: &str) -> Result<Manifest> {
+        if !valid_id(id) {
             return Err("invalid_legacy_snapshot");
         }
         let destination = Directory::open(destination)?;
         let root = Directory::open(&destination.path.join(id))?;
-        let (_, bytes) =
-            read(&root, "snapshot.json", 64 * 1024)?.ok_or("legacy_snapshot_incomplete")?;
-        let manifest: Manifest =
-            serde_json::from_slice(&bytes).map_err(|_| "invalid_legacy_snapshot")?;
-        if manifest.schema_version != 1
-            || digest(&serde_json::to_vec(&manifest).map_err(|_| "invalid_legacy_snapshot")?) != id
-        {
+        let manifest = manifest(&root, id)?;
+        root.check()?;
+        destination.check()?;
+        Ok(manifest)
+    }
+    pub fn load(destination: &Path, id: &str) -> Result<Self> {
+        Self::load_checked(destination, id, || Ok(()))
+    }
+    pub fn load_checked(
+        destination: &Path,
+        id: &str,
+        check: impl Fn() -> Result<()>,
+    ) -> Result<Self> {
+        check()?;
+        if !valid_id(id) {
             return Err("invalid_legacy_snapshot");
         }
+        let destination = Directory::open(destination)?;
+        let root = Directory::open(&destination.path.join(id))?;
+        let manifest = manifest(&root, id)?;
         let mut files = vec![];
         let mut inventories = vec![];
         let mut missing = vec![];
         // Walk the compiled source inventory, never paths from snapshot JSON.
         for spec in manifest.source.files() {
+            check()?;
             match read(&root, spec.name, spec.limit)? {
                 Some((stamp, bytes)) => {
                     inventories.push(inspect(manifest.source, spec.name, &bytes)?);
@@ -157,6 +250,7 @@ impl Snapshot {
         }
         root.check()?;
         destination.check()?;
+        check()?;
         Ok(Self { manifest, files })
     }
     /// `base` is supplied by native startup (or a disposable test fixture),
@@ -429,6 +523,75 @@ mod tests {
             fs::read_to_string(destination.join(id).join("project-profiles.json")).unwrap(),
             "external edit"
         );
+    }
+    #[test]
+    fn catalog_preserves_incomplete_unknown_and_changed_snapshots_without_claiming_integrity() {
+        let (base, _, destination) = fixture();
+        let snapshot = Snapshot::acquire(base.path(), Source::Workbench, || Ok(())).unwrap();
+        let id = snapshot.persist(&destination, || Ok(())).unwrap();
+        fs::create_dir(destination.join("f".repeat(64))).unwrap();
+        fs::create_dir(destination.join("unknown-retained-folder")).unwrap();
+        let catalog = Snapshot::catalog(&destination, || Ok(())).unwrap();
+        assert_eq!(catalog.unrecognized, 1);
+        assert_eq!(catalog.snapshots.len(), 2);
+        assert_eq!(
+            catalog
+                .snapshots
+                .iter()
+                .find(|entry| entry.id == id)
+                .unwrap()
+                .manifest
+                .as_ref(),
+            Some(&snapshot.manifest)
+        );
+        assert_eq!(
+            catalog
+                .snapshots
+                .iter()
+                .find(|entry| entry.id != id)
+                .unwrap()
+                .issue,
+            Some("legacy_snapshot_incomplete")
+        );
+        fs::write(
+            destination.join(&id).join("project-profiles.json"),
+            "changed after listing",
+        )
+        .unwrap();
+        // A valid completion marker is not a verification of all saved files.
+        assert!(Snapshot::describe(&destination, &id).is_ok());
+        assert!(matches!(
+            Snapshot::load(&destination, &id),
+            Err("legacy_snapshot_changed")
+        ));
+        assert!(matches!(
+            Snapshot::load_checked(&destination, &id, || Err("cancelled")),
+            Err("cancelled")
+        ));
+        assert!(matches!(
+            Snapshot::describe(&destination, "../foreign"),
+            Err("invalid_legacy_snapshot")
+        ));
+        assert!(destination.join("unknown-retained-folder").is_dir());
+    }
+    #[test]
+    #[cfg(unix)]
+    fn catalog_never_follows_foreign_links_and_counts_them_toward_the_bound() {
+        let (base, source, destination) = fixture();
+        let id = "a".repeat(64);
+        std::os::unix::fs::symlink(&source, destination.join(&id)).unwrap();
+        let catalog = Snapshot::catalog(&destination, || Ok(())).unwrap();
+        assert_eq!(catalog.snapshots[0].issue, Some("legacy_path_unavailable"));
+        assert!(!source.join("snapshot.json").exists());
+        for index in 0..32 {
+            fs::create_dir(destination.join(format!("retained-{index}"))).unwrap();
+        }
+        assert!(matches!(
+            Snapshot::catalog(&destination, || Ok(())),
+            Err("legacy_snapshot_limit")
+        ));
+        assert_eq!(fs::read_dir(&destination).unwrap().count(), 33);
+        assert!(base.path().exists());
     }
     #[test]
     #[cfg(unix)]

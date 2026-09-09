@@ -80,6 +80,10 @@ pub struct Registry {
     pub projects: Vec<Project>,
     pub worktrees: Vec<Worktree>,
     pub legacy_references: Vec<LegacyReference>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_profiles: Vec<super::legacy_profiles::ImportedProfile>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub imported_profile_bindings: Vec<super::legacy_profiles::ProfileBinding>,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -179,6 +183,8 @@ impl Default for Registry {
             projects: vec![],
             worktrees: vec![],
             legacy_references: vec![],
+            imported_profiles: vec![],
+            imported_profile_bindings: vec![],
         }
     }
 }
@@ -209,8 +215,20 @@ impl Registry {
         if self.projects.len() > MAX_ITEMS
             || self.worktrees.len() > MAX_ITEMS
             || self.legacy_references.len() > MAX_ITEMS * 8
+            || self.imported_profiles.len() > MAX_ITEMS
+            || self.imported_profile_bindings.len() > MAX_ITEMS * 2
         {
             return Err("registry_limit");
+        }
+        let mut imported_ids = BTreeSet::new();
+        let mut imported_sources = BTreeSet::new();
+        for profile in &self.imported_profiles {
+            profile.validate()?;
+            if !imported_ids.insert(&profile.id)
+                || !imported_sources.insert((&profile.source_snapshot_id, &profile.profile.id))
+            {
+                return Err("duplicate_imported_profile");
+            }
         }
         let mut projects = BTreeSet::new();
         for project in &self.projects {
@@ -262,6 +280,32 @@ impl Registry {
                 if tree.binding.same_repo(&other.binding) && tree.repo_id != other.repo_id {
                     return Err("repository_identity_conflict");
                 }
+            }
+        }
+        let mut imported_bindings = BTreeSet::new();
+        let mut imported_worktrees = BTreeSet::new();
+        for binding in &self.imported_profile_bindings {
+            let profile = self
+                .imported_profiles
+                .iter()
+                .find(|profile| profile.id == binding.imported_id)
+                .ok_or("invalid_imported_profile_binding")?;
+            let tree = self
+                .worktrees
+                .iter()
+                .find(|tree| tree.id == binding.worktree_id)
+                .ok_or("invalid_imported_profile_binding")?;
+            if super::legacy_profiles::ProfileTarget::of(&tree.binding.target) != binding.target
+                || !imported_bindings.insert((&binding.imported_id, binding.target))
+                || !imported_worktrees.insert(&binding.worktree_id)
+                || match binding.target {
+                    super::legacy_profiles::ProfileTarget::Windows => {
+                        profile.profile.windows_path.is_none()
+                    }
+                    super::legacy_profiles::ProfileTarget::Wsl => profile.profile.wsl.is_none(),
+                }
+            {
+                return Err("invalid_imported_profile_binding");
             }
         }
         let mut references = BTreeSet::new();
@@ -435,6 +479,10 @@ impl Registry {
             .legacy_references
             .iter()
             .any(|r| r.worktree_id == context.worktree_id)
+            || self
+                .imported_profile_bindings
+                .iter()
+                .any(|binding| binding.worktree_id == context.worktree_id)
         {
             return Err("referenced_worktree");
         }
@@ -448,6 +496,69 @@ impl Registry {
         }
         self.revision += 1;
         Ok(())
+    }
+    pub fn bind_imported_profile(
+        &mut self,
+        expected: u64,
+        imported_id: &str,
+        context: &ProjectContext,
+    ) -> Result<()> {
+        use super::legacy_profiles::{ProfileBinding, ProfileTarget};
+        self.check_revision(expected)?;
+        self.context_index(context)?;
+        let binding = ProfileBinding {
+            imported_id: imported_id.into(),
+            target: ProfileTarget::of(&context.target),
+            worktree_id: context.worktree_id.clone(),
+        };
+        if self.imported_profile_bindings.contains(&binding) {
+            return Ok(());
+        }
+        if self.imported_profile_bindings.iter().any(|saved| {
+            saved.worktree_id == binding.worktree_id
+                || (saved.imported_id == binding.imported_id && saved.target == binding.target)
+        }) {
+            return Err("legacy_profile_binding_conflict");
+        }
+        let mut next = self.clone();
+        next.imported_profile_bindings.push(binding);
+        next.revision += 1;
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
+    pub fn unbind_imported_profile(
+        &mut self,
+        expected: u64,
+        imported_id: &str,
+        target: super::legacy_profiles::ProfileTarget,
+    ) -> Result<()> {
+        self.check_revision(expected)?;
+        let Some(index) = self
+            .imported_profile_bindings
+            .iter()
+            .position(|binding| binding.imported_id == imported_id && binding.target == target)
+        else {
+            return Ok(());
+        };
+        self.imported_profile_bindings.remove(index);
+        self.revision += 1;
+        Ok(())
+    }
+    pub fn imported_profile_for(
+        &self,
+        context: &ProjectContext,
+    ) -> Result<Option<&super::legacy_profiles::ImportedProfile>> {
+        self.context_index(context)?;
+        Ok(self
+            .imported_profile_bindings
+            .iter()
+            .find(|binding| binding.worktree_id == context.worktree_id)
+            .and_then(|binding| {
+                self.imported_profiles
+                    .iter()
+                    .find(|profile| profile.id == binding.imported_id)
+            }))
     }
     pub fn map_legacy(&mut self, expected: u64, reference: LegacyReference) -> Result<()> {
         self.check_revision(expected)?;

@@ -4,6 +4,68 @@ WP #546 / R02–06, R08, R13, R16–21, R24–25 and S01. This bundle owns
 Project/Worktree Registry, manifest/local trust, Overview/Source/Files/Dependencies,
 legacy import and WSL-native LSP. Runtime and Terminal/session owners remain B05/B06.
 
+## Reviewed Workbench profile import
+
+A fully verified native snapshot can now produce a one-time profile import review.
+New profiles, identical records and old-ID/path conflicts have explicit choices;
+all start as skipped. Import preserves the complete typed Workbench profile,
+source snapshot and original ID, assigns a separate Workspace metadata ID, and
+commits through the existing Registry revision/byte CAS. Repeated identical input
+reuses the saved ID; keep-both preserves conflicting records and existing v0.8
+state. Cancelled/expired/replayed previews, foreign/duplicate selections and stale
+destinations cannot write. The Registry JSON is the single metadata commit point;
+there is no claimed transaction with repositories or external service owners.
+
+Imported profiles are visible in Overview before any path is admitted. A separate
+Windows folder review reads the native saved profile ID and uses the established
+object lease. Registration and profile-to-worktree mapping commit together, with
+no automatic selection or trust. Conflicting bindings leave both records and the
+Registry unchanged. Explicit unlink keeps the imported profile and project;
+referenced worktree removal is blocked. Bound profile ports are defaults beneath
+project/local values, including an explicitly empty local list. Environment and
+service references remain preserved metadata for their owners' later review.
+WSL proposals remain unbound until the native WSL owner is implemented.
+
+The first profile check passed 121 Rust tests, 25 UI tests, strict Clippy and build.
+A new defaults regression initially called a nonexistent test serialization helper;
+after correction, 127 Rust tests and 28 UI tests, strict Clippy and build passed in
+59.526 seconds (3,584,671,744-byte cgroup peak). The final combined focused run passed 128 Workspace Rust tests, five Code Pad
+installer command regressions, 28 product UI tests, five generated Windows fixture
+checks, strict Clippy and build in **116.793 seconds** (5,063,368,704-byte cgroup
+peak). Final affected verification selected all and passed in **454.471 seconds**,
+with a **6,401,130,496-byte** cgroup peak under 8 GiB. New Windows validation
+remains pending. Template conversion, Code Pad destination application, window mapping,
+WSL binding and remaining importer/provider acceptance are unfinished.
+
+## Additional CI corrections
+
+[a43f3bd general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34318912693)
+exposed a Windows recovery directory bug: the no-follow creator inspected a bare
+verbatim drive prefix before its RootDir component, producing Windows error 1
+in all seven new recovery tests. It now requires an absolute path, joins the full
+root before probing, and checks every created/existing ancestor for reparse links.
+The API Studio handoff cancellation fixture also asserted dialog removal after
+only waiting for the native mock invocation. It now waits for the actual dialog
+removal. Neither failure is reported as unrelated success.
+
+The in-progress affected run was cancelled to incorporate these fixes. Seven
+portable recovery tests, Code Pad strict Clippy and 12 handoff UI tests passed in
+40.405 seconds (3,717,419,008-byte cgroup peak). Windows execution of the prefix
+fix remains pending; final affected all passed as recorded above.
+
+## Windows Source/Files checkpoint
+
+[a43f3bd Windows acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34318912672)
+(tested merge `c4f84d308ac8391af2c9a1f5e287dc8de1151046`) passed native authority/WAL,
+packaged Source and Files including actual chooser, worktree create/edit/stage/
+commit/cleanup and dirty-buffer protections, plus API/Knowledge and installer
+coexistence. Rust archive selection/import also succeeded. The next `lsp_installed`
+request failed in 13 ms with a generic adapter error, before full LSP acceptance.
+The native status path now preserves typed busy/index/path/IO distinctions and
+keeps per-entry diagnostics sanitized. The fixture retries only explicit busy
+responses and retains only its verified nonce-owned installation index on failure.
+No root cause or full LSP/rename recovery Windows PASS is claimed yet.
+
 ## Windows fixture checkpoint
 
 [c865fb6 Windows acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34316489082)
@@ -22,6 +84,20 @@ single-quoted selector. All five generated-request/renderer/proxy regressions pa
 The final affected run selected all and passed in **371.739 seconds**, with a
 **1,728,090,112-byte** cgroup peak under the shared 8 GiB limit. The prior Source
 environment and native recovery changes still await packaged Windows execution.
+
+## Snapshot catalog and revalidation
+
+The native catalog lists only bounded completion metadata from the product's
+own snapshot directory. Incomplete/corrupt/link entries remain visible and
+unusable; unrecognized entries are counted and preserved. Listing does not claim
+file integrity. An explicit opaque snapshot ID starts a cancellable verification
+job which checks all compiled source files and hashes, without reopening a legacy
+source. Restart with a removed source, changed saved bytes after listing,
+invalid IDs, links and catalog limits are covered by portable regressions.
+Fourteen focused Rust tests, strict Clippy and product build passed. An outdated
+Registry setup mock caused an unhandled UI response-shape error; after correcting
+the mock, all 25 product UI tests passed in 6.229 seconds (555,679,744-byte cgroup
+peak). These catalog changes passed final affected all as recorded above; Windows verification is pending.
 
 ## Behavior and ownership
 

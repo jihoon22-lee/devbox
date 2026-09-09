@@ -2,11 +2,12 @@ import { useEffect, useRef, useState } from "react";
 import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
 import LegacyImports from "./LegacyImports";
+import {ProfileMetadata,type ImportedProfile,type ProfileBinding} from "./LegacyProfileImport";
 
 type Status = {phase: "loading" | "setup" | "selected" | "failed"; issue?: string};
 export interface Worktree {id: string; projectId: string; revision: number; binding: {root: string; target: ProjectContext["target"]}; trustedDigest: string | null}
-export interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[]}
-interface Preview {previewId: string; binding: Worktree["binding"]; discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
+export interface Registry {revision: number; projects: {id: string; name: string}[]; worktrees: Worktree[];importedProfiles?:ImportedProfile[];importedProfileBindings?:ProfileBinding[]}
+interface Preview {previewId: string; binding: Worktree["binding"]; importedProfileId?:string|null;discovery: {kind: "known" | "newProject" | "linkedWorktree" | "aliasOrMove" | "replacedRoot"}}
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
@@ -20,6 +21,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const [error, setError] = useState("");
   const [rename, setRename] = useState<{id: string; name: string} | null>(null);
   const [remove, setRemove] = useState<Worktree | null>(null);
+  const [unlinkProfile,setUnlinkProfile]=useState<ProfileBinding|null>(null);
   const alive = useRef(true);
   const currentPreview = useRef<string | null>(null);
   const loadId = useRef(0);
@@ -111,6 +113,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
       {preview && <section aria-label="프로젝트 등록 확인">
         <h2>등록 확인</h2><p>{discoveryLabels[preview.discovery.kind]}</p><p>{preview.binding.root}</p>
         <p>명령 실행에 대한 신뢰는 별도로 확인합니다.</p>
+        {preview.importedProfileId&&<p>가져온 프로필을 이 폴더에 연결합니다. 프로필의 포트 설정은 프로젝트·로컬 설정이 없는 경우 기본값으로 사용합니다.</p>}
         <label htmlFor="workspace-project-name">프로젝트 이름</label>
         <input id="workspace-project-name" value={name} maxLength={120} disabled={busy} onChange={event => setName(event.target.value)} />
         <button disabled={busy || !name.trim() || (editing && ["aliasOrMove","replacedRoot"].includes(preview.discovery.kind))} onClick={() => void act(async () => {
@@ -140,7 +143,29 @@ export default function RegistryGate({context = null, onContextChanged = async (
             })}>해제 확인</button><button disabled={busy} onClick={() => setRemove(null)}>취소</button></section>}
         </div>)}
       </section>)}
+      {(registry?.importedProfiles??[]).map(imported=><section key={imported.id} aria-label={`가져온 프로필 ${imported.profile.name}`}>
+        <h2>가져온 프로필: {imported.profile.name}</h2>
+        <ProfileMetadata profile={imported.profile}/>
+        <p>환경 설정과 서비스 참조는 보관되었습니다. 실행 연결은 해당 기능에서 확인해야 합니다.</p>
+        {!(registry?.importedProfileBindings??[]).some(binding=>binding.importedId===imported.id)&&<p>아직 프로젝트 폴더에 연결하지 않았습니다.</p>}
+        <button disabled={busy||editing||!imported.profile.windowsPath} onClick={()=>void act(async()=>{
+          if(preview)await cancelPreview();
+          const next=await registryCall<Preview>("preview_imported_profile_windows",{importedId:imported.id});
+          if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
+          currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName(imported.profile.name);
+          document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});
+        })}>Windows 폴더 연결 검토</button>
+        {imported.profile.wsl&&<p>WSL 폴더는 보관되어 있으며 연결 기능을 준비 중입니다.</p>}
+        {(registry?.importedProfileBindings??[]).filter(binding=>binding.importedId===imported.id).map(binding=><div key={binding.target}>
+          <p>연결한 폴더: {registry?.worktrees.find(tree=>tree.id===binding.worktreeId)?.binding.root}</p>
+          <button disabled={busy||editing} onClick={()=>setUnlinkProfile(binding)}>프로필 연결 해제</button>
+          {unlinkProfile===binding&&<section aria-label="프로필 연결 해제 확인"><p>보관한 프로필과 프로젝트 등록을 유지하고 둘 사이의 연결을 해제합니다.</p>
+            <button disabled={busy||editing} onClick={()=>void act(async()=>{await registryCall("unbind_imported_profile",{revision:registry!.revision,importedId:imported.id,target:binding.target});setUnlinkProfile(null);await refresh();})}>연결 해제 확인</button>
+            <button disabled={busy} onClick={()=>setUnlinkProfile(null)}>취소</button>
+          </section>}
+        </div>)}
+      </section>)}
     </>}
-    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports/>}
+    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports selected={status.phase==="selected"} existingProfiles={registry?.importedProfiles??[]} onImported={refresh}/>}
   </section>;
 }

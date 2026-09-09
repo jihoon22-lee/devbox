@@ -49,6 +49,7 @@ struct Snapshot {
     project: Manifest,
     local: LocalOverlay,
     effective: Manifest,
+    defaults: Manifest,
     sources: BTreeMap<String, String>,
     unavailable_sources: Vec<String>,
     digest: String,
@@ -75,6 +76,7 @@ impl Snapshot {
         registry_revision: u64,
         mut files: ProjectFiles,
         private: MetadataRoot,
+        defaults: Manifest,
         deadline: u64,
     ) -> Result<Self> {
         crate::files_host::current_deadline(deadline)?;
@@ -90,7 +92,7 @@ impl Snapshot {
             .map(|bytes| LocalOverlay::parse(bytes, context))
             .transpose()?
             .unwrap_or_else(|| LocalOverlay::empty(context.clone()));
-        let effective = manifest::effective(&Manifest::default(), &project, &local, context)?;
+        let effective = manifest::effective(&defaults, &project, &local, context)?;
         let paths: BTreeSet<_> = effective
             .tasks
             .values()
@@ -124,6 +126,7 @@ impl Snapshot {
             project,
             local,
             effective,
+            defaults,
             sources,
             unavailable_sources,
             digest,
@@ -274,6 +277,12 @@ impl Definitions {
             registry.revision,
             ProjectFiles::new(lease)?,
             private,
+            Manifest {
+                expected_ports: registry
+                    .imported_profile_for(context)?
+                    .map(|imported| imported.profile.expected_ports.clone()),
+                ..Manifest::default()
+            },
             deadline,
         )?;
         if projects.snapshot()?.revision != registry.revision {
@@ -375,7 +384,7 @@ impl Definitions {
             EditTarget::Project => {
                 let next = Manifest::parse(request.content.as_bytes())?;
                 let effective =
-                    manifest::effective(&Manifest::default(), &next, &snapshot.local, context)?;
+                    manifest::effective(&snapshot.defaults, &next, &snapshot.local, context)?;
                 (
                     serde_json::to_value(&snapshot.project),
                     serde_json::to_value(&next),
@@ -391,7 +400,7 @@ impl Definitions {
                 // native owner. JSON editing cannot mint cross-owner authority.
                 validate_local_edit(&snapshot.local, &next)?;
                 let effective =
-                    manifest::effective(&Manifest::default(), &snapshot.project, &next, context)?;
+                    manifest::effective(&snapshot.defaults, &snapshot.project, &next, context)?;
                 let bytes = serde_json::to_vec_pretty(&next).map_err(|_| "invalid_overlay")?;
                 (
                     serde_json::to_value(&snapshot.local),
@@ -499,10 +508,47 @@ mod tests {
             registry.revision,
             ProjectFiles::new(lease).unwrap(),
             MetadataRoot::open(private).unwrap(),
+            Manifest::default(),
             u64::MAX,
         )
         .unwrap();
         (snapshot, registry)
+    }
+    #[test]
+    fn imported_port_defaults_yield_to_project_and_explicit_empty_local_values() {
+        let root = tempfile::tempdir().unwrap();
+        let private = tempfile::tempdir().unwrap();
+        let (original, _) = snapshot(root.path(), private.path());
+        let capture = || {
+            Snapshot::capture(
+                &original.context,
+                original.registry_revision,
+                ProjectFiles::new(probe_fixture(root.path()).unwrap()).unwrap(),
+                MetadataRoot::open(private.path()).unwrap(),
+                Manifest {
+                    expected_ports: Some(vec![3000]),
+                    ..Manifest::default()
+                },
+                u64::MAX,
+            )
+            .unwrap()
+        };
+        assert_eq!(capture().effective.expected_ports, Some(vec![3000]));
+        fs::create_dir(root.path().join(".devbox")).unwrap();
+        fs::write(
+            root.path().join(MANIFEST),
+            br#"{"schemaVersion":1,"expectedPorts":[8080]}"#,
+        )
+        .unwrap();
+        assert_eq!(capture().effective.expected_ports, Some(vec![8080]));
+        let mut local = LocalOverlay::empty(original.context.clone());
+        local.expected_ports = Some(vec![]);
+        fs::write(
+            private.path().join(OVERLAY),
+            serde_json::to_vec(&local).unwrap(),
+        )
+        .unwrap();
+        assert_eq!(capture().effective.expected_ports, Some(vec![]));
     }
     #[test]
     fn execution_source_changes_revoke_the_definition_digest_without_executing_it() {
@@ -544,6 +590,7 @@ mod tests {
             2,
             ProjectFiles::new(lease).unwrap(),
             MetadataRoot::open(private.path()).unwrap(),
+            Manifest::default(),
             u64::MAX
         )
         .is_err());
@@ -575,6 +622,7 @@ mod tests {
             original.registry_revision,
             ProjectFiles::new(probe_fixture(root.path()).unwrap()).unwrap(),
             MetadataRoot::open(private.path()).unwrap(),
+            Manifest::default(),
             u64::MAX,
         )
         .unwrap();

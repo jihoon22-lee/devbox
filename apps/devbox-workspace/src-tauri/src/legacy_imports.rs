@@ -3,7 +3,7 @@
 use crate::{
     core::{
         legacy_inventory::Source,
-        legacy_snapshot::{Manifest, Snapshot},
+        legacy_snapshot::{Catalog, Manifest, Snapshot},
         stores::StoreRoot,
     },
     private_metadata::MetadataRoot,
@@ -24,13 +24,14 @@ type Result<T> = std::result::Result<T, &'static str>;
 pub(crate) enum Phase {
     Reading,
     Preserving,
+    Checking,
     Ready,
     Cancelled,
     Failed,
 }
 impl Phase {
     fn active(self) -> bool {
-        matches!(self, Self::Reading | Self::Preserving)
+        matches!(self, Self::Reading | Self::Preserving | Self::Checking)
     }
 }
 #[derive(Clone, Serialize)]
@@ -38,12 +39,21 @@ impl Phase {
 pub(crate) struct Job {
     id: String,
     source: Source,
+    operation: Operation,
     phase: Phase,
     snapshot_id: Option<String>,
     manifest: Option<Manifest>,
     issue: Option<&'static str>,
     #[serde(skip)]
     cancelled: Arc<AtomicBool>,
+    #[serde(skip)]
+    snapshot: Option<Arc<Snapshot>>,
+}
+#[derive(Clone, Copy, Serialize)]
+#[serde(rename_all = "kebab-case")]
+enum Operation {
+    Preserve,
+    Verify,
 }
 pub(crate) struct LegacyImports {
     stores: Arc<StoreRoot>,
@@ -72,6 +82,60 @@ impl LegacyImports {
             .map_err(|_| "legacy_import_busy")?
             .clone())
     }
+    pub(crate) fn profile_source(
+        &self,
+        job_id: &str,
+    ) -> Result<(String, workbench_lib::component::ProfileStore)> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
+            current
+                .as_ref()
+                .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+                .and_then(|job| job.snapshot.clone())
+                .ok_or("legacy_import_stale")?
+        };
+        if snapshot.manifest.source != Source::Workbench {
+            return Err("legacy_profiles_unavailable");
+        }
+        let inventory = snapshot
+            .manifest
+            .files
+            .iter()
+            .find(|file| file.name == "project-profiles.json")
+            .filter(|file| file.issue.is_none())
+            .ok_or("legacy_profiles_unavailable")?;
+        let bytes = snapshot
+            .bytes(&inventory.name)
+            .ok_or("legacy_profiles_unavailable")?;
+        let profiles = workbench_lib::component::ProfileStore::load(
+            std::str::from_utf8(bytes).map_err(|_| "legacy_profiles_unavailable")?,
+        )
+        .map_err(|_| "legacy_profiles_unavailable")?;
+        Ok((snapshot.id()?, profiles))
+    }
+    pub(crate) fn catalog(&self) -> Result<Catalog> {
+        self.stores.read()?;
+        let root = MetadataRoot::open(self.stores.root())?;
+        let destination = root.path().join("legacy-imports");
+        let result = match std::fs::symlink_metadata(&destination) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Catalog::default(),
+            Err(_) => return Err("legacy_snapshot_unavailable"),
+            Ok(_) => Snapshot::catalog(&destination, || {
+                self.stores.read()?;
+                root.revalidate()
+            })?,
+        };
+        root.revalidate()?;
+        self.stores.read()?;
+        Ok(result)
+    }
+    pub(crate) fn verify(&self, id: String) -> Result<Job> {
+        self.stores.read()?;
+        let root = MetadataRoot::open(self.stores.root())?;
+        let manifest = Snapshot::describe(&root.path().join("legacy-imports"), &id)?;
+        root.revalidate()?;
+        self.start_job(manifest.source, Some(id))
+    }
     pub(crate) fn cancel(&self, id: &str) -> Result<()> {
         let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
         let job = current
@@ -84,6 +148,9 @@ impl LegacyImports {
         Ok(())
     }
     pub(crate) fn start(&self, source: Source) -> Result<Job> {
+        self.start_job(source, None)
+    }
+    fn start_job(&self, source: Source, existing: Option<String>) -> Result<Job> {
         self.stores.read()?;
         let mut current = self.current.lock().map_err(|_| "legacy_import_busy")?;
         if current.as_ref().is_some_and(|job| job.phase.active()) {
@@ -92,11 +159,21 @@ impl LegacyImports {
         let job = Job {
             id: uuid::Uuid::new_v4().to_string(),
             source,
-            phase: Phase::Reading,
+            operation: if existing.is_some() {
+                Operation::Verify
+            } else {
+                Operation::Preserve
+            },
+            phase: if existing.is_some() {
+                Phase::Checking
+            } else {
+                Phase::Reading
+            },
             snapshot_id: None,
             manifest: None,
             issue: None,
             cancelled: Arc::default(),
+            snapshot: None,
         };
         *current = Some(job.clone());
         let stores = self.stores.clone();
@@ -118,6 +195,18 @@ impl LegacyImports {
                     Ok(())
                 };
                 let result = (|| {
+                    if let Some(id) = existing {
+                        let root = MetadataRoot::open(stores.root())?;
+                        let snapshot = Snapshot::load_checked(
+                            &root.path().join("legacy-imports"),
+                            &id,
+                            || {
+                                check()?;
+                                root.revalidate()
+                            },
+                        )?;
+                        return Ok((id, Arc::new(snapshot)));
+                    }
                     let snapshot = Snapshot::acquire(&base, source, check)?;
                     check()?;
                     if let Ok(mut state) = state.lock() {
@@ -130,15 +219,16 @@ impl LegacyImports {
                         check()?;
                         destination.revalidate()
                     })?;
-                    Ok((id, snapshot.manifest))
+                    Ok((id, Arc::new(snapshot)))
                 })();
                 if let Ok(mut state) = state.lock() {
                     if let Some(job) = state.as_mut() {
                         match result {
-                            Ok((id, manifest)) => {
+                            Ok((id, snapshot)) => {
                                 job.phase = Phase::Ready;
                                 job.snapshot_id = Some(id);
-                                job.manifest = Some(manifest);
+                                job.manifest = Some(snapshot.manifest.clone());
+                                job.snapshot = Some(snapshot);
                             }
                             Err(issue) => {
                                 job.phase = if issue == "legacy_import_cancelled" {
@@ -177,6 +267,61 @@ impl Drop for LegacyImports {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn wait(owner: &LegacyImports) -> Job {
+        let start = Instant::now();
+        loop {
+            let job = owner.status().unwrap().unwrap();
+            if !job.phase.active() {
+                return job;
+            }
+            assert!(start.elapsed() < Duration::from_secs(5));
+            std::thread::sleep(Duration::from_millis(5));
+        }
+    }
+    #[test]
+    fn restarted_owner_verifies_saved_bytes_without_reopening_the_legacy_source() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let source = base.path().join(Source::Workbench.identifier());
+        std::fs::create_dir(&source).unwrap();
+        std::fs::write(
+            source.join("project-profiles.json"),
+            br#"{"version":1,"profiles":[]}"#,
+        )
+        .unwrap();
+        let stores = Arc::new(StoreRoot::open(&root).unwrap());
+        let owner = LegacyImports::new(stores.clone()).unwrap();
+        assert!(owner.catalog().unwrap().snapshots.is_empty());
+        assert!(!root.join("legacy-imports").exists());
+        owner.start(Source::Workbench).unwrap();
+        let id = wait(&owner).snapshot_id.unwrap();
+        drop(owner);
+        std::fs::remove_dir_all(source).unwrap();
+        let owner = LegacyImports::new(stores.clone()).unwrap();
+        assert!(owner.status().unwrap().is_none());
+        assert_eq!(owner.catalog().unwrap().snapshots[0].id, id);
+        assert!(owner.verify("../foreign".into()).is_err());
+        owner.verify(id.clone()).unwrap();
+        let verified = wait(&owner);
+        assert!(matches!(verified.operation, Operation::Verify));
+        assert!(verified.phase == Phase::Ready);
+        assert_eq!(verified.snapshot_id.as_ref(), Some(&id));
+        assert!(stores.read().unwrap().is_none());
+        std::fs::write(
+            root.join("legacy-imports")
+                .join(&id)
+                .join("project-profiles.json"),
+            b"modified backup",
+        )
+        .unwrap();
+        owner.verify(id).unwrap();
+        let failed = wait(&owner);
+        assert!(failed.phase == Phase::Failed);
+        assert_eq!(failed.issue, Some("legacy_snapshot_changed"));
+        assert!(failed.manifest.is_none());
+        assert!(!root.join("stores").exists());
+    }
     #[test]
     fn native_job_preserves_fixed_sources_and_never_activates_or_grants_paths() {
         let base = tempfile::tempdir().unwrap();

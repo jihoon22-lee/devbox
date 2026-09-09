@@ -159,12 +159,19 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                         "prepare_legacy_snapshot"
                             | "legacy_snapshot_job"
                             | "cancel_legacy_snapshot"
+                            | "list_legacy_snapshots"
+                            | "verify_legacy_snapshot"
+                            | "preview_profile_import"
+                            | "cancel_profile_import"
+                            | "apply_profile_import"
                     ))
         }
         "workspace.registry" => matches!(
             method,
             "snapshot"
                 | "preview_windows"
+                | "preview_imported_profile_windows"
+                | "unbind_imported_profile"
                 | "cancel_registration"
                 | "apply_registration"
                 | "rename"
@@ -717,6 +724,80 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             empty(&args)?;
             Ok(json!(host.legacy.status()?))
         }
+        "list_legacy_snapshots" => {
+            empty(&args)?;
+            Ok(json!(host.legacy.catalog()?))
+        }
+        "preview_profile_import" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Job {
+                job_id: String,
+            }
+            let value: Job = input(args)?;
+            let (snapshot_id, profiles) = host.legacy.profile_source(&value.job_id)?;
+            Ok(json!(host
+                .projects()?
+                .preview_profile_import(snapshot_id, profiles)?))
+        }
+        "preview_imported_profile_windows" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Profile {
+                imported_id: String,
+            }
+            let value: Profile = input(args)?;
+            Ok(json!(host
+                .projects()?
+                .preview_imported_profile_windows(&value.imported_id)?))
+        }
+        "unbind_imported_profile" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Unbind {
+                revision: u64,
+                imported_id: String,
+                target: crate::core::legacy_profiles::ProfileTarget,
+            }
+            let value: Unbind = input(args)?;
+            Ok(json!(host.projects()?.unbind_imported_profile(
+                value.revision,
+                &value.imported_id,
+                value.target
+            )?))
+        }
+        "apply_profile_import" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Apply {
+                preview_id: String,
+                choices: Vec<crate::core::legacy_profiles::Choice>,
+            }
+            let value: Apply = input(args)?;
+            let (registry, result) = host
+                .projects()?
+                .apply_profile_import(&value.preview_id, value.choices)?;
+            Ok(json!({"registry":registry,"result":result}))
+        }
+        "cancel_profile_import" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Cancel {
+                preview_id: String,
+            }
+            let value: Cancel = input(args)?;
+            host.projects()?.cancel_profile_import(&value.preview_id)?;
+            Ok(Value::Null)
+        }
+        "verify_legacy_snapshot" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Snapshot {
+                snapshot_id: String,
+            }
+            let value: Snapshot = input(args)?;
+            Ok(json!(host.legacy.verify(value.snapshot_id)?))
+        }
         "cancel_legacy_snapshot" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1267,6 +1348,28 @@ mod tests {
             );
         }
         assert!(host.legacy.status().unwrap().is_none());
+        assert_eq!(
+            dispatch(&host, "list_legacy_snapshots", json!({"path":"foreign"})),
+            Err("invalid_request")
+        );
+        assert_eq!(
+            dispatch(
+                &host,
+                "verify_legacy_snapshot",
+                json!({"snapshotId":"../foreign"})
+            ),
+            Err("invalid_legacy_snapshot")
+        );
+        assert!(!allowed(
+            "workspace.files",
+            "files",
+            "verify_legacy_snapshot"
+        ));
+        assert!(!allowed(
+            "workspace.migration",
+            "source",
+            "list_legacy_snapshots"
+        ));
         assert!(!root.path().join("legacy-imports").exists());
         assert!(!allowed(
             "workspace.source",

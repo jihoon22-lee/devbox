@@ -12,6 +12,7 @@ beforeEach(() => {
   call.mockReset();
   call.mockImplementation(async (_component, method) => {
     if (method === "legacy_snapshot_job") return null;
+    if (method === "list_legacy_snapshots") return {snapshots:[],unrecognized:0};
     if (method === "status") return {phase:"selected"};
     if (method === "snapshot") return emptyRegistry;
     if (method === "preview_windows") return preview;
@@ -19,7 +20,7 @@ beforeEach(() => {
   });
 });
 it("requires explicit empty startup and preserves a failed store", async () => {
-  call.mockResolvedValue({phase:"setup"});
+  call.mockImplementation(async (_component,method)=>method==="status"?{phase:"setup"}:method==="legacy_snapshot_job"?null:{snapshots:[],unrecognized:0});
   const view = render(<RegistryGate/>);
   await screen.findByRole("button", {name:"빈 Workspace 시작"});
   expect(call.mock.calls.some(([,method])=>method === "start_empty")).toBe(false);
@@ -43,6 +44,23 @@ it("previews and cancels registration without granting trust or writing the regi
   expect(call).toHaveBeenCalledWith("workspace.registry", "cancel_registration", {previewId:"fixture-preview"});
   expect(call.mock.calls.some(([,method])=>method === "apply_registration")).toBe(false);
 });
+it("proposes an imported folder using only its stored native record ID",async()=>{
+  const profile={id:"old-profile",name:"가져온 프로젝트",windowsPath:"C:\\fixture",wsl:null,gitRoot:null,expectedPorts:[3000],runManagerServiceIds:[],environment:null};
+  call.mockImplementation(async(_component,method)=>{
+    if(method==="status")return {phase:"selected"};
+    if(method==="snapshot")return {...emptyRegistry,importedProfiles:[{id:"native-imported",sourceSnapshotId:"snapshot",profile}]};
+    if(method==="legacy_snapshot_job")return null;
+    if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
+    if(method==="preview_imported_profile_windows")return {...preview,importedProfileId:"native-imported"};
+    return {};
+  });
+  render(<RegistryGate/>);
+  fireEvent.click(await screen.findByRole("button",{name:"Windows 폴더 연결 검토"}));
+  await screen.findByRole("heading",{name:"등록 확인"});
+  expect(call).toHaveBeenCalledWith("workspace.registry","preview_imported_profile_windows",{importedId:"native-imported"});
+  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
+  expect(screen.getByText(/가져온 프로필을 이 폴더에 연결합니다/)).toBeTruthy();
+});
 it("sends only the reviewed preview token on explicit registration", async () => {
   render(<RegistryGate/>);
   fireEvent.change(await screen.findByLabelText("Windows 프로젝트 폴더"), {target:{value:preview.binding.root}});
@@ -56,7 +74,7 @@ it("selects only an explicit native context and refreshes after successful admis
   const context = {projectId:"project-a",worktreeId:"tree-a",revision:2,target:{kind:"windows" as const}};
   const registry = {revision:2,projects:[{id:"project-a",name:"fixture"}],worktrees:[{id:"tree-a",projectId:"project-a",revision:2,binding:preview.binding,trustedDigest:null}]};
   const refreshed = vi.fn(async () => {});
-  call.mockImplementation(async (_component, method) => method === "status" ? {phase:"selected"} : method === "snapshot" ? registry : method === "legacy_snapshot_job" ? null : {});
+  call.mockImplementation(async (_component, method) => method === "status" ? {phase:"selected"} : method === "snapshot" ? registry : method === "legacy_snapshot_job" ? null : method === "list_legacy_snapshots" ? {snapshots:[],unrecognized:0} : {});
   const view = render(<RegistryGate onContextChanged={refreshed}/>);
   fireEvent.click(await screen.findByRole("button", {name:"프로젝트 선택"}));
   await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(1));

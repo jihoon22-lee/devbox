@@ -13,7 +13,15 @@ bytes under a content-addressed product-local snapshot. Unknown/future/corrupt
 files have diagnostics without success counts. Cancellation leaves incomplete
 snapshots uncommitted; retries verify existing bytes without overwriting changed
 files. This step does not activate imported data or grant project/file/LSP access.
-The snapshot-to-Registry/editor mapping is still being implemented. Repo Manager's
+The persisted catalog is available after restart. Explicit revalidation checks all
+saved bytes without reopening the legacy source; completion metadata alone is
+not an integrity check. Incomplete or damaged entries and unknown folders remain
+preserved. Verified Workbench profiles can be reviewed and imported with explicit new/reuse/
+keep-both/skip choices. Their original IDs and complete metadata remain alongside
+new Workspace IDs. A separate native Windows folder review commits registration
+and profile binding together; imported ports are defaults below project/local
+values. Unlink preserves both records. Templates, Code Pad destination application,
+window mapping and WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
 file to migrate. Native window-state mapping and older identifier diagnostics
 remain part of the unfinished importer.
