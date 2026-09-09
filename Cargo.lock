@@ -1434,6 +1434,8 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "window-state",
+ "window-state-tauri",
  "windows 0.61.3",
  "workbench",
  "wsl",

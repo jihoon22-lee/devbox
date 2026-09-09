@@ -12,6 +12,7 @@ beforeEach(() => {
   call.mockReset();
   call.mockImplementation(async (_component, method) => {
     if (method === "legacy_snapshot_job") return null;
+    if (method === "list_window_history") return {items:[],unrecognized:0};
     if (method === "list_legacy_snapshots") return {snapshots:[],unrecognized:0};
     if (method === "status") return {phase:"selected"};
     if (method === "snapshot") return emptyRegistry;
@@ -50,6 +51,7 @@ it("proposes an imported folder using only its stored native record ID",async()=
     if(method==="status")return {phase:"selected"};
     if(method==="snapshot")return {...emptyRegistry,importedProfiles:[{id:"native-imported",sourceSnapshotId:"snapshot",profile}]};
     if(method==="legacy_snapshot_job")return null;
+    if(method==="list_window_history")return {items:[],unrecognized:0};
     if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
     if(method==="preview_imported_profile_windows")return {...preview,importedProfileId:"native-imported"};
     return {};
@@ -74,7 +76,7 @@ it("selects only an explicit native context and refreshes after successful admis
   const context = {projectId:"project-a",worktreeId:"tree-a",revision:2,target:{kind:"windows" as const}};
   const registry = {revision:2,projects:[{id:"project-a",name:"fixture"}],worktrees:[{id:"tree-a",projectId:"project-a",revision:2,binding:preview.binding,trustedDigest:null}]};
   const refreshed = vi.fn(async () => {});
-  call.mockImplementation(async (_component, method) => method === "status" ? {phase:"selected"} : method === "snapshot" ? registry : method === "legacy_snapshot_job" ? null : method === "list_legacy_snapshots" ? {snapshots:[],unrecognized:0} : {});
+  call.mockImplementation(async (_component, method) => method === "status" ? {phase:"selected"} : method === "snapshot" ? registry : method === "legacy_snapshot_job" ? null : method === "list_window_history" ? {items:[],unrecognized:0} : method === "list_legacy_snapshots" ? {snapshots:[],unrecognized:0} : {});
   const view = render(<RegistryGate onContextChanged={refreshed}/>);
   fireEvent.click(await screen.findByRole("button", {name:"프로젝트 선택"}));
   await waitFor(() => expect(refreshed).toHaveBeenCalledTimes(1));
@@ -101,6 +103,7 @@ it("reviews the saved Code Pad workspace through native job identity before regi
   call.mockImplementation(async(_component,method)=>{
     if(method==="status")return {phase:"selected"};
     if(method==="snapshot")return emptyRegistry;
+    if(method==="list_window_history")return {items:[],unrecognized:0};
     if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
     if(method==="legacy_snapshot_job")return {id:"verified-job",source:"code-pad",phase:"ready",operation:"verify",manifest:{files:[{name:"session.json",issue:null,records:1}],missing:[]}};
     if(method==="legacy_workspace")return {path:preview.binding.root,target:"windows"};
@@ -124,6 +127,7 @@ it("reviews a concrete template profile and registers only after explicit approv
     if(method==="status")return {phase:"selected"};
     if(method==="snapshot")return {...emptyRegistry,importedTemplates:[imported]};
     if(method==="legacy_snapshot_job")return null;
+    if(method==="list_window_history")return {items:[],unrecognized:0};
     if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
     if(method==="preview_template_profile_windows")return {...preview,templateProfile:candidate};
     return {};

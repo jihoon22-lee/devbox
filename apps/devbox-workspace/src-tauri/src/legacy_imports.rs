@@ -82,6 +82,32 @@ impl LegacyImports {
             .map_err(|_| "legacy_import_busy")?
             .clone())
     }
+    pub(crate) fn window_source(
+        &self,
+        job_id: &str,
+    ) -> Result<(String, window_state::WindowState)> {
+        let snapshot = {
+            let current = self.current.lock().map_err(|_| "legacy_import_busy")?;
+            current
+                .as_ref()
+                .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+                .and_then(|job| job.snapshot.clone())
+                .ok_or("legacy_import_stale")?
+        };
+        if !snapshot
+            .manifest
+            .files
+            .iter()
+            .any(|file| file.name == "window-state-v1.json" && file.issue.is_none())
+        {
+            return Err("legacy_window_unavailable");
+        }
+        let bytes = snapshot
+            .bytes("window-state-v1.json")
+            .ok_or("legacy_window_unavailable")?;
+        let state = window_state::decode_state(bytes).map_err(|_| "legacy_window_unavailable")?;
+        Ok((snapshot.id()?, state))
+    }
     pub(crate) fn profile_source(
         &self,
         job_id: &str,

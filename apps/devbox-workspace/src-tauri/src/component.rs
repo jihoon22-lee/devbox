@@ -44,6 +44,7 @@ struct Runtime {
     source_workers: Arc<tokio::sync::Semaphore>,
     host: Arc<OnceLock<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
+    window_imports: Arc<Mutex<crate::window_import::WindowImports>>,
     probes: Pool,
     files: Arc<Mutex<crate::files_host::FilesHost>>,
     file_requests: Pool,
@@ -69,6 +70,7 @@ impl Default for Runtime {
             source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             host: Arc::default(),
             metadata: Pool::default(),
+            window_imports: Arc::default(),
             probes: Pool::default(),
             files: Arc::default(),
             file_requests: Pool::default(),
@@ -155,6 +157,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         "workspace.lsp" => route == "files" && crate::lsp_host::allowed(method),
         "workspace.migration" => {
             matches!(method, "status" | "start_empty")
+                || (route == "overview" && crate::window_import::WindowImports::allowed(method))
                 || (route == "overview"
                     && matches!(
                         method,
@@ -1154,6 +1157,32 @@ async fn execute(
             }
             (Err(issue), _) | (_, Err(issue)) => Err(issue),
         }
+    } else if request.component == "workspace.migration"
+        && crate::window_import::WindowImports::allowed(&request.method)
+    {
+        match (runtime.host(), runtime.metadata.reserve()) {
+            (Ok(host), Ok(permit)) => {
+                let owner = runtime.window_imports.clone();
+                let geometry = crate::window_import::NativeGeometry {
+                    window: window.clone(),
+                    deadline,
+                };
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _permit = permit;
+                    crate::files_host::current_deadline(deadline)?;
+                    owner.lock().map_err(|_| "busy")?.dispatch(
+                        &host,
+                        &geometry,
+                        &request.method,
+                        request.args,
+                        deadline,
+                    )
+                })
+                .await
+                .unwrap_or(Err("worker_unavailable"))
+            }
+            (Err(issue), _) | (_, Err(issue)) => Err(issue),
+        }
     } else if request.method == "clear_project" {
         empty(&request.args).and_then(|()| {
             product_shell_tauri::replace_project_context(
@@ -1475,6 +1504,21 @@ mod tests {
                     .any(|entry| entry["id"] == component && entry["owner"] == "workspace"),
                 "the product shell would reject {component} before its domain adapter"
             );
+        }
+    }
+    #[test]
+    fn window_geometry_changes_require_the_migration_overview_role() {
+        for method in [
+            "preview_window_import",
+            "preview_window_restore",
+            "apply_window_import",
+            "cancel_window_import",
+            "list_window_history",
+        ] {
+            assert!(allowed("workspace.migration", "overview", method));
+            assert!(!allowed("workspace.migration", "files", method));
+            assert!(!allowed("workspace.files", "overview", method));
+            assert!(!allowed("workspace.registry", "overview", method));
         }
     }
     #[test]

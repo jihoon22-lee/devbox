@@ -18,12 +18,26 @@ pub struct FileSpec {
     pub limit: usize,
 }
 const MIB: usize = 1024 * 1024;
+const WINDOW: FileSpec = FileSpec {
+    name: "window-state-v1.json",
+    limit: window_state::MAX_STATE_BYTES,
+};
 impl Source {
     pub fn identifier(self) -> &'static str {
         match self {
             Self::Workbench => "com.devbox.workbench",
             Self::CodePad => "com.devbox.codepad",
             Self::RepoManager => "com.devbox.repomanager",
+        }
+    }
+    /// Snapshot v1 predates window inventory. Keep its exact fixed file set so
+    /// existing content-addressed manifests remain valid without rewriting IDs.
+    pub fn snapshot_files(self, version: u32) -> Result<&'static [FileSpec], &'static str> {
+        let files = self.files();
+        match version {
+            1 => Ok(&files[..files.len() - 1]),
+            2 => Ok(files),
+            _ => Err("invalid_legacy_snapshot"),
         }
     }
     pub fn files(self) -> &'static [FileSpec] {
@@ -37,6 +51,7 @@ impl Source {
                     name: "profile-templates.json",
                     limit: MIB,
                 },
+                WINDOW,
             ],
             Self::CodePad => &[
                 FileSpec {
@@ -51,10 +66,11 @@ impl Source {
                     name: "lsp/config.json",
                     limit: 64 * 1024,
                 },
+                WINDOW,
             ],
             // v0.7 scan root, selected repository and panel preferences are
             // React state only. Dependency enrichment is a derived cache.
-            Self::RepoManager => &[],
+            Self::RepoManager => &[WINDOW],
         }
     }
 }
@@ -135,6 +151,17 @@ fn decode(source: Source, name: &str, bytes: &[u8], limit: usize) -> Result<usiz
         .is_some_and(|version| version != 1)
     {
         return Err(Issue::UnsupportedSchema);
+    }
+    if name == "window-state-v1.json" {
+        if raw
+            .get("schemaVersion")
+            .and_then(Value::as_u64)
+            .is_some_and(|version| version != 1)
+        {
+            return Err(Issue::UnsupportedSchema);
+        }
+        window_state::decode_state(bytes).map_err(|_| Issue::Corrupt)?;
+        return Ok(1);
     }
     let (normalized, count) = match (source, name) {
         (Source::Workbench, "project-profiles.json") => {
@@ -246,8 +273,54 @@ mod tests {
         );
     }
     #[test]
+    fn window_future_corruption_and_size_limits_never_claim_success() {
+        for source in [Source::Workbench, Source::CodePad, Source::RepoManager] {
+            let future =
+                inspect(source, "window-state-v1.json", br#"{"schemaVersion":2}"#).unwrap();
+            assert_eq!(future.issue, Some(Issue::UnsupportedSchema));
+            assert_eq!(future.records, None);
+            let corrupt = inspect(
+                source,
+                "window-state-v1.json",
+                br#"{"schemaVersion":1,"bounds":null}"#,
+            )
+            .unwrap();
+            assert_eq!(corrupt.issue, Some(Issue::Corrupt));
+            assert_eq!(corrupt.records, None);
+            assert_eq!(
+                inspect(
+                    source,
+                    "window-state-v1.json",
+                    &vec![b' '; window_state::MAX_STATE_BYTES + 1]
+                )
+                .unwrap()
+                .issue,
+                Some(Issue::Limit)
+            );
+        }
+        assert_eq!(
+            Source::Workbench
+                .snapshot_files(1)
+                .unwrap()
+                .iter()
+                .map(|file| file.name)
+                .collect::<Vec<_>>(),
+            ["project-profiles.json", "profile-templates.json"]
+        );
+        assert_eq!(
+            Source::CodePad
+                .snapshot_files(1)
+                .unwrap()
+                .iter()
+                .map(|file| file.name)
+                .collect::<Vec<_>>(),
+            ["session.json", "recovery.json", "lsp/config.json"]
+        );
+    }
+    #[test]
     fn inventory_never_invents_repo_preferences_or_admits_project_files() {
-        assert!(Source::RepoManager.files().is_empty());
+        assert_eq!(Source::RepoManager.files()[0].name, "window-state-v1.json");
+        assert!(Source::RepoManager.snapshot_files(1).unwrap().is_empty());
         for name in [
             "../session.json",
             ".git/config",

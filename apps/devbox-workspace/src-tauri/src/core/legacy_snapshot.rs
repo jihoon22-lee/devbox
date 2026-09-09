@@ -92,15 +92,14 @@ fn manifest(root: &Directory, id: &str) -> Result<Manifest> {
     let (_, bytes) = read(root, "snapshot.json", 64 * 1024)?.ok_or("legacy_snapshot_incomplete")?;
     let manifest: Manifest =
         serde_json::from_slice(&bytes).map_err(|_| "invalid_legacy_snapshot")?;
-    let specs = manifest.source.files();
+    let specs = manifest.source.snapshot_files(manifest.schema_version)?;
     let names = manifest
         .files
         .iter()
         .map(|file| file.name.as_str())
         .chain(manifest.missing.iter().map(String::as_str))
         .collect::<std::collections::BTreeSet<_>>();
-    if manifest.schema_version != 1
-        || digest(&serde_json::to_vec(&manifest).map_err(|_| "invalid_legacy_snapshot")?) != id
+    if digest(&serde_json::to_vec(&manifest).map_err(|_| "invalid_legacy_snapshot")?) != id
         || manifest.files.len() + manifest.missing.len() != specs.len()
         || names.len() != specs.len()
         || specs.iter().any(|spec| !names.contains(spec.name))
@@ -230,7 +229,7 @@ impl Snapshot {
         let mut inventories = vec![];
         let mut missing = vec![];
         // Walk the compiled source inventory, never paths from snapshot JSON.
-        for spec in manifest.source.files() {
+        for spec in manifest.source.snapshot_files(manifest.schema_version)? {
             check()?;
             match read(&root, spec.name, spec.limit)? {
                 Some((stamp, bytes)) => {
@@ -264,7 +263,7 @@ impl Snapshot {
         let root_path = base.path.join(source.identifier());
         let mut result = Self {
             manifest: Manifest {
-                schema_version: 1,
+                schema_version: 2,
                 source,
                 files: vec![],
                 missing: vec![],
@@ -450,6 +449,85 @@ mod tests {
         )
         .unwrap();
         (base, source, destination)
+    }
+    #[test]
+    fn original_v1_snapshots_keep_their_ids_and_new_windows_use_versioned_inventory() {
+        for source in [Source::Workbench, Source::CodePad, Source::RepoManager] {
+            let base = tempfile::tempdir().unwrap();
+            let root = base.path().join(source.identifier());
+            fs::create_dir(&root).unwrap();
+            let destination = base.path().join("snapshots");
+            fs::create_dir(&destination).unwrap();
+            let original_file = match source {
+                Source::Workbench => Some(("project-profiles.json", br#"{"version":1,"profiles":[]}"#.as_slice())),
+                Source::CodePad => Some(("session.json", br#"{"version":1,"workspace_folder":null,"docs":[],"views":[[],[]],"active_view":0,"active_doc_by_view":[null,null],"recent_files":[]}"#.as_slice())),
+                Source::RepoManager => None,
+            };
+            if let Some((name, bytes)) = original_file {
+                fs::write(root.join(name), bytes).unwrap();
+            }
+            let mut original = Snapshot::acquire(base.path(), source, || Ok(())).unwrap();
+            original.manifest.schema_version = 1;
+            original
+                .manifest
+                .missing
+                .retain(|name| name != "window-state-v1.json");
+            let id = original.persist(&destination, || Ok(())).unwrap();
+            let marker = fs::read(destination.join(&id).join("snapshot.json")).unwrap();
+            let window = window_state::WindowState::new(
+                window_state::MonitorId::new("old-monitor").unwrap(),
+                window_state::WindowBounds::new(20, 30, 1000, 700),
+                window_state::WindowBounds::new(0, 0, 1920, 1040),
+                1.0,
+                true,
+            )
+            .unwrap()
+            .to_bytes()
+            .unwrap();
+            fs::write(root.join("window-state-v1.json"), &window).unwrap();
+            let next = Snapshot::acquire(base.path(), source, || Ok(())).unwrap();
+            assert_eq!(next.manifest.schema_version, 2);
+            assert_eq!(
+                next.manifest
+                    .files
+                    .iter()
+                    .find(|item| item.name == "window-state-v1.json")
+                    .unwrap()
+                    .records,
+                Some(1)
+            );
+            let next_id = next.persist(&destination, || Ok(())).unwrap();
+            assert_ne!(next_id, id);
+            let loaded_original = Snapshot::load(&destination, &id).unwrap();
+            assert_eq!(loaded_original.id().unwrap(), id);
+            if let Some((name, bytes)) = original_file {
+                assert_eq!(loaded_original.bytes(name).unwrap(), bytes);
+            }
+            assert_eq!(
+                fs::read(destination.join(&id).join("snapshot.json")).unwrap(),
+                marker
+            );
+            assert_eq!(
+                Snapshot::load(&destination, &next_id)
+                    .unwrap()
+                    .bytes("window-state-v1.json")
+                    .unwrap(),
+                window
+            );
+            assert_eq!(fs::read(root.join("window-state-v1.json")).unwrap(), window);
+            assert!(Snapshot::catalog(&destination, || Ok(()))
+                .unwrap()
+                .snapshots
+                .iter()
+                .all(|entry| entry.issue.is_none()));
+            let mut future = next;
+            future.manifest.schema_version = 3;
+            let future_id = future.persist(&destination, || Ok(())).unwrap();
+            assert!(matches!(
+                Snapshot::load(&destination, &future_id),
+                Err("invalid_legacy_snapshot")
+            ));
+        }
     }
     #[test]
     fn stable_snapshot_repeats_without_changing_source_or_importing_invalid_data() {

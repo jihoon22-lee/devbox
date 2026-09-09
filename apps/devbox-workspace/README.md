@@ -7,7 +7,7 @@ Hidden v0.8 B04 development product. The shared Overview/Source/Files UI and nat
 Uses a new `com.devbox.v08.workspace` identity; startup does not open legacy data roots. Navigation retains mounted route drafts in memory, with bounded history. Native runtime and installer identity proof remain separate from the focused Registry/storage checks.
 
 Overview now provides explicit backup of fixed v0.7 Workbench profile/template and
-Code Pad session/recovery/LSP JSON files. A bounded native background job validates
+Code Pad session/recovery/LSP JSON files and each legacy product’s main-window state. A bounded native background job validates
 schemas and records, checks source identity/content again, and preserves exact
 bytes under a content-addressed product-local snapshot. Unknown/future/corrupt
 files have diagnostics without success counts. Cancellation leaves incomplete
@@ -46,11 +46,9 @@ is resolved, runtime installed or execution approval inherited by conversion.
 Overview reads the single last workspace from a verified Code Pad session without
 resolving its path. Explicit Windows folder review uses the native snapshot job ID
 and existing Registry discovery/registration; it grants no selection or execution
-trust. WSL/unsupported paths remain visible without automatic probes. Templates,
-window mapping and WSL bindings remain incomplete. Repo Manager's
+trust. WSL/unsupported paths remain visible without automatic probes. WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
-file to migrate. Native window-state mapping and older identifier diagnostics
-remain part of the unfinished importer.
+file to migrate. Older identifier diagnostics remain part of the unfinished importer.
 
 The existing Workbench, Repo Manager and Code Pad UI/tests live in
 `packages/workspace-features` and are consumed by their legacy entry points too.
@@ -169,6 +167,19 @@ folder binding share the Registry commit. Environment data is absent and selecti
 and execution trust remain separate. Template editing and WSL instantiation remain
 pending. The hosted template fixture covers the native import and actual creation UI;
 its Windows result is pending for this change.
+
+Verified main-window state from Workbench, Code Pad and Repo Manager now has an
+explicit current/adjusted review using the existing monitor/DPI restoration logic.
+The snapshot inventory is versioned: original v1 snapshot IDs and bytes remain
+readable; new v2 snapshots include the fixed window file. Window import passes only
+a native job/review ID. It preserves current native geometry in bounded history
+before applying and rejects changed geometry/monitors, expired tokens and replay.
+Previous states have the same explicit restoration review. Native geometry runs on
+the UI thread and uses the existing coalescing window writer. A partial OS failure
+can leave intermediate geometry; the saved previous state remains available.
+This is not a transaction between window APIs and disk persistence. Only the
+compatible main-to-main mapping is implemented; secondary-window roles belong to
+B07. The new hosted window UI/native fixture awaits Windows execution.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.
