@@ -179,13 +179,41 @@ The first bare-WSL1 diagnostic used an unavailable UNC path; its replacement rea
 persisted bytes through the real helper and propagates child failure status. All
 fixture distributions/directories were removed. Existing user distributions/data
 were not fixtures. These local pipe results are distinct from the expanded Windows
-Registry/trust/local-overlay fixture, whose new CI execution is pending.
+Registry/trust/local-overlay fixture. That expanded actual WSL1 Rust/helper fixture
+now passed at `5571786` in **6.94 s** in [run 34404024294](https://github.com/jihoon22-lee/devbox/actions/runs/34404024294);
+its remaining general/packaged checks are still running.
 
 Final `pnpm verify:affected` selected all and passed in **498.179 s**, sampled RSS
 **6,445,371,392 B**, cgroup **6,444,003,328 B / 8 GiB**. New CI results remain pending.
 Prior failing intermediate runs are preserved in this PR's commit/Actions history;
 they do not override the exact-commit PASS evidence above. Initial Workspace
 bundle at `01db848` is 279,012/280,000 B, gzip 82,319/90,000 B; limits were not raised.
+
+## Native Git engine preparation
+
+Repo Manager's default standalone and Workspace desktop builds preserve Tauri and
+its scheduler. The native library now reuses the same typed Source dispatcher and
+Git/Dependency logic without GUI startup; native callers supply an execution
+capability and runtime. Exact-root/closed-method validation precedes IO, and native
+Source queries do not publish standalone repository snapshots. This does not yet
+enable WSL command execution. No library version changed; Tokio was already in the
+lockfile and notices were regenerated for its new direct dependency edge.
+
+Headless **130 tests** and both headless/desktop Linux strict Clippy PASS
+(**26.459 s**, sampled RSS **1,580,789,760 B**). Full Workspace MSVC all-target strict
+Clippy, native musl dependency-tree checks and dependency policy PASS (**18.990 s**,
+sampled RSS **1,751,560,192 B**). The native graph has no Tauri/GTK/WebKit runtime or
+build dependencies. Initial unused desktop imports/entry points and a legacy test
+wrapper's feature gate were corrected before these results.
+
+Final affected all PASS: **680.021 s**, sampled RSS **5,809,029,120 B**,
+cgroup **6,444,793,856 B / 8 GiB**.
+
+An exclusively owned kernel probe on WSL1/WSL2 confirmed subreaper adoption after
+double-fork/setsid and repeated waitid WNOWAIT followed by exact child reaping.
+WSL1 has no pidfd_open; WSL2 provides it. All synthetic distributions/directories
+were removed. This is capability evidence for the next process owner, not Git/LSP
+execution acceptance. See [subreaper semantics](https://www.man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html).
 
 ## Remaining acceptance and rollback limits
 

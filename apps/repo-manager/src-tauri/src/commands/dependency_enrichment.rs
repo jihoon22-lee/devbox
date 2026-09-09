@@ -139,7 +139,8 @@ impl EnrichmentEndpoints {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
+#[cfg(feature = "desktop")]
 pub async fn dependency_enrichment_preview(
     request: DependencyEnrichmentPreviewRequest,
 ) -> Result<DependencyEnrichmentPreview, String> {
@@ -197,7 +198,8 @@ pub(crate) async fn preview_with_access(
     Ok(preview)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
+#[cfg(feature = "desktop")]
 pub async fn dependency_enrichment_execute(
     request: DependencyEnrichmentExecuteRequest,
 ) -> Result<DependencyEnrichmentReport, String> {
@@ -599,8 +601,8 @@ fn prepare_cache_directory(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_dependency_enrichment_preview(
-    _component_app: &tauri::AppHandle,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     #[derive(serde::Deserialize)]
@@ -614,8 +616,8 @@ pub(crate) async fn __component_dependency_enrichment_preview(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
 pub(crate) async fn __component_dependency_enrichment_execute(
-    _component_app: &tauri::AppHandle,
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
     #[derive(serde::Deserialize)]
@@ -846,14 +848,14 @@ mod tests {
             },
         )
         .unwrap();
-        let report = tauri::async_runtime::block_on(
-            super::super::dependency_inventory_with_access(access.clone()),
-        )
+        let report = crate::runtime::block_on(super::super::dependency_inventory_with_access(
+            access.clone(),
+        ))
         .unwrap();
         assert_eq!(report.package_count, 1);
         assert!(report.summary_published);
         assert!(!root.path().join(".git").exists());
-        let wrong = tauri::async_runtime::block_on(crate::component::dispatch_dependencies(
+        let wrong = crate::runtime::block_on(crate::component::dispatch_dependencies(
             access.clone(),
             "dependency_inventory",
             json!({"request":{"path":common.path().to_string_lossy()}}),
@@ -864,34 +866,27 @@ mod tests {
             deps_dev: true,
         };
         let preview =
-            tauri::async_runtime::block_on(preview_with_access(access.clone(), selection, false))
+            crate::runtime::block_on(preview_with_access(access.clone(), selection, false))
                 .unwrap();
-        let success = tauri::async_runtime::block_on(execute_with_access(
-            access.clone(),
-            preview.token.clone(),
-        ))
-        .unwrap();
+        let success =
+            crate::runtime::block_on(execute_with_access(access.clone(), preview.token.clone()))
+                .unwrap();
         assert_eq!(success.revision, report.revision);
         assert!(
-            tauri::async_runtime::block_on(execute_with_access(access.clone(), preview.token))
-                .is_err()
+            crate::runtime::block_on(execute_with_access(access.clone(), preview.token)).is_err()
         );
         let cancelled =
-            tauri::async_runtime::block_on(preview_with_access(access.clone(), selection, false))
+            crate::runtime::block_on(preview_with_access(access.clone(), selection, false))
                 .unwrap();
         cancel_with_access(&access, &cancelled.token).unwrap();
-        assert!(tauri::async_runtime::block_on(execute_with_access(
-            access.clone(),
-            cancelled.token
-        ))
-        .is_err());
-        let stale =
-            tauri::async_runtime::block_on(preview_with_access(access.clone(), selection, false))
-                .unwrap();
+        assert!(
+            crate::runtime::block_on(execute_with_access(access.clone(), cancelled.token)).is_err()
+        );
+        let stale = crate::runtime::block_on(preview_with_access(access.clone(), selection, false))
+            .unwrap();
         current.store(false, Ordering::Release);
         assert!(
-            tauri::async_runtime::block_on(execute_with_access(access.clone(), stale.token))
-                .is_err()
+            crate::runtime::block_on(execute_with_access(access.clone(), stale.token)).is_err()
         );
         current.store(true, Ordering::Release);
         let missing = common.path().join("deleted-generation");
@@ -911,10 +906,12 @@ mod tests {
             assert!(write_cache_for(&access, &EnrichmentCache::default(), now_epoch_ms()).is_err());
             assert_eq!(fs::read(cache_path(common.path())).unwrap(), bytes);
             // Cache failure cannot break the explicitly requested offline view.
-            assert!(tauri::async_runtime::block_on(
-                super::super::dependency_inventory_with_access(access.clone())
-            )
-            .is_ok());
+            assert!(
+                crate::runtime::block_on(super::super::dependency_inventory_with_access(
+                    access.clone()
+                ))
+                .is_ok()
+            );
         }
     }
 
@@ -993,7 +990,7 @@ mod tests {
         let client = fixture_client(Duration::from_secs(1));
         let endpoints = fixture_endpoints(&base);
         let coordinate = coordinate();
-        let (osv, deps) = tauri::async_runtime::block_on(async {
+        let (osv, deps) = crate::runtime::block_on(async {
             join(
                 fetch_osv(&client, &endpoints, std::slice::from_ref(&coordinate)),
                 fetch_deps_dev(&client, &endpoints, std::slice::from_ref(&coordinate)),
@@ -1051,7 +1048,7 @@ mod tests {
             headers: vec![("Location".into(), location.clone())],
             body: String::new(),
         });
-        let redirect_result = tauri::async_runtime::block_on(fetch_optional(
+        let redirect_result = crate::runtime::block_on(fetch_optional(
             &fixture_client(Duration::from_millis(250)),
             Url::parse(&base).unwrap(),
             1_024,
@@ -1074,7 +1071,7 @@ mod tests {
                 "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
             );
         });
-        let timeout_result = tauri::async_runtime::block_on(fetch_optional(
+        let timeout_result = crate::runtime::block_on(fetch_optional(
             &fixture_client(Duration::from_millis(30)),
             url,
             1_024,
@@ -1109,7 +1106,7 @@ mod tests {
         bad.package_ids = vec!["npm:bad@1.2.3".into()];
         let endpoints = fixture_endpoints(&base);
         let client = fixture_client(Duration::from_secs(1));
-        let network = tauri::async_runtime::block_on(fetch_deps_dev(
+        let network = crate::runtime::block_on(fetch_deps_dev(
             &client,
             &endpoints,
             &[good.clone(), bad.clone()],
@@ -1205,7 +1202,7 @@ mod tests {
             "version = 4\n\n[[package]]\nname = \"fixture\"\nversion = \"0.2.0\"\n",
         )
         .unwrap();
-        let result = tauri::async_runtime::block_on(validate_stored_plan(
+        let result = crate::runtime::block_on(validate_stored_plan(
             &DependencyAccess::legacy(&root.path().to_string_lossy()).unwrap(),
             &stored,
         ));

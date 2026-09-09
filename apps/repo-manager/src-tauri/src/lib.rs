@@ -1,9 +1,11 @@
 pub mod component;
 // Learn more about Tauri commands at https://tauri.app/develop/calling-rust/
+#[cfg(feature = "desktop")]
 mod applink;
-mod commands;
+pub mod commands;
 mod core;
 mod integration;
+mod runtime;
 
 #[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};

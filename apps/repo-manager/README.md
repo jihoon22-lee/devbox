@@ -410,3 +410,15 @@ cancellation/deadline ownership. Git-returned roots and metadata are admitted
 before IO, and operation IDs are namespaced by product context. The product
 Registry owns discovery/provider identity; these calls do not publish the legacy
 repository view. Standalone behavior and its existing storage remain unchanged.
+
+## Native component build
+
+The default `standalone` feature includes `desktop` and preserves the Tauri app,
+plugins and existing scheduler. Workspace explicitly enables `desktop` when it
+reuses the component. Building the library with `--no-default-features` leaves
+Git/Dependency logic and typed native Source dispatch available without Tauri,
+GTK/WebKit, window state or application bootstrap. The caller supplies a Tokio
+runtime and an `ExecutionPolicy` capability; a renderer path cannot mint one.
+Both consumers use the same parsers, operation IDs, argument checks and Git
+commands. Native Source dispatch suppresses standalone repository publication.
+This build boundary alone does not enable WSL Git execution or child retirement.
