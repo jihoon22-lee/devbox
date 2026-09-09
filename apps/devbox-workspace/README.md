@@ -245,7 +245,18 @@ carry their original context, so equal POSIX names in another distro do not matc
 Reviewed buffer recovery uses the helper's native encoding/snapshot and guarded
 atomic save. User request deadlines bound the remaining pipe request. The app waits
 for confirmed helper retirement on exit; failed retirement retains the owner.
-The hosted Windows-to-WSL flow is not yet accepted: `c10bbea` still failed during
-prelaunch registry capture. WSL reveal, reconnecting open documents, Git and LSP
-remain incomplete. The Windows native suite and actual UI didSave/second hover
-passed at `c10bbea`; journal recovery UI remains under investigation.
+Explicit WSL reconnection confirms retirement, observes the same registered root
+again without automatically starting a stopped distro, and invalidates all old
+file revisions. Session/recovery eligibility survives missing files. The editor
+reopens files one at a time, preserves dirty text when disk bytes match, and sends
+changed dirty files to external-change review. Failed reads retain buffers; saves
+are never replayed. Late watcher reads from a retired connection cannot replace
+the reconciled buffer. The reconnect button remains available when offline root
+capability checks fail.
+The hosted Windows-to-WSL flow is not yet accepted. Registry mode detection now
+uses the VM flag independently of filesystem format. The `c34bdac` WSL runtime
+step passed Registry capture and helper launch/hello, then failed at the first
+root observation with `wsl_identity_unavailable`. WSL reveal, definitions, Git
+and LSP remain incomplete. Actual Windows UI didSave/second hover and full journal
+preview/cancel/review/apply passed at `1ad2e1d`; its later context clear failed.
+Context admission now waits for active workers; packaged acceptance is pending.

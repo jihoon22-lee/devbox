@@ -163,6 +163,28 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
             u64::MAX
         )
         .is_err());
+    bridge.shutdown().unwrap();
+    bridge
+        .reconnect_until(&owner, &resources, &context, u64::MAX)
+        .unwrap();
+    assert!(bridge.documents.has(&bridge_path));
+    assert!(bridge.documents.revision(&bridge_path).is_err());
+    assert!(bridge.poll(&owner, &context).unwrap().is_empty());
+    let reconnected = bridge
+        .execute(
+            &owner,
+            &context,
+            "open_file",
+            serde_json::json!({"request":{"path":bridge_path,"encoding":null}}),
+            u64::MAX,
+        )
+        .unwrap();
+    assert_ne!(
+        reconnected["nativeRevision"],
+        bridge_current["nativeRevision"]
+    );
+    assert_eq!(reconnected["text"], "검토한 복구\n");
+    assert_eq!(bridge.poll(&owner, &context).unwrap().len(), 1);
     bridge.close(&bridge_path).unwrap();
     assert!(!bridge.documents.has_documents());
     bridge.shutdown().unwrap();

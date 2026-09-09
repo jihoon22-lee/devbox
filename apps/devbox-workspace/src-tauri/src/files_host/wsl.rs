@@ -38,6 +38,23 @@ impl FilesHost {
         }
         let projects = host.projects()?;
         current_deadline(deadline)?;
+        if method == "reconnect_wsl_files" {
+            empty(&args)?;
+            if let Some(owner) = self.wsl.iter_mut().find(|owner| owner.context() == context) {
+                owner.reconnect_until(&projects, host.helper_directory()?, context, deadline)?;
+            } else {
+                if self.wsl.len() >= 4 {
+                    return Err("file_context_limit");
+                }
+                self.wsl.push(WslFiles::open_until(
+                    &projects,
+                    host.helper_directory()?,
+                    context,
+                    deadline,
+                )?);
+            }
+            return Ok(Value::Null);
+        }
         self.wsl.retain(|owner| {
             owner.documents.has_documents()
                 || (owner.context() == context && owner.is_open())

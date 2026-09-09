@@ -380,3 +380,11 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - `1ad2e1d` packaged journal trace는 UI preview→cancel→다시 preview→apply까지 모두 성공했고 원본 복구 확인을 통과했다. 이후 프로젝트 선택 해제가 active context reader와 겹쳐 admission 단계에서 거부됐다. 선택 변경은 먼저 caller/replay를 확인하고 한 개의 bounded waiter가 기존 worker의 최종 종료를 기다리게 했다. 획득 후 context/origin/deadline/shutdown을 다시 확인하고 effect를 한 번만 수행한다. session의 짧은 순수 metadata 구간도 정상 lock 대기로 처리해 describe와의 경합을 실패로 만들지 않는다.
 - context permit 3개·native component 경계 9개와 Linux/전체 MSVC strict Clippy PASS(**49.499초 / peak 3,127,840,768 bytes / 8 GiB**). 선택/해제 요청도 기존 native 30초 상한 안에서 대기/검증하도록 frontend deadline을 맞췄다. 최종 전체 영향 범위 검증을 다시 수행한다.
 - 최종 `pnpm verify:affected` all PASS(**508.270초 / sampled RSS peak 6,666,821,632 bytes, cgroup peak 6,445,342,720 bytes / 8 GiB**). 초기 bundle **278,778/280,000 bytes**, gzip **82,235/90,000 bytes**. 새로운 실제 WSL 시작과 packaged 선택 해제 수용은 다음 CI에서 확인한다.
+
+## WSL 편집 연결 복원
+
+- 명시적 재연결은 이전 helper 종료 확인 → 등록된 같은 root의 새 admission → 과거 file revision 무효화 순서다. 중지된 배포판을 자동으로 시작하지 않는다. 실패 시 기존 session/recovery metadata와 UI buffer를 보존한다. 재연결한 owner는 각 파일을 새로 열기 전까지 읽기·쓰기·poll 권한을 갖지 않는다.
+- UI는 파일을 하나씩 다시 읽으며 같은 디스크 bytes에는 최신 미저장 text/encoding/cursor/bookmark를 유지하고 새 native revision만 연결한다. 변경된 dirty 파일은 기존 외부 변경 검토로 보낸다. 파일 누락·부분 실패와 읽는 동안의 편집·context 변경을 보존하고 저장을 replay하지 않는다. 이전 연결의 늦은 watcher 읽기 결과도 적용하지 않는다. offline capabilities 조회 실패 중에도 재연결 버튼을 표시한다.
+- metadata 회귀 1개·editor/reconnect 45개·TypeScript·Linux strict Clippy PASS. 추가 offline UI/late watcher 회귀를 포함한 **46개**, TypeScript·전체 Workspace MSVC all-target strict Clippy PASS(**22.502초 / sampled RSS peak 1,731,518,464 bytes / 8 GiB**). owned Windows-to-WSL fixture에 retirement/reconnect/old revision 거부·새 read/poll 검사를 추가했으나 실제 실행은 아직 하지 않았다.
+- `c34bdac` WSL storage 산출물은 filesystemVersion=2/Flags=7/WSL1을 확인했다. 실제 Registry capture/helper launch/hello는 PASS, 첫 root observation이 `wsl_identity_unavailable`로 FAIL(실행 0.88초)이다. Windows native Workspace 141개 PASS. WSL1의 생성 시각/파일시스템 ID 조건을 추가 조사하며 packaged 수용은 진행 중이다.
+- 최종 `pnpm verify:affected` all PASS(**455.472초 / sampled RSS peak 5,973,651,456 bytes, cgroup peak 6,444,953,600 bytes / 8 GiB**). 새 재연결의 실제 Windows-to-WSL 실행은 아직 미검증이다.

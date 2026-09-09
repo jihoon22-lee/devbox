@@ -105,6 +105,7 @@ pub fn allowed(component: &str, method: &str) -> bool {
             method,
             "pick_files"
                 | "open_file"
+                | "reconnect_wsl_files"
                 | "sync_editor_document"
                 | "save_file"
                 | "rename_file_action"
@@ -844,7 +845,10 @@ impl FilesHost {
         if requested_path.is_some_and(wsl::posix)
             || matches!(
                 method,
-                "list_workspace_files" | "canonicalize_workspace" | "workspace_capabilities"
+                "list_workspace_files"
+                    | "canonicalize_workspace"
+                    | "workspace_capabilities"
+                    | "reconnect_wsl_files"
             ) && context.is_some_and(|context| {
                 matches!(
                     context.target,

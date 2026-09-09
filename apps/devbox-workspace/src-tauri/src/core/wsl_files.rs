@@ -21,12 +21,28 @@ pub fn eligible(root: &str, raw: &str) -> bool {
         .strip_prefix(&root)
         .is_some_and(|suffix| suffix.starts_with('/'))
 }
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Documents {
     revisions: HashMap<String, Option<String>>,
     watched: HashMap<String, Option<WatchSnapshot>>,
 }
 impl Documents {
+    /// Keep recovery/session eligibility, but never carry a retired helper's
+    /// file grants or watcher observations into its replacement.
+    pub fn disconnected(&self) -> Self {
+        Self {
+            revisions: self
+                .revisions
+                .keys()
+                .map(|path| (path.clone(), None))
+                .collect(),
+            watched: self
+                .watched
+                .keys()
+                .map(|path| (path.clone(), None))
+                .collect(),
+        }
+    }
     pub fn has_documents(&self) -> bool {
         !self.revisions.is_empty()
     }
@@ -122,7 +138,11 @@ impl Documents {
         Ok(())
     }
     pub fn watched_paths(&self) -> Vec<String> {
-        self.watched.keys().cloned().collect()
+        self.watched
+            .keys()
+            .filter(|path| self.revision(path).is_ok())
+            .cloned()
+            .collect()
     }
     pub fn accept_poll(&mut self, root: &str, result: Value) -> Result<Vec<WatchSnapshot>> {
         let snapshots: Vec<WatchSnapshot> =
@@ -181,6 +201,15 @@ mod tests {
             1
         );
         assert_eq!(docs.revision("/root/project/한글.txt").unwrap(), revision);
+        let disconnected = docs.disconnected();
+        assert!(disconnected.has("/root/project/한글.txt"));
+        assert!(disconnected.revision("/root/project/한글.txt").is_err());
+        assert!(disconnected.watched_paths().is_empty());
+        let mut reconnected = disconnected;
+        reconnected
+            .record("/root/project", "/root/project/한글.txt", &opened, true)
+            .unwrap();
+        assert_eq!(reconnected.watched_paths(), vec!["/root/project/한글.txt"]);
         let mut foreign = snapshot.clone();
         foreign["path"] = json!("/root/project-other/한글.txt");
         assert!(docs.accept_poll("/root/project", json!([foreign])).is_err());

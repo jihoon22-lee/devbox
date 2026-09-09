@@ -217,6 +217,10 @@ export interface NavEntry {
 }
 
 export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null}
+function isWslContext(context: string): boolean {
+  try { return JSON.parse(context)?.target?.kind === "wsl"; }
+  catch { return false; }
+}
 export default function App({contextKey = "standalone", active = true, onDirtyChange, openRequest}: {contextKey?:string; active?:boolean; onDirtyChange?:(dirty:boolean) => void; openRequest?:FileOpenRequest | null} = {}) {
   const handledOpenRequest = useRef<string | null>(null);
   const activeRef = useRef(active);
@@ -299,6 +303,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const persistenceAllowedRef = useRef(sessionPersistenceAllowed);
   persistenceAllowedRef.current = sessionPersistenceAllowed;
   const busyRef = useRef(false);
+  const reconnectingRef = useRef(false);
+  const connectionEpochRef = useRef(0);
   const operationTokenRef = useRef(0);
   const replaceCommandsRef = useRef(new Map<DocId, () => boolean>());
   const bookmarkCommandsRef = useRef(new Map<DocId, BookmarkCommands>());
@@ -1490,6 +1496,9 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     let unlisten: (() => void) | undefined;
     const handleEvent = (payload: FileChangedEvent) => {
       if (payload.contextKey !== undefined && payload.contextKey !== contextRef.current) return;
+      if (reconnectingRef.current) return;
+      const eventContext = contextRef.current;
+      const epoch = connectionEpochRef.current;
       if (renameApplyBusyRef.current) {
         // The native transaction owns its snapshot boundary while applying.
         // Queue watcher evidence without replacing the editor buffer; a
@@ -1513,6 +1522,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       const expected = { ...current };
       void openFile(payload.path, null)
         .then((opened) => {
+          if (eventContext !== contextRef.current || epoch !== connectionEpochRef.current) return;
           const latest = stateRef.current.docs.find((doc) => doc.path === payload.path);
           // Recheck every in-memory condition immediately before applying the
           // response. The user may have typed while open_file was pending.
@@ -1532,7 +1542,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
           const reloaded = stateRef.current.docs.find((doc) => doc.id === latest.id);
           if (reloaded) void lspSync.reload(reloaded);
         })
-        .catch(() => enqueueExternalChange(payload.path));
+        .catch(() => { if (eventContext === contextRef.current && epoch === connectionEpochRef.current) enqueueExternalChange(payload.path); });
     };
     // In browser/Vitest the Tauri bridge is absent; treat that as a disabled
     // watcher rather than creating an unhandled rejection during mount.
@@ -1787,6 +1797,20 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
           {isProductHosted() && <button type="button" className="toolbar-button" disabled={busy || !hydrated} onClick={() => void runFileOperation(async () => {
             for (const path of await pickFiles()) await openPath(path);
           })}>파일 선택</button>}
+          {isProductHosted() && isWslContext(contextKey) && <button type="button" className="toolbar-button" disabled={busy || !hydrated || renameApplyBusy || recoveryOpen} onClick={() => void runFileOperation(async () => {
+            const context = contextRef.current;
+            reconnectingRef.current = true;
+            connectionEpochRef.current += 1;
+            try {
+              const { reconnectWsl } = await import("./reconnectWsl");
+              await reconnectWsl({
+                current: () => stateRef.current.docs,
+                active: () => contextRef.current === context,
+                replace: doc => dispatchAction({ type: "replaceDoc", doc }),
+                conflict: enqueueExternalChange,
+              });
+            } finally { reconnectingRef.current = false; }
+          })}>WSL 다시 연결</button>}
           <button type="button" className="toolbar-button" onClick={handleSetWorkspace} disabled={busy || !hydrated}>
             작업 폴더
           </button>

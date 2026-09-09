@@ -3,6 +3,12 @@ import { StrictMode } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import App from "./App";
+const hosted = vi.hoisted(() => ({ value: false, reconnect: vi.fn(async () => {}) }));
+vi.mock("../transport", async importOriginal => ({
+  ...await importOriginal<typeof import("../transport")>(),
+  isProductHosted: () => hosted.value,
+  componentInvoke: () => hosted.reconnect,
+}));
 import {
   changeLspDocument,
   closeLspDocument,
@@ -341,6 +347,8 @@ function diagnosticEvent(version: number, message: string): LspDiagnosticsEvent 
 }
 
 beforeEach(() => {
+  hosted.value = false;
+  hosted.reconnect.mockReset().mockResolvedValue(undefined);
   vi.mocked(loadRecovery).mockReset().mockResolvedValue([]);
   vi.mocked(loadRecoveryState).mockReset().mockResolvedValue({entries:[]});
   vi.mocked(saveSession).mockReset().mockResolvedValue(undefined);
@@ -1333,6 +1341,28 @@ it("keeps context changes blocked until the last closed document releases its wa
   expect(rendered.queryByRole("tab",{name:/one\.ts/})).toBeNull();
   await act(async()=>pending.resolve());
   await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(false));
+});
+
+it("reconnects an offline WSL context and ignores an older watcher read", async () => {
+  hosted.value = true;
+  const contextKey = JSON.stringify({target:{kind:"wsl",distroId:"fixture"}});
+  const oldRead = deferred<Awaited<ReturnType<typeof openFile>>>();
+  openFileMock.mockResolvedValueOnce({...openedFile(), nativeRevision:"old"})
+    .mockReturnValueOnce(oldRead.promise)
+    .mockResolvedValue({...openedFile(), nativeRevision:"new"});
+  const view = render(<App contextKey={contextKey} openRequest={{id:"open",contextKey,path:"/tmp/one.ts",line:null}}/>);
+  await waitFor(() => expect(view.getByRole("tab",{name:/one\.ts/})).toBeTruthy());
+  // The button does not depend on a successful capabilities probe while offline.
+  const reconnect = view.getByRole("button", {name:"WSL 다시 연결"});
+  await act(async () => fileChangedHandlerRef.current?.({payload:{path:"/tmp/one.ts",mtimeNanos:"2",contentHash:"external",size:8,contextKey}}));
+  await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(2));
+  fireEvent.click(reconnect);
+  await waitFor(() => expect(openFileMock).toHaveBeenCalledTimes(3));
+  await waitFor(() => expect((reconnect as HTMLButtonElement).disabled).toBe(false));
+  await act(async () => oldRead.resolve({...openedFile("obsolete"), nativeRevision:"retired"}));
+  expect(view.getByTestId("doc-text-/tmp/one.ts").textContent).toBe("before");
+  expect(hosted.reconnect).toHaveBeenCalledWith("reconnect_wsl_files");
+  expect(saveFileMock).not.toHaveBeenCalled();
 });
 
 it("opens an imported recovery path after applying its reviewed contents",async()=>{

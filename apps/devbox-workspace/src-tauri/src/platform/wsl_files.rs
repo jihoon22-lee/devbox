@@ -66,6 +66,26 @@ impl WslFiles {
     pub fn context(&self) -> &ProjectContext {
         &self.context
     }
+    pub fn reconnect_until(
+        &mut self,
+        projects: &ProjectOwner,
+        resources: &Path,
+        context: &ProjectContext,
+        deadline: u64,
+    ) -> Result<()> {
+        crate::files_host::current_deadline(deadline)?;
+        if context != &self.context || projects.binding(context)? != *self.binding() {
+            return Err("file_context_changed");
+        }
+        self.shutdown()?;
+        crate::files_host::current_deadline(deadline)?;
+        // Failed retirement or fresh admission preserves metadata and buffers.
+        // Admission never implicitly starts a stopped distribution.
+        let mut replacement = Self::open_until(projects, resources, context, deadline)?;
+        replacement.documents = self.documents.disconnected();
+        *self = replacement;
+        Ok(())
+    }
     pub fn shutdown(&self) -> Result<()> {
         self.lease.shutdown()
     }
