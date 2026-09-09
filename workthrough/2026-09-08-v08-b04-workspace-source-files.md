@@ -399,3 +399,8 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 최종 static helper를 전용 WSL1에서 실행한 실제 Windows pipe probe PASS(**3.029초**, 등록/재시작/정리 포함): root observation, attach, list, read, 한글/CRLF save, stale save 거부, 한글/공백 rename, delete, EOF. 로컬 소스 검사이며 새 commit의 packaged Rust host/WSL2/LSP 수용 근거는 아니다.
 - musl helper **21개·실제 pipe 5개**, 전체 Workspace MSVC all-target strict Clippy도 PASS(**52.848초 / sampled RSS peak 1,512,017,920 bytes / 8 GiB**). 최종 전체 영향 범위 검증을 수행한다.
 - 최종 `pnpm verify:affected` all PASS(**468.589초 / sampled RSS peak 6,235,197,440 bytes, cgroup peak 6,190,153,728 bytes / 8 GiB**). Windows source/packaged host와 WSL 경로의 최종 commit CI는 새 실행에서 확인한다.
+- 동일 static helper의 전용 **WSL2** 실제 Windows pipe도 PASS(**3.726초**, 등록/재시작/정리 포함): root/attach/list/read/한글·CRLF save/stale save 거부/한글·공백 rename/delete/EOF, restart identity·replacement 구분. ext4의 statx/descriptor mount ID/renameat2 경로를 사용했다. 첫 진단 runner는 inherited cwd에서 후속 실행이 30초 제한에 걸렸고, Windows SystemDirectory와 Linux `--cd /`를 명시한 뒤 통과했다. 제품 코드를 바꾼 결과가 아니며 packaged Rust host/WSL2/LSP 수용은 별도다. 임시 WSL2 등록·디렉터리를 정리했다.
+- `01db848` [Windows 제품 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34398314206)의 실제 WSL1 native Rust/helper fixture **PASS(2.72초)**. Registry·Files/감시·복구·reconnect·명시적 시작 경계를 통과했다. 나머지 native/packaged/일반 CI는 진행 중이다.
+
+- WSL definitions 준비: 기존 manifest/overlay schema와 bounded project-file snapshot을 기존 `workspace-wsl` library로 이동했다. Windows는 native `ProjectLease` type adapter를 사용하며 schema·trust·파일 동작은 동일하다. 집중 검증: schema 6개 및 snapshot 4개 PASS (65.089초); WSL 연결/쓰기 구현은 후속 semantic 변경에서 검증한다.
+- 위 이동의 최종 `pnpm verify:affected` all PASS: 466.898초, sampled RSS peak 4,429,033,472 bytes, cgroup peak 6,442,696,704 bytes / 8 GiB.

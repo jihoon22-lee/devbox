@@ -247,3 +247,8 @@ pub mod windows_path;
 
 #[cfg(all(feature = "helper", target_os = "linux"))]
 pub mod linux_files;
+
+#[cfg(feature = "files")]
+pub mod manifest;
+#[cfg(feature = "files")]
+pub mod project_files;
