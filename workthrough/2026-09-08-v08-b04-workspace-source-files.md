@@ -113,8 +113,32 @@ five generated-fixture checks in **34.211 seconds**, peak **2,052,390,912 bytes*
 including token expiry/foreign context/offline metadata and disabled restoration.
 Final affected verification selected all and passed in **429.869 seconds**,
 cgroup peak **5,043,556,352 bytes** under 8 GiB. The new Windows actual-control/
-repeat/restore fixture has not run on Windows yet. The active Windows runs still target the earlier
-`3dc56c6` recovery/host/path changes, not this configuration import.
+repeat/restore fixture has not run on Windows yet. The completed product run targets the earlier `3dc56c6` recovery/host/path changes,
+not this configuration import.
+
+## Last workspace onboarding and recovery completion
+
+The verified Code Pad session proposes its one persisted `workspace_folder` through
+metadata-only path classification. Explicit Windows review accepts the native job
+ID, reuses OS Registry discovery and requires separate registration/selection/trust.
+WSL and unsupported paths remain visible without resolving them or starting a
+distro. All registration probes, including imported profiles, use the separate
+bounded probe pool. Snapshot replacement rejects stale job IDs.
+
+Focused native classification/source/Registry tests, strict Clippy, **41 product UI
+tests**, build and five generated Windows fixture checks passed in **70.666 seconds**,
+cgroup peak **4,628,320,256 bytes**, within 8 GiB. Tests cover removed source/offline
+metadata, stale jobs, late UI results, disabled review and explicit token-only
+registration review. The Windows fixture now reviews the saved root after source
+removal and verifies cancellation leaves Registry unchanged.
+
+The `3dc56c6` packaged run passed Source/Files and the new session/bookmark flow,
+then failed because completed recovery paths were ignored by the Files parent.
+Files now opens those paths through normal native file admission after session
+hydration. Existing document buffers retain the normal reopen behavior. Focused recovery/open validation passed **44 Files UI tests** and the product
+build in **24.759 seconds**, cgroup peak **1,583,370,240 bytes**. Final affected verification selected all and passed in **427.846 seconds**,
+cgroup peak **5,813,968,896 bytes** under 8 GiB. The final Windows execution
+of these changes is pending.
 
 ## Windows corrections and verification
 
@@ -144,6 +168,8 @@ shared 8 GiB budget.
 | [3db1a59 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34326324526) | FAIL: real debounce tests exceeded CI's five-second default and the Windows long-cache regression failed while publishing the installed index. Time budgets and the second direct Win32 path are corrected locally; new Windows results pending. |
 | [3db1a59 product](https://github.com/jihoon22-lee/devbox/actions/runs/34326324514) | Native authority/WAL, API/Knowledge and coexistence PASS. Linked-worktree Source history returned busy before a diff, so downstream Files/session/LSP checks were not reached. Empty invoke probes do not establish the exact native admission cause. |
 | 3db1a59 baseline | 14/15 runtime cases passed; WSL Desktop startup failed and baseline pnpm download hit TLS ECONNRESET. Run Manager's known owned-task baseline failure still misses its performance budget. R24 remains incomplete. |
+| [3dc56c6 CI](https://github.com/jihoon22-lee/devbox/actions/runs/34329557876) | PASS, including Windows check, Clippy and tests; the long-cache atomic writer regression is resolved on Windows. |
+| [3dc56c6 product](https://github.com/jihoon22-lee/devbox/actions/runs/34329557848) | Native authority/WAL, packaged Source/Files, session import/bookmarks/repeat/history, API/Knowledge and coexistence passed. Imported recovery reached explicit apply, but no editor tab reopened; remaining recovery/LSP checks were not reached. |
 | [3dc56c6 baseline](https://github.com/jihoon22-lee/devbox/actions/runs/34329557848) | Public v0.7 assets and all 15 runtime cases PASS; six measured budgets PASS. Run Manager's known owned-task spawn failure remains, and live PTY restore/integrated comparison are unmeasured: `r24Passed=false`. |
 
 The generated Windows session fixture now owns an exclusive synthetic Code Pad
@@ -151,7 +177,8 @@ folder, verifies the snapshot, removes only that owned source, and exercises rea
 CodeMirror bookmarks, stale autosave, repeat import and previous-session restore.
 Its recovery extension checks imported buffers, stale discard rejection, disk
 unchanged until explicit recovery, repeat after discard and previous recovery
-restore. These new packaged scenarios await execution after the Source correction.
+restore. The `3dc56c6` run reached recovery apply; reopening and subsequent recovery/LSP
+checks require another Windows execution.
 
 Vitest/mocker were updated to 4.1.11 after CI reported
 [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
@@ -161,7 +188,7 @@ not changed. Earlier detailed checkpoints and intermediate failures are retained
 
 ## Remaining acceptance and rollback limits
 
-Recent-workspace onboarding, templates/window state,
+Templates/window state,
 older references and provider handoff remain incomplete. WSL-native Git/LSP,
 remote Files IO/cancellation and Windows/WSL end-to-end acceptance remain required.
 Native filesystem cancellation is cooperative; current Files IO is serialized.

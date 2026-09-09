@@ -14,6 +14,9 @@ import {
   listWorkspaceFiles,
   loadLspConfig,
   loadSession,
+  loadRecovery,
+  loadRecoveryState,
+  applyRecovery,
   saveSession,
   openFile,
   openLspDocument,
@@ -141,6 +144,9 @@ vi.mock("./api", () => ({
   unwatchFile: vi.fn().mockResolvedValue(undefined),
   saveSession: vi.fn().mockResolvedValue(undefined),
   loadRecovery: vi.fn().mockResolvedValue([]),
+  loadRecoveryState: vi.fn().mockResolvedValue({entries:[]}),
+  applyRecovery: vi.fn().mockResolvedValue(undefined),
+  discardRecovery: vi.fn().mockResolvedValue(undefined),
   canonicalizeWorkspace: vi.fn(),
   workspaceCapabilities: vi.fn(),
   listWorkspaceFiles: vi.fn(),
@@ -334,6 +340,8 @@ function diagnosticEvent(version: number, message: string): LspDiagnosticsEvent 
 }
 
 beforeEach(() => {
+  vi.mocked(loadRecovery).mockReset().mockResolvedValue([]);
+  vi.mocked(loadRecoveryState).mockReset().mockResolvedValue({entries:[]});
   vi.mocked(saveSession).mockReset().mockResolvedValue(undefined);
   openFileMock.mockReset();
   saveFileMock.mockReset();
@@ -1313,4 +1321,18 @@ it("keeps context changes blocked until the last closed document releases its wa
   expect(rendered.queryByRole("tab",{name:/one\.ts/})).toBeNull();
   await act(async()=>pending.resolve());
   await waitFor(()=>expect(dirty).toHaveBeenLastCalledWith(false));
+});
+
+it("opens an imported recovery path after applying its reviewed contents",async()=>{
+  const path="/tmp/recovered.ts";
+  const entry={path,content:"recovered",baseHash:null,snapshotAtMs:1};
+  vi.mocked(loadRecovery).mockResolvedValue([entry]);
+  vi.mocked(loadRecoveryState).mockResolvedValue({entries:[entry]});
+  openFileMock.mockResolvedValueOnce(openedFile("before",path)).mockResolvedValue(openedFile("recovered",path));
+  const view=render(<App/>);
+  fireEvent.click(await view.findByRole("button",{name:"복구 (1)"}));
+  await waitFor(()=>expect(view.getByTestId(`doc-text-${path}`).textContent).toBe("recovered"));
+  expect(vi.mocked(applyRecovery)).toHaveBeenCalledWith(path,"recovered");
+  expect(watchFileMock).toHaveBeenCalledWith(path);
+  expect(view.queryByRole("button",{name:"복구 (1)"})).toBeNull();
 });

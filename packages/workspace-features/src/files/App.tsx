@@ -1735,10 +1735,14 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
 
   return (
     <main className="app-shell">
-      {recoveryOpen && recoveryChecked && (
+      {recoveryOpen && recoveryChecked && hydrated && (
         <RecoveryDialog
-          onDone={() => {
-            setRecoveryOpen(false);
+          onDone={(recovered) => {
+            if (!recovered.length) {setRecoveryOpen(false); return;}
+            void runFileOperation(async () => {
+              setRecoveryOpen(false);
+              for (const path of recovered) await openPath(path);
+            });
           }}
         />
       )}
