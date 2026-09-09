@@ -54,12 +54,39 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   const fill=async(id,value)=>cdp.evaluate(`(()=>{const input=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
   const dirty='Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("●"))';
   const openHistoryLine=async()=>{
+    // Record only fixed operation/issue codes for this owned synthetic probe.
+    // UI errors are deliberately sanitized, so preserve admission vs. engine
+    // failure and duration without logging request args or response contents.
+    await cdp.evaluate(`(() => {
+      const original=window.__TAURI_INTERNALS__.invoke;
+      window.__workspaceHistoryProbe=[];
+      window.__workspaceHistoryRestore=()=>{window.__TAURI_INTERNALS__.invoke=original;};
+      window.__TAURI_INTERNALS__.invoke=async function(command,args,...rest) {
+        const request=args?.request;
+        if(command!=="plugin:workspace|execute"||request?.component!=="workspace.source"||!["repo_history","repo_commit_detail","repo_diff"].includes(request.method))return original.call(this,command,args,...rest);
+        const started=performance.now();
+        const fixed=value=>typeof value==="string"&&/^[a-z_]{1,80}$/.test(value)?value:null;
+        try {
+          const result=await original.call(this,command,args,...rest);
+          window.__workspaceHistoryProbe.push({method:request.method,state:fixed(result?.operation?.outcome?.state),issue:fixed(result?.value?.issue),elapsedMs:Math.round(performance.now()-started)});
+          return result;
+        } catch(problem) {
+          window.__workspaceHistoryProbe.push({method:request.method,state:"rejected",issue:fixed(problem?.code),elapsedMs:Math.round(performance.now()-started)});
+          throw problem;
+        }
+      };
+    })()`);
+    try {
     await click("히스토리 불러오기",".history-panel");
     await waitForRenderer(cdp,'!!document.querySelector(".history-entry:not(:disabled)")',"Source history entry unavailable");
     await cdp.evaluate('document.querySelector(".history-entry:not(:disabled)").click()');
     await waitForRenderer(cdp,'!!document.querySelector(".diff-line-open")',"Source diff line unavailable");
     await cdp.evaluate('document.querySelector(".diff-line-open").click()');
     await waitForRenderer(cdp,'!!document.querySelector(".workspace-feature-files:not([hidden]) .cm-content")',"Source diff did not open Files");
+    } finally {
+      const attempts=await cdp.evaluate('(() => {window.__workspaceHistoryRestore?.();return window.__workspaceHistoryProbe?.slice(-8)??[];})()');
+      writeFileSync(path.join("product-foundation-evidence",`workspace-history-${Date.now()}.json`),JSON.stringify(attempts,null,2));
+    }
   };
   const saveAndCloseEditor=async()=>{
     await click("저장",".workspace-feature-files");

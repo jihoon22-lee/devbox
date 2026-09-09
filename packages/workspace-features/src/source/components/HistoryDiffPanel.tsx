@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { WorkspaceOperationError } from "../../transport";
 import {
   GIT_VIEW_ERROR,
   repoCommitDetail,
@@ -85,9 +86,9 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
       setDetail(null);
       setDiff(null);
       setDiffSelection("workingTree");
-    } catch {
+    } catch (cause) {
       if (sequence === sequenceRef.current) {
-        setError(GIT_VIEW_ERROR);
+        setError(cause instanceof WorkspaceOperationError ? cause.message : GIT_VIEW_ERROR);
         setHistory(null);
         setDetail(null);
         setDiff(null);
@@ -118,9 +119,9 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
       if (sequence !== sequenceRef.current) return;
       setDetail(nextDetail);
       setDiff(nextDiff);
-    } catch {
+    } catch (cause) {
       if (sequence === sequenceRef.current) {
-        setError(GIT_VIEW_ERROR);
+        setError(cause instanceof WorkspaceOperationError ? cause.message : GIT_VIEW_ERROR);
         setDetail(null);
         setDiff(null);
       }
@@ -147,9 +148,9 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
       const nextDiff = await repoDiff(repo.path, selection === "commit" ? selectedCommitId : null);
       if (sequence !== sequenceRef.current) return;
       setDiff(nextDiff);
-    } catch {
+    } catch (cause) {
       if (sequence === sequenceRef.current) {
-        setError(GIT_VIEW_ERROR);
+        setError(cause instanceof WorkspaceOperationError ? cause.message : GIT_VIEW_ERROR);
         setDiff(null);
       }
     } finally {

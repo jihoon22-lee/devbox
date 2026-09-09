@@ -67,6 +67,10 @@ Its preview/apply checks preserve existing safety rules and block folders with
 open native documents. Revocation works without contacting a sibling. Legacy
 import, complete Windows LSP integration and WSL-native Git/LSP remain incomplete. The basic Source/worktree, Dependencies and Files packaged flows passed Windows
 acceptance at `833854a`; broader cleanup and actual dialog acceptance are pending.
+The `4139ea9` Windows run failed at concurrent history detail/diff loading before
+reaching those new checks. Selected-store readers now share a read lock while
+activation remains exclusive. History preserves the native bridge's fixed error
+message; the Windows fixture records bounded method/issue codes for the retry.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.

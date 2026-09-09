@@ -83,6 +83,21 @@ also passed in **36.831 seconds** (cgroup peak **4,293,656,576 bytes**).
 Final affected all passed in **403.909 seconds** (cgroup peak **6,442,516,480 bytes**,
 8 GiB cap). No new Windows execution result is claimed for these LSP changes.
 
+The [4139ea9 Windows run](https://github.com/jihoon22-lee/devbox/actions/runs/34291364099)
+passed native authority/WAL, API Studio, Knowledge, installer coexistence and the
+baseline, but packaged Workspace stopped at concurrent history detail/diff loading.
+Its generic UI error did not identify the failing boundary; cleanup/dialog checks
+were not reached. Host selected-store reads held an exclusive try-lock across
+filesystem validation, allowing simultaneous read requests to reject one another.
+The host now shares read leases and keeps activation exclusive; pointer and object
+checks remain intact. A threaded regression verifies overlapping readers and denied
+activation. History shows only fixed native bridge errors, while arbitrary engine
+errors remain sanitized. The fixture records bounded history method/issue codes and
+duration, without arguments or response contents. Focused host/Clippy, **9 history
+UI tests**, product build and **4 generated-request tests** passed in **37.678 seconds**
+(cgroup peak **4,411,543,552 bytes**). Final affected all passed in **355.968 seconds**
+(cgroup peak **5,172,359,168 bytes**, 8 GiB cap). Windows retry is pending.
+
 ## Actual verification
 
 The extracted shared UI passed 307 tests and the original native suites passed

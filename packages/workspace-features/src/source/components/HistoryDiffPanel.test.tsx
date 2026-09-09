@@ -11,6 +11,7 @@ import {
   type RepoEntry,
 } from "../api";
 import HistoryDiffPanel from "./HistoryDiffPanel";
+import { WorkspaceOperationError } from "../../transport";
 
 vi.mock("../api", () => ({
   GIT_VIEW_ERROR: "Git history 또는 diff를 불러올 수 없습니다.",
@@ -70,6 +71,13 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("HistoryDiffPanel", () => {
+  it("preserves the native bridge's fixed recovery message for failed diff reads", async () => {
+    repoDiffMock.mockRejectedValueOnce(new WorkspaceOperationError("Git 설정이나 실행 근거를 다시 검토해 주세요."));
+    render(<HistoryDiffPanel repo={repo}/>);
+    fireEvent.click(screen.getByRole("button", {name:"히스토리 불러오기"}));
+    fireEvent.click(await screen.findByRole("button", {name:/Add fixture/}));
+    expect((await screen.findByRole("alert")).textContent).toBe("Git 설정이나 실행 근거를 다시 검토해 주세요.");
+  });
   it("loads an explicit bounded history request and exposes accessible status", async () => {
     render(<HistoryDiffPanel repo={repo} />);
 
