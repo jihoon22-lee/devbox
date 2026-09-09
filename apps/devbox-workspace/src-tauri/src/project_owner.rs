@@ -75,10 +75,19 @@ impl ProjectOwner {
     /// Registration metadata alone is insufficient after a root/Git replacement.
     pub fn admit(&self, context: &ProjectContext) -> Result<ProjectLease> {
         let binding = self.binding(context)?;
+        #[cfg(all(test, unix))]
+        if matches!(&binding.target, product_contract::ExecutionTarget::Wsl {distro_id} if distro_id == "native-test-fixture")
+        {
+            return self.admit_lease(
+                context,
+                crate::platform::project_probe::probe_fixture(Path::new(&binding.root))?,
+            );
+        }
         if binding.target != product_contract::ExecutionTarget::Windows {
             return Err("wsl_admission_required");
         }
-        self.admit_lease(context, probe_windows(&binding.root)?)
+        let lease = probe_windows(&binding.root)?;
+        self.admit_lease(context, lease)
     }
     pub fn binding(&self, context: &ProjectContext) -> Result<Binding> {
         context.validate().map_err(|_| "invalid_context")?;

@@ -22,8 +22,15 @@ removal and verified local archive/cache import now use an independent LSP worke
 queue. Native picker choices are expiring single-use tokens with no editor grant;
 selected source objects are checked before bounded private snapshots reach the
 existing digest/dependency-lock verifier. Product shutdown cancels downloads and
-waits for active LSP workers to retire. Context-specific LSP approval and editing
-remain pending.
+waits for active LSP workers to retire.
+Native lifecycle commands now use per-context execution review and an owned LSP
+thread, including automatic retries. Review pins saved configuration, exact argv,
+filtered PATH, executable/runtime files and project execution definitions. Starts
+retain context/filesystem/installation permits through initialization; installation
+waits use their own lock. Cancellation retains probes and initializing children until
+termination is confirmed. Configuration writes, revocation and context retirement
+stop the owner before mutation. Approval UI, editor document synchronization and
+WorkspaceEdit integration remain pending; Files still advertises LSP as unavailable.
 LSP settings now load and save separately for each registered context without
 accessing its project files or resolving a server. Native revisions prevent stale
 writes; explicit corrupt-file recovery preserves the original bytes, and future

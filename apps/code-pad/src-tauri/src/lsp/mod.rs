@@ -63,7 +63,7 @@ pub use manager::{
     AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspDiagnosticsEvent, LspEvent,
     LspExecutionAuthority, LspManager, LspManagerError, LspStatusEvent, RenameApplyResult,
     RenameFileResult, RenameFileStatus, RenamePreview, RenamePreviewFile, RenamePreviewRange,
-    RenamedDocument, StartupRecovery, UnapprovedLspExecution,
+    RenamedDocument, ReviewedLspExecution, StartupRecovery, UnapprovedLspExecution,
 };
 pub use node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,

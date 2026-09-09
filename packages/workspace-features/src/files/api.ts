@@ -175,15 +175,28 @@ export function saveLspConfig(config: LspConfig, recoverInvalid = false, nativeR
 }
 
 export function startLanguageServer(languageId: string): Promise<void> {
-  return invoke<void>("start_language_server", { languageId });
+  return startServer("start_language_server",languageId);
 }
 
 export function stopLanguageServer(languageId: string): Promise<void> {
-  return invoke<void>("stop_language_server", { languageId });
+  const operationId=isProductHosted()?pendingStarts.get(languageId)?.operationId:undefined;
+  return invoke<void>("stop_language_server", { languageId,...(operationId?{operationId}:{}) });
 }
 
 export function restartLanguageServer(languageId: string): Promise<void> {
-  return invoke<void>("restart_language_server", { languageId });
+  return startServer("restart_language_server",languageId);
+}
+
+const pendingStarts=new Map<string,{operationId:string;promise:Promise<void>}>();
+function startServer(method:string,languageId:string):Promise<void> {
+  if(!isProductHosted())return invoke<void>(method,{languageId});
+  const pending=pendingStarts.get(languageId);if(pending)return pending.promise;
+  const operationId=crypto.randomUUID();
+  // Publish cancellation identity before the first invoke/description await.
+  const promise=Promise.resolve().then(()=>invoke<void>(method,{languageId,operationId})).finally(()=>{
+    if(pendingStarts.get(languageId)?.operationId===operationId)pendingStarts.delete(languageId);
+  });
+  pendingStarts.set(languageId,{operationId,promise});return promise;
 }
 
 export function languageServerStatuses(): Promise<LanguageServerStatus[]> {

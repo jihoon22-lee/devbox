@@ -215,10 +215,14 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   await click("선택한 정리 범위 검토",".workspace-source-cleanup-scope");
   await click("검토한 정리 범위 승인",".workspace-source-cleanup-scope");
   await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.getAttribute("aria-busy")==="false"&&!document.querySelector(".workspace-source-cleanup-scope > section")',"Refreshed cleanup scope did not settle");
+  const beforePickerTrust=success(await source("trust_status"));
+  assert.equal(beforePickerTrust.approved,true,JSON.stringify({stage:"before-sibling-picker",changedEvidence:beforePickerTrust.changedEvidence}));
   const pickingSibling=call("workspace.files","pick_files");
   const [pickedSibling]=await Promise.all([pickingSibling,nativeFileDialog({processId,executable,directory,action:"Open",selectedFile:path.join(linkedTarget,"tracked.txt")})]);
   const siblingChoices=success(pickedSibling);assert.equal(siblingChoices.length,1);
   const siblingDocument=success(await call("workspace.files","open_file",{request:{path:siblingChoices[0],encoding:null}}));
+  const afterPickerTrust=success(await source("trust_status"));
+  assert.equal(afterPickerTrust.approved,true,JSON.stringify({stage:"after-sibling-picker",changedEvidence:afterPickerTrust.changedEvidence}));
   const openSiblingPreview=success(await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-open-sibling-document"}}));
   assert.equal(openSiblingPreview.worktrees.find(tree=>realpathSync.native(tree.path)===realpathSync.native(linkedTarget)).eligible,false,"An open native picker document must prevent worktree removal");
   success(await call("workspace.files","unwatch_file",{path:siblingDocument.path}));

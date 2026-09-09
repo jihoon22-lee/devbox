@@ -135,8 +135,8 @@ reuse the existing native installer. Long installs hold neither the Files mutex 
 a project-selection permit. Shutdown signals download cancellation and waits for
 actual workers; cancelled caller futures cannot release the native worker early.
 The installer keeps its usual cleanup path after cancellation, and synchronous
-promotion/index work finishes before retirement. Execution/config-edit/WorkspaceEdit
-commands remain denied pending the context-specific LSP owner.
+promotion/index work finishes before retirement. Per-context configuration and
+lifecycle commands are connected below; document/WorkspaceEdit integration is pending.
 
 The shared engine now carries a persistent document authority through workspace
 clones, rename plans and backups. It checks paths before canonicalization and the
@@ -174,8 +174,9 @@ port associated before child admission and the
 [Windows tree-completion notification](https://devblogs.microsoft.com/oldnewthing/20130405-00/?p=4743).
 Ten disposable Windows runs using the actual revised Job module confirmed EOF and
 an already-signaled descendant handle in **21.759–36.5554 ms** after fixture release.
-This validates the Job/pipeline reproduction; full Windows process tests remain pending. The first local cross-build attempt was
-blocked by a missing `clang-cl` tool, not reported as a test pass.
+The [37d1478 general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34301256774)
+subsequently passed every job, including the Windows process tests. A local full
+cross-build was blocked by a missing `clang-cl` tool and was not reported as a pass.
 
 [Windows acceptance at `2eb2bf0`](https://github.com/jihoon22-lee/devbox/actions/runs/34297918386)
 passed history and reached the sibling-document picker, then failed to find its
@@ -184,6 +185,46 @@ The driver now discovers visible native HWNDs for the exact fixture process befo
 using UI Automation for controls; existing process/path/control checks remain.
 The parented fixture's Cancel and Open both passed with the revised driver.
 The packaged cleanup and installer steps still require a successful retry.
+
+The [37d1478 Windows product run](https://github.com/jihoon22-lee/devbox/actions/runs/34301256761)
+passed the owned chooser and file open, then rejected cleanup with
+`source_review_required`. A disposable Windows probe using the actual Git evidence
+modules and rfd did not reproduce a change in files, environment or cwd. Native
+approval now stores optional component digests and returns fixed changed-evidence
+categories, without environment values; old approval records remain readable.
+The fixture checks trust both before and after the sibling picker to identify the
+remaining cause without bypassing review. Cleanup and installer acceptance remain pending.
+
+Native LSP lifecycle now has context-bound one-time review, cancellation, replay
+checks and offline revocation. Review pins saved settings, definitions, exact argv,
+ordered admitted PATH, executable/runtime objects and managed code trees. Streaming
+limits are 256 MiB/file, 512 MiB total and 20,000 objects. Foreign installed-index
+paths are rejected before canonicalization. The shared manager consumes immutable
+reviewed configuration and process specifications rather than re-reading unreviewed
+config/index paths before native authority checks.
+
+Each active context uses an owned OS thread/Tokio runtime for sessions and retries.
+Startup retains context/filesystem/installation permits; installation waits use a
+separate lock and retire a context whose installation is changing. Configuration
+saves now acquire the context write permit (the earlier classification mistakenly
+placed the method in Source's filesystem exclusions). Save, revocation, definition
+changes and context retirement stop the owner before mutation. Exit waits for worker,
+thread and process retirement. Native startup IDs are published before the first
+renderer await, with bounded native cancellation intent and deadline checks. Probes
+and initializing children complete cleanup before cancellation returns. Events carry
+the native context; the approval UI and native editor/document bridge remain pending.
+
+Focused portable verification passed **132 LSP unit + 15 manager integration tests**.
+After correcting a test-only empty argv value, startup wait budget and old allowlist
+expectation, **100 Workspace Rust tests, both strict Clippy checks, 6 process tests,
+32 API/LSP UI tests, product build and fixture syntax** passed in **69.275 seconds**,
+cgroup peak **3,396,943,872 bytes** under 8 GiB. Actual Node peers tested normal actor
+retirement and cancellation during initialization, including independent child-exit
+checks. Final startup/installation exclusion verification passed **132 LSP unit,
+15 manager integration and 101 Workspace Rust tests plus strict Clippy** in
+**107.545 seconds**, cgroup peak **5,121,277,952 bytes** under 8 GiB. Final affected
+verification selected all and passed in **467.721 seconds**, cgroup peak
+**6,442,582,016 bytes** under 8 GiB. These new actor checks have not yet passed Windows CI.
 
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,

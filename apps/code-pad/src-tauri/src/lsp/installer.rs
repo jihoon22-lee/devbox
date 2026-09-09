@@ -1691,10 +1691,26 @@ impl ManagedInstaller {
             return Err(InstallError::UnsafeArchivePath);
         }
         let recorded = PathBuf::from(&server.installed_path);
+        // The private index is still serialized input. Reject a foreign path
+        // before canonicalization can contact a share or start a WSL provider.
+        if !is_same_path(&recorded, &destination)
+            && !is_same_path(&recorded, &canonical_destination)
+        {
+            return Err(InstallError::MetadataMismatch(
+                "recorded install path is not the managed destination".into(),
+            ));
+        }
         let canonical_recorded = fs::canonicalize(&recorded).map_err(|_| {
             InstallError::MetadataMismatch("recorded install path is missing".into())
         })?;
-        if !is_same_path(&canonical_recorded, &canonical_destination) {
+        let recorded_identity = devbox_filesystem::filesystem_identity(&canonical_recorded, true)
+            .map_err(|_| InstallError::UnsafeArchivePath)?;
+        let destination_identity =
+            devbox_filesystem::filesystem_identity(&canonical_destination, true)
+                .map_err(|_| InstallError::UnsafeArchivePath)?;
+        if recorded_identity != destination_identity
+            || !is_same_path(&canonical_recorded, &canonical_destination)
+        {
             return Err(InstallError::MetadataMismatch(
                 "recorded install path is not the managed canonical directory".into(),
             ));

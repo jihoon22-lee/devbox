@@ -298,7 +298,14 @@ mod windows_ownership {
 
     #[tokio::test]
     async fn version_probe_owns_descendants_on_success_error_timeout_and_cancel() {
-        for behavior in ["success", "output-limit", "failure", "hang", "cancel"] {
+        for behavior in [
+            "success",
+            "output-limit",
+            "failure",
+            "hang",
+            "cancel",
+            "cancel-result",
+        ] {
             let root = tempfile::tempdir().unwrap();
             std::fs::write(root.path().join("probe-mode"), behavior).unwrap();
             let executable = fixture("").executable;
@@ -314,13 +321,24 @@ mod windows_ownership {
                 }),
             };
             let resolver = RuntimeResolver::new();
-            let mut probe = Box::pin(resolver.probe_managed_runtime(&resolved));
+            let cancellation = RequestCancellation::new();
+            let mut probe =
+                Box::pin(resolver.probe_managed_runtime_cancellable(&resolved, &cancellation));
             let marker = root.path().join("descendant.pid");
             let descendant = tokio::select! {
                 result = &mut probe => panic!("probe completed before fixture release: {result:?}"),
                 descendant = OwnedProcess::from_marker(&marker) => descendant,
             };
             descendant.assert_running();
+            if behavior == "cancel-result" {
+                cancellation.cancel();
+                assert!(matches!(
+                    probe.await,
+                    Err(RuntimeError::RuntimeProbeCancelled)
+                ));
+                descendant.assert_exited();
+                continue;
+            }
             if behavior == "cancel" {
                 // Dropping the future must close its Job even without a result.
                 drop(probe);

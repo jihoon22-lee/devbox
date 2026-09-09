@@ -80,7 +80,7 @@ impl Settings {
         settings.revalidate(host)?;
         Ok(settings)
     }
-    fn revalidate(&self, host: &Host) -> Result<()> {
+    pub(super) fn revalidate(&self, host: &Host) -> Result<()> {
         if host.component("files")? != self.data.path()
             || host.projects()?.binding(&self.context)? != self.binding
         {
@@ -93,11 +93,28 @@ impl Settings {
         }
         Ok(())
     }
-    fn revision(&self) -> Result<String> {
+    pub(super) fn revision(&self) -> Result<String> {
         Ok(digest(
             &serde_json::to_vec(&(&self.context, &self.binding, &self.original))
                 .map_err(|_| "lsp_config_invalid")?,
         ))
+    }
+    pub(super) fn binding(&self) -> &Binding {
+        &self.binding
+    }
+    pub(super) fn private(&self) -> &MetadataRoot {
+        &self.private
+    }
+    pub(super) fn execution_config(&self) -> Result<LspConfig> {
+        let config = decode(
+            self.original
+                .as_deref()
+                .ok_or("lsp_settings_save_required")?,
+        )?;
+        if !config.enabled || config.workspace_root != self.binding.root {
+            return Err("lsp_settings_save_required");
+        }
+        Ok(config)
     }
     pub(super) fn view(&self) -> Result<Value> {
         let loaded = self.original.as_deref().map(decode).transpose();

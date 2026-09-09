@@ -29,6 +29,7 @@ fn inside(root: &str, path: &str) -> bool {
             .strip_prefix(root.trim_end_matches('/'))
             .is_some_and(|tail| tail.starts_with('/'))
 }
+#[derive(Clone)]
 pub(crate) struct ProtectedStorage {
     root: String,
     parents: Vec<String>,

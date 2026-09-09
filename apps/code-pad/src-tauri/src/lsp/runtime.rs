@@ -677,8 +677,20 @@ impl RuntimeResolver {
         &self,
         resolved: &ResolvedProcess,
     ) -> Result<(), RuntimeError> {
+        self.probe_managed_runtime_cancellable(
+            resolved,
+            &super::transport::RequestCancellation::new(),
+        )
+        .await
+    }
+    pub async fn probe_managed_runtime_cancellable(
+        &self,
+        resolved: &ResolvedProcess,
+        cancellation: &super::transport::RequestCancellation,
+    ) -> Result<(), RuntimeError> {
         if let Some(runtime) = &resolved.runtime {
-            self.probe_runtime(runtime, &resolved.current_dir).await?;
+            self.probe_runtime(runtime, &resolved.current_dir, cancellation)
+                .await?;
         }
         Ok(())
     }
@@ -687,7 +699,11 @@ impl RuntimeResolver {
         &self,
         runtime: &ResolvedRuntime,
         workspace: &Path,
+        cancellation: &super::transport::RequestCancellation,
     ) -> Result<(), RuntimeError> {
+        if cancellation.is_cancelled() {
+            return Err(RuntimeError::RuntimeProbeCancelled);
+        }
         let mut command = Command::new(&runtime.executable);
         command
             .arg("--version")
@@ -769,17 +785,14 @@ impl RuntimeResolver {
             }
             Ok(())
         };
-        let result = match timeout(RUNTIME_PROBE_TIMEOUT, probe).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => {
-                kill_and_reap(&mut child).await;
-                Err(error)
-            }
-            Err(_) => {
-                kill_and_reap(&mut child).await;
-                Err(RuntimeError::RuntimeProbeTimeout)
-            }
+        let result = tokio::select! {
+            biased;
+            _=cancellation.cancelled()=>Err(RuntimeError::RuntimeProbeCancelled),
+            result=timeout(RUNTIME_PROBE_TIMEOUT,probe)=>result.unwrap_or(Err(RuntimeError::RuntimeProbeTimeout)),
         };
+        if result.is_err() {
+            kill_and_reap(&mut child).await;
+        }
         #[cfg(windows)]
         job.terminate_and_wait()
             .await
@@ -1302,6 +1315,7 @@ pub enum RuntimeError {
     },
     RuntimeProbeFailed,
     RuntimeProbeTimeout,
+    RuntimeProbeCancelled,
     RuntimeProbeOutputLimit,
     RuntimeProbeInvalidOutput,
     ManagedServerUnsupported,
@@ -1368,6 +1382,9 @@ impl fmt::Display for RuntimeError {
             ),
             Self::RuntimeProbeFailed => f.write_str("managed runtime version probe failed"),
             Self::RuntimeProbeTimeout => f.write_str("managed runtime version probe timed out"),
+            Self::RuntimeProbeCancelled => {
+                f.write_str("managed runtime version probe was cancelled")
+            }
             Self::RuntimeProbeOutputLimit => {
                 f.write_str("managed runtime version probe output exceeded its limit")
             }

@@ -51,6 +51,15 @@ struct Approval {
     schema_version: u32,
     context: ProjectContext,
     digest: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    evidence: Option<ApprovalEvidence>,
+}
+#[derive(Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ApprovalEvidence {
+    files: String,
+    environment: String,
+    definitions: String,
 }
 fn approval(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<Approval>> {
     let Some(bytes) = bytes else {
@@ -68,6 +77,17 @@ fn approval(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<App
         if value.context != *context
             || value.digest.len() != 64
             || !value.digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+            || value.evidence.as_ref().is_some_and(|evidence| {
+                [
+                    &evidence.files,
+                    &evidence.environment,
+                    &evidence.definitions,
+                ]
+                .iter()
+                .any(|digest| {
+                    digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+                })
+            })
         {
             return Err("source_trust_invalid");
         }
@@ -145,8 +165,25 @@ impl Snapshot {
         )
     }
     fn view(&self) -> Result<Value> {
+        let approval = approval(self.approval_bytes.as_deref(), &self.context)?;
+        let mut changed = Vec::new();
+        if let Some(evidence) = approval
+            .as_ref()
+            .and_then(|approval| approval.evidence.as_ref())
+        {
+            let (files, environment) = self.git.evidence_digests();
+            if evidence.files != files {
+                changed.push("execution_files");
+            }
+            if evidence.environment != environment {
+                changed.push("execution_environment");
+            }
+            if evidence.definitions != self.definitions.digest() {
+                changed.push("project_definitions");
+            }
+        }
         Ok(
-            json!({"approved":self.approved()?,"hasApproval":approval(self.approval_bytes.as_deref(), &self.context)?.is_some(),"review":self.git.review}),
+            json!({"approved":self.approved()?,"hasApproval":approval.is_some(),"review":self.git.review,"changedEvidence":changed}),
         )
     }
     fn write_approval(&self, host: &Host, approved: bool, budget: Budget) -> Result<()> {
@@ -160,6 +197,14 @@ impl Snapshot {
             schema_version: 1,
             context: self.context.clone(),
             digest: self.digest.clone(),
+            evidence: Some({
+                let (files, environment) = self.git.evidence_digests();
+                ApprovalEvidence {
+                    files,
+                    environment,
+                    definitions: self.definitions.digest().to_owned(),
+                }
+            }),
         });
         let bytes = serde_json::to_vec(&value).map_err(|_| "source_trust_invalid")?;
         let target = DefinitionTarget::capture(

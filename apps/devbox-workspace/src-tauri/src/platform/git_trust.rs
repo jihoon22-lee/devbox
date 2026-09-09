@@ -425,6 +425,9 @@ impl GitTrust {
     pub fn digest(&self) -> &str {
         &self.digest
     }
+    pub(crate) fn evidence_digests(&self) -> (String, String) {
+        (self.files.digest(), self.environment.digest())
+    }
     pub fn directories(&self) -> Option<(&Path, &Path)> {
         self.lease.git_directories()
     }

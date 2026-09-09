@@ -97,7 +97,8 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
   rejected(await lsp("lsp_import_archive",{...key(rust),archivePaths:selected}));
   const imported=await state(rust);assert.equal(imported.state,"installed");assert.equal(imported.installed.install_source,"local_archive");
   assert.deepEqual(success(await lsp("language_server_statuses")),[]);
-  await assert.rejects(lsp("start_language_server",{languageId:"rust"}));
+  const unapprovedStart=await lsp("start_language_server",{languageId:"rust",operationId:"unapproved-install-proof"});
+  rejected(unapprovedStart);assert.equal(unapprovedStart.value.issue,"lsp_settings_save_required");
 
   await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="files").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);
   await waitForRenderer(cdp,'Array.from(document.querySelectorAll(".workspace-feature-files:not([hidden]) button")).some(b=>b.textContent.trim()==="언어 서버"&&!b.disabled)',"LSP settings button unavailable");

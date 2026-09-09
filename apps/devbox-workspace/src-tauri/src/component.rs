@@ -51,6 +51,7 @@ struct Runtime {
     dialogs: Pool,
     lsp: Arc<Mutex<Option<Arc<crate::lsp_host::LspHost>>>>,
     lsp_requests: Pool,
+    lsp_operations: crate::core::source_operations::Operations,
     lsp_workers: Arc<tokio::sync::Semaphore>,
     lsp_shutdown: code_pad_lib::lsp::RequestCancellation,
 }
@@ -75,12 +76,20 @@ impl Default for Runtime {
             dialogs: Pool::default(),
             lsp: Arc::default(),
             lsp_requests: Pool::default(),
+            lsp_operations: Default::default(),
             lsp_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             lsp_shutdown: Default::default(),
         }
     }
 }
 impl Runtime {
+    async fn retire_lsp(&self) -> Result<(), &'static str> {
+        let owner = self.lsp.lock().map_err(|_| "lsp_unavailable")?.clone();
+        if let Some(owner) = owner {
+            owner.retire().await?;
+        }
+        Ok(())
+    }
     fn host(&self) -> Result<Arc<Host>, &'static str> {
         self.host.try_lock().map_err(|_| "busy")?.clone()
     }
@@ -165,7 +174,33 @@ async fn execute_lsp(
     context_permit: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
     use tauri_plugin_dialog::DialogExt;
-    let queued = runtime.lsp_requests.reserve_with_limit(8)?;
+    let queued =
+        runtime
+            .lsp_requests
+            .reserve_with_limit(if crate::lsp_host::stops(&request.method) {
+                10
+            } else {
+                8
+            })?;
+    let (operation_id, cancelled) =
+        crate::lsp_host::admission(&request.method, request.args.clone())?;
+    let context_key =
+        serde_json::to_string(&request.header.context).map_err(|_| "invalid_request")?;
+    for id in cancelled {
+        runtime.lsp_operations.cancel(&context_key, &id)?;
+    }
+    let start = operation_id
+        .as_deref()
+        .map(|id| runtime.lsp_operations.register(&context_key, Some(id)))
+        .transpose()
+        .map_err(|issue| {
+            if issue == "source_cancelled" {
+                "lsp_operation_cancelled"
+            } else {
+                issue
+            }
+        })?;
+    let _cancel = start.as_ref().map(|start| start.cancel_on_drop());
     if runtime.lsp_shutdown.is_cancelled() {
         return Err("lsp_operation_cancelled");
     }
@@ -206,12 +241,18 @@ async fn execute_lsp(
     } else {
         None
     };
-    let worker = runtime
-        .lsp_workers
-        .clone()
-        .acquire_owned()
-        .await
-        .map_err(|_| "worker_unavailable")?;
+    let worker = if crate::lsp_host::worker_required(&request.method) {
+        Some(
+            runtime
+                .lsp_workers
+                .clone()
+                .acquire_owned()
+                .await
+                .map_err(|_| "worker_unavailable")?,
+        )
+    } else {
+        None
+    };
     let runtime = runtime.clone();
     let app = window.app_handle().clone();
     let host = runtime.host()?;
@@ -228,7 +269,12 @@ async fn execute_lsp(
                 // wait holds the editor's mutex or filesystem/context permit.
                 let mut files = runtime.files.try_lock().map_err(|_| "files_unavailable")?;
                 files.initialize(&app, &host)?;
-                *slot = Some(Arc::new(crate::lsp_host::LspHost::new(&app, &host)?));
+                *slot = Some(Arc::new(crate::lsp_host::LspHost::new(
+                    &app,
+                    &host,
+                    runtime.context_activity.clone(),
+                    runtime.filesystem_activity.clone(),
+                )?));
             }
             slot.as_ref().ok_or("lsp_unavailable")?.clone()
         };
@@ -247,6 +293,7 @@ async fn execute_lsp(
                     args: request.args,
                     context: request.header.context.as_ref(),
                     deadline,
+                    start,
                 },
                 &runtime.lsp_shutdown,
             ))
@@ -453,7 +500,6 @@ async fn execute_source(
         request.method.as_str(),
         "cancel_trust"
             | "revoke_trust"
-            | "save_lsp_config"
             | "cancel_worktree"
             | "cancel_cleanup_scope"
             | "revoke_cleanup_scope"
@@ -694,6 +740,23 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         _ => Err("invalid_request"),
     }
 }
+fn changes_context(method: &str) -> bool {
+    matches!(
+        method,
+        "select_project"
+            | "clear_project"
+            | "apply_registration"
+            | "remove"
+            | "apply_edit"
+            | "approve_cleanup_scope"
+            | "revoke_cleanup_scope"
+            | "approve_trust"
+            | "revoke_trust"
+            | "save_lsp_config"
+            | "lsp_execution_approve"
+            | "lsp_execution_revoke"
+    )
+}
 #[tauri::command]
 async fn execute(
     window: WebviewWindow,
@@ -732,18 +795,7 @@ async fn execute(
     let definitions = request.component == "workspace.definitions";
     let dependencies = request.component == "workspace.dependencies";
     let source = request.component == "workspace.source";
-    let context_change = matches!(
-        request.method.as_str(),
-        "select_project"
-            | "clear_project"
-            | "apply_registration"
-            | "remove"
-            | "apply_edit"
-            | "approve_cleanup_scope"
-            | "revoke_cleanup_scope"
-            | "approve_trust"
-            | "revoke_trust"
-    );
+    let context_change = changes_context(&request.method);
     // Acquire before checking the session, and retain through queued/native
     // work. Worker clones keep the boundary after caller timeout/cancellation.
     let context_permit = if files
@@ -766,7 +818,17 @@ async fn execute(
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
-    let mut result = if lsp {
+    let retired = if matches!(
+        request.method.as_str(),
+        "select_project" | "clear_project" | "apply_registration" | "remove" | "apply_edit"
+    ) {
+        runtime.retire_lsp().await
+    } else {
+        Ok(())
+    };
+    let mut result = if let Err(issue) = retired {
+        Err(issue)
+    } else if lsp {
         execute_lsp(&window, &runtime, request, context_permit.clone()).await
     } else if files {
         execute_files(
@@ -1036,11 +1098,12 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let manager = app
                     .try_state::<Arc<code_pad_lib::lsp::LspManager>>()
                     .map(|manager| manager.inner().clone());
+                let actor_stopped = runtime.retire_lsp().await.is_ok();
                 let stopped = match manager {
                     Some(manager) => manager.shutdown_for_exit().await.is_ok(),
                     None => true,
                 };
-                if retired && stopped {
+                if retired && stopped && actor_stopped {
                     runtime.exit_authorized.store(true, Ordering::Release);
                     app.exit(exit_code);
                 } else {
@@ -1055,6 +1118,27 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lsp_settings_write_excludes_another_save_and_running_context_operation() {
+        let runtime = Runtime::default();
+        let reading = runtime.context_activity.enter(false).unwrap();
+        assert!(runtime
+            .context_activity
+            .enter(changes_context("save_lsp_config"))
+            .is_err());
+        drop(reading);
+        let writing = runtime
+            .context_activity
+            .enter(changes_context("save_lsp_config"))
+            .unwrap();
+        assert!(runtime
+            .context_activity
+            .enter(changes_context("save_lsp_config"))
+            .is_err());
+        assert!(runtime.context_activity.enter(false).is_err());
+        drop(writing);
+        assert!(runtime.context_activity.enter(false).is_ok());
+    }
     #[test]
     fn saturated_lsp_workers_leave_files_and_project_selection_available() {
         let runtime = Runtime::default();

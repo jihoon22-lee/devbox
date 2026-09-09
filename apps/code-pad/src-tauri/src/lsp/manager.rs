@@ -27,7 +27,7 @@ use super::installer::ManagedInstaller;
 use super::logs::{LanguageServerLog, LspLogLevel, LspLogStore, StderrLineSanitizer};
 use super::positions::{position_to_offset, LspPosition, LspRange, PositionEncoding};
 use super::process::{IncomingMessage, LspProcess, ProcessState};
-use super::runtime::{ResolvedProcess, RuntimeResolver};
+use super::runtime::{EnvironmentAllowlist, ResolvedProcess, RuntimeResolver};
 use super::transport::RequestCancellation;
 use crate::commands::file as file_commands;
 use crate::core::encoding::Encoding;
@@ -88,6 +88,7 @@ pub enum LspManagerError {
     ConfigRecoveryRequired,
     Disabled,
     ExecutionApprovalRequired,
+    ExecutionBusy,
     MissingWorkspace,
     UnsupportedWslWorkspace,
     MissingServer(String),
@@ -109,6 +110,7 @@ impl fmt::Display for LspManagerError {
             Self::ExecutionApprovalRequired => {
                 formatter.write_str("현재 프로젝트의 언어 서버 실행 승인이 필요합니다")
             }
+            Self::ExecutionBusy=>formatter.write_str("다른 작업이 실행 근거를 사용 중입니다"),
             Self::MissingWorkspace => formatter.write_str("LSP 작업 폴더가 설정되지 않았습니다"),
             Self::UnsupportedWslWorkspace => formatter.write_str(
                 "WSL 작업 폴더는 Windows host LSP를 지원하지 않습니다. 파일 편집과 5초 폴링 감시는 계속 사용할 수 있습니다",
@@ -452,11 +454,23 @@ pub enum StartupRecovery {
 /// Persistent native authority is checked for every start, including monitor
 /// retries. A per-command or thread-local guard cannot cover those retries.
 pub trait LspExecutionAuthority: Send + Sync {
+    /// Retain native context/filesystem/installation exclusion through the
+    /// entire startup, including probes and automatic retry initialization.
+    fn begin_start(&self) -> Result<Option<Box<dyn Send>>, LspManagerError> {
+        Ok(None)
+    }
     /// Runs before workspace path IO or runtime resolution.
     fn validate_config(&self, language_id: &str, config: &LspConfig)
         -> Result<(), LspManagerError>;
     /// Runs before a managed runtime probe and again before server spawn.
     fn validate_process(&self, process: &ResolvedProcess) -> Result<(), LspManagerError>;
+    /// Native cancellation must keep a created probe/initializing child owned
+    /// until its cleanup finishes, instead of dropping the startup future.
+    fn startup_cancelled(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(std::future::pending())
+    }
     /// Execution approval alone never authorizes documents. The default denies
     /// access until the native context owner supplies a persistent path policy.
     fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
@@ -483,12 +497,21 @@ impl LspExecutionAuthority for UnapprovedLspExecution {
     }
 }
 
+/// Immutable inputs captured by a native execution owner after path inspection.
+/// Starts and automatic retries still invoke its authority at each boundary.
+pub struct ReviewedLspExecution {
+    pub config: LspConfig,
+    pub processes: BTreeMap<String, ResolvedProcess>,
+    pub environment: EnvironmentAllowlist,
+}
+
 #[derive(Clone)]
 pub struct LspManager {
     app_local_data_dir: PathBuf,
     app_version: String,
     resolver: RuntimeResolver,
     execution_authority: Option<Arc<dyn LspExecutionAuthority>>,
+    reviewed: Option<Arc<ReviewedLspExecution>>,
     installer: Arc<ManagedInstaller>,
     state: Arc<Mutex<ManagerState>>,
     logs: Arc<Mutex<LspLogStore>>,
@@ -545,6 +568,7 @@ impl LspManager {
             app_version: app_version.into(),
             resolver: RuntimeResolver::new(),
             execution_authority: None,
+            reviewed: None,
             installer,
             state: Arc::new(Mutex::new(ManagerState::default())),
             logs: Arc::new(Mutex::new(LspLogStore::default())),
@@ -584,6 +608,33 @@ impl LspManager {
 
     pub fn subscribe_events(&self) -> broadcast::Receiver<LspEvent> {
         self.events.subscribe()
+    }
+
+    /// The host owns persistence and executable resolution. In particular a
+    /// retry must not open config/index paths before native revalidation.
+    pub fn with_reviewed_execution(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+        authority: Arc<dyn LspExecutionAuthority>,
+        reviewed: ReviewedLspExecution,
+    ) -> Result<Self, LspManagerError> {
+        reviewed
+            .config
+            .validate()
+            .map_err(|_| LspManagerError::Config("invalid reviewed configuration".into()))?;
+        if reviewed
+            .processes
+            .values()
+            .any(|process| process.env != *reviewed.environment.as_map())
+        {
+            return Err(LspManagerError::ExecutionApprovalRequired);
+        }
+        let mut manager =
+            Self::with_execution_authority(app_local_data_dir, app_version, installer, authority);
+        manager.resolver = RuntimeResolver::new().with_environment(reviewed.environment.clone());
+        manager.reviewed = Some(Arc::new(reviewed));
+        Ok(manager)
     }
 
     fn next_rename_plan_id(&self) -> String {
@@ -689,6 +740,13 @@ impl LspManager {
     }
 
     pub fn load_config(&self) -> Result<LoadedLspConfig, LspManagerError> {
+        if let Some(reviewed) = &self.reviewed {
+            return Ok(LoadedLspConfig {
+                config: reviewed.config.clone(),
+                persist_allowed: true,
+                error: None,
+            });
+        }
         load_from_app_local_data_dir(&self.app_local_data_dir)
             .map_err(|error| LspManagerError::Config(error.to_string()))
     }
@@ -698,6 +756,9 @@ impl LspManager {
         config: &LspConfig,
         recover_invalid: bool,
     ) -> Result<(), LspManagerError> {
+        if self.reviewed.is_some() {
+            return Err(LspManagerError::ExecutionApprovalRequired);
+        }
         let loaded = self.load_config()?;
         if !loaded.persist_allowed && !recover_invalid {
             return Err(LspManagerError::ConfigRecoveryRequired);
@@ -775,7 +836,7 @@ impl LspManager {
                     self.emit_status(language_id, None, false).await;
                     Ok(())
                 } else {
-                    let _ = session.client.stop().await;
+                    stop_unpublished(&session.client, &session.process).await;
                     Err(LspManagerError::Protocol(format!(
                         "{language_id} 언어 서버 시작이 취소되었습니다"
                     )))
@@ -837,6 +898,11 @@ impl LspManager {
     }
 
     async fn create_session(&self, language_id: &str) -> Result<LanguageSession, LspManagerError> {
+        let _native_start = self
+            .execution_authority
+            .as_ref()
+            .map(|authority| authority.begin_start())
+            .transpose()?;
         let generation = self
             .next_session_generation
             .fetch_add(1, Ordering::Relaxed)
@@ -866,7 +932,13 @@ impl LspManager {
         });
         let workspace = WorkspaceRoot::with_authority(&config.workspace_root, document_authority)
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let resolved = if let Some(server) = config.server_by_language.get(language_id) {
+        let resolved = if let Some(reviewed) = &self.reviewed {
+            reviewed
+                .processes
+                .get(language_id)
+                .cloned()
+                .ok_or_else(|| LspManagerError::MissingServer(language_id.to_owned()))?
+        } else if let Some(server) = config.server_by_language.get(language_id) {
             match server {
                 ServerRef::Managed {
                     manifest_id,
@@ -877,8 +949,7 @@ impl LspManager {
                         .installer
                         .resolve_managed_install(manifest_id, version)
                         .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-                    let resolved = self
-                        .resolver
+                    self.resolver
                         .prepare_managed(
                             &installation.manifest,
                             language_id,
@@ -886,15 +957,7 @@ impl LspManager {
                             node_path.as_deref(),
                             workspace.path(),
                         )
-                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-                    if let Some(authority) = &self.execution_authority {
-                        authority.validate_process(&resolved)?;
-                    }
-                    self.resolver
-                        .probe_managed_runtime(&resolved)
-                        .await
-                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-                    resolved
+                        .map_err(|error| LspManagerError::Protocol(error.to_string()))?
                 }
                 _ => self
                     .resolver
@@ -913,6 +976,30 @@ impl LspManager {
             return Err(LspManagerError::MissingServer(language_id.to_owned()));
         };
 
+        let managed = matches!(
+            config.server_by_language.get(language_id),
+            Some(ServerRef::Managed { .. })
+        );
+        if (managed || self.reviewed.is_some())
+            && resolved
+                .runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.kind == super::catalog::RuntimeKind::Node)
+        {
+            if let Some(authority) = &self.execution_authority {
+                authority.validate_process(&resolved)?;
+            }
+            let cancellation = RequestCancellation::new();
+            let probe = self
+                .resolver
+                .probe_managed_runtime_cancellable(&resolved, &cancellation);
+            tokio::pin!(probe);
+            tokio::select! {
+                result=&mut probe=>result,
+                _=self.startup_cancelled()=>{cancellation.cancel();probe.await},
+            }
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
         if let Some(authority) = &self.execution_authority {
             authority.validate_config(language_id, &config)?;
             authority.validate_process(&resolved)?;
@@ -922,14 +1009,18 @@ impl LspManager {
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         self.spawn_stderr_monitor(language_id.to_owned(), process.subscribe_stderr());
         let client = LspClient::new(process.clone());
-        let capabilities = match client
-            .initialize(&workspace, InitializeConfig::new(&self.app_version))
-            .await
-        {
-            Ok(capabilities) => capabilities,
-            Err(error) => {
-                let _ = client.stop().await;
-                return Err(LspManagerError::Protocol(error.to_string()));
+        let initialized = tokio::select! {
+            result=client.initialize(&workspace,InitializeConfig::new(&self.app_version))=>Some(result),
+            _=self.startup_cancelled()=>None,
+        };
+        let capabilities = match initialized {
+            Some(Ok(capabilities)) => capabilities,
+            failure => {
+                stop_unpublished(&client, &process).await;
+                return Err(match failure {
+                    Some(Err(error)) => LspManagerError::Protocol(error.to_string()),
+                    _ => LspManagerError::ExecutionApprovalRequired,
+                });
             }
         };
         let sync_kind = capabilities.sync_kind.unwrap_or(SyncKind::Full);
@@ -947,6 +1038,14 @@ impl LspManager {
             failure_handled: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
         })
+    }
+
+    async fn startup_cancelled(&self) {
+        if let Some(authority) = &self.execution_authority {
+            authority.startup_cancelled().await;
+        } else {
+            std::future::pending::<()>().await;
+        }
     }
 
     pub async fn stop(&self, language_id: &str) -> Result<(), LspManagerError> {
@@ -1124,6 +1223,11 @@ impl LspManager {
     pub async fn shutdown_for_exit(&self) -> Result<(), LspManagerError> {
         self.shutting_down.store(true, Ordering::Release);
         let result = self.stop_all().await;
+        self.wait_for_startup_retirement().await;
+        result
+    }
+
+    pub async fn wait_for_startup_retirement(&self) {
         while self.active_starts.load(Ordering::Acquire) != 0 {
             let notified = self.start_finished.notified();
             if self.active_starts.load(Ordering::Acquire) == 0 {
@@ -1131,7 +1235,6 @@ impl LspManager {
             }
             notified.await;
         }
-        result
     }
 
     pub async fn statuses(&self) -> Vec<LanguageServerStatus> {
@@ -2446,7 +2549,7 @@ impl LspManager {
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
                         let reason = error.to_string();
-                        let _ = session.client.stop().await;
+                        stop_unpublished(&session.client, &session.process).await;
                         let (next_delay, disabled) = self
                             .record_restart_failure(language_id, reason.clone())
                             .await;
@@ -2465,7 +2568,7 @@ impl LspManager {
                             .await;
                         let reason =
                             "replacement language server exited during document replay".to_owned();
-                        let _ = session.client.stop().await;
+                        stop_unpublished(&session.client, &session.process).await;
                         let (next_delay, disabled) = self
                             .record_restart_failure(language_id, reason.clone())
                             .await;
@@ -2502,7 +2605,7 @@ impl LspManager {
                     if !accepted {
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
-                        let _ = session.client.stop().await;
+                        stop_unpublished(&session.client, &session.process).await;
                         return;
                     }
                     self.spawn_session_monitor(language_id, Arc::clone(&session));
@@ -4228,6 +4331,16 @@ fn validate_rename_name(new_name: &str) -> Result<(), LspManagerError> {
     Ok(())
 }
 
+async fn stop_unpublished(client: &LspClient, process: &LspProcess) {
+    loop {
+        let _ = client.stop().await;
+        if process.wait_for_exit(Duration::from_secs(2)).await {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 fn normalized_language_id(language_id: &str) -> Result<String, LspManagerError> {
     let language_id = language_id.trim();
     if language_id.is_empty()
@@ -4297,6 +4410,109 @@ mod status_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reviewed_execution_never_loads_or_overwrites_unreviewed_config() {
+        let data = tempfile::tempdir().unwrap();
+        let installer = Arc::new(ManagedInstaller::new(data.path()).unwrap());
+        let path = super::super::config::lsp_config_path(data.path());
+        let original = br#"{"version":99,"future":"preserve"}"#;
+        fs::write(&path, original).unwrap();
+        let config = LspConfig {
+            enabled: true,
+            workspace_root: data
+                .path()
+                .join("absent-project")
+                .to_string_lossy()
+                .into_owned(),
+            ..LspConfig::default()
+        };
+        let manager = LspManager::with_reviewed_execution(
+            data.path(),
+            "test",
+            installer,
+            Arc::new(UnapprovedLspExecution),
+            ReviewedLspExecution {
+                config: config.clone(),
+                processes: BTreeMap::new(),
+                environment: EnvironmentAllowlist::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(manager.load_config().unwrap().config, config);
+        assert!(manager.save_config(&config, true).is_err());
+        for _ in 0..2 {
+            assert!(matches!(
+                manager.start("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+            assert!(matches!(
+                manager.create_session("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+        }
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+
+    #[tokio::test]
+    async fn reviewed_process_revalidation_precedes_index_resolution_and_runtime_probe() {
+        struct DenyPrepared(ResolvedProcess);
+        impl LspExecutionAuthority for DenyPrepared {
+            fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
+                Ok(())
+            }
+            fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
+                Ok(())
+            }
+            fn validate_process(&self, process: &ResolvedProcess) -> Result<(), LspManagerError> {
+                assert_eq!(process, &self.0);
+                Err(LspManagerError::ExecutionApprovalRequired)
+            }
+        }
+        let data = tempfile::tempdir().unwrap();
+        let executable = data.path().join("unavailable-runtime");
+        let process = ResolvedProcess {
+            executable: executable.clone(),
+            args: vec![],
+            current_dir: data.path().to_owned(),
+            env: Default::default(),
+            runtime: Some(super::super::runtime::ResolvedRuntime {
+                kind: super::super::catalog::RuntimeKind::Node,
+                executable,
+                version_requirement: None,
+            }),
+        };
+        let config = LspConfig {
+            enabled: true,
+            workspace_root: data.path().to_string_lossy().into_owned(),
+            server_by_language: BTreeMap::from([(
+                "rust".into(),
+                ServerRef::Managed {
+                    manifest_id: "absent-installation".into(),
+                    version: "1.0.0".into(),
+                    node_path: None,
+                },
+            )]),
+            ..LspConfig::default()
+        };
+        let manager = LspManager::with_reviewed_execution(
+            data.path(),
+            "test",
+            Arc::new(ManagedInstaller::new(data.path()).unwrap()),
+            Arc::new(DenyPrepared(process.clone())),
+            ReviewedLspExecution {
+                config,
+                processes: BTreeMap::from([("rust".into(), process)]),
+                environment: EnvironmentAllowlist::new(),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            manager.start("rust").await,
+            Err(LspManagerError::ExecutionApprovalRequired)
+        ));
+        assert!(manager.state.lock().await.sessions.is_empty());
+    }
 
     #[tokio::test]
     async fn hosted_execution_rejects_unapproved_roots_before_path_resolution() {
