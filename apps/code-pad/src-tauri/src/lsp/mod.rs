@@ -37,7 +37,7 @@ pub use config::{
 };
 pub use documents::{
     AtomicDocumentChange, DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot,
-    DocumentStore, RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
+    DocumentStore, LspDocumentAuthority, RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
 };
 pub use features::{
     apply_formatting_edits, apply_workspace_edit, build_completion_params, build_definition_params,

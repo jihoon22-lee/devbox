@@ -24,6 +24,10 @@ selected source objects are checked before bounded private snapshots reach the
 existing digest/dependency-lock verifier. Product shutdown cancels downloads and
 waits for active LSP workers to retire. Context-specific LSP approval and editing
 remain pending.
+The shared LSP engine retains native document authority across cloned sessions,
+rename previews, disk apply and rollback. It checks incoming paths before resolution
+and their canonical targets afterward. Revoked access preserves pending recovery
+journals; execution approval alone defaults to no document access.
 The product host now authenticates explicit startup and Registry commands. Its
 native startup screen creates a blank generation only after a user action and
 shows schema/owner failures without replacing existing data. Registry UI supports

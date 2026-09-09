@@ -138,6 +138,18 @@ The installer keeps its usual cleanup path after cancellation, and synchronous
 promotion/index work finishes before retirement. Execution/config-edit/WorkspaceEdit
 commands remain denied pending the context-specific LSP owner.
 
+The shared engine now carries a persistent document authority through workspace
+clones, rename plans and backups. It checks paths before canonicalization and the
+canonical result before file inspection; rename preview/apply/rollback recheck
+retained targets before IO. Revocation before apply leaves the file unchanged;
+revocation before rollback keeps post-write data and its journal/backup for recovery.
+Hosted execution authority defaults to denying document access. Standalone behavior
+and hosted no-IO startup recovery remain intact. **130 LSP unit + 15 manager integration
+tests and strict Clippy passed**, **65.667 seconds**, cgroup peak **4,518,932,480 bytes**
+under 8 GiB. An initial test-only missing import was fixed before this passing run.
+Final affected all passed in **392.420 seconds**, cgroup peak **6,200,475,648 bytes**
+under the shared 8 GiB limit.
+
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,
 no protected product stores and no editor grant. Import validates all tokens before

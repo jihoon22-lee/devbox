@@ -9,8 +9,8 @@ use super::catalog::{LspConfig, ServerRef};
 use super::client::{CapabilitySet, ClientStatus, InitializeConfig, LspClient, ServerInfo};
 use super::config::{load_from_app_local_data_dir, save_to_app_local_data_dir, LoadedLspConfig};
 use super::documents::{
-    DidChange, DidClose, DidOpen, DidSave, DocumentSnapshot, DocumentStore, RequestSnapshot,
-    SyncKind, WorkspaceRoot,
+    DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot, DocumentStore,
+    LspDocumentAuthority, RequestSnapshot, SyncKind, WorkspaceRoot,
 };
 use super::features::{
     apply_workspace_edit, build_completion_params, build_definition_params,
@@ -366,7 +366,7 @@ struct PendingRename {
     language_id: String,
     session: Arc<LanguageSession>,
     session_generation: u64,
-    workspace_root: PathBuf,
+    workspace_root: WorkspaceRoot,
     created_at: Instant,
     open_documents: Vec<PendingRenameDocument>,
     plan: WorkspaceEditPlan,
@@ -457,6 +457,18 @@ pub trait LspExecutionAuthority: Send + Sync {
         -> Result<(), LspManagerError>;
     /// Runs before a managed runtime probe and again before server spawn.
     fn validate_process(&self, process: &ResolvedProcess) -> Result<(), LspManagerError>;
+    /// Execution approval alone never authorizes documents. The default denies
+    /// access until the native context owner supplies a persistent path policy.
+    fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
+        Err(DocumentError::AccessDenied)
+    }
+}
+
+struct ExecutionDocumentAuthority(Arc<dyn LspExecutionAuthority>);
+impl LspDocumentAuthority for ExecutionDocumentAuthority {
+    fn validate_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.0.validate_document_path(path)
+    }
 }
 
 /// A hosted read-only manager has no execution authority. A later native
@@ -849,7 +861,10 @@ impl LspManager {
         }
         ensure_host_workspace_supported(&config.workspace_root)?;
 
-        let workspace = WorkspaceRoot::new(&config.workspace_root)
+        let document_authority = self.execution_authority.as_ref().map(|authority| {
+            Arc::new(ExecutionDocumentAuthority(authority.clone())) as Arc<dyn LspDocumentAuthority>
+        });
+        let workspace = WorkspaceRoot::with_authority(&config.workspace_root, document_authority)
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         let resolved = if let Some(server) = config.server_by_language.get(language_id) {
             match server {
@@ -1697,7 +1712,7 @@ impl LspManager {
             language_id: normalized_id,
             session: Arc::clone(&context.session),
             session_generation: context.session.generation,
-            workspace_root: context.request_documents.workspace().path().to_path_buf(),
+            workspace_root: context.request_documents.workspace().clone(),
             created_at: Instant::now(),
             open_documents,
             plan,
@@ -1783,7 +1798,7 @@ impl LspManager {
             .path()
             .to_path_buf();
         if !current_session
-            || current_workspace != pending.workspace_root
+            || current_workspace != pending.workspace_root.path()
             || !matches!(pending.session.process.state().await, ProcessState::Running)
         {
             self.clear_rename_cancellation(plan_id).await;
@@ -2828,6 +2843,7 @@ fn load_rename_documents(
             ));
         }
         if !disk_files.contains_key(&canonical_uri) {
+            validate_rename_access(store.workspace(), &path)?;
             let size = file_commands::preflight_size(&path).map_err(|_| {
                 LspManagerError::Protocol("이름 변경 대상 파일 크기를 확인하지 못했습니다".into())
             })?;
@@ -2853,6 +2869,7 @@ fn load_rename_documents(
                         .into(),
                 ));
             }
+            validate_rename_access(store.workspace(), &snapshot.path)?;
             let opened =
                 file_commands::open_path_limited(&snapshot.path, MAX_RENAME_TOTAL_BYTES as u64)
                     .map_err(|_| {
@@ -2867,6 +2884,7 @@ fn load_rename_documents(
             }
             opened
         } else {
+            validate_rename_access(store.workspace(), &path)?;
             let opened = file_commands::open_path_limited(&path, MAX_RENAME_TOTAL_BYTES as u64)
                 .map_err(|_| {
                     LspManagerError::Protocol(
@@ -2890,6 +2908,12 @@ fn load_rename_documents(
         disk_files.insert(canonical_uri, opened);
     }
     Ok((store, disk_files))
+}
+
+fn validate_rename_access(workspace: &WorkspaceRoot, path: &Path) -> Result<(), LspManagerError> {
+    workspace.validate_access(path).map_err(|_| {
+        LspManagerError::Protocol("LSP 문서 접근 권한이 변경되어 작업을 중단했습니다".into())
+    })
 }
 
 fn pending_rename_files(
@@ -3296,6 +3320,7 @@ fn validate_pending_rename_documents(
 #[derive(Debug, Clone)]
 struct RenameBackup {
     target: PathBuf,
+    workspace: WorkspaceRoot,
     backup: file_commands::CreatedBackup,
     applied_mtime: Option<i64>,
     applied_size: Option<u64>,
@@ -3407,7 +3432,7 @@ fn apply_pending_rename_files(
     files: &[PendingRenameFile],
     backup_root: &Path,
     plan_id: &str,
-    workspace_root: &Path,
+    workspace_root: &WorkspaceRoot,
     cancellation: Arc<AtomicBool>,
     deadline: Instant,
 ) -> DiskRenameOutcome {
@@ -3434,7 +3459,11 @@ fn apply_pending_rename_files(
     // mtime/size/hash for delete-and-recreate races.
     let mut current_bytes = Vec::with_capacity(files.len());
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             results[index].error = Some(error.into());
             return DiskRenameOutcome {
                 success: false,
@@ -3509,7 +3538,11 @@ fn apply_pending_rename_files(
     let mut after_snapshots = Vec::with_capacity(files.len());
     let mut encoded_total_bytes = 0usize;
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             results[index].error = Some(error.into());
             return DiskRenameOutcome {
                 success: false,
@@ -3571,7 +3604,11 @@ fn apply_pending_rename_files(
     backup_dir = Some(directory.clone());
 
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             let _ = fs::remove_dir_all(&directory);
             results[index].error = Some(error.into());
             return DiskRenameOutcome {
@@ -3608,6 +3645,7 @@ fn apply_pending_rename_files(
         };
         backups.push(RenameBackup {
             target: file.path.clone(),
+            workspace: workspace_root.clone(),
             backup,
             applied_mtime: None,
             applied_size: None,
@@ -3619,7 +3657,7 @@ fn apply_pending_rename_files(
     let journal = RenameJournal {
         schema: 1,
         plan_id: plan_id.to_owned(),
-        workspace_root: workspace_root.to_string_lossy().into_owned(),
+        workspace_root: workspace_root.path().to_string_lossy().into_owned(),
         state: RenameJournalState::Applying,
         entries: files
             .iter()
@@ -3650,7 +3688,11 @@ fn apply_pending_rename_files(
     }
 
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             let mut outcome = DiskRenameOutcome {
                 success: false,
                 rolled_back: false,
@@ -3790,6 +3832,10 @@ fn rollback_rename_backups(backups: &[RenameBackup], count: usize) -> bool {
         ) else {
             continue;
         };
+        if backup.workspace.validate_access(&backup.target).is_err() {
+            success = false;
+            continue;
+        }
         let current = match file_commands::read_stable_limited(
             &backup.target,
             Some(MAX_RENAME_TOTAL_BYTES as u64),
@@ -3817,6 +3863,10 @@ fn rollback_rename_backups(backups: &[RenameBackup], count: usize) -> bool {
             || current.0.len() != expected_size
             || file_commands::content_hash(&current.1) != expected_hash
         {
+            success = false;
+            continue;
+        }
+        if backup.workspace.validate_access(&backup.target).is_err() {
             success = false;
             continue;
         }
@@ -4290,6 +4340,9 @@ mod tests {
     async fn hosted_execution_rechecks_the_resolved_command_before_spawn() {
         struct DenyProcess(std::sync::atomic::AtomicUsize);
         impl LspExecutionAuthority for DenyProcess {
+            fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
+                Ok(())
+            }
             fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
                 Ok(())
             }
@@ -4637,6 +4690,73 @@ mod tests {
     }
 
     #[test]
+    fn disk_rename_retains_authority_through_apply_and_rollback() {
+        struct Approval(AtomicBool);
+        impl LspDocumentAuthority for Approval {
+            fn validate_path(&self, _: &Path) -> Result<(), DocumentError> {
+                if self.0.load(Ordering::Acquire) {
+                    Ok(())
+                } else {
+                    Err(DocumentError::AccessDenied)
+                }
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("document.rs");
+        fs::write(&path, b"before\n").unwrap();
+        let opened = file_commands::open_path(&path).unwrap();
+        let approval = Arc::new(Approval(AtomicBool::new(true)));
+        let workspace =
+            WorkspaceRoot::with_authority(directory.path(), Some(approval.clone())).unwrap();
+        let files = vec![PendingRenameFile {
+            path: path.clone(),
+            display_path: "document.rs".into(),
+            before_text: opened.text,
+            after_text: "after\n".into(),
+            encoding: opened.encoding,
+            line_ending: opened.line_ending,
+            expected_mtime: opened.mtime,
+            expected_size: opened.size,
+            expected_content_hash: opened.content_hash,
+            expected_identity: opened.identity,
+            ranges: Vec::new(),
+        }];
+        let backup_root = directory.path().join("backups");
+        let apply = || {
+            apply_pending_rename_files(
+                &files,
+                &backup_root,
+                "reviewed-plan",
+                &workspace,
+                Arc::new(AtomicBool::new(false)),
+                Instant::now() + Duration::from_secs(10),
+            )
+        };
+        approval.0.store(false, Ordering::Release);
+        let denied = apply();
+        assert!(!denied.success);
+        assert!(!backup_root.exists());
+        assert_eq!(fs::read(&path).unwrap(), b"before\n");
+
+        approval.0.store(true, Ordering::Release);
+        let mut applied = apply();
+        assert!(applied.success);
+        assert_eq!(fs::read(&path).unwrap(), b"after\n");
+        let backup_dir = applied.backup_dir.clone().unwrap();
+        let journal = fs::read(backup_dir.join("journal.json")).unwrap();
+        approval.0.store(false, Ordering::Release);
+        assert!(!rollback_disk_rename(&mut applied));
+        assert_eq!(fs::read(&path).unwrap(), b"after\n");
+        assert_eq!(fs::read(backup_dir.join("journal.json")).unwrap(), journal);
+        assert!(applied.backups[0].backup.path.exists());
+
+        approval.0.store(true, Ordering::Release);
+        assert!(rollback_disk_rename(&mut applied));
+        assert_eq!(fs::read(&path).unwrap(), b"before\n");
+        assert!(!backup_dir.exists());
+    }
+
+    #[test]
     fn disk_rename_rolls_back_a_prior_write_when_a_later_file_is_read_only() {
         let directory = tempfile::tempdir().unwrap();
         let first_path = directory.path().join("first.rs");
@@ -4683,7 +4803,7 @@ mod tests {
             &files,
             &backup_root,
             "rename-test",
-            directory.path(),
+            &WorkspaceRoot::new(directory.path()).unwrap(),
             Arc::new(AtomicBool::new(false)),
             Instant::now() + Duration::from_secs(10),
         );
