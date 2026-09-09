@@ -418,6 +418,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
       {error && (
         <div className="lsp-installer-error" role="alert">
           <span>{error}</span>
+          <button type="button" className="toolbar-button" disabled={loading || recoveryBusy || Boolean(busyKey)} onClick={() => void refresh()}>설치 상태 새로 고침</button>
           {recoveryAvailable && (
             <button
               type="button"

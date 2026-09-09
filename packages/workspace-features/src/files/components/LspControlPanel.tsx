@@ -3,8 +3,6 @@ import { focusFirst, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
   languageServerLogs,
   languageServerStatuses,
-  lspCatalog,
-  lspInstalled,
   loadLspConfig,
   restartLanguageServer,
   saveLspConfig,
@@ -232,16 +230,9 @@ export default function LspControlPanel({
         if (!cancelled) setError("LSP 설정을 불러오지 못했습니다.");
       });
     void refreshRuntime();
-    void Promise.all([lspCatalog(), lspInstalled()])
-      .then(([catalog, installed]) => {
-        if (cancelled) return;
-        setManagedCatalog(catalog);
-        setManagedStatuses(installed);
-      })
-      .catch(() => {
-        // Managed catalog availability must not prevent local/custom server
-        // configuration from remaining usable.
-      });
+    // The installer panel owns catalog/status loading and publishes the same
+    // snapshot to the server selector. Parallel duplicate status reads collide
+    // with the native installer's operation lease after an archive is installed.
     const timer = window.setInterval(() => void refreshRuntime(), 2_000);
     return () => {
       cancelled = true;

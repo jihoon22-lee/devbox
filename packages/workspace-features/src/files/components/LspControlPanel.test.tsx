@@ -187,6 +187,31 @@ afterEach(() => {
 });
 
 describe("LspControlPanel", () => {
+  it("shares one pending native install snapshot with the server selector", async () => {
+    const manifest = fixtureManifest();
+    catalogMock.mockResolvedValue([manifest]);
+    let finish!: (value: ManagedInstallStatus[]) => void;
+    installedMock.mockImplementation(() => new Promise(resolve => { finish = resolve; }));
+    const rendered = render(<LspControlPanel workspaceRoot="C:\\work" onClose={() => undefined} />);
+    await waitFor(() => expect(installedMock).toHaveBeenCalledTimes(1));
+    await act(async () => finish([fixtureInstallStatus(manifest, "installed")]));
+    expect(await rendered.findByRole("button", { name: "제거" })).toBeTruthy();
+    expect(catalogMock).toHaveBeenCalledTimes(1);
+    expect(installedMock).toHaveBeenCalledTimes(1);
+    expect(rendered.queryByText("관리형 서버 상태를 확인하지 못했습니다.")).toBeNull();
+  });
+
+  it("can explicitly reload failed installation metadata without changing configuration", async () => {
+    const manifest = fixtureManifest();
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockRejectedValueOnce(new Error("busy")).mockResolvedValue([fixtureInstallStatus(manifest,"not_installed")]);
+    const rendered = render(<LspControlPanel workspaceRoot="C:\\work" onClose={() => undefined} />);
+    fireEvent.click(await rendered.findByRole("button", { name: "설치 상태 새로 고침" }));
+    expect(await rendered.findByRole("button", { name: "설치" })).toBeTruthy();
+    expect(installedMock).toHaveBeenCalledTimes(2);
+    expect(saveMock).not.toHaveBeenCalled(); expect(installMock).not.toHaveBeenCalled();
+  });
+
   it("reloads the native revision after saving before the next configuration write", async () => {
     loadMock.mockResolvedValueOnce(loadedConfig({ nativeRevision: "revision-one" }))
       .mockResolvedValue(loadedConfig({ nativeRevision: "revision-two" }));
