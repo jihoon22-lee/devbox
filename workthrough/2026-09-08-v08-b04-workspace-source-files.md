@@ -98,6 +98,19 @@ UI tests**, product build and **4 generated-request tests** passed in **37.678 s
 (cgroup peak **4,411,543,552 bytes**). Final affected all passed in **355.968 seconds**
 (cgroup peak **5,172,359,168 bytes**, 8 GiB cap). Windows retry is pending.
 
+The chooser driver also failed an isolated local Windows test: its UI Automation
+provider exposed a native Button as a Pane without InvokePattern. The driver now
+locates the filename editor/button by native class and ID, checks their HWND parent
+and exact process, and uses bounded [Windows messages](https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw).
+The 1.5-second sends retain the executable/start-time/owned-path guards and do not
+broadcast messages. The new `windows-workspace-file-dialog.test.ps1` compiles an
+owned disposable dialog, checks cancellation and a Korean filename selection, then
+confirms child exit before cleanup. Both actions passed on local Windows; this is
+driver evidence, separate from packaged Tauri acceptance. CI runs the same test
+before product builds and watches all Workspace fixture scripts. Final affected all
+passed in **314.733 seconds**, cgroup peak **1,576,943,616 bytes** under 8 GiB.
+The packaged retry remains pending.
+
 ## Actual verification
 
 The extracted shared UI passed 307 tests and the original native suites passed
