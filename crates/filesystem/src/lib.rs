@@ -100,100 +100,61 @@ pub fn open_filesystem_metadata_object(
     open_object(path.as_ref(), directory, false)
 }
 
-fn open_object(
-    path: &Path,
+/// Identify the exact object of a retained handle without reopening its path.
+/// This is evidence for a native owner, not permission to access another path.
+pub fn opened_filesystem_identity(
+    handle: &File,
     directory: bool,
-    _read_contents: bool,
-) -> io::Result<(File, FilesystemIdentity)> {
+) -> io::Result<FilesystemIdentity> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-
-        #[cfg(target_os = "linux")]
-        const NO_FOLLOW: i32 = 0x20000;
-        #[cfg(target_os = "macos")]
-        const NO_FOLLOW: i32 = 0x100;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        const NO_FOLLOW: i32 = 0;
-
-        let handle = OpenOptions::new()
-            .read(true)
-            .custom_flags(NO_FOLLOW)
-            .open(path)?;
+        use std::os::unix::fs::MetadataExt;
         let metadata = handle.metadata()?;
-        if metadata.is_dir() != directory {
+        if metadata.is_dir() != directory || metadata.file_type().is_symlink() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unexpected file type",
             ));
         }
-        let identity = FilesystemIdentity {
+        Ok(FilesystemIdentity {
             scope: metadata.dev(),
             object: metadata.ino(),
-        };
-        Ok((handle, identity))
+        })
     }
-
     #[cfg(windows)]
     {
-        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
-        use windows::Win32::Foundation::{GENERIC_READ, HANDLE, WIN32_ERROR};
-        use windows::Win32::Storage::FileSystem::{
-            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
-            FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{
+            Foundation::{HANDLE, WIN32_ERROR},
+            Storage::FileSystem::{
+                GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
+                FILE_ATTRIBUTE_REPARSE_POINT,
+            },
         };
-
-        let flags = FILE_FLAG_OPEN_REPARSE_POINT
-            | if directory {
-                FILE_FLAG_BACKUP_SEMANTICS
-            } else {
-                Default::default()
-            };
-        // Identity queries need attributes only. Requesting GENERIC_READ here
-        // would conflict with an existing exclusive source-data handle.
-        let desired_access = FILE_READ_ATTRIBUTES.0
-            | if directory || !_read_contents {
-                0
-            } else {
-                GENERIC_READ.0
-            };
-        // Rust's Windows path conversion handles extended-length paths. Direct
-        // CreateFileW with an ordinary spelling fails once private generation
-        // paths (especially sibling temporary files) cross MAX_PATH.
-        let handle = OpenOptions::new()
-            .access_mode(desired_access)
-            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
-            .custom_flags(flags.0)
-            .open(path)?;
-        let raw = HANDLE(handle.as_raw_handle());
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        unsafe { GetFileInformationByHandle(raw, &mut information) }.map_err(|error| {
-            WIN32_ERROR::from_error(&error)
-                .map(|code| io::Error::from_raw_os_error(code.0 as i32))
-                .unwrap_or_else(|| io::Error::other(error))
-        })?;
-        let is_directory = information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
-        let is_reparse_point = information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
-        if is_reparse_point || is_directory != directory {
+        unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut information) }
+            .map_err(|error| {
+                WIN32_ERROR::from_error(&error)
+                    .map(|code| io::Error::from_raw_os_error(code.0 as i32))
+                    .unwrap_or_else(|| io::Error::other(error))
+            })?;
+        if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+            || (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0) != directory
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unexpected file type",
             ));
         }
-        let identity = FilesystemIdentity {
+        Ok(FilesystemIdentity {
             scope: u64::from(information.dwVolumeSerialNumber),
             object: (u64::from(information.nFileIndexHigh) << 32)
                 | u64::from(information.nFileIndexLow),
-        };
-        Ok((handle, identity))
+        })
     }
-
     #[cfg(not(any(unix, windows)))]
     {
         use std::time::UNIX_EPOCH;
-
-        let handle = std::fs::File::open(path)?;
         let metadata = handle.metadata()?;
         if metadata.is_dir() != directory {
             return Err(io::Error::new(
@@ -205,12 +166,62 @@ fn open_object(
             .modified()?
             .duration_since(UNIX_EPOCH)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid time"))?;
-        let identity = FilesystemIdentity {
+        Ok(FilesystemIdentity {
             scope: metadata.len(),
             object: u64::try_from(modified.as_nanos()).unwrap_or(u64::MAX),
-        };
-        Ok((handle, identity))
+        })
     }
+}
+fn open_object(
+    path: &Path,
+    directory: bool,
+    _read_contents: bool,
+) -> io::Result<(File, FilesystemIdentity)> {
+    #[cfg(unix)]
+    let handle = {
+        use std::os::unix::fs::OpenOptionsExt;
+        #[cfg(target_os = "linux")]
+        let flags = libc::O_NOFOLLOW | if _read_contents { 0 } else { libc::O_PATH };
+        #[cfg(not(target_os = "linux"))]
+        let flags = libc::O_NOFOLLOW;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(flags)
+            .open(path)?
+    };
+    #[cfg(windows)]
+    let handle = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::{
+            Foundation::GENERIC_READ,
+            Storage::FileSystem::{
+                FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+                FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+            },
+        };
+        let flags = FILE_FLAG_OPEN_REPARSE_POINT
+            | if directory {
+                FILE_FLAG_BACKUP_SEMANTICS
+            } else {
+                Default::default()
+            };
+        let desired_access = FILE_READ_ATTRIBUTES.0
+            | if directory || !_read_contents {
+                0
+            } else {
+                GENERIC_READ.0
+            };
+        // Rust's Windows path conversion retains extended-length paths.
+        OpenOptions::new()
+            .access_mode(desired_access)
+            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+            .custom_flags(flags.0)
+            .open(path)?
+    };
+    #[cfg(not(any(unix, windows)))]
+    let handle = File::open(path)?;
+    let identity = opened_filesystem_identity(&handle, directory)?;
+    Ok((handle, identity))
 }
 
 /// Verify that no component of an absolute path is a symbolic link/reparse
@@ -576,6 +587,24 @@ mod identity_tests {
             opened_identity,
             filesystem_identity(&source, false).unwrap()
         );
+        assert_eq!(
+            super::opened_filesystem_identity(&handle, false).unwrap(),
+            opened_identity
+        );
+        drop(handle);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn metadata_handles_cannot_read_file_contents() {
+        use std::io::Read;
+        let root = fixture_root();
+        let path = root.join("metadata-only.txt");
+        fs::write(&path, b"owned contents").unwrap();
+        let (mut handle, identity) = super::open_filesystem_metadata_object(&path, false).unwrap();
+        assert_eq!(identity, filesystem_identity(&path, false).unwrap());
+        assert!(handle.read(&mut [0u8; 1]).is_err());
         drop(handle);
         let _ = fs::remove_dir_all(root);
     }

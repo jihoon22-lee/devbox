@@ -493,6 +493,15 @@ impl FileOwner {
         Ok(document.grant.file.path.clone())
     }
     pub fn save(&mut self, scope: Scope<'_>, request: SaveFileRequest) -> Result<SavedFileWire> {
+        self.save_guarded(scope, request, &|| Ok(()))
+    }
+    pub fn save_guarded(
+        &mut self,
+        scope: Scope<'_>,
+        request: SaveFileRequest,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<SavedFileWire> {
+        guard()?;
         let path = self.admitted_path(scope, &request.path)?;
         let id = key(&path)?;
         let document = self.documents.get(&id).ok_or("file_selection_required")?;
@@ -504,15 +513,26 @@ impl FileOwner {
         if request.source_lossy != document.lossy {
             return Err("file_snapshot_changed");
         }
-        let saved = file::save_path(
+        let issue = std::cell::Cell::new(None);
+        let check = || {
+            let checked = guard()
+                .and_then(|()| self.ensure_user_path(&path))
+                .and_then(|()| document.grant.admit(scope));
+            checked.map_err(|error| {
+                issue.set(Some(error));
+                file::FileError::BackupIntegrity
+            })
+        };
+        let saved = file::save_path_guarded(
             &path,
             &request.text,
             request.encoding,
             request.line_ending,
             document.expected(),
             document.lossy,
+            &check,
         )
-        .map_err(|_| "file_save_conflict")?;
+        .map_err(|_| issue.get().unwrap_or("file_save_conflict"))?;
         let context = document.grant.context.clone();
         let mut wire = SavedFileWire::from(saved.clone());
         wire.path = path.to_str().ok_or("invalid_file_path")?.to_owned();

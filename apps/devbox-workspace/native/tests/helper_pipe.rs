@@ -34,7 +34,7 @@ impl Helper {
             sequence: 0,
         }
     }
-    fn call(&mut self, method: &str, root: Option<&str>, args: Value) -> Response {
+    fn send(&mut self, method: &str, root: Option<&str>, args: Value) -> Request {
         self.sequence += 1;
         let request = Request {
             version: VERSION,
@@ -47,6 +47,10 @@ impl Helper {
             args,
         };
         workspace_wsl::write_frame(self.input.as_mut().unwrap(), &request).unwrap();
+        request
+    }
+    fn call(&mut self, method: &str, root: Option<&str>, args: Value) -> Response {
+        let request = self.send(method, root, args);
         let response: Response = workspace_wsl::read_frame(&mut self.output)
             .unwrap()
             .unwrap();
@@ -137,4 +141,65 @@ fn actual_helper_rejects_a_replayed_pipe_sequence() {
         Err(error) => error.kind() == io::ErrorKind::UnexpectedEof,
         Ok(Some(_)) => false,
     });
+}
+
+fn save_args(context: &Value, opened: &Value, text: &str) -> Value {
+    json!({"context":context,"nativeRevision":opened["nativeRevision"],"request":{
+        "path":opened["path"],"text":text,"encoding":opened["encoding"],"lineEnding":opened["lineEnding"],
+        "expectedMtimeNanos":opened["mtimeNanos"],"expectedSize":opened["size"],"expectedContentHash":opened["contentHash"],"sourceLossy":false
+    }})
+}
+#[test]
+fn actual_helper_save_rotates_authority_and_eof_never_leaves_partial_file_contents() {
+    let directory = tempfile::Builder::new()
+        .prefix(".wsl-save-pipe-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let file = directory.path().join("source.txt");
+    std::fs::write(&file, b"original\r\n").unwrap();
+    let mut helper = Helper::start();
+    let report = helper
+        .call("observe_root", None, json!({"path":directory.path()}))
+        .result
+        .unwrap();
+    let root = report["token"].as_str().unwrap();
+    let context = json!({"projectId":"project","worktreeId":"tree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}});
+    helper
+        .call("files_attach", Some(root), json!({"context":context}))
+        .result
+        .unwrap();
+    let open_args = json!({"context":context,"request":{"path":file,"encoding":null}});
+    let opened = helper
+        .call("files_open", Some(root), open_args.clone())
+        .result
+        .unwrap();
+    let save = save_args(&context, &opened, "saved\n");
+    let saved = helper
+        .call("files_save", Some(root), save.clone())
+        .result
+        .unwrap();
+    assert_ne!(saved["nativeRevision"], opened["nativeRevision"]);
+    assert_eq!(std::fs::read(&file).unwrap(), b"saved\r\n");
+    assert_eq!(
+        helper
+            .call("files_save", Some(root), save)
+            .result
+            .unwrap_err(),
+        "file_snapshot_changed"
+    );
+    let opened = helper
+        .call("files_open", Some(root), open_args)
+        .result
+        .unwrap();
+    let large = "x".repeat(8 * 1024 * 1024) + "\n";
+    helper.send(
+        "files_save",
+        Some(root),
+        save_args(&context, &opened, &large),
+    );
+    helper.input.take();
+    helper.exited(0);
+    let bytes = std::fs::read(&file).unwrap();
+    assert!(bytes == b"saved\r\n" || bytes == large.replace('\n', "\r\n").as_bytes());
+    assert_eq!(std::fs::read_dir(directory.path()).unwrap().count(), 1);
 }

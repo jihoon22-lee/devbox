@@ -201,7 +201,7 @@ observations and has a bounded Windows pipe client. Its static ELF resource is
 built in the product workflow from the same source SHA, checked before packaging,
 and checked against the compiled digest before native launch. The client binds a
 registered GUID/backing-directory and WSL2 backing-image objects, requires explicit stopped-distro start,
-and retires the metadata helper on EOF/timeouts. Actual local Windows-to-WSL pipe
+and retires the helper on EOF/timeouts. Actual local Windows-to-WSL pipe
 and installed-resource-path probes passed; the packaged Rust client and hosted
 WSL1 observation fixture await CI. A lazy WSL folder form now lists registered
 GUIDs without startup, requires an explicit stopped-distro start choice, and uses
@@ -217,9 +217,12 @@ server at the old snapshot. The host checks the saved bytes against current disk
 newer unsaved editor text remains dirty and is synchronized after didSave.
 
 The Windows host and Linux helper now share the file grant/conflict implementation.
-The helper can attach an observed native project context, read a file and retain
-buffer metadata. It restricts file content to the selected distro's root filesystem;
+The helper can attach an observed native project context, read a file, retain
+buffer metadata and explicitly save against its current revision and disk snapshot.
+Cancellation rechecks precede atomic replacement; owned staging files retain native
+parent/file identities. Unacknowledged saves require reconciliation and are never
+replayed automatically. It restricts file content to the selected distro's root filesystem;
 Windows aliases and other mounts are not admitted through a POSIX spelling. The
-WSL Files route, mutations and language servers remain unconnected. LSP text updates
+WSL Files route, Git and language servers remain unconnected. LSP text updates
 now stay in the server document owner: NativeEditorMirror alone acknowledges UI
 buffer hashes, so an older queued notification cannot clear a newer unsaved buffer.

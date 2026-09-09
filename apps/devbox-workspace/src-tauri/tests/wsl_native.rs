@@ -29,6 +29,8 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
     std::fs::create_dir(&unc).unwrap();
     let marker = Path::new(&unc).join("original.txt");
     std::fs::write(&marker, b"unchanged synthetic fixture\n").unwrap();
+    let editable = Path::new(&unc).join("edit.txt");
+    std::fs::write(&editable, b"original\r\n").unwrap();
     let lease =
         wsl_distro::Lease::capture(&distro.id, false).expect("owned WSL registry/storage capture");
     lease
@@ -106,7 +108,33 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
             serde_json::json!({"context":context,"path":opened["path"]}),
         )
         .unwrap();
+    let edit = first
+        .file_request(
+            "files_open",
+            &report.token,
+            serde_json::json!({"context":context,"request":{"path":format!("{root}/edit.txt"),"encoding":null}}),
+        )
+        .unwrap();
+    let save = serde_json::json!({"context":context,"nativeRevision":edit["nativeRevision"],"request":{
+        "path":edit["path"],"text":"saved 한글\n","encoding":edit["encoding"],"lineEnding":edit["lineEnding"],
+        "expectedMtimeNanos":edit["mtimeNanos"],"expectedSize":edit["size"],"expectedContentHash":edit["contentHash"],"sourceLossy":false
+    }});
+    let saved = first
+        .file_request("files_save", &report.token, save.clone())
+        .expect("actual native WSL atomic save");
+    assert!(workspace_wsl::token(
+        saved["nativeRevision"].as_str().unwrap()
+    ));
+    assert_ne!(saved["nativeRevision"], edit["nativeRevision"]);
+    assert!(matches!(
+        first.file_request("files_save", &report.token, save),
+        Err("file_snapshot_changed")
+    ));
     drop(first); // EOF must retire the Linux helper before restart.
+    assert_eq!(
+        std::fs::read(&editable).unwrap(),
+        "saved 한글\r\n".as_bytes()
+    );
     let mut second = Connection::connect(&resources, &distro.id, false).unwrap();
     let repeated = second.observe(&root).unwrap();
     assert_eq!(report.root_object, repeated.root_object);
@@ -165,5 +193,6 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
         b"unchanged synthetic fixture\n"
     );
     std::fs::remove_file(marker).unwrap();
+    std::fs::remove_file(editable).unwrap();
     std::fs::remove_dir(&unc).unwrap();
 }

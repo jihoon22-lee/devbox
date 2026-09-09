@@ -1,6 +1,9 @@
 const issues:Record<string,string>={
   wsl_distro_stopped: "WSL 배포판이 중지되어 있습니다. 목록을 새로 고친 뒤 시작 여부를 선택해 주세요.",
   wsl_distro_missing: "WSL 배포판 등록을 찾을 수 없습니다. 목록을 새로 고쳐 주세요.",
+  wsl_storage_path_unsafe: "WSL 저장 폴더 경로에 링크나 접근할 수 없는 폴더가 있습니다. 배포판 저장 위치를 확인해 주세요.",
+  wsl_storage_unavailable: "WSL 배포판 저장 폴더의 식별 정보를 읽지 못했습니다. 경로와 접근 권한을 확인해 주세요.",
+  wsl_request_cancelled: "WSL 파일 작업이 취소되었습니다. 편집 내용은 유지됩니다.",
   wsl_registry_changed: "WSL 배포판이나 디스크가 바뀌었습니다. 폴더 연결을 다시 검토해 주세요.",
   wsl_helper_unavailable: "WSL 연결 파일을 확인하지 못했습니다. Workspace 설치 상태를 확인해 주세요.",
   wsl_helper_changed: "WSL 연결 파일이 변경되었습니다. Workspace를 다시 설치한 뒤 확인해 주세요.",

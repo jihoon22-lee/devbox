@@ -107,7 +107,7 @@ mod native {
         runtime: Runtime,
         child: Child,
         input: Option<ChildStdin>,
-        output: ChildStdout,
+        output: Option<ChildStdout>,
         stderr: JoinHandle<()>,
         session: String,
         sequence: u64,
@@ -170,7 +170,7 @@ mod native {
                 runtime,
                 child,
                 input: Some(input),
-                output,
+                output: Some(output),
                 stderr,
                 session,
                 sequence: 0,
@@ -217,7 +217,7 @@ mod native {
         pub fn file_request(&mut self, method: &str, token: &str, args: Value) -> Result<Value> {
             if !matches!(
                 method,
-                "files_attach" | "files_open" | "files_close" | "files_sync_editor"
+                "files_attach" | "files_open" | "files_save" | "files_close" | "files_sync_editor"
             ) {
                 return Err("wsl_request_invalid");
             }
@@ -255,7 +255,7 @@ mod native {
             let mut frame = Vec::new();
             workspace_wsl::write_frame(&mut frame, &request).map_err(|_| "wsl_protocol_invalid")?;
             let input = self.input.as_mut().ok_or("wsl_connection_closed")?;
-            let output = &mut self.output;
+            let output = self.output.as_mut().ok_or("wsl_connection_closed")?;
             let stderr = &mut self.stderr;
             let result = self.runtime.block_on(async { tokio::time::timeout(Duration::from_millis(u64::from(budget) + 1000), async {
                 tokio::select! {
@@ -300,6 +300,9 @@ mod native {
                 "wsl_filesystem_unavailable" => "wsl_filesystem_unavailable",
                 "file_context_changed" => "file_context_changed",
                 "file_snapshot_changed" => "file_snapshot_changed",
+                "file_save_conflict" => "file_save_conflict",
+                "wsl_request_cancelled" => "wsl_request_cancelled",
+                "wsl_timeout" => "wsl_timeout",
                 "file_selection_required" => "file_selection_required",
                 "unsafe_file_path" => "unsafe_file_path",
                 "file_target_unavailable" => "file_target_unavailable",
@@ -317,12 +320,35 @@ mod native {
                 return;
             }
             self.failed = true;
-            // Closing stdin gives the Linux helper EOF, including when its
-            // metadata worker is blocked. No request is ever replayed.
+            // EOF cancels at the helper's precommit boundary. Drain an abandoned
+            // response without retaining its contents, so a full stdout pipe
+            // cannot block the Windows launcher during confirmed retirement.
             self.input.take();
+            let output = self.output.take();
             let child = &mut self.child;
             self.runtime.block_on(async {
-                if tokio::time::timeout(Duration::from_secs(3), child.wait())
+                let complete = async {
+                    let drain = async move {
+                        if let Some(mut output) = output {
+                            let mut bytes = [0u8; 16384];
+                            let mut total = 0usize;
+                            loop {
+                                match output.read(&mut bytes).await {
+                                    Ok(0) | Err(_) => break,
+                                    Ok(length) => {
+                                        total += length;
+                                        if total > MAX_FRAME_BYTES + 4 {
+                                            break;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    };
+                    let _ = tokio::join!(child.wait(), drain);
+                };
+                // The helper has five seconds to retire blocked atomic/read IO.
+                if tokio::time::timeout(Duration::from_secs(8), complete)
                     .await
                     .is_err()
                 {

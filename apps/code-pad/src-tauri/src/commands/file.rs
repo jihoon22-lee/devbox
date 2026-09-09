@@ -6,7 +6,10 @@ use crate::core::{
     guard,
     line_ending::{self, LineEnding},
 };
-use devbox_filesystem::{filesystem_identity, FilesystemIdentity};
+use devbox_filesystem::{
+    filesystem_identity, open_filesystem_metadata_object, opened_filesystem_identity,
+    FilesystemIdentity,
+};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fmt;
@@ -14,7 +17,7 @@ use std::fs::File;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::UNIX_EPOCH;
 #[cfg(feature = "desktop")]
 use tauri_plugin_opener::OpenerExt;
 
@@ -371,6 +374,58 @@ pub fn save_path_limited(
     source_lossy: bool,
     max_bytes: Option<u64>,
 ) -> Result<SavedFile, FileError> {
+    save_path_with_policy(
+        path,
+        text,
+        encoding,
+        line_ending,
+        expected,
+        source_lossy,
+        SavePolicy {
+            max_bytes,
+            guard: &|| Ok(()),
+        },
+    )
+}
+/// Revalidate a native owner's authority/cancellation before IO, before staging,
+/// and immediately before the snapshot-checked atomic replacement.
+pub fn save_path_guarded(
+    path: &Path,
+    text: &str,
+    encoding: Encoding,
+    line_ending: LineEnding,
+    expected: ExpectedFileSnapshot<'_>,
+    source_lossy: bool,
+    guard: &dyn Fn() -> Result<(), FileError>,
+) -> Result<SavedFile, FileError> {
+    save_path_with_policy(
+        path,
+        text,
+        encoding,
+        line_ending,
+        expected,
+        source_lossy,
+        SavePolicy {
+            max_bytes: None,
+            guard,
+        },
+    )
+}
+struct SavePolicy<'a> {
+    max_bytes: Option<u64>,
+    guard: &'a dyn Fn() -> Result<(), FileError>,
+}
+fn save_path_with_policy(
+    path: &Path,
+    text: &str,
+    encoding: Encoding,
+    line_ending: LineEnding,
+    expected: ExpectedFileSnapshot<'_>,
+    source_lossy: bool,
+    policy: SavePolicy<'_>,
+) -> Result<SavedFile, FileError> {
+    let max_bytes = policy.max_bytes;
+    (policy.guard)()?;
     if source_lossy {
         return Err(FileError::LossySource);
     }
@@ -429,24 +484,22 @@ pub fn save_path_limited(
     let bytes = encode_for_save(text, encoding, line_ending)?;
     let saved_content_hash = content_hash(&bytes);
     let permissions = current.permissions();
-    let (temporary, prepared_metadata) =
-        write_sibling_temp(&canonical, &bytes, Some(&permissions))?;
-    let fallback_mtime = modified_epoch_nanos(&prepared_metadata)?;
-    let fallback_size = prepared_metadata.len();
+    (policy.guard)()?;
+    let mut temporary = write_sibling_temp(&canonical, &bytes, Some(&permissions))?;
+    let fallback_mtime = modified_epoch_nanos(&temporary.metadata)?;
+    let fallback_size = temporary.metadata.len();
 
     // The user may have edited the file while the temporary replacement was
     // being prepared. Recheck the exact bytes immediately before commit.
     let before_replace = match read_stable_limited(&canonical, max_bytes) {
         Ok(snapshot) => snapshot,
         Err(error) => {
-            let _ = fs::remove_file(&temporary);
             return Err(error);
         }
     };
     let replacement_identity = match filesystem_identity(&canonical, false) {
         Ok(identity) => identity,
         Err(source) => {
-            let _ = fs::remove_file(&temporary);
             return Err(FileError::Io {
                 operation: "identify file before replacement",
                 source,
@@ -456,7 +509,6 @@ pub fn save_path_limited(
     let before_replace_mtime = match modified_epoch_nanos(&before_replace.0) {
         Ok(mtime) => mtime,
         Err(error) => {
-            let _ = fs::remove_file(&temporary);
             return Err(error);
         }
     };
@@ -467,7 +519,6 @@ pub fn save_path_limited(
         && before_replace.0.len() == expected.size
         && content_hash(&before_replace.1) == expected.content_hash;
     if !replacement_is_still_current {
-        let _ = fs::remove_file(&temporary);
         return Err(FileError::Conflict {
             expected_mtime: expected.mtime,
             actual_mtime: before_replace_mtime,
@@ -478,18 +529,19 @@ pub fn save_path_limited(
 
     if let Some(expected_identity) = bounded_path_identity {
         if !path_matches_identity(path, expected_identity) {
-            let _ = fs::remove_file(&temporary);
             return Err(FileError::BackupIntegrity);
         }
     }
 
-    if let Err(source) = replace_file(&temporary, &canonical) {
-        let _ = fs::remove_file(&temporary);
+    (policy.guard)()?;
+    temporary.validate()?;
+    if let Err(source) = replace_file(&temporary.path, &canonical) {
         return Err(FileError::Io {
             operation: "replace file atomically",
             source,
         });
     }
+    temporary.published = true;
     let mut warnings = Vec::new();
     if let Err(error) = sync_parent(&canonical) {
         warnings.push(error.to_string());
@@ -734,28 +786,22 @@ pub(crate) fn restore_sibling_backup_if_current_limited_with_guard(
         return Err(FileError::BackupIntegrity);
     }
     let permissions = metadata.permissions();
-    let (temporary, _) = write_sibling_temp(target, &bytes, Some(&permissions))?;
-    if let Err(error) = guard() {
-        let _ = fs::remove_file(&temporary);
-        return Err(error);
-    }
+    let mut temporary = write_sibling_temp(target, &bytes, Some(&permissions))?;
+    guard()?;
     if let Some(expected) = expected {
-        if let Err(error) = validate_file_snapshot_limited(target, expected, max_bytes) {
-            let _ = fs::remove_file(&temporary);
-            return Err(error);
-        }
+        validate_file_snapshot_limited(target, expected, max_bytes)?;
     }
     if !path_matches_identity(target, target_identity) {
-        let _ = fs::remove_file(&temporary);
         return Err(FileError::BackupIntegrity);
     }
-    if let Err(source) = replace_file(&temporary, target) {
-        let _ = fs::remove_file(&temporary);
+    temporary.validate()?;
+    if let Err(source) = replace_file(&temporary.path, target) {
         return Err(FileError::Io {
             operation: "restore rename backup atomically",
             source,
         });
     }
+    temporary.published = true;
     sync_parent(target)
 }
 
@@ -1136,27 +1182,51 @@ pub(crate) fn modified_epoch_nanos(metadata: &fs::Metadata) -> Result<i64, FileE
     i64::try_from(duration.as_nanos()).map_err(|_| FileError::MetadataTime)
 }
 
+struct SiblingTemp {
+    path: PathBuf,
+    metadata: fs::Metadata,
+    identity: FilesystemIdentity,
+    parent_identity: FilesystemIdentity,
+    file: File,
+    _parent: File,
+    published: bool,
+}
+impl SiblingTemp {
+    fn validate(&self) -> Result<(), FileError> {
+        let parent = self.path.parent().ok_or(FileError::BackupIntegrity)?;
+        if filesystem_identity(parent, true).ok() != Some(self.parent_identity)
+            || filesystem_identity(&self.path, false).ok() != Some(self.identity)
+        {
+            return Err(FileError::BackupIntegrity);
+        }
+        Ok(())
+    }
+}
+impl Drop for SiblingTemp {
+    fn drop(&mut self) {
+        // Retain both handles during cleanup. A moved/replaced parent or leaf
+        // cannot make an unrelated file into this transaction's temporary file.
+        if !self.published && self.validate().is_ok() {
+            let _ = fs::remove_file(&self.path);
+        }
+    }
+}
 fn write_sibling_temp(
     target: &Path,
     bytes: &[u8],
     permissions: Option<&std::fs::Permissions>,
-) -> Result<(PathBuf, fs::Metadata), FileError> {
+) -> Result<SiblingTemp, FileError> {
     let parent = target
         .parent()
         .ok_or_else(|| FileError::InvalidPath(format!("{target:?}")))?;
-    let nonce = SystemTime::now()
-        .duration_since(UNIX_EPOCH)
-        .map(|duration| duration.as_nanos())
-        .unwrap_or_default();
-    let process = std::process::id();
-
-    for attempt in 0..100u32 {
-        let temporary = parent.join(format!(".code-pad-{process}-{nonce}-{attempt}.tmp"));
-        let open = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary);
-        let mut file = match open {
+    for _ in 0..100u32 {
+        let (parent_handle, parent_identity) = open_filesystem_metadata_object(parent, true)
+            .map_err(|source| FileError::Io {
+                operation: "retain temporary-file parent",
+                source,
+            })?;
+        let path = parent.join(format!(".code-pad-{}.tmp", uuid::Uuid::new_v4()));
+        let file = match OpenOptions::new().write(true).create_new(true).open(&path) {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
             Err(source) => {
@@ -1166,49 +1236,73 @@ fn write_sibling_temp(
                 })
             }
         };
-
-        let result = (|| {
-            if let Some(permissions) = permissions {
-                file.set_permissions(permissions.clone())
-                    .map_err(|source| FileError::Io {
-                        operation: "preserve file permissions",
-                        source,
-                    })?;
-            }
-            file.write_all(bytes).map_err(|source| FileError::Io {
+        // If handle identity cannot be established, preserve the unverified
+        // path instead of deleting a pathname another writer could replace.
+        let identity =
+            opened_filesystem_identity(&file, false).map_err(|source| FileError::Io {
+                operation: "identify owned temporary file",
+                source,
+            })?;
+        let metadata = file.metadata().map_err(|source| FileError::Io {
+            operation: "inspect owned temporary file",
+            source,
+        })?;
+        let mut temporary = SiblingTemp {
+            path,
+            identity,
+            parent_identity,
+            file,
+            _parent: parent_handle,
+            metadata,
+            published: false,
+        };
+        temporary.validate()?;
+        if let Some(permissions) = permissions {
+            temporary
+                .file
+                .set_permissions(permissions.clone())
+                .map_err(|source| FileError::Io {
+                    operation: "preserve file permissions",
+                    source,
+                })?;
+        }
+        temporary
+            .file
+            .write_all(bytes)
+            .map_err(|source| FileError::Io {
                 operation: "write temporary file",
                 source,
             })?;
-            file.flush().map_err(|source| FileError::Io {
-                operation: "flush temporary file",
-                source,
-            })?;
-            file.sync_all().map_err(|source| FileError::Io {
-                operation: "sync temporary file",
-                source,
-            })?;
-            Ok::<(), FileError>(())
-        })();
-        if let Err(error) = result {
-            drop(file);
-            let _ = fs::remove_file(&temporary);
-            return Err(error);
-        }
-        let prepared_metadata = match file.metadata() {
-            Ok(metadata) => metadata,
-            Err(source) => {
-                drop(file);
-                let _ = fs::remove_file(&temporary);
-                return Err(FileError::Io {
-                    operation: "read temporary file metadata",
+        temporary.file.flush().map_err(|source| FileError::Io {
+            operation: "flush temporary file",
+            source,
+        })?;
+        temporary.file.sync_all().map_err(|source| FileError::Io {
+            operation: "sync temporary file",
+            source,
+        })?;
+        temporary.metadata = temporary.file.metadata().map_err(|source| FileError::Io {
+            operation: "read temporary file metadata",
+            source,
+        })?;
+        // ReplaceFileW opens the replacement without sharing data access. Keep
+        // the exact object alive through a metadata-only handle, then release
+        // the writable handle before atomic publication. There is no unpinned
+        // interval in which an object ID could be recycled.
+        let (metadata_handle, metadata_identity) =
+            open_filesystem_metadata_object(&temporary.path, false).map_err(|source| {
+                FileError::Io {
+                    operation: "retain completed temporary file",
                     source,
-                });
-            }
-        };
-        drop(file);
-        return Ok((temporary, prepared_metadata));
+                }
+            })?;
+        if metadata_identity != temporary.identity {
+            return Err(FileError::BackupIntegrity);
+        }
+        temporary.file = metadata_handle;
+        temporary.validate()?;
+        return Ok(temporary);
     }
-
     Err(FileError::Io {
         operation: "create unique temporary file",
         source: io::Error::new(
@@ -1276,12 +1370,12 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
             None
         }
     };
-    let (temporary, _) = write_sibling_temp(path, bytes, permissions.as_ref())?;
+    let temporary = write_sibling_temp(path, bytes, permissions.as_ref())?;
     // Never use overwrite-capable rename for the create branch: an attacker or
     // stale recovery process can create the journal path between the earlier
     // metadata check and this decision. The no-replace helper keeps that race
     // from clobbering an unrelated file.
-    publish_private_temp(&temporary, path, target_identity)?;
+    publish_private_temp(temporary, path, target_identity)?;
     if filesystem_identity(parent, true).ok() != Some(parent_identity) {
         return Err(FileError::BackupIntegrity);
     }
@@ -1289,26 +1383,26 @@ pub(crate) fn write_private_atomic(path: &Path, bytes: &[u8]) -> Result<(), File
 }
 
 fn publish_private_temp(
-    temporary: &Path,
+    mut temporary: SiblingTemp,
     target: &Path,
     target_identity: Option<FilesystemIdentity>,
 ) -> Result<(), FileError> {
+    temporary.validate()?;
     if target_identity.is_some_and(|expected| !path_matches_identity(target, expected)) {
-        let _ = fs::remove_file(temporary);
         return Err(FileError::BackupIntegrity);
     }
     let result = if target_identity.is_some() {
-        replace_file(temporary, target)
+        replace_file(&temporary.path, target)
     } else {
-        rename_without_replace(temporary, target)
+        rename_without_replace(&temporary.path, target)
     };
     if let Err(source) = result {
-        let _ = fs::remove_file(temporary);
         return Err(FileError::Io {
             operation: "publish rename transaction journal",
             source,
         });
     }
+    temporary.published = true;
     Ok(())
 }
 
@@ -1511,17 +1605,72 @@ mod tests {
     }
 
     #[test]
+    fn temporary_cleanup_preserves_replaced_leaf_and_parent_objects() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("parent");
+        fs::create_dir(&parent).unwrap();
+        let staged = write_sibling_temp(&parent.join("file.txt"), b"staged", None).unwrap();
+        let original = staged.path.clone();
+        let displaced = parent.join("displaced.tmp");
+        fs::rename(&original, &displaced).unwrap();
+        fs::write(&original, b"foreign leaf").unwrap();
+        assert!(staged.validate().is_err());
+        drop(staged);
+        assert_eq!(fs::read(&original).unwrap(), b"foreign leaf");
+        assert_eq!(fs::read(&displaced).unwrap(), b"staged");
+        let staged = write_sibling_temp(&parent.join("file.txt"), b"owned parent", None).unwrap();
+        let original = staged.path.clone();
+        let moved = directory.path().join("moved");
+        fs::rename(&parent, &moved).unwrap();
+        fs::create_dir(&parent).unwrap();
+        fs::write(&original, b"foreign parent").unwrap();
+        assert!(staged.validate().is_err());
+        drop(staged);
+        assert_eq!(fs::read(&original).unwrap(), b"foreign parent");
+        assert_eq!(
+            fs::read(moved.join(original.file_name().unwrap())).unwrap(),
+            b"owned parent"
+        );
+    }
+    #[test]
+    fn cancelled_precommit_save_preserves_source_and_removes_only_its_staging() {
+        let (directory, path) = temp_file("cancel.txt", b"original\r\n");
+        let opened = open_path(&path).unwrap();
+        let staged = std::cell::Cell::new(false);
+        let guard = || {
+            if fs::read_dir(directory.path()).unwrap().count() > 1 {
+                staged.set(true);
+                assert_eq!(fs::read(&path).unwrap(), b"original\r\n");
+                return Err(FileError::BackupIntegrity);
+            }
+            Ok(())
+        };
+        assert!(save_path_guarded(
+            &path,
+            "changed\n",
+            opened.encoding,
+            opened.line_ending,
+            snapshot(&opened),
+            false,
+            &guard
+        )
+        .is_err());
+        assert!(staged.get());
+        assert_eq!(fs::read(&path).unwrap(), b"original\r\n");
+        assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
+    }
+    #[test]
     fn private_atomic_publish_never_overwrites_a_concurrent_path_owner() {
         let directory = tempfile::tempdir().unwrap();
         let target = directory.path().join("journal.json");
 
         // The caller approved a create, but another writer publishes first.
-        let create_temp = directory.path().join("create.tmp");
-        fs::write(&create_temp, b"stale create").unwrap();
+        let create_temp = write_sibling_temp(&target, b"stale create", None).unwrap();
+        let create_path = create_temp.path.clone();
         fs::write(&target, b"concurrent owner").unwrap();
-        assert!(publish_private_temp(&create_temp, &target, None).is_err());
+        assert!(publish_private_temp(create_temp, &target, None).is_err());
         assert_eq!(fs::read(&target).unwrap(), b"concurrent owner");
-        assert!(!create_temp.exists());
+        assert!(!create_path.exists());
 
         // The caller approved an update, but that exact file is replaced
         // before publish. Allocate the replacement while the approved object
@@ -1531,14 +1680,14 @@ mod tests {
         fs::write(&replacement, b"replacement owner").unwrap();
         fs::remove_file(&target).unwrap();
         fs::rename(&replacement, &target).unwrap();
-        let update_temp = directory.path().join("update.tmp");
-        fs::write(&update_temp, b"stale update").unwrap();
+        let update_temp = write_sibling_temp(&target, b"stale update", None).unwrap();
+        let update_path = update_temp.path.clone();
         assert!(matches!(
-            publish_private_temp(&update_temp, &target, Some(approved_identity)),
+            publish_private_temp(update_temp, &target, Some(approved_identity)),
             Err(FileError::BackupIntegrity)
         ));
         assert_eq!(fs::read(&target).unwrap(), b"replacement owner");
-        assert!(!update_temp.exists());
+        assert!(!update_path.exists());
     }
 
     fn snapshot(opened: &OpenedFile) -> ExpectedFileSnapshot<'_> {

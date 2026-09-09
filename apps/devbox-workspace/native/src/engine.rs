@@ -60,6 +60,12 @@ enum FileMethod {
         context: ProjectContext,
         request: code_pad_lib::commands::file::OpenFileRequest,
     },
+    #[serde(rename = "files_save")]
+    Save {
+        context: ProjectContext,
+        request: code_pad_lib::commands::file::SaveFileRequest,
+        native_revision: String,
+    },
     #[serde(rename = "files_close")]
     Close {
         context: ProjectContext,
@@ -77,6 +83,7 @@ impl FileMethod {
     fn context(&self) -> &ProjectContext {
         match self {
             Self::Open { context, .. }
+            | Self::Save { context, .. }
             | Self::Close { context, .. }
             | Self::SyncEditor { context, .. } => context,
         }
@@ -200,7 +207,7 @@ pub fn admit(path: &Path) -> Result<()> {
     Ok(())
 }
 impl Engine {
-    fn file_request(&mut self, request: &Request) -> Result<Value> {
+    fn file_request(&mut self, request: &Request, guard: &dyn Fn() -> Result<()>) -> Result<Value> {
         let method: FileMethod = input(&json!({"method":request.method,"args":request.args}))?;
         let root = self
             .roots
@@ -226,6 +233,23 @@ impl Engine {
                 value["nativeRevision"] = json!(revision);
                 Ok(value)
             }
+            FileMethod::Save {
+                request,
+                native_revision,
+                ..
+            } => {
+                if access.owner.document_revision(&request.path)? != native_revision {
+                    return Err("file_snapshot_changed");
+                }
+                let saved =
+                    access
+                        .owner
+                        .save_guarded(Some((&access.context, &lease)), request, guard)?;
+                let revision = access.owner.document_revision(&saved.path).ok();
+                let mut value = serde_json::to_value(saved).map_err(|_| "wsl_response_invalid")?;
+                value["nativeRevision"] = json!(revision);
+                Ok(value)
+            }
             FileMethod::Close { path, .. } => {
                 access.owner.close(&path)?;
                 Ok(Value::Null)
@@ -242,13 +266,21 @@ impl Engine {
         }
     }
     pub fn dispatch(&mut self, request: &Request) -> Result<Value> {
+        self.dispatch_guarded(request, &|| Ok(()))
+    }
+    pub fn dispatch_guarded(
+        &mut self,
+        request: &Request,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<Value> {
+        guard()?;
         self.roots
             .retain(|_, root| root.touched.elapsed() < ROOT_TTL);
         if matches!(
             request.method.as_str(),
-            "files_open" | "files_close" | "files_sync_editor"
+            "files_open" | "files_save" | "files_close" | "files_sync_editor"
         ) {
-            return self.file_request(request);
+            return self.file_request(request, guard);
         }
         match request.method.as_str() {
             "files_attach" => {
@@ -479,6 +511,31 @@ mod tests {
             true
         );
         assert_eq!(std::fs::read(&file).unwrap(), b"original\r\n");
+        let save_args = json!({"context":context,"nativeRevision":opened["nativeRevision"],"request":{
+            "path":opened["path"],"text":"saved\n","encoding":opened["encoding"],"lineEnding":opened["lineEnding"],
+            "expectedMtimeNanos":opened["mtimeNanos"],"expectedSize":opened["size"],"expectedContentHash":opened["contentHash"],"sourceLossy":false
+        }});
+        let save = request("files_save", Some(report.token.clone()), save_args);
+        let staged = std::cell::Cell::new(false);
+        let cancel = || {
+            if std::fs::read_dir(&root).unwrap().count() > 1 {
+                staged.set(true);
+                Err("wsl_request_cancelled")
+            } else {
+                Ok(())
+            }
+        };
+        assert_eq!(
+            engine.dispatch_guarded(&save, &cancel),
+            Err("wsl_request_cancelled")
+        );
+        assert!(staged.get());
+        assert_eq!(std::fs::read(&file).unwrap(), b"original\r\n");
+        assert_eq!(std::fs::read_dir(&root).unwrap().count(), 1);
+        let saved = engine.dispatch(&save).unwrap();
+        assert_ne!(saved["nativeRevision"], opened["nativeRevision"]);
+        assert_eq!(std::fs::read(&file).unwrap(), b"saved\r\n");
+        assert_eq!(engine.dispatch(&save), Err("file_snapshot_changed"));
         let close = request(
             "files_close",
             Some(report.token.clone()),

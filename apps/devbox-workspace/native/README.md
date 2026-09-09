@@ -7,13 +7,19 @@ admission and protected-storage policy shared by the Windows host and Linux
 helper. Tauri storage discovery stays in the Windows host.
 The executable observes/revalidates root/Git objects and opens files only after
 attaching one native project context to an observed root. It executes no Git,
-language server or package manager and exposes no file mutation commands yet.
+language server or package manager. Explicit saves require the current native
+revision and disk snapshot and reuse Code Pad's encoding/CRLF atomic replacement.
 
 The inherited stdin/stdout protocol uses versioned, size-limited frames, random
 session/request/root tokens, exact monotonic request sequences, deadlines and
-expiring root observations. EOF, malformed input and deadline expiry terminate
-this read-only helper, including a blocked observation. Adding
-child processes or writes requires a corresponding retirement/recovery owner.
+expiring root observations. EOF, malformed input and deadline expiry cancel active
+work. Saves check cancellation and native authority before staging and immediately
+before replacement. Temporary files retain their parent/file identities; cleanup
+removes only the still-owned staging file. A blocked syscall has a five-second exit
+deadline: disk contents remain either the original or the complete replacement,
+but a hard exit may leave staging data. The Windows owner drains abandoned replies
+while retiring the helper and never replays a save. Adding child processes requires
+a corresponding process-retirement owner.
 
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,
@@ -28,7 +34,10 @@ and the effective native mount type. drvfs/9p, other mounted filesystems, links,
 devices and another project context cannot become file access. Temporary filesystems
 outside the distro root filesystem are currently unsupported. File reads use the
 same Windows/Code Pad encoding, size and native revision contract. Buffer sync is
-metadata only; dropping the connection cannot write an unsaved buffer to disk.
+metadata only. Explicit saves rotate the native revision; old revisions cannot
+repeat the mutation. Dropping a connection during a save may leave its complete
+replacement committed without acknowledgement, so the caller must reopen/reconcile
+before another save. Dropping a connection never saves buffered text on its own.
 These helper methods are not yet connected to the product's WSL Files route.
 
 `cargo test -p workspace-wsl` covers existing file-owner regressions, native mount
