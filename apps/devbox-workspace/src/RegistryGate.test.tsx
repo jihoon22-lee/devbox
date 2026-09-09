@@ -96,3 +96,22 @@ it("reviews an explicit Source suggestion without automatically registering or s
   expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
   expect((screen.getByLabelText("프로젝트 이름") as HTMLInputElement).value).toBe(suggestedRoot.name);
 });
+
+it("reviews the saved Code Pad workspace through native job identity before registration",async()=>{
+  call.mockImplementation(async(_component,method)=>{
+    if(method==="status")return {phase:"selected"};
+    if(method==="snapshot")return emptyRegistry;
+    if(method==="list_legacy_snapshots")return {snapshots:[],unrecognized:0};
+    if(method==="legacy_snapshot_job")return {id:"verified-job",source:"code-pad",phase:"ready",operation:"verify",manifest:{files:[{name:"session.json",issue:null,records:1}],missing:[]}};
+    if(method==="legacy_workspace")return {path:preview.binding.root,target:"windows"};
+    if(method==="preview_legacy_workspace_windows")return preview;
+    return {};
+  });
+  render(<RegistryGate/>);
+  fireEvent.click(await screen.findByRole("button",{name:"마지막 작업 폴더 등록 검토"}));
+  await screen.findByRole("heading",{name:"등록 확인"});
+  expect(call).toHaveBeenCalledWith("workspace.registry","preview_legacy_workspace_windows",{jobId:"verified-job"});
+  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
+  fireEvent.click(screen.getByRole("button",{name:"취소"}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","cancel_registration",{previewId:preview.previewId}));
+});

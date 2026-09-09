@@ -166,6 +166,13 @@ export default function RegistryGate({context = null, onContextChanged = async (
         </div>)}
       </section>)}
     </>}
-    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports selected={status.phase==="selected"} existingProfiles={registry?.importedProfiles??[]} onImported={refresh}/>}
+    {(status.phase==="setup"||status.phase==="selected")&&<LegacyImports selected={status.phase==="selected"} existingProfiles={registry?.importedProfiles??[]} onImported={refresh} disabled={busy||editing} onWorkspaceReview={jobId=>void act(async()=>{
+      if(editing)return;
+      if(preview)await cancelPreview();
+      const next=await registryCall<Preview>("preview_legacy_workspace_windows",{jobId});
+      if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
+      currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName("Code Pad 작업 폴더");
+      document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});
+    })}/>}
   </section>;
 }

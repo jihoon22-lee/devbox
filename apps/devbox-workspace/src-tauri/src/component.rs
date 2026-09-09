@@ -166,6 +166,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                             | "preview_profile_import"
                             | "cancel_profile_import"
                             | "apply_profile_import"
+                            | "legacy_workspace"
                     ))
         }
         "workspace.registry" => matches!(
@@ -173,6 +174,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
             "snapshot"
                 | "preview_windows"
                 | "preview_imported_profile_windows"
+                | "preview_legacy_workspace_windows"
                 | "unbind_imported_profile"
                 | "cancel_registration"
                 | "apply_registration"
@@ -757,6 +759,24 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 .projects()?
                 .preview_profile_import(snapshot_id, profiles)?))
         }
+        "legacy_workspace" | "preview_legacy_workspace_windows" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Job {
+                job_id: String,
+            }
+            let value: Job = input(args)?;
+            let proposal = host.legacy.workspace(&value.job_id)?;
+            if method == "legacy_workspace" {
+                return Ok(json!(proposal));
+            }
+            let proposal = proposal
+                .filter(|proposal| {
+                    proposal.target == crate::core::legacy_workspace::Target::Windows
+                })
+                .ok_or("legacy_workspace_unsupported")?;
+            Ok(json!(host.projects()?.preview_windows(&proposal.path)?))
+        }
         "preview_imported_profile_windows" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -871,6 +891,15 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         }
         _ => Err("invalid_request"),
     }
+}
+fn project_probe(method: &str) -> bool {
+    matches!(
+        method,
+        "preview_windows"
+            | "preview_imported_profile_windows"
+            | "preview_legacy_workspace_windows"
+            | "select_project"
+    )
 }
 fn changes_context(method: &str) -> bool {
     matches!(
@@ -1083,7 +1112,7 @@ async fn execute(
     } else if request.method == "status" {
         empty(&request.args).map(|()| runtime.status())
     } else {
-        let preview = request.method == "preview_windows" || select;
+        let preview = project_probe(&request.method);
         let pool = if preview {
             &runtime.probes
         } else {
@@ -1450,6 +1479,22 @@ mod tests {
     #[test]
     fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
         assert!(allowed("workspace.registry", "overview", "preview_windows"));
+        for method in [
+            "preview_windows",
+            "preview_imported_profile_windows",
+            "preview_legacy_workspace_windows",
+            "select_project",
+        ] {
+            assert!(project_probe(method));
+            assert!(allowed("workspace.registry", "overview", method));
+        }
+        assert!(!project_probe("legacy_workspace"));
+        assert!(allowed(
+            "workspace.migration",
+            "overview",
+            "legacy_workspace"
+        ));
+        assert!(!allowed("workspace.migration", "files", "legacy_workspace"));
         assert!(!allowed(
             "workspace.migration",
             "overview",

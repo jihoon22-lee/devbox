@@ -143,6 +143,13 @@ impl LegacyImports {
         .map_err(|_| "legacy_session_unavailable")?;
         Ok((snapshot.id()?, session))
     }
+    pub(crate) fn workspace(
+        &self,
+        job_id: &str,
+    ) -> Result<Option<crate::core::legacy_workspace::Proposal>> {
+        let (_, session) = self.session_source(job_id)?;
+        crate::core::legacy_workspace::proposal(session.workspace_folder.as_deref())
+    }
     pub(crate) fn recovery_source(
         &self,
         job_id: &str,
@@ -352,6 +359,42 @@ impl Drop for LegacyImports {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn last_workspace_uses_only_the_verified_job_and_preserves_offline_metadata() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let source = base.path().join(Source::CodePad.identifier());
+        std::fs::create_dir(&source).unwrap();
+        let mut session = code_pad_lib::core::session::Session::empty();
+        session.workspace_folder = Some(r"C:\offline\한글 폴더".into());
+        let bytes = session.to_json().unwrap();
+        std::fs::write(source.join("session.json"), &bytes).unwrap();
+        let stores = Arc::new(StoreRoot::open(&root).unwrap());
+        let owner = LegacyImports::new(stores.clone()).unwrap();
+        assert_eq!(
+            owner.workspace("foreign").unwrap_err(),
+            "legacy_import_stale"
+        );
+        owner.start(Source::CodePad).unwrap();
+        let job = wait(&owner);
+        assert!(job.phase == Phase::Ready);
+        assert_eq!(
+            std::fs::read_to_string(source.join("session.json")).unwrap(),
+            bytes
+        );
+        std::fs::remove_dir_all(source).unwrap();
+        let proposal = owner.workspace(&job.id).unwrap().unwrap();
+        assert_eq!(proposal.path, session.workspace_folder.unwrap());
+        assert_eq!(
+            proposal.target,
+            crate::core::legacy_workspace::Target::Windows
+        );
+        assert!(stores.read().unwrap().is_none());
+        owner.start(Source::RepoManager).unwrap();
+        assert_eq!(owner.workspace(&job.id).unwrap_err(), "legacy_import_stale");
+        wait(&owner);
+    }
     fn wait(owner: &LegacyImports) -> Job {
         let start = Instant::now();
         loop {

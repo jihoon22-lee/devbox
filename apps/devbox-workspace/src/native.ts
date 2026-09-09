@@ -133,6 +133,8 @@ const issues: Record<string, string> = {
   legacy_lsp_review_limit: "진행 중인 LSP 설정 가져오기를 완료하거나 취소해 주세요.",
   legacy_lsp_review_stale: "LSP 설정 검토가 만료되었거나 이미 사용되었습니다. 다시 검토해 주세요.",
   legacy_lsp_limit: "LSP 설정 보관 이력이 한도에 도달했습니다. 기존 내용을 보존했습니다.",
+  legacy_workspace_limit: "보관한 작업 폴더 경로가 길이 제한을 초과했습니다. 원본은 유지됩니다.",
+  legacy_workspace_unsupported: "이 작업 폴더는 Windows 폴더 등록을 지원하지 않습니다. 보관한 경로는 유지됩니다.",
   lsp_config_changed: "LSP 설정이 변경되었습니다. 설정 화면을 다시 열어 확인해 주세요.",
   lsp_config_future: "현재 버전에서 읽을 수 없는 LSP 설정을 보존했습니다.",
   lsp_config_invalid: "LSP 설정을 확인해 주세요.",

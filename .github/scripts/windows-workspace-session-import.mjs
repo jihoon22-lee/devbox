@@ -54,6 +54,13 @@ export async function exerciseWorkspaceSessionImport({cdp,root,call,success,wait
     do {finished=success(await call("workspace.migration","legacy_snapshot_job"));if(finished.phase==="ready")break;assert.notEqual(finished.phase,"failed");await delay(100);} while(performance.now()<deadline);
     assert.equal(finished.phase,"ready");assert.equal(finished.id,job.id);
     removeOwnedSource();
+    const savedWorkspace=success(await call("workspace.migration","legacy_workspace",{jobId:job.id}));
+    assert.deepEqual(savedWorkspace,{path:root,target:"windows"});
+    const registryBefore=success(await call("workspace.registry","snapshot"));
+    const folderReview=success(await call("workspace.registry","preview_legacy_workspace_windows",{jobId:job.id}));
+    assert.equal(folderReview.discovery.kind,"known");
+    success(await call("workspace.registry","cancel_registration",{previewId:folderReview.previewId}));
+    assert.deepEqual(success(await call("workspace.registry","snapshot")),registryBefore);
     // Let the previous editor close's documented one-second debounce settle.
     await delay(1300);
     const before=success(await files("load_session"));

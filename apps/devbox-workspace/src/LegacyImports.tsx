@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from "react";
 import {nativeCall,issueMessage} from "./native";
 import LegacyProfileImport,{type ImportedProfile} from "./LegacyProfileImport";
+import LegacyWorkspace from "./LegacyWorkspace";
 
 type Source="workbench"|"code-pad"|"repo-manager";
 type Entry={name:string;bytes:number;sha256:string;records:number|null;issue:"corrupt"|"unsupported-schema"|"limit"|null};
@@ -12,7 +13,7 @@ const labels:Record<string,string>={"project-profiles.json":"프로젝트 프로
 const active=(job:Job|null)=>job?.phase==="reading"||job?.phase==="preserving"||job?.phase==="checking";
 const call=<T,>(method:string,args:Record<string,unknown>={})=>nativeCall<T>("workspace.migration",method,args);
 
-export default function LegacyImports({selected=false,existingProfiles=[],onImported=async()=>{}}:{selected?:boolean;existingProfiles?:ImportedProfile[];onImported?:()=>Promise<void>}) {
+export default function LegacyImports({selected=false,existingProfiles=[],onImported=async()=>{},onWorkspaceReview,disabled=false}:{selected?:boolean;existingProfiles?:ImportedProfile[];onImported?:()=>Promise<void>;onWorkspaceReview?:(jobId:string)=>void;disabled?:boolean}) {
   const [source,setSource]=useState<Source>("workbench");
   const [job,setJob]=useState<Job|null>(null);
   const [catalog,setCatalog]=useState<Catalog>({snapshots:[],unrecognized:0});
@@ -82,6 +83,7 @@ export default function LegacyImports({selected=false,existingProfiles=[],onImpo
         {job.manifest.files.length>0&&<table><thead><tr><th>항목</th><th>확인 결과</th></tr></thead><tbody>{job.manifest.files.map(entry=><tr key={entry.name}><td>{labels[entry.name]??entry.name}</td><td>{entry.issue==="unsupported-schema"?"지원하지 않는 형식 — 원본 보관":entry.issue==="corrupt"?"내용 확인 필요 — 원본 보관":entry.issue==="limit"?"크기 제한 초과":`${entry.records??0}개 항목`}</td></tr>)}</tbody></table>}
         {job.manifest.missing.length>0&&<p>저장 파일 없음: {job.manifest.missing.map(name=>labels[name]??name).join(", ")}</p>}
         {job.source==="workbench"&&job.manifest.files.some(file=>file.name==="project-profiles.json"&&!file.issue)&&(selected?<LegacyProfileImport key={job.id} jobId={job.id} existing={existingProfiles} onImported={onImported} onBusyChange={setProfileBusy}/>:<p>Workspace를 시작한 뒤 보관한 프로필 가져오기를 검토할 수 있습니다.</p>)}
+        {selected&&onWorkspaceReview&&job.source==="code-pad"&&job.manifest.files.some(file=>file.name==="session.json"&&!file.issue)&&<LegacyWorkspace key={job.id} jobId={job.id} disabled={disabled||busy||profileBusy} onReview={onWorkspaceReview}/>}
       </>}
     </>}
   </section>;

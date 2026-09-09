@@ -43,7 +43,11 @@ permit prevent editor replacement or overlapping settings writes/starts. Receipt
 survive normal settings saves; repeat import preserves later changes. Exact
 preimages support checked history restoration, including offline roots. No command
 is resolved, runtime installed or execution approval inherited by conversion.
-Recent-workspace onboarding, templates, window mapping and WSL bindings remain incomplete. Repo Manager's
+Overview reads the single last workspace from a verified Code Pad session without
+resolving its path. Explicit Windows folder review uses the native snapshot job ID
+and existing Registry discovery/registration; it grants no selection or execution
+trust. WSL/unsupported paths remain visible without automatic probes. Templates,
+window mapping and WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
 file to migrate. Native window-state mapping and older identifier diagnostics
 remain part of the unfinished importer.
