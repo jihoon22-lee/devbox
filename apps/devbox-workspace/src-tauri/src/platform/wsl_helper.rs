@@ -217,7 +217,15 @@ mod native {
         pub fn file_request(&mut self, method: &str, token: &str, args: Value) -> Result<Value> {
             if !matches!(
                 method,
-                "files_attach" | "files_open" | "files_save" | "files_close" | "files_sync_editor"
+                "files_attach"
+                    | "files_list"
+                    | "files_preview"
+                    | "files_open"
+                    | "files_save"
+                    | "files_rename"
+                    | "files_delete"
+                    | "files_close"
+                    | "files_sync_editor"
             ) {
                 return Err("wsl_request_invalid");
             }
@@ -301,6 +309,8 @@ mod native {
                 "file_context_changed" => "file_context_changed",
                 "file_snapshot_changed" => "file_snapshot_changed",
                 "file_save_conflict" => "file_save_conflict",
+                "file_rename_conflict" => "file_rename_conflict",
+                "file_delete_conflict" => "file_delete_conflict",
                 "wsl_request_cancelled" => "wsl_request_cancelled",
                 "wsl_timeout" => "wsl_timeout",
                 "file_selection_required" => "file_selection_required",
@@ -310,6 +320,8 @@ mod native {
                 "file_limit" => "file_limit",
                 "file_owner_path" => "file_owner_path",
                 "file_read_failed" => "file_read_failed",
+                "file_listing_unavailable" => "file_listing_unavailable",
+                "file_preview_unavailable" => "file_preview_unavailable",
                 "file_unavailable" => "file_unavailable",
                 "file_changed" => "file_changed",
                 _ => "wsl_operation_failed",

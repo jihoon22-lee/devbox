@@ -217,8 +217,10 @@ server at the old snapshot. The host checks the saved bytes against current disk
 newer unsaved editor text remains dirty and is synchronized after didSave.
 
 The Windows host and Linux helper now share the file grant/conflict implementation.
-The helper can attach an observed native project context, read a file, retain
-buffer metadata and explicitly save against its current revision and disk snapshot.
+The helper can attach an observed native project context, list/read files, retain
+buffer metadata, preview Markdown/Mermaid and explicitly save/rename/delete against
+its current revision and disk snapshot. Attached roots survive idle time and still
+revalidate native objects on every operation.
 Cancellation rechecks precede atomic replacement; owned staging files retain native
 parent/file identities. Unacknowledged saves require reconciliation and are never
 replayed automatically. It restricts file content to the selected distro's root filesystem;
@@ -226,3 +228,9 @@ Windows aliases and other mounts are not admitted through a POSIX spelling. The
 WSL Files route, Git and language servers remain unconnected. LSP text updates
 now stay in the server document owner: NativeEditorMirror alone acknowledges UI
 buffer hashes, so an older queued notification cannot clear a newer unsaved buffer.
+
+Windows Files and the helper share guarded directory traversal and local preview
+image admission. Rejected directories are not traversed, changed roots and expired
+requests abort publication, and bounded output reports incomplete/truncated scans.
+Linux rename uses one non-overwriting namespace syscall; unsupported filesystems
+fail without a partial hard-link move.

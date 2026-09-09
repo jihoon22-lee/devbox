@@ -885,11 +885,33 @@ fn sibling_destination(source: &Path, new_name: &str) -> Result<PathBuf, FileErr
 }
 
 #[cfg(windows)]
+fn windows_sibling_paths(source: &Path, target: &Path) -> io::Result<(PathBuf, PathBuf)> {
+    let invalid = || io::Error::new(io::ErrorKind::InvalidInput, "invalid sibling file path");
+    let source_parent = source.parent().ok_or_else(invalid)?;
+    let target_parent = target.parent().ok_or_else(invalid)?;
+    let identity = filesystem_identity(source_parent, true)?;
+    if filesystem_identity(target_parent, true)? != identity {
+        return Err(invalid());
+    }
+    // Rust's canonical spelling includes the extended Windows prefix. A new
+    // UUID staging leaf can cross MAX_PATH even when the journal target does not.
+    let parent = fs::canonicalize(target_parent)?;
+    if filesystem_identity(&parent, true)? != identity {
+        return Err(invalid());
+    }
+    Ok((
+        parent.join(source.file_name().ok_or_else(invalid)?),
+        parent.join(target.file_name().ok_or_else(invalid)?),
+    ))
+}
+
+#[cfg(windows)]
 fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
     use std::os::windows::ffi::OsStrExt;
     use windows::core::PCWSTR;
     use windows::Win32::Storage::FileSystem::MoveFileW;
 
+    let (source, destination) = windows_sibling_paths(source, destination)?;
     let source: Vec<u16> = source.as_os_str().encode_wide().chain(Some(0)).collect();
     let destination: Vec<u16> = destination
         .as_os_str()
@@ -900,7 +922,34 @@ fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
         .map_err(io::Error::other)
 }
 
-#[cfg(not(windows))]
+#[cfg(target_os = "linux")]
+fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
+    use std::os::unix::ffi::OsStrExt;
+    let source = std::ffi::CString::new(source.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid source path"))?;
+    let destination = std::ffi::CString::new(destination.as_os_str().as_bytes())
+        .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "invalid destination path"))?;
+    // One namespace syscall: helper EOF/crash cannot leave the intermediate
+    // source+destination pair of a hard-link/unlink sequence. Unsupported
+    // filesystems return an error instead of falling back to a partial move.
+    let result = unsafe {
+        libc::syscall(
+            libc::SYS_renameat2,
+            libc::AT_FDCWD,
+            source.as_ptr(),
+            libc::AT_FDCWD,
+            destination.as_ptr(),
+            libc::RENAME_NOREPLACE,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
+
+#[cfg(not(any(windows, target_os = "linux")))]
 fn rename_without_replace(source: &Path, destination: &Path) -> io::Result<()> {
     // `std::fs::rename` may replace a concurrently-created destination on Unix.
     // A sibling hard link is create-new, so the move can never clobber data.
@@ -917,6 +966,15 @@ pub fn rename_path(
     new_name: &str,
     expected: ExpectedFileSnapshot<'_>,
 ) -> Result<RenamedFileWire, FileError> {
+    rename_path_guarded(path, new_name, expected, &|| Ok(()))
+}
+pub fn rename_path_guarded(
+    path: &Path,
+    new_name: &str,
+    expected: ExpectedFileSnapshot<'_>,
+    guard: &dyn Fn() -> Result<(), FileError>,
+) -> Result<RenamedFileWire, FileError> {
+    guard()?;
     let canonical = canonical_file(path)?;
     let destination = sibling_destination(&canonical, new_name)?;
     match fs::symlink_metadata(&destination) {
@@ -933,6 +991,7 @@ pub fn rename_path(
     // Re-read immediately before the mutation, including a content digest, so
     // a stale tab can never rename a replaced file merely because metadata is equal.
     let canonical = validate_file_snapshot(&canonical, expected)?;
+    guard()?;
     rename_without_replace(&canonical, &destination).map_err(|source| FileError::Io {
         operation: "rename file without replacement",
         source,
@@ -949,7 +1008,16 @@ pub fn rename_path(
 }
 
 pub fn delete_path(path: &Path, expected: ExpectedFileSnapshot<'_>) -> Result<(), FileError> {
+    delete_path_guarded(path, expected, &|| Ok(()))
+}
+pub fn delete_path_guarded(
+    path: &Path,
+    expected: ExpectedFileSnapshot<'_>,
+    guard: &dyn Fn() -> Result<(), FileError>,
+) -> Result<(), FileError> {
+    guard()?;
     let canonical = validate_file_snapshot(path, expected)?;
+    guard()?;
     fs::remove_file(&canonical).map_err(|source| FileError::Io {
         operation: "delete file",
         source,
@@ -1427,6 +1495,7 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
         .ok()
         .flatten()
         .is_some();
+    let (temporary, target) = windows_sibling_paths(temporary, target)?;
     let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
     if wsl_target {
@@ -1621,17 +1690,57 @@ mod tests {
         let staged = write_sibling_temp(&parent.join("file.txt"), b"owned parent", None).unwrap();
         let original = staged.path.clone();
         let moved = directory.path().join("moved");
-        fs::rename(&parent, &moved).unwrap();
-        fs::create_dir(&parent).unwrap();
-        fs::write(&original, b"foreign parent").unwrap();
-        assert!(staged.validate().is_err());
-        drop(staged);
-        assert_eq!(fs::read(&original).unwrap(), b"foreign parent");
-        assert_eq!(
-            fs::read(moved.join(original.file_name().unwrap())).unwrap(),
-            b"owned parent"
-        );
+        #[cfg(windows)]
+        {
+            // Windows refuses to move a directory containing retained file
+            // handles even when their delete sharing permits leaf renames.
+            assert_eq!(
+                fs::rename(&parent, &moved).unwrap_err().kind(),
+                io::ErrorKind::PermissionDenied
+            );
+            staged.validate().unwrap();
+            assert_eq!(fs::read(&original).unwrap(), b"owned parent");
+            drop(staged);
+            assert!(!original.exists());
+            fs::rename(&parent, &moved).unwrap();
+        }
+        #[cfg(not(windows))]
+        {
+            fs::rename(&parent, &moved).unwrap();
+            fs::create_dir(&parent).unwrap();
+            fs::write(&original, b"foreign parent").unwrap();
+            assert!(staged.validate().is_err());
+            drop(staged);
+            assert_eq!(fs::read(&original).unwrap(), b"foreign parent");
+            assert_eq!(
+                fs::read(moved.join(original.file_name().unwrap())).unwrap(),
+                b"owned parent"
+            );
+        }
     }
+    #[test]
+    fn cancelled_precommit_rename_and_delete_preserve_the_opened_file() {
+        let (directory, path) = temp_file("cancel-action.txt", b"original\r\n");
+        let opened = open_path(&path).unwrap();
+        let calls = std::cell::Cell::new(0);
+        let guard = || {
+            calls.set(calls.get() + 1);
+            if calls.get() == 2 {
+                Err(FileError::BackupIntegrity)
+            } else {
+                Ok(())
+            }
+        };
+        assert!(rename_path_guarded(&path, "renamed.txt", snapshot(&opened), &guard).is_err());
+        assert_eq!(calls.get(), 2);
+        assert_eq!(fs::read(&path).unwrap(), b"original\r\n");
+        assert!(!directory.path().join("renamed.txt").exists());
+        calls.set(0);
+        assert!(delete_path_guarded(&path, snapshot(&opened), &guard).is_err());
+        assert_eq!(calls.get(), 2);
+        assert_eq!(fs::read(&path).unwrap(), b"original\r\n");
+    }
+
     #[test]
     fn cancelled_precommit_save_preserves_source_and_removes_only_its_staging() {
         let (directory, path) = temp_file("cancel.txt", b"original\r\n");
@@ -1659,6 +1768,23 @@ mod tests {
         assert_eq!(fs::read(&path).unwrap(), b"original\r\n");
         assert_eq!(fs::read_dir(directory.path()).unwrap().count(), 1);
     }
+    #[test]
+    #[cfg(windows)]
+    fn private_atomic_journal_supports_long_temporary_and_target_paths() {
+        use std::os::windows::ffi::OsStrExt;
+        let directory = tempfile::tempdir().unwrap();
+        let mut parent = directory.path().to_path_buf();
+        while parent.as_os_str().encode_wide().count() < 280 {
+            parent.push("journal-fixture-directory");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let target = parent.join("journal.json");
+        write_private_atomic(&target, b"original").unwrap();
+        write_private_atomic(&target, b"replacement").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"replacement");
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    }
+
     #[test]
     fn private_atomic_publish_never_overwrites_a_concurrent_path_owner() {
         let directory = tempfile::tempdir().unwrap();

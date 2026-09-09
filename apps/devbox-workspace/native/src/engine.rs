@@ -55,6 +55,18 @@ impl RootLease for NativeFileLease<'_> {
     deny_unknown_fields
 )]
 enum FileMethod {
+    #[serde(rename = "files_list")]
+    List {
+        context: ProjectContext,
+        path: String,
+    },
+    #[serde(rename = "files_preview")]
+    Preview {
+        context: ProjectContext,
+        path: String,
+        content: String,
+        workspace_root: String,
+    },
     #[serde(rename = "files_open")]
     Open {
         context: ProjectContext,
@@ -64,6 +76,18 @@ enum FileMethod {
     Save {
         context: ProjectContext,
         request: code_pad_lib::commands::file::SaveFileRequest,
+        native_revision: String,
+    },
+    #[serde(rename = "files_rename")]
+    Rename {
+        context: ProjectContext,
+        request: code_pad_lib::commands::file::RenameFileRequest,
+        native_revision: String,
+    },
+    #[serde(rename = "files_delete")]
+    Delete {
+        context: ProjectContext,
+        request: code_pad_lib::commands::file::FileActionRequest,
         native_revision: String,
     },
     #[serde(rename = "files_close")]
@@ -82,8 +106,12 @@ enum FileMethod {
 impl FileMethod {
     fn context(&self) -> &ProjectContext {
         match self {
-            Self::Open { context, .. }
+            Self::List { context, .. }
+            | Self::Preview { context, .. }
+            | Self::Open { context, .. }
             | Self::Save { context, .. }
+            | Self::Rename { context, .. }
+            | Self::Delete { context, .. }
             | Self::Close { context, .. }
             | Self::SyncEditor { context, .. } => context,
         }
@@ -224,6 +252,45 @@ impl Engine {
             target: &access.context.target,
         };
         match method {
+            FileMethod::Preview {
+                path,
+                content,
+                workspace_root,
+                ..
+            } => {
+                if Path::new(&workspace_root) != lease.root() {
+                    return Err("file_context_changed");
+                }
+                access
+                    .owner
+                    .admitted_path(Some((&access.context, &lease)), &path)?;
+                let result = code_pad_lib::commands::preview::render_preview_guarded(
+                    &path,
+                    &content,
+                    &workspace_root,
+                    &|path| access.owner.ensure_user_path(path).map_err(str::to_string),
+                    &|| guard().map_err(str::to_string),
+                )
+                .map_err(|_| "file_preview_unavailable")?;
+                access
+                    .owner
+                    .admitted_path(Some((&access.context, &lease)), &path)?;
+                lease.revalidate()?;
+                serde_json::to_value(result).map_err(|_| "wsl_response_invalid")
+            }
+            FileMethod::List { path, .. } => {
+                if Path::new(&path) != lease.root() {
+                    return Err("file_context_changed");
+                }
+                let result = code_pad_lib::commands::folder::list_workspace_files_guarded(
+                    lease.root(),
+                    &|path| access.owner.ensure_user_path(path).map_err(str::to_string),
+                    &|| guard().map_err(str::to_string),
+                )
+                .map_err(|_| "file_listing_unavailable")?;
+                lease.revalidate()?;
+                serde_json::to_value(result).map_err(|_| "wsl_response_invalid")
+            }
             FileMethod::Open { request, .. } => {
                 let opened = access
                     .owner
@@ -254,6 +321,37 @@ impl Engine {
                 access.owner.close(&path)?;
                 Ok(Value::Null)
             }
+            FileMethod::Rename {
+                request,
+                native_revision,
+                ..
+            } => {
+                if access.owner.document_revision(&request.file.path)? != native_revision {
+                    return Err("file_snapshot_changed");
+                }
+                let renamed =
+                    access
+                        .owner
+                        .rename_guarded(Some((&access.context, &lease)), request, guard)?;
+                let revision = access.owner.document_revision(&renamed.path).ok();
+                let mut value =
+                    serde_json::to_value(renamed).map_err(|_| "wsl_response_invalid")?;
+                value["nativeRevision"] = json!(revision);
+                Ok(value)
+            }
+            FileMethod::Delete {
+                request,
+                native_revision,
+                ..
+            } => {
+                if access.owner.document_revision(&request.path)? != native_revision {
+                    return Err("file_snapshot_changed");
+                }
+                access
+                    .owner
+                    .delete_guarded(Some((&access.context, &lease)), request, guard)?;
+                Ok(Value::Null)
+            }
             FileMethod::SyncEditor {
                 path,
                 native_revision,
@@ -275,10 +373,20 @@ impl Engine {
     ) -> Result<Value> {
         guard()?;
         self.roots
-            .retain(|_, root| root.touched.elapsed() < ROOT_TTL);
+            // Preview leases expire, but an attached editor keeps its bounded
+            // root owner until explicit release/EOF. Idle editing must not lose
+            // its native document revisions. Every operation still revalidates.
+            .retain(|_, root| root.files.is_some() || root.touched.elapsed() < ROOT_TTL);
         if matches!(
             request.method.as_str(),
-            "files_open" | "files_save" | "files_close" | "files_sync_editor"
+            "files_list"
+                | "files_preview"
+                | "files_open"
+                | "files_save"
+                | "files_rename"
+                | "files_delete"
+                | "files_close"
+                | "files_sync_editor"
         ) {
             return self.file_request(request, guard);
         }
@@ -425,7 +533,7 @@ mod tests {
         }
     }
     #[test]
-    fn file_reads_require_native_root_context_and_reject_scope_changes() {
+    fn file_operations_require_native_root_context_and_reject_scope_changes() {
         let directory = tempfile::Builder::new()
             .prefix(".wsl-engine-fixture-")
             .tempdir_in(env!("CARGO_MANIFEST_DIR"))
@@ -465,6 +573,27 @@ mod tests {
         engine.dispatch(&attach).unwrap();
         engine.dispatch(&attach).unwrap();
         let opened = engine.dispatch(&open).unwrap();
+        let listed = engine
+            .dispatch(&request(
+                "files_list",
+                Some(report.token.clone()),
+                json!({
+                    "context":context,"path":root
+                }),
+            ))
+            .unwrap();
+        assert_eq!(listed["files"].as_array().unwrap().len(), 1);
+        assert_eq!(listed["files"][0]["path"], opened["path"]);
+        assert_eq!(
+            engine.dispatch(&request(
+                "files_list",
+                Some(report.token.clone()),
+                json!({
+                    "context":context,"path":outside
+                })
+            )),
+            Err("file_context_changed")
+        );
         assert_eq!(opened["text"], "original\n");
         assert!(crate::token(opened["nativeRevision"].as_str().unwrap()));
         let mut foreign = context.clone();
@@ -536,6 +665,10 @@ mod tests {
         assert_ne!(saved["nativeRevision"], opened["nativeRevision"]);
         assert_eq!(std::fs::read(&file).unwrap(), b"saved\r\n");
         assert_eq!(engine.dispatch(&save), Err("file_snapshot_changed"));
+        engine.roots.get_mut(&report.token).unwrap().touched = Instant::now() - ROOT_TTL;
+        // Attached editor grants survive idle time; preview leases still expire.
+        let current = engine.dispatch(&open).unwrap();
+        assert_eq!(current["nativeRevision"], saved["nativeRevision"]);
         let close = request(
             "files_close",
             Some(report.token.clone()),
@@ -546,6 +679,43 @@ mod tests {
             engine.dispatch(&sync(opened["nativeRevision"].as_str().unwrap())),
             Err("file_selection_required")
         );
+        let current = engine.dispatch(&open).unwrap();
+        let file_action = |opened: &Value| {
+            json!({
+                "path":opened["path"],"expectedMtimeNanos":opened["mtimeNanos"],
+                "expectedSize":opened["size"],"expectedContentHash":opened["contentHash"]
+            })
+        };
+        let mut rename_args = file_action(&current);
+        rename_args["newName"] = json!("renamed 한글.txt");
+        let rename = request(
+            "files_rename",
+            Some(report.token.clone()),
+            json!({
+                "context":context,"nativeRevision":current["nativeRevision"],"request":rename_args
+            }),
+        );
+        let renamed = engine.dispatch(&rename).unwrap();
+        assert!(!file.exists());
+        assert_ne!(renamed["nativeRevision"], current["nativeRevision"]);
+        assert_eq!(
+            std::fs::read(root.join("renamed 한글.txt")).unwrap(),
+            b"saved\r\n"
+        );
+        assert_eq!(engine.dispatch(&rename), Err("file_selection_required"));
+        let mut delete = request(
+            "files_delete",
+            Some(report.token.clone()),
+            json!({
+                "context":context,"nativeRevision":current["nativeRevision"],"request":file_action(&renamed)
+            }),
+        );
+        assert_eq!(engine.dispatch(&delete), Err("file_snapshot_changed"));
+        assert!(root.join("renamed 한글.txt").exists());
+        delete.args["nativeRevision"] = renamed["nativeRevision"].clone();
+        engine.dispatch(&delete).unwrap();
+        assert!(!root.join("renamed 한글.txt").exists());
+        assert_eq!(engine.dispatch(&delete), Err("file_selection_required"));
         engine
             .dispatch(&request(
                 "release_root",

@@ -15,10 +15,11 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 [features]
 default = ["standalone"]
 standalone = ["desktop"]
+preview = ["dep:devbox-markdown"]
 desktop = [
     "dep:tauri-build", "dep:tauri", "dep:tauri-plugin-clipboard-manager",
     "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-single-instance",
-    "dep:devbox-window-state-tauri", "dep:devbox-applink", "dep:devbox-markdown", "dep:notify",
+    "dep:devbox-window-state-tauri", "dep:devbox-applink", "preview", "dep:notify",
 ]
 
 [[bin]]

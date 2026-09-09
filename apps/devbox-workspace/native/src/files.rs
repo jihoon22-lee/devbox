@@ -577,6 +577,15 @@ impl FileOwner {
         scope: Scope<'_>,
         request: RenameFileRequest,
     ) -> Result<RenamedFileWire> {
+        self.rename_guarded(scope, request, &|| Ok(()))
+    }
+    pub fn rename_guarded(
+        &mut self,
+        scope: Scope<'_>,
+        request: RenameFileRequest,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<RenamedFileWire> {
+        guard()?;
         let path = self.admitted_path(scope, &request.file.path)?;
         let id = key(&path)?;
         let document = self.documents.get(&id).ok_or("file_selection_required")?;
@@ -585,8 +594,19 @@ impl FileOwner {
             request.file.expected_size,
             &request.file.expected_content_hash,
         )?;
-        let mut wire = file::rename_path(&path, &request.new_name, document.expected())
-            .map_err(|_| "file_rename_conflict")?;
+        let issue = std::cell::Cell::new(None);
+        let check = || {
+            guard()
+                .and_then(|()| self.ensure_user_path(&path))
+                .and_then(|()| document.grant.admit(scope))
+                .map_err(|error| {
+                    issue.set(Some(error));
+                    file::FileError::BackupIntegrity
+                })
+        };
+        let mut wire =
+            file::rename_path_guarded(&path, &request.new_name, document.expected(), &check)
+                .map_err(|_| issue.get().unwrap_or("file_rename_conflict"))?;
         let next_path = path.with_file_name(&request.new_name);
         wire.path = next_path.to_str().ok_or("invalid_file_path")?.to_owned();
         let next = Grant::open(&next_path, document.grant.context.clone(), self.admission);
@@ -613,6 +633,15 @@ impl FileOwner {
         Ok(wire)
     }
     pub fn delete(&mut self, scope: Scope<'_>, request: FileActionRequest) -> Result<()> {
+        self.delete_guarded(scope, request, &|| Ok(()))
+    }
+    pub fn delete_guarded(
+        &mut self,
+        scope: Scope<'_>,
+        request: FileActionRequest,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<()> {
+        guard()?;
         let path = self.admitted_path(scope, &request.path)?;
         let id = key(&path)?;
         let document = self.documents.get(&id).ok_or("file_selection_required")?;
@@ -621,7 +650,18 @@ impl FileOwner {
             request.expected_size,
             &request.expected_content_hash,
         )?;
-        file::delete_path(&path, document.expected()).map_err(|_| "file_delete_conflict")?;
+        let issue = std::cell::Cell::new(None);
+        let check = || {
+            guard()
+                .and_then(|()| self.ensure_user_path(&path))
+                .and_then(|()| document.grant.admit(scope))
+                .map_err(|error| {
+                    issue.set(Some(error));
+                    file::FileError::BackupIntegrity
+                })
+        };
+        file::delete_path_guarded(&path, document.expected(), &check)
+            .map_err(|_| issue.get().unwrap_or("file_delete_conflict"))?;
         self.documents.remove(&id);
         self.choices.retain(|previous| previous != &path);
         Ok(())

@@ -6,7 +6,7 @@ edition.workspace = true
 
 [features]
 default = ["helper"]
-helper = ["files", "dep:libc"]
+helper = ["files", "dep:libc", "code-pad/preview"]
 files = ["dep:code-pad", "dep:product-contract", "dep:devbox-wsl", "dep:devbox-filesystem", "dep:sha2", "dep:windows"]
 
 [lib]

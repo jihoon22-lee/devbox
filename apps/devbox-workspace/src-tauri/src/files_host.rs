@@ -953,12 +953,14 @@ impl FilesHost {
                         json!({"path":lease.binding().root,"sourceKind":"native","watchMode":"native","editSupported":true,"lspSupported":lease.binding().target == product_contract::ExecutionTarget::Windows,"lspReason":if lease.binding().target == product_contract::ExecutionTarget::Windows {None} else {Some("host_lsp_wsl_unsupported")}}),
                     );
                 }
-                let mut result = tauri::async_runtime::block_on(code_pad_lib::component::dispatch(
-                    app,
-                    method,
-                    json!({"path":lease.binding().root}),
-                ))
-                .map_err(|_| "file_listing_unavailable")?;
+                let mut result = value(
+                    code_pad_lib::commands::folder::list_workspace_files_guarded(
+                        std::path::Path::new(&lease.binding().root),
+                        &|path| self.owner.ensure_user_path(path).map_err(str::to_string),
+                        &|| current_deadline(deadline).map_err(str::to_string),
+                    )
+                    .map_err(|_| "file_listing_unavailable")?,
+                )?;
                 if let Some(files) = result["files"].as_array_mut() {
                     for file in files.iter_mut() {
                         if let Some(path) = file["path"].as_str() {
@@ -990,12 +992,12 @@ impl FilesHost {
                     return Err("file_context_changed");
                 }
                 let path = self.owner.admitted_path(scope, &request.path)?;
-                let result = tauri::async_runtime::block_on(
-                    code_pad_lib::commands::preview::render_preview(
-                        path.to_string_lossy().into_owned(),
-                        request.content,
-                        lease.binding().root.clone(),
-                    ),
+                let result = code_pad_lib::commands::preview::render_preview_guarded(
+                    &path.to_string_lossy(),
+                    &request.content,
+                    &lease.binding().root,
+                    &|path| self.owner.ensure_user_path(path).map_err(str::to_string),
+                    &|| current_deadline(deadline).map_err(str::to_string),
                 )
                 .map_err(|_| "file_preview_unavailable")?;
                 self.owner.admitted_path(scope, &request.path)?;

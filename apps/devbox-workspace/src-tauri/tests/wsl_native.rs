@@ -140,6 +140,60 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
     assert_eq!(report.root_object, repeated.root_object);
     assert_eq!(scope, second.lease().scope(&repeated.root_object.scope));
     assert_ne!(report.token, repeated.token);
+    second
+        .file_request(
+            "files_attach",
+            &repeated.token,
+            serde_json::json!({"context":context}),
+        )
+        .unwrap();
+    let listed = second
+        .file_request(
+            "files_list",
+            &repeated.token,
+            serde_json::json!({"context":context,"path":root}),
+        )
+        .unwrap();
+    assert_eq!(listed["files"].as_array().unwrap().len(), 2);
+    let edit = second
+        .file_request(
+            "files_open",
+            &repeated.token,
+            serde_json::json!({
+                "context":context,"request":{"path":format!("{root}/edit.txt"),"encoding":null}
+            }),
+        )
+        .unwrap();
+    let mut rename = serde_json::json!({"context":context,"nativeRevision":edit["nativeRevision"],"request":{
+        "path":edit["path"],"expectedMtimeNanos":edit["mtimeNanos"],"expectedSize":edit["size"],"expectedContentHash":edit["contentHash"],"newName":"original.txt"
+    }});
+    assert!(matches!(
+        second.file_request("files_rename", &repeated.token, rename.clone()),
+        Err("file_rename_conflict")
+    ));
+    rename["request"]["newName"] = serde_json::json!("review 한글.md");
+    let renamed = second
+        .file_request("files_rename", &repeated.token, rename)
+        .expect("native WSL non-overwriting rename");
+    let preview = second.file_request("files_preview", &repeated.token, serde_json::json!({
+        "context":context,"path":renamed["path"],"content":"# Native WSL preview","workspaceRoot":root
+    })).unwrap();
+    assert_eq!(preview["kind"], "markdown");
+    assert!(preview["html"]
+        .as_str()
+        .unwrap()
+        .contains("Native WSL preview"));
+    let mut delete = serde_json::json!({"context":context,"nativeRevision":edit["nativeRevision"],"request":{
+        "path":renamed["path"],"expectedMtimeNanos":renamed["mtimeNanos"],"expectedSize":renamed["size"],"expectedContentHash":renamed["contentHash"]
+    }});
+    assert!(matches!(
+        second.file_request("files_delete", &repeated.token, delete.clone()),
+        Err("file_snapshot_changed")
+    ));
+    delete["nativeRevision"] = renamed["nativeRevision"].clone();
+    second
+        .file_request("files_delete", &repeated.token, delete)
+        .expect("native WSL snapshot-checked delete");
     second.release(&repeated.token).unwrap();
     assert!(second.validate(&repeated.token).is_err());
     drop(second);
@@ -193,6 +247,7 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
         b"unchanged synthetic fixture\n"
     );
     std::fs::remove_file(marker).unwrap();
-    std::fs::remove_file(editable).unwrap();
+    assert!(!editable.exists());
+    assert!(!Path::new(&unc).join("review 한글.md").exists());
     std::fs::remove_dir(&unc).unwrap();
 }

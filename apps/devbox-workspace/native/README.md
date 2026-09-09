@@ -9,10 +9,15 @@ The executable observes/revalidates root/Git objects and opens files only after
 attaching one native project context to an observed root. It executes no Git,
 language server or package manager. Explicit saves require the current native
 revision and disk snapshot and reuse Code Pad's encoding/CRLF atomic replacement.
+Rename/delete require the same native revision and precommit authority/cancellation
+checks. Linux rename uses `renameat2(RENAME_NOREPLACE)`; unsupported filesystems
+return an error without a hard-link/unlink fallback or overwritten destination.
 
 The inherited stdin/stdout protocol uses versioned, size-limited frames, random
 session/request/root tokens, exact monotonic request sequences, deadlines and
-expiring root observations. EOF, malformed input and deadline expiry cancel active
+expiring preview observations. Attached editor roots remain owned until release
+or EOF so idle time cannot discard open document revisions. Every operation still
+revalidates the native objects. EOF, malformed input and deadline expiry cancel active
 work. Saves check cancellation and native authority before staging and immediately
 before replacement. Temporary files retain their parent/file identities; cleanup
 removes only the still-owned staging file. A blocked syscall has a five-second exit
@@ -39,6 +44,14 @@ repeat the mutation. Dropping a connection during a save may leave its complete
 replacement committed without acknowledgement, so the caller must reopen/reconcile
 before another save. Dropping a connection never saves buffered text on its own.
 These helper methods are not yet connected to the product's WSL Files route.
+
+Quick Open and Markdown/Mermaid preview reuse the Code Pad core without Tauri.
+The guarded listing is also used by Windows Files: it admits each directory before
+reading children, retains directory identity, checks cancellation and applies
+50,000-file/400,000-entry/128-depth/8-MiB output bounds. Denied paths mark the result
+incomplete. Preview admits each local image before reading and after completion;
+cancelled previews return no result. Existing sanitization, image limits and
+remote-image rendering behavior remain in the shared Markdown renderer.
 
 `cargo test -p workspace-wsl` covers existing file-owner regressions, native mount
 admission and actual subprocess framing/context/replay/EOF behavior.

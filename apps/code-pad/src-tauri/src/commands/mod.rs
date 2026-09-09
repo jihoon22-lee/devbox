@@ -1,11 +1,10 @@
 pub mod file;
-#[cfg(feature = "desktop")]
 pub mod folder;
 #[cfg(feature = "desktop")]
 pub mod installer;
 #[cfg(feature = "desktop")]
 pub mod lsp;
-#[cfg(feature = "desktop")]
+#[cfg(feature = "preview")]
 pub mod preview;
 #[cfg(feature = "desktop")]
 pub mod recovery;
