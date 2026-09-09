@@ -9,6 +9,14 @@ function deferred() {
 }
 
 describe("native editor buffer mirror", () => {
+  it("does not block editable rename flush on read-only inspection documents", async () => {
+    const send = vi.fn().mockResolvedValue(true);
+    const mirror = new NativeEditorMirror(send);
+    await mirror.flush([document, { ...document, id: "large-inspection", readOnly: true }]);
+    expect(send).toHaveBeenCalledTimes(1);
+    expect(send).toHaveBeenCalledWith(document.path, document.nativeRevision, document.text);
+  });
+
   it("includes unsupported and cross-language files, while standalone documents make no calls", async () => {
     const send = vi.fn().mockResolvedValue(true);
     const mirror = new NativeEditorMirror(send);

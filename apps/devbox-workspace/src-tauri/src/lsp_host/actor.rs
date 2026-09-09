@@ -473,13 +473,13 @@ mod tests {
     }
     fn fixture(mode: &str) -> (Fixture, PathBuf) {
         let fixture = Fixture::new();
-        let script = fixture.root.path().join("fixture.mjs");
+        let script = fixture.path().join("fixture.mjs");
         fs::write(
             &script,
             include_str!("../../../../../.github/fixtures/workspace-lsp-server.mjs"),
         )
         .unwrap();
-        let marker = fixture.root.path().join("child.pid");
+        let marker = fixture.path().join("child.pid");
         let settings = Settings::open(&fixture.host, &fixture.context).unwrap();
         let mut view = settings.view().unwrap();
         let mut args = vec![marker.to_string_lossy().into_owned()];
@@ -562,7 +562,7 @@ mod tests {
     async fn owned_actor_documents_require_native_grants_and_saved_disk_revisions() {
         use code_pad_lib::commands::file::{OpenFileRequest, SaveFileRequest};
         let (fixture, marker) = fixture("documents");
-        let path = fixture.root.path().join("main.rs");
+        let path = fixture.path().join("main.rs");
         fs::write(&path, b"let value = 1;\r\n").unwrap();
         let lease = fixture
             .host
@@ -581,7 +581,7 @@ mod tests {
             )
             .unwrap();
         let revision = owner.document_revision(&opened.path).unwrap();
-        let notes_path = fixture.root.path().join("notes.txt");
+        let notes_path = fixture.path().join("notes.txt");
         fs::write(&notes_path, b"let value = 1;\r\n").unwrap();
         let notes = owner
             .open(
@@ -622,7 +622,7 @@ mod tests {
                 .unwrap_err(),
             "file_snapshot_changed"
         );
-        let unowned = fixture.root.path().join("unopened.rs");
+        let unowned = fixture.path().join("unopened.rs");
         fs::write(&unowned, b"unopened").unwrap();
         let mut denied = request(&revision);
         denied["path"] = json!(unowned);

@@ -1,6 +1,6 @@
 import { syncEditorDocument } from "./api";
 
-interface Snapshot { id: string; path: string; nativeRevision?: string | null; text: string }
+interface Snapshot { id: string; path: string; nativeRevision?: string | null; text: string; readOnly?: boolean }
 type Send = typeof syncEditorDocument;
 
 /** All editor buffers participate, independently of language-server support. */
@@ -19,10 +19,12 @@ export class NativeEditorMirror {
   }
 
   update(documents: readonly Snapshot[]): void {
-    const ids = new Set(documents.map(document => document.id));
+    const ids = new Set(documents.filter(document => !document.readOnly).map(document => document.id));
     for (const id of this.documents.keys()) if (!ids.has(id)) this.documents.delete(id);
     for (const document of documents) {
-      if (!document.nativeRevision) continue;
+      // Native open already recorded the immutable inspection baseline. Large
+      // read-only buffers must not consume the editable mirror payload budget.
+      if (!document.nativeRevision || document.readOnly) continue;
       const previous = this.documents.get(document.id);
       if (previous?.snapshot.path === document.path
         && previous.snapshot.nativeRevision === document.nativeRevision

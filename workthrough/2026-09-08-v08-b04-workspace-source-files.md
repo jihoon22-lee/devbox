@@ -269,6 +269,16 @@ Node start, CodeMirror document sync/edit/save/hover and explicit revocation.
 Final affected verification selected all and passed in **496.966 seconds**,
 cgroup peak **6,444,388,352 bytes** under 8 GiB. Full Windows retry remains pending.
 
+Follow-up review found that native document fixtures still built some requests from
+Windows TEMP's short spelling. The fixture now exposes the Registry's canonical
+root for every document path. Read-only inspection buffers keep the clean baseline
+already recorded by native open; the editor does not retransmit those large buffers
+through the smaller editable mirror budget or block unrelated rename flushes.
+Focused **17 native LSP Rust tests, strict Clippy, 5 mirror tests and product build**
+passed in **90.443 seconds**, cgroup peak **4,418,715,648 bytes** under 8 GiB.
+Final affected verification for this follow-up selected all and passed in
+**410.567 seconds**, with a **4,967,952,384-byte** cgroup peak under 8 GiB.
+
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,
 no protected product stores and no editor grant. Import validates all tokens before

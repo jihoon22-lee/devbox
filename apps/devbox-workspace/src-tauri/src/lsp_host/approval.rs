@@ -785,6 +785,7 @@ pub(super) mod tests {
     pub(in crate::lsp_host) struct Fixture {
         _data: tempfile::TempDir,
         pub(in crate::lsp_host) root: tempfile::TempDir,
+        canonical_root: PathBuf,
         pub(in crate::lsp_host) host: Arc<Host>,
         pub(in crate::lsp_host) context: ProjectContext,
         pub(in crate::lsp_host) installer: Arc<ManagedInstaller>,
@@ -806,7 +807,8 @@ pub(super) mod tests {
                 )
                 .unwrap()
                 .1;
-            let executable = root.path().join("server.exe");
+            let canonical_root = PathBuf::from(owner.binding(&context).unwrap().root);
+            let executable = canonical_root.join("server.exe");
             fs::write(&executable, b"synthetic code, never executed by review").unwrap();
             let settings = Settings::open(&host, &context).unwrap();
             let mut view = settings.view().unwrap();
@@ -820,11 +822,15 @@ pub(super) mod tests {
             Self {
                 _data: data,
                 root,
+                canonical_root,
                 host,
                 context,
                 installer,
                 protected,
             }
+        }
+        pub(in crate::lsp_host) fn path(&self) -> &Path {
+            &self.canonical_root
         }
         pub(in crate::lsp_host) fn capture(&self, require_existing: bool) -> Result<Snapshot> {
             let snapshot = Snapshot::capture(
@@ -887,14 +893,10 @@ pub(super) mod tests {
         let approved = fixture.capture(true).unwrap();
         let process = &approved.processes["rust"];
         approved.validate_process(process).unwrap();
-        fs::write(
-            fixture.root.path().join("server.exe"),
-            b"changed executable",
-        )
-        .unwrap();
+        fs::write(fixture.path().join("server.exe"), b"changed executable").unwrap();
         assert!(approved.validate_process(process).is_err());
         fs::write(
-            fixture.root.path().join("server.exe"),
+            fixture.path().join("server.exe"),
             b"synthetic code, never executed by review",
         )
         .unwrap();
