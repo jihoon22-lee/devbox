@@ -156,6 +156,13 @@ impl FilesHost {
             })
             .transpose()
     }
+    pub(crate) fn guard_recovery_write(&self, context: &ProjectContext, path: &str) -> Result<()> {
+        self.owner.guard_editor_write(context, path)?;
+        if self.owner.has_document(path) {
+            return Err("lsp_recovery_document_open");
+        }
+        Ok(())
+    }
     pub(crate) fn guard_editor_write(&self, context: &ProjectContext, path: &str) -> Result<()> {
         self.owner.guard_editor_write(context, path)
     }

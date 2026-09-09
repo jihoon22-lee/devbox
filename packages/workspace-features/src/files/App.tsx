@@ -2115,6 +2115,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       )}
       {lspPanelOpen && (
         <LspControlPanel
+          key={contextKey}
           workspaceRoot={state.workspaceFolder}
           workspaceCapabilities={workspaceCapabilities}
           onClose={() => setLspPanelOpen(false)}

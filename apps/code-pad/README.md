@@ -42,7 +42,10 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
   하나라도 쓰기 또는 LSP 반영에 실패하면 app-local `0700` transaction 디렉터리의
   identity/hash 검증 백업으로 이미 쓴 파일을 역순 되돌리고 파일별 결과를 표시한다.
   취소·timeout과 서버 중단 시에도 pending plan을 폐기하며, journal recovery는 외부 변경
-  파일을 덮어쓰지 않는다. 미리보기의 before/after와 range payload는 각각 UTF-8
+  파일을 덮어쓰지 않는다. Workspace host는 시작 시 journal을 보존하고 별도의 명시적
+  복구 검토를 제공한다. 서버 설정·실행 승인 없이도 현재 프로젝트와 원본 백업을 검증한다.
+  대상 탭을 닫은 뒤 승인하며, 부분 실패 시 원본과 journal을 보존해 다시 검토할 수 있다.
+  미리보기의 before/after와 range payload는 각각 UTF-8
   16KiB·전체 저장 결과는 정규화/인코딩 후 2MiB aggregate 안에서만 허용하며, UTF-16·CRLF
   확장으로 이 상한을 넘으면 적용 전에 거부한다. 미리보기에는 절대 경로·서버 오류·credential이
   포함되지 않으며, 서버가 반환한 전체 텍스트는 native pending plan에만 보관한다. Windows

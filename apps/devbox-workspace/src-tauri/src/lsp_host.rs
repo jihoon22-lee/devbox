@@ -5,6 +5,7 @@ mod approval;
 mod archives;
 mod documents;
 mod evidence;
+mod recovery;
 mod settings;
 use crate::{
     host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
@@ -58,6 +59,10 @@ pub(crate) fn allowed(method: &str) -> bool {
                 | "discard_lsp_archives"
                 | "load_lsp_config"
                 | "save_lsp_config"
+                | "lsp_recovery_list"
+                | "lsp_recovery_preview"
+                | "lsp_recovery_apply"
+                | "lsp_recovery_cancel"
                 | "lsp_execution_preview"
                 | "lsp_execution_approve"
                 | "lsp_execution_cancel"
@@ -75,6 +80,10 @@ pub(crate) fn contextual(method: &str) -> bool {
             method,
             "load_lsp_config"
                 | "save_lsp_config"
+                | "lsp_recovery_list"
+                | "lsp_recovery_preview"
+                | "lsp_recovery_apply"
+                | "lsp_recovery_cancel"
                 | "lsp_execution_preview"
                 | "lsp_execution_approve"
                 | "lsp_execution_cancel"
@@ -129,6 +138,7 @@ pub(crate) struct LspHost {
     storage: Storage,
     selections: Mutex<archives::Selections>,
     approvals: Mutex<approval::Approvals>,
+    recovery: Mutex<recovery::Recovery>,
     protected: ProtectedStorage,
     actor: Mutex<Option<Arc<actor::Actor>>>,
     preparing: std::sync::atomic::AtomicBool,
@@ -153,6 +163,7 @@ impl LspHost {
             files,
             selections: Mutex::new(archives::Selections::new(protected.clone())),
             approvals: Mutex::new(Default::default()),
+            recovery: Mutex::new(Default::default()),
             protected,
             actor: Mutex::new(None),
             preparing: Default::default(),
@@ -164,6 +175,9 @@ impl LspHost {
         })
     }
     pub(crate) fn expire(&self) {
+        if let Ok(mut recovery) = self.recovery.try_lock() {
+            recovery.expire();
+        }
         if let Ok(mut selections) = self.selections.try_lock() {
             selections.expire();
         }
@@ -333,6 +347,46 @@ impl LspHost {
             return Err("lsp_operation_cancelled");
         }
         let result = match method {
+            "lsp_recovery_list" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                recovery::Recovery::list(
+                    host.clone(),
+                    context.ok_or("project_selection_required")?,
+                    deadline,
+                )
+            }
+            "lsp_recovery_preview" | "lsp_recovery_apply" | "lsp_recovery_cancel" => {
+                let context = context.ok_or("project_selection_required")?;
+                if method != "lsp_recovery_cancel" {
+                    self.retire().await?;
+                }
+                let _filesystem = if method == "lsp_recovery_cancel" {
+                    None
+                } else {
+                    Some(
+                        self.activities
+                            .filesystem
+                            .enter(method == "lsp_recovery_apply")
+                            .map_err(|_| "lsp_busy")?,
+                    )
+                };
+                let mut recovery = self.recovery.lock().map_err(|_| "lsp_unavailable")?;
+                if method == "lsp_recovery_preview" {
+                    recovery.preview(
+                        host.clone(),
+                        context,
+                        self.protected.clone(),
+                        self.files.clone(),
+                        args,
+                        deadline,
+                    )
+                } else {
+                    recovery.consume(context, args, method == "lsp_recovery_apply", deadline)
+                }
+            }
+
             "lsp_execution_preview" => {
                 if args.as_object().is_none_or(|value| !value.is_empty()) {
                     return Err("invalid_request");
@@ -510,7 +564,11 @@ impl LspHost {
             }
             _ => Err("invalid_request"),
         };
-        self.storage.revalidate(host)?;
+        // Recovery reports completed/partial disk writes even when subsequent
+        // storage revalidation fails. Its consumed plan retained all write guards.
+        if method != "lsp_recovery_apply" || result.is_err() {
+            self.storage.revalidate(host)?;
+        }
         result
     }
 }

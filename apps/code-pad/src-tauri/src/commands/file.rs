@@ -688,6 +688,25 @@ pub(crate) fn restore_sibling_backup_if_current_limited(
     expected: Option<ExpectedFileSnapshot<'_>>,
     max_bytes: Option<u64>,
 ) -> Result<(), FileError> {
+    restore_sibling_backup_if_current_limited_with_guard(
+        target,
+        backup,
+        expected,
+        max_bytes,
+        &|| Ok(()),
+    )
+}
+
+/// Hosted recovery rechecks its native authority after preparing temporary bytes,
+/// immediately before the existing snapshot-checked atomic replacement.
+pub(crate) fn restore_sibling_backup_if_current_limited_with_guard(
+    target: &Path,
+    backup: &CreatedBackup,
+    expected: Option<ExpectedFileSnapshot<'_>>,
+    max_bytes: Option<u64>,
+    guard: &dyn Fn() -> Result<(), FileError>,
+) -> Result<(), FileError> {
+    guard()?;
     // The target must still be the regular path component approved by the
     // transaction. Do not canonicalize a replacement symlink/reparse point
     // into a different object before validating the snapshot.
@@ -709,6 +728,10 @@ pub(crate) fn restore_sibling_backup_if_current_limited(
     }
     let permissions = metadata.permissions();
     let (temporary, _) = write_sibling_temp(target, &bytes, Some(&permissions))?;
+    if let Err(error) = guard() {
+        let _ = fs::remove_file(&temporary);
+        return Err(error);
+    }
     if let Some(expected) = expected {
         if let Err(error) = validate_file_snapshot_limited(target, expected, max_bytes) {
             let _ = fs::remove_file(&temporary);

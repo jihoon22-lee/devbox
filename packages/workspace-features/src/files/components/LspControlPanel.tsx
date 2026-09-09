@@ -23,6 +23,7 @@ import type {
 } from "../types";
 import ManagedInstallerPanel from "./ManagedInstallerPanel";
 import LspExecutionReview from "./LspExecutionReview";
+import LspRecoveryReview from "./LspRecoveryReview";
 import { isProductHosted } from "../../transport";
 
 const LANGUAGE_OPTIONS = [
@@ -532,6 +533,7 @@ export default function LspControlPanel({
           nativeRevision={loaded?.nativeRevision ?? null}
           disabled={busy || hasUnsavedChanges || formDirty || !config.enabled || !lspAvailable}
         />}
+        {isProductHosted() && <LspRecoveryReview disabled={busy || !workspaceRoot} />}
         <section className="lsp-status-section" aria-label="언어 서버 상태">
           <h3>현재 상태</h3>
           {configuredLanguageIds.length === 0 && (

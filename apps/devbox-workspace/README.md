@@ -35,8 +35,15 @@ an existing native Files grant and revision; save/reload additionally verify cur
 disk bytes and encoding. A native hash mirror includes every opened editor buffer,
 even unsupported languages, and rejects dirty rename targets before preview/apply
 and rollback. Successful atomic rename refreshes native grants and all affected open
-buffers. Events are filtered by native project/worktree/revision/target. Explicit
-journal recovery and WSL-native transport remain incomplete.
+buffers. Events are filtered by native project/worktree/revision/target.
+Explicit journal recovery lists only private context metadata until a user requests
+review. The native review pins current project authority, every target/backup and
+an expiring one-time token; it works with disabled, missing or corrupt LSP settings.
+Target editor tabs must be closed. Apply holds the filesystem write permit, rechecks
+all files before the first replacement, and checks authority again just before each
+atomic restore. Partial failure preserves the journal and backups for another review;
+completed cleanup removes only known unchanged files. WSL-native transport remains
+incomplete; the new packaged Windows recovery fixture is awaiting execution.
 LSP settings now load and save separately for each registered context without
 accessing its project files or resolving a server. Native revisions prevent stale
 writes; explicit corrupt-file recovery preserves the original bytes, and future

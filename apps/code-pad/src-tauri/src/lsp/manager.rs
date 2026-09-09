@@ -5,6 +5,8 @@
 //! mutations are staged and committed only after the corresponding JSON-RPC
 //! notification has been written successfully.
 
+pub mod recovery;
+
 use super::catalog::{LspConfig, ServerRef};
 use super::client::{CapabilitySet, ClientStatus, InitializeConfig, LspClient, ServerInfo};
 use super::config::{load_from_app_local_data_dir, save_to_app_local_data_dir, LoadedLspConfig};
@@ -3438,7 +3440,7 @@ struct RenameBackup {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameJournal {
     schema: u8,
     plan_id: String,
@@ -3456,7 +3458,7 @@ enum RenameJournalState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameJournalEntry {
     target: String,
     backup: String,

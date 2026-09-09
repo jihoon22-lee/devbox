@@ -2,7 +2,7 @@
 import assert from "node:assert/strict";
 import {createServer} from "node:net";
 import {createHash} from "node:crypto";
-import {mkdirSync,readFileSync,writeFileSync} from "node:fs";
+import {mkdirSync,readFileSync,writeFileSync,realpathSync,existsSync} from "node:fs";
 import path from "node:path";
 import {pathToFileURL} from "node:url";
 import {setTimeout as delay} from "node:timers/promises";
@@ -135,7 +135,8 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
   assert.deepEqual(success(await lsp("language_server_statuses")),[]);
   const config=success(await lsp("load_lsp_config"));assert.equal(config.config.enabled,false);
   const execution=await exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRenderer});
-  return {...execution,blockedDownloadLeavesFilesUsable:true,nativeCancelAndOpaqueChoices:true,arbitraryPathAndReplayRejected:true,verifiedNativeArchiveImported:true,confirmedUiUninstallAndOfflineCacheInstall:true,reviewedNodeClosureImportedWithNativeMultiPicker:true,installationNeverStartsLanguageServers:true,offlineProxyAttempts:network.attempts()};
+  const recovery=await exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,success,waitForRenderer});
+  return {...execution,...recovery,blockedDownloadLeavesFilesUsable:true,nativeCancelAndOpaqueChoices:true,arbitraryPathAndReplayRejected:true,verifiedNativeArchiveImported:true,confirmedUiUninstallAndOfflineCacheInstall:true,reviewedNodeClosureImportedWithNativeMultiPicker:true,installationNeverStartsLanguageServers:true,offlineProxyAttempts:network.attempts()};
 }
 
 
@@ -202,4 +203,64 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
   await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files .document-tab")).find(tab=>tab.textContent.includes("lsp-owner-main.rs"))?.querySelector(".tab-action").click()');
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs"))',"LSP editor fixture did not close");
   return {explicitNativeExecutionReview:true,approvalDoesNotAutoStart:true,actualNodeLspInitialize:true,codeMirrorDidOpenChangeSaveHover:true,revocationConfirmsNativeShutdown:true};
+}
+
+async function exerciseWorkspaceLspRecovery({cdp,root,directory,executable,call,success,waitForRenderer}) {
+  const lsp=(method,args={})=>call("workspace.lsp",method,args);
+  const rejected=result=>assert.equal(result.operation.outcome.state,"failed");
+  const description=await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
+  // Only the nonce-named executable copied into this owned fixture can name
+  // this disposable private namespace. Never enumerate existing installations.
+  const canonicalExe=realpathSync.native(executable);
+  assert.equal(path.dirname(canonicalExe),realpathSync.native(directory));
+  const namespace=createHash("sha256").update(path.toNamespacedPath(canonicalExe)).digest("hex");
+  assert.equal(description.handshake.installationId,namespace);
+  assert.match(description.context.worktreeId,/^[a-f0-9-]{36}$/);
+  const privateRoot=path.join(process.env.LOCALAPPDATA,`com.devbox.v08.workspace.i${namespace}`);
+  const pointer=JSON.parse(readFileSync(path.join(privateRoot,"active-stores.json"),"utf8"));
+  assert.equal(pointer.schemaVersion,1);assert.match(pointer.id,/^[a-f0-9-]{36}$/);
+  assert.equal(success(await lsp("load_lsp_config")).config.enabled,false);
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  success(await lsp("lsp_recovery_list"));
+  const backups=path.join(privateRoot,"stores",pointer.id,"files","views",`worktree-${description.context.worktreeId}`,"lsp","runtime","rename-backups");
+  assert.ok(existsSync(backups));
+  const journalId="native-recovery-fixture", journalDir=path.join(backups,journalId);mkdirSync(journalDir);
+  const target=path.join(root,"lsp-recovery-fixture.rs"), backup=path.join(journalDir,"backup-fixture.bak");
+  const before="let before = 1;\r\n",after="let after = 1;\r\n",hash=text=>createHash("sha256").update(text).digest("hex");
+  writeFileSync(target,after,{flag:"wx"});writeFileSync(backup,before,{flag:"wx"});
+  const journal=path.join(journalDir,"journal.json");
+  writeFileSync(journal,JSON.stringify({schema:1,planId:journalId,workspaceRoot:path.toNamespacedPath(realpathSync.native(root)),state:"rollbackfailed",entries:[{
+    target:path.toNamespacedPath(realpathSync.native(target)),backup,beforeSize:Buffer.byteLength(before),beforeHash:hash(before),afterSize:Buffer.byteLength(after),afterHash:hash(after),
+  }]}),{flag:"wx"});
+  const opened=success(await call("workspace.files","open_file",{request:{path:target,encoding:null}}));
+  rejected(await lsp("lsp_recovery_preview",{journalId}));
+  success(await call("workspace.files","unwatch_file",{path:opened.path}));
+  let preview=success(await lsp("lsp_recovery_preview",{journalId}));
+  success(await lsp("lsp_recovery_cancel",{previewId:preview.previewId}));
+  rejected(await lsp("lsp_recovery_apply",{previewId:preview.previewId}));
+  assert.equal(readFileSync(target,"utf8"),after);
+  preview=success(await lsp("lsp_recovery_preview",{journalId}));
+  writeFileSync(target,"external fixture edit");
+  rejected(await lsp("lsp_recovery_apply",{previewId:preview.previewId}));
+  assert.equal(readFileSync(target,"utf8"),"external fixture edit");assert.equal(readFileSync(backup,"utf8"),before);
+  writeFileSync(target,after);
+  const click=async(label,scope="document")=>{
+    const predicate=`Array.from((${scope})?.querySelectorAll("button")??[]).find(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`;
+    await waitForRenderer(cdp,`!!(${predicate})`,"Native recovery action unavailable");await cdp.evaluate(`(${predicate}).click()`);
+  };
+  await click("언어 서버",'document.querySelector(".workspace-feature-files")');
+  await click("복구 기록 확인",'document.querySelector(".lsp-panel")');
+  const records=success(await lsp("lsp_recovery_list")).records,index=records.findIndex(record=>record.journalId===journalId);
+  assert.ok(index>=0);assert.equal(records[index].available,true);
+  await click(`기록 ${index+1} 복구 검토`,'document.querySelector(".lsp-panel")');
+  await waitForRenderer(cdp,'document.querySelector("section[aria-label=\"이름 변경 복구\"]")?.textContent.includes("let before")',"Native recovery preview omitted original bytes");
+  await click("복구 검토 취소",'document.querySelector(".lsp-panel")');
+  assert.equal(readFileSync(target,"utf8"),after);
+  await click(`기록 ${index+1} 복구 검토`,'document.querySelector(".lsp-panel")');
+  await click("검토한 원본 복원",'document.querySelector(".lsp-panel")');
+  await waitForRenderer(cdp,'document.querySelector("section[aria-label=\"이름 변경 복구\"]")?.textContent.includes("원본 복원이 완료되었습니다")',"Native recovery did not complete");
+  assert.equal(readFileSync(target,"utf8"),before);assert.equal(existsSync(journalDir),false);
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  await click("닫기",'document.querySelector(".lsp-panel")');
+  return {nativeJournalPreviewDoesNotWrite:true,recoveryRejectsOpenEditorAndChangedBytes:true,recoveryCancelAndReplayRejected:true,explicitUiRecoveryRestoresCrlfWithoutServerApproval:true};
 }

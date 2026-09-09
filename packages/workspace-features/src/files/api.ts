@@ -460,3 +460,22 @@ export function cancelLspExecutionReview(previewId: string): Promise<void> {
 export function revokeLspExecution(): Promise<void> {
   return componentInvoke("workspace.lsp")<void>("lsp_execution_revoke");
 }
+
+export interface LspRecoveryListing { records: Array<{ journalId: string; files: number; available: boolean }>; truncated: boolean }
+export interface LspRecoveryPreview {
+  previewId: string; journalId: string;
+  files: Array<{ path: string; restore: boolean; current: string; original: string; currentSize: number; originalSize: number }>;
+}
+export interface LspRecoveryResult { complete: boolean; restored: string[]; cleanupPending: boolean; error: string | null }
+export function listLspRecovery(): Promise<LspRecoveryListing> {
+  return componentInvoke("workspace.lsp")<LspRecoveryListing>("lsp_recovery_list");
+}
+export function previewLspRecovery(journalId: string): Promise<LspRecoveryPreview> {
+  return componentInvoke("workspace.lsp")<LspRecoveryPreview>("lsp_recovery_preview", { journalId });
+}
+export function applyLspRecovery(previewId: string): Promise<LspRecoveryResult> {
+  return componentInvoke("workspace.lsp")<LspRecoveryResult>("lsp_recovery_apply", { previewId });
+}
+export function cancelLspRecovery(previewId: string): Promise<void> {
+  return componentInvoke("workspace.lsp")<void>("lsp_recovery_cancel", { previewId });
+}

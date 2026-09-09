@@ -279,6 +279,45 @@ passed in **90.443 seconds**, cgroup peak **4,418,715,648 bytes** under 8 GiB.
 Final affected verification for this follow-up selected all and passed in
 **410.567 seconds**, with a **4,967,952,384-byte** cgroup peak under 8 GiB.
 
+
+### Explicit native rename-journal recovery
+
+Hosted startup remains preserve-only. A separate explicit metadata list and native
+one-time review allow recovery even with missing/disabled/corrupt server settings.
+The current Registry lease, protected storage, transport and canonical identity
+admit every recorded target before use. All target tabs must be closed; preview
+and apply recheck that boundary. Current target and original backup bytes, identities,
+mtime/size/hashes are retained. Unknown/future/corrupt journals, sensitive paths,
+links, duplicate targets and external changes are preserved. Listing is bounded to
+16 private entries and never follows recorded target paths.
+
+Apply retires the server and retains the filesystem write permit, validates every
+file before the first replacement, and checks native authority again after temporary
+restore bytes are ready. Partial failure reports confirmed restores and keeps its
+journal/backups; another review resumes entries already equal to their original.
+Cleanup removes only known unchanged backups and leaves unknown children intact.
+The UI reads only after an explicit action, displays current/original excerpts,
+consumes failed approvals and cancels unmounted or context-retired previews.
+
+Focused recovery validation passed **6 shared engine + 4 native owner tests and both
+strict Clippy checks in 60.487 seconds**, peak **4,795,949,056 bytes**. The **36 approval/
+recovery/control-panel UI tests, shared typecheck and product build** passed in
+**23.217 seconds**, peak **1,620,819,968 bytes**. The packaged Windows fixture now
+checks open-editor denial, cancel/replay, external changes and explicit UI CRLF
+restoration without server approval. Its execution remains pending.
+The broader pass completed **210 Code Pad + 15 manager integration + 108 Workspace
+Rust tests, strict Clippy, 342 shared UI tests and product build in 141.355 seconds**,
+peak **4,825,878,528 bytes**. A subsequent adversarial test reproduced an external
+write during the new final authority callback (6.428-second expected failure).
+The restore helper now validates the target snapshot after that callback too.
+Recovery responses retain committed/partial results if later metadata checks fail,
+and report pending cleanup separately from successful restoration.
+The final focused correction passed **7 recovery engine + 4 native owner tests,
+strict Clippy, 4 recovery UI tests and product build in 42.095 seconds**, peak
+**3,156,873,216 bytes**. Six literal Windows renderer expressions and the fixture's
+Node syntax parsed successfully. Final recovery affected verification selected all and passed in **453.937 seconds**,
+with a **6,442,975,232-byte** cgroup peak under the shared 8 GiB cap.
+
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,
 no protected product stores and no editor grant. Import validates all tokens before
