@@ -29,7 +29,14 @@ fn actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start() {
     std::fs::create_dir(&unc).unwrap();
     let marker = Path::new(&unc).join("original.txt");
     std::fs::write(&marker, b"unchanged synthetic fixture\n").unwrap();
-    let mut first = Connection::connect(&resources, &distro.id, false).unwrap();
+    let lease =
+        wsl_distro::Lease::capture(&distro.id, false).expect("owned WSL registry/storage capture");
+    lease
+        .helper_args(&resources, &uuid::Uuid::new_v4().to_string(), false)
+        .expect("owned WSL registry remains stable before launch");
+    drop(lease);
+    let mut first =
+        Connection::connect(&resources, &distro.id, false).expect("owned WSL helper launch/hello");
     let report = first.observe(&root).unwrap();
     assert_eq!(report.root, root);
     first.validate(&report.token).unwrap();

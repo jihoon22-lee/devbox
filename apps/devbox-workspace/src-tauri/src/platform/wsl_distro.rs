@@ -36,6 +36,10 @@ mod native {
     const ROOT: &str = r"Software\Microsoft\Windows\CurrentVersion\Lxss";
     const LIMIT: usize = 128;
     struct Key(HKEY);
+    // A read-only registry handle may be queried from any native worker. It is
+    // retained until the lease drops, so deletion/recreation cannot replace it.
+    unsafe impl Send for Key {}
+    unsafe impl Sync for Key {}
     impl Drop for Key {
         fn drop(&mut self) {
             unsafe {
@@ -138,6 +142,57 @@ mod native {
         }
         Ok((u64::from(time.dwHighDateTime) << 32) | u64::from(time.dwLowDateTime))
     }
+    fn values_digest(key: &Key) -> Result<[u8; 32]> {
+        let mut values: std::collections::BTreeMap<Vec<u16>, (u32, Vec<u8>)> =
+            std::collections::BTreeMap::new();
+        let mut total = 0usize;
+        for index in 0..=LIMIT {
+            let mut name = vec![0u16; 16385];
+            let mut name_size = name.len() as u32;
+            let mut data = vec![0u8; 65536];
+            let mut data_size = data.len() as u32;
+            let mut kind = 0u32;
+            let status = unsafe {
+                RegEnumValueW(
+                    key.0,
+                    index as u32,
+                    Some(PWSTR(name.as_mut_ptr())),
+                    &mut name_size,
+                    None,
+                    Some(&mut kind),
+                    Some(data.as_mut_ptr()),
+                    Some(&mut data_size),
+                )
+            };
+            if status == ERROR_NO_MORE_ITEMS {
+                let mut hash = Sha256::new();
+                for (name, (kind, data)) in values {
+                    hash.update((name.len() as u32).to_le_bytes());
+                    for unit in name {
+                        hash.update(unit.to_le_bytes());
+                    }
+                    hash.update(kind.to_le_bytes());
+                    hash.update((data.len() as u32).to_le_bytes());
+                    hash.update(data);
+                }
+                return Ok(hash.finalize().into());
+            }
+            if status != ERROR_SUCCESS
+                || index == LIMIT
+                || name_size as usize >= name.len()
+                || data_size as usize > data.len()
+            {
+                return Err("wsl_registry_invalid");
+            }
+            name.truncate(name_size as usize);
+            data.truncate(data_size as usize);
+            total += name.len() * 2 + data.len();
+            if total > 1024 * 1024 || values.insert(name, (kind, data)).is_some() {
+                return Err("wsl_registry_invalid");
+            }
+        }
+        Err("wsl_registry_limit")
+    }
     #[derive(Clone, PartialEq, Eq)]
     struct Registration {
         id: String,
@@ -145,9 +200,18 @@ mod native {
         version: u32,
         base: PathBuf,
         backing: Option<PathBuf>,
-        revision: u64,
+        values_digest: [u8; 32],
     }
     fn registration(key: &Key, id: &str) -> Result<Registration> {
+        for attempt in 0..3 {
+            match registration_snapshot(key, id) {
+                Err("wsl_registry_changed") if attempt < 2 => continue,
+                result => return result,
+            }
+        }
+        Err("wsl_registry_changed")
+    }
+    fn registration_snapshot(key: &Key, id: &str) -> Result<Registration> {
         let before = revision(key)?;
         let name = text(key, "DistributionName")?;
         let version = number(key, "Version")?;
@@ -178,6 +242,7 @@ mod native {
         } else {
             None
         };
+        let values_digest = values_digest(key)?;
         if !base.is_absolute() || revision(key)? != before {
             return Err("wsl_registry_changed");
         }
@@ -187,7 +252,7 @@ mod native {
             version,
             base,
             backing,
-            revision: before,
+            values_digest,
         })
     }
     fn registrations() -> Result<Vec<Registration>> {
@@ -340,6 +405,7 @@ mod native {
         identity: FilesystemIdentity,
         backing: Option<(File, FilesystemIdentity)>,
         _directory: File,
+        key: Key,
     }
     impl Lease {
         pub fn capture(id: &str, allow_start: bool) -> Result<Self> {
@@ -366,11 +432,14 @@ mod native {
                     open_filesystem_metadata_object(path, false).map_err(|_| "wsl_registry_changed")
                 })
                 .transpose()?;
+            let key = open(HKEY_CURRENT_USER, &format!("{ROOT}\\{{{id}}}"))?
+                .ok_or("wsl_distro_missing")?;
             let result = Self {
                 registration,
                 identity,
                 backing,
                 _directory: directory,
+                key,
             };
             result.revalidate()?;
             Ok(result)
@@ -382,6 +451,11 @@ mod native {
             &self.registration.name
         }
         pub fn revalidate(&self) -> Result<()> {
+            // The key itself must still exist. LastWriteTime is a snapshot
+            // consistency check, not identity: WSL can rewrite identical values.
+            if registration(&self.key, self.id())? != self.registration {
+                return Err("wsl_registry_changed");
+            }
             let current = registrations()?
                 .into_iter()
                 .find(|entry| entry.id == self.registration.id)
@@ -453,6 +527,83 @@ mod native {
                 "--session".into(),
                 session.into(),
             ])
+        }
+    }
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        fn create(path: &str) -> Key {
+            let mut key = HKEY::default();
+            let name = wide(path);
+            assert_eq!(
+                unsafe { RegCreateKeyW(HKEY_CURRENT_USER, PCWSTR(name.as_ptr()), &mut key) },
+                ERROR_SUCCESS
+            );
+            Key(key)
+        }
+        fn set(key: &Key, name: &str, kind: REG_VALUE_TYPE, bytes: &[u8]) {
+            let name = wide(name);
+            assert_eq!(
+                unsafe { RegSetValueExW(key.0, PCWSTR(name.as_ptr()), None, kind, Some(bytes)) },
+                ERROR_SUCCESS
+            );
+        }
+        fn set_text(key: &Key, name: &str, value: &str) {
+            let bytes = wide(value)
+                .into_iter()
+                .flat_map(u16::to_le_bytes)
+                .collect::<Vec<_>>();
+            set(key, name, REG_SZ, &bytes);
+        }
+        fn initialize(key: &Key, base: &Path) {
+            set_text(key, "DistributionName", "native-registry-fixture");
+            set_text(key, "BasePath", base.to_str().unwrap());
+            for (name, value) in [
+                ("Version", 1u32),
+                ("DefaultUid", 1000),
+                ("Flags", 7),
+                ("State", 1),
+            ] {
+                set(key, name, REG_DWORD, &value.to_le_bytes());
+            }
+        }
+        #[test]
+        fn registry_value_identity_survives_rewrites_but_not_policy_or_key_replacement() {
+            let path = format!("Software\\DevboxRegistryFixture-{}", uuid::Uuid::new_v4());
+            assert!(open(HKEY_CURRENT_USER, &path).unwrap().is_none());
+            struct Owned(String);
+            impl Drop for Owned {
+                fn drop(&mut self) {
+                    let name = wide(&self.0);
+                    unsafe {
+                        let _ = RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(name.as_ptr()));
+                    }
+                }
+            }
+            let owned = Owned(path);
+            let key = create(&owned.0);
+            let directory = tempfile::tempdir().unwrap();
+            initialize(&key, directory.path());
+            let before = registration(&key, "fixture").unwrap();
+            let stamp = revision(&key).unwrap();
+            std::thread::sleep(Duration::from_millis(20));
+            set(&key, "State", REG_DWORD, &1u32.to_le_bytes());
+            assert_ne!(stamp, revision(&key).unwrap());
+            assert!(before == registration(&key, "fixture").unwrap());
+            set(&key, "DefaultUid", REG_DWORD, &0u32.to_le_bytes());
+            assert!(before != registration(&key, "fixture").unwrap());
+            set(&key, "DefaultUid", REG_DWORD, &1000u32.to_le_bytes());
+            set_text(&key, "NewExecutionProperty", "changed");
+            assert!(before != registration(&key, "fixture").unwrap());
+            let name = wide(&owned.0);
+            assert_eq!(
+                unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, PCWSTR(name.as_ptr())) },
+                ERROR_SUCCESS
+            );
+            let replacement = create(&owned.0);
+            initialize(&replacement, directory.path());
+            assert!(before == registration(&replacement, "fixture").unwrap());
+            assert!(registration(&key, "fixture").is_err());
         }
     }
 }
