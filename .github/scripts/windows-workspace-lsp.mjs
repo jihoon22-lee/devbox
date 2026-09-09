@@ -1,0 +1,136 @@
+// Native Windows catalog/archive/cache checks using disposable fixture data.
+import assert from "node:assert/strict";
+import {createServer} from "node:net";
+import {createHash} from "node:crypto";
+import {mkdirSync,readFileSync,writeFileSync} from "node:fs";
+import path from "node:path";
+import {setTimeout as delay} from "node:timers/promises";
+import {nativeFileDialog,nativeFileSave} from "./windows-workspace-files.mjs";
+
+export async function createWorkspaceLspProxy() {
+  let holding=false, attempts=0;
+  const sockets=new Set(), pending=new Set();
+  const deny=socket=>{pending.delete(socket);socket.end("HTTP/1.1 502 Fixture Offline\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");};
+  const server=createServer(socket=>{
+    sockets.add(socket);socket.on("error",()=>{});
+    socket.on("close",()=>{sockets.delete(socket);pending.delete(socket);});
+    socket.once("data",()=>{attempts++;holding?pending.add(socket):deny(socket);});
+  });
+  await new Promise((resolve,reject)=>{server.once("error",reject);server.listen(0,"127.0.0.1",resolve);});
+  return {
+    url:`http://127.0.0.1:${server.address().port}`,
+    attempts:()=>attempts,
+    hold:()=>{holding=true;},
+    release:()=>{holding=false;for(const socket of pending)deny(socket);},
+    async waitForAttempt(previous) {
+      const deadline=performance.now()+15_000;
+      while(attempts===previous&&performance.now()<deadline)await delay(25);
+      assert.ok(attempts>previous,"Native installer did not reach the owned offline proxy");
+    },
+    close:()=>{for(const socket of sockets)socket.destroy();server.close();},
+  };
+}
+
+async function downloadArchive(artifact,destination) {
+  const expected=artifact.size_bytes;
+  assert.ok(Number.isSafeInteger(expected)&&expected>0&&expected<=64*1024*1024);
+  const hosts=new Set(["github.com","release-assets.githubusercontent.com","registry.npmjs.org"]);
+  let url=new URL(artifact.url);
+  for(let redirects=0;redirects<=5;redirects++) {
+    assert.ok(url.protocol==="https:"&&hosts.has(url.hostname)&&!url.username&&!url.password,"Unexpected reviewed artifact transport");
+    const response=await fetch(url,{redirect:"manual",signal:AbortSignal.timeout(120_000)});
+    if(response.status>=300&&response.status<400) {
+      const location=response.headers.get("location");await response.body?.cancel();
+      assert.ok(location,"Reviewed artifact redirect lacks a destination");url=new URL(location,url);continue;
+    }
+    assert.equal(response.status,200,"Reviewed artifact download failed");
+    const chunks=[];let size=0;
+    for await(const chunk of response.body){size+=chunk.length;assert.ok(size<=expected,"Reviewed artifact exceeds expected size");chunks.push(chunk);}
+    const bytes=Buffer.concat(chunks);
+    assert.equal(size,expected);assert.equal(createHash("sha256").update(bytes).digest("hex"),artifact.sha256);
+    writeFileSync(destination,bytes,{flag:"wx"});return destination;
+  }
+  throw new Error("Reviewed artifact redirect limit exceeded");
+}
+
+export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,success,waitForRenderer,processId,executable,network}) {
+  const lsp=(method,args={})=>call("workspace.lsp",method,args);
+  const rejected=result=>assert.equal(result.operation.outcome.state,"failed");
+  const catalog=success(await lsp("lsp_catalog"));
+  const rust=catalog.find(item=>item.id==="rust-analyzer"), node=catalog.find(item=>item.id==="typescript-language-server");
+  assert.ok(rust&&node);
+  const key=item=>({manifestId:item.id,version:item.version,platform:item.platform});
+  const state=async item=>success(await lsp("lsp_installed")).find(entry=>entry.manifest_id===item.id&&entry.version===item.version);
+  assert.equal((await state(rust)).state,"not_installed");
+  assert.equal((await state(node)).state,"not_installed");
+
+  // Only this app process uses the local failing proxy. Node's fixture download
+  // remains independent and verifies the native catalog's fixed digest.
+  const beforeBlocked=network.attempts();network.hold();
+  const installing=lsp("lsp_install",key(rust)).then(value=>({value}),error=>({error}));
+  const editing=path.join(root,"lsp-install-edit.txt");writeFileSync(editing,"before",{flag:"wx"});
+  try {
+    await network.waitForAttempt(beforeBlocked);
+    const document=success(await call("workspace.files","open_file",{request:{path:editing,encoding:null}}));
+    success(await call("workspace.files","save_file",{request:nativeFileSave(document,"edited during blocked download")}));
+    success(await call("workspace.files","unwatch_file",{path:document.path}));
+    assert.equal(readFileSync(editing,"utf8"),"edited during blocked download");
+  } finally {network.release();}
+  const blocked=await installing;if(blocked.error)throw blocked.error;rejected(blocked.value);
+  assert.equal((await state(rust)).state,"not_installed");
+
+  const archives=path.join(directory,"reviewed-lsp-archives");mkdirSync(archives);
+  const rustArchive=await downloadArchive(rust.artifact,path.join(archives,"rust-analyzer.zip"));
+  rejected(await lsp("lsp_import_archive",{...key(rust),archivePaths:[rustArchive]}));
+  const pick=async(action,selectedFiles=[])=>{
+    const result=lsp("pick_lsp_archives");
+    const [selected]=await Promise.all([result,nativeFileDialog({processId,executable,directory,action,selectedFiles})]);
+    return success(selected);
+  };
+  assert.deepEqual(await pick("Cancel"),[]);
+  const discarded=await pick("Open",[rustArchive]);assert.equal(discarded.length,1);
+  assert.match(discarded[0],/^[0-9a-f-]{36}$/);assert.notEqual(discarded[0],rustArchive);
+  success(await lsp("discard_lsp_archives",{archivePaths:discarded}));
+  rejected(await lsp("lsp_import_archive",{...key(rust),archivePaths:discarded}));
+  const selected=await pick("Open",[rustArchive]);
+  success(await lsp("lsp_import_archive",{...key(rust),archivePaths:selected}));
+  rejected(await lsp("lsp_import_archive",{...key(rust),archivePaths:selected}));
+  const imported=await state(rust);assert.equal(imported.state,"installed");assert.equal(imported.installed.install_source,"local_archive");
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  await assert.rejects(lsp("start_language_server",{languageId:"rust"}));
+
+  await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="files").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);
+  await waitForRenderer(cdp,'Array.from(document.querySelectorAll(".workspace-feature-files:not([hidden]) button")).some(b=>b.textContent.trim()==="언어 서버"&&!b.disabled)',"LSP settings button unavailable");
+  await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files button")).find(b=>b.textContent.trim()==="언어 서버").click()');
+  const card=`Array.from(document.querySelectorAll(".lsp-installer-card")).find(card=>card.querySelector("strong")?.textContent==="rust-analyzer")`;
+  const click=async(label,scope="document")=>{
+    const predicate=`Array.from((${scope})?.querySelectorAll("button")??[]).find(b=>b.textContent.trim()===${JSON.stringify(label)}&&!b.disabled)`;
+    await waitForRenderer(cdp,`!!(${predicate})`,"LSP installer action unavailable");await cdp.evaluate(`(${predicate}).click()`);
+  };
+  await click("제거",card);await click("제거 확인");
+  await waitForRenderer(cdp,`!!(${card})?.querySelector(".lsp-state.not_installed")`,"Native LSP uninstall did not settle");
+  assert.equal((await state(rust)).archive_cached,true);
+  await click("설치",card);await click("취소",'document.querySelector(".lsp-confirmation")');
+  assert.equal((await state(rust)).state,"not_installed");
+  const beforeCache=network.attempts();
+  await click("설치",card);await click("설치 확인");
+  await waitForRenderer(cdp,`!!(${card})?.querySelector(".lsp-state.installed")`,"Offline native LSP install did not settle");
+  const cached=await state(rust);assert.equal(cached.installed.install_source,"archive_cache");assert.equal(network.attempts(),beforeCache);
+  await click("닫기",'document.querySelector(".lsp-panel")');
+
+  const lockBytes=readFileSync("apps/code-pad/src-tauri/src/lsp/node-lock.json");
+  assert.equal(createHash("sha256").update(lockBytes).digest("hex"),node.files.package_lock_sha256);
+  const lock=JSON.parse(lockBytes), packages=lock.roots[node.id].map(root=>lock.packages.find(item=>item.name===root.name&&item.version===root.version&&item.path===root.path));
+  assert.equal(packages.length,2);
+  const nodeArchives=[];
+  for(const [index,item] of packages.entries()) {
+    assert.ok(item);assert.deepEqual(item.dependencies,{});assert.deepEqual(item.optional_dependencies,{});
+    nodeArchives.push(await downloadArchive({...item,url:item.tarball},path.join(archives,`node-${index}.tgz`)));
+  }
+  const nodeChoices=await pick("Open",nodeArchives);assert.equal(nodeChoices.length,2);
+  success(await lsp("lsp_import_archive",{...key(node),archivePaths:nodeChoices}));
+  assert.equal((await state(node)).state,"installed");
+  assert.deepEqual(success(await lsp("language_server_statuses")),[]);
+  const config=success(await lsp("load_lsp_config"));assert.equal(config.config.enabled,false);
+  return {blockedDownloadLeavesFilesUsable:true,nativeCancelAndOpaqueChoices:true,arbitraryPathAndReplayRejected:true,verifiedNativeArchiveImported:true,confirmedUiUninstallAndOfflineCacheInstall:true,reviewedNodeClosureImportedWithNativeMultiPicker:true,installationNeverStartsLanguageServers:true,offlineProxyAttempts:network.attempts()};
+}

@@ -188,6 +188,7 @@ pub enum InstallError {
     EntrypointMissing,
     InstallConflict,
     InstallBusy,
+    Cancelled,
     IndexCorrupt,
     CatalogManifestNotFound {
         manifest_id: String,
@@ -260,6 +261,7 @@ impl fmt::Display for InstallError {
             Self::InstallConflict => {
                 formatter.write_str("immutable install destination already exists")
             }
+            Self::Cancelled => formatter.write_str("managed installation cancelled"),
             Self::InstallBusy => formatter.write_str("another managed installation is active"),
             Self::IndexCorrupt => formatter
                 .write_str("installed server index is corrupt; explicit recovery is required"),
@@ -406,6 +408,25 @@ impl ManagedInstaller {
         let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
         self.install(&manifest, &manifest.version, &current_rfc3339())
             .await
+    }
+
+    /// Product shutdown can cancel download waits; completed synchronous
+    /// promotion/index work is retired before this future returns.
+    pub async fn install_catalog_cancellable(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+        cancellation: &super::transport::RequestCancellation,
+    ) -> Result<InstallResult, InstallError> {
+        let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
+        self.install_cancellable(
+            &manifest,
+            &manifest.version,
+            &current_rfc3339(),
+            Some(cancellation),
+        )
+        .await
     }
 
     /// Return the reviewed catalog's install state without changing the
@@ -555,6 +576,20 @@ impl ManagedInstaller {
         requested_version: &str,
         installed_at: &str,
     ) -> Result<InstallResult, InstallError> {
+        self.install_cancellable(manifest, requested_version, installed_at, None)
+            .await
+    }
+
+    async fn install_cancellable(
+        &self,
+        manifest: &ServerManifest,
+        requested_version: &str,
+        installed_at: &str,
+        cancellation: Option<&super::transport::RequestCancellation>,
+    ) -> Result<InstallResult, InstallError> {
+        if cancellation.is_some_and(|signal| signal.is_cancelled()) {
+            return Err(InstallError::Cancelled);
+        }
         let _operation = self
             .operation_lock
             .try_lock()
@@ -566,9 +601,11 @@ impl ManagedInstaller {
             let lock = reviewed_node_lock().map_err(node_lock_error)?;
             let download_dir = self.lsp_root.join("downloads").join(&nonce);
             let staging = self.lsp_root.join("staging").join(&nonce);
-            let result = self
-                .install_node_downloads(manifest, installed_at, &lock, &download_dir, &staging)
-                .await;
+            let result = until_cancelled(
+                self.install_node_downloads(manifest, installed_at, &lock, &download_dir, &staging),
+                cancellation,
+            )
+            .await;
             if download_dir.exists() {
                 let _ = fs::remove_dir_all(&download_dir);
             }
@@ -582,10 +619,13 @@ impl ManagedInstaller {
             .join("downloads")
             .join(format!("{nonce}.part"));
         let staging = self.lsp_root.join("staging").join(&nonce);
-        let result = async {
-            let (archive, source) = self.prepare_archive(manifest, &partial).await?;
-            self.install_verified_archive(manifest, installed_at, &archive, &staging, source)
-        }
+        let result = until_cancelled(
+            async {
+                let (archive, source) = self.prepare_archive(manifest, &partial).await?;
+                self.install_verified_archive(manifest, installed_at, &archive, &staging, source)
+            },
+            cancellation,
+        )
         .await;
         let _ = fs::remove_file(&partial);
         if staging.exists() {
@@ -1807,7 +1847,23 @@ fn civil_date_from_days(days_since_1970: i64) -> (i64, u32, u32) {
     (year, month as u32, day as u32)
 }
 
-fn validate_external_archive(archive: &Path) -> Result<(), InstallError> {
+async fn until_cancelled<T>(
+    operation: impl std::future::Future<Output = Result<T, InstallError>>,
+    cancellation: Option<&super::transport::RequestCancellation>,
+) -> Result<T, InstallError> {
+    match cancellation {
+        None => operation.await,
+        Some(signal) => tokio::select! {
+            biased;
+            _ = signal.cancelled() => Err(InstallError::Cancelled),
+            result = operation => result,
+        },
+    }
+}
+
+/// Validate native picker input before the product copies it into a private
+/// snapshot. This is the same no-link boundary used by direct legacy imports.
+pub fn validate_external_archive(archive: &Path) -> Result<(), InstallError> {
     validate_absolute_clean_path(archive)?;
     reject_symlink_tree(archive)?;
     let metadata = fs::symlink_metadata(archive)
@@ -2740,6 +2796,64 @@ mod tests {
             .unwrap()
             .next()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn cancelled_install_preserves_verified_cache_and_installed_index() {
+        let archive = zip(&[("server.exe", b"cancel fixture")]);
+        let mut manifest = manifest(&archive, "server.exe");
+        manifest.artifact.url = "https://127.0.0.1:9/unreachable.zip".into();
+        let temp = TempDir::new().unwrap();
+        let selected = write_fixture(&temp, "selected.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &selected)
+            .unwrap();
+        installer.uninstall(&manifest).unwrap();
+        let previous = fs::read(installer.index_path()).unwrap();
+        let cancellation = super::super::transport::RequestCancellation::new();
+        cancellation.cancel();
+        assert!(matches!(
+            installer
+                .install_cancellable(
+                    &manifest,
+                    "1.2.3",
+                    "2026-08-13T01:02:03Z",
+                    Some(&cancellation)
+                )
+                .await,
+            Err(InstallError::Cancelled)
+        ));
+        assert_eq!(fs::read(installer.index_path()).unwrap(), previous);
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
+        let result = installer
+            .install(&manifest, "1.2.3", "2026-08-13T01:02:03Z")
+            .await
+            .unwrap();
+        assert_eq!(result.server.install_source, InstallSource::ArchiveCache);
+    }
+
+    #[tokio::test]
+    async fn cancellation_retires_an_in_flight_download_future() {
+        let signal = super::super::transport::RequestCancellation::new();
+        let retired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        struct Download(std::sync::Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for Download {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let held = Download(retired.clone());
+        let download = async move {
+            let _held = held;
+            std::future::pending::<Result<(), InstallError>>().await
+        };
+        let (result, ()) = tokio::join!(until_cancelled(download, Some(&signal)), async {
+            tokio::task::yield_now().await;
+            signal.cancel();
+        });
+        assert!(matches!(result, Err(InstallError::Cancelled)));
+        assert!(retired.load(std::sync::atomic::Ordering::Acquire));
     }
 
     #[tokio::test]

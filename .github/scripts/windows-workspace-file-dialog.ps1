@@ -6,6 +6,7 @@ param(
     [Parameter(Mandatory = $true)][string]$ExpectedExecutable,
     [Parameter(Mandatory = $true)][string]$FixtureRoot,
     [Parameter(Mandatory = $true)][ValidateSet('Open', 'Cancel')][string]$Action,
+    [string]$SelectedFilesJson,
     [string]$SelectedFile
 )
 $ErrorActionPreference = 'Stop'
@@ -86,11 +87,23 @@ function Assert-OwnedProcess {
     }
 }
 Assert-OwnedProcess
+$selectedPaths = @()
 if ($Action -eq 'Open') {
-    if ([string]::IsNullOrWhiteSpace($SelectedFile)) { throw 'A selected fixture file is required.' }
-    $selectedPath = [WorkspaceFixturePath]::Canonical($SelectedFile)
-    if (-not $selectedPath.StartsWith($fixturePath, [StringComparison]::OrdinalIgnoreCase) -or
-        -not [IO.File]::Exists($selectedPath)) { throw 'The selected file is outside the owned fixture.' }
+    $requestedPaths = New-Object 'System.Collections.Generic.List[string]'
+    if (-not [string]::IsNullOrWhiteSpace($SelectedFilesJson)) {
+        $decoded = ConvertFrom-Json -InputObject $SelectedFilesJson
+        foreach ($entry in $decoded) {
+            if ($entry -isnot [string]) { throw 'A selected fixture file is required.' }
+            $requestedPaths.Add($entry)
+        }
+    } else { $requestedPaths.Add($SelectedFile) }
+    if ($requestedPaths.Count -lt 1 -or $requestedPaths.Count -gt 32) { throw 'A bounded selected file set is required.' }
+    foreach ($requestedPath in $requestedPaths) {
+        if ($requestedPath -isnot [string] -or [string]::IsNullOrWhiteSpace($requestedPath)) { throw 'A selected fixture file is required.' }
+        $selectedPath = [WorkspaceFixturePath]::Canonical($requestedPath)
+        if (-not $selectedPath.StartsWith($fixturePath, [StringComparison]::OrdinalIgnoreCase) -or -not [IO.File]::Exists($selectedPath)) { throw 'The selected file is outside the owned fixture.' }
+        $selectedPaths += $selectedPath
+    }
 }
 $processCondition = [System.Windows.Automation.PropertyCondition]::new(
     [System.Windows.Automation.AutomationElement]::ProcessIdProperty, $TargetProcessId)
@@ -128,12 +141,13 @@ if ($Action -eq 'Open') {
     }
     if ($null -eq $filename) { throw 'The owned chooser filename editor is unavailable.' }
     Assert-OwnedProcess
-    $dialogPath = if ($selectedPath.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) {
-        '\\' + $selectedPath.Substring(8)
-    } elseif ($selectedPath.StartsWith('\\?\', [StringComparison]::Ordinal)) {
-        $selectedPath.Substring(4)
-    } else { $selectedPath }
-    [WorkspaceFixturePath]::SetFilename($dialog.Current.NativeWindowHandle, $filename.Current.NativeWindowHandle, $TargetProcessId, $dialogPath)
+    $dialogPaths = @($selectedPaths | ForEach-Object {
+        if ($_.StartsWith('\\?\UNC\', [StringComparison]::OrdinalIgnoreCase)) { '\\' + $_.Substring(8) }
+        elseif ($_.StartsWith('\\?\', [StringComparison]::Ordinal)) { $_.Substring(4) }
+        else { $_ }
+    })
+    $filenameValue = if ($dialogPaths.Count -eq 1) { $dialogPaths[0] } else { ($dialogPaths | ForEach-Object { '"' + $_ + '"' }) -join ' ' }
+    [WorkspaceFixturePath]::SetFilename($dialog.Current.NativeWindowHandle, $filename.Current.NativeWindowHandle, $TargetProcessId, $filenameValue)
 }
 $buttonId = if ($Action -eq 'Open') { '1' } else { '2' }
 $buttonClass = [System.Windows.Automation.PropertyCondition]::new(

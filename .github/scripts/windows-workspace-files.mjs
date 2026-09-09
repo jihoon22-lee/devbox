@@ -9,11 +9,15 @@ const runFile=promisify(execFile);
 export const nativeFileSnapshot = doc => ({path:doc.path, nativeRevision:doc.nativeRevision, expectedMtimeNanos:doc.mtimeNanos, expectedSize:doc.size, expectedContentHash:doc.contentHash});
 export const nativeFileSave = (doc,text) => ({...nativeFileSnapshot(doc),text,encoding:doc.encoding,lineEnding:doc.lineEnding,sourceLossy:doc.lossy});
 
-export async function nativeFileDialog({processId,executable,directory,action,selectedFile}) {
+export async function nativeFileDialog({processId,executable,directory,action,selectedFile,selectedFiles}) {
   assert.ok(Number.isSafeInteger(processId)&&processId>0,"An owned product process is required for dialog acceptance");
   const args=["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.resolve(".github/scripts/windows-workspace-file-dialog.ps1"),"-TargetProcessId",String(processId),"-ExpectedExecutable",executable,"-FixtureRoot",directory,"-Action",action];
-  if(action==="Open")args.push("-SelectedFile",selectedFile);
-  await runFile("powershell.exe",args,{windowsHide:true,timeout:25_000,maxBuffer:64*1024});
+  if(action==="Open")args.push("-SelectedFilesJson",JSON.stringify(selectedFiles??[selectedFile]));
+  const started=performance.now();
+  const result={action,state:"running"};
+  try {await runFile("powershell.exe",args,{windowsHide:true,timeout:25_000,maxBuffer:64*1024});result.state="completed";}
+  catch(error){result.state="failed";result.diagnostic=String(error.stderr??error.message).slice(0,4000);throw error;}
+  finally {result.elapsedMs=Math.round(performance.now()-started);writeFileSync(`product-foundation-evidence/workspace-native-dialog-${Date.now()}.json`,JSON.stringify(result,null,2));}
 }
 
 export async function exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer, processId, executable}) {

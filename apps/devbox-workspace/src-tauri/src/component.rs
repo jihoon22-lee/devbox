@@ -49,6 +49,10 @@ struct Runtime {
     file_requests: Pool,
     file_workers: Arc<tokio::sync::Semaphore>,
     dialogs: Pool,
+    lsp: Arc<Mutex<Option<Arc<crate::lsp_host::LspHost>>>>,
+    lsp_requests: Pool,
+    lsp_workers: Arc<tokio::sync::Semaphore>,
+    lsp_shutdown: code_pad_lib::lsp::RequestCancellation,
 }
 impl Default for Runtime {
     fn default() -> Self {
@@ -69,6 +73,10 @@ impl Default for Runtime {
             file_requests: Pool::default(),
             file_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             dialogs: Pool::default(),
+            lsp: Arc::default(),
+            lsp_requests: Pool::default(),
+            lsp_workers: Arc::new(tokio::sync::Semaphore::new(2)),
+            lsp_shutdown: Default::default(),
         }
     }
 }
@@ -132,9 +140,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                         | "dependency_enrichment_cancel"
                 )
         }
-        "workspace.files" | "workspace.lsp" => {
-            route == "files" && crate::files_host::allowed(component, method)
-        }
+        "workspace.files" => route == "files" && crate::files_host::allowed(component, method),
+        "workspace.lsp" => route == "files" && crate::lsp_host::allowed(method),
         "workspace.migration" => matches!(method, "status" | "start_empty"),
         "workspace.registry" => matches!(
             method,
@@ -149,6 +156,99 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         ),
         _ => false,
     }
+}
+
+async fn execute_lsp(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+) -> Result<Value, &'static str> {
+    use tauri_plugin_dialog::DialogExt;
+    let queued = runtime.lsp_requests.reserve_with_limit(8)?;
+    if runtime.lsp_shutdown.is_cancelled() {
+        return Err("lsp_operation_cancelled");
+    }
+    let mut deadline = request.header.deadline_ms;
+    let chosen = if request.method == "pick_lsp_archives" {
+        empty(&request.args)?;
+        let dialog = runtime.dialogs.reserve_with_limit(1)?;
+        let (sender, receiver) = tokio::sync::oneshot::channel();
+        window
+            .dialog()
+            .file()
+            .set_parent(window)
+            .set_title("관리형 LSP archive 선택")
+            .add_filter("LSP archive", &["zip", "tgz", "gz"])
+            .pick_files(move |paths| {
+                let _dialog = dialog;
+                let _ = sender.send(paths);
+            });
+        let Some(paths) = receiver.await.map_err(|_| "file_dialog_unavailable")? else {
+            return Ok(json!([]));
+        };
+        let mut admitted = request.header.clone();
+        admitted.request_id = uuid::Uuid::new_v4().to_string();
+        admitted.deadline_ms = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis() as u64
+            + 29_000;
+        product_shell_tauri::authorize(window, &admitted, "workspace.lsp")
+            .map_err(|_| "file_selection_expired")?;
+        deadline = admitted.deadline_ms;
+        Some(
+            paths
+                .into_iter()
+                .map(|path| path.into_path().map_err(|_| "invalid_file_path"))
+                .collect::<Result<Vec<_>, _>>()?,
+        )
+    } else {
+        None
+    };
+    let worker = runtime
+        .lsp_workers
+        .clone()
+        .acquire_owned()
+        .await
+        .map_err(|_| "worker_unavailable")?;
+    let runtime = runtime.clone();
+    let app = window.app_handle().clone();
+    let host = runtime.host()?;
+    tauri::async_runtime::spawn_blocking(move || {
+        let (_queued, _worker) = (queued, worker);
+        crate::files_host::current_deadline(deadline)?;
+        if runtime.lsp_shutdown.is_cancelled() {
+            return Err("lsp_operation_cancelled");
+        }
+        let owner = {
+            let mut slot = runtime.lsp.lock().map_err(|_| "lsp_unavailable")?;
+            if slot.is_none() {
+                // Files and LSP share only initialization. No installer/server
+                // wait holds the editor's mutex or filesystem/context permit.
+                let mut files = runtime.files.try_lock().map_err(|_| "files_unavailable")?;
+                files.initialize(&app, &host)?;
+                *slot = Some(Arc::new(crate::lsp_host::LspHost::new(&app, &host)?));
+            }
+            slot.as_ref().ok_or("lsp_unavailable")?.clone()
+        };
+        crate::files_host::current_deadline(deadline)?;
+        if runtime.lsp_shutdown.is_cancelled() {
+            return Err("lsp_operation_cancelled");
+        }
+        if let Some(paths) = chosen {
+            owner.choose(&host, &paths, deadline)
+        } else {
+            tauri::async_runtime::block_on(owner.execute(
+                &app,
+                &host,
+                &request.method,
+                request.args,
+                &runtime.lsp_shutdown,
+            ))
+        }
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
 }
 
 async fn execute_files(
@@ -621,10 +721,8 @@ async fn execute(
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
-    let files = matches!(
-        request.component.as_str(),
-        "workspace.files" | "workspace.lsp"
-    );
+    let files = request.component == "workspace.files";
+    let lsp = request.component == "workspace.lsp";
     let definitions = request.component == "workspace.definitions";
     let dependencies = request.component == "workspace.dependencies";
     let source = request.component == "workspace.source";
@@ -656,10 +754,9 @@ async fn execute(
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
-    let mut result = if matches!(
-        request.component.as_str(),
-        "workspace.files" | "workspace.lsp"
-    ) {
+    let mut result = if lsp {
+        execute_lsp(&window, &runtime, request).await
+    } else if files {
         execute_files(
             &window,
             &runtime,
@@ -861,6 +958,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
                         let definitions = runtime.definitions.clone();
                         let source = runtime.source.clone();
+                        let lsp = runtime.lsp.clone();
                         let _ = tauri::async_runtime::spawn_blocking(move || {
                             let _permit = permit;
                             if let Ok(projects) = host.projects() {
@@ -871,6 +969,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                             }
                             if let Ok(mut source) = source.try_lock() {
                                 source.expire();
+                            }
+                            if let Ok(lsp) = lsp.try_lock() {
+                                if let Some(lsp) = lsp.as_ref() {
+                                    lsp.expire();
+                                }
                             }
                         })
                         .await;
@@ -887,11 +990,15 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             if runtime.exit_authorized.load(Ordering::Acquire) {
                 return;
             }
-            let Some(manager) = app.try_state::<Arc<code_pad_lib::lsp::LspManager>>() else {
-                // Before Files activation no language-server owner exists.
+            if app
+                .try_state::<Arc<code_pad_lib::lsp::LspManager>>()
+                .is_none()
+                && runtime.lsp_requests.0.load(Ordering::Acquire) == 0
+            {
                 runtime.shutdown_started.store(true, Ordering::Release);
+                runtime.lsp_shutdown.cancel();
                 return;
-            };
+            }
             api.prevent_exit();
             if runtime
                 .shutdown_started
@@ -901,11 +1008,27 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 return;
             }
             let runtime = runtime.inner().clone();
-            let manager = manager.inner().clone();
+            runtime.lsp_shutdown.cancel();
             let app = app.clone();
             let exit_code = code.unwrap_or(0);
             tauri::async_runtime::spawn(async move {
-                if manager.shutdown_for_exit().await.is_ok() {
+                // Cancellation interrupts downloads; the LSP worker retains its
+                // request permit until archive IO/index work actually retires.
+                let retired = tokio::time::timeout(Duration::from_secs(5), async {
+                    while runtime.lsp_requests.0.load(Ordering::Acquire) != 0 {
+                        tokio::time::sleep(Duration::from_millis(20)).await;
+                    }
+                })
+                .await
+                .is_ok();
+                let manager = app
+                    .try_state::<Arc<code_pad_lib::lsp::LspManager>>()
+                    .map(|manager| manager.inner().clone());
+                let stopped = match manager {
+                    Some(manager) => manager.shutdown_for_exit().await.is_ok(),
+                    None => true,
+                };
+                if retired && stopped {
                     runtime.exit_authorized.store(true, Ordering::Release);
                     app.exit(exit_code);
                 } else {
@@ -920,6 +1043,24 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn saturated_lsp_workers_leave_files_and_project_selection_available() {
+        let runtime = Runtime::default();
+        let _first = runtime.lsp_workers.clone().try_acquire_owned().unwrap();
+        let _second = runtime.lsp_workers.clone().try_acquire_owned().unwrap();
+        assert!(runtime.lsp_workers.clone().try_acquire_owned().is_err());
+        let _editor = runtime.file_workers.clone().try_acquire_owned().unwrap();
+        let _file_owner = runtime.files.try_lock().unwrap();
+        let _selection = runtime.context_activity.enter(true).unwrap();
+        let _private_install = runtime.lsp.lock().unwrap();
+        let request = runtime.lsp_requests.reserve().unwrap();
+        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 1);
+        runtime.lsp_shutdown.cancel();
+        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 1);
+        drop(request);
+        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 0);
+    }
+
     #[test]
     fn git_and_editor_io_exclude_writes_without_blocking_private_recovery() {
         let runtime = Runtime::default();

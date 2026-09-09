@@ -17,7 +17,13 @@ The hosted LSP manager preserves existing rename journals during initialization
 and denies execution before project path resolution. Server preparation now
 separates path/argv inspection from runtime probes; native approval hooks cover
 probes, server starts and automatic retries. Workspace waits for confirmed LSP
-shutdown before exiting. Context-specific LSP approval and editing remain pending.
+shutdown before exiting. Windows catalog install, explicit installed-index recovery,
+removal and verified local archive/cache import now use an independent LSP worker
+queue. Native picker choices are expiring single-use tokens with no editor grant;
+selected source objects are checked before bounded private snapshots reach the
+existing digest/dependency-lock verifier. Product shutdown cancels downloads and
+waits for active LSP workers to retire. Context-specific LSP approval and editing
+remain pending.
 The product host now authenticates explicit startup and Registry commands. Its
 native startup screen creates a blank generation only after a user action and
 shows schema/owner failures without replacing existing data. Registry UI supports
@@ -70,7 +76,11 @@ acceptance at `833854a`; broader cleanup and actual dialog acceptance are pendin
 The `4139ea9` Windows run failed at concurrent history detail/diff loading before
 reaching those new checks. Selected-store readers now share a read lock while
 activation remains exclusive. History preserves the native bridge's fixed error
-message; the Windows fixture records bounded method/issue codes for the retry.
+message. The `d612d4a` general CI passed, while its Windows fixture passed history
+but timed out waiting for a later native request. The fixture now allows the native
+29-second request budget and records bounded method/issue codes, duration and owned
+dialog driver failures. New installer/cache and multi-file picker acceptance is
+pending; local Windows disposable dialog cancel/single/multi selection passed.
 
 The [B04 workthrough](../../workthrough/2026-09-08-v08-b04-workspace-source-files.md)
 records actual extraction/build tests and the remaining Windows/WSL acceptance.

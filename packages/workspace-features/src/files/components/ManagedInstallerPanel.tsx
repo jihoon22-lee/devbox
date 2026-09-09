@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import { focusFirst, restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
   importLspArchives,
+  discardLspArchives,
   installLsp,
   lspCatalog,
   lspInstalled,
@@ -231,6 +232,13 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
   const [error, setError] = useState<string | null>(null);
   const [pending, setPending] = useState<PendingAction | null>(null);
   const mountedRef = useRef(true);
+  const archiveChoicesRef = useRef<string[]>([]);
+  const releaseChoices = () => {
+    const choices = archiveChoicesRef.current;
+    archiveChoicesRef.current = [];
+    if (choices.length > 0) void discardLspArchives(choices).catch(() => {});
+  };
+  const cancelPending = () => { releaseChoices(); setPending(null); };
   const refreshGenerationRef = useRef(0);
   const confirmationRef = useRef<HTMLElement>(null);
   // State updates do not synchronously change event-handler closures. Keep a
@@ -285,6 +293,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
     return () => {
       mountedRef.current = false;
       refreshGenerationRef.current += 1;
+      releaseChoices();
     };
     // The panel owns one snapshot while it is open.
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -318,7 +327,11 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
     try {
       const archivePaths = await pickLspArchives();
       if (mountedRef.current && archivePaths.length > 0) {
+        releaseChoices();
+        archiveChoicesRef.current = archivePaths;
         setPending({ kind: "import", manifest, status, archivePaths });
+      } else if (archivePaths.length > 0) {
+        void discardLspArchives(archivePaths).catch(() => {});
       }
     } catch {
       // Native picker/parser details (including the selected path) stay out
@@ -342,6 +355,8 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
       if (kind === "install" && manifest) {
         await installLsp(manifest.id, manifest.version, manifest.platform);
       } else if (kind === "import" && manifest && pending.archivePaths) {
+        // Confirmed import owns the choices until the native worker retires.
+        archiveChoicesRef.current = [];
         await importLspArchives(
           manifest.id,
           manifest.version,
@@ -366,6 +381,10 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
           : "관리형 서버를 설치하지 못했습니다.";
       if (mountedRef.current) setError(message);
     } finally {
+      if (kind === "import" && pending.archivePaths) {
+        void discardLspArchives(pending.archivePaths).catch(() => {});
+        if (mountedRef.current) setPending(null);
+      }
       operationInFlightRef.current = false;
       if (mountedRef.current) setBusyKey(null);
     }
@@ -476,7 +495,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
             onKeyDown={(event) => {
               if (!confirmationRef.current) return;
               trapDialogKeyDown(event, confirmationRef.current, () => {
-                if (!busyKey && !operationInFlightRef.current) setPending(null);
+                if (!busyKey && !operationInFlightRef.current) cancelPending();
               });
             }}
           >
@@ -494,7 +513,7 @@ export default function ManagedInstallerPanel({ onChanged }: Props) {
               <div><dt>Runtime</dt><dd>{pendingMetadata.runtime}</dd></div>
             </dl>
             <div className="lsp-confirmation-actions">
-              <button type="button" className="toolbar-button" disabled={Boolean(busyKey)} onClick={() => setPending(null)}>취소</button>
+              <button type="button" className="toolbar-button" disabled={Boolean(busyKey)} onClick={cancelPending}>취소</button>
               <button type="button" className="toolbar-button selected" disabled={Boolean(busyKey)} onClick={() => void confirmPending()}>
                 {pending.kind === "uninstall" ? "제거 확인" : pending.kind === "import" ? "가져오기 확인" : "설치 확인"}
               </button>

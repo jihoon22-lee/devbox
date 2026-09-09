@@ -59,17 +59,6 @@ pub fn allowed(component: &str, method: &str) -> bool {
                 | "unwatch_file"
                 | "take_pending_open"
         ),
-        "workspace.lsp" => matches!(
-            method,
-            "lsp_catalog"
-                | "lsp_installed"
-                | "load_lsp_config"
-                | "language_server_statuses"
-                | "language_server_logs"
-                | "stop_language_server"
-                | "stop_all_language_servers"
-                | "close_lsp_document"
-        ),
         _ => false,
     }
 }
@@ -328,13 +317,8 @@ impl FilesHost {
         } = invocation;
         self.initialize(app, host)?;
         current_deadline(deadline)?;
-        if component == "workspace.lsp" {
-            // Read-only metadata and cleanup remain available while untrusted.
-            // Starting/installing or editing through LSP needs its trust owner.
-            return tauri::async_runtime::block_on(code_pad_lib::component::dispatch(
-                app, method, args,
-            ))
-            .map_err(|_| "lsp_unavailable");
+        if component != "workspace.files" {
+            return Err("invalid_request");
         }
         #[derive(Deserialize)]
         #[serde(deny_unknown_fields)]

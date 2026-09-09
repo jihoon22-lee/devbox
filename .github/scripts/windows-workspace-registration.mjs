@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {mkdirSync, writeFileSync, readFileSync, realpathSync} from "node:fs";
 import path from "node:path";
+import {exerciseWorkspaceLspInstaller} from "./windows-workspace-lsp.mjs";
 import {exerciseWorkspaceFiles} from "./windows-workspace-files.mjs";
 import {exerciseWorkspaceDependencies} from "./windows-workspace-dependencies.mjs";
 import {exerciseWorkspaceDefinitions} from "./windows-workspace-definitions.mjs";
@@ -12,18 +13,32 @@ export function workspaceRequestExpression(component, method, args = {}) {
   return `(async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke;
     const d = await invoke("plugin:product-shell|describe");
-    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${["workspace.dependencies","workspace.source"].includes(component) ? 29000 : 5000},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
+    const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${["workspace.dependencies","workspace.source","workspace.lsp"].includes(component) ? 29000 : 5000},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
     try {return await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});}
     catch(problem) {throw new Error("Native Workspace request rejected: " + JSON.stringify(problem).slice(0,2000));}
   })()`;
 }
 
-export async function exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId, executable}) {
+export async function exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId, executable, network}) {
   const root = path.join(directory, "한글 project");
   mkdirSync(root);
   const marker = path.join(root, "preserved.txt");
   writeFileSync(marker, "synthetic project bytes\r\n", {flag:"wx"});
-  const call = async (component, method, args = {}) => cdp.evaluate(workspaceRequestExpression(component, method, args));
+  const requests = [];
+  const call = async (component, method, args = {}) => {
+    const started = performance.now();
+    const row = {component,method,state:"running"};
+    requests.push(row); if(requests.length>16)requests.shift();
+    const record = () => writeFileSync(`product-foundation-evidence/workspace-native-requests-${suffix}.json`,JSON.stringify(requests,null,2));
+    record();
+    try {
+      const result = await cdp.evaluate(workspaceRequestExpression(component, method, args),{timeoutMs:method==="lsp_install"?660_000:35_000});
+      row.state=result?.operation?.outcome?.state??"invalid";
+      if(typeof result?.value?.issue==="string"&&/^[a-z_]{1,80}$/.test(result.value.issue))row.issue=result.value.issue;
+      return result;
+    } catch(error) {row.state="transport-failed";throw error;}
+    finally {row.elapsedMs=Math.round(performance.now()-started);record();}
+  };
   const success = result => {assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
   const click = async label => {
     const predicate = `Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === ${JSON.stringify(label)} && !button.disabled)`;
@@ -92,6 +107,9 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   registry = success(await call("workspace.registry","snapshot"));
   const files = await exerciseWorkspaceFiles({cdp, root:canonicalRoot, directory, call, success, waitForRenderer, processId, executable});
   record("files", files);
+  const lspInstaller = await exerciseWorkspaceLspInstaller({cdp,root:canonicalRoot,directory,call,success,waitForRenderer,processId,executable,network});
+  record("lsp-installer",lspInstaller);
+  await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="overview").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);
   await click("프로젝트 선택 해제");
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-registry button")).find(button => button.textContent.trim() === "프로젝트 선택 해제")',"Workspace context did not clear");
   assert.equal((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,null);
@@ -108,5 +126,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,definitions,dependencies,source,files,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP and importer acceptance are separate"};
+  return {authority,definitions,dependencies,source,files,lspInstaller,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP and importer acceptance are separate"};
 }

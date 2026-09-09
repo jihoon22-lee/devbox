@@ -82,6 +82,14 @@ const issues: Record<string, string> = {
   files_initialize_failed: "편집기 저장소를 준비하지 못했습니다. 저장된 정보를 확인해 주세요.",
   recovery_preview_stale: "복구 대상이 변경되었습니다. 미리보기를 다시 확인해 주세요.",
   recovery_unavailable: "저장된 복구 내용을 확인하지 못했습니다.",
+  lsp_operation_cancelled: "LSP 설치 작업이 취소되었습니다.",
+  lsp_install_busy: "다른 LSP 설치 작업이 진행 중입니다.",
+  lsp_index_corrupt: "관리형 서버 설치 목록 복구가 필요합니다.",
+  lsp_install_failed: "관리형 서버 설치를 완료하지 못했습니다. 파일 검증과 연결 상태를 확인해 주세요.",
+  lsp_archive_selection_invalid: "archive 선택이 만료되었습니다. 파일을 다시 선택해 주세요.",
+  lsp_archive_changed: "선택한 archive가 변경되었습니다. 파일을 다시 선택해 주세요.",
+  lsp_archive_unsafe: "연결된 경로 대신 실제 archive 파일을 선택해 주세요.",
+  lsp_archive_limit: "archive 선택은 32개·합계 512 MiB까지 가능합니다.",
   request_expired: "작업 대기 시간이 초과되었습니다. 다시 시도해 주세요.",
 };
 export function issueMessage(issue: string): string { return issues[issue] ?? "작업을 완료하지 못했습니다. 상태를 확인하고 다시 시도해 주세요."; }
@@ -93,7 +101,7 @@ export async function nativeCall<T>(component: string, method: string, args: Rec
 export async function componentCall<T>(description: Description, component: string, method: string, args: Record<string, unknown>, route: string): Promise<T> {
   const header = makeRequest(description.handshake, route, Date.now(), description.context);
   // Stay inside the native 30-second ceiling across renderer/native clock precision.
-  if (component === "workspace.dependencies" || component === "workspace.source") header.deadlineMs += 24_000;
+  if (component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp") header.deadlineMs += 24_000;
   const provenance = { product: "workspace", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: {operation: unknown; value: T & {issue?: string}};
   try {response = await invoke("plugin:workspace|execute", {request:{header, component, method, args}});}

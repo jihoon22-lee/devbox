@@ -8,6 +8,8 @@ $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('devbox-file-dialog-'+[guid]:
 $exe=Join-Path $fixtureRoot 'NativeDialogProbe.exe'
 $chosen=Join-Path $fixtureRoot '한글 selected.txt'
 [IO.File]::WriteAllText($chosen,'synthetic chooser fixture')
+$secondChosen=Join-Path $fixtureRoot '한글 second.txt'
+[IO.File]::WriteAllText($secondChosen,'synthetic multi-file fixture')
 $code=@'
 using System;
 using System.IO;
@@ -21,7 +23,7 @@ public static class NativeDialogProbe {
             dialog.InitialDirectory=args[0];
             dialog.Multiselect=true;
             if(dialog.ShowDialog()!=DialogResult.OK) return 2;
-            File.WriteAllText(args[1],dialog.FileName);
+            File.WriteAllLines(args[1],dialog.FileNames);
             return 0;
         }
     }
@@ -30,17 +32,23 @@ public static class NativeDialogProbe {
 $process=$null
 try {
     Add-Type -TypeDefinition $code -ReferencedAssemblies System.Windows.Forms,System.Drawing -OutputAssembly $exe -OutputType WindowsApplication
-    foreach($action in @('Cancel','Open')) {
+    foreach($action in @('Cancel','Open','Multi')) {
         $result=Join-Path $fixtureRoot ('result-'+$action+'.txt')
         $process=Start-Process -FilePath $exe -ArgumentList ('"'+$fixtureRoot+'" "'+$result+'"') -PassThru
         $null=$process.Handle
         $process.Refresh()
-        & $Driver -TargetProcessId $process.Id -ExpectedExecutable $exe -FixtureRoot $fixtureRoot -Action $action -SelectedFile $chosen
+        $driverAction=if($action -eq 'Multi'){'Open'}else{$action}
+        $selectionJson=if($action -eq 'Multi'){@($chosen,$secondChosen)|ConvertTo-Json -Compress}else{@($chosen)|ConvertTo-Json -Compress}
+        & $Driver -TargetProcessId $process.Id -ExpectedExecutable $exe -FixtureRoot $fixtureRoot -Action $driverAction -SelectedFilesJson $selectionJson
         if(-not $process.WaitForExit(5000)){throw 'Fixture chooser did not close'}
-        $expectedExit=if($action -eq 'Open'){0}else{2}
+        $expectedExit=if($action -eq 'Cancel'){2}else{0}
         if($process.ExitCode -ne $expectedExit){throw 'Fixture chooser returned an unexpected exit code'}
-        if($action -eq 'Open') {
-            if(-not [IO.File]::Exists($result) -or [IO.File]::ReadAllText($result) -ne $chosen){throw 'Fixture chooser selected a different file'}
+        if($action -ne 'Cancel') {
+            if(-not [IO.File]::Exists($result)){throw 'Fixture chooser did not publish its selection'}
+            $actual=@([IO.File]::ReadAllLines($result)|ForEach-Object{[WorkspaceFixturePath]::Canonical($_)})
+            $expected=if($action -eq 'Multi'){@($chosen,$secondChosen)}else{@($chosen)}
+            if($actual.Count -ne @($expected).Count){throw 'Fixture chooser selected a different number of files'}
+            foreach($file in $expected){if($actual -notcontains [WorkspaceFixturePath]::Canonical($file)){throw 'Fixture chooser selected a different file'}}
         } elseif([IO.File]::Exists($result)) {throw 'Cancelled fixture chooser published a file'}
         Write-Output ('Native owned chooser '+$action+': PASS')
         $process.Dispose()

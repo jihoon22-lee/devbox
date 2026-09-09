@@ -9,6 +9,7 @@ import {
   lspInstalled,
   loadLspConfig,
   pickLspArchives,
+  discardLspArchives,
   recoverInstalledLsp,
   restartLanguageServer,
   saveLspConfig,
@@ -34,6 +35,7 @@ vi.mock("../api", () => ({
   lspInstalled: vi.fn(),
   loadLspConfig: vi.fn(),
   pickLspArchives: vi.fn(),
+  discardLspArchives: vi.fn().mockResolvedValue(undefined),
   recoverInstalledLsp: vi.fn(),
   saveLspConfig: vi.fn(),
   startLanguageServer: vi.fn(),
@@ -170,6 +172,7 @@ beforeEach(() => {
   installMock.mockReset().mockResolvedValue(undefined);
   importMock.mockReset().mockResolvedValue(undefined);
   pickArchiveMock.mockReset().mockResolvedValue([]);
+  vi.mocked(discardLspArchives).mockReset().mockResolvedValue(undefined);
   uninstallMock.mockReset().mockResolvedValue(undefined);
   recoverMock.mockReset().mockResolvedValue(undefined);
   saveMock.mockReset().mockResolvedValue(undefined);
@@ -452,6 +455,31 @@ describe("LspControlPanel", () => {
       manifest.platform,
       ["C:\\Users\\alice\\private-server.zip"],
     ));
+  });
+
+  it("releases archive choices on cancel, unmount and a late picker result", async () => {
+    const manifest = fixtureManifest();
+    catalogMock.mockResolvedValue([manifest]);
+    installedMock.mockResolvedValue([fixtureInstallStatus(manifest, "not_installed")]);
+    const release = vi.mocked(discardLspArchives);
+    pickArchiveMock.mockResolvedValue(["native-token-a"]);
+    const first = render(<ManagedInstallerPanel onChanged={() => undefined} />);
+    fireEvent.click(await first.findByRole("button", { name: "local archive 가져오기" }));
+    fireEvent.click(await first.findByRole("button", { name: "취소" }));
+    await waitFor(() => expect(release).toHaveBeenCalledWith(["native-token-a"]));
+    pickArchiveMock.mockResolvedValue(["native-token-b"]);
+    fireEvent.click(first.getByRole("button", { name: "local archive 가져오기" }));
+    await first.findByRole("button", { name: "가져오기 확인" });
+    first.unmount();
+    await waitFor(() => expect(release).toHaveBeenCalledWith(["native-token-b"]));
+    let resolvePicker!: (value: string[]) => void;
+    pickArchiveMock.mockImplementation(() => new Promise((resolve) => { resolvePicker = resolve; }));
+    const second = render(<ManagedInstallerPanel onChanged={() => undefined} />);
+    fireEvent.click(await second.findByRole("button", { name: "local archive 가져오기" }));
+    second.unmount();
+    await act(async () => resolvePicker(["native-token-late"]));
+    expect(release).toHaveBeenCalledWith(["native-token-late"]);
+    expect(importMock).not.toHaveBeenCalled();
   });
 
   it("passes a Node archive set without exposing the selected paths", async () => {

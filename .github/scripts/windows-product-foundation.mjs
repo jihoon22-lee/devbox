@@ -1,3 +1,4 @@
+import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
 // Runs only on a disposable GitHub-hosted Windows runner. Uses synthetic
 // product installations, never an installed user app or a legacy data store.
@@ -64,10 +65,11 @@ async function connect(port, child, deadline = performance.now() + 30_000) {
         return {
           close: () => socket.close(),
           command,
-          async evaluate(expression) {
+          async evaluate(expression, {timeoutMs=10_000} = {}) {
+            if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 660_000) throw new Error("Invalid fixture CDP deadline");
             const next = ++id;
             const result = await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => { pending.delete(next); writeFileSync("product-foundation-evidence/renderer-timeout.json", JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2)); reject(new Error(`CDP request timeout at ${currentProbe?.stage}`)); }, 10_000);
+              const timer = setTimeout(() => { pending.delete(next); writeFileSync("product-foundation-evidence/renderer-timeout.json", JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2)); reject(new Error(`CDP request timeout at ${currentProbe?.stage}`)); }, timeoutMs);
               pending.set(next, { resolve, reject, timer });
               socket.send(JSON.stringify({ id: next, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
             });
@@ -106,6 +108,8 @@ async function start(product, suffix) {
   writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:"debug",executableBytes:statSync(built).size},null,2));
   const port = await freePort();
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, "webview2") };
+  const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
+  if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
   const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
   let cdp, child;
   try {
@@ -167,7 +171,7 @@ async function start(product, suffix) {
     let componentProbe;
     if (product.id === "workspace") {
       progress(product, suffix, "workspace-registration");
-      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable});
+      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network});
     }
     if (product.id === "api-studio") {
       progress(product, suffix, "component-authority");
@@ -399,11 +403,12 @@ async function start(product, suffix) {
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
-    return { child, cdp, policy, handshake: description.handshake, startupMs, componentProbe };
-  } catch (error) { stop({ child, cdp, policy }); throw error; }
+    return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe };
+  } catch (error) { stop({ child, cdp, policy, network }); throw error; }
 }
 
 function stop(instance) {
+  instance?.network?.close();
   instance?.cdp?.close();
   if (instance?.child?.pid && instance.child.exitCode === null) {
     // Kill only the process tree created by this fixture.

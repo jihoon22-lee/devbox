@@ -129,6 +129,45 @@ process tests, Workspace **83 Rust tests** and both strict Clippy checks passed 
 **60.332 seconds**, cgroup peak **5,522,358,272 bytes** under 8 GiB. Final affected
 all passed in **392.131 seconds**, cgroup peak **6,443,929,600 bytes** under 8 GiB.
 
+Windows LSP installation now runs through its own bounded request/worker pool.
+Catalog, verified cache/local archive import, installed-index recovery and removal
+reuse the existing native installer. Long installs hold neither the Files mutex nor
+a project-selection permit. Shutdown signals download cancellation and waits for
+actual workers; cancelled caller futures cannot release the native worker early.
+The installer keeps its usual cleanup path after cancellation, and synchronous
+promotion/index work finishes before retirement. Execution/config-edit/WorkspaceEdit
+commands remain denied pending the context-specific LSP owner.
+
+Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
+180-second expiry, held file/parent identities and content metadata, no links,
+no protected product stores and no editor grant. Import validates all tokens before
+consumption, copies bounded private snapshots, then applies the existing exact
+catalog SHA-256/size/Node-lock verification. Cancel/unmount/late picker results release
+choices. Snapshot cleanup removes only the owner's known files and preserves unknown
+entries or changed roots. Focused **29 installer tests, 89 Workspace Rust tests,
+strict Clippy, 26 LSP UI tests and product build** passed; the combined final run was
+**59.385 seconds**, cgroup peak **4,563,910,656 bytes** under 8 GiB.
+
+[d612d4a general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34294469016)
+passed. Its [Windows run](https://github.com/jihoon22-lee/devbox/actions/runs/34294469013)
+passed the chooser driver and history UI, then a later native request exceeded the
+fixture's 10-second CDP deadline. The truncated expression did not identify the exact
+method. Native fixture calls now allow 35 seconds for the 29-second native admission
+budget, with bounded method/state/issue/timing records and owned-dialog diagnostics.
+No cleanup or packaged dialog completion is inferred from that failed run.
+
+The new Windows installer fixture confines the app's HTTPS traffic to a local failing
+proxy, verifies Files editing while a download waits, then imports catalog-hashed
+Rust and Node archives through the actual chooser. It checks explicit UI uninstall,
+cancelled install confirmation, cache reinstall with no proxy requests, Node closure
+multi-selection and no server auto-start. Actual packaged execution is pending.
+Local Windows disposable chooser **cancel, single selection and Korean multi-file
+selection all passed**. Two earlier multi-selection driver attempts failed on
+PowerShell collection unrolling; explicit typed input collection fixed that failure.
+Final focused Rust/Clippy/UI/build and **5 Node fixture regressions** passed in
+**19.295 seconds**, cgroup peak **1,561,645,056 bytes** under 8 GiB. Final affected
+all passed in **390.914 seconds**, cgroup peak **6,216,245,248 bytes** under 8 GiB.
+
 ## Actual verification
 
 The extracted shared UI passed 307 tests and the original native suites passed

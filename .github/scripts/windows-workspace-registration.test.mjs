@@ -36,7 +36,7 @@ import {Script} from "node:vm";
 const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
 test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
   let checked=0;
-  for(const name of ["registration","definitions","dependencies","source","files"]){
+  for(const name of ["registration","definitions","dependencies","source","files","lsp"]){
     const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
     const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));
@@ -59,7 +59,7 @@ test("Workspace renderer probes contain valid decoded JavaScript expressions",()
 });
 
 test("long feature fixture requests select their own route inside the native deadline ceiling", async()=>{
-  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"]]) {
+  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"],["workspace.lsp","files"]]) {
   let sent;
   await runInNewContext(workspaceRequestExpression(component,"fixture_method",{request:{path:"C:\\fixture"}}),{
     window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>command==="plugin:product-shell|describe"?{handshake:{installationId:"installation",sessionId:"session"},context:null}:(sent=input.request)}},
@@ -77,4 +77,22 @@ test("native component rejection retains its structured problem in renderer diag
       throw {code:"unauthorized",provenance:{component:"workspace.source"}};
     }}},crypto:{randomUUID:()=>"request"},Date:{now:()=>1000},
   }),/Native Workspace request rejected:.*unauthorized/);
+});
+
+import {createWorkspaceLspProxy} from "./windows-workspace-lsp.mjs";
+import {createConnection} from "node:net";
+import {once} from "node:events";
+test("owned LSP proxy holds then rejects requests without forwarding",async()=>{
+  const proxy=await createWorkspaceLspProxy();
+  const address=new URL(proxy.url);
+  const socket=createConnection({host:address.hostname,port:Number(address.port)});
+  try {
+    await once(socket,"connect");proxy.hold();
+    const chunks=[];socket.on("data",chunk=>chunks.push(chunk));
+    socket.write("CONNECT registry.npmjs.org:443 HTTP/1.1\r\nHost: registry.npmjs.org:443\r\n\r\n");
+    await proxy.waitForAttempt(0);assert.equal(chunks.length,0);
+    const ended=once(socket,"end");proxy.release();await ended;
+    assert.match(Buffer.concat(chunks).toString(),/^HTTP\/1\.1 502 Fixture Offline/);
+    assert.equal(proxy.attempts(),1);
+  } finally {socket.destroy();proxy.close();}
 });

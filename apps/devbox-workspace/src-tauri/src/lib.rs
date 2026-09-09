@@ -4,6 +4,7 @@ mod definitions;
 pub mod file_owner;
 mod files_host;
 pub mod host;
+mod lsp_host;
 pub mod platform;
 mod private_metadata;
 pub mod project_owner;

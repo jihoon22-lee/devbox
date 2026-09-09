@@ -255,6 +255,13 @@ export async function pickLspArchives(): Promise<string[]> {
   return typeof selected === "string" ? [selected] : [];
 }
 
+/** Release opaque product picker choices. Standalone paths have no native lease. */
+export async function discardLspArchives(archivePaths: string[]): Promise<void> {
+  if (isProductHosted() && archivePaths.length > 0) {
+    await componentInvoke("workspace.lsp")<void>("discard_lsp_archives", { archivePaths });
+  }
+}
+
 export function importLspArchives(
   manifestId: string,
   version: string,
