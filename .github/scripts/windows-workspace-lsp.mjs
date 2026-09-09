@@ -244,12 +244,27 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
   };
   assert.equal((await hover()).stale,false);
   await waitForRenderer(cdp,'window.__workspaceLspTrace.rows.length>0',"Native editor trace did not observe IPC fetches");
+  const previousChanges=await cdp.evaluate('window.__workspaceLspTrace.rows.filter(row=>row.method==="change_lsp_document"&&row.phase==="succeeded").length');
   await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").focus()');
   await cdp.command("Input.insertText",{text:"// editor\n"});
   const dirty='Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs")&&tab.textContent.includes("●"))';
   await waitForRenderer(cdp,dirty,"LSP editor change did not remain dirty");
+  await waitForRenderer(cdp,`window.__workspaceLspTrace.rows.filter(row=>row.method==="change_lsp_document"&&row.phase==="succeeded").length>${previousChanges}`,"Native editor change did not synchronize");
+  // Keep an actual native LSP read active across the user's Save click. The
+  // file request must wait for its permit, without resubmitting a failed save.
+  const reading=lsp("request_lsp_hover",{languageId:"rust",uri,position:{line:0,character:2}}).then(result=>({result}),error=>({error}));
+  let readingStarted=false;
+  for(let attempt=0;attempt<100;attempt+=1){
+    if(existsSync(marker+".hover")){readingStarted=true;break;}
+    await delay(10);
+  }
+  assert.ok(readingStarted,"Native LSP read did not hold the fixture request");
   await click("저장",'document.querySelector(".workspace-feature-files")');
+  const readResult=await reading;
+  assert.ok(!readResult.error,"The concurrent native LSP read failed");
+  assert.equal(success(readResult.result).stale,false);
   await waitForRenderer(cdp,`!(${dirty})`,"LSP editor save did not settle");
+  await waitForRenderer(cdp,'window.__workspaceLspTrace.rows.filter(row=>row.method==="save_file").length===1&&window.__workspaceLspTrace.rows.some(row=>row.method==="save_file"&&row.phase==="succeeded")',"Native save did not complete exactly once");
   assert.ok(readFileSync(file,"utf8").includes("// editor"));
   await waitForRenderer(cdp,'window.__workspaceLspTrace.rows.some(row=>row.method==="save_lsp_document"&&row.phase==="succeeded")',"Native editor didSave did not complete");
   assert.equal((await hover()).stale,false);
@@ -262,7 +277,7 @@ async function exerciseWorkspaceLspExecution({cdp,root,call,success,waitForRende
   success(await lsp("save_lsp_config",{config:original.config,nativeRevision:current.nativeRevision,recoverInvalid:false}));
   await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files .document-tab")).find(tab=>tab.textContent.includes("lsp-owner-main.rs"))?.querySelector(".tab-action").click()');
   await waitForRenderer(cdp,'!Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("lsp-owner-main.rs"))',"LSP editor fixture did not close");
-  return {explicitNativeExecutionReview:true,approvalDoesNotAutoStart:true,actualNodeLspInitialize:true,codeMirrorDidOpenChangeSaveHover:true,revocationConfirmsNativeShutdown:true};
+  return {explicitNativeExecutionReview:true,approvalDoesNotAutoStart:true,actualNodeLspInitialize:true,codeMirrorDidOpenChangeSaveHover:true,saveWaitsForNativeLspReadWithoutReplay:true,revocationConfirmsNativeShutdown:true};
   } finally {
     const trace=await cdp.evaluate('(()=>{const trace=window.__workspaceLspTrace;trace.restore();delete window.__workspaceLspTrace;return trace.rows;})()');
     writeFileSync("product-foundation-evidence/workspace-lsp-editor-sync.json",JSON.stringify(trace,null,2));

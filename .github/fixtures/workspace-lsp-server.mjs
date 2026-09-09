@@ -15,7 +15,13 @@ process.stdin.on("data",chunk=>{
     const message=JSON.parse(buffer.subarray(boundary+4,end));buffer=buffer.subarray(end);
     if(message.method==="initialize"){
       if(mode!=="hang-initialize")send(message.id,{capabilities:{textDocumentSync:{openClose:true,change:1,save:true},hoverProvider:true,renameProvider:true,completionProvider:{},definitionProvider:true,referencesProvider:true,documentFormattingProvider:true,diagnosticProvider:{interFileDependencies:false,workspaceDiagnostics:false}},serverInfo:{name:"Workspace fixture",version:"1"}});
-    }else if(message.method==="textDocument/hover")send(message.id,{contents:{kind:"plaintext",value:"fixture hover"}});
+    }else if(message.method==="textDocument/hover"){
+      const reply=()=>send(message.id,{contents:{kind:"plaintext",value:"fixture hover"}});
+      if(mode==="documents"&&message.params.position.character===2){
+        writeFileSync(marker+".hover","pending");
+        setTimeout(reply,750);
+      }else reply();
+    }
     else if(message.method==="textDocument/rename"){
       const uri=message.params.textDocument.uri;
       const edit={range:{start:{line:0,character:4},end:{line:0,character:9}},newText:message.params.newName};

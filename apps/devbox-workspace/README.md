@@ -274,3 +274,10 @@ The host excludes concurrent Git/editor writes during definition operations.
 Actual local WSL1/WSL2 pipe checks passed for definition creation/read/change/replay
 boundaries. The expanded Windows Registry/overlay fixture awaits its new CI run.
 WSL reveal, Git/LSP, references/providers and remaining R24 acceptance are incomplete.
+
+File saves and reviewed definition writes wait for active filesystem readers before
+entering their native worker, within the original deadline. Waiting holds no Files
+mutex and never retries an executed operation. Expiry/shutdown rejects the wait;
+the original context and snapshot checks still precede IO. This addresses the
+`5571786` packaged save rejection during an LSP read; the forced-overlap Windows
+fixture awaits its next run.

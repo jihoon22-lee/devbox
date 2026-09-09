@@ -47,6 +47,7 @@ const issues: Record<string, string> = {
   initializing: "저장된 정보를 불러오고 있습니다.",
   busy: "앞선 작업이 끝난 뒤 다시 시도해 주세요.",
   context_busy: "파일 또는 Git 작업이 진행 중입니다. 완료나 취소를 확인한 뒤 다시 시도해 주세요.",
+  request_cancelled: "작업이 취소되었습니다.",
   store_owner_busy: "다른 작업에서 저장소를 사용하고 있습니다.",
   legacy_window_unavailable: "검증을 마친 기존 창 상태가 필요합니다. 보관 내용을 다시 확인해 주세요.",
   window_state_invalid: "창 위치와 크기의 저장 형식을 확인하지 못했습니다. 원본을 유지합니다.",

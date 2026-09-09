@@ -87,6 +87,40 @@ impl Default for Runtime {
     }
 }
 impl Runtime {
+    /// A file write waits before entering a worker or taking the Files mutex.
+    /// The existing bounded request pool owns the waiter; admission is not an
+    /// IO retry and never repeats authentication or a partially executed save.
+    async fn filesystem_permit(
+        &self,
+        write: bool,
+        deadline: u64,
+    ) -> Result<crate::core::context_activity::ContextPermit, &'static str> {
+        crate::files_host::current_deadline(deadline)?;
+        if self.shutdown_started.load(Ordering::Acquire) {
+            return Err("request_cancelled");
+        }
+        if !write {
+            return self.filesystem_activity.enter(false);
+        }
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis();
+        let remaining = u128::from(deadline).saturating_sub(now).min(30_000) as u64;
+        self.filesystem_activity
+            .enter_change(
+                std::time::Instant::now() + Duration::from_millis(remaining),
+                &self.shutdown_started,
+            )
+            .await
+            .map_err(|issue| {
+                if issue == "context_expired" {
+                    "request_expired"
+                } else {
+                    "request_cancelled"
+                }
+            })
+    }
     #[cfg(windows)]
     fn start_wsl_poll(&self, app: tauri::AppHandle) {
         use tauri::Emitter;
@@ -457,9 +491,18 @@ async fn execute_files(
     } else {
         None
     };
-    let filesystem = file_access(&request.method)
-        .map(|write| runtime.filesystem_activity.enter(write))
-        .transpose()?;
+    let filesystem = match file_access(&request.method) {
+        Some(write) => Some(runtime.filesystem_permit(write, deadline).await?),
+        None => None,
+    };
+    // The context permit prevents a project switch while waiting. A closed or
+    // replaced window must still not admit a delayed file operation.
+    if product_shell_tauri::workspace_context(window).map_err(|_| "file_context_changed")?
+        != request.header.context
+    {
+        return Err("file_context_changed");
+    }
+    crate::files_host::current_deadline(deadline)?;
     let worker = runtime
         .file_workers
         .clone()
@@ -1271,9 +1314,18 @@ async fn execute(
         let host = runtime.host();
         let owner = runtime.definitions.clone();
         let permit = runtime.probes.reserve();
-        let filesystem = definition_access(&request.method)
-            .map(|write| runtime.filesystem_activity.enter(write))
-            .transpose();
+        let filesystem = match definition_access(&request.method) {
+            Some(write) => runtime.filesystem_permit(write, deadline).await.map(Some),
+            None => Ok(None),
+        }
+        .and_then(|permit| {
+            if product_shell_tauri::workspace_context(&window).map_err(|_| "stale_context")?
+                != request.header.context
+            {
+                return Err("stale_context");
+            }
+            Ok(permit)
+        });
         match (host, permit, filesystem) {
             (Ok(host), Ok(permit), Ok(filesystem)) => {
                 let worker_context = context_permit.clone();
@@ -1566,6 +1618,57 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    fn after_ms(milliseconds: u64) -> u64 {
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + milliseconds
+    }
+    #[tokio::test]
+    async fn a_file_write_waits_for_the_retained_reader_and_enters_only_once() {
+        let runtime = Runtime::default();
+        let caller = runtime.filesystem_activity.enter(false).unwrap();
+        let worker = caller.clone();
+        drop(caller);
+        let executions = std::sync::atomic::AtomicUsize::new(0);
+        let mut write = Box::pin(async {
+            let permit = runtime.filesystem_permit(true, after_ms(2_000)).await?;
+            executions.fetch_add(1, Ordering::SeqCst);
+            Ok::<_, &'static str>(permit)
+        });
+        assert!(tokio::time::timeout(Duration::from_millis(15), &mut write)
+            .await
+            .is_err());
+        assert_eq!(executions.load(Ordering::SeqCst), 0);
+        drop(worker);
+        let permit = write.await.unwrap();
+        assert_eq!(executions.load(Ordering::SeqCst), 1);
+        assert!(runtime.filesystem_activity.enter(false).is_err());
+        assert!(runtime.filesystem_activity.enter(true).is_err());
+        drop(permit);
+        assert!(runtime.filesystem_activity.enter(false).is_ok());
+    }
+    #[tokio::test]
+    async fn an_expired_or_cancelled_file_wait_does_not_admit_a_write() {
+        let runtime = Runtime::default();
+        let reader = runtime.filesystem_activity.enter(false).unwrap();
+        assert!(matches!(
+            runtime.filesystem_permit(true, after_ms(15)).await,
+            Err("request_expired")
+        ));
+        runtime.shutdown_started.store(true, Ordering::Release);
+        assert!(matches!(
+            runtime.filesystem_permit(true, after_ms(2_000)).await,
+            Err("request_cancelled")
+        ));
+        drop(reader);
+        assert!(matches!(
+            runtime.filesystem_permit(true, after_ms(2_000)).await,
+            Err("request_cancelled")
+        ));
+        assert!(runtime.filesystem_activity.enter(true).is_ok());
+    }
     #[test]
     fn template_writes_are_overview_registry_only() {
         for method in ["save_template", "archive_template"] {

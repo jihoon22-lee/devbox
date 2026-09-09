@@ -181,7 +181,9 @@ fixture distributions/directories were removed. Existing user distributions/data
 were not fixtures. These local pipe results are distinct from the expanded Windows
 Registry/trust/local-overlay fixture. That expanded actual WSL1 Rust/helper fixture
 now passed at `5571786` in **6.94 s** in [run 34404024294](https://github.com/jihoon22-lee/devbox/actions/runs/34404024294);
-its remaining general/packaged checks are still running.
+its [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34404024291) also passed.
+The product run passed native Workspace 135 tests, API Studio/Knowledge and
+installer coexistence, but packaged LSP editor save failed as detailed below.
 
 Final `pnpm verify:affected` selected all and passed in **498.179 s**, sampled RSS
 **6,445,371,392 B**, cgroup **6,444,003,328 B / 8 GiB**. New CI results remain pending.
@@ -214,6 +216,34 @@ double-fork/setsid and repeated waitid WNOWAIT followed by exact child reaping.
 WSL1 has no pidfd_open; WSL2 provides it. All synthetic distributions/directories
 were removed. This is capability evidence for the next process owner, not Git/LSP
 execution acceptance. See [subreaper semantics](https://www.man7.org/linux/man-pages/man2/PR_SET_CHILD_SUBREAPER.2const.html).
+
+## File save admission during LSP reads
+
+At `5571786`, the packaged trace recorded `save_file` failing with `context_busy`
+after 11 ms while LSP document work was active. No save began and the dirty buffer
+remained. Earlier full `01db848` acceptance did not expose this scheduling race.
+
+File and definition writers now wait for exclusive filesystem admission within
+the original request deadline and existing bounded queue. The wait owns no Files
+mutex/worker, does not repeat authentication or IO, and checks shutdown/expiry.
+After admission the original context and deadline are checked again before normal
+snapshot-guarded IO. Read operations and private recovery metadata keep their
+existing admission. Cancelled/expired waits cannot begin a write.
+
+Native regressions for retained readers, exactly-one admission, expiry and shutdown
+plus Linux Clippy PASS (**75.762 s**, sampled RSS **4,303,204,352 B**). Generated
+Windows fixture expression/request tests **9 PASS**, full Workspace MSVC all-target
+strict Clippy PASS (**10.675 s**, sampled RSS **1,506,586,624 B**). The packaged
+fixture now holds a real LSP hover read across Save and requires one successful
+save before didSave/second hover; its actual Windows run is pending.
+
+Final affected all PASS: **549.444 s**, sampled RSS **5,879,857,152 B**,
+cgroup **6,444,339,200 B / 8 GiB**.
+
+The owned kernel probe also verified `/proc/self/exe` reexecution and parent-death
+SIGTERM delivery/reaping on WSL1 and WSL2. WSL1 lacks `/proc/self/task/<pid>/children`
+as well as pidfd, so the future process owner must not depend on either. Both
+probe distributions and owned directories were removed.
 
 ## Remaining acceptance and rollback limits
 
