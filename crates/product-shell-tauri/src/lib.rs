@@ -158,7 +158,7 @@ pub fn workspace_context(window: &WebviewWindow) -> Result<Option<ProjectContext
     }
     let context = state
         .session
-        .try_lock()
+        .lock()
         .map_err(|_| "context_busy")?
         .context()
         .cloned();
@@ -184,7 +184,7 @@ pub fn replace_project_context(
     if now > u128::from(deadline_ms) {
         return Err("context_selection_expired");
     }
-    let mut session = state.session.try_lock().map_err(|_| "context_busy")?;
+    let mut session = state.session.lock().map_err(|_| "context_busy")?;
     if session.context() != expected {
         return Err("stale_context");
     }

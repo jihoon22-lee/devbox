@@ -36,6 +36,7 @@ struct Runtime {
     shutdown_started: Arc<AtomicBool>,
     exit_authorized: Arc<AtomicBool>,
     context_activity: crate::core::context_activity::ContextActivity,
+    context_waiters: Pool,
     filesystem_activity: crate::core::context_activity::ContextActivity,
     definitions: Arc<Mutex<crate::definitions::Definitions>>,
     source: Arc<Mutex<crate::source_host::SourceHost>>,
@@ -62,6 +63,7 @@ impl Default for Runtime {
             shutdown_started: Arc::default(),
             exit_authorized: Arc::default(),
             context_activity: Default::default(),
+            context_waiters: Pool::default(),
             filesystem_activity: Default::default(),
             definitions: Arc::default(),
             source: Arc::default(),
@@ -1154,8 +1156,13 @@ async fn execute(
     let dependencies = request.component == "workspace.dependencies";
     let source = request.component == "workspace.source";
     let context_change = changes_context(&request.method);
-    // Acquire before checking the session, and retain through queued/native
-    // work. Worker clones keep the boundary after caller timeout/cancellation.
+    // Authenticate/replay-check once before waiting. A single bounded waiter
+    // holds no context permit, so active file/metadata workers can retire.
+    let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
+    let problem = |code| Problem {
+        code,
+        provenance: provenance.clone(),
+    };
     let context_permit = if files
         || definitions
         || dependencies
@@ -1163,16 +1170,58 @@ async fn execute(
         || context_change
         || (lsp && crate::lsp_host::contextual(&request.method))
     {
-        Some(
-            runtime
-                .context_activity
-                .enter(context_change)
-                .map_err(|_| rejected(ProblemCode::Unavailable))?,
-        )
+        if context_change {
+            let _waiting = runtime
+                .context_waiters
+                .reserve_with_limit(1)
+                .map_err(|_| problem(ProblemCode::Overloaded))?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| problem(ProblemCode::Expired))?
+                .as_millis();
+            let remaining = u128::from(request.header.deadline_ms)
+                .saturating_sub(now)
+                .min(30_000) as u64;
+            let deadline = std::time::Instant::now() + Duration::from_millis(remaining);
+            Some(
+                runtime
+                    .context_activity
+                    .enter_change(deadline, &runtime.shutdown_started)
+                    .await
+                    .map_err(|issue| {
+                        problem(if issue == "context_expired" {
+                            ProblemCode::Expired
+                        } else {
+                            ProblemCode::Unavailable
+                        })
+                    })?,
+            )
+        } else {
+            Some(
+                runtime
+                    .context_activity
+                    .enter(false)
+                    .map_err(|_| problem(ProblemCode::Unavailable))?,
+            )
+        }
     } else {
         None
     };
-    let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
+    if context_permit.is_some() {
+        // Selection may have changed between authentication and admission.
+        // Recheck under the retained permit without replaying authorization.
+        if product_shell_tauri::workspace_context(&window)
+            .map_err(|_| problem(ProblemCode::Unavailable))?
+            != request.header.context
+        {
+            return Err(problem(ProblemCode::StaleContext));
+        }
+        crate::files_host::current_deadline(request.header.deadline_ms)
+            .map_err(|_| problem(ProblemCode::Expired))?;
+        if runtime.shutdown_started.load(Ordering::Acquire) {
+            return Err(problem(ProblemCode::Unavailable));
+        }
+    }
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
