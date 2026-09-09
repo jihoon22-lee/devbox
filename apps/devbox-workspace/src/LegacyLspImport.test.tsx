@@ -9,9 +9,9 @@ const call=vi.mocked(componentCall),description={context:{projectId:"project"}} 
 const preview={previewId:"native-preview",config:{enabled:false,workspace_root:"C:/new",server_by_language:{rust:{kind:"custom",executable:"missing-server",args:[]}}},currentConfig:{enabled:true,workspace_root:"C:/current"},conflict:true,alreadyImported:false,restoring:false};
 afterEach(cleanup);
 beforeEach(()=>{call.mockReset();});
-it("reviews disabled configuration and sends only a one-use token after explicit replacement",async()=>{
+it.each(["code-pad","code-pad-legacy"])("reviews disabled configuration and sends only a one-use token after explicit replacement (%s)",async(source)=>{
   call.mockImplementation(async(_description,_component,method)=>{
-    if(method==="legacy_snapshot_job")return {id:"verified-job",source:"code-pad",phase:"ready"};
+    if(method==="legacy_snapshot_job")return {id:"verified-job",source,phase:"ready"};
     if(method==="preview_lsp_config_import")return preview;
     if(method==="apply_lsp_config_import")return {reused:false,restored:false};
     throw new Error(`unexpected request: ${method}`);

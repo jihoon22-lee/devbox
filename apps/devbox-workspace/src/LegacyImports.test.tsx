@@ -12,20 +12,20 @@ const ready={operation:"preserve",id:"native-job",source:"code-pad",phase:"ready
   {name:"session.json",bytes:200,sha256:"fixture",records:2,issue:null},
   {name:"recovery.json",bytes:20,sha256:"fixture",records:null,issue:"unsupported-schema"},
 ],missing:["lsp/config.json"]}};
-it("only prepares a selected native source and distinguishes unsupported data from imported records",async()=>{
+it.each(["code-pad","code-pad-legacy"])("only prepares selected source %s and distinguishes unsupported data",async(source)=>{
   let state:unknown=null;
   call.mockImplementation(async(_component,method)=>{
     if(method==="list_legacy_snapshots")return emptyCatalog;
-    if(method==="prepare_legacy_snapshot"){state=ready;return ready;}
+    if(method==="prepare_legacy_snapshot"){state={...ready,source};return state;}
     if(method==="legacy_snapshot_job")return state;
     throw new Error("unexpected mutation");
   });
   const {container}=render(<LegacyImports/>);
   expect(call.mock.calls.some(([,method])=>method==="prepare_legacy_snapshot")).toBe(false);
-  fireEvent.change(screen.getByRole("combobox"),{target:{value:"code-pad"}});
+  fireEvent.change(screen.getByRole("combobox"),{target:{value:source}});
   fireEvent.click(screen.getByRole("button",{name:"설정 확인 및 보관"}));
   await screen.findByText("설정 보관이 완료되었습니다.");
-  expect(call).toHaveBeenCalledWith("workspace.migration","prepare_legacy_snapshot",{source:"code-pad"});
+  expect(call).toHaveBeenCalledWith("workspace.migration","prepare_legacy_snapshot",{source});
   expect(screen.getByText("2개 항목")).toBeTruthy();expect(screen.getByText("지원하지 않는 형식 — 원본 보관")).toBeTruthy();
   expect(screen.getByText("저장 파일 없음: 언어 서버 설정")).toBeTruthy();
   expect(call.mock.calls.every(([,method])=>["prepare_legacy_snapshot","legacy_snapshot_job","list_legacy_snapshots"].includes(method))).toBe(true);

@@ -1,3 +1,4 @@
+import {isCodePadSource} from "./legacySources";
 import {useEffect,useRef,useState} from "react";
 import type {Description} from "@devbox/product-shell/api";
 import {componentCall,issueMessage} from "./native";
@@ -33,7 +34,7 @@ export default function LegacySessionImport({description,disabled,onBusyChange,o
     </section>}
     {!preview&&<button disabled={busy||disabled} onClick={()=>void act(async()=>{
       const job=await componentCall<{id:string;source:string;phase:string}|null>(description,"workspace.migration","legacy_snapshot_job",{},"overview");
-      if(!job||job.source!=="code-pad"||job.phase!=="ready")throw new Error("Overview에서 Code Pad 보관본의 내용을 먼저 확인해 주세요.");
+      if(!job||!isCodePadSource(job.source)||job.phase!=="ready")throw new Error("Overview에서 Code Pad 보관본의 내용을 먼저 확인해 주세요.");
       const next=await call<Preview>("preview_session_import",{jobId:job.id});
       if(!alive.current){await call("cancel_session_import",{previewId:next.previewId});return;}
       pending.current=next.previewId;setPreview(next);setReplace(false);setResult(null);

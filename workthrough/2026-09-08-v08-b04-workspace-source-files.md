@@ -225,3 +225,15 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - [870f8a8 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34336335989)은 native authority/WAL, 템플릿 9개, Source 22개, Files 9개, 실제 복구 후 편집기 재열기·반복·이전 복구 복원, LSP 설정 import를 통과했다. API/Knowledge와 설치 공존도 통과했다. 전체 packaged 결과는 FAIL: `windows-workspace-session-import.mjs:127`의 의도적으로 오래된 LSP 저장 요청이 6ms 만에 `unavailable / workspace.dispatch / rejected`로 admission 전 거부되어 revision 충돌 확인까지 도달하지 못했다. background context activity와의 경합이며 수락된 쓰기 결과가 아니다. artifact의 source는 해당 PR merge SHA `95e6732daa39c154fdede8a47d68f7b2031109cf`다.
 - fixture 요청은 정확히 이 native pre-admission envelope만 최대 20회·50ms 간격으로 재시도한다. 원래 문맥/입력/deadline을 고정하고 새 request ID를 사용한다. 수락된 실패, transport 실패, 다른 권한/출처 오류는 재시도하지 않는다. native 권한·context exclusion은 유지한다. 템플릿과 창 상태 증거는 각각 완료 직후 기록한다.
 - generated JavaScript와 fresh-ID/fixed-context/deadline, 재시도 상한, accepted/ambiguous failure 비재시도 **7개** PASS(0.520초). 최종 `pnpm verify:affected` all PASS(**369.214초 / peak 1,651,732,480 bytes / 8 GiB**). 다음 Windows 결과는 완료 후 기록한다.
+
+## 이전 Code Pad identifier의 독립 가져오기
+
+- 기존 standalone에 남아 있는 `com.workbench.codepad`를 명시적 `code-pad-legacy` source로 추가했다. 현재 `com.devbox.codepad`와 각각 선택해 보관하며 고정 native identifier만 허용한다. 원본 root 이름 변경·병합·자동 조회를 하지 않는다. 같은 bytes도 source별 snapshot ID를 유지한다.
+- 세션·미저장 복구·LSP 설정·마지막 폴더·창 상태가 기존 검증 완료 job 및 명시적 적용 절차를 사용한다. current/older 동시 존재, 원본 bytes 유지, 이전 원본 제거와 재시작 후 보관본 검증·읽기, 같은 bytes의 독립 ID, corrupt/future window 및 동적 identifier 거부를 검증했다. Registry 선택/신뢰는 바꾸지 않는다.
+- 집중 Rust importer/inventory/snapshot 및 strict Clippy, Workspace UI 52개·build·generated request 7개 PASS(**42.476초 / peak 2,726,805,504 bytes / 8 GiB**). 초기 검증의 test expression 치환 오류를 바로잡고 위 검증을 다시 실행했다. 최종 `pnpm verify:affected` all PASS(**646.062초 / peak 6,444,781,568 bytes / 8 GiB**). 이 실행 중 아래 생성 고지 파일을 갱신했으며 이후 전체 Rust compile/test도 완료했다.
+- hosted Windows 세션 fixture는 두 전용 원본을 함께 둔 상태에서 이전 source만 보관하고, 원본 제거 후 재검증·offline metadata 조회와 current 원본/Registry 보존을 확인한 뒤 기존 전체 세션 흐름으로 이어진다. Windows 실행은 다음 head에서 확인한다.
+
+## 고지 파일의 lockfile fingerprint 동기화
+
+- `161d2af` CI 의존성 정책은 취약점이 아닌 `THIRD_PARTY_NOTICES.md`의 오래된 Cargo.lock fingerprint 때문에 실패했다. 창 adapter의 직접 의존성 두 줄 추가 후 생성 파일 동기화가 빠져 있었다. CI의 pnpm audit는 알려진 취약점 없음으로 통과했다.
+- 저장소 생성기로 고지 파일을 다시 생성했다. diff는 Cargo.lock SHA-256 한 줄뿐이며 외부 의존성·버전·license 목록은 같다. 위 최종 affected all은 생성 이후 Rust compile/test까지 통과했다. 독립 dependency policy check도 PASS(2.326초)하여 Cargo.lock/pnpm-lock과 고지 파일 일치를 확인했다. 다음 CI에서 최종 결과를 확인한다.

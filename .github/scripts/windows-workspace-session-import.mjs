@@ -5,6 +5,48 @@ import {randomUUID} from "node:crypto";
 import path from "node:path";
 import {setTimeout as delay} from "node:timers/promises";
 
+async function exerciseOlderIdentifier({call,success,checkCurrent}) {
+  const sourceRoot=path.join(process.env.LOCALAPPDATA,"com.workbench.codepad");
+  mkdirSync(sourceRoot);
+  const ownedRoot=realpathSync.native(sourceRoot),nonce=randomUUID();
+  const marker=path.join(sourceRoot,".workspace-fixture-owner");
+  writeFileSync(marker,nonce,{flag:"wx"});
+  const folder=path.join(sourceRoot,"offline 이전 폴더");
+  const bytes=JSON.stringify({version:1,workspace_folder:folder,docs:[],views:[[],[]],active_view:0,active_doc_by_view:[null,null],recent_files:[]});
+  const file=path.join(sourceRoot,"session.json");
+  writeFileSync(file,bytes,{flag:"wx"});
+  let removed=false;
+  const remove=()=>{
+    assert.equal(realpathSync.native(sourceRoot),ownedRoot);
+    assert.equal(readFileSync(marker,"utf8"),nonce);
+    assert.equal(readFileSync(file,"utf8"),bytes);
+    assert.deepEqual(readdirSync(sourceRoot).sort(),[".workspace-fixture-owner","session.json"]);
+    unlinkSync(file);unlinkSync(marker);rmdirSync(sourceRoot);removed=true;
+  };
+  const wait=async()=>{
+    const deadline=performance.now()+10_000;
+    do {
+      const job=success(await call("workspace.migration","legacy_snapshot_job"));
+      if(job.phase==="ready")return job;
+      assert.notEqual(job.phase,"failed");await delay(100);
+    } while(performance.now()<deadline);
+    throw new Error("Older Code Pad snapshot did not finish");
+  };
+  try {
+    const before=success(await call("workspace.registry","snapshot"));
+    const accepted=success(await call("workspace.migration","prepare_legacy_snapshot",{source:"code-pad-legacy"}));
+    const ready=await wait();assert.equal(ready.id,accepted.id);assert.equal(ready.source,"code-pad-legacy");
+    assert.equal(ready.manifest.files[0].name,"session.json");assert.equal(ready.manifest.files[0].issue,null);
+    checkCurrent();remove();
+    const verify=success(await call("workspace.migration","verify_legacy_snapshot",{snapshotId:ready.snapshotId}));
+    const checked=await wait();assert.equal(checked.id,verify.id);assert.equal(checked.source,"code-pad-legacy");
+    assert.deepEqual(success(await call("workspace.migration","legacy_workspace",{jobId:checked.id})),{path:folder,target:"windows"});
+    assert.deepEqual(success(await call("workspace.registry","snapshot")),before);
+    checkCurrent();
+    return {explicitOlderIdentifier:true,bothOriginalsPreserved:true,offlineOlderSnapshotReverified:true,registryUnchanged:true};
+  } finally {if(!removed)remove();}
+}
+
 export async function exerciseWorkspaceSessionImport({cdp,root,call,success,waitForRenderer}) {
   assert.equal(process.env.GITHUB_ACTIONS,"true");assert.equal(process.env.RUNNER_ENVIRONMENT,"github-hosted");
   const sourceRoot=path.join(process.env.LOCALAPPDATA,"com.devbox.codepad");
@@ -48,6 +90,13 @@ export async function exerciseWorkspaceSessionImport({cdp,root,call,success,wait
     throw new Error(`Session fixture button unavailable: ${label}`);
   };
   try {
+    const olderIdentifier=await exerciseOlderIdentifier({call,success,checkCurrent:()=>{
+      assert.equal(realpathSync.native(sourceRoot),ownedRoot);
+      assert.equal(readFileSync(marker,"utf8"),nonce);
+      assert.equal(readFileSync(path.join(sourceRoot,"session.json"),"utf8"),bytes);
+      assert.equal(readFileSync(path.join(sourceRoot,"recovery.json"),"utf8"),recoveryBytes);
+      assert.equal(readFileSync(path.join(lspRoot,"config.json"),"utf8"),lspBytes);
+    }});
     const job=success(await call("workspace.migration","prepare_legacy_snapshot",{source:"code-pad"}));
     const deadline=performance.now()+10_000;
     let finished;
@@ -144,6 +193,6 @@ export async function exerciseWorkspaceSessionImport({cdp,root,call,success,wait
     await click("검토한 이전 LSP 설정 복원");
     await waitForRenderer(cdp,`Array.from(document.querySelectorAll('section[aria-label="Code Pad LSP 설정 가져오기"] [role=status]')).some(node=>node.textContent.includes("복원했습니다"))`,"LSP configuration preimage was not restored");
     assert.deepEqual(success(await lsp("load_lsp_config")).config,{...previousLsp.config,enabled:false});
-    return {actualImportedDisabledLspControls:true,staleLspSettingsRejected:true,repeatPreservesLaterLspSettings:true,previousLspConfigRestored:true,actualImportedRecoveryDialogAndDiskApply:true,staleRecoveryDiscardRejected:true,repeatKeepsDiscardedRecovery:true,recoveryMetadataHistoryRestored:true,verifiedSnapshotSurvivesSourceRemoval:true,explicitConflictReview:true,originalDocumentIdAndTwoViews:true,actualEditorBookmarks:true,staleAutosaveRejected:true,repeatPreservesCurrentSession:true,previousSessionRestored:true,repositoryBytesUnchangedUntilExplicitRecovery:true};
+    return {olderIdentifier,actualImportedDisabledLspControls:true,staleLspSettingsRejected:true,repeatPreservesLaterLspSettings:true,previousLspConfigRestored:true,actualImportedRecoveryDialogAndDiskApply:true,staleRecoveryDiscardRejected:true,repeatKeepsDiscardedRecovery:true,recoveryMetadataHistoryRestored:true,verifiedSnapshotSurvivesSourceRemoval:true,explicitConflictReview:true,originalDocumentIdAndTwoViews:true,actualEditorBookmarks:true,staleAutosaveRejected:true,repeatPreservesCurrentSession:true,previousSessionRestored:true,repositoryBytesUnchangedUntilExplicitRecovery:true};
   } finally {if(!removed)removeOwnedSource();}
 }

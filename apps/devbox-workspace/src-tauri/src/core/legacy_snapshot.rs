@@ -431,6 +431,23 @@ fn write_exact(root: &Directory, name: &str, bytes: &[u8], limit: usize) -> Resu
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn identical_code_pad_bytes_keep_identifier_specific_snapshot_ids() {
+        let base = tempfile::tempdir().unwrap();
+        for source in [Source::CodePad, Source::CodePadLegacy] {
+            let root = base.path().join(source.identifier());
+            fs::create_dir(&root).unwrap();
+            fs::write(root.join("session.json"), b"{\"version\":99}").unwrap();
+        }
+        let current = Snapshot::acquire(base.path(), Source::CodePad, || Ok(())).unwrap();
+        let older = Snapshot::acquire(base.path(), Source::CodePadLegacy, || Ok(())).unwrap();
+        assert_eq!(current.manifest.files, older.manifest.files);
+        assert_eq!(current.manifest.missing, older.manifest.missing);
+        assert_ne!(current.id().unwrap(), older.id().unwrap());
+        assert!(current.manifest.files[0].issue.is_some());
+        assert_eq!(current.bytes("session.json"), older.bytes("session.json"));
+        assert!(serde_json::from_str::<Source>("\"com.workbench.codepad\"").is_err());
+    }
     use std::cell::Cell;
     fn fixture() -> (tempfile::TempDir, PathBuf, PathBuf) {
         let base = tempfile::tempdir().unwrap();
@@ -460,7 +477,7 @@ mod tests {
             fs::create_dir(&destination).unwrap();
             let original_file = match source {
                 Source::Workbench => Some(("project-profiles.json", br#"{"version":1,"profiles":[]}"#.as_slice())),
-                Source::CodePad => Some(("session.json", br#"{"version":1,"workspace_folder":null,"docs":[],"views":[[],[]],"active_view":0,"active_doc_by_view":[null,null],"recent_files":[]}"#.as_slice())),
+                Source::CodePad | Source::CodePadLegacy => Some(("session.json", br#"{"version":1,"workspace_folder":null,"docs":[],"views":[[],[]],"active_view":0,"active_doc_by_view":[null,null],"recent_files":[]}"#.as_slice())),
                 Source::RepoManager => None,
             };
             if let Some((name, bytes)) = original_file {

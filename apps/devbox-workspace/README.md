@@ -48,7 +48,10 @@ resolving its path. Explicit Windows folder review uses the native snapshot job 
 and existing Registry discovery/registration; it grants no selection or execution
 trust. WSL/unsupported paths remain visible without automatic probes. WSL bindings remain incomplete. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
-file to migrate. Older identifier diagnostics remain part of the unfinished importer.
+file to migrate. The explicit Code Pad (older version) source reads `com.workbench.codepad` independently
+from `com.devbox.codepad`. Both fixed roots can coexist; source identity remains part
+of the snapshot ID even for identical contents. Session/recovery/LSP/window review
+uses the same verified-job boundaries, without renaming or merging the original roots.
 
 The existing Workbench, Repo Manager and Code Pad UI/tests live in
 `packages/workspace-features` and are consumed by their legacy entry points too.

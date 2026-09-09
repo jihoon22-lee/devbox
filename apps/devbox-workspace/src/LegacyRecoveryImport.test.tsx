@@ -9,9 +9,9 @@ const call=vi.mocked(componentCall),description={} as Description;
 const preview={previewId:"native-preview",candidate:{recovery:{entries:[{path:"C:/선택한 폴더/file.txt",content:"unsaved",base_hash:null,snapshot_at_ms:1}]},skippedEntries:1},currentEntries:[{path:"C:/선택한 폴더/file.txt",content:"new buffer"}],conflictingPaths:["C:/선택한 폴더/file.txt"],conflict:true,alreadyImported:false,restoring:false};
 afterEach(cleanup);
 beforeEach(()=>{call.mockReset();});
-it("requires replacement review and submits only a native token before reloading the editor",async()=>{
+it.each(["code-pad","code-pad-legacy"])("requires replacement review and submits only a native token before reloading the editor (%s)",async(source)=>{
   call.mockImplementation(async(_description,_component,method)=>{
-    if(method==="legacy_snapshot_job")return {id:"verified-job",source:"code-pad",phase:"ready"};
+    if(method==="legacy_snapshot_job")return {id:"verified-job",source,phase:"ready"};
     if(method==="preview_recovery_import")return preview;
     if(method==="apply_recovery_import")return {importedEntries:1,reused:false};
     throw new Error(`unexpected request: ${method}`);

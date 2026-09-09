@@ -1,3 +1,4 @@
+import {isCodePadSource} from "./legacySources";
 import {useEffect,useRef,useState} from "react";
 import type {Description} from "@devbox/product-shell/api";
 import {componentCall,issueMessage} from "./native";
@@ -35,7 +36,7 @@ export default function LegacyLspImport({description,disabled,onBusyChange,onApp
     </section>}
     {!preview&&<button disabled={busy||blocked} onClick={()=>void act(async()=>{
       const job=await componentCall<{id:string;source:string;phase:string}|null>(description,"workspace.migration","legacy_snapshot_job",{},"overview");
-      if(!job||job.source!=="code-pad"||job.phase!=="ready")throw new Error("Overview에서 Code Pad 보관본의 내용을 먼저 확인해 주세요.");
+      if(!job||!isCodePadSource(job.source)||job.phase!=="ready")throw new Error("Overview에서 Code Pad 보관본의 내용을 먼저 확인해 주세요.");
       await acceptPreview(await call<Preview>("preview_lsp_config_import",{jobId:job.id}));
     })}>LSP 설정 가져오기 검토</button>}
     {preview&&<>

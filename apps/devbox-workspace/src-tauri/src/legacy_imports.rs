@@ -182,7 +182,7 @@ impl LegacyImports {
                 .and_then(|job| job.snapshot.clone())
                 .ok_or("legacy_import_stale")?
         };
-        if snapshot.manifest.source != Source::CodePad
+        if !snapshot.manifest.source.is_code_pad()
             || !snapshot
                 .manifest
                 .files
@@ -219,7 +219,7 @@ impl LegacyImports {
                 .and_then(|job| job.snapshot.clone())
                 .ok_or("legacy_import_stale")?
         };
-        if snapshot.manifest.source != Source::CodePad
+        if !snapshot.manifest.source.is_code_pad()
             || !snapshot
                 .manifest
                 .files
@@ -246,7 +246,7 @@ impl LegacyImports {
                 .and_then(|job| job.snapshot.clone())
                 .ok_or("legacy_import_stale")?
         };
-        if snapshot.manifest.source != Source::CodePad
+        if !snapshot.manifest.source.is_code_pad()
             || !snapshot
                 .manifest
                 .files
@@ -416,6 +416,91 @@ impl Drop for LegacyImports {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn both_code_pad_identifiers_remain_independent_and_verified_older_data_survives_source_loss() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("workspace");
+        std::fs::create_dir(&root).unwrap();
+        let stores = Arc::new(StoreRoot::open(&root).unwrap());
+        let owner = LegacyImports::new(stores.clone()).unwrap();
+        let mut originals = Vec::new();
+        for (source, folder) in [
+            (Source::CodePad, r"C:\offline\current"),
+            (Source::CodePadLegacy, r"C:\offline\이전 폴더"),
+        ] {
+            let source_root = base.path().join(source.identifier());
+            std::fs::create_dir_all(source_root.join("lsp")).unwrap();
+            let mut session = code_pad_lib::core::session::Session::empty();
+            session.workspace_folder = Some(folder.into());
+            let recovery = serde_json::json!({"version":1,"entries":[{
+                "path":format!(r"{folder}\buffer.txt"),"content":folder,
+                "base_hash":null,"snapshot_at_ms":1
+            }]});
+            let config = serde_json::json!({"version":1,"enabled":true,
+                "workspace_root":folder,"server_by_language":{},"custom_servers":[],"update_policy":"manual"});
+            for (name, bytes) in [
+                ("session.json", session.to_json().unwrap()),
+                ("recovery.json", recovery.to_string()),
+                ("lsp/config.json", config.to_string()),
+            ] {
+                let file = source_root.join(name);
+                std::fs::write(&file, &bytes).unwrap();
+                originals.push((file, bytes));
+            }
+        }
+        owner.start(Source::CodePad).unwrap();
+        let current = wait(&owner);
+        assert!(current.phase == Phase::Ready);
+        owner.start(Source::CodePadLegacy).unwrap();
+        let older = wait(&owner);
+        assert!(older.phase == Phase::Ready);
+        assert_eq!(older.source, Source::CodePadLegacy);
+        assert_ne!(current.snapshot_id, older.snapshot_id);
+        assert_eq!(
+            owner.session_source(&current.id).unwrap_err(),
+            "legacy_import_stale"
+        );
+        for (file, bytes) in &originals {
+            assert_eq!(&std::fs::read_to_string(file).unwrap(), bytes);
+        }
+        let (_, session) = owner.session_source(&older.id).unwrap();
+        let (_, recovery) = owner.recovery_source(&older.id).unwrap();
+        let (_, config) = owner.lsp_source(&older.id).unwrap();
+        assert_eq!(
+            session.workspace_folder.as_deref(),
+            Some(r"C:\offline\이전 폴더")
+        );
+        assert_eq!(recovery.entries[0].content, r"C:\offline\이전 폴더");
+        assert_eq!(
+            Some(config.workspace_root.as_str()),
+            session.workspace_folder.as_deref()
+        );
+        assert!(config.enabled);
+        std::fs::remove_dir_all(base.path().join(Source::CodePadLegacy.identifier())).unwrap();
+        drop(owner);
+        let restarted = LegacyImports::new(stores.clone()).unwrap();
+        let catalog = restarted.catalog().unwrap();
+        assert_eq!(catalog.snapshots.len(), 2);
+        restarted.verify(older.snapshot_id.unwrap()).unwrap();
+        let verified = wait(&restarted);
+        assert!(verified.phase == Phase::Ready);
+        assert_eq!(
+            restarted.workspace(&verified.id).unwrap().unwrap().path,
+            r"C:\offline\이전 폴더"
+        );
+        assert_eq!(
+            restarted.recovery_source(&verified.id).unwrap().1.entries[0].content,
+            recovery.entries[0].content
+        );
+        assert_eq!(restarted.lsp_source(&verified.id).unwrap().1, config);
+        for (file, bytes) in originals
+            .iter()
+            .filter(|(file, _)| file.starts_with(base.path().join(Source::CodePad.identifier())))
+        {
+            assert_eq!(&std::fs::read_to_string(file).unwrap(), bytes);
+        }
+        assert!(stores.read().unwrap().is_none());
+    }
     #[test]
     fn last_workspace_uses_only_the_verified_job_and_preserves_offline_metadata() {
         let base = tempfile::tempdir().unwrap();

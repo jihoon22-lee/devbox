@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 pub enum Source {
     Workbench,
     CodePad,
+    CodePadLegacy,
     RepoManager,
 }
 
@@ -27,6 +28,7 @@ impl Source {
         match self {
             Self::Workbench => "com.devbox.workbench",
             Self::CodePad => "com.devbox.codepad",
+            Self::CodePadLegacy => "com.workbench.codepad",
             Self::RepoManager => "com.devbox.repomanager",
         }
     }
@@ -39,6 +41,9 @@ impl Source {
             2 => Ok(files),
             _ => Err("invalid_legacy_snapshot"),
         }
+    }
+    pub fn is_code_pad(self) -> bool {
+        matches!(self, Self::CodePad | Self::CodePadLegacy)
     }
     pub fn files(self) -> &'static [FileSpec] {
         match self {
@@ -53,7 +58,7 @@ impl Source {
                 },
                 WINDOW,
             ],
-            Self::CodePad => &[
+            Self::CodePad | Self::CodePadLegacy => &[
                 FileSpec {
                     name: "session.json",
                     limit: 8 * MIB,
@@ -182,7 +187,7 @@ fn decode(source: Source, name: &str, bytes: &[u8], limit: usize) -> Result<usiz
                 count,
             )
         }
-        (Source::CodePad, "session.json") => {
+        (Source::CodePad | Source::CodePadLegacy, "session.json") => {
             let parsed = code_pad_lib::core::session::Session::from_json(text)
                 .map_err(|_| Issue::Corrupt)?;
             let count = parsed.docs.len();
@@ -191,7 +196,7 @@ fn decode(source: Source, name: &str, bytes: &[u8], limit: usize) -> Result<usiz
                 count,
             )
         }
-        (Source::CodePad, "recovery.json") => {
+        (Source::CodePad | Source::CodePadLegacy, "recovery.json") => {
             code_pad_lib::component::validate_persistent_file(name, bytes)
                 .map_err(|_| Issue::Corrupt)?;
             let parsed: code_pad_lib::core::recovery::RecoveryFile =
@@ -202,7 +207,7 @@ fn decode(source: Source, name: &str, bytes: &[u8], limit: usize) -> Result<usiz
                 count,
             )
         }
-        (Source::CodePad, "lsp/config.json") => {
+        (Source::CodePad | Source::CodePadLegacy, "lsp/config.json") => {
             let parsed =
                 code_pad_lib::lsp::LspConfig::from_json(text).map_err(|_| Issue::Corrupt)?;
             let count = parsed.server_by_language.len();
@@ -274,7 +279,12 @@ mod tests {
     }
     #[test]
     fn window_future_corruption_and_size_limits_never_claim_success() {
-        for source in [Source::Workbench, Source::CodePad, Source::RepoManager] {
+        for source in [
+            Source::Workbench,
+            Source::CodePad,
+            Source::CodePadLegacy,
+            Source::RepoManager,
+        ] {
             let future =
                 inspect(source, "window-state-v1.json", br#"{"schemaVersion":2}"#).unwrap();
             assert_eq!(future.issue, Some(Issue::UnsupportedSchema));

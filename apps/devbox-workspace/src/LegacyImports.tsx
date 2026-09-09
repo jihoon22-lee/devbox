@@ -5,12 +5,11 @@ import LegacyTemplateImport,{type ImportedTemplate} from "./LegacyTemplateImport
 import LegacyWorkspace from "./LegacyWorkspace";
 import LegacyWindowImport from "./LegacyWindowImport";
 
-type Source="workbench"|"code-pad"|"repo-manager";
+import {legacySources as sources,isCodePadSource,type LegacySource as Source} from "./legacySources";
 type Entry={name:string;bytes:number;sha256:string;records:number|null;issue:"corrupt"|"unsupported-schema"|"limit"|null};
 type Manifest={source:Source;files:Entry[];missing:string[]};
 type Job={id:string;source:Source;operation:"preserve"|"verify";phase:"reading"|"preserving"|"checking"|"ready"|"cancelled"|"failed";snapshotId:string|null;manifest:Manifest|null;issue:string|null};
 type Catalog={snapshots:{id:string;manifest:Manifest|null;issue:string|null}[];unrecognized:number};
-const sources:Record<Source,string>={workbench:"Workbench","code-pad":"Code Pad","repo-manager":"Repo Manager"};
 const labels:Record<string,string>={"project-profiles.json":"프로젝트 프로필","profile-templates.json":"프로필 템플릿","session.json":"열린 파일·커서·북마크","recovery.json":"미저장 복구 내용","lsp/config.json":"언어 서버 설정","window-state-v1.json":"창 위치와 크기"};
 const active=(job:Job|null)=>job?.phase==="reading"||job?.phase==="preserving"||job?.phase==="checking";
 const call=<T,>(method:string,args:Record<string,unknown>={})=>nativeCall<T>("workspace.migration",method,args);
@@ -62,6 +61,7 @@ export default function LegacyImports({selected=false,existingProfiles=[],existi
     <h2>기존 설정 보관</h2>
     <p>기존 앱의 설정과 미저장 복구 내용을 읽어 별도로 보관합니다. 원본 파일은 유지됩니다.</p>
     <label>기존 앱 <select value={source} disabled={busy||profileBusy||templateBusy||windowBusy||active(job)} onChange={event=>setSource(event.target.value as Source)}>{Object.entries(sources).map(([key,label])=><option key={key} value={key}>{label}</option>)}</select></label>
+    {source==="code-pad-legacy"&&<p>이전 버전이 저장한 설정 폴더를 확인합니다. 현재 버전의 설정도 있다면 각각 선택해 보관하고 가져올 수 있습니다.</p>}
     <button disabled={busy||profileBusy||templateBusy||windowBusy||active(job)} onClick={()=>void act("prepare_legacy_snapshot",{source})}>설정 확인 및 보관</button>
     <button disabled={busy||profileBusy||templateBusy||windowBusy} onClick={()=>void act("legacy_snapshot_job",{})}>보관 상태 새로 고침</button>
     {error&&<p role="alert">{error}</p>}
@@ -88,7 +88,7 @@ export default function LegacyImports({selected=false,existingProfiles=[],existi
         {job.manifest.missing.length>0&&<p>저장 파일 없음: {job.manifest.missing.map(name=>labels[name]??name).join(", ")}</p>}
         {job.source==="workbench"&&job.manifest.files.some(file=>file.name==="project-profiles.json"&&!file.issue)&&(selected?<LegacyProfileImport key={job.id} jobId={job.id} existing={existingProfiles} onImported={onImported} onBusyChange={setProfileBusy} disabled={disabled||busy||templateBusy||windowBusy}/>:<p>Workspace를 시작한 뒤 보관한 프로필 가져오기를 검토할 수 있습니다.</p>)}
         {job.source==="workbench"&&job.manifest.files.some(file=>file.name==="profile-templates.json"&&!file.issue)&&(selected?<LegacyTemplateImport key={`templates-${job.id}`} jobId={job.id} existing={existingTemplates} onImported={onImported} onBusyChange={setTemplateBusy} disabled={disabled||busy||profileBusy||windowBusy}/>:<p>Workspace를 시작한 뒤 보관한 템플릿 가져오기를 검토할 수 있습니다.</p>)}
-        {selected&&onWorkspaceReview&&job.source==="code-pad"&&job.manifest.files.some(file=>file.name==="session.json"&&!file.issue)&&<LegacyWorkspace key={job.id} jobId={job.id} disabled={disabled||busy||profileBusy||templateBusy||windowBusy} onReview={onWorkspaceReview}/>}
+        {selected&&onWorkspaceReview&&isCodePadSource(job.source)&&job.manifest.files.some(file=>file.name==="session.json"&&!file.issue)&&<LegacyWorkspace key={job.id} jobId={job.id} disabled={disabled||busy||profileBusy||templateBusy||windowBusy} onReview={onWorkspaceReview}/>}
       </>}
     </>}
     {selected&&<LegacyWindowImport jobId={job?.phase==="ready"&&job.manifest?.files.some(file=>file.name==="window-state-v1.json"&&!file.issue)?job.id:undefined} disabled={disabled||busy||profileBusy||templateBusy||active(job)} onBusyChange={setWindowBusy}/>}
