@@ -2583,34 +2583,27 @@ fn reject_hard_link(path: &Path) -> Result<(), InstallError> {
 
     #[cfg(windows)]
     {
-        use std::os::windows::ffi::OsStrExt;
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::CloseHandle;
+        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+        use windows::Win32::Foundation::HANDLE;
         use windows::Win32::Storage::FileSystem::{
-            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-            FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
-            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            OPEN_EXISTING,
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE,
         };
 
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let handle = unsafe {
-            CreateFileW(
-                PCWSTR(wide.as_ptr()),
-                FILE_READ_ATTRIBUTES.0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                None,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
-                None,
-            )
-        }
-        .map_err(|_| InstallError::UnsafeArchivePath)?;
+        // Product generation + SHA-named cache paths exceed MAX_PATH. Rust's
+        // path conversion retains extended-length support while the no-follow
+        // handle and exact link-count checks remain identical.
+        let handle = OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES.0)
+            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
+            .open(path)
+            .map_err(|_| InstallError::UnsafeArchivePath)?;
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        let result = unsafe { GetFileInformationByHandle(handle, &mut information) };
-        let close_result = unsafe { CloseHandle(handle) };
+        let result =
+            unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut information) };
         if result.is_err()
-            || close_result.is_err()
             || information.nNumberOfLinks != 1
             || information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
         {
@@ -2777,6 +2770,33 @@ mod tests {
         header.set_cksum();
         builder.append_data(&mut header, path, io::empty()).unwrap();
         builder.into_inner().unwrap().finish().unwrap()
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn long_generation_archive_cache_is_verified_without_allowing_hard_links() {
+        let temp = TempDir::new().unwrap();
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let root = temp.path().join("generation-component-".repeat(10));
+        let installer = ManagedInstaller::new(&root).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        let cached = installer
+            .archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)
+            .unwrap();
+        assert!(cached.to_string_lossy().len() > 260);
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
+        let alias = temp.path().join("cache-alias.zip");
+        fs::hard_link(&cached, &alias).unwrap();
+        assert!(matches!(
+            installer.cached_archive(&manifest),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        fs::remove_file(alias).unwrap();
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
     }
 
     #[test]
