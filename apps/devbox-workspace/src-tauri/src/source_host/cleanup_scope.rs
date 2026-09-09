@@ -111,8 +111,11 @@ impl Member {
         {
             return Err("source_cleanup_scope_changed");
         }
-        let environment =
-            GitEnvironment::native(std::path::Path::new(&binding.root), budget.deadline_ms)?;
+        let environment = GitEnvironment::native(
+            std::path::Path::new(&binding.root),
+            host.source_environment(),
+            budget.deadline_ms,
+        )?;
         if environment.program != root.git.environment.program
             || environment.environment != root.git.environment.environment
         {

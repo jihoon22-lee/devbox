@@ -46,9 +46,13 @@ impl Selected {
 }
 pub struct Host {
     stores: Arc<StoreRoot>,
+    source_environment: crate::platform::git_trust::SourceEnvironment,
     selected: RwLock<Option<Selected>>,
 }
 impl Host {
+    pub(crate) fn source_environment(&self) -> &crate::platform::git_trust::SourceEnvironment {
+        &self.source_environment
+    }
     pub fn storage_root(&self) -> &Path {
         self.stores.root()
     }
@@ -60,6 +64,7 @@ impl Host {
             .transpose()?;
         Ok(Self {
             stores,
+            source_environment: crate::platform::git_trust::SourceEnvironment::capture(),
             selected: RwLock::new(selected),
         })
     }

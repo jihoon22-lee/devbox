@@ -51,6 +51,23 @@ fn same_repository_path(expected: &str, actual: &str) -> bool {
     normalize(expected).is_some_and(|expected| normalize(actual).as_ref() == Some(&expected))
 }
 
+/// Owned by the native Host for this product process. Windows UI/COM code may
+/// mutate the ambient process environment after a picker opens. Git always gets
+/// these same captured values through env_clear, including during later reviews.
+/// Values stay in native memory; persisted approvals contain only their digest.
+pub(crate) struct SourceEnvironment {
+    #[cfg(windows)]
+    values: Vec<(OsString, OsString)>,
+}
+impl SourceEnvironment {
+    pub(crate) fn capture() -> Self {
+        Self {
+            #[cfg(windows)]
+            values: std::env::vars_os().collect(),
+        }
+    }
+}
+
 pub struct GitEnvironment {
     pub program: PathBuf,
     executables: Vec<PathBuf>,
@@ -78,11 +95,15 @@ fn set(environment: &mut Vec<(OsString, OsString)>, name: &str, value: OsString)
     environment.push((name.into(), value));
 }
 impl GitEnvironment {
-    pub fn native(project: &Path, deadline: u64) -> Result<Self> {
+    pub(crate) fn native(
+        project: &Path,
+        source: &SourceEnvironment,
+        deadline: u64,
+    ) -> Result<Self> {
         #[cfg(windows)]
         {
             crate::files_host::current_deadline(deadline)?;
-            let mut environment = std::env::vars_os().collect::<Vec<_>>();
+            let mut environment = source.values.clone();
             let home = get(&environment, "HOME")
                 .filter(|value| !value.is_empty())
                 .or_else(|| {
@@ -217,7 +238,7 @@ impl GitEnvironment {
         }
         #[cfg(not(windows))]
         {
-            let _ = (project, deadline);
+            let _ = (project, source, deadline);
             Err("windows_required")
         }
     }
@@ -483,6 +504,69 @@ mod tests {
             "//server/share/repo"
         ));
         assert!(!same_repository_path("/project/Repo", "/project/repo"));
+    }
+    #[cfg(windows)]
+    #[test]
+    fn native_git_uses_the_hosts_captured_environment_for_review_and_execution() {
+        let directory = tempfile::tempdir().unwrap();
+        let root =
+            super::super::storage_paths::display(&std::fs::canonicalize(directory.path()).unwrap())
+                .unwrap();
+        let empty = root.join("fixture.gitconfig");
+        std::fs::write(&empty, b"").unwrap();
+        let mut source = SourceEnvironment::capture();
+        set(&mut source.values, "HOME", root.as_os_str().to_owned());
+        set(
+            &mut source.values,
+            "GIT_CONFIG_SYSTEM",
+            empty.as_os_str().to_owned(),
+        );
+        set(
+            &mut source.values,
+            "GIT_CONFIG_GLOBAL",
+            empty.as_os_str().to_owned(),
+        );
+        set(
+            &mut source.values,
+            "DEVBOX_SOURCE_FROZEN_ENV_TEST",
+            "reviewed-fixture-value".into(),
+        );
+        let reviewed = GitEnvironment::native(&root, &source, u64::MAX).unwrap();
+        assert_eq!(
+            get(&reviewed.environment, "DEVBOX_SOURCE_FROZEN_ENV_TEST"),
+            Some("reviewed-fixture-value".into())
+        );
+        // A separate owner's snapshot cannot change this Host's execution. No
+        // test mutates ambient variables while other Rust tests are running.
+        let mut other = SourceEnvironment {
+            values: source.values.clone(),
+        };
+        set(
+            &mut other.values,
+            "DEVBOX_SOURCE_FROZEN_ENV_TEST",
+            "another-owner-value".into(),
+        );
+        assert_ne!(
+            reviewed.digest(),
+            GitEnvironment::native(&root, &other, u64::MAX)
+                .unwrap()
+                .digest()
+        );
+        let next = GitEnvironment::native(&root, &source, u64::MAX).unwrap();
+        assert_eq!(reviewed.digest(), next.digest());
+        let output = std::process::Command::new(&next.program)
+            .env_clear()
+            .envs(next.environment.iter().cloned())
+            .current_dir(&root)
+            .args([
+                "-c",
+                "alias.fixture-env=!printf '%s' \"$DEVBOX_SOURCE_FROZEN_ENV_TEST\"",
+                "fixture-env",
+            ])
+            .output()
+            .unwrap();
+        assert!(output.status.success());
+        assert_eq!(output.stdout, b"reviewed-fixture-value");
     }
     fn fixture(root: &Path) -> GitEnvironment {
         std::fs::create_dir_all(root.join(".git/objects")).unwrap();

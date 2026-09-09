@@ -117,7 +117,11 @@ impl Snapshot {
         if lease.git_directories().is_none() {
             return Err("source_requires_repository");
         }
-        let environment = GitEnvironment::native(std::path::Path::new(&binding.root), deadline)?;
+        let environment = GitEnvironment::native(
+            std::path::Path::new(&binding.root),
+            host.source_environment(),
+            deadline,
+        )?;
         let git = GitTrust::capture(lease, environment, deadline)?;
         let definitions = definitions.execution_evidence(host, context, deadline)?;
         let common = MetadataRoot::open(&host.component("common")?)?;

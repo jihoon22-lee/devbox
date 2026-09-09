@@ -88,7 +88,11 @@ preserved, and a missing generation is never recreated by cache publication.
 
 Source now offers separate native Git approval and the shared Git panels. It
 pins the launcher/core executable, config/include/hook evidence and native
-worktree arguments before execution. Changed evidence requires review. Git and
+worktree arguments before execution. Host startup captures one private native
+environment for Source; every review and Git child uses that same snapshot through
+`env_clear`, so later UI/COM environment changes cannot change approved execution.
+Restart Workspace to adopt a new process environment. Changed execution files and
+project definitions still require review. Git and
 editor disk operations coordinate while private recovery writes remain usable.
 Commit drafts survive permission refreshes and block project switching. Generic
 file editing cannot rewrite the products' native Registry/approval stores.

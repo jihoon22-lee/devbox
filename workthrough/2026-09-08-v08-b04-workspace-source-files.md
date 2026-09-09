@@ -318,6 +318,37 @@ strict Clippy, 4 recovery UI tests and product build in 42.095 seconds**, peak
 Node syntax parsed successfully. Final recovery affected verification selected all and passed in **453.937 seconds**,
 with a **6,442,975,232-byte** cgroup peak under the shared 8 GiB cap.
 
+### Source environment after the Windows picker
+
+[0c0eb8a Windows acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34312951461)
+(tested merge `9e43f0f`) passed native authority/WAL/LSP tests, the actual sibling
+picker/open, API migration/lifetimes, Knowledge migration and installer coexistence.
+Packaged Workspace failed immediately after the picker: its new diagnostic reported
+only `execution_environment` changed; execution files and project definitions did
+not change. This confirms the Source approval failure category without exposing
+ambient values or bypassing approval. The full packaged LSP/recovery flow was not
+reached. Legacy performance passed too.
+
+The native Host now captures Source's environment once for the product process.
+Root and sibling Git reviews derive from that same memory snapshot, and the existing
+worker policy supplies it through `env_clear`. Later ambient UI/COM changes cannot
+alter the actual child environment. No variables are dropped from the captured
+launch environment and no values are persisted or sent to the renderer. A new
+product process captures a new environment; file/config/hook/definition evidence
+continues to require current review. The Windows unit fixture runs actual Git with
+a synthetic frozen value and verifies that a separate owner has a different digest.
+
+All **108 portable Workspace Rust tests passed**. Strict Clippy initially rejected
+a public signature exposing the new crate-private type; after correction, **Clippy
+and the MSVC probe build passed in 8.503 seconds**, peak **1,027,133,440 bytes**.
+An actual local Windows probe using the current native Git/environment/path modules
+opened the owned chooser, injected an ambient environment change and confirmed that
+review/file/environment digests stayed unchanged and an actual Git child received
+its reviewed value. This verifies that boundary, not the full packaged product.
+Final Source environment affected verification selected all and passed in
+**418.898 seconds**, with a **5,279,395,840-byte** cgroup peak under 8 GiB.
+
+
 Archive chooser results are private one-time UUID capabilities: 32 files/512 MiB,
 180-second expiry, held file/parent identities and content metadata, no links,
 no protected product stores and no editor grant. Import validates all tokens before
