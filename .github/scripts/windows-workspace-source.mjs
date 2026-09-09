@@ -258,8 +258,11 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   const started=Date.now();
   while(!existsSync(cancellationMarker)&&Date.now()-started<5000)await new Promise(resolve=>setTimeout(resolve,25));
   assert.equal(existsSync(cancellationMarker),true,"owned pre-commit did not start");
-  const blockedSave=await call("workspace.files","save_file",{request:nativeFileSave(doc,"must wait for Git\n")});
-  failed(blockedSave);assert.equal(blockedSave.value.issue,"context_busy");
+  // The writer now waits for the native filesystem permit. A short original
+  // deadline expires while the owned hook is still live, before any file IO.
+  const blockedSave=await call("workspace.files","save_file",{request:nativeFileSave(doc,"must wait for Git\n")},500);
+  failed(blockedSave);assert.equal(blockedSave.value.issue,"request_expired");
+  assert.equal(readFileSync(path.join(folder,"tracked.txt"),"utf8"),"pending cancelled commit\n");
   const recoverySaved=success(await call("workspace.files","save_recovery",{nativeRevision:success(await call("workspace.files","load_recovery",{})).nativeRevision,entries:[{path:doc.path,content:"editor buffer survives Git",base_hash:doc.contentHash,snapshot_at_ms:Date.now()}]}));
   assert.equal(success(await source("repo_local_cancel",{request:{operationId}})),true);
   failed(await committing);
@@ -275,5 +278,5 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   success(await call("workspace.registry","remove",{revision:registry.revision,context:registered.context}));
   await cdp.command("Page.reload");
   await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Original context did not reload");
-  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,cleanupRequiresSeparateSiblingScope:true,changedSiblingEvidenceRevokesOnlyCleanup:true,uiReviewedSiblingCleanupPreservesBranch:true,nativePickerDocumentBlocksSiblingCleanup:true,gitBlocksFileWritesButKeepsRecovery:true,ownedGitCancellationReleasesEditor:true};
+  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,cleanupRequiresSeparateSiblingScope:true,changedSiblingEvidenceRevokesOnlyCleanup:true,uiReviewedSiblingCleanupPreservesBranch:true,nativePickerDocumentBlocksSiblingCleanup:true,gitBlocksFileWritesButKeepsRecovery:true,expiredSaveIsNotReplayed:true,ownedGitCancellationReleasesEditor:true};
 }

@@ -163,3 +163,15 @@ test("native editor trace ignores unrelated bodies and retains only static failu
   const row=window.__workspaceLspTrace.rows[0];assert.equal(row.phase,"failed");assert.equal(row.issue,"file_snapshot_changed");
   assert.ok(!JSON.stringify(row).includes("synthetic"));window.__workspaceLspTrace.restore();
 });
+
+
+test("bounded writer-wait fixtures retain their short original deadline", async () => {
+  let sent;
+  await runInNewContext(workspaceRequestExpression("workspace.files", "save_file", {request:{path:"C:\\fixture"}}, 500), {
+    window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>command==="plugin:product-shell|describe"?{handshake:{installationId:"installation",sessionId:"session"},context:null}:(sent=input.request)}},
+    crypto:{randomUUID:()=>"request"}, Date:{now:()=>1000},
+  });
+  assert.equal(sent.header.deadlineMs,1500);
+  assert.equal(sent.header.route,"files");
+  for(const budget of [0,99,29001,Infinity,"500"]) assert.throws(()=>workspaceRequestExpression("workspace.files","save_file",{},budget));
+});

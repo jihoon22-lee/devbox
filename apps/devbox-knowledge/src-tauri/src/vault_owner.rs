@@ -191,6 +191,25 @@ mod tests {
     }
     #[test]
     fn two_product_installations_cannot_own_one_vault() {
+        #[cfg(unix)]
+        if std::env::var_os("DEVBOX_VAULT_OWNER_FIXTURE").is_none() {
+            // Another parallel test can fork between this owner's close and
+            // reacquire. Its pre-exec copy briefly retains the same flock open
+            // description even with CLOEXEC. Create this fixture only after
+            // exec in an isolated test process, which spawns no further child.
+            let status = std::process::Command::new(std::env::current_exe().unwrap())
+                .args([
+                    "--exact",
+                    "vault_owner::tests::two_product_installations_cannot_own_one_vault",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env("DEVBOX_VAULT_OWNER_FIXTURE", "1")
+                .status()
+                .unwrap();
+            assert!(status.success());
+            return;
+        }
         let base = tempfile::tempdir().unwrap();
         let vault = tempfile::tempdir().unwrap();
         let owner = acquire(base.path(), vault.path(), None).unwrap();

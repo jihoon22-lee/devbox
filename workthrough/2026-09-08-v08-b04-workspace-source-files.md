@@ -276,6 +276,67 @@ process-owner observations, not project Git/LSP or packaged WebView acceptance.
 Final `pnpm verify:affected` selected all and PASS (**570.759 s**, sampled RSS
 **4,950,102,016 B**, cgroup peak **6,444,773,376 B** within the 8 GiB limit).
 
+## Native WSL Git review
+
+The shared helper library now owns the unchanged Git config parser and bounded
+file/include/hook traversal. Windows injects its original path admission and native
+environment resolver; Linux injects distro-native filesystem admission and retains
+an observed root/context. Source approval still lives in Windows and combines
+native Git files/environment with project-definition evidence. No pipe method
+executes Git yet, and Windows-native Git rejects the WSL evidence variant.
+
+Linux freezes command environment without transient launcher cwd/depth/interop
+fields, skips relative/linked/foreign PATH entries, and observes executable bytes
+without probing the tool. It explicitly binds system config to the distro /etc or
+selected local prefix when no inherited override exists. Empty overrides retain
+Git's disabled-config behavior. Reattach cannot clear changed sources. Four
+48-MiB snapshots per pipe retain existing include/object/hook bounds.
+
+Helper **45 tests**, Source focused tests and Linux all-target strict Clippy PASS
+(**48.409 s**, sampled RSS **4,384,866,304 B**). Earlier extraction checks passed
+helper tests but found one unmigrated cleanup-scope resolver call; fixing it passed
+the intermediate native tests/Clippy (**62.768 s**). Full Workspace MSVC all-target
+strict Clippy and static musl release helper PASS (**83.084 s**, sampled RSS
+**1,733,296,128 B**). The existing musl cdylib warning excludes an unsupported
+extra crate type; the executable is built successfully.
+
+The product CI now provisions Git explicitly in its current run-owned disposable
+WSL distro, then tests Windows Source review, approval, changed-hook rejection,
+reconnect stability, revoke and unchanged original config/no hook execution. This
+new actual Windows result is pending; it is not included in the local PASS count.
+No user distro receives an automatic package installation.
+Dependency notices regeneration/check and workflow YAML parsing PASS (**3.376 s**);
+the actual Windows PowerShell parser also accepted the owned-fixture script.
+
+## Verification fixture synchronization
+
+The `ff43086` Windows product run failed in the older Source cancellation fixture:
+it expected immediate `context_busy`, while the new bounded writer wait correctly
+returned `request_expired`. The fixture now supplies an original 500-ms deadline,
+asserts unchanged file bytes before cancelling Git, and verifies the later explicit
+save. Its generated request retains that deadline; accepted failures never retry.
+The new packaged LSP-overlap fixture was not reached in that run.
+
+The same head's frontend job found two existing API Studio timing races. The
+OpenAPI handoff test now settles asynchronous file/effect setup, controls the native
+reply and asserts no close before it and exactly one close afterwards. The Knowledge
+draft test settles the async action before checking the rendered completion, rather
+than treating a mock invocation as completion. Product behavior is unchanged.
+
+The first Git-review affected run (**594.233 s**, failed) reached Knowledge's
+immediate vault-lock reacquire assertion while a parallel hot-journal test spawned
+a subprocess. On Unix, fork copies refer to the same flock description until close
+(see [flock ownership](https://man7.org/linux/man-pages/man2/flock.2.html)); isolating
+the lease fixture after exec removes that inheritance interval from this lifecycle
+assertion. The Windows test and production ownership implementation are unchanged.
+
+Generated request **10**, API Studio **17** and Knowledge **37** focused tests PASS
+(**37.725 s**, sampled RSS **2,485,501,952 B**). Final all-scope affected verification
+PASS after these concrete fixes (**424.017 s**, sampled RSS **4,709,679,104 B**,
+cgroup peak **5,004,349,440 B** within the 8 GiB limit). Neither prior failed run
+is recorded as PASS. The `ff43086` general CI finished with only the two frontend
+test failures above; Rust, Windows compile, catalog and dependency jobs passed.
+
 ## Remaining acceptance and rollback limits
 
 - WSL template instantiation, reveal, native Git/LSP and full WSL2 Rust host/WebView
