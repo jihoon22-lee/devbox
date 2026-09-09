@@ -96,3 +96,36 @@ test("owned LSP proxy holds then rejects requests without forwarding",async()=>{
     assert.equal(proxy.attempts(),1);
   } finally {socket.destroy();proxy.close();}
 });
+
+test("only pre-admission busy rejection retries with fresh IDs and a fixed context/deadline",async()=>{
+  let sequence=0,now=1000;const attempts=[];
+  const context={projectId:"p",worktreeId:"w",revision:3,target:{kind:"windows"}};
+  const result=await runInNewContext(workspaceRequestExpression("workspace.lsp","save_lsp_config",{nativeRevision:"old"}),{
+    window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>{
+      if(command==="plugin:product-shell|describe")return {handshake:{installationId:"i",sessionId:"s"},context};
+      attempts.push(JSON.parse(JSON.stringify(input.request)));
+      if(attempts.length<3)throw {code:"unavailable",provenance:{product:"workspace",component:"workspace.dispatch",requestId:"rejected",revision:1}};
+      return {value:{issue:"lsp_config_changed"}};
+    }}},crypto:{randomUUID:()=>String(++sequence)},Date:{now:()=>now},setTimeout:callback=>{now+=50;callback();},
+  });
+  assert.equal(result.value.issue,"lsp_config_changed");assert.equal(attempts.length,3);
+  assert.deepEqual(attempts.map(request=>request.header.requestId),["1","2","3"]);
+  for(const request of attempts){assert.deepEqual(request.header.context,context);assert.equal(request.header.deadlineMs,30000);assert.deepEqual(request.args,{nativeRevision:"old"});}
+});
+test("busy retries are bounded and never repeat accepted or ambiguous failures",async()=>{
+  const busy={code:"unavailable",provenance:{product:"workspace",component:"workspace.dispatch",requestId:"rejected",revision:1}};
+  for(const [failure,expected] of [[busy,20],[{...busy,provenance:{...busy.provenance,requestId:"accepted-request"}},1],[{code:"unauthorized"},1],[new Error("transport failed"),1]]){
+    let calls=0;
+    await assert.rejects(runInNewContext(workspaceRequestExpression("workspace.registry","apply_registration",{previewId:"one-use"}),{
+      window:{__TAURI_INTERNALS__:{invoke:async command=>{if(command==="plugin:product-shell|describe")return {handshake:{installationId:"i",sessionId:"s"},context:null};calls++;throw failure;}}},
+      crypto:{randomUUID:()=>String(calls)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    }),/Native Workspace request rejected/);
+    assert.equal(calls,expected);
+  }
+  let calls=0;
+  const accepted={operation:{outcome:{state:"failed"}},value:{issue:"busy"}};
+  assert.equal(await runInNewContext(workspaceRequestExpression("workspace.registry","apply_registration"),{
+    window:{__TAURI_INTERNALS__:{invoke:async command=>{if(command==="plugin:product-shell|describe")return {handshake:{installationId:"i",sessionId:"s"},context:null};calls++;return accepted;}}},crypto:{randomUUID:()=>"request"},Date:{now:()=>1000},
+  }),accepted);
+  assert.equal(calls,1);
+});

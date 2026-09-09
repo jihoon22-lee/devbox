@@ -177,8 +177,9 @@ folder, verifies the snapshot, removes only that owned source, and exercises rea
 CodeMirror bookmarks, stale autosave, repeat import and previous-session restore.
 Its recovery extension checks imported buffers, stale discard rejection, disk
 unchanged until explicit recovery, repeat after discard and previous recovery
-restore. The `3dc56c6` run reached recovery apply; reopening and subsequent recovery/LSP
-checks require another Windows execution.
+restore. The `870f8a8` run passed recovery reopening, repeat/discard and previous-state
+restoration. It reached disabled LSP settings import before the admission race below;
+full packaged LSP/journal recovery acceptance is still pending.
 
 Vitest/mocker were updated to 4.1.11 after CI reported
 [GHSA-82fw-gwwq-j7x9](https://github.com/advisories/GHSA-82fw-gwwq-j7x9).
@@ -204,7 +205,7 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - 기존 `ProfileTemplateStore`의 bounded strict 검증을 재사용한다. 검증 완료한 Workbench 보관 작업 ID로만 읽으며 원래 ID·이름·빈 경로·WSL·Git·포트·서비스 기본값을 Registry의 독립 사본으로 보관한다. import/reuse/keep-both/skip은 revision·원본 사본 digest·one-use 만료 token과 최종 byte CAS를 확인하고 기존 프로필·프로젝트를 유지한다.
 - 프로젝트 관리에서 템플릿과 실제 Windows 폴더를 선택하고 native probe 결과를 검토한다. 등록, 새 프로필 ID와 실제 템플릿 출처 기록, 폴더 연결을 하나의 Registry 저장으로 반영한다. 환경 데이터는 비어 있고 현재 선택·실행 신뢰는 별도다. 취소·기존 폴더 연결 충돌은 저장을 남기지 않는다.
 - Rust template/owner/route 검증과 strict Clippy, Workspace UI **44개**, build, 생성된 Windows fixture 표현식 **5개** PASS(44.074초, peak 3,887,083,520 bytes/8 GiB). 후속 UI 상태 표시 정리까지 포함한 최종 `pnpm verify:affected`는 all을 선택해 **445.250초 / peak 6,198,820,864 bytes / 8 GiB**로 PASS했다. 초기 집중 실행에서 잘못된 pnpm filter로 UI가 선택되지 않은 결과는 UI PASS에서 제외하고 올바른 `devbox-workspace` filter로 위 검증을 실행했다.
-- `.github/scripts/windows-workspace-template-import.mjs`는 hosted 전용 원본의 byte 보존·원본 없이 보관본 읽기·repeat/replay·실제 템플릿 생성 UI·출처/원자적 연결·선택/신뢰 미변경·해제 후 데이터 보존을 검사한다. 새 fixture의 Windows 실행, 템플릿 편집·WSL 생성, 기존 window mapping은 미완료다. 앞선 `7d857f8` [Windows 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34332819276)은 native authority/WAL 테스트 단계 실패로 packaged shell/복구/LSP 실행을 건너뛰었다. 실패는 `settings_import.rs`의 history 변조 단계에서 발생했다. 이전 import/repeat/restore는 통과했으며 아래 긴 경로 수정으로 후속 검증한다.
+- `.github/scripts/windows-workspace-template-import.mjs`는 hosted 전용 원본의 byte 보존·원본 없이 보관본 읽기·repeat/replay·실제 템플릿 생성 UI·출처/원자적 연결·선택/신뢰 미변경·해제 후 데이터 보존을 검사한다. `870f8a8`의 hosted Windows fixture는 실제 템플릿 생성과 9개 보존/권한 검사를 통과했다. 템플릿 편집·WSL 생성은 미완료다. 앞선 `7d857f8` [Windows 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34332819276)은 native authority/WAL 테스트 단계 실패로 packaged shell/복구/LSP 실행을 건너뛰었다. 실패는 `settings_import.rs`의 history 변조 단계에서 발생했다. 이전 import/repeat/restore는 통과했으며 아래 긴 경로 수정으로 후속 검증한다.
 
 ## Windows 긴 보관 경로 교체
 
@@ -218,3 +219,9 @@ exact-main stable promotion belong to B08/B09; this draft provides no release cl
 - native job ID로 확인한 상태를 기존 `window-state`의 모니터/DPI 보정에 연결한다. 현재/적용 후 크기·위치·최대화를 검토하고 명시적 교체 동의와 one-use/3분 token으로 적용한다. 창/모니터 변경·만료·재사용을 거부한다. 현재 native geometry는 Overview generation의 bounded immutable history에 먼저 보관하고 같은 절차로 복원한다. 프로젝트 Registry·선택·실행 신뢰는 변경하지 않는다.
 - native 창 API는 UI 스레드에서 실행하고 기존 coalescing writer/normal bounds memory를 사용한다. metadata IO는 bounded worker에서 수행한다. deadline/취소를 각 OS 변경 전에 확인하며 OS 일부 실패와 파일 저장을 단일 transaction으로 주장하지 않는다. 보관한 이전 geometry는 부분 실패 후에도 남는다. main→main만 대응하며 secondary mapping은 B07이 소유한다.
 - 회귀 검증: v1/v2/restart compatibility, 원본 제거 뒤 가져오기, stale/취소/재사용/확인 누락, partial native failure와 손상 history 보존, UI 교체 동의/복원/late token, 실제 hosted native 창 UI fixture를 추가했다. 집중 native window/owner/role 8개와 snapshot 9개, inventory 4개, adapter monitor/DPI 회귀 1개, strict Clippy PASS. 기존 Registry UI mock의 새 history 응답을 보완한 뒤 Workspace UI 48개와 build PASS(24.193초, peak 1,543,094,272 bytes/8 GiB); 생성된 fixture 표현식 5개도 PASS. 필터 때문에 실행되지 않은 adapter 일반 테스트는 이 집중 결과에 포함하지 않는다. 최종 `pnpm verify:affected` all PASS(**797.673초 / peak 6,445,101,056 bytes / 8 GiB**), 공용 adapter 전체 테스트도 포함했다. 앞선 `870f8a8` Windows native authority/WAL은 통과해 긴 경로 교체 수정이 확인됐으나 packaged shell 단계가 실패했다. 해당 job 완료 후 상세 로그를 확인하며 새 창 상태 fixture의 Windows 실행은 아직 하지 않았다.
+
+## Windows 수용 fixture의 admission 경합
+
+- [870f8a8 제품 수용](https://github.com/jihoon22-lee/devbox/actions/runs/34336335989)은 native authority/WAL, 템플릿 9개, Source 22개, Files 9개, 실제 복구 후 편집기 재열기·반복·이전 복구 복원, LSP 설정 import를 통과했다. API/Knowledge와 설치 공존도 통과했다. 전체 packaged 결과는 FAIL: `windows-workspace-session-import.mjs:127`의 의도적으로 오래된 LSP 저장 요청이 6ms 만에 `unavailable / workspace.dispatch / rejected`로 admission 전 거부되어 revision 충돌 확인까지 도달하지 못했다. background context activity와의 경합이며 수락된 쓰기 결과가 아니다. artifact의 source는 해당 PR merge SHA `95e6732daa39c154fdede8a47d68f7b2031109cf`다.
+- fixture 요청은 정확히 이 native pre-admission envelope만 최대 20회·50ms 간격으로 재시도한다. 원래 문맥/입력/deadline을 고정하고 새 request ID를 사용한다. 수락된 실패, transport 실패, 다른 권한/출처 오류는 재시도하지 않는다. native 권한·context exclusion은 유지한다. 템플릿과 창 상태 증거는 각각 완료 직후 기록한다.
+- generated JavaScript와 fresh-ID/fixed-context/deadline, 재시도 상한, accepted/ambiguous failure 비재시도 **7개** PASS(0.520초). 최종 `pnpm verify:affected` all PASS(**369.214초 / peak 1,651,732,480 bytes / 8 GiB**). 다음 Windows 결과는 완료 후 기록한다.

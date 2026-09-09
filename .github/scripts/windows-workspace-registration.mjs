@@ -17,8 +17,22 @@ export function workspaceRequestExpression(component, method, args = {}) {
     const invoke = window.__TAURI_INTERNALS__.invoke;
     const d = await invoke("plugin:product-shell|describe");
     const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${["workspace.dependencies","workspace.source","workspace.lsp"].includes(component) ? 29000 : 5000},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
-    try {return await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});}
-    catch(problem) {throw new Error("Native Workspace request rejected: " + JSON.stringify(problem).slice(0,2000));}
+    for(let attempt=0;;attempt++) {
+      try {return await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});}
+      catch(problem) {
+        // This exact envelope is emitted before authorization/admission. No
+        // operation ran; background readers may still hold the context lease.
+        // Never retry accepted failures, transport errors or other provenance.
+        if(attempt<19 && Date.now()+50<header.deadlineMs && problem?.code==="unavailable"
+          && problem.provenance?.product==="workspace" && problem.provenance?.component==="workspace.dispatch"
+          && problem.provenance?.requestId==="rejected" && problem.provenance?.revision===1) {
+          await new Promise(resolve=>setTimeout(resolve,50));
+          header.requestId=crypto.randomUUID();
+          continue;
+        }
+        throw new Error("Native Workspace request rejected: " + JSON.stringify(problem).slice(0,2000));
+      }
+    }
   })()`;
 }
 
@@ -103,8 +117,9 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   const record = (feature, checks) => writeFileSync(`product-foundation-evidence/workspace-${feature}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks},null,2));
   record("definitions", definitions);
   const templateImport=await exerciseWorkspaceTemplateImport({cdp,directory,call,success,waitForRenderer});
-  const windowImport=await exerciseWorkspaceWindowImport({cdp,call,success,waitForRenderer});
   record("template-import",templateImport);
+  const windowImport=await exerciseWorkspaceWindowImport({cdp,call,success,waitForRenderer});
+  record("window-import",windowImport);
   registry = success(await call("workspace.registry","snapshot"));
   const dependencies = await exerciseWorkspaceDependencies({cdp, root:canonicalRoot, call, success, waitForRenderer});
   record("dependencies", dependencies);

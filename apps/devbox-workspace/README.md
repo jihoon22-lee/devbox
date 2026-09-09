@@ -87,7 +87,7 @@ Target editor tabs must be closed. Apply holds the filesystem write permit, rech
 all files before the first replacement, and checks authority again just before each
 atomic restore. Partial failure preserves the journal and backups for another review;
 completed cleanup removes only known unchanged files. WSL-native transport remains
-incomplete; the new packaged Windows recovery fixture is awaiting execution.
+incomplete; full packaged Windows LSP/journal recovery acceptance is pending.
 LSP settings now load and save separately for each registered context without
 accessing its project files or resolving a server. Native revisions prevent stale
 writes; explicit corrupt-file recovery preserves the original bytes, and future
@@ -166,7 +166,7 @@ Windows folder; registration, a fresh profile with its template provenance and i
 folder binding share the Registry commit. Environment data is absent and selection
 and execution trust remain separate. Template editing and WSL instantiation remain
 pending. The hosted template fixture covers the native import and actual creation UI;
-its Windows result is pending for this change.
+it passed in the `870f8a8` hosted Windows run.
 
 Verified main-window state from Workbench, Code Pad and Repo Manager now has an
 explicit current/adjusted review using the existing monitor/DPI restoration logic.
