@@ -20,6 +20,8 @@ struct Object {
     identity: FilesystemIdentity,
     directory: bool,
     _handle: File,
+    #[cfg(unix)]
+    mode: u32,
     bytes: Option<Vec<u8>>,
     names: Option<Vec<OsString>>,
 }
@@ -168,6 +170,10 @@ impl GitFiles {
             {
                 return Err("git_sources_changed");
             }
+            #[cfg(unix)]
+            if mode(&object._handle)? != object.mode {
+                return Err("git_sources_changed");
+            }
             return Ok(());
         }
         if self.objects.len() + self.absent.len() >= MAX_OBJECTS {
@@ -181,6 +187,8 @@ impl GitFiles {
             Object {
                 identity,
                 directory,
+                #[cfg(unix)]
+                mode: mode(&handle)?,
                 _handle: handle,
                 bytes: None,
                 names: None,
@@ -293,6 +301,10 @@ impl GitFiles {
             if filesystem_identity(path, object.directory).ok() != Some(object.identity) {
                 return Err("git_sources_changed");
             }
+            #[cfg(unix)]
+            if mode(&object._handle)? != object.mode {
+                return Err("git_sources_changed");
+            }
             if let Some(expected) = &object.bytes {
                 let (handle, identity) =
                     open_filesystem_object(path, false).map_err(|_| "git_sources_changed")?;
@@ -337,6 +349,11 @@ impl GitFiles {
             } else {
                 b"file"
             });
+            #[cfg(unix)]
+            {
+                part(b"unix-mode");
+                part(&object.mode.to_be_bytes());
+            }
             if let Some(bytes) = &object.bytes {
                 part(b"contents");
                 part(bytes);
@@ -359,6 +376,13 @@ impl GitFiles {
             .collect()
     }
 }
+#[cfg(unix)]
+fn mode(file: &File) -> Result<u32> {
+    use std::os::unix::fs::MetadataExt;
+    file.metadata()
+        .map(|metadata| metadata.mode() & 0o7777)
+        .map_err(|_| "git_sources_changed")
+}
 fn directory_names(path: &Path) -> Result<Vec<OsString>> {
     let mut names = Vec::new();
     for entry in fs::read_dir(path)
@@ -377,6 +401,26 @@ fn directory_names(path: &Path) -> Result<Vec<OsString>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(unix)]
+    #[test]
+    fn enabling_an_unchanged_hook_requires_fresh_execution_evidence() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let hook = root.path().join("pre-commit");
+        fs::write(&hook, b"unchanged source").unwrap();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o600)).unwrap();
+        let mut files = GitFiles::default();
+        files.file(root.path(), &hook, 1024, u64::MAX).unwrap();
+        let before = files.digest();
+        fs::set_permissions(&hook, fs::Permissions::from_mode(0o700)).unwrap();
+        assert_eq!(
+            files.revalidate(u64::MAX).unwrap_err(),
+            "git_sources_changed"
+        );
+        let mut next = GitFiles::default();
+        next.file(root.path(), &hook, 1024, u64::MAX).unwrap();
+        assert_ne!(before, next.digest());
+    }
     #[test]
     fn missing_include_and_replaced_same_bytes_require_new_evidence() {
         let root = tempfile::tempdir().unwrap();

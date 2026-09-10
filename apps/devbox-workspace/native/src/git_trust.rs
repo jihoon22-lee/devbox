@@ -275,6 +275,9 @@ impl<L: GitLease> GitTrust<L> {
             digest,
         })
     }
+    pub fn root(&self) -> &Path {
+        self.lease.root()
+    }
     pub fn bytes(&self) -> usize {
         self.files.bytes()
     }

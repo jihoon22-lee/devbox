@@ -1,4 +1,7 @@
-//! A private inherited-pipe helper. EOF cancels work before atomic replacement.
+//! A private inherited-pipe helper. Native command owners survive cancellation
+//! until their descendants have retired; only then is completion acknowledged.
+#[cfg(target_os = "linux")]
+mod broker;
 #[cfg(target_os = "linux")]
 mod supervisor;
 #[cfg(target_os = "linux")]
@@ -6,12 +9,12 @@ fn main() {
     use std::{
         io,
         sync::{
-            atomic::{AtomicU32, AtomicU64, Ordering},
-            mpsc, Arc,
+            atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering},
+            mpsc, Arc, Mutex,
         },
         time::{Duration, Instant},
     };
-    use workspace_wsl::{read_frame, write_frame, Request, Response};
+    use workspace_wsl::{control::Input, read_frame, write_frame, Response};
     let native_args = std::env::args_os().skip(1).collect::<Vec<_>>();
     if native_args.first().is_some_and(|arg| arg == "--supervise") {
         std::process::exit(supervisor::run(&native_args[1..]));
@@ -25,8 +28,17 @@ fn main() {
     let deadline = Arc::new(AtomicU64::new(0));
     // 0 live, 1 orderly EOF/cancel, 2 malformed stream, 124 deadline.
     let stop = Arc::new(AtomicU32::new(0));
+    let cancelled = Arc::new(AtomicBool::new(false));
+    // A domain policy cancels its own request on Drop. It must never poison
+    // the session-wide signal used by a later, independent Source request.
+    let active = Arc::new(Mutex::new(Arc::new(AtomicBool::new(false))));
+    let gate = broker::ProcessGate::default();
+    let broker = broker::Broker::new(session.clone(), cancelled.clone());
     let watchdog_deadline = deadline.clone();
     let watchdog_stop = stop.clone();
+    let watchdog_cancelled = cancelled.clone();
+    let watchdog_active = active.clone();
+    let watchdog_gate = gate.clone();
     std::thread::spawn(move || {
         let mut retiring = None;
         loop {
@@ -36,12 +48,15 @@ fn main() {
             }
             let code = watchdog_stop.load(Ordering::Acquire);
             if code != 0 {
+                watchdog_cancelled.store(true, Ordering::Release);
+                if let Ok(active) = watchdog_active.lock() {
+                    active.store(true, Ordering::Release);
+                }
                 let since = retiring.get_or_insert_with(Instant::now);
-                if since.elapsed() >= Duration::from_secs(5) {
-                    // Only read/atomic-file operations exist here. A blocked
-                    // syscall cannot turn the old/new-file boundary into an
-                    // in-place partial write. Never add child execution without
-                    // a separate confirmed process-retirement owner.
+                if since.elapsed() >= Duration::from_secs(5) && watchdog_gate.close_if_idle() {
+                    // This CAS also closes future command admission. A blocked
+                    // read/atomic replacement can still exit at its old/new
+                    // file boundary, but an unretired child owner cannot.
                     std::process::exit(if code == 1 { 0 } else { code as i32 });
                 }
             }
@@ -50,12 +65,21 @@ fn main() {
     });
     let (sender, receiver) = mpsc::sync_channel(1);
     let reader_stop = stop.clone();
+    let reader_cancelled = cancelled.clone();
+    let reader_active = active.clone();
+    let reader_broker = broker.clone();
     std::thread::spawn(move || {
         let mut input = io::stdin().lock();
         loop {
-            let code = match read_frame::<_, Request>(&mut input) {
-                Ok(Some(request)) => {
+            let code = match read_frame::<_, Input>(&mut input) {
+                Ok(Some(Input::Request(request))) => {
                     if sender.try_send(request).is_ok() {
+                        continue;
+                    }
+                    2
+                }
+                Ok(Some(Input::Control(reply))) => {
+                    if reader_broker.reply(reply).is_ok() {
                         continue;
                     }
                     2
@@ -64,14 +88,16 @@ fn main() {
                 Err(_) => 2,
             };
             let _ = reader_stop.compare_exchange(0, code, Ordering::AcqRel, Ordering::Acquire);
+            reader_cancelled.store(true, Ordering::Release);
+            if let Ok(active) = reader_active.lock() {
+                active.store(true, Ordering::Release);
+            }
             break;
         }
-        // Disconnect wakes an idle owner; an active save observes the shared
-        // cancellation at its precommit guard and drops only its owned temp.
     });
     let mut engine = workspace_wsl::engine::Engine::default();
     let mut sequence = 0u64;
-    let mut output = io::stdout().lock();
+    let mut prepared = false;
     for request in receiver {
         if stop.load(Ordering::Acquire) != 0 {
             break;
@@ -93,9 +119,36 @@ fn main() {
                 Ok(())
             }
         };
-        let result = engine
-            .dispatch_guarded(&request, &guard)
-            .map_err(str::to_owned);
+        let result = if request.method == "execution_prepare" {
+            if request.root_token.is_some()
+                || !request.args.as_object().is_some_and(|args| args.is_empty())
+            {
+                Err("wsl_request_invalid")
+            } else {
+                prepared = true;
+                Ok(serde_json::json!({"retirement":true}))
+            }
+        } else if request.method == "source_execute" && !prepared {
+            Err("wsl_execution_required")
+        } else if request.method == "source_execute" {
+            let operation_cancelled = Arc::new(AtomicBool::new(cancelled.load(Ordering::Acquire)));
+            if let Ok(mut active) = active.lock() {
+                *active = operation_cancelled.clone();
+            }
+            let result = gate.enter().and_then(|permit| {
+                let authorize = broker.authorization(&request, operation_cancelled.clone());
+                engine.execute_source(&request, &guard, operation_cancelled, authorize, permit)
+            });
+            // The successful/failed result cannot acknowledge ownership release
+            // while a domain worker still retains a policy/process permit.
+            while !gate.is_idle() {
+                std::thread::sleep(Duration::from_millis(5));
+            }
+            result
+        } else {
+            engine.dispatch_guarded(&request, &guard)
+        }
+        .map_err(str::to_owned);
         if stop.load(Ordering::Acquire) != 0 {
             break;
         }
@@ -106,15 +159,28 @@ fn main() {
             sequence,
             result,
         };
-        if write_frame(&mut output, &response).is_err() {
+        if broker.output.lock().map_or(true, |mut output| {
+            write_frame(&mut *output, &response).is_err()
+        }) {
             stop.store(1, Ordering::Release);
             break;
         }
         deadline.store(0, Ordering::Release);
     }
-    // Graceful completion drops native grants and any staging owner first.
+    cancelled.store(true, Ordering::Release);
+    if let Ok(active) = active.lock() {
+        active.store(true, Ordering::Release);
+    }
     drop(engine);
-    drop(output);
+    while !gate.close_if_idle() {
+        std::thread::sleep(Duration::from_millis(5));
+    }
+    // Preparation completes before a command frame is sent. Even a truncated
+    // subsequent command therefore receives a no-children retirement proof.
+    // Existing file-only peers retain their original EOF contract.
+    if prepared {
+        let _ = broker.retired(sequence);
+    }
     let code = stop.load(Ordering::Acquire);
     if code > 1 {
         std::process::exit(code as i32);

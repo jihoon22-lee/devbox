@@ -1,6 +1,8 @@
 //! Source owns its execution approval separately from task/LSP permissions.
 //! All methods run in bounded native workers after product/session admission.
 mod cleanup_scope;
+#[cfg(all(test, windows))]
+mod wsl_execution_tests;
 use crate::{
     definitions::{self, Definitions, ExecutionDefinitions},
     host::Host,
@@ -94,6 +96,78 @@ fn approval(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<App
         }
     }
     Ok(value)
+}
+pub(crate) enum PreparedSource {
+    Native(Box<(repo_manager_lib::component::SourceAccess, Value)>),
+    #[cfg(windows)]
+    Wsl(Box<WslExecution>),
+}
+pub(crate) enum ReadySource {
+    Native(Box<(repo_manager_lib::component::SourceAccess, Value)>),
+    #[cfg(windows)]
+    Complete(Value),
+}
+impl PreparedSource {
+    /// Called after Source/definition mutexes have been released, while the
+    /// original bounded worker still owns all request/context/filesystem slots.
+    pub(crate) fn finish_on_worker(self) -> Result<ReadySource> {
+        match self {
+            Self::Native(access) => Ok(ReadySource::Native(access)),
+            #[cfg(windows)]
+            Self::Wsl(execution) => execution.run().map(ReadySource::Complete),
+        }
+    }
+}
+#[cfg(windows)]
+pub(crate) struct WslExecution {
+    snapshot: Snapshot,
+    host: Arc<Host>,
+    method: String,
+    args: Value,
+    budget: Budget,
+    cancelled: Arc<std::sync::atomic::AtomicBool>,
+    _retained: Box<dyn std::any::Any + Send + Sync>,
+}
+#[cfg(windows)]
+impl WslExecution {
+    fn run(mut self: Box<Self>) -> Result<Value> {
+        self.budget.check()?;
+        let args = std::mem::take(&mut self.args);
+        self.snapshot.git.execute_source(
+            &self.method,
+            args,
+            self.budget.expires,
+            self.cancelled.clone(),
+            &|root| {
+                if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                    return Err("source_cancelled");
+                }
+                if root != self.snapshot.binding.root {
+                    return Err("source_context_changed");
+                }
+                self.budget.check()?;
+                // Git files are checked in Linux. Calling that same pipe here would
+                // deadlock; this callback checks Windows metadata and the separate
+                // definition owner before granting one native admission ticket.
+                self.snapshot
+                    .revalidate_metadata(&self.host, self.budget.deadline_ms)?;
+                if !self.snapshot.approved()? {
+                    return Err("source_review_required");
+                }
+                self.budget.check()
+            },
+        )
+    }
+}
+#[cfg(windows)]
+impl Drop for WslExecution {
+    fn drop(&mut self) {
+        // This object never leaves the blocking worker. Retain its request and
+        // filesystem/context permits through an unconfirmed Linux retirement.
+        while self.snapshot.git.shutdown().is_err() {
+            std::thread::sleep(Duration::from_millis(100));
+        }
+    }
 }
 struct Snapshot {
     context: ProjectContext,
@@ -432,7 +506,7 @@ impl SourceHost {
         definitions: &mut Definitions,
         invocation: Invocation,
         retained: T,
-    ) -> Result<(repo_manager_lib::component::SourceAccess, Value)> {
+    ) -> Result<PreparedSource> {
         let Invocation {
             files,
             context,
@@ -479,6 +553,21 @@ impl SourceHost {
                 .as_ref()
                 .ok_or("source_owner_unavailable")?
                 .ensure_user_path(pending.target.path())?;
+        }
+        #[cfg(windows)]
+        if snapshot.git.is_wsl() {
+            if creation.is_some() || !workspace_wsl::control::source_method(&method) {
+                return Err("wsl_source_method_unavailable");
+            }
+            return Ok(PreparedSource::Wsl(Box::new(WslExecution {
+                snapshot,
+                host,
+                method,
+                args,
+                budget,
+                cancelled: admitted.flag(),
+                _retained: Box::new(retained),
+            })));
         }
         let cleanup = if matches!(method.as_str(), "repo_cleanup_preview" | "repo_cleanup") {
             cleanup_scope::Execution::capture(&host, definitions, &snapshot, files, budget)?
@@ -545,7 +634,7 @@ impl SourceHost {
             .map_err(|_| "worktree_target_invalid")?;
             access = access.with_creation(creation);
         }
-        Ok((access, args))
+        Ok(PreparedSource::Native(Box::new((access, args))))
     }
 }
 
@@ -573,6 +662,7 @@ pub(crate) fn issue(error: &str) -> &'static str {
         "worktree_target_changed" => "worktree_target_changed",
         "worktree_target_unavailable" => "worktree_target_unavailable",
         "file_owner_path" => "file_owner_path",
+        "wsl_source_method_unavailable" => "wsl_source_method_unavailable",
         "source_review_required" => "source_review_required",
         "source_cancelled" | "git_cancelled" => "source_cancelled",
         "source_requires_repository" => "source_requires_repository",

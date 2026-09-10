@@ -337,9 +337,63 @@ cgroup peak **5,004,349,440 B** within the 8 GiB limit). Neither prior failed ru
 is recorded as PASS. The `ff43086` general CI finished with only the two frontend
 test failures above; Rust, Windows compile, catalog and dependency jobs passed.
 
+## Native WSL Source execution
+
+At `90f919f`, [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34414940838)
+and [product CI](https://github.com/jihoon22-lee/devbox/actions/runs/34414940852)
+passed. The actual Windows WSL1 review/approval/revoke fixture passed in **6.17 s**.
+Packaged Source verified deadline expiry without replay; both packaged LSP variants
+verified a real overlapping file save waits for its reader. Expanded WSL native
+Registry/definition checks also passed. These results resolve the pending checks
+above, without claiming the later Source execution fixture was already run.
+
+The native helper now reuses headless Repo Manager Source dispatch and its owned
+Linux Git supervisor. A closed method allowlist excludes worktree create/cleanup
+until destination and sibling capabilities exist. Each command requires a one-use
+pipe ticket and revalidation of Windows private approval, context, definitions,
+native root/Git objects and the original deadline. Unix file modes join the digest;
+mount admission rejects the effective foreign/autofs mount before target IO.
+
+A preparation acknowledgement guarantees a final retirement response even after a
+partial command frame. Per-operation cancellation cannot poison later requests.
+Partial frame decoding survives timeout; Windows never infers Linux retirement
+from killing wsl.exe. Blocking execution and native descendants retain the context,
+filesystem permit and admission owner until confirmed shutdown. The Windows callback
+runs outside the pipe runtime and avoids reacquiring its own Git connection.
+
+Local helper tests (**47 library**, **1 gate**, **5 file pipe**, **4 Source pipe**,
+**5 supervisor**, with the isolated supervisor subfixture run by its parent), full
+Workspace MSVC strict Clippy and static musl release passed (**96.942 s**, sampled
+RSS **1,657,241,600 B**). An additional actual pipe test now rejects a forged approval
+ticket without launching a hook or changing HEAD. All **5 Source pipe tests**,
+helper strict Clippy, generated dependency notices/check and the static headless
+dependency graph passed (**12.301 s**, sampled RSS **1,131,192,320 B**).
+The new Windows Source host fixture
+covers selected stage/commit, live revocation and cancellation of a detached hook
+while the filesystem permit remains retained; actual CI execution is pending.
+
+Final all-scope `pnpm verify:affected` PASS (**687.922 s**, sampled RSS
+**5,915,459,584 B**, cgroup peak **6,445,281,280 B** within the 8 GiB cap).
+The static helper is **4,674,592 bytes**; workflow YAML parsing also passed.
+
+## Milestone scope check
+
+The authorized finish line is the v0.8.0 milestone and that version's release and
+deployment. No subsequent product version is authorized. On 2026-09-10, live
+milestone/PR/release records and changed paths were checked against #541/#546:
+B01–B03 are merged, B04 remains draft, and the latest public release remains the
+pre-task v0.7.0. WSL Git/worktree/LSP are explicit WP04 requirements.
+
+Ancillary changes beyond Workspace's immediate feature files were reported to the
+user: the CI-blocking Vitest advisory update, API/Knowledge async and lease fixtures,
+and Knowledge's owned hot-journal recovery fix (a production change). These address
+v0.8 integration verification; they do not introduce a later release or a new
+product feature. Newly discovered work outside this milestone must be reported
+before proceeding.
+
 ## Remaining acceptance and rollback limits
 
-- WSL template instantiation, reveal, native Git/LSP and full WSL2 Rust host/WebView
+- WSL template instantiation, reveal, Git worktree create/cleanup, native LSP and full WSL2 Rust host/WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration

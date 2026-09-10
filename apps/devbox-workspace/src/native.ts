@@ -9,6 +9,7 @@ const issues: Record<string, string> = {
   source_cleanup_scope_invalid: "저장된 정리 범위를 확인하지 못했습니다. 기존 파일을 보존했습니다.",
   source_cleanup_scope_changed: "정리 범위의 프로젝트나 Git 실행 근거가 바뀌었습니다. 범위를 다시 검토하거나 철회해 주세요.",
   source_cleanup_open_files: "해당 작업 폴더에 열린 파일 탭이 있습니다. 탭을 닫은 뒤 정리 후보를 다시 검사해 주세요.",
+  wsl_source_method_unavailable: "이 WSL Git 작업은 아직 사용할 수 없습니다.",
   source_review_required: "Git 설정이나 실행 근거를 다시 검토해 주세요.",
   source_cancelled: "Git 작업을 취소했습니다.",
   worktree_branch_invalid: "새 branch 이름을 확인해 주세요.",

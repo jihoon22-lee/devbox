@@ -117,23 +117,25 @@ pub fn token(value: &str) -> bool {
 /// A partial prefix/body is an error, including EOF during a frame. Length is
 /// checked before allocation. No shell strings or line-oriented escaping exist.
 pub fn read_frame<R: Read, T: serde::de::DeserializeOwned>(input: &mut R) -> io::Result<Option<T>> {
-    let mut prefix = [0_u8; 4];
-    if input.read(&mut prefix[..1])? == 0 {
-        return Ok(None);
+    let mut cursor = control::FrameCursor::default();
+    loop {
+        let count = input.read(cursor.buffer())?;
+        if count == 0 {
+            return if cursor.is_empty() {
+                Ok(None)
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::UnexpectedEof,
+                    "partial frame",
+                ))
+            };
+        }
+        if let Some(body) = cursor.advance(count)? {
+            return serde_json::from_slice(&body)
+                .map(Some)
+                .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid protocol JSON"));
+        }
     }
-    input.read_exact(&mut prefix[1..])?;
-    let length = u32::from_le_bytes(prefix) as usize;
-    if length == 0 || length > MAX_FRAME_BYTES {
-        return Err(io::Error::new(
-            io::ErrorKind::InvalidData,
-            "invalid frame length",
-        ));
-    }
-    let mut body = vec![0; length];
-    input.read_exact(&mut body)?;
-    serde_json::from_slice(&body)
-        .map(Some)
-        .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid protocol JSON"))
 }
 pub fn write_frame<W: Write, T: Serialize>(output: &mut W, value: &T) -> io::Result<()> {
     struct Bounded(Vec<u8>);
@@ -271,3 +273,5 @@ mod git_environment;
 
 #[cfg(all(feature = "helper", target_os = "linux"))]
 mod git_review;
+
+pub mod control;

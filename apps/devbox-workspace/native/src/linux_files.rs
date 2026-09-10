@@ -76,15 +76,15 @@ fn native_mount(mounts: &str, path: &Path, device: u64, id: Option<u64>) -> Resu
         let (mounted_major, mounted_minor) = fields[2]
             .split_once(':')
             .ok_or("wsl_filesystem_unavailable")?;
-        if mounted_major.parse::<u32>().ok() != Some(major)
-            || mounted_minor.parse::<u32>().ok() != Some(minor)
-        {
-            continue;
-        }
-        let allowed = matches!(
-            fields[separator + 1],
-            "ext4" | "ext3" | "ext2" | "btrfs" | "xfs" | "f2fs" | "lxfs" | "wslfs"
-        );
+        // Select the deepest mount first, even when it belongs to another
+        // device. Skipping a foreign device would incorrectly fall back to the
+        // native parent mount during lexical preflight.
+        let allowed = mounted_major.parse::<u32>().ok() == Some(major)
+            && mounted_minor.parse::<u32>().ok() == Some(minor)
+            && matches!(
+                fields[separator + 1],
+                "ext4" | "ext3" | "ext2" | "btrfs" | "xfs" | "f2fs" | "lxfs" | "wslfs"
+            );
         let depth = mount.components().count();
         match selected {
             Some((previous, _)) if previous > depth => {}
@@ -150,6 +150,16 @@ fn mount_id(file: &File, wslfs: bool) -> Result<Option<u64>> {
 }
 pub fn admit(path: &Path) -> Result<()> {
     super::engine::admit(path)?;
+    // Reject drvfs/network/autofs and foreign mounts lexically before touching
+    // a candidate or any missing ancestor. Metadata lookup can itself activate
+    // an automount; it is not a harmless substitute for native admission.
+    let root = metadata_object(Path::new("/"))?;
+    let root_device = root
+        .metadata()
+        .map_err(|_| "wsl_filesystem_unavailable")?
+        .dev();
+    let mounts = bounded_file(Path::new("/proc/self/mountinfo"), MAX_MOUNTS_BYTES)?;
+    native_mount(&mounts, path, root_device, None)?;
     // Missing leaves (new .git metadata or rename targets) inherit only their
     // nearest existing parent. No content handle is opened by this admission.
     let mut existing = path;
@@ -170,15 +180,8 @@ pub fn admit(path: &Path) -> Result<()> {
     if !(metadata.is_file() || metadata.is_dir()) {
         return Err("wsl_native_filesystem_required");
     }
-    let root = metadata_object(Path::new("/"))?;
     let filesystem = fsid(&object)?;
-    if metadata.dev()
-        != root
-            .metadata()
-            .map_err(|_| "wsl_filesystem_unavailable")?
-            .dev()
-        || filesystem != fsid(&root)?
-    {
+    if metadata.dev() != root_device || filesystem != fsid(&root)? {
         return Err("wsl_native_filesystem_required");
     }
     let mount_id = mount_id(&object, filesystem.1)?;
@@ -210,6 +213,19 @@ mod tests {
             );
             assert_eq!(
                 native_mount(&mounts, Path::new("/home/project/file"), device, None),
+                Err("wsl_native_filesystem_required")
+            );
+        }
+        for (device, filesystem) in [("9:2", "ext4"), ("0:77", "autofs"), ("0:88", "9p")] {
+            let mounts =
+                format!("{native}2 1 {device} / /home/project rw - {filesystem} source rw\n");
+            assert_eq!(
+                native_mount(
+                    &mounts,
+                    Path::new("/home/project/missing"),
+                    libc::makedev(8, 1),
+                    None
+                ),
                 Err("wsl_native_filesystem_required")
             );
         }

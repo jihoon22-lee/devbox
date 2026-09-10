@@ -725,29 +725,37 @@ async fn execute_source(
             worker_admission.clone(),
         );
         crate::files_host::current_deadline(deadline)?;
-        let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
-        let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
-        crate::files_host::current_deadline(deadline)?;
-        source.initialize(&worker_app, &host)?;
-        source.access(
-            host,
-            &mut definitions,
-            crate::source_host::Invocation {
-                files,
-                context,
-                method: worker_method,
-                args,
-                budget,
-                admitted: worker_admission,
-            },
-            retained,
-        )
+        let prepared = {
+            let mut source = source.lock().map_err(|_| "source_owner_unavailable")?;
+            let mut definitions = definitions.lock().map_err(|_| "definition_owner_busy")?;
+            crate::files_host::current_deadline(deadline)?;
+            source.initialize(&worker_app, &host)?;
+            source.access(
+                host,
+                &mut definitions,
+                crate::source_host::Invocation {
+                    files,
+                    context,
+                    method: worker_method,
+                    args,
+                    budget,
+                    admitted: worker_admission,
+                },
+                retained,
+            )?
+        };
+        prepared.finish_on_worker()
     });
-    let (access, args) = tokio::time::timeout(remaining()?, admitted.until_cancelled(worker))
+    let prepared = tokio::time::timeout(remaining()?, admitted.until_cancelled(worker))
         .await
         .map_err(|_| "request_expired")??
         .unwrap_or(Err("worker_unavailable"))
         .map_err(crate::source_host::issue)?;
+    let (access, args) = match prepared {
+        crate::source_host::ReadySource::Native(access) => *access,
+        #[cfg(windows)]
+        crate::source_host::ReadySource::Complete(value) => return Ok(value),
+    };
     match tokio::time::timeout(
         remaining()?,
         repo_manager_lib::component::dispatch_source(&app, access, &method, args),

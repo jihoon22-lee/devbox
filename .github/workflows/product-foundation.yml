@@ -163,6 +163,8 @@ jobs:
           cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-native.log
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           cargo test -p devbox-workspace --lib source_host::tests::owned_wsl_source_review_preserves_native_approval_and_changed_evidence -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p devbox-workspace --lib source_host::wsl_execution_tests::owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source-execution.log
           exit $LASTEXITCODE
       - name: Preserve native WSL results before independent acceptance
         if: ${{ !cancelled() }}

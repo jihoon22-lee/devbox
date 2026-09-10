@@ -6,7 +6,7 @@ edition.workspace = true
 
 [features]
 default = ["helper"]
-helper = ["git", "files", "dep:libc", "code-pad/preview"]
+helper = ["git", "files", "dep:libc", "code-pad/preview", "dep:repo-manager", "dep:tokio"]
 files = ["dep:code-pad", "dep:product-contract", "dep:devbox-wsl", "dep:devbox-filesystem", "dep:sha2", "dep:windows"]
 
 git = ["files", "dep:devbox-git", "dep:gix-config"]
@@ -53,4 +53,14 @@ tempfile = "3"
 [dependencies.devbox-git]
 package = "git"
 path = "../../../crates/git"
+optional = true
+
+[dependencies.repo-manager]
+path = "../../repo-manager/src-tauri"
+default-features = false
+optional = true
+
+[dependencies.tokio]
+version = "1"
+features = ["rt", "time", "sync"]
 optional = true

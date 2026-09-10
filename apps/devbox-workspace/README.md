@@ -225,7 +225,7 @@ Cancellation rechecks precede atomic replacement; owned staging files retain nat
 parent/file identities. Unacknowledged saves require reconciliation and are never
 replayed automatically. It restricts file content to the selected distro's root filesystem;
 Windows aliases and other mounts are not admitted through a POSIX spelling. The
-WSL Files route now delegates to the helper while Git and language servers remain
+WSL Files route delegates to the helper; language servers remain
 unconnected. LSP text updates
 now stay in the server document owner: NativeEditorMirror alone acknowledges UI
 buffer hashes, so an older queued notification cannot clear a newer unsaved buffer.
@@ -272,20 +272,28 @@ preserve encoding/CRLF through the shared Code Pad writer. Trust is revoked befo
 writing, and an unacknowledged write requires reopening rather than replay.
 The host excludes concurrent Git/editor writes during definition operations.
 Actual local WSL1/WSL2 pipe checks passed for definition creation/read/change/replay
-boundaries. The expanded Windows Registry/overlay fixture awaits its new CI run.
+boundaries. The expanded Windows Registry/overlay fixture passed at `90f919f`.
 WSL reveal, Git/LSP, references/providers and remaining R24 acceptance are incomplete.
 
 File saves and reviewed definition writes wait for active filesystem readers before
 entering their native worker, within the original deadline. Waiting holds no Files
 mutex and never retries an executed operation. Expiry/shutdown rejects the wait;
 the original context and snapshot checks still precede IO. This addresses the
-`5571786` packaged save rejection during an LSP read; the forced-overlap Windows
-fixture awaits its next run.
+`5571786` packaged save rejection during an LSP read; the forced-overlap packaged Windows
+fixture passed at `90f919f`.
 
 WSL Source review now reads Git tools/config/includes/hooks in the native helper,
 shares Windows' bounded evidence checks and binds their digests to the Windows
 private approval plus project definitions. Reading/approving runs no Git. Changed
 sources invalidate approval, and transient launcher variables do not invalidate
-an unchanged review on reconnect. Native command execution remains gated while
-its process-retirement and cancellation bridge is completed. The new hosted WSL
-review/approval/revoke fixture is pending actual Windows execution.
+an unchanged review on reconnect. The hosted WSL1
+review/approval/revoke fixture passed at `90f919f`, as did the expanded definition
+fixture and packaged file-save/LSP-read overlap checks.
+
+Basic WSL Source status/diff/history/stage/commit/remote operations now use the
+native Git owner. Every command rechecks Windows approval and native Git evidence;
+cancellation retains the context and file-write exclusion until native descendants
+retire. The static helper reuses Repo Manager's existing execution policies without
+Tauri. Linux actual-pipe tests and Windows compilation passed; the new Windows
+Source execution fixture is pending. WSL worktree creation/cleanup and LSP still
+require their additional native ownership and destination/edit capabilities.

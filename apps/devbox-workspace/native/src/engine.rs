@@ -17,6 +17,7 @@ use std::{
 };
 
 type Result<T> = std::result::Result<T, &'static str>;
+pub type SourceAuthorization = std::sync::Arc<dyn Fn(&str) -> Result<()> + Send + Sync>;
 const ROOT_TTL: Duration = Duration::from_secs(180);
 struct Root {
     observation: ProjectObservation,
@@ -278,6 +279,51 @@ pub fn admit(path: &Path) -> Result<()> {
     Ok(())
 }
 impl Engine {
+    /// Only the binary's process/pipe owner supplies these native capabilities.
+    pub fn execute_source<T: Send + Sync + 'static>(
+        &mut self,
+        request: &Request,
+        guard: &dyn Fn() -> Result<()>,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        authorize: SourceAuthorization,
+        retained: T,
+    ) -> Result<Value> {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Execute {
+            context: ProjectContext,
+            digest: String,
+            method: String,
+            args: Value,
+        }
+        if request.method != "source_execute" {
+            return Err("wsl_request_invalid");
+        }
+        guard()?;
+        let args: Execute = input(&request.args)?;
+        let root = self
+            .roots
+            .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+            .ok_or("wsl_root_expired")?;
+        let source = root.source.as_ref().ok_or("wsl_context_required")?;
+        if source.context() != &args.context {
+            return Err("source_context_changed");
+        }
+        root.observation.revalidate()?;
+        let value = source.execute(crate::git_review::Execution {
+            expected: &args.digest,
+            method: &args.method,
+            args: args.args,
+            budget_ms: request.budget_ms,
+            cancelled,
+            authorize,
+            retained,
+        })?;
+        guard()?;
+        root.observation.revalidate()?;
+        root.touched = Instant::now();
+        Ok(value)
+    }
     fn source_request(
         &mut self,
         request: &Request,

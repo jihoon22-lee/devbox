@@ -22,6 +22,28 @@ mod native {
     use workspace_wsl::{Request, Response, RootReport, MAX_FRAME_BYTES, VERSION};
     type Result<T> = std::result::Result<T, &'static str>;
 
+    async fn until_cancelled(flag: &std::sync::atomic::AtomicBool) {
+        while !flag.load(std::sync::atomic::Ordering::Acquire) {
+            tokio::time::sleep(Duration::from_millis(5)).await;
+        }
+    }
+    async fn read_source_packet(
+        output: &mut ChildStdout,
+        cursor: &mut workspace_wsl::control::FrameCursor,
+    ) -> Result<workspace_wsl::control::Output> {
+        loop {
+            let read = output
+                .read(cursor.buffer())
+                .await
+                .map_err(|_| "wsl_connection_closed")?;
+            if read == 0 {
+                return Err("wsl_connection_closed");
+            }
+            if let Some(body) = cursor.advance(read).map_err(|_| "wsl_protocol_invalid")? {
+                return serde_json::from_slice(&body).map_err(|_| "wsl_protocol_invalid");
+            }
+        }
+    }
     struct Artifact {
         _file: File,
         _directories: Vec<File>,
@@ -113,6 +135,10 @@ mod native {
         sequence: u64,
         failed: bool,
         retired: bool,
+        requires_retirement: bool,
+        retirement_ack: bool,
+        acknowledged: u64,
+        cursor: workspace_wsl::control::FrameCursor,
     }
     impl Connection {
         /// `directory` comes from AppHandle's native resource directory. The
@@ -177,6 +203,10 @@ mod native {
                 sequence: 0,
                 failed: false,
                 retired: false,
+                requires_retirement: false,
+                retirement_ack: false,
+                acknowledged: 0,
+                cursor: workspace_wsl::control::FrameCursor::default(),
             };
             let hello = connection.request("hello", None, serde_json::json!({}), 5000)?;
             if hello["version"] != VERSION {
@@ -266,6 +296,240 @@ mod native {
             }
             self.request(method, Some(token), args, remaining)
         }
+        /// Calls on a bounded native worker. Each approval callback executes
+        /// outside this connection's Tokio runtime so it may validate the
+        /// separate definition owner without nesting runtime.block_on calls.
+        pub fn execute_source(
+            &mut self,
+            root: &str,
+            args: Value,
+            expires: std::time::Instant,
+            cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            authorize: &dyn Fn(&str) -> Result<()>,
+        ) -> Result<Value> {
+            use workspace_wsl::control::{ControlInput, ControlOutput, Output};
+            if self.failed || self.retired {
+                return Err("wsl_connection_closed");
+            }
+            if args["context"]["target"]["kind"] != "wsl"
+                || args["context"]["target"]["distroId"] != self.lease.id()
+            {
+                return Err("wsl_context_invalid");
+            }
+            let budget = || -> Result<u32> {
+                let remaining = expires
+                    .saturating_duration_since(std::time::Instant::now())
+                    .as_millis()
+                    .min(29000) as u32;
+                if remaining == 0 {
+                    Err("request_expired")
+                } else {
+                    Ok(remaining)
+                }
+            };
+            if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                return Err("source_cancelled");
+            }
+            self.lease.revalidate()?;
+            if !self.requires_retirement {
+                // Once acknowledged, even a partial command frame must receive
+                // a no-children proof when input is closed during cancellation.
+                let prepared =
+                    self.request("execution_prepare", None, serde_json::json!({}), budget()?)?;
+                if prepared != serde_json::json!({"retirement":true}) {
+                    return Err("wsl_protocol_invalid");
+                }
+                self.requires_retirement = true;
+            }
+            let request = Request {
+                version: VERSION,
+                session_id: self.session.clone(),
+                request_id: uuid::Uuid::new_v4().to_string(),
+                sequence: self.sequence.checked_add(1).ok_or("wsl_protocol_invalid")?,
+                budget_ms: budget()?,
+                method: "source_execute".into(),
+                root_token: Some(root.into()),
+                args,
+            };
+            request.validate(&self.session)?;
+            self.sequence = request.sequence;
+            self.write_source_frame(&request, expires, &cancelled)?;
+            let mut tickets = std::collections::BTreeSet::new();
+            let mut denied = None;
+            loop {
+                let packet = self.next_source_packet(expires, &cancelled)?;
+                match packet {
+                    Output::Response(response) => {
+                        if response.version != VERSION
+                            || response.session_id != self.session
+                            || response.request_id != request.request_id
+                            || response.sequence != request.sequence
+                        {
+                            return Err("wsl_protocol_invalid");
+                        }
+                        self.acknowledged = response.sequence;
+                        self.lease.revalidate()?;
+                        if let Some(error) = denied {
+                            return Err(error);
+                        }
+                        return Self::result(response);
+                    }
+                    Output::Control(ControlOutput::Admission {
+                        version,
+                        session_id,
+                        request_id,
+                        sequence,
+                        admission_id,
+                        target_root,
+                    }) => {
+                        if version != VERSION
+                            || session_id != self.session
+                            || request_id != request.request_id
+                            || sequence != request.sequence
+                            || !workspace_wsl::token(&admission_id)
+                            || target_root.len() > 32768
+                            || !target_root.starts_with('/')
+                            || target_root.chars().any(char::is_control)
+                            || tickets.len() >= 1024
+                            || !tickets.insert(admission_id.clone())
+                        {
+                            return Err("wsl_protocol_invalid");
+                        }
+                        self.acknowledged = sequence;
+                        self.lease.revalidate()?;
+                        if denied.is_none() {
+                            denied = authorize(&target_root).err();
+                        }
+                        let reply = ControlInput::AdmissionReply {
+                            version,
+                            session_id,
+                            request_id,
+                            sequence,
+                            admission_id,
+                            approved: denied.is_none(),
+                        };
+                        self.write_source_frame(&reply, expires, &cancelled)?;
+                    }
+                    Output::Control(ControlOutput::Retired {
+                        version,
+                        session_id,
+                        sequence,
+                    }) => {
+                        self.accept_retirement(version, &session_id, sequence)?;
+                        return Err(denied.unwrap_or("wsl_timeout"));
+                    }
+                }
+            }
+        }
+        fn write_source_frame<T: serde::Serialize>(
+            &mut self,
+            value: &T,
+            expires: std::time::Instant,
+            cancelled: &std::sync::atomic::AtomicBool,
+        ) -> Result<()> {
+            let mut frame = Vec::new();
+            workspace_wsl::write_frame(&mut frame, value).map_err(|_| "wsl_protocol_invalid")?;
+            let input = self.input.as_mut().ok_or("wsl_connection_closed")?;
+            self.runtime.block_on(async {
+                tokio::time::timeout(
+                    expires.saturating_duration_since(std::time::Instant::now()),
+                    async {
+                        tokio::select! {
+                            _ = until_cancelled(cancelled) => Err("source_cancelled"),
+                            result = async {
+                                input.write_all(&frame).await.map_err(|_| "wsl_connection_closed")?;
+                                input.flush().await.map_err(|_| "wsl_connection_closed")
+                            } => result,
+                        }
+                    },
+                )
+                .await
+                .unwrap_or(Err("request_expired"))
+            })
+        }
+        fn next_source_packet(
+            &mut self,
+            expires: std::time::Instant,
+            cancelled: &std::sync::atomic::AtomicBool,
+        ) -> Result<workspace_wsl::control::Output> {
+            let output = self.output.as_mut().ok_or("wsl_connection_closed")?;
+            let cursor = &mut self.cursor;
+            let stderr = &mut self.stderr;
+            self.runtime.block_on(async {
+                tokio::time::timeout(
+                    expires.saturating_duration_since(std::time::Instant::now()),
+                    async {
+                        tokio::select! {
+                            _ = until_cancelled(cancelled) => Err("source_cancelled"),
+                            _ = stderr => Err("wsl_connection_closed"),
+                            frame = read_source_packet(output,cursor) => frame,
+                        }
+                    },
+                )
+                .await
+                .unwrap_or(Err("request_expired"))
+            })
+        }
+        fn accept_retirement(&mut self, version: u32, session: &str, sequence: u64) -> Result<()> {
+            // A partially written next request may never have been accepted.
+            // Bound the proof by the last observed and last sent sequences.
+            if version != VERSION
+                || session != self.session
+                || sequence < self.acknowledged
+                || sequence > self.sequence
+            {
+                return Err("wsl_protocol_invalid");
+            }
+            self.retirement_ack = true;
+            Ok(())
+        }
+        fn shutdown_source(&mut self) -> Result<()> {
+            use workspace_wsl::control::{ControlOutput, Output};
+            self.failed = true;
+            self.input.take();
+            let until = std::time::Instant::now() + Duration::from_secs(8);
+            while !self.retirement_ack {
+                let output = self.output.as_mut().ok_or("wsl_shutdown_unconfirmed")?;
+                let cursor = &mut self.cursor;
+                let packet = self
+                    .runtime
+                    .block_on(async {
+                        tokio::time::timeout(
+                            until.saturating_duration_since(std::time::Instant::now()),
+                            read_source_packet(output, cursor),
+                        )
+                        .await
+                    })
+                    .map_err(|_| "wsl_shutdown_unconfirmed")?
+                    .map_err(|_| "wsl_shutdown_unconfirmed")?;
+                if let Output::Control(ControlOutput::Retired {
+                    version,
+                    session_id,
+                    sequence,
+                }) = packet
+                {
+                    self.accept_retirement(version, &session_id, sequence)
+                        .map_err(|_| "wsl_shutdown_unconfirmed")?;
+                }
+                // Abandoned data/admission frames are drained with the same
+                // partial cursor. EOF has already cancelled native approvals.
+            }
+            let child = &mut self.child;
+            self.runtime
+                .block_on(async {
+                    tokio::time::timeout(
+                        until.saturating_duration_since(std::time::Instant::now()),
+                        child.wait(),
+                    )
+                    .await
+                })
+                .map_err(|_| "wsl_shutdown_unconfirmed")?
+                .map_err(|_| "wsl_shutdown_unconfirmed")?;
+            self.retired = true;
+            self.output.take();
+            self.stderr.abort();
+            Ok(())
+        }
         fn request(
             &mut self,
             method: &str,
@@ -294,29 +558,43 @@ mod native {
             workspace_wsl::write_frame(&mut frame, &request).map_err(|_| "wsl_protocol_invalid")?;
             let input = self.input.as_mut().ok_or("wsl_connection_closed")?;
             let output = self.output.as_mut().ok_or("wsl_connection_closed")?;
+            let cursor = &mut self.cursor;
             let stderr = &mut self.stderr;
-            let result = self.runtime.block_on(async { tokio::time::timeout(Duration::from_millis(u64::from(budget) + 1000), async {
-                tokio::select! {
-                    _ = stderr => Err("wsl_connection_closed"),
-                    result = async {
-                        input.write_all(&frame).await.map_err(|_| "wsl_connection_closed")?;
-                        input.flush().await.map_err(|_| "wsl_connection_closed")?;
-                        let length = output.read_u32_le().await.map_err(|_| "wsl_connection_closed")? as usize;
-                        if length == 0 || length > MAX_FRAME_BYTES { return Err("wsl_protocol_invalid"); }
-                        let mut body = vec![0; length];
-                        output.read_exact(&mut body).await.map_err(|_| "wsl_connection_closed")?;
-                        serde_json::from_slice::<Response>(&body).map_err(|_| "wsl_protocol_invalid")
-                    } => result,
-                }
-            }).await }).unwrap_or(Err("wsl_timeout"));
+            let result = self
+                .runtime
+                .block_on(async {
+                    tokio::time::timeout(Duration::from_millis(u64::from(budget) + 1000), async {
+                        tokio::select! {
+                            _ = stderr => Err("wsl_connection_closed"),
+                            result = async {
+                                input.write_all(&frame).await.map_err(|_| "wsl_connection_closed")?;
+                                input.flush().await.map_err(|_| "wsl_connection_closed")?;
+                                read_source_packet(output,cursor).await
+                            } => result,
+                        }
+                    })
+                    .await
+                })
+                .unwrap_or(Err("wsl_timeout"));
             let response = match result {
-                Ok(response)
+                Ok(workspace_wsl::control::Output::Response(response))
                     if response.version == VERSION
                         && response.session_id == self.session
                         && response.request_id == request.request_id
                         && response.sequence == request.sequence =>
                 {
                     response
+                }
+                Ok(workspace_wsl::control::Output::Control(
+                    workspace_wsl::control::ControlOutput::Retired {
+                        version,
+                        session_id,
+                        sequence,
+                    },
+                )) if self.requires_retirement => {
+                    let _ = self.accept_retirement(version, &session_id, sequence);
+                    self.retire();
+                    return Err("wsl_connection_closed");
                 }
                 other => {
                     self.retire();
@@ -327,6 +605,10 @@ mod native {
                 self.retire();
                 return Err(error);
             }
+            self.acknowledged = response.sequence;
+            Self::result(response)
+        }
+        fn result(response: Response) -> Result<Value> {
             response.result.map_err(|error| match error.as_str() {
                 "wsl_root_expired" => "wsl_root_expired",
                 "wsl_root_changed" => "wsl_root_changed",
@@ -336,6 +618,10 @@ mod native {
                 "wsl_context_required" => "wsl_context_required",
                 "wsl_native_filesystem_required" => "wsl_native_filesystem_required",
                 "wsl_filesystem_unavailable" => "wsl_filesystem_unavailable",
+                "source_cancelled" => "source_cancelled",
+                "source_review_required" => "source_review_required",
+                "source_operation_unavailable" => "source_operation_unavailable",
+                "wsl_source_method_unavailable" => "wsl_source_method_unavailable",
                 "git_sources_changed" => "git_sources_changed",
                 "source_requires_repository" => "source_requires_repository",
                 "source_context_changed" => "source_context_changed",
@@ -386,6 +672,9 @@ mod native {
             if self.retired {
                 return Ok(());
             }
+            if self.requires_retirement {
+                return self.shutdown_source();
+            }
             self.failed = true;
             // EOF cancels at the helper's precommit boundary. Drain an abandoned
             // response without retaining its contents, so a full stdout pipe
@@ -435,7 +724,16 @@ mod native {
     }
     impl Drop for Connection {
         fn drop(&mut self) {
-            self.retire();
+            if self.requires_retirement {
+                // Source connections are owned exclusively by blocking native
+                // workers. Preserve that owner and its activity permits until
+                // proof; killing/reaping wsl.exe does not prove Linux cleanup.
+                while self.shutdown().is_err() {
+                    std::thread::sleep(Duration::from_millis(100));
+                }
+            } else {
+                self.retire();
+            }
         }
     }
     #[cfg(test)]

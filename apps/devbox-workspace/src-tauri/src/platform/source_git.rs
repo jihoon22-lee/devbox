@@ -110,6 +110,42 @@ impl SourceGit {
             Self::Native(Box::new(GitTrust::capture(lease, environment, deadline)?)),
         ))
     }
+    #[cfg(windows)]
+    pub(crate) fn is_wsl(&self) -> bool {
+        matches!(self, Self::Wsl { .. })
+    }
+    #[cfg(windows)]
+    pub(crate) fn execute_source(
+        &self,
+        method: &str,
+        args: serde_json::Value,
+        expires: std::time::Instant,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        authorize: &dyn Fn(&str) -> Result<()>,
+    ) -> Result<serde_json::Value> {
+        let Self::Wsl {
+            context,
+            lease,
+            report,
+        } = self
+        else {
+            return Err("wsl_context_invalid");
+        };
+        lease.execute_source(
+            context,
+            serde_json::json!({"digest":report.digest,"method":method,"args":args}),
+            expires,
+            cancelled,
+            authorize,
+        )
+    }
+    #[cfg(windows)]
+    pub(crate) fn shutdown(&self) -> Result<()> {
+        match self {
+            Self::Native(_) => Ok(()),
+            Self::Wsl { lease, .. } => lease.shutdown(),
+        }
+    }
     /// Native Windows Git must never receive a WSL root through UNC or argv.
     pub(crate) fn native(&self) -> Result<&GitTrust> {
         match self {

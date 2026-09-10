@@ -37,9 +37,81 @@ impl GitLease for Lease {
 }
 pub(crate) struct Review {
     context: ProjectContext,
-    trust: GitTrust<Lease>,
+    trust: std::sync::Arc<GitTrust<Lease>>,
 }
 impl Review {
+    pub(crate) fn execute<T: Send + Sync + 'static>(
+        &self,
+        execution: Execution<'_, T>,
+    ) -> Result<serde_json::Value> {
+        let Execution {
+            expected,
+            method,
+            args,
+            budget_ms,
+            cancelled,
+            authorize,
+            retained,
+        } = execution;
+        // Creation/cleanup need their own native destination/sibling capabilities;
+        // cancellation is delivered by the current pipe owner's EOF, not a method
+        // that could target another request's domain operation ID.
+        if !crate::control::source_method(method) {
+            return Err("wsl_source_method_unavailable");
+        }
+        let expires =
+            std::time::Instant::now() + std::time::Duration::from_millis(u64::from(budget_ms));
+        let deadline = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis()
+            .saturating_add(u128::from(budget_ms))
+            .min(u128::from(u64::MAX)) as u64;
+        self.revalidate(expected, deadline)?;
+        let program = self.trust.environment.program.clone();
+        let environment = self.trust.environment.environment.clone();
+        let root = self.trust.root().to_path_buf();
+        let trust = self.trust.clone();
+        let key = serde_json::to_string(&self.context).map_err(|_| "wsl_context_invalid")?;
+        let policy = devbox_git::execution::ExecutionPolicy::new_cancellable(
+            program,
+            environment,
+            expires,
+            cancelled,
+            move |target| {
+                let _retained = &retained;
+                // Unknown targets fail before filesystem IO or Windows authorization.
+                trust.repository(target, deadline).map_err(str::to_owned)?;
+                authorize(target.cwd()).map_err(str::to_owned)?;
+                trust.repository(target, deadline).map_err(str::to_owned)
+            },
+        )
+        .map_err(|_| "source_context_changed")?
+        .with_linux_supervisor()
+        .map_err(|_| "source_context_changed")?;
+        let access = repo_manager_lib::component::SourceAccess::for_project(root, key, policy);
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|_| "source_operation_unavailable")?;
+        let result = runtime.block_on(repo_manager_lib::component::dispatch_source_native(
+            access, method, args,
+        ));
+        // Native headless workers belong to this runtime. The binary additionally
+        // retains its process permit until every policy clone and owner has retired.
+        drop(runtime);
+        result.map_err(|error| match error.as_str() {
+            "git_cancelled" | "wsl_request_cancelled" => "source_cancelled",
+            "git_timeout" | "wsl_timeout" | "request_expired" => "request_expired",
+            "source_review_required" => "source_review_required",
+            "source_context_changed" | "git_sources_changed" | "project_object_changed" => {
+                "source_context_changed"
+            }
+            "git_output_too_large" => "git_source_limit",
+            _ => "source_operation_unavailable",
+        })
+    }
+
     pub(crate) fn context(&self) -> &ProjectContext {
         &self.context
     }
@@ -69,7 +141,10 @@ impl Review {
         )?;
         original.revalidate()?;
         guard()?;
-        Ok(Self { context, trust })
+        Ok(Self {
+            context,
+            trust: std::sync::Arc::new(trust),
+        })
     }
     pub(crate) fn view(&self) -> Value {
         let (files, environment) = self.trust.evidence_digests();
@@ -104,4 +179,14 @@ impl Method {
             Self::Capture { context } | Self::Validate { context, .. } => context,
         }
     }
+}
+
+pub(crate) struct Execution<'a, T> {
+    pub expected: &'a str,
+    pub method: &'a str,
+    pub args: serde_json::Value,
+    pub budget_ms: u32,
+    pub cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    pub authorize: crate::engine::SourceAuthorization,
+    pub retained: T,
 }

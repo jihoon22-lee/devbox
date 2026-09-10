@@ -6,8 +6,9 @@ The `files` feature contains the file grants, conflict checks, definition schema
 and snapshots, Windows path admission and protected-storage policy shared by the Windows host and Linux
 helper. Tauri storage discovery stays in the Windows host.
 The executable observes/revalidates root/Git objects and opens files only after
-attaching one native project context to an observed root. Its pipe methods execute no Git,
-language server or package manager. Explicit saves require the current native
+attaching one native project context to an observed root. Reviewed Source operations
+can execute Git through the native process owner described below. Language servers
+and package managers are not exposed by this pipe. Explicit saves require the current native
 revision and disk snapshot and reuse Code Pad's encoding/CRLF atomic replacement.
 Rename/delete require the same native revision and precommit authority/cancellation
 checks. Linux rename uses `renameat2(RENAME_NOREPLACE)` where available. WSL1's
@@ -30,11 +31,11 @@ before replacement. Temporary files retain their parent/file identities; cleanup
 removes only the still-owned staging file. A blocked syscall has a five-second exit
 deadline: disk contents remain either the original or the complete replacement,
 but a hard exit may leave staging data. The Windows owner drains abandoned replies
-while retiring the helper and never replays a save. Adding child processes requires
-a corresponding process-retirement owner.
+while retiring the helper and never replays a save. Sessions prepared for child
+execution retain their owner until native process retirement is acknowledged.
 
 The private `--supervise -- <absolute program> <argv...>` entry point now provides
-that owner for upcoming Git/LSP execution. It starts before helper threads, sets
+that owner for Git execution and the upcoming LSP transport. It starts before helper threads, sets
 Linux subreaper and parent-death notification, and inherits the caller's explicit
 cwd/environment/stdio. Each job has its own owner. After root exit or cancellation,
 it discovers candidates through `/proc`, proves direct-child ownership with
@@ -49,8 +50,8 @@ unreaped until the final group signal. Windows Job ownership is unchanged.
 Actual owned WSL1 and WSL2 fixtures verified normal exit, double-fork/setsid cleanup,
 cancellation without touching another job, parent death and mapped-image reexecution.
 The Rust integration tests cover these behaviors locally and in the helper CI job.
-Git/LSP pipe admission and cancellation-aware helper shutdown remain required before
-project execution is enabled; the file-only session watchdog is unchanged.
+Git pipe admission and cancellation-aware shutdown now use that owner. LSP transport
+remains incomplete; the file-only session watchdog is unchanged.
 
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,
@@ -149,6 +150,32 @@ and Git owners must share the same context; reattaching cannot erase changed
 sources. Windows stores only the combined native Git/definition approval digest
 and display projection, then revalidates both owners before approval. Changed
 hooks/configs/tools require fresh review. No Git command runs from these methods.
-Source execution still requires the child-aware session retirement/cancel bridge.
+Source execution uses the child-aware session retirement/cancel bridge below.
 The hosted Windows fixture provisions Git only in its owned disposable distro and
 checks review/approval/revoke/reconnect evidence with synthetic repositories.
+
+
+`execution_prepare` first confirms that this session will acknowledge retirement,
+even if a subsequent command frame is only partially received. `source_execute`
+admits the closed set of basic Repo Manager Source operations against its retained
+Git review and current native root. Before each actual Git command, a unique framed
+admission ticket asks Windows to revalidate the private approval, Registry context,
+project definitions and original request deadline. A wrong, stale or repeated ticket
+closes the session. Linux checks its own evidence again after the reply. Unix file
+mode is part of review evidence, so making an unchanged hook executable revokes trust.
+
+The helper reuses Repo Manager with default features disabled and Tokio's existing
+runtime; the static Linux dependency graph contains no Tauri/GTK/WebKit runtime.
+Git executes with the reviewed environment and per-command subreaper owner. EOF,
+timeout and explicit cancellation signal the active operation but retain every
+blocking worker and owned descendant. The response waits for all command owners;
+the final retirement frame is emitted only after future admission is closed.
+Windows retains its context/filesystem permits and partial-frame decoder while
+waiting for that proof and natural launcher exit. It cannot treat killing wsl.exe
+as proof of Linux child retirement. An unconfirmed retirement keeps the owner held.
+
+Real subprocess regressions cover selected stage/commit, denied approval, forged
+tickets, partial command EOF and cancellation with a detached hook descendant.
+The new Windows fixture checks the full Source host boundary, approval revocation
+and retained filesystem permits; its execution result remains pending. WSL worktree
+creation/cleanup need additional destination/sibling capabilities and remain gated.
