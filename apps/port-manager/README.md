@@ -1,5 +1,9 @@
 # port-manager — Port & Process Manager
 
+v0.8 B05 준비에서 UI·API adapter·테스트는
+`packages/workspace-features/src/runtime`로 이전했다. 독립 앱도 같은 UI를 사용한다.
+Workspace의 Runtime 관찰과 별도 Process Action 권한 연결은 B05에서 이어서 구현한다.
+
 현재 PC에서 사용 중인 listener와 연결된 프로세스를 한 화면에서 확인하고,
 같은 endpoint와 같은 프로세스 실행인지 다시 확인한 뒤 안전하게 종료하는 앱이다.
 산출물: PortManager.exe (apps/port-manager).

@@ -1,0 +1,85 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
+.workspace-feature-logs {
+  color-scheme: dark;
+  font-family: var(--db-font-sans);
+  color: var(--db-color-text);
+  background: var(--db-color-bg);
+  --bg: var(--db-color-bg);
+  --panel: var(--db-color-surface);
+  --panel-2: var(--db-color-border);
+  --border: var(--db-color-border);
+  --muted: var(--db-color-text-muted);
+  --accent: var(--db-color-accent);
+  --danger: var(--db-color-danger);
+  --ok: var(--db-color-ok);
+}
+
+.workspace-feature-logs * { box-sizing: border-box; }
+.workspace-feature-logs { min-height: 100vh; margin: 0; }
+.workspace-feature-logs { background: var(--bg); }
+.workspace-feature-logs button, .workspace-feature-logs input, .workspace-feature-logs select { font: inherit; }
+.workspace-feature-logs button, .workspace-feature-logs select, .workspace-feature-logs input { color: inherit; }
+.workspace-feature-logs button { cursor: pointer; }
+.workspace-feature-logs button:disabled { cursor: not-allowed; opacity: .5; }
+.workspace-feature-logs .app-shell { display: flex; min-height: 100vh; flex-direction: column; gap: 12px; padding: 20px; }
+.workspace-feature-logs .topbar, .workspace-feature-logs .section-heading, .workspace-feature-logs .filter-row, .workspace-feature-logs .source-form, .workspace-feature-logs .statusbar { display: flex; align-items: center; gap: 12px; }
+.workspace-feature-logs .topbar { justify-content: space-between; border-bottom: 1px solid var(--border); padding-bottom: 16px; }
+.workspace-feature-logs .top-actions { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+.workspace-feature-logs h1, .workspace-feature-logs h2, .workspace-feature-logs p { margin: 0; }
+.workspace-feature-logs h1 { font-size: 24px; letter-spacing: -.02em; }
+.workspace-feature-logs h2 { font-size: 14px; }
+.workspace-feature-logs .eyebrow { color: var(--accent); font-size: 10px; letter-spacing: .16em; font-weight: 700; }
+.workspace-feature-logs .subtitle, .workspace-feature-logs .muted { color: var(--muted); font-size: 12px; }
+.workspace-feature-logs .source-panel, .workspace-feature-logs .filter-panel, .workspace-feature-logs .log-panel { background: var(--panel); border: 1px solid var(--border); border-radius: 10px; padding: 14px; }
+.workspace-feature-logs .section-heading { justify-content: space-between; margin-bottom: 12px; }
+.workspace-feature-logs .source-form { align-items: end; flex-wrap: wrap; }
+.workspace-feature-logs label { display: flex; flex: 1 1 180px; flex-direction: column; gap: 5px; color: var(--muted); font-size: 11px; }
+.workspace-feature-logs input:not([type="checkbox"]), .workspace-feature-logs select { min-height: 34px; width: 100%; border: 1px solid var(--border); border-radius: 6px; padding: 7px 9px; background: var(--bg); }
+.workspace-feature-logs input:focus, .workspace-feature-logs select:focus, .workspace-feature-logs button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.workspace-feature-logs .toggle { flex: 0 0 auto; flex-direction: row; align-items: center; gap: 6px; }
+.workspace-feature-logs .button { min-height: 34px; border: 1px solid var(--border); border-radius: 6px; padding: 6px 12px; background: var(--panel-2); }
+.workspace-feature-logs .button:hover { border-color: var(--accent); }
+.workspace-feature-logs .button.primary { background: #1b4d72; border-color: #3c82b9; }
+.workspace-feature-logs .button.danger { color: var(--danger); }
+.workspace-feature-logs .source-list { display: flex; flex-wrap: wrap; gap: 8px; min-height: 28px; margin-top: 12px; }
+.workspace-feature-logs .source-chip { display: inline-flex; align-items: center; gap: 6px; border: 1px solid var(--border); border-radius: 999px; background: var(--panel-2); padding: 5px 8px 5px 10px; font-size: 12px; }
+.workspace-feature-logs .source-chip button { border: 0; background: transparent; color: var(--muted); padding: 0 2px; }
+.workspace-feature-logs .source-status { color: var(--muted); font-size: 10px; text-transform: uppercase; }
+.workspace-feature-logs .source-status-initial, .workspace-feature-logs .source-status-advanced { color: var(--ok); }
+.workspace-feature-logs .source-status-unavailable { color: var(--danger); }
+.workspace-feature-logs .filter-row { flex-wrap: wrap; align-items: end; }
+.workspace-feature-logs .filter-grow { flex: 1 1 300px; }
+.workspace-feature-logs .error, .workspace-feature-logs .notice { border: 1px solid #743c45; border-radius: 6px; background: #351e26; color: var(--danger); padding: 9px 11px; }
+.workspace-feature-logs .notice { border-color: #32624f; background: #1d332b; color: var(--ok); }
+.workspace-feature-logs .log-panel { flex: 1; min-height: 300px; }
+.workspace-feature-logs .log-table { overflow: auto; max-height: calc(100vh - 420px); border: 1px solid var(--border); border-radius: 6px; }
+.workspace-feature-logs .log-row { display: grid; grid-template-columns: 28px 190px 70px 130px minmax(180px, 1fr) 42px; gap: 8px; align-items: center; min-height: 34px; padding: 5px 8px; border-bottom: 1px solid rgba(49,66,84,.55); font-size: 12px; }
+.workspace-feature-logs .log-row:last-child { border-bottom: 0; }
+.workspace-feature-logs .log-head { position: sticky; top: 0; z-index: 1; background: var(--panel-2); color: var(--muted); font-size: 10px; text-transform: uppercase; letter-spacing: .06em; }
+.workspace-feature-logs .log-row > * { min-width: 0; }
+.workspace-feature-logs .log-row time, .workspace-feature-logs .log-row code { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.workspace-feature-logs .row-select { display: inline-flex; align-items: center; justify-content: center; }
+.workspace-feature-logs .bookmark-cell { display: inline-flex; align-items: center; justify-content: center; }
+.workspace-feature-logs .log-row[tabindex="0"]:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+.workspace-feature-logs .message { overflow-wrap: anywhere; white-space: pre-wrap; }
+.workspace-feature-logs .message.nowrap { overflow-x: auto; overflow-wrap: normal; white-space: pre; }
+.workspace-feature-logs mark { border-radius: 2px; background: #d5ad4a; color: #151b22; padding: 0 1px; }
+.workspace-feature-logs .level { font-size: 10px; font-weight: 700; text-transform: uppercase; }
+.workspace-feature-logs .level-error, .workspace-feature-logs .level-fatal { color: var(--danger); }
+.workspace-feature-logs .level-warn { color: #ffd48a; }
+.workspace-feature-logs .level-info { color: var(--ok); }
+.workspace-feature-logs .bookmark { border: 0; background: transparent; color: #5f7185; font-size: 16px; }
+.workspace-feature-logs .bookmark.active { color: #ffd16a; }
+.workspace-feature-logs .empty { color: var(--muted); padding: 30px; text-align: center; }
+.workspace-feature-logs .statusbar { color: var(--muted); font-size: 11px; flex-wrap: wrap; justify-content: space-between; padding: 0 4px; }
+.workspace-feature-logs .handoff-backdrop { position: fixed; inset: 0; z-index: 10; display: grid; place-items: center; padding: 20px; background: rgba(0,0,0,.58); }
+.workspace-feature-logs .handoff-dialog { width: min(560px, 100%); border: 1px solid var(--border); border-radius: 10px; background: var(--panel); padding: 20px; box-shadow: 0 16px 60px rgba(0,0,0,.4); }
+.workspace-feature-logs .handoff-dialog h2 { margin-bottom: 10px; font-size: 17px; }
+.workspace-feature-logs .handoff-details { display: grid; gap: 8px; margin: 18px 0; }
+.workspace-feature-logs .handoff-details div { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; border-bottom: 1px solid var(--border); padding-bottom: 7px; }
+.workspace-feature-logs .handoff-details dt { color: var(--muted); font-size: 11px; }
+.workspace-feature-logs .handoff-details dd { margin: 0; text-align: right; }
+.workspace-feature-logs .handoff-actions { display: flex; justify-content: flex-end; gap: 8px; }
+@media (max-width: 900px) { .workspace-feature-logs .log-row { grid-template-columns: 28px 145px 62px 100px minmax(120px,1fr) 36px; } .workspace-feature-logs .topbar { align-items: flex-start; flex-direction: column; } .workspace-feature-logs .top-actions { justify-content: flex-start; } }

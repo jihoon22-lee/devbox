@@ -3,6 +3,10 @@
 예약 실행(크론 잡)과 상시 실행(서비스)을 한 곳에서 관리하는 앱.
 산출물: `Run Manager.exe` (`apps/run-manager`).
 
+v0.8 B05 준비에서 UI·API adapter·테스트는
+`packages/workspace-features/src/tasks`로 이전했다. 독립 앱도 같은 UI를 사용하며,
+Workspace Runtime owner와 scheduler 연결·importer는 B05의 별도 semantic 변경이다.
+
 ## 주요 기능
 
 - **작업(cron job)** — 이름, 명령, 작업 디렉터리, 환경변수, 실행 대상(Windows/WSL 배포판), cron 빌더 + 다음 실행 시각 미리보기

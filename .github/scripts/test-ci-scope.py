@@ -55,10 +55,17 @@ assert pnpm_lock_only.dependency_scope == "all"
 
 editor = resolve("packages/editor/src/index.ts")
 assert editor.frontend_packages == [
-    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/repo-manager",
+    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/log-lens", "apps/port-manager", "apps/repo-manager", "apps/run-manager",
     "apps/workbench", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
 ]
-assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
+assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench"]
+for feature in ["tasks", "runtime", "logs"]:
+    workspace_feature = resolve(f"packages/workspace-features/src/{feature}/api.ts")
+    assert workspace_feature.frontend_apps == [
+        "code-pad", "devbox-workspace", "log-lens", "port-manager", "repo-manager",
+        "run-manager", "workbench",
+    ]
+    assert workspace_feature.rust_scope == "none"
 knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
 assert knowledge_features.frontend_apps == ["devbox-knowledge", "everything-plus", "knowledge-base", "life-log"]
 
@@ -111,7 +118,7 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
+assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench"]
 assert "packages/workspace-features" in catalog.frontend_packages
 assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages
