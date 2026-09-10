@@ -22,6 +22,7 @@ import type {
 import ManagedInstallerPanel from "./ManagedInstallerPanel";
 import LspExecutionReview from "./LspExecutionReview";
 import LspRecoveryReview from "./LspRecoveryReview";
+import WslLspServerSettings from "./WslLspServerSettings";
 import { isProductHosted } from "../../transport";
 
 const LANGUAGE_OPTIONS = [
@@ -155,6 +156,8 @@ export default function LspControlPanel({
   const dialogRef = useRef<HTMLElement>(null);
   const lspAvailable = Boolean(workspaceRoot)
     && (workspaceCapabilities?.lspSupported ?? true);
+  const nativeWsl = workspaceCapabilities?.sourceKind === "wsl"
+    && workspaceCapabilities.lspReason !== "host_lsp_wsl_unsupported";
 
   const configuredLanguageIds = [...new Set([
     ...Object.keys(config.server_by_language),
@@ -434,10 +437,17 @@ export default function LspControlPanel({
           이 작업 폴더에서 언어 서버 사용
         </label>
         <p className="lsp-trust-note">
-          서버는 사용자 권한으로 실행됩니다. Code Pad는 셸을 거치지 않고 고정 argv와 작업 폴더만 전달하지만,
+          서버는 사용자 권한으로 실행됩니다. 셸을 거치지 않고 고정 argv와 작업 폴더만 전달하지만,
           신뢰하는 로컬 실행 파일만 등록하세요.
         </p>
 
+        {nativeWsl ? loaded && <WslLspServerSettings
+          key={loaded.nativeRevision ?? "loaded"}
+          config={config}
+          disabled={busy}
+          onDirty={setFormDirty}
+          onApply={next => { setConfig(next); setHasUnsavedChanges(true); }}
+        /> : <>
         <div className="lsp-config-grid">
           <label>
             언어
@@ -518,13 +528,14 @@ export default function LspControlPanel({
           <button type="button" className="toolbar-button" disabled={!loaded} onClick={removeServer}>이 언어 설정 제거</button>
           <button type="button" className="toolbar-button selected" disabled={!loaded} onClick={updateServer}>이 언어 설정 적용</button>
         </div>
+        </>}
 
         {isProductHosted() && <LspExecutionReview
           key={`${loaded?.nativeRevision}:${hasUnsavedChanges}:${formDirty}`}
           nativeRevision={loaded?.nativeRevision ?? null}
           disabled={busy || hasUnsavedChanges || formDirty || !config.enabled || !lspAvailable}
         />}
-        {isProductHosted() && <LspRecoveryReview disabled={busy || !workspaceRoot} />}
+        {isProductHosted() && !nativeWsl && <LspRecoveryReview disabled={busy || !workspaceRoot} />}
         <section className="lsp-status-section" aria-label="언어 서버 상태">
           <h3>현재 상태</h3>
           {configuredLanguageIds.length === 0 && (
@@ -616,12 +627,12 @@ export default function LspControlPanel({
           })}
         </section>
 
-          <ManagedInstallerPanel
+          {!nativeWsl && <ManagedInstallerPanel
             onChanged={(nextCatalog, nextStatuses) => {
               setManagedCatalog(nextCatalog);
               setManagedStatuses(nextStatuses);
             }}
-          />
+          />}
         </div>
 
         <footer className="lsp-panel-footer">

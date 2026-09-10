@@ -104,7 +104,12 @@ fn main() {
                         std::thread::sleep(Duration::from_secs(1));
                     }
                 }
-                json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":{"openClose":true,"change":1,"save":true},"completionProvider":{},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"renameProvider":true,"documentFormattingProvider":true,"diagnosticProvider":{"interFileDependencies":false,"workspaceDiagnostics":false}}})
+                let sync = if args.iter().any(|arg| arg == "--numeric-sync") {
+                    json!(1)
+                } else {
+                    json!({"openClose":true,"change":1,"save":true})
+                };
+                json!({"capabilities":{"positionEncoding":"utf-16","textDocumentSync":sync,"completionProvider":{},"hoverProvider":true,"definitionProvider":true,"referencesProvider":true,"renameProvider":true,"documentFormattingProvider":true,"diagnosticProvider":{"interFileDependencies":false,"workspaceDiagnostics":false}}})
             }
             "textDocument/didOpen" => {
                 let doc = &params["textDocument"];

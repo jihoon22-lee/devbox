@@ -252,6 +252,58 @@ describe("LspControlPanel", () => {
     }) as HTMLInputElement).disabled).toBe(true);
   });
 
+  it("saves an explicit native WSL Node command without touching the Windows installer", async () => {
+    loadMock.mockResolvedValue(loadedConfig());
+    const view = render(<LspControlPanel workspaceRoot="/home/project" workspaceCapabilities={{
+      path: "/home/project", sourceKind: "wsl", watchMode: "polling",
+      editSupported: true, lspSupported: true, lspReason: null,
+    }} onClose={() => undefined} />);
+    await view.findByText(/선택한 WSL 배포판에 설치된 서버/);
+    fireEvent.click(view.getByRole("checkbox", { name: "이 작업 폴더에서 언어 서버 사용" }));
+    fireEvent.change(view.getByLabelText("언어"), { target: { value: "typescript" } });
+    fireEvent.change(view.getByLabelText("서버 종류"), { target: { value: "node" } });
+    fireEvent.change(view.getByLabelText("서버 진입 파일 절대 경로"), { target: { value: "/opt/한글 tools/server.mjs" } });
+    fireEvent.change(view.getByLabelText("Node 실행 파일 절대 경로"), { target: { value: "/opt/node/bin/node" } });
+    fireEvent.change(view.getByLabelText("인자 (한 줄에 하나, 셸 문법 사용 안 함)"), { target: { value: "--stdio\nargument with spaces" } });
+    expect((view.getByText("설정 저장") as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.click(view.getByText("이 언어 설정 적용"));
+    fireEvent.click(view.getByText("설정 저장"));
+    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({
+      enabled: true, workspace_root: "/home/project", server_by_language: {},
+      custom_servers: [expect.objectContaining({ language_ids: ["typescript"],
+        executable: "/opt/한글 tools/server.mjs", args: ["--stdio", "argument with spaces"],
+        runtime: { kind: "node", executable: "/opt/node/bin/node", min_version: null },
+      })],
+    }), false));
+    expect(catalogMock).not.toHaveBeenCalled();
+    expect(installedMock).not.toHaveBeenCalled();
+    expect(startMock).not.toHaveBeenCalled();
+    expect(view.queryByRole("option", { name: "설치된 관리형 서버" })).toBeNull();
+    expect(view.getByText(/이름 변경과 여러 파일에 걸친 편집 적용은 아직 지원하지 않습니다/)).toBeTruthy();
+  });
+
+  it("edits one imported WSL language while preserving sibling configuration and provenance", async () => {
+    const config = loadedConfig().config;
+    const original = { language_ids: ["typescript", "javascript"], executable: "/opt/server.mjs",
+      args: ["--stdio"], runtime: { kind: "node" as const, executable: "/opt/node", min_version: ">=22" },
+      source: "user-reviewed-source", license: "MIT", version: "5.3.0" };
+    loadMock.mockResolvedValue(loadedConfig({ config: { ...config, custom_servers: [original] } }));
+    const view = render(<LspControlPanel workspaceRoot="/home/project" workspaceCapabilities={{
+      path: "/home/project", sourceKind: "wsl", watchMode: "polling",
+      editSupported: true, lspSupported: true, lspReason: null,
+    }} onClose={() => undefined} />);
+    await view.findByText(/선택한 WSL 배포판에 설치된 서버/);
+    fireEvent.change(view.getByLabelText("언어"), { target: { value: "typescript" } });
+    expect((view.getByLabelText("서버 진입 파일 절대 경로") as HTMLInputElement).value).toBe("/opt/server.mjs");
+    fireEvent.change(view.getByLabelText("서버 진입 파일 절대 경로"), { target: { value: "/opt/next.mjs" } });
+    fireEvent.click(view.getByText("이 언어 설정 적용"));
+    fireEvent.click(view.getByText("설정 저장"));
+    await waitFor(() => expect(saveMock).toHaveBeenCalledWith(expect.objectContaining({
+      custom_servers: [{ ...original, language_ids: ["javascript"] },
+        { ...original, language_ids: ["typescript"], executable: "/opt/next.mjs" }],
+    }), false));
+  });
+
   it("keeps one close action in the footer instead of a duplicate header button", async () => {
     const onClose = vi.fn();
     const rendered = render(<LspControlPanel workspaceRoot={"/work/project"} onClose={onClose} />);

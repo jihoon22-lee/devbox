@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { applyLspRecovery, cancelLspRecovery, listLspRecovery, previewLspRecovery, type LspRecoveryPreview } from "../api";
@@ -12,6 +13,17 @@ beforeEach(() => {
   vi.mocked(applyLspRecovery).mockResolvedValue({complete:true, restored:["src/fixture.rs"], cleanupPending:false, error:null});
 });
 afterEach(cleanup);
+it("keeps a recovery listing requested immediately after paint", async () => {
+  function PaintedRecovery() {
+    useLayoutEffect(() => {
+      document.querySelector<HTMLButtonElement>('section[aria-label="이름 변경 복구"] button')!.click();
+    }, []);
+    return <LspRecoveryReview disabled={false}/>;
+  }
+  const view = render(<PaintedRecovery/>);
+  await view.findByText("기록 1 복구 검토");
+  expect(listLspRecovery).toHaveBeenCalledOnce();
+});
 async function review(view: ReturnType<typeof render>) {
   fireEvent.click(view.getByText("복구 기록 확인"));
   fireEvent.click(await view.findByText("기록 1 복구 검토"));

@@ -14,7 +14,6 @@ export default function LspRecoveryReview({ disabled }: { disabled: boolean }) {
   const generation = useRef(0);
   const working = useRef(false);
   useEffect(() => {
-    generation.current += 1;
     return () => {
       generation.current += 1;
       const id = pending.current;

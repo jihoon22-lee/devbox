@@ -766,9 +766,79 @@ those now cover the test-only feature and preserved thread limit. The corrected
 full run includes all **4 native LSP pipe tests (6.17 s)**. Initial Workspace
 bundle remains **279,789 / 280,000 B** (gzip **82,531 / 90,000 B**).
 
+## Native WSL LSP settings and installed-server compatibility
+
+Files now exposes installed Linux ELF and explicit Node entry/runtime settings.
+The Windows installer and rename-recovery controls remain target-specific. Editing
+one imported language preserves sibling bindings and provenance, and saving still
+requires a separate execution review. A confirmed retired actor is removed with
+an exact-instance comparison before a new explicit start captures fresh evidence.
+The recovery listing received the same paint-time cancellation correction as
+execution review. Focused UI checks passed **37 tests** and TypeScript validation.
+
+The actual installed TypeScript server exposed a numeric `textDocumentSync`
+compatibility defect: the client recorded the buffer without sending didOpen, so
+formatting failed because the server had no open document. Numeric Full/Incremental
+now includes open/close/save, consistent with the [reference LSP client](https://github.com/microsoft/vscode-languageserver-node/blob/main/client/src/common/client.ts).
+Explicit object-form disabled options stay disabled. Dynamic registrations are
+folded into a status snapshot without changing the retained static capability,
+so unregistration also reaches the UI. The client checks passed **5 tests**, and
+the numeric-sync closed-pipe regression passed with the other **4 native tests**.
+
+The ignored installed-server fixture was explicitly run with reviewed artifacts
+in the native WSL2 environment. All **7 languages passed in 96.79 s** using
+rust-analyzer **2026-08-10.1**, TypeScript language server **5.3.0**/TypeScript
+**6.0.3**, basedpyright **1.39.9**, web servers **4.10.0**, Node **24.18.0** and the
+installed Rust toolchain (cargo/rustc/rustfmt). Rust/TypeScript/JavaScript exercised
+completion, hover and buffered formatting; Python exercised completion/hover;
+JSON/HTML/CSS advertised hover in this configuration. TypeScript, JavaScript,
+Python, HTML and CSS returned actual semantic hover content. Every language used
+version 2 with a non-stale response, preserved disk bytes, and acknowledged native
+shutdown. JSON schema-less hover may be empty. Snippet completion and optional
+web formatter initialization are not claimed. The first Rust formatting attempt
+correctly failed without rustfmt; the final fixture explicitly supplies it.
+Node packages used the existing digest-pinned `node-lock.json`, with no install
+scripts; the Linux rust-analyzer archive was checked against the release asset's
+SHA-256 `d42908a7dc7b89250ae881a0919e477296843665c98574ecc8fe16ba60cecefb`.
+
+The final native strict/client/installed-server run passed in **151.576 s**, sampled
+RSS **3,899,932,672 B**, cgroup memory peak **4,780,158,976 B**. Windows-target strict
+Clippy and the combined helper/test/debug-app build passed in **243.392 s**.
+The final UI wording/test/frontend/Windows debug build passed in **41.403 s**.
+The updated actual Windows→WSL2 Source/Files/LSP fixture then passed in **79.06 s**
+(**113.809 s** including setup/cleanup), with both its distro and directory removed.
+
+The current Windows debug executable and helper passed the complete owned WSL2
+WebView scenario in **62.139 s** (**94.829 s** including setup/cleanup). Through the
+real UI it registered a WSL project, preserved dirty/CRLF state, reviewed Git,
+staged/committed the selected file, configured the installed TypeScript Node
+runtime/entry/argv, saved and approved it, started it, opened a UTF-16 document,
+formatted only the buffer, explicitly saved, then stopped/revoked the server.
+It subsequently opened a **64 MiB** read-only file in **22.568 s** and verified
+all **67,108,864 bytes** from the actual CodeMirror document. App exit, private
+data removal and owned distro/directory cleanup all passed. Initial fixture
+attempts started during approval's exclusive context transition and were rejected;
+the successful sequence waits for the visible approval acknowledgement, as the
+Windows fixture already does. Bounded trace metadata now includes lifecycle
+operations and top-level rejection codes, without response contents.
+
+This is a local `cargo-xwin` **debug fixture executed on Windows**, not a release
+candidate or CI artifact. It contains `dd0d4fa` plus the reviewed modified tree;
+Windows executable SHA-256:
+`3f7e60a9a73b6030ee3618cb694c73d64404acca40fe0a7e938e7c254de6f96a`;
+helper SHA-256:
+`a4e1d4c993d87546d774ea64ecbded758a1ae5f9d4553397fc3d3d9ad932d9f4`.
+The already-pushed `dd0d4fa` [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34487464005)
+and [product CI](https://github.com/jihoon22-lee/devbox/actions/runs/34487463960)
+both passed, including execution review and Knowledge startup. The earlier
+Knowledge failure did not recur; its cause was not established. Final
+`pnpm verify:affected` selected the full repository and passed in **521.463 s**,
+sampled RSS **6,935,654,400 B**, cgroup memory peak **6,446,018,560 B** under the
+shared resource limit. CI for these UI/compatibility changes remains pending.
+
 ## Remaining acceptance and rollback limits
 
-- Native WSL LSP UI exposure, installed-server baselines and final combined WebView acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
+- Native WSL LSP has installed-server, combined Windows/WebView and final affected evidence above; final CI verification of these changes remains required. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration
   comparison remain required. Maximum read-only file/frame parity now has native

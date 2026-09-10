@@ -173,6 +173,13 @@ enum Instance {
     Wsl(wsl_actor::Actor),
 }
 impl Instance {
+    fn finished(&self) -> bool {
+        match self {
+            Self::Native(actor) => actor.finished(),
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.finished(),
+        }
+    }
     fn context(&self) -> &product_contract::ProjectContext {
         match self {
             Self::Native(actor) => actor.context(),
@@ -340,6 +347,22 @@ impl LspHost {
             return actor::idle(method, args);
         };
         let existing = self.actor.lock().map_err(|_| "lsp_unavailable")?.clone();
+        // A transport can retire itself after losing its approval or pipe.
+        // Release only that confirmed instance so a fresh explicit start can
+        // capture new evidence, without retiring a concurrent replacement.
+        let existing = if let Some(old) = existing.as_ref().filter(|old| old.finished()) {
+            old.retire().await?;
+            let mut slot = self.actor.lock().map_err(|_| "lsp_unavailable")?;
+            if slot
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, old))
+            {
+                *slot = None;
+            }
+            slot.clone()
+        } else {
+            existing
+        };
         let instance = if let Some(instance) = existing {
             instance
         } else {

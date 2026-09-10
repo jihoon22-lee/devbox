@@ -121,6 +121,9 @@ impl Actor {
     pub(super) fn context(&self) -> &ProjectContext {
         &self.context
     }
+    pub(super) fn finished(&self) -> bool {
+        self.confirmed.load(Ordering::Acquire)
+    }
     pub(super) async fn request(
         &self,
         method: &str,

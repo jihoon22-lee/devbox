@@ -236,7 +236,7 @@ impl WslFiles {
                 match method {
                     "canonicalize_workspace" => Ok(json!(self.binding().root)),
                     "workspace_capabilities" => Ok(
-                        json!({"path":self.binding().root,"sourceKind":"wsl","watchMode":"polling","editSupported":true,"lspSupported":false,"lspReason":"host_lsp_wsl_unsupported"}),
+                        json!({"path":self.binding().root,"sourceKind":"wsl","watchMode":"polling","editSupported":true,"lspSupported":true,"lspReason":null}),
                     ),
                     _ => self.lease.file_request_until(
                         context,

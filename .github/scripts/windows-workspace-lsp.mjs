@@ -174,7 +174,7 @@ export function installWorkspaceEditorTrace() {
       if (url.hostname === "ipc.localhost" && decodeURIComponent(url.pathname) === "/plugin:workspace|execute" && typeof init?.body === "string") request = JSON.parse(init.body).request;
     } catch { /* Non-IPC fetches remain untouched. */ }
     const method = request?.method;
-    const tracked = request?.component === "workspace.lsp" && (/^(open|change|reload|save|close)_lsp_document$/.test(method) || /^lsp_recovery_(list|preview|apply|cancel)$/.test(method) || /^lsp_execution_(preview|approve|cancel|revoke)$/.test(method) || ["load_lsp_config", "save_lsp_config"].includes(method))
+    const tracked = request?.component === "workspace.lsp" && (/^(open|change|reload|save|close)_lsp_document$/.test(method) || /^lsp_recovery_(list|preview|apply|cancel)$/.test(method) || /^lsp_execution_(preview|approve|cancel|revoke)$/.test(method) || ["load_lsp_config", "save_lsp_config", "start_language_server", "restart_language_server", "stop_language_server", "stop_all_language_servers"].includes(method))
       || request?.component === "workspace.files" && ["save_file", "sync_editor_document"].includes(method);
     if (!tracked) return original.call(this, input, init);
     const row = {method, phase:"pending", elapsedMs:0}, started = performance.now();
@@ -182,9 +182,9 @@ export function installWorkspaceEditorTrace() {
     return original.call(this, input, init).then(response => {
       // Clone before Tauri consumes the body; return the original immediately.
       void response.clone().json().then(result => {
-        row.phase = result?.operation?.outcome?.state ?? "unknown";
-        const issue = result?.value?.issue;
-        if (typeof issue === "string" && /^[a-z_]{1,80}$/.test(issue)) row.issue = issue;
+        row.phase = result?.operation?.outcome?.state ?? (result?.code ? "rejected" : "unknown");
+        const issue = result?.value?.issue ?? result?.code;
+        if (typeof issue === "string" && /^[a-z_-]{1,80}$/.test(issue)) row.issue = issue;
       }).catch(() => {row.phase="invalid_response";}).finally(() => {row.elapsedMs=Math.round(performance.now()-started);});
       return response;
     }, error => {row.phase="rejected";row.elapsedMs=Math.round(performance.now()-started);throw error;});

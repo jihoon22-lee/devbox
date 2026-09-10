@@ -29,12 +29,15 @@ struct Helper {
 }
 impl Helper {
     fn start(root: &Path, context: Value) -> Self {
+        Self::start_with_path(root, context, root.join("bin").as_os_str())
+    }
+    fn start_with_path(root: &Path, context: Value, path: &std::ffi::OsStr) -> Self {
         let session = uuid::Uuid::new_v4().to_string();
         let mut child = Command::new(env!("CARGO_BIN_EXE_devbox-workspace-wsl"))
             .args(["--session", &session])
             .env_clear()
             .env("HOME", root)
-            .env("PATH", root.join("bin"))
+            .env("PATH", path)
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -148,6 +151,9 @@ impl Helper {
     }
     fn capture(&mut self, servers: Value) {
         let config = json!({"version":1,"enabled":true,"workspace_root":self.root,"server_by_language":servers,"custom_servers":[],"update_policy":"manual"});
+        self.capture_config(config);
+    }
+    fn capture_config(&mut self, config: Value) {
         let view = self
             .call("lsp_capture", json!({"config":config}))
             .result
@@ -218,6 +224,209 @@ impl Helper {
             assert!(Instant::now() < until, "native retirement deadline");
             thread::sleep(Duration::from_millis(10));
         }
+    }
+}
+
+/// This optional acceptance check uses already-provisioned, digest-reviewed
+/// server artifacts. It never installs packages or writes outside its fixture.
+#[test]
+#[ignore = "requires DEVBOX_WSL_LSP_INSTALLED_TARGETS with reviewed native server artifacts"]
+fn installed_native_language_servers_accept_versioned_documents() {
+    let installed = PathBuf::from(
+        std::env::var_os("DEVBOX_WSL_LSP_INSTALLED_TARGETS").expect("installed fixture targets"),
+    );
+    let node = installed.join("bin/node");
+    let toolchain = PathBuf::from(
+        std::env::var_os("DEVBOX_WSL_LSP_INSTALLED_TOOLCHAIN")
+            .expect("installed Rust toolchain bin with cargo, rustc and rustfmt"),
+    );
+    for executable in ["cargo", "rustc", "rustfmt"] {
+        assert!(toolchain.join(executable).is_file());
+    }
+    let cases = [
+        (
+            "rust",
+            "rs",
+            "fn main() { let value = 1; }\n",
+            "bin/rust-analyzer",
+        ),
+        (
+            "typescript",
+            "ts",
+            "const value = '한글🙂';\nvalue;\n",
+            "node_modules/typescript-language-server/lib/cli.mjs",
+        ),
+        (
+            "javascript",
+            "js",
+            "const value = '한글🙂';\nvalue;\n",
+            "node_modules/typescript-language-server/lib/cli.mjs",
+        ),
+        (
+            "python",
+            "py",
+            "value = '한글🙂'\nvalue\n",
+            "node_modules/basedpyright/langserver.index.js",
+        ),
+        (
+            "json",
+            "json",
+            "{\"name\":\"한글🙂\"}\n",
+            "node_modules/vscode-langservers-extracted/bin/vscode-json-language-server",
+        ),
+        (
+            "html",
+            "html",
+            "<div class=\"value\">한글🙂</div>\n",
+            "node_modules/vscode-langservers-extracted/bin/vscode-html-language-server",
+        ),
+        (
+            "css",
+            "css",
+            ".value { color: red; }\n",
+            "node_modules/vscode-langservers-extracted/bin/vscode-css-language-server",
+        ),
+    ];
+    for (language, extension, text, entry) in cases {
+        let fixture = Fixture::new();
+        let path = fixture.root.join(format!("문서 space.{extension}"));
+        fs::write(&path, text).unwrap();
+        if language == "rust" {
+            fs::write(fixture.root.join("Cargo.toml"), "[package]\nname = \"installed_fixture\"\nversion = \"0.1.0\"\nedition = \"2024\"\n[workspace]\n[[bin]]\nname = \"fixture\"\npath = \"문서 space.rs\"\n").unwrap();
+        }
+        let mut files = fixture.helper();
+        files.call("files_attach", json!({})).result.unwrap();
+        let opened = files
+            .call(
+                "files_open",
+                json!({"request":{"path":path,"encoding":null}}),
+            )
+            .result
+            .unwrap();
+        let revision = opened["nativeRevision"].clone();
+        let paths = std::env::join_paths([
+            fixture.root.join("bin"),
+            installed.join("bin"),
+            toolchain.clone(),
+        ])
+        .unwrap();
+        let mut lsp = Helper::start_with_path(&fixture.root, fixture.context.clone(), &paths);
+        let mut config = json!({"version":1,"enabled":true,"workspace_root":fixture.root,"server_by_language":{},"custom_servers":[],"update_policy":"manual"});
+        if language == "rust" {
+            config["server_by_language"][language] = json!({"kind":"local","installed_path":installed.join(entry),"executable":null,"args":[]});
+        } else {
+            config["custom_servers"] = json!([{"language_ids":[language],"executable":installed.join(entry),"args":["--stdio"],"runtime":{"kind":"node","executable":node,"min_version":">=22"},"source":"reviewed-test-artifacts","license":"unknown","version":"unknown"}]);
+        }
+        lsp.capture_config(config);
+        let start = lsp.lsp(
+            "start_language_server",
+            json!({"languageId":language,"operationId":format!("installed-{language}")}),
+            None,
+        );
+        assert!(
+            start.result.is_ok(),
+            "{language} startup: {:?}",
+            start.result
+        );
+        let status = lsp
+            .lsp("language_server_statuses", json!({}), None)
+            .result
+            .unwrap();
+        assert_eq!(status[0]["status"], "ready", "{language}: {status}");
+        assert_eq!(status[0]["capabilities"]["rename"], false);
+        let opened = lsp
+            .lsp(
+                "open_lsp_document",
+                json!({"languageId":language,"path":path,"nativeRevision":revision,"text":text}),
+                Some(proof(&mut files, &path, &revision, true)),
+            )
+            .result
+            .unwrap();
+        let uri = opened["uri"].clone();
+        assert!(uri.as_str().unwrap().contains("%20"));
+        let changed = format!("{text}\n");
+        let updated = lsp.lsp("change_lsp_document", json!({"languageId":language,"uri":uri,"nativeRevision":revision,"text":changed,"dirty":true}), Some(proof(&mut files, &path, &revision, false))).result.unwrap();
+        assert_eq!(updated["version"], 2);
+        let capabilities = lsp
+            .lsp("language_server_statuses", json!({}), None)
+            .result
+            .unwrap()[0]["capabilities"]
+            .clone();
+        let mut features = Vec::new();
+        for (capability, method) in [
+            ("completion", "request_lsp_completion"),
+            ("hover", "request_lsp_hover"),
+            ("formatting", "request_lsp_formatting"),
+        ] {
+            if capabilities[capability] != true {
+                continue;
+            }
+            let mut args = json!({"languageId":language,"uri":uri});
+            if capability == "formatting" {
+                args["tabSize"] = json!(2);
+                args["insertSpaces"] = json!(true);
+            } else {
+                let (line, character) = match language {
+                    "typescript" | "javascript" | "python" => (1, 2),
+                    "css" => (0, 11),
+                    "html" => (0, 2),
+                    "rust" => (0, 18),
+                    _ => (0, 1),
+                };
+                args["position"] = json!({"line":line,"character":character});
+            }
+            let reply = lsp.lsp(
+                method,
+                args,
+                Some(proof(&mut files, &path, &revision, false)),
+            );
+            assert!(
+                reply.result.is_ok(),
+                "{language} {capability}: {:?}",
+                reply.result
+            );
+            let result = reply.result.unwrap();
+            if capability == "formatting" {
+                for document in result["documents"]
+                    .as_array()
+                    .expect("buffered formatting result")
+                {
+                    assert_eq!(document["uri"], uri);
+                    assert_eq!(document["version"], 3);
+                }
+            } else {
+                assert_eq!(
+                    result["metadata"]["version"], 2,
+                    "{language} {capability}: {result}"
+                );
+                assert_eq!(result["stale"], false);
+                if capability == "hover" && !matches!(language, "rust" | "json") {
+                    assert!(
+                        !result["value"].is_null(),
+                        "{language} must return semantic hover content"
+                    );
+                }
+            }
+            features.push(capability);
+        }
+        assert!(
+            !features.is_empty(),
+            "{language} must expose an editor feature"
+        );
+        assert_eq!(fs::read_to_string(&path).unwrap(), text);
+        lsp.lsp(
+            "close_lsp_document",
+            json!({"languageId":language,"uri":uri}),
+            None,
+        )
+        .result
+        .unwrap();
+        lsp.lsp("stop_all_language_servers", json!({}), None)
+            .result
+            .unwrap();
+        lsp.close();
+        files.close();
+        eprintln!("installed native {language}: ready, UTF-16 version 2, features {features:?}, explicit shutdown acknowledged");
     }
 }
 impl Drop for Helper {
@@ -292,7 +501,7 @@ fn alive(pid: u32) -> bool {
 #[test]
 fn native_lsp_documents_bind_file_identity_versions_utf16_and_explicit_saves() {
     let fixture = Fixture::new();
-    let (server, state) = fixture.server("server-state", &[]);
+    let (server, state) = fixture.server("server-state", &["--numeric-sync"]);
     let path = fixture.root.join("문서.rs");
     fs::write(&path, "a🙂b\n").unwrap();
     let mut files = fixture.helper();

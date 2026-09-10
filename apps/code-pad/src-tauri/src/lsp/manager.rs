@@ -1346,7 +1346,7 @@ impl LspManager {
             let process = session.process.state().await;
             let process_state = process_state_label(process.clone());
             let document_count = session.documents.lock().await.len();
-            let mut capabilities = session.client.capabilities().await;
+            let mut capabilities = session.client.capabilities().await.for_status();
             if self.rename_backup_root.is_none() {
                 capabilities = capabilities.without_disk_rename();
             }

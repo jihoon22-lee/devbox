@@ -75,8 +75,27 @@ its own native descriptors and editor versions. Formatting changes memory only;
 explicit Files save remains required. Disk rename/WorkspaceEdit is unsupported.
 The synthetic ELF server is built only with `test-fixtures` and shipped to CI as a
 separate test artifact, never as a packaged helper resource. Actual Windows actor
-fixtures passed on owned WSL1/2. UI exposure and final WebView acceptance remain
-pending.
+fixtures passed on owned WSL1/2. The Files UI now exposes native ELF and explicit
+Node entry/runtime settings without the Windows installer. The updated actual
+Windows→WSL2 host fixture and combined WebView scenario passed, including an
+installed TypeScript server and explicit buffered-format/save/stop flow; see the
+B04 workthrough for binary provenance and remaining integration requirements.
+
+An opt-in installed-server check in `tests/lsp_pipe.rs` accepts
+`DEVBOX_WSL_LSP_INSTALLED_TARGETS` (an already-reviewed directory with `bin/node`,
+`bin/rust-analyzer` and `node_modules`) and `DEVBOX_WSL_LSP_INSTALLED_TOOLCHAIN`
+(an installed native Rust `bin` directory containing cargo/rustc/rustfmt). It
+never downloads or installs packages. The B04 fixture used rust-analyzer
+2026-08-10.1 and the existing Code Pad `node-lock.json`: TypeScript language
+server 5.3.0/TypeScript 6.0.3, basedpyright 1.39.9 and web servers 4.10.0, with
+Node 24.18.0. Run `cargo test -p workspace-wsl --features test-fixtures --test
+lsp_pipe installed_native_language_servers_accept_versioned_documents --
+--ignored --exact --nocapture` under the repository verification resource wrapper.
+These native WSL2 checks cover versioned document/feature requests, memory-only
+formatting where advertised, semantic hover, and acknowledged shutdown; they
+are separate from Windows/WebView evidence. The web servers advertise hover in
+this baseline: snippet completion and their optional formatter initialization
+are not enabled. The UI displays only advertised features.
 
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,

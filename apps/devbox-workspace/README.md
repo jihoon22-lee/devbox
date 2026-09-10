@@ -312,7 +312,7 @@ actual-pipe tests passed; the expanded Windows cleanup fixture remains pending.
 WSL Dependencies now analyzes native lockfiles without Windows path fallback,
 using the same parser and keeping summary/cache/remote approval on Windows. Linux
 regressions and Windows compilation passed; the expanded host fixture is pending.
-WSL LSP still requires its native adapter.
+WSL LSP now uses the native adapter described below.
 
 Explicit Explorer reveal now revalidates the currently opened WSL document through
 the native helper. Only its exact acknowledged path is mapped to the retained
@@ -367,6 +367,15 @@ actor fixtures on owned WSL1/2, including authenticated file proofs, UTF-16 edit
 explicit save and cancellation with detached-child retirement. UI exposure,
 installed-language-server baselines and final WebView acceptance remain pending;
 WSL disk rename/WorkspaceEdit remains unsupported.
+Files now offers installed Linux ELF and explicit Node entry/runtime settings,
+with Windows installation controls confined to Windows contexts. Numeric LSP
+synchronization retains open/change/save/close notifications; dynamic feature
+registrations are reflected in status snapshots. The installed-server native
+fixture passed for Rust, TypeScript, JavaScript, Python, JSON, HTML and CSS;
+available features remain server-dependent (see the native README).
 The `d8f76a4` CI Windows debug artifact passed an owned WSL2 WebView scenario for
 registration, dirty-buffer retention, CRLF save, selected stage/commit and exact
-64-MiB read-only editor content. This evidence does not cover the newer LSP path.
+64-MiB read-only editor content. The newer local Windows debug fixture also passed
+that flow with installed TypeScript LSP configuration/review/start, buffered
+formatting, explicit save, stop and revocation; the B04 workthrough records the
+exact executable/helper hashes and modified-tree provenance.

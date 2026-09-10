@@ -330,6 +330,9 @@ impl Actor {
     pub(super) fn uses_installation(&self, id: &str, version: &str) -> bool {
         self.snapshot.config().server_by_language.values().any(|server|matches!(server,code_pad_lib::lsp::ServerRef::Managed {manifest_id,version:configured,..} if manifest_id==id&&configured==version))
     }
+    pub(super) fn finished(&self) -> bool {
+        self.confirmed.load(Ordering::Acquire)
+    }
     pub(super) async fn request(
         &self,
         method: &str,
