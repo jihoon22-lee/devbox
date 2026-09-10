@@ -158,3 +158,20 @@ it("loads WSL discovery only after opening its folder form",async()=>{
   expect(call.mock.calls.filter(([,method])=>method==="list_wsl_distros")).toHaveLength(1);
   expect(call.mock.calls.some(([,method])=>method==="preview_wsl")).toBe(false);
 });
+
+it("reviews a Source worktree proposal in its WSL distro without starting it", async () => {
+  const target={kind:"wsl" as const,distroId:"native-distro-id"};
+  const suggestedRoot={id:"created-wsl-worktree",path:"/home/fixture/새 worktree",name:"WSL 프로젝트",target};
+  call.mockImplementation(async(_component,method)=>{
+    if(method==="status")return {phase:"selected"};
+    if(method==="snapshot")return emptyRegistry;
+    if(method==="preview_wsl")return {...preview,binding:{root:suggestedRoot.path,target}};
+    if(method==="legacy_snapshot_job")return null;
+    if(method==="list_window_history")return {items:[],unrecognized:0};
+    return {snapshots:[],unrecognized:0};
+  });
+  render(<RegistryGate suggestedRoot={suggestedRoot}/>);
+  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","preview_wsl",{distroId:target.distroId,root:suggestedRoot.path,startStopped:false}));
+  expect(call.mock.calls.some(([,method])=>method==="preview_windows"||method==="apply_registration")).toBe(false);
+  expect(await screen.findByDisplayValue(suggestedRoot.name)).toBeTruthy();
+});

@@ -294,6 +294,8 @@ Basic WSL Source status/diff/history/stage/commit/remote operations now use the
 native Git owner. Every command rechecks Windows approval and native Git evidence;
 cancellation retains the context and file-write exclusion until native descendants
 retire. The static helper reuses Repo Manager's existing execution policies without
-Tauri. Linux actual-pipe tests and Windows compilation passed; the new Windows
-Source execution fixture is pending. WSL worktree creation/cleanup and LSP still
-require their additional native ownership and destination/edit capabilities.
+Tauri. Linux actual-pipe tests, Windows compilation and actual Windows WSL1
+Source execution passed at `3011ef9` (11.07 seconds). WSL worktree creation now retains a one-use native destination review and offers
+registration in the same distro. Its Linux execution and Windows compilation passed;
+the expanded Windows host fixture is pending. WSL cleanup and LSP still require
+their additional native sibling/edit capabilities.

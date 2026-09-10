@@ -14,7 +14,7 @@ export interface Preview {previewId: string; binding: Worktree["binding"]; impor
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
-export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot, suggestedRoot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void; suggestedRoot?: {id:string;path:string;name:string}|null}) {
+export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot, suggestedRoot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void; suggestedRoot?: {id:string;path:string;name:string;target?:ProjectContext["target"]}|null}) {
   const [status, setStatus] = useState<Status>({phase:"loading"});
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [templateId,setTemplateId]=useState("");
@@ -83,7 +83,9 @@ export default function RegistryGate({context = null, onContextChanged = async (
     void act(async()=>{
       if(preview)await cancelPreview();
       setRoot(suggestedRoot.path);setName(suggestedRoot.name);setTemplateId("");
-      const next=await registryCall<Preview>("preview_windows",{root:suggestedRoot.path});
+      const next=suggestedRoot.target?.kind==="wsl"
+        ? await registryCall<Preview>("preview_wsl",{distroId:suggestedRoot.target.distroId,root:suggestedRoot.path,startStopped:false})
+        : await registryCall<Preview>("preview_windows",{root:suggestedRoot.path});
       if(!alive.current){await registryCall("cancel_registration",{previewId:next.previewId});return;}
       currentPreview.current=next.previewId;setPreview(next);
       document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});

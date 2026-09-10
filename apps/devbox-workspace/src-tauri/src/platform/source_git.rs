@@ -26,6 +26,14 @@ pub(crate) struct Report {
     bytes: usize,
 }
 #[cfg(windows)]
+#[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct WorktreePreview {
+    pub preview_id: String,
+    pub branch: String,
+    pub target_dir: String,
+}
+#[cfg(windows)]
 impl Report {
     fn validate(&self) -> Result<()> {
         let hash = |value: &str| {
@@ -109,6 +117,38 @@ impl SourceGit {
             binding,
             Self::Native(Box::new(GitTrust::capture(lease, environment, deadline)?)),
         ))
+    }
+    #[cfg(windows)]
+    pub(crate) fn preview_worktree(
+        &self,
+        branch: &str,
+        target: &str,
+        deadline: u64,
+    ) -> Result<WorktreePreview> {
+        let Self::Wsl {
+            context,
+            lease,
+            report,
+        } = self
+        else {
+            return Err("wsl_context_invalid");
+        };
+        let preview: WorktreePreview = serde_json::from_value(lease.file_request_until(
+            context,
+            "source_worktree_preview",
+            serde_json::json!({"digest":report.digest,"branch":branch,"targetDir":target}),
+            deadline,
+        )?)
+        .map_err(|_| "wsl_protocol_invalid")?;
+        if !workspace_wsl::token(&preview.preview_id)
+            || preview.branch != branch
+            || !preview.target_dir.starts_with('/')
+            || preview.target_dir.len() > 32768
+            || preview.target_dir.chars().any(char::is_control)
+        {
+            return Err("wsl_protocol_invalid");
+        }
+        Ok(preview)
     }
     #[cfg(windows)]
     pub(crate) fn is_wsl(&self) -> bool {

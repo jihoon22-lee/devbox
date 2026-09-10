@@ -101,12 +101,13 @@ impl FrameCursor {
     }
 }
 
-/// Project Git methods that need only the selected repository capability.
-/// Creation and sibling cleanup require additional native capabilities.
+/// Project Git dispatch methods. Creation additionally consumes a retained
+/// destination preview; sibling cleanup needs a separate native capability.
 pub fn source_method(method: &str) -> bool {
     matches!(
         method,
-        "repo_status"
+        "create_worktree"
+            | "repo_status"
             | "worktrees"
             | "worktree_clean"
             | "repo_preflight"

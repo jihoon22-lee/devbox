@@ -52,9 +52,10 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null}|null>(null);
   const reloadImportedSession=useCallback(()=>{setFileRequest(null);setSessionRevision(value=>value+1);},[]);
   const [sourceNavigationError, setSourceNavigationError] = useState("");
-  const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string}|null>(null);
+  const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string;target:NonNullable<Description["context"]>["target"]}|null>(null);
   const proposeWorktree = (path:string) => {
-    setRegistrationRequest({id:crypto.randomUUID(),path,name:registry?.projects.find(project=>project.id===description.context?.projectId)?.name??""});
+    if (!description.context) return;
+    setRegistrationRequest({id:crypto.randomUUID(),path,target:description.context.target,name:registry?.projects.find(project=>project.id===description.context?.projectId)?.name??""});
     navigate("source");
   };
   const openSourceFile = (relative:string,line:number|null) => {

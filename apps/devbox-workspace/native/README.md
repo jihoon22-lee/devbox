@@ -176,6 +176,22 @@ as proof of Linux child retirement. An unconfirmed retirement keeps the owner he
 
 Real subprocess regressions cover selected stage/commit, denied approval, forged
 tickets, partial command EOF and cancellation with a detached hook descendant.
-The new Windows fixture checks the full Source host boundary, approval revocation
-and retained filesystem permits; its execution result remains pending. WSL worktree
-creation/cleanup need additional destination/sibling capabilities and remain gated.
+The Windows fixture passed at `3011ef9` in 11.07 seconds, covering the full Source
+host boundary, approval revocation and retained filesystem permits. WSL worktree
+cleanup still needs additional sibling capabilities and remains gated.
+
+
+`source_worktree_preview` retains the existing native parent and missing target
+without creating either a directory or Git command. The shared Windows/Linux
+worktree target owner checks the selected filesystem, Git-metadata exclusions,
+parent identity and target absence. The Windows preview retains that exact helper
+connection and issues its own one-use token. Creation consumes both tokens, checks
+the original approval and destination before and after each command admission,
+then reuses Repo Manager's reviewed worktree creation. Failed or cancelled creation
+is never automatically retried or cleaned. Registration is a separate explicit
+proposal with the same WSL distro; it does not automatically start a stopped distro.
+
+Actual Linux tests cover creation, preserved unrelated files, token replay and a
+destination created while approval is pending. The expanded Windows fixture also
+registers the linked worktree and stages/commits in its own context; compilation
+passed but that new actual Windows result remains pending.

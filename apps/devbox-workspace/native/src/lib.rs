@@ -267,10 +267,14 @@ pub mod git_config;
 pub mod git_files;
 #[cfg(feature = "git")]
 pub mod git_trust;
+#[cfg(feature = "git")]
+pub mod git_worktree;
 
 #[cfg(all(feature = "helper", target_os = "linux"))]
 mod git_environment;
 
+#[cfg(all(target_os = "linux", feature = "helper"))]
+mod git_creation;
 #[cfg(all(feature = "helper", target_os = "linux"))]
 mod git_review;
 

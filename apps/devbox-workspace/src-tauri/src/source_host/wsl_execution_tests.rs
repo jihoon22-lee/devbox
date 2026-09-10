@@ -269,6 +269,100 @@ fn owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership()
         fs::read(fixture.unc.join("unselected.txt")).unwrap(),
         b"preserved unselected\n"
     );
+    let linked = format!("{root}/linked 한글 worktree");
+    let preview = fixture
+        .source
+        .manage(
+            &fixture.host,
+            &mut fixture.definitions,
+            &fixture.context,
+            "preview_worktree",
+            json!({"branch":"native-linked","targetDir":linked}),
+            Fixture::budget(),
+        )
+        .unwrap();
+    let linked_unc = fixture.unc.join("linked 한글 worktree");
+    assert!(!linked_unc.exists());
+    let created = fixture.execute(
+        "create_worktree",
+        json!({"previewId":preview["previewId"],"operationId":"owned-create"}),
+        "owned-create",
+    );
+    assert_eq!(created["path"], linked);
+    assert_eq!(
+        fs::read(linked_unc.join("tracked.txt")).unwrap(),
+        b"selected native change\n"
+    );
+    let projects = fixture.host.projects().unwrap();
+    let product_contract::ExecutionTarget::Wsl { distro_id } = &fixture.context.target else {
+        panic!("expected WSL target");
+    };
+    let proposal = projects
+        .preview_wsl(
+            fixture.host.helper_directory().unwrap(),
+            distro_id,
+            &linked,
+            false,
+        )
+        .unwrap();
+    let (_, linked_context) = projects
+        .apply(
+            &proposal.preview_id,
+            "Native linked worktree",
+            RegistrationAction::Register,
+        )
+        .unwrap();
+    assert_eq!(linked_context.project_id, fixture.context.project_id);
+    assert_ne!(linked_context.worktree_id, fixture.context.worktree_id);
+    assert_eq!(linked_context.target, fixture.context.target);
+    let original_context = std::mem::replace(&mut fixture.context, linked_context);
+    let original_root = std::mem::replace(&mut fixture.root, linked.clone());
+    let original_unc = std::mem::replace(&mut fixture.unc, linked_unc);
+    fixture.approve();
+    fs::write(fixture.unc.join("tracked.txt"), b"linked context change\n").unwrap();
+    fixture.execute(
+        "repo_stage",
+        json!({"request":{"path":linked,"paths":["tracked.txt"],"operationId":"linked-stage"}}),
+        "linked-stage",
+    );
+    fixture.execute("repo_commit", json!({"request":{"path":linked,"message":"linked native commit","operationId":"linked-commit"}}), "linked-commit");
+    assert_eq!(fixture.git(&["branch", "--show-current"]), "native-linked");
+    assert_eq!(
+        fixture.git(&["show", "HEAD:tracked.txt"]),
+        "linked context change"
+    );
+    fixture.context = original_context;
+    fixture.root = original_root;
+    fixture.unc = original_unc;
+    assert_eq!(
+        fixture.git(&["show", "HEAD:tracked.txt"]),
+        "selected native change"
+    );
+    let cancelled_path = format!("{root}/cancelled worktree");
+    let preview = fixture
+        .source
+        .manage(
+            &fixture.host,
+            &mut fixture.definitions,
+            &fixture.context,
+            "preview_worktree",
+            json!({"branch":"cancelled-preview","targetDir":cancelled_path}),
+            Fixture::budget(),
+        )
+        .unwrap();
+    fixture
+        .source
+        .manage(
+            &fixture.host,
+            &mut fixture.definitions,
+            &fixture.context,
+            "cancel_worktree",
+            json!({"previewId":preview["previewId"]}),
+            Fixture::budget(),
+        )
+        .unwrap();
+    assert!(!fixture.unc.join("cancelled worktree").exists());
+    assert_eq!(fixture.git(&["branch", "--list", "cancelled-preview"]), "");
     fs::write(fixture.unc.join("tracked.txt"), b"revoked pending change\n").unwrap();
     let prepared = fixture.prepare(
         "repo_stage",

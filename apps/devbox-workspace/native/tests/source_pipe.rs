@@ -496,3 +496,101 @@ fn a_forged_admission_ticket_retires_without_starting_the_commit() {
     assert!(!root.join("must-not-exist").exists());
     assert_eq!(git(root, &["rev-parse", "HEAD"]), before);
 }
+
+fn worktree_preview(helper: &mut Helper, branch: &str, target: &Path) -> Value {
+    helper.send(
+        "source_worktree_preview",
+        json!({"context":helper.context,"digest":helper.digest,"branch":branch,"targetDir":target}),
+    );
+    helper.complete(true).result.unwrap()
+}
+#[test]
+fn worktree_creation_consumes_native_destination_review_and_preserves_other_files() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let target = root.join("linked 한글 folder");
+    let mut helper = Helper::start(root);
+    let preview = worktree_preview(&mut helper, "reviewed-branch", &target);
+    assert!(!target.exists());
+    assert_eq!(helper.admissions, 0);
+    fs::write(root.join("unselected.txt"), b"preserved\n").unwrap();
+    helper.execute(
+        "create_worktree",
+        json!({"previewId":preview["previewId"],"operationId":"create-reviewed"}),
+    );
+    assert_eq!(
+        helper.complete(true).result.unwrap()["path"],
+        target.to_string_lossy().as_ref()
+    );
+    assert_eq!(
+        git(&target, &["branch", "--show-current"]),
+        "reviewed-branch"
+    );
+    assert_eq!(fs::read(target.join("tracked.txt")).unwrap(), b"original\n");
+    assert_eq!(
+        fs::read(root.join("unselected.txt")).unwrap(),
+        b"preserved\n"
+    );
+    let admissions = helper.admissions;
+    helper.execute(
+        "create_worktree",
+        json!({"previewId":preview["previewId"],"operationId":"replay-reviewed"}),
+    );
+    assert!(helper.complete(true).result.is_err());
+    assert_eq!(helper.admissions, admissions);
+    helper.retire();
+}
+#[test]
+fn worktree_review_cannot_overwrite_a_destination_created_during_approval() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let target = root.join("concurrent destination");
+    let mut helper = Helper::start(root);
+    let preview = worktree_preview(&mut helper, "must-not-exist", &target);
+    helper.execute(
+        "create_worktree",
+        json!({"previewId":preview["previewId"],"operationId":"concurrent-create"}),
+    );
+    let packet = helper
+        .frames
+        .as_ref()
+        .unwrap()
+        .recv_timeout(Duration::from_secs(5))
+        .unwrap()
+        .unwrap();
+    let Output::Control(frame) = packet else {
+        panic!("missing pre-command approval");
+    };
+    fs::create_dir(&target).unwrap();
+    fs::write(target.join("owned.txt"), b"concurrent owner\n").unwrap();
+    helper.reply(frame, true);
+    assert!(helper.complete(true).result.is_err());
+    assert_eq!(
+        fs::read(target.join("owned.txt")).unwrap(),
+        b"concurrent owner\n"
+    );
+    assert!(!target.join(".git").exists());
+    assert_eq!(git(root, &["branch", "--list", "must-not-exist"]), "");
+    helper.retire();
+}
+#[test]
+fn a_wrong_worktree_token_cannot_be_retried_with_the_original_token() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let target = root.join("uncreated");
+    let mut helper = Helper::start(root);
+    let preview = worktree_preview(&mut helper, "wrong-token", &target);
+    for id in [
+        Value::String(uuid::Uuid::new_v4().to_string()),
+        preview["previewId"].clone(),
+    ] {
+        helper.execute(
+            "create_worktree",
+            json!({"previewId":id,"operationId":"wrong-preview"}),
+        );
+        assert!(helper.complete(true).result.is_err());
+    }
+    assert!(!target.exists());
+    assert_eq!(helper.admissions, 0);
+    helper.retire();
+}

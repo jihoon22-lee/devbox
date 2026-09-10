@@ -391,9 +391,42 @@ v0.8 integration verification; they do not introduce a later release or a new
 product feature. Newly discovered work outside this milestone must be reported
 before proceeding.
 
+The actual Windows→WSL1 Source execution fixture at `3011ef9` passed in
+**11.07 s** ([run 34424819336](https://github.com/jihoon22-lee/devbox/actions/runs/34424819336),
+`workspace-wsl-source-execution.log`). It confirms selected stage/commit, approval
+revocation after preparation, cancellation with a detached hook and retained
+filesystem ownership through child retirement. The overall product run and the
+later linked-worktree expansion remain separate pending acceptance.
+
+## Native WSL worktree creation
+
+Windows and Linux now share the existing retained-parent/absent-target worktree
+owner. Linux adds distro-native filesystem admission. A native preview keeps the
+exact helper connection alive until Windows consumes its own one-use review token;
+creation revalidates the original Git approval and destination before/after command
+admission. Repo Manager still owns the actual worktree mutation. No partial result
+is automatically retried or removed.
+
+Source registration proposals now retain their Windows/WSL target. WSL proposals
+use the same distro with `startStopped: false`; registration and context selection
+remain separate from creation. The expanded Windows fixture creates/registers a
+linked worktree, approves it separately, stages/commits within that context and
+checks the original checkout remains unchanged. A cancelled preview creates nothing.
+
+Shared helper **50 tests**, Workspace/helper Linux strict Clippy and Workspace
+frontend build passed (**36.468 s**, sampled RSS **1,618,538,496 B**). Actual Source
+pipe **8 tests** and Registry **10 UI tests**, plus full Workspace MSVC all-target
+strict Clippy passed (**25.868 s**, sampled RSS **2,058,334,208 B**). The real-pipe
+cases cover one-use creation, wrong-token consumption and a concurrently created
+destination during command approval. After extending the Windows fixture, MSVC
+and helper strict Clippy passed again (**6.244 s**, sampled RSS **1,400,930,304 B**).
+Final all-scope `pnpm verify:affected` passed (**480.077 s**, sampled process-group
+RSS **7,801,643,008 B**, enforced cgroup memory peak **6,405,210,112 B**).
+Actual Windows execution of the expanded linked-context fixture is pending.
+
 ## Remaining acceptance and rollback limits
 
-- WSL template instantiation, reveal, Git worktree create/cleanup, native LSP and full WSL2 Rust host/WebView
+- WSL template instantiation, reveal, Git worktree cleanup, native LSP and full WSL2 Rust host/WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration

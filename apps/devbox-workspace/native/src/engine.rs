@@ -305,7 +305,7 @@ impl Engine {
             .roots
             .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
             .ok_or("wsl_root_expired")?;
-        let source = root.source.as_ref().ok_or("wsl_context_required")?;
+        let source = root.source.as_mut().ok_or("wsl_context_required")?;
         if source.context() != &args.context {
             return Err("source_context_changed");
         }
@@ -394,6 +394,16 @@ impl Engine {
                 )?;
                 view
             }
+            Method::Worktree {
+                digest,
+                branch,
+                target_dir,
+                ..
+            } => root
+                .source
+                .as_mut()
+                .ok_or("wsl_context_required")?
+                .preview_worktree(&digest, branch, &target_dir, deadline)?,
             Method::Validate { digest, .. } => {
                 root.source
                     .as_ref()
@@ -694,7 +704,7 @@ impl Engine {
         }
         if matches!(
             request.method.as_str(),
-            "source_capture" | "source_validate"
+            "source_capture" | "source_validate" | "source_worktree_preview"
         ) {
             return self.source_request(request, guard);
         }

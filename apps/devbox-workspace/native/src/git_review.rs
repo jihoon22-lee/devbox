@@ -38,10 +38,11 @@ impl GitLease for Lease {
 pub(crate) struct Review {
     context: ProjectContext,
     trust: std::sync::Arc<GitTrust<Lease>>,
+    creation: Option<crate::git_creation::Creation>,
 }
 impl Review {
     pub(crate) fn execute<T: Send + Sync + 'static>(
-        &self,
+        &mut self,
         execution: Execution<'_, T>,
     ) -> Result<serde_json::Value> {
         let Execution {
@@ -53,9 +54,8 @@ impl Review {
             authorize,
             retained,
         } = execution;
-        // Creation/cleanup need their own native destination/sibling capabilities;
-        // cancellation is delivered by the current pipe owner's EOF, not a method
-        // that could target another request's domain operation ID.
+        // Cleanup still needs explicit sibling capabilities. Cancellation uses
+        // the current pipe owner rather than another request's operation ID.
         if !crate::control::source_method(method) {
             return Err("wsl_source_method_unavailable");
         }
@@ -68,6 +68,13 @@ impl Review {
             .saturating_add(u128::from(budget_ms))
             .min(u128::from(u64::MAX)) as u64;
         self.revalidate(expected, deadline)?;
+        let (target_boundary, creation, args) = if method == "create_worktree" {
+            let plan = self.creation.take().ok_or("worktree_preview_stale")?;
+            let (target, creation) = plan.consume(args, deadline)?;
+            (Some(target), Some(creation), json!({}))
+        } else {
+            (None, None, args)
+        };
         let program = self.trust.environment.program.clone();
         let environment = self.trust.environment.environment.clone();
         let root = self.trust.root().to_path_buf();
@@ -80,16 +87,25 @@ impl Review {
             cancelled,
             move |target| {
                 let _retained = &retained;
+                if let Some(target) = &target_boundary {
+                    target.revalidate(deadline).map_err(str::to_owned)?;
+                }
                 // Unknown targets fail before filesystem IO or Windows authorization.
                 trust.repository(target, deadline).map_err(str::to_owned)?;
                 authorize(target.cwd()).map_err(str::to_owned)?;
+                if let Some(target) = &target_boundary {
+                    target.revalidate(deadline).map_err(str::to_owned)?;
+                }
                 trust.repository(target, deadline).map_err(str::to_owned)
             },
         )
         .map_err(|_| "source_context_changed")?
         .with_linux_supervisor()
         .map_err(|_| "source_context_changed")?;
-        let access = repo_manager_lib::component::SourceAccess::for_project(root, key, policy);
+        let mut access = repo_manager_lib::component::SourceAccess::for_project(root, key, policy);
+        if let Some(creation) = creation {
+            access = access.with_creation(creation);
+        }
         let runtime = tokio::runtime::Builder::new_current_thread()
             .enable_all()
             .build()
@@ -108,6 +124,8 @@ impl Review {
                 "source_context_changed"
             }
             "git_output_too_large" => "git_source_limit",
+            "worktree_preview_stale" => "worktree_preview_stale",
+            "worktree_target_changed" => "worktree_target_changed",
             _ => "source_operation_unavailable",
         })
     }
@@ -144,7 +162,35 @@ impl Review {
         Ok(Self {
             context,
             trust: std::sync::Arc::new(trust),
+            creation: None,
         })
+    }
+    pub(crate) fn preview_worktree(
+        &mut self,
+        expected: &str,
+        branch: String,
+        path: &str,
+        deadline: u64,
+    ) -> Result<Value> {
+        self.revalidate(expected, deadline)?;
+        if self.creation.is_some() {
+            return Err("project_preview_limit");
+        }
+        let (git, common) = self
+            .trust
+            .directories()
+            .ok_or("source_requires_repository")?;
+        let creation = crate::git_creation::Creation::capture(
+            self.trust.root(),
+            &[git.to_owned(), common.to_owned()],
+            branch,
+            path,
+            deadline,
+        )?;
+        self.revalidate(expected, deadline)?;
+        let view = creation.view();
+        self.creation = Some(creation);
+        Ok(view)
     }
     pub(crate) fn view(&self) -> Value {
         let (files, environment) = self.trust.evidence_digests();
@@ -167,6 +213,13 @@ impl Review {
 pub(crate) enum Method {
     #[serde(rename = "source_capture")]
     Capture { context: ProjectContext },
+    #[serde(rename = "source_worktree_preview")]
+    Worktree {
+        context: ProjectContext,
+        digest: String,
+        branch: String,
+        target_dir: String,
+    },
     #[serde(rename = "source_validate")]
     Validate {
         context: ProjectContext,
@@ -176,7 +229,9 @@ pub(crate) enum Method {
 impl Method {
     pub(crate) fn context(&self) -> &ProjectContext {
         match self {
-            Self::Capture { context } | Self::Validate { context, .. } => context,
+            Self::Capture { context }
+            | Self::Validate { context, .. }
+            | Self::Worktree { context, .. } => context,
         }
     }
 }

@@ -297,6 +297,12 @@ struct PendingWorktree {
     target: Arc<WorktreeTarget>,
     created: Instant,
 }
+#[cfg(windows)]
+struct PendingWslWorktree {
+    snapshot: Snapshot,
+    native_preview: String,
+    created: Instant,
+}
 pub(crate) struct Invocation {
     pub files: Arc<std::sync::Mutex<crate::files_host::FilesHost>>,
     pub context: ProjectContext,
@@ -310,15 +316,31 @@ pub(crate) struct SourceHost {
     pending: HashMap<String, Pending>,
     cleanup: cleanup_scope::Owner,
     worktrees: HashMap<String, PendingWorktree>,
+    #[cfg(windows)]
+    wsl_worktrees: HashMap<String, PendingWslWorktree>,
     storage: Option<ProtectedStorage>,
     common: Option<PathBuf>,
 }
 impl SourceHost {
+    fn preview_count(&self) -> usize {
+        let count = self.pending.len() + self.worktrees.len() + self.cleanup.len();
+        #[cfg(windows)]
+        {
+            count + self.wsl_worktrees.len()
+        }
+        #[cfg(not(windows))]
+        {
+            count
+        }
+    }
     pub(crate) fn expire(&mut self) {
         self.cleanup.expire();
         self.pending
             .retain(|_, pending| pending.created.elapsed() < TTL);
         self.worktrees
+            .retain(|_, pending| pending.created.elapsed() < TTL);
+        #[cfg(windows)]
+        self.wsl_worktrees
             .retain(|_, pending| pending.created.elapsed() < TTL);
     }
     pub(crate) fn initialize(&mut self, app: &tauri::AppHandle, host: &Host) -> Result<()> {
@@ -349,9 +371,7 @@ impl SourceHost {
         let deadline = budget.deadline_ms;
         self.expire();
         if cleanup_scope::management(method) {
-            if method == "preview_cleanup_scope"
-                && self.pending.len() + self.worktrees.len() + self.cleanup.len() >= MAX_PREVIEWS
-            {
+            if method == "preview_cleanup_scope" && self.preview_count() >= MAX_PREVIEWS {
                 return Err("project_preview_limit");
             }
             return self
@@ -373,6 +393,14 @@ impl SourceHost {
                 {
                     self.worktrees.remove(&id.preview_id);
                 }
+                #[cfg(windows)]
+                if self
+                    .wsl_worktrees
+                    .get(&id.preview_id)
+                    .is_some_and(|pending| pending.snapshot.context == *context)
+                {
+                    self.wsl_worktrees.remove(&id.preview_id);
+                }
                 Ok(Value::Null)
             }
             "preview_worktree" => {
@@ -386,12 +414,33 @@ impl SourceHost {
                 if !repo_manager_lib::component::source_branch_valid(&input.branch) {
                     return Err("worktree_branch_invalid");
                 }
-                if self.pending.len() + self.worktrees.len() + self.cleanup.len() >= MAX_PREVIEWS {
+                if self.preview_count() >= MAX_PREVIEWS {
                     return Err("project_preview_limit");
                 }
                 let snapshot = Snapshot::capture(host, definitions, context, deadline)?;
                 if !snapshot.approved()? {
                     return Err("source_review_required");
+                }
+                #[cfg(windows)]
+                if snapshot.git.is_wsl() {
+                    let preview = snapshot.git.preview_worktree(
+                        &input.branch,
+                        &input.target_dir,
+                        deadline,
+                    )?;
+                    snapshot.revalidate(host, deadline)?;
+                    budget.check()?;
+                    let preview_id = uuid::Uuid::new_v4().to_string();
+                    let view = json!({"previewId":preview_id,"branch":preview.branch,"targetDir":preview.target_dir,"root":snapshot.binding.root});
+                    self.wsl_worktrees.insert(
+                        preview_id,
+                        PendingWslWorktree {
+                            snapshot,
+                            native_preview: preview.preview_id,
+                            created: Instant::now(),
+                        },
+                    );
+                    return Ok(view);
                 }
                 let (git, common) = snapshot
                     .git
@@ -472,6 +521,9 @@ impl SourceHost {
                     .retain(|_, pending| pending.snapshot.context != *context);
                 self.worktrees
                     .retain(|_, pending| pending.context != *context);
+                #[cfg(windows)]
+                self.wsl_worktrees
+                    .retain(|_, pending| pending.snapshot.context != *context);
                 Ok(json!({"approved":false}))
             }
             "trust_status" | "preview_trust" => {
@@ -484,7 +536,7 @@ impl SourceHost {
                 if method == "trust_status" {
                     return Ok(view);
                 }
-                if self.pending.len() + self.worktrees.len() + self.cleanup.len() >= MAX_PREVIEWS {
+                if self.preview_count() >= MAX_PREVIEWS {
                     return Err("project_preview_limit");
                 }
                 let preview_id = uuid::Uuid::new_v4().to_string();
@@ -526,6 +578,27 @@ impl SourceHost {
                 operation_id: String,
             }
             let input: Create = serde_json::from_value(args).map_err(|_| "invalid_request")?;
+            #[cfg(windows)]
+            if let Some(pending) = self.wsl_worktrees.remove(&input.preview_id) {
+                if pending.snapshot.context != context || pending.created.elapsed() >= TTL {
+                    return Err("worktree_preview_stale");
+                }
+                pending.snapshot.revalidate(&host, deadline)?;
+                if !pending.snapshot.approved()? {
+                    return Err("source_review_required");
+                }
+                budget.check()?;
+                admitted.check()?;
+                return Ok(PreparedSource::Wsl(Box::new(WslExecution {
+                    snapshot: pending.snapshot,
+                    host,
+                    method,
+                    args: json!({"previewId":pending.native_preview,"operationId":input.operation_id}),
+                    budget,
+                    cancelled: admitted.flag(),
+                    _retained: Box::new(retained),
+                })));
+            }
             let pending = self
                 .worktrees
                 .remove(&input.preview_id)
