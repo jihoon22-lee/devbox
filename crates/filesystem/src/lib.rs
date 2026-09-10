@@ -28,6 +28,7 @@
 //!   구현한다.
 
 pub mod ignore;
+pub mod project;
 pub mod project_path;
 pub mod walk;
 
@@ -54,6 +55,13 @@ static NEXT_ATOMIC_FILE: AtomicU64 = AtomicU64::new(0);
 pub struct FilesystemIdentity {
     scope: u64,
     object: u64,
+}
+impl FilesystemIdentity {
+    /// OS-supplied evidence components. They cannot reconstruct an open handle
+    /// or admit access; consumers must compare a fresh native observation.
+    pub fn components(self) -> (u64, u64) {
+        (self.scope, self.object)
+    }
 }
 
 /// Resolve the identity of the exact final path component without following a
@@ -82,118 +90,71 @@ pub fn open_filesystem_object(
     open_object(path.as_ref(), directory, true)
 }
 
-fn open_object(
-    path: &Path,
+/// Retain native identity without requesting file-content access. On Windows
+/// this can inspect an in-use backing image without reading its contents.
+/// The caller must still check the pathname's fresh identity before reuse.
+pub fn open_filesystem_metadata_object(
+    path: impl AsRef<Path>,
     directory: bool,
-    _read_contents: bool,
 ) -> io::Result<(File, FilesystemIdentity)> {
+    open_object(path.as_ref(), directory, false)
+}
+
+/// Identify the exact object of a retained handle without reopening its path.
+/// This is evidence for a native owner, not permission to access another path.
+pub fn opened_filesystem_identity(
+    handle: &File,
+    directory: bool,
+) -> io::Result<FilesystemIdentity> {
     #[cfg(unix)]
     {
-        use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
-
-        #[cfg(target_os = "linux")]
-        const NO_FOLLOW: i32 = 0x20000;
-        #[cfg(target_os = "macos")]
-        const NO_FOLLOW: i32 = 0x100;
-        #[cfg(not(any(target_os = "linux", target_os = "macos")))]
-        const NO_FOLLOW: i32 = 0;
-
-        let handle = OpenOptions::new()
-            .read(true)
-            .custom_flags(NO_FOLLOW)
-            .open(path)?;
+        use std::os::unix::fs::MetadataExt;
         let metadata = handle.metadata()?;
-        if metadata.is_dir() != directory {
+        if metadata.is_dir() != directory || metadata.file_type().is_symlink() {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unexpected file type",
             ));
         }
-        let identity = FilesystemIdentity {
+        Ok(FilesystemIdentity {
             scope: metadata.dev(),
             object: metadata.ino(),
-        };
-        Ok((handle, identity))
+        })
     }
-
     #[cfg(windows)]
     {
-        use std::os::windows::ffi::OsStrExt;
-        use std::os::windows::io::FromRawHandle;
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::{GENERIC_READ, WIN32_ERROR};
-        use windows::Win32::Storage::FileSystem::{
-            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-            FILE_ATTRIBUTE_DIRECTORY, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_BACKUP_SEMANTICS,
-            FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
-            FILE_SHARE_WRITE, OPEN_EXISTING,
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{
+            Foundation::{HANDLE, WIN32_ERROR},
+            Storage::FileSystem::{
+                GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
+                FILE_ATTRIBUTE_REPARSE_POINT,
+            },
         };
-
-        let wide = path
-            .as_os_str()
-            .encode_wide()
-            .chain(Some(0))
-            .collect::<Vec<_>>();
-        let flags = FILE_FLAG_OPEN_REPARSE_POINT
-            | if directory {
-                FILE_FLAG_BACKUP_SEMANTICS
-            } else {
-                Default::default()
-            };
-        // Identity queries need attributes only. Requesting GENERIC_READ here
-        // would conflict with an existing exclusive source-data handle.
-        let desired_access = FILE_READ_ATTRIBUTES.0
-            | if directory || !_read_contents {
-                0
-            } else {
-                GENERIC_READ.0
-            };
-        let raw = unsafe {
-            CreateFileW(
-                PCWSTR(wide.as_ptr()),
-                desired_access,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                None,
-                OPEN_EXISTING,
-                flags,
-                None,
-            )
-        }
-        .map_err(|error| {
-            WIN32_ERROR::from_error(&error)
-                .map(|code| io::Error::from_raw_os_error(code.0 as i32))
-                .unwrap_or_else(|| io::Error::other(error))
-        })?;
-        // Transfer ownership immediately so every later error closes exactly
-        // this handle once.
-        let handle = unsafe { std::fs::File::from_raw_handle(raw.0) };
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        unsafe { GetFileInformationByHandle(raw, &mut information) }.map_err(|error| {
-            WIN32_ERROR::from_error(&error)
-                .map(|code| io::Error::from_raw_os_error(code.0 as i32))
-                .unwrap_or_else(|| io::Error::other(error))
-        })?;
-        let is_directory = information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0;
-        let is_reparse_point = information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0;
-        if is_reparse_point || is_directory != directory {
+        unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut information) }
+            .map_err(|error| {
+                WIN32_ERROR::from_error(&error)
+                    .map(|code| io::Error::from_raw_os_error(code.0 as i32))
+                    .unwrap_or_else(|| io::Error::other(error))
+            })?;
+        if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
+            || (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0) != directory
+        {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "unexpected file type",
             ));
         }
-        let identity = FilesystemIdentity {
+        Ok(FilesystemIdentity {
             scope: u64::from(information.dwVolumeSerialNumber),
             object: (u64::from(information.nFileIndexHigh) << 32)
                 | u64::from(information.nFileIndexLow),
-        };
-        Ok((handle, identity))
+        })
     }
-
     #[cfg(not(any(unix, windows)))]
     {
         use std::time::UNIX_EPOCH;
-
-        let handle = std::fs::File::open(path)?;
         let metadata = handle.metadata()?;
         if metadata.is_dir() != directory {
             return Err(io::Error::new(
@@ -205,12 +166,62 @@ fn open_object(
             .modified()?
             .duration_since(UNIX_EPOCH)
             .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid time"))?;
-        let identity = FilesystemIdentity {
+        Ok(FilesystemIdentity {
             scope: metadata.len(),
             object: u64::try_from(modified.as_nanos()).unwrap_or(u64::MAX),
-        };
-        Ok((handle, identity))
+        })
     }
+}
+fn open_object(
+    path: &Path,
+    directory: bool,
+    _read_contents: bool,
+) -> io::Result<(File, FilesystemIdentity)> {
+    #[cfg(unix)]
+    let handle = {
+        use std::os::unix::fs::OpenOptionsExt;
+        #[cfg(target_os = "linux")]
+        let flags = libc::O_NOFOLLOW | if _read_contents { 0 } else { libc::O_PATH };
+        #[cfg(not(target_os = "linux"))]
+        let flags = libc::O_NOFOLLOW;
+        OpenOptions::new()
+            .read(true)
+            .custom_flags(flags)
+            .open(path)?
+    };
+    #[cfg(windows)]
+    let handle = {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows::Win32::{
+            Foundation::GENERIC_READ,
+            Storage::FileSystem::{
+                FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES,
+                FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+            },
+        };
+        let flags = FILE_FLAG_OPEN_REPARSE_POINT
+            | if directory {
+                FILE_FLAG_BACKUP_SEMANTICS
+            } else {
+                Default::default()
+            };
+        let desired_access = FILE_READ_ATTRIBUTES.0
+            | if directory || !_read_contents {
+                0
+            } else {
+                GENERIC_READ.0
+            };
+        // Rust's Windows path conversion retains extended-length paths.
+        OpenOptions::new()
+            .access_mode(desired_access)
+            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+            .custom_flags(flags.0)
+            .open(path)?
+    };
+    #[cfg(not(any(unix, windows)))]
+    let handle = File::open(path)?;
+    let identity = opened_filesystem_identity(&handle, directory)?;
+    Ok((handle, identity))
 }
 
 /// Verify that no component of an absolute path is a symbolic link/reparse
@@ -231,8 +242,11 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
             "path must be absolute",
         ));
     }
-    let mut current = Some(path);
-    while let Some(component) = current {
+    // Inspect each ancestor before touching its descendants. Starting at the
+    // leaf could already traverse a junction into a network/WSL provider.
+    let mut ancestors = path.ancestors().collect::<Vec<_>>();
+    ancestors.reverse();
+    for component in ancestors {
         let metadata = fs::symlink_metadata(component)?;
         let is_reparse_point = {
             #[cfg(windows)]
@@ -250,7 +264,6 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
                 "path contains a symbolic link or reparse point",
             ));
         }
-        current = component.parent();
     }
     Ok(())
 }
@@ -452,8 +465,27 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
 
-    let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
-    let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
+    // Rust's file creation supports long paths, but the direct Win32 call
+    // below also needs an extended-length parent. Resolve that existing
+    // parent once and keep both sibling names, including an absent target.
+    let parent = fs::canonicalize(
+        target
+            .parent()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?,
+    )?;
+    let sibling = |path: &Path| -> io::Result<Vec<u16>> {
+        let name = path
+            .file_name()
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no file name"))?;
+        Ok(parent
+            .join(name)
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect())
+    };
+    let temporary = sibling(temporary)?;
+    let target = sibling(target)?;
     const MAX_REPLACE_ATTEMPTS: usize = 16;
     for attempt in 0..MAX_REPLACE_ATTEMPTS {
         let result = unsafe {
@@ -555,6 +587,24 @@ mod identity_tests {
             opened_identity,
             filesystem_identity(&source, false).unwrap()
         );
+        assert_eq!(
+            super::opened_filesystem_identity(&handle, false).unwrap(),
+            opened_identity
+        );
+        drop(handle);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn metadata_handles_cannot_read_file_contents() {
+        use std::io::Read;
+        let root = fixture_root();
+        let path = root.join("metadata-only.txt");
+        fs::write(&path, b"owned contents").unwrap();
+        let (mut handle, identity) = super::open_filesystem_metadata_object(&path, false).unwrap();
+        assert_eq!(identity, filesystem_identity(&path, false).unwrap());
+        assert!(handle.read(&mut [0u8; 1]).is_err());
         drop(handle);
         let _ = fs::remove_dir_all(root);
     }
@@ -573,6 +623,32 @@ mod identity_tests {
         assert!(filesystem_identity(&link, true).is_err());
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_long_paths_retain_contents_identity_and_replacement_checks() {
+        use std::io::Read;
+        use std::os::windows::ffi::OsStrExt;
+        let root = fixture_root();
+        let mut parent = root.clone();
+        while parent.as_os_str().encode_wide().count() < 300 {
+            parent.push("long-generation-한글-space");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let source = parent.join("local-overlay.json");
+        fs::write(&source, b"original").unwrap();
+        let (mut handle, identity) = open_filesystem_object(&source, false).unwrap();
+        let mut bytes = Vec::new();
+        handle.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes, b"original");
+        assert_eq!(filesystem_identity(&source, false).unwrap(), identity);
+        assert!(filesystem_identity(&parent, true).is_ok());
+        fs::rename(&source, parent.join("previous.json")).unwrap();
+        fs::write(&source, b"replacement").unwrap();
+        assert_ne!(filesystem_identity(&source, false).unwrap(), identity);
+        drop(handle);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[cfg(windows)]
@@ -737,5 +813,42 @@ mod atomic_write_tests {
 
         assert_eq!(error.kind(), std::io::ErrorKind::NotFound);
         assert!(!root.exists());
+    }
+
+    #[test]
+    fn long_generation_paths_create_and_replace_hashed_history_without_temp_leaks() {
+        let root = new_test_dir();
+        let mut parent = root.clone();
+        for _ in 0..8 {
+            parent.push("generation-0123456789-한글 space");
+        }
+        fs::create_dir_all(&parent).unwrap();
+        let name = format!("{}.json", "a".repeat(64));
+        let target = parent.join(&name);
+        atomic_write(&target, b"before").unwrap();
+        atomic_write(&target, b"after").unwrap();
+        assert_eq!(fs::read(&target).unwrap(), b"after");
+        let names: Vec<_> = fs::read_dir(&parent)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        assert_eq!(names, vec![std::ffi::OsString::from(name)]);
+        fs::remove_dir_all(root).unwrap();
+    }
+}
+
+#[cfg(all(test, unix))]
+mod link_order_tests {
+    #[test]
+    fn rejects_a_dangling_ancestor_before_inspecting_its_missing_child() {
+        let root = std::env::temp_dir().join(format!("devbox-link-order-{}", std::process::id()));
+        std::fs::create_dir(&root).unwrap();
+        let link = root.join("link");
+        std::os::unix::fs::symlink(root.join("absent-target"), &link).unwrap();
+        let error = super::ensure_no_links(link.join("never-probed-child")).unwrap_err();
+        std::fs::remove_file(link).unwrap();
+        std::fs::remove_dir(root).unwrap();
+        // Leaf-first traversal reports NotFound after following the link.
+        assert_eq!(error.kind(), std::io::ErrorKind::InvalidInput);
     }
 }

@@ -307,6 +307,10 @@ jobs:
   rust-windows:
     name: Rust (Windows compile check)
     runs-on: windows-latest
+    # Tauri app build scripts copy shared notice resources into one target
+    # staging path. Parallel copies can fail with Windows sharing violation 32.
+    env:
+      CARGO_BUILD_JOBS: 1
     needs: scope
     if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
     steps:

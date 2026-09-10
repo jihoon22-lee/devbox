@@ -1,12 +1,13 @@
 {
   "identifier": "main",
-  "description": "Local product shell window; domain mutations are not granted.",
+  "description": "Local Workspace window; native owners enforce project, file and recovery admission.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "product-shell:allow-describe",
-    "product-shell:allow-route-status"
+    "product-shell:allow-route-status",
+    "workspace:allow-execute"
   ]
 }

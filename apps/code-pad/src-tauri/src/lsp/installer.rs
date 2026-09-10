@@ -188,6 +188,7 @@ pub enum InstallError {
     EntrypointMissing,
     InstallConflict,
     InstallBusy,
+    Cancelled,
     IndexCorrupt,
     CatalogManifestNotFound {
         manifest_id: String,
@@ -260,6 +261,7 @@ impl fmt::Display for InstallError {
             Self::InstallConflict => {
                 formatter.write_str("immutable install destination already exists")
             }
+            Self::Cancelled => formatter.write_str("managed installation cancelled"),
             Self::InstallBusy => formatter.write_str("another managed installation is active"),
             Self::IndexCorrupt => formatter
                 .write_str("installed server index is corrupt; explicit recovery is required"),
@@ -406,6 +408,25 @@ impl ManagedInstaller {
         let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
         self.install(&manifest, &manifest.version, &current_rfc3339())
             .await
+    }
+
+    /// Product shutdown can cancel download waits; completed synchronous
+    /// promotion/index work is retired before this future returns.
+    pub async fn install_catalog_cancellable(
+        &self,
+        manifest_id: &str,
+        version: &str,
+        platform: &str,
+        cancellation: &super::transport::RequestCancellation,
+    ) -> Result<InstallResult, InstallError> {
+        let manifest = Self::catalog_manifest(manifest_id, version, platform)?;
+        self.install_cancellable(
+            &manifest,
+            &manifest.version,
+            &current_rfc3339(),
+            Some(cancellation),
+        )
+        .await
     }
 
     /// Return the reviewed catalog's install state without changing the
@@ -555,6 +576,20 @@ impl ManagedInstaller {
         requested_version: &str,
         installed_at: &str,
     ) -> Result<InstallResult, InstallError> {
+        self.install_cancellable(manifest, requested_version, installed_at, None)
+            .await
+    }
+
+    async fn install_cancellable(
+        &self,
+        manifest: &ServerManifest,
+        requested_version: &str,
+        installed_at: &str,
+        cancellation: Option<&super::transport::RequestCancellation>,
+    ) -> Result<InstallResult, InstallError> {
+        if cancellation.is_some_and(|signal| signal.is_cancelled()) {
+            return Err(InstallError::Cancelled);
+        }
         let _operation = self
             .operation_lock
             .try_lock()
@@ -566,9 +601,11 @@ impl ManagedInstaller {
             let lock = reviewed_node_lock().map_err(node_lock_error)?;
             let download_dir = self.lsp_root.join("downloads").join(&nonce);
             let staging = self.lsp_root.join("staging").join(&nonce);
-            let result = self
-                .install_node_downloads(manifest, installed_at, &lock, &download_dir, &staging)
-                .await;
+            let result = until_cancelled(
+                self.install_node_downloads(manifest, installed_at, &lock, &download_dir, &staging),
+                cancellation,
+            )
+            .await;
             if download_dir.exists() {
                 let _ = fs::remove_dir_all(&download_dir);
             }
@@ -582,10 +619,13 @@ impl ManagedInstaller {
             .join("downloads")
             .join(format!("{nonce}.part"));
         let staging = self.lsp_root.join("staging").join(&nonce);
-        let result = async {
-            let (archive, source) = self.prepare_archive(manifest, &partial).await?;
-            self.install_verified_archive(manifest, installed_at, &archive, &staging, source)
-        }
+        let result = until_cancelled(
+            async {
+                let (archive, source) = self.prepare_archive(manifest, &partial).await?;
+                self.install_verified_archive(manifest, installed_at, &archive, &staging, source)
+            },
+            cancellation,
+        )
         .await;
         let _ = fs::remove_file(&partial);
         if staging.exists() {
@@ -1651,10 +1691,26 @@ impl ManagedInstaller {
             return Err(InstallError::UnsafeArchivePath);
         }
         let recorded = PathBuf::from(&server.installed_path);
+        // The private index is still serialized input. Reject a foreign path
+        // before canonicalization can contact a share or start a WSL provider.
+        if !is_same_path(&recorded, &destination)
+            && !is_same_path(&recorded, &canonical_destination)
+        {
+            return Err(InstallError::MetadataMismatch(
+                "recorded install path is not the managed destination".into(),
+            ));
+        }
         let canonical_recorded = fs::canonicalize(&recorded).map_err(|_| {
             InstallError::MetadataMismatch("recorded install path is missing".into())
         })?;
-        if !is_same_path(&canonical_recorded, &canonical_destination) {
+        let recorded_identity = devbox_filesystem::filesystem_identity(&canonical_recorded, true)
+            .map_err(|_| InstallError::UnsafeArchivePath)?;
+        let destination_identity =
+            devbox_filesystem::filesystem_identity(&canonical_destination, true)
+                .map_err(|_| InstallError::UnsafeArchivePath)?;
+        if recorded_identity != destination_identity
+            || !is_same_path(&canonical_recorded, &canonical_destination)
+        {
             return Err(InstallError::MetadataMismatch(
                 "recorded install path is not the managed canonical directory".into(),
             ));
@@ -1807,7 +1863,23 @@ fn civil_date_from_days(days_since_1970: i64) -> (i64, u32, u32) {
     (year, month as u32, day as u32)
 }
 
-fn validate_external_archive(archive: &Path) -> Result<(), InstallError> {
+async fn until_cancelled<T>(
+    operation: impl std::future::Future<Output = Result<T, InstallError>>,
+    cancellation: Option<&super::transport::RequestCancellation>,
+) -> Result<T, InstallError> {
+    match cancellation {
+        None => operation.await,
+        Some(signal) => tokio::select! {
+            biased;
+            _ = signal.cancelled() => Err(InstallError::Cancelled),
+            result = operation => result,
+        },
+    }
+}
+
+/// Validate native picker input before the product copies it into a private
+/// snapshot. This is the same no-link boundary used by direct legacy imports.
+pub fn validate_external_archive(archive: &Path) -> Result<(), InstallError> {
     validate_absolute_clean_path(archive)?;
     reject_symlink_tree(archive)?;
     let metadata = fs::symlink_metadata(archive)
@@ -2511,34 +2583,27 @@ fn reject_hard_link(path: &Path) -> Result<(), InstallError> {
 
     #[cfg(windows)]
     {
-        use std::os::windows::ffi::OsStrExt;
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::CloseHandle;
+        use std::os::windows::{fs::OpenOptionsExt, io::AsRawHandle};
+        use windows::Win32::Foundation::HANDLE;
         use windows::Win32::Storage::FileSystem::{
-            CreateFileW, GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-            FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_FLAG_OPEN_REPARSE_POINT,
-            FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
-            OPEN_EXISTING,
+            GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_REPARSE_POINT,
+            FILE_FLAG_OPEN_REPARSE_POINT, FILE_READ_ATTRIBUTES, FILE_SHARE_DELETE, FILE_SHARE_READ,
+            FILE_SHARE_WRITE,
         };
 
-        let wide: Vec<u16> = path.as_os_str().encode_wide().chain(Some(0)).collect();
-        let handle = unsafe {
-            CreateFileW(
-                PCWSTR(wide.as_ptr()),
-                FILE_READ_ATTRIBUTES.0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                None,
-                OPEN_EXISTING,
-                FILE_ATTRIBUTE_NORMAL | FILE_FLAG_OPEN_REPARSE_POINT,
-                None,
-            )
-        }
-        .map_err(|_| InstallError::UnsafeArchivePath)?;
+        // Product generation + SHA-named cache paths exceed MAX_PATH. Rust's
+        // path conversion retains extended-length support while the no-follow
+        // handle and exact link-count checks remain identical.
+        let handle = OpenOptions::new()
+            .access_mode(FILE_READ_ATTRIBUTES.0)
+            .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+            .custom_flags(FILE_FLAG_OPEN_REPARSE_POINT.0)
+            .open(path)
+            .map_err(|_| InstallError::UnsafeArchivePath)?;
         let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        let result = unsafe { GetFileInformationByHandle(handle, &mut information) };
-        let close_result = unsafe { CloseHandle(handle) };
+        let result =
+            unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut information) };
         if result.is_err()
-            || close_result.is_err()
             || information.nNumberOfLinks != 1
             || information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
         {
@@ -2707,6 +2772,33 @@ mod tests {
         builder.into_inner().unwrap().finish().unwrap()
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn long_generation_archive_cache_is_verified_without_allowing_hard_links() {
+        let temp = TempDir::new().unwrap();
+        let archive = zip(&[("server.exe", b"fixture")]);
+        let manifest = manifest(&archive, "server.exe");
+        let archive_path = write_fixture(&temp, "fixture.zip", &archive);
+        let root = temp.path().join("generation-component-".repeat(10));
+        let installer = ManagedInstaller::new(&root).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &archive_path)
+            .unwrap();
+        let cached = installer
+            .archive_cache_path(&manifest.artifact.sha256, manifest.artifact.kind)
+            .unwrap();
+        assert!(cached.to_string_lossy().len() > 260);
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
+        let alias = temp.path().join("cache-alias.zip");
+        fs::hard_link(&cached, &alias).unwrap();
+        assert!(matches!(
+            installer.cached_archive(&manifest),
+            Err(InstallError::UnsafeArchivePath)
+        ));
+        fs::remove_file(alias).unwrap();
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
+    }
+
     #[test]
     fn exact_archive_is_promoted_and_indexed_atomically() {
         let archive = zip(&[("server.exe", b"fixture")]);
@@ -2740,6 +2832,64 @@ mod tests {
             .unwrap()
             .next()
             .is_none());
+    }
+
+    #[tokio::test]
+    async fn cancelled_install_preserves_verified_cache_and_installed_index() {
+        let archive = zip(&[("server.exe", b"cancel fixture")]);
+        let mut manifest = manifest(&archive, "server.exe");
+        manifest.artifact.url = "https://127.0.0.1:9/unreachable.zip".into();
+        let temp = TempDir::new().unwrap();
+        let selected = write_fixture(&temp, "selected.zip", &archive);
+        let installer = ManagedInstaller::new(temp.path().join("data")).unwrap();
+        installer
+            .install_archive(&manifest, "1.2.3", "2026-08-13T01:02:03Z", &selected)
+            .unwrap();
+        installer.uninstall(&manifest).unwrap();
+        let previous = fs::read(installer.index_path()).unwrap();
+        let cancellation = super::super::transport::RequestCancellation::new();
+        cancellation.cancel();
+        assert!(matches!(
+            installer
+                .install_cancellable(
+                    &manifest,
+                    "1.2.3",
+                    "2026-08-13T01:02:03Z",
+                    Some(&cancellation)
+                )
+                .await,
+            Err(InstallError::Cancelled)
+        ));
+        assert_eq!(fs::read(installer.index_path()).unwrap(), previous);
+        assert!(installer.cached_archive(&manifest).unwrap().is_some());
+        let result = installer
+            .install(&manifest, "1.2.3", "2026-08-13T01:02:03Z")
+            .await
+            .unwrap();
+        assert_eq!(result.server.install_source, InstallSource::ArchiveCache);
+    }
+
+    #[tokio::test]
+    async fn cancellation_retires_an_in_flight_download_future() {
+        let signal = super::super::transport::RequestCancellation::new();
+        let retired = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        struct Download(std::sync::Arc<std::sync::atomic::AtomicBool>);
+        impl Drop for Download {
+            fn drop(&mut self) {
+                self.0.store(true, std::sync::atomic::Ordering::Release);
+            }
+        }
+        let held = Download(retired.clone());
+        let download = async move {
+            let _held = held;
+            std::future::pending::<Result<(), InstallError>>().await
+        };
+        let (result, ()) = tokio::join!(until_cancelled(download, Some(&signal)), async {
+            tokio::task::yield_now().await;
+            signal.cancel();
+        });
+        assert!(matches!(result, Err(InstallError::Cancelled)));
+        assert!(retired.load(std::sync::atomic::Ordering::Acquire));
     }
 
     #[tokio::test]

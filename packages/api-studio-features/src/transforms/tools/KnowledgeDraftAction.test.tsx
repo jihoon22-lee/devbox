@@ -42,8 +42,10 @@ describe("Knowledge draft output action", () => {
     expect(createKnowledgeDraftHandoffMock).not.toHaveBeenCalled();
     await waitFor(() => expect(document.activeElement).toBe(screen.getByRole("button", { name: "취소" })));
 
-    fireEvent.click(screen.getByRole("button", { name: "초안 저장" }));
-    await waitFor(() => expect(createKnowledgeDraftHandoffMock).toHaveBeenCalledWith("current output"));
+    await act(async () => {
+      fireEvent.click(screen.getByRole("button", { name: "초안 저장" }));
+    });
+    expect(createKnowledgeDraftHandoffMock).toHaveBeenCalledWith("current output");
     expect(screen.queryByRole("dialog", { name: "Knowledge 초안 미리보기" })).toBeNull();
     expect(screen.getByRole("status").textContent).toContain("Knowledge 초안 미리보기로 전달했습니다");
     expect(screen.getByRole("status").textContent).toContain("저장은 Knowledge에서 확인하세요");

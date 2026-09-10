@@ -1,0 +1,116 @@
+// Actual native file ownership and retained editor UI; only caller-owned data.
+import assert from "node:assert/strict";
+import {writeFileSync, readFileSync, renameSync, existsSync, realpathSync} from "node:fs";
+import path from "node:path";
+import {execFile} from "node:child_process";
+import {promisify} from "node:util";
+const runFile=promisify(execFile);
+
+export const nativeFileSnapshot = doc => ({path:doc.path, nativeRevision:doc.nativeRevision, expectedMtimeNanos:doc.mtimeNanos, expectedSize:doc.size, expectedContentHash:doc.contentHash});
+export const nativeFileSave = (doc,text) => ({...nativeFileSnapshot(doc),text,encoding:doc.encoding,lineEnding:doc.lineEnding,sourceLossy:doc.lossy});
+
+export async function nativeFileDialog({processId,executable,directory,action,selectedFile,selectedFiles}) {
+  assert.ok(Number.isSafeInteger(processId)&&processId>0,"An owned product process is required for dialog acceptance");
+  const args=["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.resolve(".github/scripts/windows-workspace-file-dialog.ps1"),"-TargetProcessId",String(processId),"-ExpectedExecutable",executable,"-FixtureRoot",directory,"-Action",action];
+  if(action==="Open")args.push("-SelectedFilesJson",JSON.stringify(selectedFiles??[selectedFile]));
+  const started=performance.now();
+  const result={action,state:"running"};
+  try {await runFile("powershell.exe",args,{windowsHide:true,timeout:25_000,maxBuffer:64*1024});result.state="completed";}
+  catch(error){result.state="failed";result.diagnostic=String(error.stderr??error.message).slice(0,4000);throw error;}
+  finally {result.elapsedMs=Math.round(performance.now()-started);writeFileSync(`product-foundation-evidence/workspace-native-dialog-${Date.now()}.json`,JSON.stringify(result,null,2));}
+}
+
+export async function exerciseWorkspaceFiles({cdp, root, directory, call, success, waitForRenderer, processId, executable}) {
+  const files = (method, args = {}) => call("workspace.files", method, args);
+  const rejected = result => assert.equal(result.operation.outcome.state, "failed", JSON.stringify(result));
+  const open = async file => success(await files("open_file", {request:{path:file, encoding:null}}));
+  const snapshot = nativeFileSnapshot;
+  const save = (doc, text) => files("save_file", {request:nativeFileSave(doc,text)});
+  const file = path.join(root, "한글 edit.txt");
+  const outside = path.join(directory, "outside.txt");
+  writeFileSync(file, "original\r\n", {flag:"wx"});
+  writeFileSync(outside, "outside preserved", {flag:"wx"});
+  rejected(await files("open_file", {request:{path:outside, encoding:null}}));
+  assert.ok(Number.isSafeInteger(processId)&&processId>0,"An owned product process is required for dialog acceptance");
+  const cancelledChoice=files("pick_files");
+  const [cancelResult]=await Promise.all([cancelledChoice,nativeFileDialog({processId,executable,directory,action:"Cancel"})]);
+  assert.deepEqual(success(cancelResult),[]);
+  rejected(await files("open_file",{request:{path:outside,encoding:null}}));
+  const approvedChoice=files("pick_files");
+  const [choiceResult]=await Promise.all([approvedChoice,nativeFileDialog({processId,executable,directory,action:"Open",selectedFile:outside})]);
+  const chosen=success(choiceResult);assert.equal(chosen.length,1);
+  const unchosen=path.join(directory,"dialog-unselected.txt");
+  writeFileSync(unchosen,"not selected",{flag:"wx"});
+  rejected(await files("open_file",{request:{path:unchosen,encoding:null}}));
+  assert.equal(realpathSync.native(chosen[0]),realpathSync.native(outside));
+  const picked=await open(chosen[0]);
+  assert.equal(picked.text,"outside preserved");
+  success(await save(picked,"outside preserved"));
+  success(await files("unwatch_file",{path:picked.path}));
+  const first = await open(file);
+  assert.equal(first.lineEnding, "crlf");
+  assert.match(first.nativeRevision, /^[0-9a-f-]{36}$/);
+  const saved = success(await save(first, "changed\n"));
+  assert.notEqual(saved.nativeRevision, first.nativeRevision);
+  assert.equal(readFileSync(file, "utf8"), "changed\r\n");
+  rejected(await save(first, "stale overwrite"));
+  const current = await open(file);
+  const replaced = `${file}.old`;
+  renameSync(file, replaced);
+  writeFileSync(file, "changed\r\n", {flag:"wx"});
+  rejected(await save(current, "replaced object overwrite"));
+  assert.equal(readFileSync(file, "utf8"), "changed\r\n");
+  const fresh = await open(file);
+  assert.notEqual(fresh.nativeRevision, current.nativeRevision);
+  const renamed = success(await files("rename_file_action", {request:{...snapshot(fresh), newName:"renamed.txt"}}));
+  assert.equal(existsSync(file), false);
+  assert.equal(readFileSync(renamed.path, "utf8"), "changed\r\n");
+  const recoverable = await open(renamed.path);
+  const recoveryRevision = success(await files("save_recovery", {nativeRevision:success(await files("load_recovery")).nativeRevision,entries:[{path:recoverable.path, content:"recovered\n", base_hash:recoverable.contentHash, snapshot_at_ms:Date.now()}]}));
+  const cancelled = success(await files("prepare_recovery", {path:recoverable.path}));
+  assert.equal(cancelled.before, "changed\n");
+  assert.equal(cancelled.after, "recovered\n");
+  success(await files("cancel_recovery_preview", {previewId:cancelled.previewId}));
+  rejected(await files("apply_recovery_preview", {previewId:cancelled.previewId}));
+  assert.equal(success(await files("load_recovery")).entries.length, 1);
+  assert.equal(readFileSync(renamed.path, "utf8"), "changed\r\n");
+  const approved = success(await files("prepare_recovery", {path:recoverable.path}));
+  success(await files("apply_recovery_preview", {previewId:approved.previewId}));
+  rejected(await files("apply_recovery_preview", {previewId:approved.previewId}));
+  assert.equal(readFileSync(renamed.path, "utf8"), "recovered\r\n");
+  success(await files("discard_recovery", {path:recoverable.path,nativeRevision:recoveryRevision.nativeRevision}));
+  const deletion = await open(renamed.path);
+  success(await files("delete_file_action", {request:snapshot(deletion)}));
+  assert.equal(existsSync(renamed.path), false);
+  assert.equal(readFileSync(outside, "utf8"), "outside preserved");
+
+  const navigate = async route => {
+    await cdp.evaluate(`(async () => {const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe"); const label=d.features.find(f=>f.route===${JSON.stringify(route)}).label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);
+  };
+  await navigate("files");
+  await waitForRenderer(cdp, '!!document.querySelector(".workspace-feature-files:not([hidden]) #path-input:not(:disabled)")', "Native Files did not hydrate");
+  const uiFile = path.join(root, "ui-draft.txt");
+  writeFileSync(uiFile, "ui original", {flag:"wx"});
+  await cdp.evaluate(`(() => {const input=document.getElementById("path-input");Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(uiFile)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
+  await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files button")).find(b=>b.textContent.trim()==="파일 열기").click()');
+  await waitForRenderer(cdp, '!!document.querySelector(".workspace-feature-files .cm-content")', "Native file did not open in CodeMirror");
+  await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").focus()');
+  await cdp.command("Input.insertText", {text:"typed "});
+  const dirty = 'Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(t=>t.textContent.includes("●"))';
+  await waitForRenderer(cdp, dirty, "Editor input did not mark the native file dirty");
+  const draft = await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").textContent');
+  await navigate("overview");
+  await waitForRenderer(cdp, 'Array.from(document.querySelectorAll(".workspace-registry button")).some(b=>b.textContent.trim()==="프로젝트 선택 해제" && b.disabled)', "Dirty native buffer did not block context change");
+  await cdp.evaluate('window.dispatchEvent(new KeyboardEvent("keydown",{key:"s",ctrlKey:true,bubbles:true,cancelable:true}))');
+  assert.equal(readFileSync(uiFile, "utf8"), "ui original");
+  await navigate("files");
+  assert.equal(await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").textContent'), draft);
+  await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-feature-files button")).find(b=>b.textContent.trim()==="저장").click()');
+  await waitForRenderer(cdp, `!(${dirty})`, "Native file save did not clear the dirty buffer");
+  assert.equal(readFileSync(uiFile, "utf8"), draft);
+  await cdp.evaluate('document.querySelector(".workspace-feature-files .document-tab .tab-action").click()');
+  await waitForRenderer(cdp, '!document.querySelector(".workspace-feature-files [role=tab]")', "Saved native tab did not close");
+  await navigate("overview");
+  await waitForRenderer(cdp, 'Array.from(document.querySelectorAll(".workspace-registry button")).some(b=>b.textContent.trim()==="프로젝트 선택 해제" && !b.disabled)', "Clean Files did not release context selection");
+  return {projectScopeDeniedOutside:true,nativeDialogCancelGrantsNothing:true,nativeDialogSelectionGrantsOnlyChosenFile:true,opaqueRevisionAndReplacementChecked:true,crlfSaveRenameDelete:true,recoveryCancelAndOneTimeApply:true,actualEditorSave:true,retainedDirtyDraftAndContextLock:true,hiddenShortcutIgnored:true};
+}

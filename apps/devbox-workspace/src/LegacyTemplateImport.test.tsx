@@ -1,0 +1,53 @@
+import {afterEach,beforeEach,expect,it,vi} from "vitest";
+import {cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
+import {assertNoA11yViolations} from "@devbox/a11y/testing";
+import LegacyTemplateImport from "./LegacyTemplateImport";
+import {nativeCall} from "./native";
+vi.mock("./native",()=>({nativeCall:vi.fn()}));
+const call=vi.mocked(nativeCall);
+afterEach(cleanup);
+beforeEach(()=>{call.mockReset();});
+const template={id:"legacy-id",name:"합성 프로젝트",windowsPath:"C:\\fixture",wsl:null,gitRoot:null,expectedPorts:[3000],runManagerServiceIds:["old-service"]};
+const preview={previewId:"native-preview",plan:{sourceSnapshotId:"native-snapshot",registryRevision:1,rows:[{template,disposition:"conflict",existingIds:["existing-id"]}]}};
+it("requires an explicit conflict choice and sends only the native preview token and old IDs",async()=>{
+  call.mockImplementation(async(_component,method)=>{
+    if(method==="preview_template_import")return preview;
+    if(method==="apply_template_import")return {result:{added:1,reused:0,skipped:0,mappings:[{sourceId:template.id,importedId:"new-native-id"}]}};
+    if(method==="cancel_template_import")return null;
+    throw new Error("unexpected operation");
+  });
+  const onImported=vi.fn(async()=>{}),onBusy=vi.fn();
+  const {container}=render(<LegacyTemplateImport jobId="verified-job" existing={[{id:"existing-id",sourceSnapshotId:"previous",template:{...template,expectedPorts:[8080]}}]} onImported={onImported} onBusyChange={onBusy}/>);
+  expect(call).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button",{name:"템플릿 가져오기 검토"}));
+  const select=await screen.findByRole("combobox",{name:"합성 프로젝트 처리 방법"});
+  expect((select as HTMLSelectElement).value).toBe("skip");
+  expect(screen.getByRole("button",{name:"선택한 템플릿 가져오기"}).hasAttribute("disabled")).toBe(true);
+  expect(screen.getByText("3000")).toBeTruthy();expect(screen.getByText("8080")).toBeTruthy();
+  await assertNoA11yViolations(container);
+  fireEvent.change(select,{target:{value:"keep-both"}});
+  fireEvent.click(screen.getByRole("button",{name:"선택한 템플릿 가져오기"}));
+  await screen.findByText(/템플릿 1개 추가/);
+  expect(call).toHaveBeenCalledWith("workspace.migration","preview_template_import",{jobId:"verified-job"});
+  expect(call).toHaveBeenCalledWith("workspace.migration","apply_template_import",{previewId:"native-preview",choices:[{sourceId:"legacy-id",decision:"keep-both"}]});
+  await waitFor(()=>expect(onImported).toHaveBeenCalledTimes(1));
+  expect(call.mock.calls.some(([,method])=>/register|execute|trust/.test(method))).toBe(false);
+});
+it("cancels a preview that arrives after the view has closed",async()=>{
+  let resolvePreview!:(value:unknown)=>void;
+  call.mockImplementation(async(_component,method)=>method==="preview_template_import"?new Promise(resolve=>{resolvePreview=resolve;}):null);
+  const view=render(<LegacyTemplateImport jobId="verified-job" existing={[]} onImported={async()=>{}} onBusyChange={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"템플릿 가져오기 검토"}));
+  view.unmount();resolvePreview(preview);
+  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.migration","cancel_template_import",{previewId:"native-preview"}));
+  expect(call.mock.calls.some(([,method])=>method==="apply_template_import")).toBe(false);
+});
+
+it("describes reuse of an edited archived destination without promising identical content",async()=>{
+  call.mockResolvedValue({...preview,plan:{...preview.plan,rows:[{template,disposition:"identical",existingIds:["existing-id"],alreadyImported:true}]}});
+  render(<LegacyTemplateImport jobId="verified-job" existing={[{id:"existing-id",sourceSnapshotId:"previous",archived:true,template:{...template,name:"수정한 이름",expectedPorts:[9090]}}]} onImported={async()=>{}} onBusyChange={vi.fn()}/>);
+  fireEvent.click(screen.getByRole("button",{name:"템플릿 가져오기 검토"}));
+  expect(await screen.findByText("이미 가져온 템플릿 · Workspace 변경 유지")).toBeTruthy();
+  expect(screen.queryByText("같은 내용이 이미 있습니다")).toBeNull();
+  expect(screen.getByRole("option",{name:"기존 항목 사용"})).toBeTruthy();
+});

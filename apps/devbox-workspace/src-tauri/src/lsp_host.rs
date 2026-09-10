@@ -1,0 +1,877 @@
+//! Independent native LSP metadata/installer owner. Installing a reviewed
+//! artifact never grants language-server execution or editor file access.
+mod actor;
+mod approval;
+mod archives;
+mod documents;
+mod evidence;
+mod recovery;
+mod settings;
+mod settings_import;
+#[cfg(windows)]
+mod wsl_actor;
+#[cfg(windows)]
+mod wsl_approval;
+use crate::{
+    host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
+};
+use code_pad_lib::lsp::{InstallError, ManagedInstaller, RequestCancellation};
+use serde::Deserialize;
+use serde_json::{json, Value};
+use std::{
+    path::PathBuf,
+    sync::{Arc, Mutex},
+    time::Duration,
+};
+use tauri::{Emitter, Manager};
+#[cfg(all(test, windows))]
+pub(crate) use wsl_approval::check_owned_fixture as check_wsl_approval_fixture;
+#[cfg(all(test, windows))]
+mod wsl_actor_fixture;
+#[cfg(all(test, windows))]
+pub(crate) use wsl_actor_fixture::check_owned_fixture as check_wsl_runtime_fixture;
+type Result<T> = std::result::Result<T, &'static str>;
+pub(crate) struct Invocation<'a> {
+    pub method: &'a str,
+    pub args: Value,
+    pub context: Option<&'a product_contract::ProjectContext>,
+    pub deadline: u64,
+    pub start: Option<crate::core::source_operations::Request>,
+}
+
+pub(crate) fn review_method(method: &str) -> bool {
+    matches!(
+        method,
+        "lsp_execution_preview"
+            | "lsp_execution_approve"
+            | "lsp_execution_cancel"
+            | "lsp_execution_revoke"
+    )
+}
+
+pub(crate) fn text_request(method: &str) -> bool {
+    documents::text_request(method)
+}
+pub(crate) fn worker_required(method: &str) -> bool {
+    !actor::allowed(method) || actor::starts(method)
+}
+pub(crate) fn stops(method: &str) -> bool {
+    actor::stops(method)
+}
+pub(crate) fn admission(method: &str, args: Value) -> Result<(Option<String>, Vec<String>)> {
+    if actor::allowed(method) {
+        actor::admission(method, args)
+    } else {
+        Ok((None, vec![]))
+    }
+}
+
+pub(crate) fn allowed(method: &str) -> bool {
+    actor::allowed(method)
+        || matches!(
+            method,
+            "lsp_catalog"
+                | "lsp_installed"
+                | "lsp_recover_installed"
+                | "lsp_install"
+                | "lsp_import_archive"
+                | "lsp_uninstall"
+                | "pick_lsp_archives"
+                | "discard_lsp_archives"
+                | "load_lsp_config"
+                | "save_lsp_config"
+                | "preview_lsp_config_import"
+                | "apply_lsp_config_import"
+                | "cancel_lsp_config_import"
+                | "list_lsp_config_history"
+                | "preview_lsp_config_restore"
+                | "lsp_recovery_list"
+                | "lsp_recovery_preview"
+                | "lsp_recovery_apply"
+                | "lsp_recovery_cancel"
+                | "lsp_execution_preview"
+                | "lsp_execution_approve"
+                | "lsp_execution_cancel"
+                | "lsp_execution_revoke"
+                | "language_server_statuses"
+                | "language_server_logs"
+                | "stop_language_server"
+                | "stop_all_language_servers"
+                | "close_lsp_document"
+        )
+}
+pub(crate) fn contextual(method: &str) -> bool {
+    actor::allowed(method)
+        || matches!(
+            method,
+            "load_lsp_config"
+                | "save_lsp_config"
+                | "preview_lsp_config_import"
+                | "apply_lsp_config_import"
+                | "cancel_lsp_config_import"
+                | "list_lsp_config_history"
+                | "preview_lsp_config_restore"
+                | "lsp_recovery_list"
+                | "lsp_recovery_preview"
+                | "lsp_recovery_apply"
+                | "lsp_recovery_cancel"
+                | "lsp_execution_preview"
+                | "lsp_execution_approve"
+                | "lsp_execution_cancel"
+                | "lsp_execution_revoke"
+        )
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Key {
+    manifest_id: String,
+    version: String,
+    platform: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Import {
+    manifest_id: String,
+    version: String,
+    platform: String,
+    archive_paths: Vec<String>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct Choices {
+    archive_paths: Vec<String>,
+}
+fn input<T: serde::de::DeserializeOwned>(value: Value) -> Result<T> {
+    serde_json::from_value(value).map_err(|_| "invalid_request")
+}
+fn installer_error(error: InstallError) -> &'static str {
+    match error {
+        InstallError::Cancelled => "lsp_operation_cancelled",
+        InstallError::InstallBusy => "lsp_install_busy",
+        InstallError::IndexCorrupt => "lsp_index_corrupt",
+        InstallError::UnsafeArchivePath => "lsp_install_path_unsafe",
+        InstallError::Io { .. } => "lsp_install_io_unavailable",
+        _ => "lsp_install_failed",
+    }
+}
+struct Storage {
+    data: Arc<MetadataRoot>,
+    archives: Arc<MetadataRoot>,
+}
+impl Storage {
+    fn revalidate(&self, host: &Host) -> Result<()> {
+        if host.component("files")? != self.data.path() {
+            return Err("files_store_changed");
+        }
+        self.data.revalidate()?;
+        self.archives.revalidate()
+    }
+}
+enum Instance {
+    Native(actor::Actor),
+    #[cfg(windows)]
+    Wsl(wsl_actor::Actor),
+}
+impl Instance {
+    fn finished(&self) -> bool {
+        match self {
+            Self::Native(actor) => actor.finished(),
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.finished(),
+        }
+    }
+    fn context(&self) -> &product_contract::ProjectContext {
+        match self {
+            Self::Native(actor) => actor.context(),
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.context(),
+        }
+    }
+    fn uses_installation(&self, id: &str, version: &str) -> bool {
+        match self {
+            Self::Native(actor) => actor.uses_installation(id, version),
+            #[cfg(windows)]
+            Self::Wsl(_) => false,
+        }
+    }
+    async fn retire(&self) -> Result<()> {
+        match self {
+            Self::Native(actor) => actor.retire().await,
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.retire().await,
+        }
+    }
+    async fn request(
+        &self,
+        method: &str,
+        args: Value,
+        deadline: u64,
+        cancelled: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) -> Result<Value> {
+        match self {
+            Self::Native(actor) => actor.request(method, args, deadline, cancelled).await,
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.request(method, args, deadline, cancelled).await,
+        }
+    }
+}
+#[cfg(windows)]
+fn wsl_error(error: &str) -> &'static str {
+    match error {
+        "lsp_operation_cancelled" => "lsp_operation_cancelled",
+        "lsp_execution_approval_required" => "lsp_execution_approval_required",
+        "lsp_busy" => "lsp_busy",
+        "lsp_already_running" => "lsp_already_running",
+        "lsp_start_in_progress" => "lsp_start_in_progress",
+        "lsp_not_running" => "lsp_not_running",
+        "lsp_disabled" => "lsp_disabled",
+        "lsp_feature_unsupported" => "lsp_feature_unsupported",
+        "lsp_document_denied" => "lsp_document_denied",
+        "file_snapshot_changed" => "file_snapshot_changed",
+        "file_selection_required" => "file_selection_required",
+        "file_limit" => "file_limit",
+        "request_expired" => "request_expired",
+        _ => "lsp_unavailable",
+    }
+}
+pub(crate) struct LspHost {
+    storage: Storage,
+    selections: Mutex<archives::Selections>,
+    approvals: Mutex<approval::Approvals>,
+    recovery: Mutex<recovery::Recovery>,
+    config_imports: Mutex<settings_import::Imports>,
+    protected: ProtectedStorage,
+    actor: Mutex<Option<Arc<Instance>>>,
+    preparing: std::sync::atomic::AtomicBool,
+    activities: approval::Activities,
+    files: Arc<Mutex<crate::files_host::FilesHost>>,
+}
+impl LspHost {
+    /// The shared component manager/installer must already have been initialized
+    /// through the short Files initialization boundary before constructing this.
+    pub(crate) fn new(
+        app: &tauri::AppHandle,
+        host: &Host,
+        context: crate::core::context_activity::ContextActivity,
+        filesystem: crate::core::context_activity::ContextActivity,
+        files: Arc<Mutex<crate::files_host::FilesHost>>,
+    ) -> Result<Self> {
+        let data = Arc::new(MetadataRoot::open(&host.component("files")?)?);
+        let archives = Arc::new(data.child("native-lsp-archives")?);
+        let protected = crate::platform::storage_paths::from_host(app, host)?;
+        Ok(Self {
+            storage: Storage { data, archives },
+            files,
+            selections: Mutex::new(archives::Selections::new(protected.clone())),
+            approvals: Mutex::new(Default::default()),
+            recovery: Mutex::new(Default::default()),
+            config_imports: Mutex::new(Default::default()),
+            protected,
+            actor: Mutex::new(None),
+            preparing: Default::default(),
+            activities: approval::Activities {
+                context,
+                filesystem,
+                installation: Default::default(),
+            },
+        })
+    }
+    pub(crate) fn expire(&self) {
+        if let Ok(mut imports) = self.config_imports.try_lock() {
+            imports.expire();
+        }
+        if let Ok(mut recovery) = self.recovery.try_lock() {
+            recovery.expire();
+        }
+        if let Ok(mut selections) = self.selections.try_lock() {
+            selections.expire();
+        }
+        if let Ok(mut approvals) = self.approvals.try_lock() {
+            approvals.expire();
+        }
+    }
+    pub(crate) async fn retire(&self) -> Result<()> {
+        let actor = self.actor.lock().map_err(|_| "lsp_unavailable")?.clone();
+        if let Some(actor) = actor {
+            actor.retire().await?;
+            let mut slot = self.actor.lock().map_err(|_| "lsp_unavailable")?;
+            if slot
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, &actor))
+            {
+                *slot = None;
+            }
+        }
+        if self.preparing.load(std::sync::atomic::Ordering::Acquire) {
+            return Err("lsp_busy");
+        }
+        Ok(())
+    }
+    async fn retire_installation(&self, id: &str, version: &str) -> Result<()> {
+        let affected = self
+            .actor
+            .lock()
+            .map_err(|_| "lsp_unavailable")?
+            .as_ref()
+            .is_some_and(|actor| actor.uses_installation(id, version));
+        if affected {
+            self.retire().await?;
+        }
+        Ok(())
+    }
+    async fn execute_live(
+        &self,
+        app: &tauri::AppHandle,
+        host: &Arc<Host>,
+        invocation: Invocation<'_>,
+        shutdown: &RequestCancellation,
+    ) -> Result<Value> {
+        let Invocation {
+            method,
+            args,
+            context,
+            deadline,
+            start,
+        } = invocation;
+        let _installation = if actor::starts(method) {
+            Some(
+                self.activities
+                    .installation
+                    .enter(false)
+                    .map_err(|_| "lsp_install_busy")?,
+            )
+        } else {
+            None
+        };
+        let Some(context) = context else {
+            return actor::idle(method, args);
+        };
+        let existing = self.actor.lock().map_err(|_| "lsp_unavailable")?.clone();
+        // A transport can retire itself after losing its approval or pipe.
+        // Release only that confirmed instance so a fresh explicit start can
+        // capture new evidence, without retiring a concurrent replacement.
+        let existing = if let Some(old) = existing.as_ref().filter(|old| old.finished()) {
+            old.retire().await?;
+            let mut slot = self.actor.lock().map_err(|_| "lsp_unavailable")?;
+            if slot
+                .as_ref()
+                .is_some_and(|current| Arc::ptr_eq(current, old))
+            {
+                *slot = None;
+            }
+            slot.clone()
+        } else {
+            existing
+        };
+        let instance = if let Some(instance) = existing {
+            instance
+        } else {
+            if !actor::starts(method) {
+                return actor::idle(method, args);
+            }
+            use std::sync::atomic::{AtomicBool, Ordering};
+            struct Preparing<'a>(&'a AtomicBool);
+            impl Drop for Preparing<'_> {
+                fn drop(&mut self) {
+                    self.0.store(false, Ordering::Release);
+                }
+            }
+            self.preparing
+                .compare_exchange(false, true, Ordering::AcqRel, Ordering::Acquire)
+                .map_err(|_| "lsp_busy")?;
+            let _preparing = Preparing(&self.preparing);
+            let current = self.actor.lock().map_err(|_| "lsp_unavailable")?.clone();
+            if let Some(current) = current {
+                drop(_preparing);
+                if current.context() != context {
+                    return Err("lsp_context_changed");
+                }
+                return current
+                    .request(
+                        method,
+                        args,
+                        deadline,
+                        start.as_ref().map(|start| start.flag()),
+                    )
+                    .await;
+            }
+            let start = start.as_ref().ok_or("invalid_request")?;
+            #[cfg(windows)]
+            if matches!(
+                context.target,
+                product_contract::ExecutionTarget::Wsl { .. }
+            ) {
+                let context_copy = context.clone();
+                let host_copy = host.clone();
+                let events_app = app.clone();
+                let activities = self.activities.clone();
+                let files = self.files.clone();
+                let owner_shutdown = shutdown.clone();
+                let cancelled = start.flag();
+                let actor = tauri::async_runtime::spawn_blocking(move || {
+                    if cancelled.load(Ordering::Acquire) || owner_shutdown.is_cancelled() {
+                        return Err("lsp_operation_cancelled");
+                    }
+                    let snapshot =
+                        wsl_approval::Snapshot::capture(host_copy, &context_copy, deadline, true)?;
+                    if cancelled.load(Ordering::Acquire) || owner_shutdown.is_cancelled() {
+                        return Err("lsp_operation_cancelled");
+                    }
+                    let sink: actor::Events = Arc::new(move |name, value| {
+                        let _ = events_app.emit_to("main", name, value);
+                    });
+                    wsl_actor::Actor::spawn(sink, snapshot, activities, files, owner_shutdown)
+                })
+                .await
+                .map_err(|_| "lsp_unavailable")??;
+                let instance = Arc::new(Instance::Wsl(actor));
+                if shutdown.is_cancelled() || start.check().is_err() {
+                    instance.retire().await?;
+                    return Err("lsp_operation_cancelled");
+                }
+                *self.actor.lock().map_err(|_| "lsp_unavailable")? = Some(instance.clone());
+                return instance
+                    .request(method, args, deadline, Some(start.flag()))
+                    .await;
+            }
+            let installer = app.state::<Arc<ManagedInstaller>>().inner().clone();
+            let snapshot = actor::start_scope(start.flag(), shutdown.clone(), deadline, async {
+                approval::Snapshot::capture(
+                    host.clone(),
+                    context,
+                    &mut Default::default(),
+                    installer.clone(),
+                    self.protected.clone(),
+                    deadline,
+                    true,
+                )
+            })
+            .await?;
+            if shutdown.is_cancelled() || start.check().is_err() {
+                return Err("lsp_operation_cancelled");
+            }
+            let event_app = app.clone();
+            snapshot.bind_activities(self.activities.clone());
+            let sink: actor::Events = Arc::new(move |name, value| {
+                let _ = event_app.emit_to("main", name, value);
+            });
+            let instance = Arc::new(Instance::Native(actor::Actor::spawn(
+                sink,
+                snapshot,
+                installer,
+                shutdown.clone(),
+                self.files.clone(),
+            )?));
+            *self.actor.lock().map_err(|_| "lsp_unavailable")? = Some(instance.clone());
+            instance
+        };
+        if instance.context() != context {
+            return Err("lsp_context_changed");
+        }
+        instance
+            .request(
+                method,
+                args,
+                deadline,
+                start.as_ref().map(|start| start.flag()),
+            )
+            .await
+    }
+    pub(crate) fn choose(&self, host: &Host, paths: &[PathBuf], deadline: u64) -> Result<Value> {
+        self.storage.revalidate(host)?;
+        let tokens = self
+            .selections
+            .lock()
+            .map_err(|_| "lsp_unavailable")?
+            .choose(paths, deadline)?;
+        self.storage.revalidate(host)?;
+        Ok(json!(tokens))
+    }
+    /// Runs on the existing bounded native worker, outside an async runtime.
+    /// WSL leases own their own pipe runtime, including their Drop cleanup.
+    pub(crate) fn execute_review(
+        &self,
+        app: &tauri::AppHandle,
+        host: &Arc<Host>,
+        method: &str,
+        args: Value,
+        context: Option<&product_contract::ProjectContext>,
+        deadline: u64,
+    ) -> Result<Value> {
+        self.storage.revalidate(host)?;
+        crate::files_host::current_deadline(deadline)?;
+        match method {
+            "lsp_execution_preview" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                let context = context.ok_or("project_selection_required")?;
+                #[cfg(windows)]
+                if matches!(
+                    context.target,
+                    product_contract::ExecutionTarget::Wsl { .. }
+                ) {
+                    let snapshot =
+                        wsl_approval::Snapshot::capture(host.clone(), context, deadline, false)?;
+                    return self
+                        .approvals
+                        .lock()
+                        .map_err(|_| "lsp_unavailable")?
+                        .preview(snapshot);
+                }
+                let snapshot = approval::Snapshot::capture(
+                    host.clone(),
+                    context,
+                    &mut Default::default(),
+                    app.state::<Arc<ManagedInstaller>>().inner().clone(),
+                    self.protected.clone(),
+                    deadline,
+                    false,
+                )?;
+                self.approvals
+                    .lock()
+                    .map_err(|_| "lsp_unavailable")?
+                    .preview(snapshot)
+            }
+            "lsp_execution_approve" | "lsp_execution_cancel" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Token {
+                    preview_id: String,
+                }
+                let token: Token = input(args)?;
+                let context = context.ok_or("project_selection_required")?;
+                if method == "lsp_execution_approve" {
+                    tauri::async_runtime::block_on(self.retire())?;
+                }
+                let mut approvals = self.approvals.lock().map_err(|_| "lsp_unavailable")?;
+                if method == "lsp_execution_approve" {
+                    approvals.approve(context, &token.preview_id, deadline)
+                } else {
+                    approvals.cancel(context, &token.preview_id)
+                }
+            }
+            "lsp_execution_revoke" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                tauri::async_runtime::block_on(self.retire())?;
+                self.approvals
+                    .lock()
+                    .map_err(|_| "lsp_unavailable")?
+                    .revoke(host, context.ok_or("project_selection_required")?, deadline)
+            }
+            _ => Err("invalid_request"),
+        }
+    }
+    pub(crate) async fn execute(
+        &self,
+        app: &tauri::AppHandle,
+        host: &Arc<Host>,
+        invocation: Invocation<'_>,
+        shutdown: &RequestCancellation,
+    ) -> Result<Value> {
+        let Invocation {
+            method,
+            args,
+            context,
+            deadline,
+            start,
+        } = invocation;
+        self.storage.revalidate(host)?;
+        if shutdown.is_cancelled() {
+            return Err("lsp_operation_cancelled");
+        }
+        let result = match method {
+            "lsp_recovery_list" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                recovery::Recovery::list(
+                    host.clone(),
+                    context.ok_or("project_selection_required")?,
+                    deadline,
+                )
+            }
+            "lsp_recovery_preview" | "lsp_recovery_apply" | "lsp_recovery_cancel" => {
+                let context = context.ok_or("project_selection_required")?;
+                if method != "lsp_recovery_cancel" {
+                    self.retire().await?;
+                }
+                let _filesystem = if method == "lsp_recovery_cancel" {
+                    None
+                } else {
+                    Some(
+                        self.activities
+                            .filesystem
+                            .enter(method == "lsp_recovery_apply")
+                            .map_err(|_| "lsp_busy")?,
+                    )
+                };
+                let mut recovery = self.recovery.lock().map_err(|_| "lsp_unavailable")?;
+                if method == "lsp_recovery_preview" {
+                    recovery.preview(
+                        host.clone(),
+                        context,
+                        self.protected.clone(),
+                        self.files.clone(),
+                        args,
+                        deadline,
+                    )
+                } else {
+                    recovery.consume(context, args, method == "lsp_recovery_apply", deadline)
+                }
+            }
+
+            "load_lsp_config" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                if let Some(context) = context {
+                    settings::Settings::open(host, context)?.view()
+                } else {
+                    Ok(
+                        json!({"config":code_pad_lib::lsp::LspConfig::default(),"persist_allowed":false,"recoveryAllowed":false,"error":null,"nativeRevision":null}),
+                    )
+                }
+            }
+            "preview_lsp_config_import"
+            | "apply_lsp_config_import"
+            | "cancel_lsp_config_import"
+            | "list_lsp_config_history"
+            | "preview_lsp_config_restore" => {
+                let context = context.ok_or("project_selection_required")?;
+                if method == "apply_lsp_config_import" {
+                    self.retire().await?;
+                }
+                // Apply also owns the exclusive component context permit. Keep
+                // Files checked until publication; importing cannot drop a tab.
+                let files = self.files.lock().map_err(|_| "lsp_busy")?;
+                if matches!(
+                    method,
+                    "preview_lsp_config_import" | "preview_lsp_config_restore"
+                ) && files.has_documents()
+                {
+                    return Err("legacy_lsp_documents_open");
+                }
+                let mut imports = self.config_imports.lock().map_err(|_| "lsp_busy")?;
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Source {
+                    job_id: String,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Token {
+                    preview_id: String,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Apply {
+                    preview_id: String,
+                    replace_existing: bool,
+                }
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Backup {
+                    backup_id: String,
+                }
+                match method {
+                    "preview_lsp_config_import" => {
+                        imports.preview(host, context, &input::<Source>(args)?.job_id)
+                    }
+                    "apply_lsp_config_import" => {
+                        let value: Apply = input(args)?;
+                        if files.has_documents() {
+                            imports.cancel(context, &value.preview_id)?;
+                            return Err("legacy_lsp_documents_open");
+                        }
+                        imports.apply(
+                            host,
+                            context,
+                            &value.preview_id,
+                            value.replace_existing,
+                            deadline,
+                        )
+                    }
+                    "cancel_lsp_config_import" => {
+                        imports.cancel(context, &input::<Token>(args)?.preview_id)
+                    }
+                    "preview_lsp_config_restore" => {
+                        imports.restore(host, context, &input::<Backup>(args)?.backup_id)
+                    }
+                    _ => {
+                        if args.as_object().is_none_or(|args| !args.is_empty()) {
+                            return Err("invalid_request");
+                        }
+                        settings_import::Imports::history(host, context)
+                    }
+                }
+            }
+            "save_lsp_config" => {
+                self.retire().await?;
+                settings::Settings::open(host, context.ok_or("project_selection_required")?)?
+                    .save(host, args, deadline)
+            }
+            "discard_lsp_archives" => {
+                let choices: Choices = input(args)?;
+                self.selections
+                    .lock()
+                    .map_err(|_| "lsp_unavailable")?
+                    .discard(&choices.archive_paths)?;
+                Ok(Value::Null)
+            }
+            "lsp_installed" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Empty {}
+                let _: Empty = input(args)?;
+                let installer = app
+                    .try_state::<Arc<ManagedInstaller>>()
+                    .ok_or("lsp_unavailable")?;
+                let statuses =
+                    code_pad_lib::commands::installer::public_installed_status(&installer)
+                        .map_err(installer_error)?;
+                serde_json::to_value(statuses).map_err(|_| "lsp_install_status_invalid")
+            }
+            "lsp_install" => {
+                let key: Key = input(args)?;
+                let _installation = self
+                    .activities
+                    .installation
+                    .enter(true)
+                    .map_err(|_| "lsp_install_busy")?;
+                self.retire_installation(&key.manifest_id, &key.version)
+                    .await?;
+                let installer = app
+                    .try_state::<Arc<ManagedInstaller>>()
+                    .ok_or("lsp_unavailable")?
+                    .inner()
+                    .clone();
+                let cancellation = RequestCancellation::new();
+                let operation = installer.install_catalog_cancellable(
+                    &key.manifest_id,
+                    &key.version,
+                    &key.platform,
+                    &cancellation,
+                );
+                tokio::pin!(operation);
+                let result = tokio::select! {
+                    result = &mut operation => result,
+                    _ = shutdown.cancelled() => { cancellation.cancel(); operation.await },
+                    _ = tokio::time::sleep(Duration::from_secs(600)) => { cancellation.cancel(); operation.await },
+                };
+                result.map(|_| Value::Null).map_err(installer_error)
+            }
+            "lsp_import_archive" => {
+                let selection: Import = input(args)?;
+                let _installation = self
+                    .activities
+                    .installation
+                    .enter(true)
+                    .map_err(|_| "lsp_install_busy")?;
+                self.retire_installation(&selection.manifest_id, &selection.version)
+                    .await?;
+                // Resolve trusted keys before consuming or reading chosen files.
+                ManagedInstaller::catalog_manifest(
+                    &selection.manifest_id,
+                    &selection.version,
+                    &selection.platform,
+                )
+                .map_err(installer_error)?;
+                let archives = self
+                    .selections
+                    .lock()
+                    .map_err(|_| "lsp_unavailable")?
+                    .take(&selection.archive_paths)?;
+                let snapshots =
+                    archives::Snapshots::create(self.storage.archives.clone(), archives, shutdown)?;
+                self.storage.revalidate(host)?;
+                if shutdown.is_cancelled() {
+                    return Err("lsp_operation_cancelled");
+                }
+                app.try_state::<Arc<ManagedInstaller>>()
+                    .ok_or("lsp_unavailable")?
+                    .import_catalog_archives(
+                        &selection.manifest_id,
+                        &selection.version,
+                        &selection.platform,
+                        &snapshots.paths(),
+                    )
+                    .map(|_| Value::Null)
+                    .map_err(installer_error)
+            }
+            _ if actor::allowed(method) => {
+                self.execute_live(
+                    app,
+                    host,
+                    Invocation {
+                        method,
+                        args,
+                        context,
+                        deadline,
+                        start,
+                    },
+                    shutdown,
+                )
+                .await
+            }
+            _ if allowed(method) && method != "pick_lsp_archives" => {
+                let _installation = if matches!(method, "lsp_uninstall" | "lsp_recover_installed") {
+                    Some(
+                        self.activities
+                            .installation
+                            .enter(true)
+                            .map_err(|_| "lsp_install_busy")?,
+                    )
+                } else {
+                    None
+                };
+                if method == "lsp_uninstall" {
+                    let key: Key = input(args.clone())?;
+                    self.retire_installation(&key.manifest_id, &key.version)
+                        .await?;
+                } else if method == "lsp_recover_installed" {
+                    self.retire().await?;
+                }
+                code_pad_lib::component::dispatch(app, method, args)
+                    .await
+                    .map_err(|_| "lsp_unavailable")
+            }
+            _ => Err("invalid_request"),
+        };
+        // Recovery reports completed/partial disk writes even when subsequent
+        // storage revalidation fails. Its consumed plan retained all write guards.
+        if method != "lsp_recovery_apply" || result.is_err() {
+            self.storage.revalidate(host)?;
+        }
+        result
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn installation_inputs_remain_closed_and_session_calls_have_separate_admission() {
+        for method in [
+            "lsp_install",
+            "lsp_import_archive",
+            "lsp_recover_installed",
+            "stop_language_server",
+            "save_lsp_config",
+            "start_language_server",
+            "restart_language_server",
+            "apply_lsp_rename",
+            "open_lsp_document",
+            "request_lsp_hover",
+        ] {
+            assert!(allowed(method));
+        }
+        for method in ["recover_rename_journals", "unknown_lsp_command"] {
+            assert!(!allowed(method));
+        }
+        assert!(input::<Key>(json!({"manifestId":"rust-analyzer", "version":"1", "platform":"windows-x86_64", "url":"https://unreviewed.invalid"})).is_err());
+        assert!(input::<Import>(json!({"manifestId":"rust-analyzer", "version":"1", "platform":"windows-x86_64", "archivePaths":[], "destination":"C:/foreign"})).is_err());
+    }
+}

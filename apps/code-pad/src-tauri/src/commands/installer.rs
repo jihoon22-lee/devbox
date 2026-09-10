@@ -22,10 +22,17 @@ pub fn lsp_catalog() -> Result<Vec<ServerManifest>, String> {
 pub fn lsp_installed(
     installer: State<'_, Arc<ManagedInstaller>>,
 ) -> Result<Vec<ManagedInstallStatus>, String> {
+    public_installed_status(&installer).map_err(public_install_error)
+}
+
+/// Preserve typed failures for product owners while sanitizing entry diagnostics
+/// exactly as the standalone command does. No installed filesystem paths leak.
+pub fn public_installed_status(
+    installer: &ManagedInstaller,
+) -> Result<Vec<ManagedInstallStatus>, InstallError> {
     installer
         .installed_status()
         .map(|statuses| statuses.into_iter().map(public_install_status).collect())
-        .map_err(public_install_error)
 }
 
 #[tauri::command]
@@ -106,10 +113,154 @@ fn public_install_error(error: InstallError) -> String {
     }
 }
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_lsp_catalog(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = lsp_catalog()?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_lsp_installed(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = lsp_installed(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_lsp_recover_installed(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    lsp_recover_installed(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_lsp_install(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        manifest_id: String,
+        version: String,
+        platform: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    lsp_install(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.manifest_id,
+        input.version,
+        input.platform,
+    )
+    .await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_lsp_import_archive(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        manifest_id: String,
+        version: String,
+        platform: String,
+        archive_paths: Vec<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    lsp_import_archive(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.manifest_id,
+        input.version,
+        input.platform,
+        input.archive_paths,
+    )
+    .await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_lsp_uninstall(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        manifest_id: String,
+        version: String,
+        platform: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    lsp_uninstall(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.manifest_id,
+        input.version,
+        input.platform,
+    )
+    .await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::{public_install_error, public_install_status};
     use crate::lsp::{InstallError, ManagedInstallState, ManagedInstallStatus};
+    #[test]
+    fn typed_status_preserves_a_corrupt_index_for_explicit_recovery() {
+        let root = tempfile::tempdir().unwrap();
+        let installer = crate::lsp::ManagedInstaller::new(root.path()).unwrap();
+        let index = installer.lsp_root().join("installed.json");
+        std::fs::write(&index, b"{corrupt fixture index").unwrap();
+        assert!(matches!(
+            super::public_installed_status(&installer),
+            Err(InstallError::IndexCorrupt)
+        ));
+        assert_eq!(std::fs::read(&index).unwrap(), b"{corrupt fixture index");
+    }
 
     #[test]
     fn installer_error_detail_is_replaced_before_ipc() {

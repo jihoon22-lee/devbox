@@ -10,6 +10,8 @@ pub mod config;
 pub mod documents;
 pub mod features;
 pub mod installer;
+#[cfg(target_os = "linux")]
+mod linux_child;
 pub mod logs;
 pub mod manager;
 pub mod node_lock;
@@ -37,7 +39,7 @@ pub use config::{
 };
 pub use documents::{
     AtomicDocumentChange, DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot,
-    DocumentStore, RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
+    DocumentStore, LspDocumentAuthority, RequestSnapshot, SyncKind, TextChange, WorkspaceRoot,
 };
 pub use features::{
     apply_formatting_edits, apply_workspace_edit, build_completion_params, build_definition_params,
@@ -61,8 +63,9 @@ pub use installer::{
 pub use logs::{LanguageServerLog, LspLogEntry, LspLogLevel};
 pub use manager::{
     AppliedDocumentEdits, EditedDocument, LanguageServerStatus, LspDiagnosticsEvent, LspEvent,
-    LspManager, LspManagerError, LspStatusEvent, RenameApplyResult, RenameFileResult,
-    RenameFileStatus, RenamePreview, RenamePreviewFile, RenamePreviewRange, RenamedDocument,
+    LspExecutionAuthority, LspManager, LspManagerError, LspStatusEvent, RenameApplyResult,
+    RenameFileResult, RenameFileStatus, RenamePreview, RenamePreviewFile, RenamePreviewRange,
+    RenamedDocument, ReviewedLspExecution, StartupRecovery, UnapprovedLspExecution,
 };
 pub use node_lock::{
     reviewed_node_lock, NodeDependencyLock, NodeLockError, NodePackageLock, NodePackageRef,

@@ -8,9 +8,12 @@ use crate::core::session::Session;
 use serde::Serialize;
 use std::fs::{self, OpenOptions};
 use std::io::{self, Write};
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "desktop")]
+use std::path::PathBuf;
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::{AppHandle, Manager};
+#[cfg(feature = "desktop")]
+use tauri::AppHandle;
 
 #[cfg(unix)]
 use std::fs::File;
@@ -27,9 +30,9 @@ pub struct LoadedSession {
     pub persist_allowed: bool,
 }
 
+#[cfg(feature = "desktop")]
 pub fn session_path(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
+    crate::component::data_root(app)
         .map(|directory| directory.join(SESSION_FILE_NAME))
         .map_err(|error| format!("앱 데이터 폴더를 확인할 수 없습니다: {error}"))
 }
@@ -136,6 +139,19 @@ fn replace_file(temporary: &Path, target: &Path) -> io::Result<()> {
         MoveFileExW, MOVEFILE_REPLACE_EXISTING, MOVEFILE_WRITE_THROUGH,
     };
 
+    // Rust filesystem APIs add the verbatim prefix for long Windows paths,
+    // but raw Win32 calls do not. Canonicalize the existing parent (the target
+    // itself may not exist) and retain both leaf names, including target links.
+    let parent = fs::canonicalize(target.parent().ok_or_else(|| {
+        io::Error::new(io::ErrorKind::InvalidInput, "session path has no parent")
+    })?)?;
+    let leaf = |path: &Path| -> io::Result<std::ffi::OsString> {
+        path.file_name().map(ToOwned::to_owned).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidInput, "session path has no filename")
+        })
+    };
+    let temporary = parent.join(leaf(temporary)?);
+    let target = parent.join(leaf(target)?);
     let temporary: Vec<u16> = temporary.as_os_str().encode_wide().chain(Some(0)).collect();
     let target: Vec<u16> = target.as_os_str().encode_wide().chain(Some(0)).collect();
     unsafe {
@@ -162,6 +178,7 @@ fn sync_parent(_path: &Path) -> io::Result<()> {
 }
 
 /// Tauri command for restoring persisted metadata.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
     let path = session_path(&app)?;
@@ -172,6 +189,7 @@ pub async fn load_session(app: AppHandle) -> Result<LoadedSession, String> {
 
 /// Tauri command for writing persisted metadata.  The core validator rejects
 /// malformed view/document relationships before anything reaches disk.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String> {
     session.validate().map_err(|error| error.to_string())?;
@@ -185,10 +203,53 @@ pub async fn save_session(app: AppHandle, session: Session) -> Result<(), String
         .map_err(|error| format!("세션을 저장할 수 없습니다: {error}"))
 }
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_load_session(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = load_session(_component_app.clone()).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_save_session(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session: Session,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    save_session(_component_app.clone(), input.session).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::session::{SessionDoc, SESSION_VERSION};
+
+    #[cfg(windows)]
+    #[test]
+    fn long_parent_supports_first_publication_and_complete_replacement() {
+        let directory = tempfile::tempdir().unwrap();
+        let parent = directory.path().join("generation-component-".repeat(10));
+        fs::create_dir_all(&parent).unwrap();
+        let path = parent.join("session.json");
+        atomic_write(&path, br#"{"first":true}"#).unwrap();
+        atomic_write(&path, br#"{"second":true}"#).unwrap();
+        assert_eq!(fs::read(&path).unwrap(), br#"{"second":true}"#);
+        assert_eq!(fs::read_dir(&parent).unwrap().count(), 1);
+    }
 
     #[test]
     fn corrupt_or_version_mismatched_files_are_empty_without_rewrite() {

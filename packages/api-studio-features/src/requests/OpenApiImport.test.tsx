@@ -53,18 +53,24 @@ it("explicitly saves supported operation projections without applying requests o
 
 describe("OpenApiImport", () => {
   it("hands a selected operation to the product Mock preview without applying or sending a request", async () => {
-    product.enabled = true; product.invoke.mockResolvedValue(undefined);
+    product.enabled = true;
+    let complete!: () => void;
+    product.invoke.mockReturnValue(new Promise<void>((resolve) => { complete = resolve; }));
     const { onClose, onApply, onAddToCollection } = setup();
-    fireEvent.change(screen.getByLabelText("로컬 파일 선택"), { target: { files: [fileWithText(fixture({
-      "/users": { get: { responses: { "201": { description: "created" } } } },
-    }))] } });
+    await act(async () => {
+      fireEvent.change(screen.getByLabelText("로컬 파일 선택"), { target: { files: [fileWithText(fixture({
+        "/users": { get: { responses: { "201": { description: "created" } } } },
+      }))] } });
+    });
     await screen.findByText("GET /users");
     expect(product.invoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "선택 operation을 Mock 초안으로" }));
-    await waitFor(() => expect(onClose).toHaveBeenCalledOnce());
+    expect(onClose).not.toHaveBeenCalled();
     expect(product.invoke).toHaveBeenCalledExactlyOnceWith("send_mock_draft", {
       output: "", status: 201, mediaType: "text", requestTarget: "/users", requestMethod: "GET",
     });
+    await act(async () => { complete(); });
+    expect(onClose).toHaveBeenCalledOnce();
     expect(onApply).not.toHaveBeenCalled(); expect(onAddToCollection).not.toHaveBeenCalled();
   });
   it("reads only a local file, previews it, and applies only after explicit confirmation", async () => {

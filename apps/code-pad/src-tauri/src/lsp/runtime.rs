@@ -22,11 +22,13 @@ use tokio::time::{timeout, Duration};
 
 const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const RUNTIME_PROBE_OUTPUT_LIMIT: usize = 8 * 1024;
+#[cfg(not(target_os = "linux"))]
 const RUNTIME_PROBE_REAP_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Environment values that may cross the child-process boundary.
 ///
-/// The allowlist starts empty.  `system()` copies only `PATH`; all other
+/// The allowlist starts empty. `system()` copies PATH and the native Windows
+/// system directory required by process initialization; all other
 /// values require an explicit `allow` call.  In particular, this type never
 /// snapshots the parent environment wholesale, so secrets such as tokens and
 /// credentials cannot be forwarded accidentally.
@@ -40,7 +42,7 @@ impl EnvironmentAllowlist {
         Self::default()
     }
 
-    /// Copy the system `PATH` only.  Missing PATH is valid; a resolver will
+    /// Copy PATH and the native platform directory. Missing PATH is valid; a resolver will
     /// report a program-not-found error if it needs PATH lookup.
     pub fn system() -> Self {
         let mut allowlist = Self::new();
@@ -49,6 +51,38 @@ impl EnvironmentAllowlist {
             let _ = allowlist.insert("PATH", path);
         }
         allowlist
+            .clone()
+            .with_native_platform()
+            .unwrap_or(allowlist)
+    }
+
+    /// Windows Node/OpenSSL needs SystemRoot to initialize its secure RNG.
+    /// Query Windows directly rather than accepting a parent-provided override.
+    pub fn with_native_platform(self) -> Result<Self, RuntimeError> {
+        #[cfg(windows)]
+        {
+            use std::os::windows::ffi::OsStringExt;
+            let mut value = self;
+            let mut buffer = vec![0u16; 32768];
+            let length = unsafe {
+                windows::Win32::System::SystemInformation::GetWindowsDirectoryW(Some(&mut buffer))
+            } as usize;
+            if length == 0 || length >= buffer.len() {
+                return Err(RuntimeError::InvalidSpec(
+                    "native Windows directory unavailable".into(),
+                ));
+            }
+            value.values.retain(|key, _| {
+                !key.to_str()
+                    .is_some_and(|key| key.eq_ignore_ascii_case("SystemRoot"))
+            });
+            value.insert("SystemRoot", OsString::from_wide(&buffer[..length]))?;
+            Ok(value)
+        }
+        #[cfg(not(windows))]
+        {
+            Ok(self)
+        }
     }
 
     pub fn with_path(path: impl Into<OsString>) -> Self {
@@ -345,7 +379,37 @@ impl ResolvedProcess {
             args: self.args.clone(),
             current_dir: self.current_dir.clone(),
             env: self.env.clone(),
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
+    }
+}
+
+/// Node's entrypoint resolver does not accept Win32 verbatim path prefixes.
+/// Remove that spelling only after proving it still resolves to the pinned file.
+fn node_script_argument(path: &Path) -> Result<OsString, RuntimeError> {
+    #[cfg(windows)]
+    {
+        let raw = path
+            .to_str()
+            .ok_or_else(|| RuntimeError::InvalidSpec("Node script path must be Unicode".into()))?;
+        let ordinary = if let Some(unc) = raw.strip_prefix(r"\\?\UNC\") {
+            PathBuf::from(format!(r"\\{unc}"))
+        } else {
+            PathBuf::from(raw.strip_prefix(r"\\?\").unwrap_or(raw))
+        };
+        let canonical = canonical_file_or_directory(&ordinary, "Node script")?;
+        if canonical != path {
+            return Err(RuntimeError::PathEscape {
+                base: path.into(),
+                path: canonical,
+            });
+        }
+        Ok(ordinary.into_os_string())
+    }
+    #[cfg(not(windows))]
+    {
+        Ok(path.as_os_str().to_owned())
     }
 }
 
@@ -354,6 +418,8 @@ impl ResolvedProcess {
 pub struct RuntimeResolver {
     search_path: Option<OsString>,
     environment: EnvironmentAllowlist,
+    #[cfg(target_os = "linux")]
+    linux_supervisor: Option<PathBuf>,
 }
 
 impl Default for RuntimeResolver {
@@ -369,6 +435,8 @@ impl RuntimeResolver {
         Self {
             search_path,
             environment,
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
     }
 
@@ -380,12 +448,22 @@ impl RuntimeResolver {
         Self {
             search_path,
             environment,
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
     }
 
     pub fn with_environment(mut self, environment: EnvironmentAllowlist) -> Self {
         self.search_path = environment.get(OsStr::new("PATH")).cloned();
         self.environment = environment;
+        self
+    }
+
+    /// Select the caller's reviewed first-party descendant reaper for probes.
+    /// It has the same native-only contract as ProcessSpec::with_linux_supervisor.
+    #[cfg(target_os = "linux")]
+    pub fn with_linux_supervisor(mut self, executable: impl Into<PathBuf>) -> Self {
+        self.linux_supervisor = Some(executable.into());
         self
     }
 
@@ -524,7 +602,7 @@ impl RuntimeResolver {
             RuntimeKind::Native => (server_executable, custom_args),
             RuntimeKind::Node => {
                 let mut args = Vec::with_capacity(custom_args.len() + 1);
-                args.push(server_executable.into_os_string());
+                args.push(node_script_argument(&server_executable)?);
                 args.extend(custom_args);
                 (runtime.executable.clone(), args)
             }
@@ -544,6 +622,22 @@ impl RuntimeResolver {
     /// directly for a bounded `--version` probe before the process spec is
     /// returned, never through a shell.
     pub async fn resolve_managed(
+        &self,
+        manifest: &ServerManifest,
+        language_id: &str,
+        installed_root: impl AsRef<Path>,
+        node_path: Option<&str>,
+        workspace: impl AsRef<Path>,
+    ) -> Result<ResolvedProcess, RuntimeError> {
+        let resolved =
+            self.prepare_managed(manifest, language_id, installed_root, node_path, workspace)?;
+        self.probe_managed_runtime(&resolved).await?;
+        Ok(resolved)
+    }
+
+    /// Resolve command paths and argv without spawning even a version probe.
+    /// Product owners use this phase to review and pin execution evidence.
+    pub fn prepare_managed(
         &self,
         manifest: &ServerManifest,
         language_id: &str,
@@ -643,9 +737,8 @@ impl RuntimeResolver {
                 }
             }
         };
-        self.probe_runtime(&runtime).await?;
         let mut process_args = Vec::with_capacity(args.len() + 1);
-        process_args.push(command_path.into_os_string());
+        process_args.push(node_script_argument(&command_path)?);
         process_args.extend(args);
         Ok(ResolvedProcess {
             executable: runtime.executable.clone(),
@@ -656,27 +749,95 @@ impl RuntimeResolver {
         })
     }
 
-    async fn probe_runtime(&self, runtime: &ResolvedRuntime) -> Result<(), RuntimeError> {
+    /// Execution boundary: the native owner must revalidate its approval before
+    /// calling this method, then again before spawning the language server.
+    pub async fn probe_managed_runtime(
+        &self,
+        resolved: &ResolvedProcess,
+    ) -> Result<(), RuntimeError> {
+        self.probe_managed_runtime_cancellable(
+            resolved,
+            &super::transport::RequestCancellation::new(),
+        )
+        .await
+    }
+    pub async fn probe_managed_runtime_cancellable(
+        &self,
+        resolved: &ResolvedProcess,
+        cancellation: &super::transport::RequestCancellation,
+    ) -> Result<(), RuntimeError> {
+        if let Some(runtime) = &resolved.runtime {
+            self.probe_runtime(runtime, &resolved.current_dir, cancellation)
+                .await?;
+        }
+        Ok(())
+    }
+
+    async fn probe_runtime(
+        &self,
+        runtime: &ResolvedRuntime,
+        workspace: &Path,
+        cancellation: &super::transport::RequestCancellation,
+    ) -> Result<(), RuntimeError> {
+        if cancellation.is_cancelled() {
+            return Err(RuntimeError::RuntimeProbeCancelled);
+        }
+        #[cfg(target_os = "linux")]
+        let mut command = if let Some(supervisor) = &self.linux_supervisor {
+            if !supervisor.is_absolute() {
+                return Err(RuntimeError::RuntimeProbeFailed);
+            }
+            let mut command = Command::new(supervisor);
+            command.args([
+                OsStr::new("--supervise"),
+                OsStr::new("--"),
+                runtime.executable.as_os_str(),
+            ]);
+            command
+        } else {
+            Command::new(&runtime.executable)
+        };
+        #[cfg(not(target_os = "linux"))]
         let mut command = Command::new(&runtime.executable);
         command
             .arg("--version")
+            .current_dir(workspace)
             .env_clear()
             .stdin(Stdio::null())
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        #[cfg(target_os = "linux")]
+        command
+            .process_group(0)
+            .kill_on_drop(self.linux_supervisor.is_none());
         for (key, value) in self.environment.iter() {
             command.env(key, value);
         }
+        #[cfg(windows)]
+        command.creation_flags(0x0800_0000 | 0x0000_0004);
         let mut child = command
             .spawn()
             .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        let owner = ProbeChild {
+            #[cfg(target_os = "linux")]
+            linux: super::linux_child::LinuxChild::capture(&child, self.linux_supervisor.is_some())
+                .map_err(|_| RuntimeError::RuntimeProbeFailed)?,
+        };
+        #[cfg(windows)]
+        let job = match super::process::windows_job::WindowsJobObject::assign_to(&child) {
+            Ok(job) => job,
+            Err(_) => {
+                owner.kill_and_reap(&mut child).await;
+                return Err(RuntimeError::RuntimeProbeFailed);
+            }
+        };
         let Some(stdout) = child.stdout.take() else {
-            kill_and_reap(&mut child).await;
+            owner.kill_and_reap(&mut child).await;
             return Err(RuntimeError::RuntimeProbeFailed);
         };
         let Some(stderr) = child.stderr.take() else {
-            kill_and_reap(&mut child).await;
+            owner.kill_and_reap(&mut child).await;
             return Err(RuntimeError::RuntimeProbeFailed);
         };
         let probe = async {
@@ -686,8 +847,17 @@ impl RuntimeResolver {
             tokio::pin!(stderr_future);
             let mut stdout_bytes = None;
             let mut stderr_bytes = None;
-            while stdout_bytes.is_none() || stderr_bytes.is_none() {
+            let mut status = None;
+            while stdout_bytes.is_none() || stderr_bytes.is_none() || status.is_none() {
                 tokio::select! {
+                    result = owner.wait(&mut child), if status.is_none() => {
+                        status = Some(result.map_err(|_| RuntimeError::RuntimeProbeFailed)?);
+                        // A descendant can inherit a pipe handle even when its
+                        // own standard output is redirected. Reap the root
+                        // concurrently, then retire its Job to release EOF.
+                        #[cfg(windows)]
+                        job.terminate().map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+                    }
                     result = &mut stdout_future, if stdout_bytes.is_none() => {
                         stdout_bytes = Some(result?);
                     }
@@ -697,10 +867,7 @@ impl RuntimeResolver {
                 }
             }
             let stdout = stdout_bytes.ok_or(RuntimeError::RuntimeProbeFailed)?;
-            let status = child
-                .wait()
-                .await
-                .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+            let status = status.ok_or(RuntimeError::RuntimeProbeFailed)?;
             if !status.success() {
                 return Err(RuntimeError::RuntimeProbeFailed);
             }
@@ -721,17 +888,19 @@ impl RuntimeResolver {
             }
             Ok(())
         };
-        match timeout(RUNTIME_PROBE_TIMEOUT, probe).await {
-            Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => {
-                kill_and_reap(&mut child).await;
-                Err(error)
-            }
-            Err(_) => {
-                kill_and_reap(&mut child).await;
-                Err(RuntimeError::RuntimeProbeTimeout)
-            }
+        let result = tokio::select! {
+            biased;
+            _=cancellation.cancelled()=>Err(RuntimeError::RuntimeProbeCancelled),
+            result=timeout(RUNTIME_PROBE_TIMEOUT,probe)=>result.unwrap_or(Err(RuntimeError::RuntimeProbeTimeout)),
+        };
+        if result.is_err() {
+            owner.kill_and_reap(&mut child).await;
         }
+        #[cfg(windows)]
+        job.terminate_and_wait()
+            .await
+            .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        result
     }
 
     /// Resolve a `custom` reference from the compact `server_by_language`
@@ -1065,9 +1234,38 @@ where
     }
 }
 
-async fn kill_and_reap(child: &mut tokio::process::Child) {
-    let _ = child.start_kill();
-    let _ = timeout(RUNTIME_PROBE_REAP_TIMEOUT, child.wait()).await;
+struct ProbeChild {
+    #[cfg(target_os = "linux")]
+    linux: super::linux_child::LinuxChild,
+}
+impl ProbeChild {
+    async fn wait(
+        &self,
+        child: &mut tokio::process::Child,
+    ) -> io::Result<std::process::ExitStatus> {
+        #[cfg(target_os = "linux")]
+        {
+            self.linux.wait(child).await
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            child.wait().await
+        }
+    }
+    async fn kill_and_reap(&self, child: &mut tokio::process::Child) {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = self.linux.terminate();
+            // Cancellation retains a supervisor until its descendants retire.
+            // Never replace an unconfirmed reaper with a process-only kill.
+            let _ = self.linux.wait(child).await;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = child.start_kill();
+            let _ = timeout(RUNTIME_PROBE_REAP_TIMEOUT, child.wait()).await;
+        }
+    }
 }
 
 fn contains_path_separator(value: &str) -> bool {
@@ -1249,6 +1447,7 @@ pub enum RuntimeError {
     },
     RuntimeProbeFailed,
     RuntimeProbeTimeout,
+    RuntimeProbeCancelled,
     RuntimeProbeOutputLimit,
     RuntimeProbeInvalidOutput,
     ManagedServerUnsupported,
@@ -1315,6 +1514,9 @@ impl fmt::Display for RuntimeError {
             ),
             Self::RuntimeProbeFailed => f.write_str("managed runtime version probe failed"),
             Self::RuntimeProbeTimeout => f.write_str("managed runtime version probe timed out"),
+            Self::RuntimeProbeCancelled => {
+                f.write_str("managed runtime version probe was cancelled")
+            }
             Self::RuntimeProbeOutputLimit => {
                 f.write_str("managed runtime version probe output exceeded its limit")
             }
@@ -1418,6 +1620,20 @@ mod tests {
         }
     }
 
+    #[cfg(windows)]
+    #[test]
+    fn native_platform_environment_replaces_parent_systemroot_with_windows_api_value() {
+        let environment = EnvironmentAllowlist::with_path("C:/fixture")
+            .allow("SYSTEMROOT", "C:/untrusted-parent-override")
+            .unwrap()
+            .with_native_platform()
+            .unwrap();
+        let system = environment.get(OsStr::new("SystemRoot")).unwrap();
+        assert_ne!(system, OsStr::new("C:/untrusted-parent-override"));
+        assert!(Path::new(system).is_absolute());
+        assert_eq!(environment.as_map().len(), 2);
+        assert!(!environment.contains_key(OsStr::new("SYSTEMROOT")));
+    }
     #[test]
     fn environment_allowlist_does_not_copy_unlisted_values() {
         let allowlist = EnvironmentAllowlist::with_path("/safe/bin")
@@ -1509,13 +1725,13 @@ mod tests {
         };
         let resolved = resolver.resolve_custom(&custom, &workspace).unwrap();
         assert_eq!(resolved.executable, fs::canonicalize(node).unwrap());
+        assert_eq!(resolved.args.len(), 2);
         assert_eq!(
-            resolved.args,
-            vec![
-                fs::canonicalize(server).unwrap().into_os_string(),
-                OsString::from("--stdio")
-            ]
+            fs::canonicalize(&resolved.args[0]).unwrap(),
+            fs::canonicalize(server).unwrap()
         );
+        assert!(!resolved.args[0].to_string_lossy().starts_with(r"\\?\"));
+        assert_eq!(resolved.args[1], OsString::from("--stdio"));
         assert_eq!(resolved.env.len(), 1);
         assert!(resolved.env.contains_key(OsStr::new("PATH")));
         assert!(resolved
@@ -1692,6 +1908,43 @@ mod tests {
             );
             assert_eq!(resolved.args[1], OsString::from("--stdio"));
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn managed_preparation_does_not_execute_the_runtime_probe() {
+        let directory = tempdir().unwrap();
+        let workspace = directory.path().join("workspace");
+        let installed = directory.path().join("installed");
+        let bin = directory.path().join("bin");
+        fs::create_dir_all(&workspace).unwrap();
+        fs::create_dir_all(&installed).unwrap();
+        fs::create_dir_all(&bin).unwrap();
+        fs::write(installed.join("server.js"), b"fixture").unwrap();
+        executable_fixture(
+            &bin.join("node"),
+            "#!/bin/sh\n[ \"$1\" = \"--version\" ] || exit 1\nprintf probe > probe-marker\necho v20.11.1\n",
+        );
+        let manifest = managed_manifest(
+            RuntimeKind::Node,
+            "server.js",
+            vec![LanguageSupport {
+                language_id: "javascript".into(),
+                extensions: vec![".js".into()],
+                command: None,
+            }],
+        );
+        let resolver = RuntimeResolver::with_path(bin.as_os_str().to_os_string());
+        let prepared = resolver
+            .prepare_managed(&manifest, "javascript", &installed, None, &workspace)
+            .unwrap();
+        assert!(!workspace.join("probe-marker").exists());
+        assert_eq!(
+            prepared.executable,
+            bin.join("node").canonicalize().unwrap()
+        );
+        resolver.probe_managed_runtime(&prepared).await.unwrap();
+        assert_eq!(fs::read(workspace.join("probe-marker")).unwrap(), b"probe");
     }
 
     #[cfg(unix)]

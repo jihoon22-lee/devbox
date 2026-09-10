@@ -8202,7 +8202,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:App.tsx",
-      "sourcePath": "apps/code-pad/src/App.tsx",
+      "sourcePath": "packages/workspace-features/src/files/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8216,7 +8216,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/ChangeSetPreview.tsx",
-      "sourcePath": "apps/code-pad/src/components/ChangeSetPreview.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/ChangeSetPreview.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8230,7 +8230,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/DocHost.tsx",
-      "sourcePath": "apps/code-pad/src/components/DocHost.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/DocHost.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8244,7 +8244,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/LspControlPanel.tsx",
-      "sourcePath": "apps/code-pad/src/components/LspControlPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/LspControlPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8258,7 +8258,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/LspNavigationPanel.tsx",
-      "sourcePath": "apps/code-pad/src/components/LspNavigationPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/LspNavigationPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8272,7 +8272,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/ManagedInstallerPanel.tsx",
-      "sourcePath": "apps/code-pad/src/components/ManagedInstallerPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/ManagedInstallerPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8286,7 +8286,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/PreviewPane.tsx",
-      "sourcePath": "apps/code-pad/src/components/PreviewPane.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/PreviewPane.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8300,7 +8300,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/ProblemsPanel.tsx",
-      "sourcePath": "apps/code-pad/src/components/ProblemsPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/ProblemsPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8314,7 +8314,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/QuickOpen.tsx",
-      "sourcePath": "apps/code-pad/src/components/QuickOpen.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/QuickOpen.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8328,7 +8328,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/RecoveryDialog.tsx",
-      "sourcePath": "apps/code-pad/src/components/RecoveryDialog.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/RecoveryDialog.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8342,7 +8342,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/StatusBar.tsx",
-      "sourcePath": "apps/code-pad/src/components/StatusBar.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/StatusBar.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8356,7 +8356,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/TabBar.tsx",
-      "sourcePath": "apps/code-pad/src/components/TabBar.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/TabBar.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8370,7 +8370,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:components/ViewPane.tsx",
-      "sourcePath": "apps/code-pad/src/components/ViewPane.tsx",
+      "sourcePath": "packages/workspace-features/src/files/components/ViewPane.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -8384,7 +8384,7 @@
     },
     {
       "legacyFeatureId": "code-pad:surface:editor/CodeEditor.tsx",
-      "sourcePath": "apps/code-pad/src/editor/CodeEditor.tsx",
+      "sourcePath": "packages/workspace-features/src/files/editor/CodeEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9868,7 +9868,7 @@
     },
     {
       "legacyFeatureId": "workbench:surface:App.tsx",
-      "sourcePath": "apps/workbench/src/App.tsx",
+      "sourcePath": "packages/workspace-features/src/overview/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9882,7 +9882,7 @@
     },
     {
       "legacyFeatureId": "workbench:surface:components/PackageDependencySummaryPanel.tsx",
-      "sourcePath": "apps/workbench/src/components/PackageDependencySummaryPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/overview/components/PackageDependencySummaryPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9896,7 +9896,7 @@
     },
     {
       "legacyFeatureId": "workbench:surface:components/WorkspaceTaskControlPanel.tsx",
-      "sourcePath": "apps/workbench/src/components/WorkspaceTaskControlPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/overview/components/WorkspaceTaskControlPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11143,7 +11143,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:App.tsx",
-      "sourcePath": "apps/repo-manager/src/App.tsx",
+      "sourcePath": "packages/workspace-features/src/source/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11157,7 +11157,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/CleanupPanel.tsx",
-      "sourcePath": "apps/repo-manager/src/components/CleanupPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/CleanupPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11171,7 +11171,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/ConfirmDialog.tsx",
-      "sourcePath": "apps/repo-manager/src/components/ConfirmDialog.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/ConfirmDialog.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11185,7 +11185,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/DependencyLensPanel.tsx",
-      "sourcePath": "apps/repo-manager/src/components/DependencyLensPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/DependencyLensPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11199,7 +11199,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/GitSafetyPanel.tsx",
-      "sourcePath": "apps/repo-manager/src/components/GitSafetyPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/GitSafetyPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11213,7 +11213,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/HistoryDiffPanel.tsx",
-      "sourcePath": "apps/repo-manager/src/components/HistoryDiffPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/HistoryDiffPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11227,7 +11227,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/RemoteSyncPanel.tsx",
-      "sourcePath": "apps/repo-manager/src/components/RemoteSyncPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/RemoteSyncPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -11241,7 +11241,7 @@
     },
     {
       "legacyFeatureId": "repo-manager:surface:components/StageCommitPanel.tsx",
-      "sourcePath": "apps/repo-manager/src/components/StageCommitPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/source/components/StageCommitPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",

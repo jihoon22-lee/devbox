@@ -212,7 +212,7 @@ describe("Developer Toolbox toolbox-text/v1 receiver", () => {
 
     fireEvent.click(screen.getByRole("button", { name: "취소" }));
     await waitFor(() => expect(discardToolboxTextMock).toHaveBeenCalledWith(firstId));
-    expect(screen.queryByRole("dialog", { name: "Toolbox 텍스트 미리보기" })).toBeNull();
+    await waitFor(() => expect(screen.queryByRole("dialog", { name: "Toolbox 텍스트 미리보기" })).toBeNull());
     expect(smartInput.value).toBe("existing input");
     expect(writeText).not.toHaveBeenCalled();
     expect(acceptToolboxTextMock).not.toHaveBeenCalled();

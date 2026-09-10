@@ -1,0 +1,58 @@
+{
+  "name": "@devbox/workspace-features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./overview": "./src/overview/App.tsx",
+    "./overview-template-editor": "./src/overview/lib/profileTemplateEditor.ts",
+    "./overview-types": "./src/overview/api.ts",
+    "./dependencies": "./src/source/Dependencies.tsx",
+    "./source": "./src/source/App.tsx",
+    "./source-panel": "./src/source/SourcePanel.tsx",
+    "./files": "./src/files/App.tsx",
+    "./transport": "./src/transport.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@devbox/a11y": "workspace:*",
+    "@devbox/context-menu": "workspace:*",
+    "@devbox/tokens": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@codemirror/autocomplete": "^6.18.7",
+    "@codemirror/commands": "^6.8.1",
+    "@codemirror/lang-css": "^6.3.1",
+    "@codemirror/lang-html": "^6.4.9",
+    "@codemirror/lang-javascript": "^6.2.3",
+    "@codemirror/lang-json": "^6.0.1",
+    "@codemirror/lang-markdown": "^6.3.3",
+    "@codemirror/lang-python": "^6.1.6",
+    "@codemirror/lang-rust": "^6.0.1",
+    "@codemirror/lang-sql": "^6.9.0",
+    "@codemirror/lang-xml": "^6.1.0",
+    "@codemirror/language": "^6.11.2",
+    "@codemirror/lint": "^6.9.7",
+    "@codemirror/search": "^6.5.10",
+    "@codemirror/state": "^6.5.2",
+    "@codemirror/view": "^6.36.5",
+    "@tauri-apps/plugin-clipboard-manager": "^2",
+    "@tauri-apps/plugin-dialog": "^2",
+    "codemirror": "^6.0.1",
+    "@devbox/mermaid-renderer": "workspace:*",
+    "@devbox/editor": "workspace:*",
+    "@devbox/diff-view": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "@vitejs/plugin-react": "^4.6.0",
+    "typescript": "~5.8.3",
+    "vite": "^7.0.4"
+  }
+}

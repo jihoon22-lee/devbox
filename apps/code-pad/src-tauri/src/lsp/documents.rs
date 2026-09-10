@@ -6,10 +6,12 @@ use std::collections::{BTreeMap, HashSet};
 use std::fmt;
 use std::fs;
 use std::path::{Component, Path, PathBuf};
+use std::sync::Arc;
 use url::Url;
 
 #[derive(Debug)]
 pub enum DocumentError {
+    AccessDenied,
     Io(std::io::Error),
     InvalidFileUri(String),
     PathOutsideWorkspace(PathBuf),
@@ -30,6 +32,7 @@ pub enum DocumentError {
 impl fmt::Display for DocumentError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self::AccessDenied => f.write_str("LSP document authority changed or is unavailable"),
             Self::Io(error) => write!(f, "document path resolution failed: {error}"),
             Self::InvalidFileUri(uri) => write!(f, "invalid local file URI: {uri}"),
             Self::PathOutsideWorkspace(path) => {
@@ -83,15 +86,49 @@ impl From<PositionError> for DocumentError {
     }
 }
 
-#[derive(Debug, Clone)]
+/// Called before path resolution and again on its canonical result. Hosted
+/// consumers must reject unapproved transports without contacting their host.
+/// The same authority follows cloned stores and pending disk transactions.
+pub trait LspDocumentAuthority: Send + Sync {
+    fn validate_path(&self, path: &Path) -> Result<(), DocumentError>;
+    fn validate_write_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.validate_path(path)
+    }
+}
+
+#[derive(Clone)]
 pub struct WorkspaceRoot {
     canonical_path: PathBuf,
     uri: Url,
+    authority: Option<Arc<dyn LspDocumentAuthority>>,
+}
+
+impl fmt::Debug for WorkspaceRoot {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_struct("WorkspaceRoot")
+            .field("canonical_path", &self.canonical_path)
+            .field("uri", &self.uri)
+            .field("has_authority", &self.authority.is_some())
+            .finish()
+    }
 }
 
 impl WorkspaceRoot {
     pub fn new(path: impl AsRef<Path>) -> Result<Self, DocumentError> {
+        Self::with_authority(path, None)
+    }
+
+    pub fn with_authority(
+        path: impl AsRef<Path>,
+        authority: Option<Arc<dyn LspDocumentAuthority>>,
+    ) -> Result<Self, DocumentError> {
+        if let Some(authority) = &authority {
+            authority.validate_path(path.as_ref())?;
+        }
         let canonical_path = fs::canonicalize(path)?;
+        if let Some(authority) = &authority {
+            authority.validate_path(&canonical_path)?;
+        }
         if !canonical_path.is_dir() {
             return Err(DocumentError::PathOutsideWorkspace(canonical_path));
         }
@@ -99,6 +136,7 @@ impl WorkspaceRoot {
         Ok(Self {
             canonical_path,
             uri,
+            authority,
         })
     }
 
@@ -114,7 +152,9 @@ impl WorkspaceRoot {
         &self,
         path: impl AsRef<Path>,
     ) -> Result<(PathBuf, Url), DocumentError> {
+        self.validate_access(path.as_ref())?;
         let canonical = fs::canonicalize(path)?;
+        self.validate_access(&canonical)?;
         if !path_is_within(&self.canonical_path, &canonical) || !canonical.is_file() {
             return Err(DocumentError::PathOutsideWorkspace(canonical));
         }
@@ -124,11 +164,29 @@ impl WorkspaceRoot {
 
     pub fn resolve_uri(&self, uri: &Url) -> Result<PathBuf, DocumentError> {
         let path = file_uri_to_path(uri)?;
+        self.validate_access(&path)?;
         let canonical = fs::canonicalize(path)?;
+        self.validate_access(&canonical)?;
         if !path_is_within(&self.canonical_path, &canonical) || !canonical.is_file() {
             return Err(DocumentError::PathOutsideWorkspace(canonical));
         }
         Ok(canonical)
+    }
+
+    /// Recheck retained paths immediately before disk IO. This does not resolve
+    /// the path: the native authority owns transport admission and identity.
+    pub fn validate_access(&self, path: &Path) -> Result<(), DocumentError> {
+        if let Some(authority) = &self.authority {
+            authority.validate_path(path)?;
+        }
+        Ok(())
+    }
+
+    pub fn validate_write_access(&self, path: &Path) -> Result<(), DocumentError> {
+        if let Some(authority) = &self.authority {
+            authority.validate_write_path(path)?;
+        }
+        Ok(())
     }
 
     /// Return a workspace-relative path using the same component comparison
@@ -806,5 +864,91 @@ mod tests {
             assert_eq!(file_uri_to_path(&uri).unwrap(), path);
             assert!(uri.as_str().contains("%20"));
         }
+    }
+
+    struct RevocableAuthority(std::sync::atomic::AtomicBool);
+    impl LspDocumentAuthority for RevocableAuthority {
+        fn validate_path(&self, _: &Path) -> Result<(), DocumentError> {
+            if self.0.load(std::sync::atomic::Ordering::Acquire) {
+                Ok(())
+            } else {
+                Err(DocumentError::AccessDenied)
+            }
+        }
+    }
+
+    #[test]
+    fn native_denial_precedes_path_io_and_follows_cloned_stores() {
+        use std::sync::atomic::{AtomicBool, Ordering};
+        let directory = tempdir().unwrap();
+        let authority = Arc::new(RevocableAuthority(AtomicBool::new(false)));
+        assert!(matches!(
+            WorkspaceRoot::with_authority(
+                directory.path().join("missing"),
+                Some(authority.clone())
+            ),
+            Err(DocumentError::AccessDenied)
+        ));
+        authority.0.store(true, Ordering::Release);
+        let workspace =
+            WorkspaceRoot::with_authority(directory.path(), Some(authority.clone())).unwrap();
+        let mut store = DocumentStore::new(workspace, PositionEncoding::Utf16, SyncKind::Full);
+        let path = directory.path().join("approved.rs");
+        fs::write(&path, "before").unwrap();
+        store.open(&path, "rust", "before").unwrap();
+        let retained = store.clone();
+        authority.0.store(false, Ordering::Release);
+        for workspace in [store.workspace(), retained.workspace()] {
+            assert!(matches!(
+                workspace.resolve_document(&path),
+                Err(DocumentError::AccessDenied)
+            ));
+            let missing = directory.path().join("missing.rs");
+            assert!(matches!(
+                workspace.resolve_document(&missing),
+                Err(DocumentError::AccessDenied)
+            ));
+            let uri = file_uri_from_absolute_path(&missing).unwrap();
+            assert!(matches!(
+                workspace.resolve_uri(&uri),
+                Err(DocumentError::AccessDenied)
+            ));
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn native_authority_checks_canonical_targets_inside_the_workspace() {
+        struct ExcludeProtected(PathBuf);
+        impl LspDocumentAuthority for ExcludeProtected {
+            fn validate_path(&self, path: &Path) -> Result<(), DocumentError> {
+                if path.starts_with(&self.0) {
+                    Err(DocumentError::AccessDenied)
+                } else {
+                    Ok(())
+                }
+            }
+        }
+        let directory = tempdir().unwrap();
+        let protected = directory.path().join("private");
+        fs::create_dir(&protected).unwrap();
+        let target = protected.join("approval.json");
+        fs::write(&target, "private").unwrap();
+        let link = directory.path().join("document.json");
+        std::os::unix::fs::symlink(&target, &link).unwrap();
+        let workspace = WorkspaceRoot::with_authority(
+            directory.path(),
+            Some(Arc::new(ExcludeProtected(protected))),
+        )
+        .unwrap();
+        assert!(matches!(
+            workspace.resolve_document(&link),
+            Err(DocumentError::AccessDenied)
+        ));
+        let uri = file_uri_from_absolute_path(&link).unwrap();
+        assert!(matches!(
+            workspace.resolve_uri(&uri),
+            Err(DocumentError::AccessDenied)
+        ));
     }
 }

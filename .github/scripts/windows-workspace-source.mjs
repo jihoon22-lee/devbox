@@ -1,0 +1,282 @@
+// Synthetic native Git approval -> selected stage -> reviewed commit. No remotes.
+import assert from "node:assert/strict";
+import {mkdirSync,writeFileSync,readFileSync,appendFileSync,existsSync,unlinkSync,realpathSync} from "node:fs";
+import {spawnSync} from "node:child_process";
+import path from "node:path";
+import {nativeFileSave,nativeFileDialog} from "./windows-workspace-files.mjs";
+
+export async function exerciseWorkspaceSource({cdp,directory,call,success,waitForRenderer,processId,executable}) {
+  const original=(await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context;
+  const folder=path.join(directory,"Git 한글 source");mkdirSync(folder);
+  const outside=path.join(directory,"unselected Git target");mkdirSync(outside);
+  const global=path.join(directory,"source-fixture-global.config");writeFileSync(global,"",{flag:"wx"});
+  const git=(args)=>{
+    const result=spawnSync("git",["-C",folder,...args],{encoding:"utf8",windowsHide:true,timeout:10_000,env:{...process.env,GIT_CONFIG_NOSYSTEM:"1",GIT_CONFIG_GLOBAL:global,GIT_CONFIG_SYSTEM:global}});
+    assert.equal(result.status,0,"owned Git fixture command failed");return result.stdout.trim();
+  };
+  git(["init","--quiet"]);git(["config","user.name","Source Fixture"]);git(["config","user.email","source@example.invalid"]);
+  writeFileSync(path.join(folder,"tracked.txt"),"initial\n");git(["add","--","tracked.txt"]);git(["commit","--quiet","-m","initial fixture"]);
+  writeFileSync(path.join(folder,"tracked.txt"),"edited in the selected root\n");
+  writeFileSync(path.join(folder,"keep-untracked.txt"),"preserved untracked\n");
+  writeFileSync(path.join(outside,"tracked.txt"),"outside sentinel\n");
+  const shell=value=>`'${value.replaceAll("\\","/").replaceAll("'","'\\''")}'`;
+  const monitorMarker=path.join(folder,"monitor-marker.txt");
+  const commitMarker=path.join(folder,"commit-marker.txt");
+  const monitor=path.join(folder,".git/hooks/fsmonitor-watchman");
+  writeFileSync(monitor,`#!/bin/sh\nprintf 'called\\n' > ${shell(monitorMarker)}\nprintf 'fixture-token\\0/\\0'\n`);
+  writeFileSync(path.join(folder,".git/hooks/pre-commit"),`#!/bin/sh\nprintf 'reviewed commit\\n' > ${shell(commitMarker)}\n`);
+  git(["config","core.fsmonitor",`"${monitor.replaceAll("\\","/")}"`]);
+  // An approved config may not redirect the native Registry worktree.
+  git(["config","core.worktree",outside]);
+  const registration=success(await call("workspace.registry","preview_windows",{root:folder}));
+  const registered=success(await call("workspace.registry","apply_registration",{previewId:registration.previewId,name:"Source fixture",action:"register"}));
+  success(await call("workspace.registry","select_project",{context:registered.context}));
+  const root=registration.binding.root;
+  const source=(method,args={})=>call("workspace.source",method,args);
+  const failed=result=>assert.equal(result.operation.outcome.state,"failed",JSON.stringify(result));
+  failed(await source("repo_changes",{request:{path:root}}));
+  assert.equal(existsSync(monitorMarker),false);
+  const cancelled=success(await source("preview_trust"));
+  success(await source("cancel_trust",{previewId:cancelled.previewId}));
+  failed(await source("approve_trust",{previewId:cancelled.previewId}));
+  const stale=success(await source("preview_trust"));
+  appendFileSync(path.join(folder,".git/config"),"\n# source changed after review\n");
+  failed(await source("approve_trust",{previewId:stale.previewId}));
+  assert.equal(existsSync(monitorMarker),false);assert.equal(existsSync(commitMarker),false);
+  await cdp.command("Page.reload");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Source context did not reload");
+  await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="source").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button=>button.textContent.trim()===label).click();})()`);
+  const click=async(label,scope=".workspace-native-source")=>{
+    const expression=`Array.from(document.querySelectorAll(${JSON.stringify(`${scope} button`)})).find(button=>button.textContent.trim()===${JSON.stringify(label)}&&!button.matches(":disabled"))`;
+    // React can replace or disable the action between separate CDP requests.
+    // Resolve and click in the same renderer turn; retry only before a click.
+    await waitForRenderer(cdp,`(()=>{const button=${expression};if(!button)return false;button.click();return true;})()`,`Source action unavailable: ${label}`);
+  };
+  const navigate=async route=>cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route===${JSON.stringify(route)}).label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(button=>button.textContent.trim()===label).click();})()`);
+  const fill=async(id,value)=>cdp.evaluate(`(()=>{const input=document.getElementById(${JSON.stringify(id)});Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,"value").set.call(input,${JSON.stringify(value)});input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
+  const dirty='Array.from(document.querySelectorAll(".workspace-feature-files [role=tab]")).some(tab=>tab.textContent.includes("●"))';
+  const openHistoryLine=async()=>{
+    // Record only fixed operation/issue codes for this owned synthetic probe.
+    // UI errors are deliberately sanitized, so preserve admission vs. engine
+    // failure and duration without logging request args or response contents.
+    await cdp.evaluate(`(() => {
+      const original=window.__TAURI_INTERNALS__.invoke;
+      window.__workspaceHistoryProbe=[];
+      window.__workspaceHistoryRestore=()=>{window.__TAURI_INTERNALS__.invoke=original;};
+      window.__TAURI_INTERNALS__.invoke=async function(command,args,...rest) {
+        const request=args?.request;
+        if(command!=="plugin:workspace|execute"||request?.component!=="workspace.source"||!["repo_history","repo_commit_detail","repo_diff"].includes(request.method))return original.call(this,command,args,...rest);
+        const started=performance.now();
+        const fixed=value=>typeof value==="string"&&/^[a-z_]{1,80}$/.test(value)?value:null;
+        try {
+          const result=await original.call(this,command,args,...rest);
+          window.__workspaceHistoryProbe.push({method:request.method,state:fixed(result?.operation?.outcome?.state),issue:fixed(result?.value?.issue),elapsedMs:Math.round(performance.now()-started)});
+          return result;
+        } catch(problem) {
+          window.__workspaceHistoryProbe.push({method:request.method,state:"rejected",issue:fixed(problem?.code),elapsedMs:Math.round(performance.now()-started)});
+          throw problem;
+        }
+      };
+    })()`);
+    try {
+    await click("히스토리 불러오기",".history-panel");
+    await waitForRenderer(cdp,'!!document.querySelector(".history-entry:not(:disabled)")',"Source history entry unavailable");
+    await cdp.evaluate('document.querySelector(".history-entry:not(:disabled)").click()');
+    await waitForRenderer(cdp,'!!document.querySelector(".diff-line-open")',"Source diff line unavailable");
+    await cdp.evaluate('document.querySelector(".diff-line-open").click()');
+    await waitForRenderer(cdp,'!!document.querySelector(".workspace-feature-files:not([hidden]) .cm-content")',"Source diff did not open Files");
+    } finally {
+      const attempts=await cdp.evaluate('(() => {window.__workspaceHistoryRestore?.();return window.__workspaceHistoryProbe?.slice(-8)??[];})()');
+      writeFileSync(path.join("product-foundation-evidence",`workspace-history-${Date.now()}.json`),JSON.stringify(attempts,null,2));
+    }
+  };
+  const saveAndCloseEditor=async()=>{
+    await click("저장",".workspace-feature-files");
+    await waitForRenderer(cdp,`!(${dirty})`,"Source editor draft did not save");
+    await cdp.evaluate('document.querySelector(".workspace-feature-files .document-tab .tab-action").click()');
+    await waitForRenderer(cdp,'!document.querySelector(".workspace-feature-files [role=tab]")',"Source editor did not close");
+    await navigate("source");
+    await waitForRenderer(cdp,'Array.from(document.querySelectorAll(".workspace-registry button")).some(button=>button.textContent.trim()==="프로젝트 선택 해제"&&!button.matches(":disabled"))',"Source editor still retains context");
+  };
+  const selectTree=async(tree)=>{
+    const button=`Array.from(document.querySelectorAll(".workspace-registry section > div")).find(div=>div.querySelector(":scope > p")?.textContent===${JSON.stringify(tree.binding.root)})?.querySelector("button")`;
+    await waitForRenderer(cdp,`!!(${button})&&!(${button}).disabled`,"Worktree selection unavailable");
+    await cdp.evaluate(`${button}.click()`);
+    await waitForRenderer(cdp,`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");return d.context?.worktreeId===${JSON.stringify(tree.id)};})()`,"Worktree context did not change");
+    await waitForRenderer(cdp,`document.querySelector(".workspace-native-source")?.textContent.includes(${JSON.stringify(tree.binding.root)})&&document.querySelector(".workspace-source-trust")?.getAttribute("aria-busy")==="false"`,"Worktree Source did not settle");
+  };
+  await click("Git 실행 검토");await click("검토한 Git 실행 승인");
+  await waitForRenderer(cdp,'!!document.querySelector(".stage-commit-panel") && document.querySelector(".workspace-source-trust")?.textContent.includes("현재 Git 실행 근거의 승인을 확인했습니다.")',"Source approval did not finish");
+  assert.equal(existsSync(monitorMarker),false);
+  failed(await source("repo_changes",{request:{path:outside}}));
+  assert.equal(existsSync(monitorMarker),false);
+  await click("변경 파일 불러오기",".stage-commit-panel");
+  await waitForRenderer(cdp,`!!document.querySelector('.stage-commit-panel input[aria-label="stage tracked.txt"]')`,"Native Git changes missing");
+  assert.equal(existsSync(monitorMarker),true);
+  await cdp.evaluate("document.querySelector('.stage-commit-panel button[aria-label=\"Files에서 tracked.txt 열기\"]').click()");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-feature-files:not([hidden]) .cm-content")',"Source change did not open Files");
+  await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").focus()');
+  await cdp.command("Input.insertText",{text:"unsaved "});
+  await waitForRenderer(cdp,dirty,"Source-opened file did not retain an editor draft");
+  const editorDraft=await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").textContent');
+  await navigate("source");
+  await cdp.evaluate(`document.querySelector('.stage-commit-panel input[aria-label="stage tracked.txt"]').click()`);
+  await click("선택 항목 stage (1)",".stage-commit-panel");
+  await waitForRenderer(cdp,`!!document.querySelector('.stage-commit-panel input[aria-label="unstage tracked.txt"]')`,"Selected native stage missing");
+  await cdp.evaluate(`(()=>{const input=document.querySelector('.stage-commit-panel textarea[aria-label="커밋 메시지"]');Object.getOwnPropertyDescriptor(HTMLTextAreaElement.prototype,"value").set.call(input,"reviewed Source fixture");input.dispatchEvent(new Event("input",{bubbles:true}));})()`);
+  await waitForRenderer(cdp,'Array.from(document.querySelectorAll(".workspace-registry button")).find(button=>button.textContent.trim()==="프로젝트 선택 해제").disabled',"Commit draft did not retain project selection");
+  await click("Commit (1)",".stage-commit-panel");
+  await waitForRenderer(cdp,'!!document.querySelector(".stage-commit-panel [role=dialog]")',"Commit review missing");
+  assert.equal(existsSync(commitMarker),false);
+  await click("Commit 실행",".stage-commit-panel");
+  await waitForRenderer(cdp,'!document.querySelector(".stage-commit-panel [role=dialog]") && document.querySelector(".stage-commit-panel textarea")?.value==="" && document.querySelector(".stage-commit-panel")?.getAttribute("aria-busy")==="false"',"Reviewed native commit did not finish");
+  assert.equal(existsSync(commitMarker),true);
+  assert.equal(git(["show","HEAD:tracked.txt"]),"edited in the selected root");
+  assert.equal(git(["show","--pretty=format:","--name-only","HEAD"]),"tracked.txt");
+  assert.equal(readFileSync(path.join(outside,"tracked.txt"),"utf8"),"outside sentinel\n");
+  assert.equal(readFileSync(path.join(folder,"keep-untracked.txt"),"utf8"),"preserved untracked\n");
+  await openHistoryLine();
+  assert.equal(await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").textContent'),editorDraft);
+  assert.equal(git(["show","HEAD:tracked.txt"]),"edited in the selected root","Git must not commit the unsaved editor buffer");
+  await saveAndCloseEditor();
+  assert.match(readFileSync(path.join(folder,"tracked.txt"),"utf8"),/^unsaved /);
+  const beforeEarlyCancel=git(["diff","--cached","--name-only"]);
+  success(await source("repo_local_cancel",{request:{operationId:"source-before-admission"}}));
+  const preCancelled=await source("repo_stage",{request:{path:root,paths:["keep-untracked.txt"],operationId:"source-before-admission"}});
+  failed(preCancelled);assert.equal(preCancelled.value.issue,"source_cancelled");
+  assert.equal(git(["diff","--cached","--name-only"]),beforeEarlyCancel);
+  const cancelledTarget=path.join(directory,"cancelled new worktree");
+  const createCancelled=success(await source("preview_worktree",{branch:"cancelled-worktree",targetDir:cancelledTarget}));
+  assert.equal(existsSync(cancelledTarget),false);
+  success(await source("cancel_worktree",{previewId:createCancelled.previewId}));
+  failed(await source("create_worktree",{previewId:createCancelled.previewId,operationId:"cancelled-worktree-create"}));
+  assert.equal(existsSync(cancelledTarget),false);
+  const staleTarget=path.join(directory,"concurrent worktree target");
+  const createStale=success(await source("preview_worktree",{branch:"stale-worktree",targetDir:staleTarget}));
+  mkdirSync(staleTarget);writeFileSync(path.join(staleTarget,"sentinel.txt"),"concurrent owner");
+  failed(await source("create_worktree",{previewId:createStale.previewId,operationId:"stale-worktree-create"}));
+  assert.equal(readFileSync(path.join(staleTarget,"sentinel.txt"),"utf8"),"concurrent owner");
+  assert.equal(git(["for-each-ref","--format=%(refname)","refs/heads/stale-worktree"]),"");
+  const linkedTarget=path.join(directory,"new Git 한글 worktree");
+  await fill("source-worktree-branch","source-fixture-worktree");await fill("source-worktree-target",linkedTarget);
+  await click("작업 폴더 생성 검토",".workspace-source-worktree");
+  await waitForRenderer(cdp,"!!document.querySelector('.workspace-source-worktree [aria-label=\"작업 폴더 생성 확인\"]')","Native worktree review missing");
+  assert.equal(existsSync(linkedTarget),false);
+  await click("확인한 작업 폴더 생성",".workspace-source-worktree");
+  await click("생성한 폴더 등록 검토",".workspace-source-worktree");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-registry")?.textContent.includes("기존 프로젝트의 연결된 작업 폴더입니다.")',"Created worktree was not recognized as a linked project");
+  await click("등록",".workspace-registry");
+  await waitForRenderer(cdp,"!document.querySelector('.workspace-registry [aria-label=\"프로젝트 등록 확인\"]')","Created worktree registration did not finish");
+  const linkedRegistry=success(await call("workspace.registry","snapshot"));
+  const linked=linkedRegistry.worktrees.find(tree=>realpathSync.native(tree.binding.root)===realpathSync.native(linkedTarget));
+  const originalTree=linkedRegistry.worktrees.find(tree=>tree.id===registered.context.worktreeId);
+  assert.ok(linked);assert.equal(linked.projectId,originalTree.projectId);assert.equal(linked.repoId,originalTree.repoId);assert.notEqual(linked.id,originalTree.id);assert.equal(linked.trustedDigest,null);
+  assert.equal((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context.worktreeId,originalTree.id,"Registration must not automatically select a new context");
+  await selectTree(linked);
+  assert.equal(success(await source("trust_status")).approved,false,"Another worktree cannot reuse Git execution approval");
+  await click("Git 실행 검토");await click("검토한 Git 실행 승인");
+  await openHistoryLine();
+  await cdp.evaluate('document.querySelector(".workspace-feature-files .cm-content").focus()');
+  await cdp.command("Input.insertText",{text:"worktree "});
+  await waitForRenderer(cdp,dirty,"Linked worktree editing did not become dirty");
+  await saveAndCloseEditor();
+  const linkedText=readFileSync(path.join(linkedTarget,"tracked.txt"),"utf8");
+  assert.match(linkedText,/^worktree /);
+  assert.match(readFileSync(path.join(folder,"tracked.txt"),"utf8"),/^unsaved /);
+  success(await source("repo_stage",{request:{path:linked.binding.root,paths:["tracked.txt"],operationId:"linked-stage"}}));
+  success(await source("repo_commit",{request:{path:linked.binding.root,message:"linked worktree edit",operationId:"linked-commit"}}));
+  assert.equal(git(["show","source-fixture-worktree:tracked.txt"]),linkedText.trim());
+  assert.equal(git(["show","HEAD:tracked.txt"]),"edited in the selected root");
+  await selectTree(originalTree);
+  // The earlier redirect test is complete; restore the owned fixture's ordinary
+  // primary worktree reporting before exercising legacy cleanup classification.
+  git(["config","--unset","core.worktree"]);
+  const cleanupRootTrust=success(await source("preview_trust"));
+  success(await source("approve_trust",{previewId:cleanupRootTrust.previewId}));
+  const scopeStatus=success(await source("cleanup_scope_status"));
+  assert.equal(scopeStatus.hasApproval,false);assert.deepEqual(scopeStatus.selectedIds,[]);
+  assert.ok(scopeStatus.available.some(tree=>tree.id===linked.id));
+  const noScope=success(await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-without-scope"}}));
+  assert.equal(noScope.worktrees.find(tree=>realpathSync.native(tree.path)===realpathSync.native(linkedTarget)).eligible,false);
+  const scopeCancelled=success(await source("preview_cleanup_scope",{worktreeIds:[linked.id]}));
+  success(await source("cancel_cleanup_scope",{previewId:scopeCancelled.previewId}));
+  failed(await source("approve_cleanup_scope",{previewId:scopeCancelled.previewId}));
+  assert.equal(existsSync(linkedTarget),true);
+  await click("정리 범위 확인",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-source-cleanup-scope input[type=checkbox]")',"Registered cleanup sibling missing");
+  await cdp.evaluate(`Array.from(document.querySelectorAll(".workspace-source-cleanup-scope label")).find(label=>label.textContent===${JSON.stringify(linked.binding.root)}).querySelector("input").click()`);
+  await click("선택한 정리 범위 검토",".workspace-source-cleanup-scope");
+  await click("검토한 정리 범위 승인",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.textContent.includes("검토한 정리 범위를 승인했습니다.")',"Native cleanup scope did not finish");
+  assert.equal(existsSync(linkedTarget),true,"Scope approval must not remove a worktree");
+  const linkedGit=git(["-C",linkedTarget,"rev-parse","--absolute-git-dir"]);
+  writeFileSync(path.join(linkedGit,"config.worktree"),"# changed sibling execution evidence\n",{flag:"wx"});
+  const staleScope=await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-stale-scope"}});
+  failed(staleScope);assert.equal(staleScope.value.issue,"source_cleanup_scope_changed");
+  success(await source("repo_changes",{request:{path:root}}));
+  await click("선택한 정리 범위 검토",".workspace-source-cleanup-scope");
+  await click("검토한 정리 범위 승인",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.getAttribute("aria-busy")==="false"&&!document.querySelector(".workspace-source-cleanup-scope > section")',"Refreshed cleanup scope did not settle");
+  const beforePickerTrust=success(await source("trust_status"));
+  assert.equal(beforePickerTrust.approved,true,JSON.stringify({stage:"before-sibling-picker",changedEvidence:beforePickerTrust.changedEvidence}));
+  const pickingSibling=call("workspace.files","pick_files");
+  const [pickedSibling]=await Promise.all([pickingSibling,nativeFileDialog({processId,executable,directory,action:"Open",selectedFile:path.join(linkedTarget,"tracked.txt")})]);
+  const siblingChoices=success(pickedSibling);assert.equal(siblingChoices.length,1);
+  const siblingDocument=success(await call("workspace.files","open_file",{request:{path:siblingChoices[0],encoding:null}}));
+  const afterPickerTrust=success(await source("trust_status"));
+  assert.equal(afterPickerTrust.approved,true,JSON.stringify({stage:"after-sibling-picker",changedEvidence:afterPickerTrust.changedEvidence}));
+  const openSiblingPreview=success(await source("repo_cleanup_preview",{request:{path:root,operationId:"cleanup-open-sibling-document"}}));
+  assert.equal(openSiblingPreview.worktrees.find(tree=>realpathSync.native(tree.path)===realpathSync.native(linkedTarget)).eligible,false,"An open native picker document must prevent worktree removal");
+  success(await call("workspace.files","unwatch_file",{path:siblingDocument.path}));
+  await click("정리 후보 검사",".cleanup-panel");
+  const linkedCheckbox=`Array.from(document.querySelectorAll(".cleanup-panel input[type=checkbox]")).find(input=>input.getAttribute("aria-label")===${JSON.stringify(`worktree ${linked.binding.root}`)})`;
+  await waitForRenderer(cdp,`!!(${linkedCheckbox})&&!(${linkedCheckbox}).matches(":disabled")`,"Approved clean sibling was not eligible");
+  await cdp.evaluate(`${linkedCheckbox}.click()`);
+  await click("선택 항목 정리 (1)",".cleanup-panel");
+  await waitForRenderer(cdp,'!!document.querySelector(".cleanup-panel [role=dialog]")',"Final worktree cleanup confirmation missing");
+  assert.equal(existsSync(linkedTarget),true);
+  await click("정리 실행",".cleanup-panel");
+  await waitForRenderer(cdp,'document.querySelector(".cleanup-panel .cleanup-result")?.textContent.includes("1개 제거")',"Reviewed worktree cleanup did not finish");
+  assert.equal(existsSync(linkedTarget),false);
+  assert.equal(git(["show","source-fixture-worktree:tracked.txt"]),linkedText.trim(),"Worktree removal must preserve its committed branch");
+  await click("정리 범위 승인 철회",".workspace-source-cleanup-scope");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-cleanup-scope")?.textContent.includes("다른 작업 폴더의 정리 승인을 철회했습니다.")',"Removed sibling scope could not be revoked without IO");
+  const afterLinked=success(await call("workspace.registry","snapshot"));
+  success(await call("workspace.registry","remove",{revision:afterLinked.revision,context:{projectId:linked.projectId,worktreeId:linked.id,revision:linked.revision,target:linked.binding.target}}));
+  unlinkSync(monitorMarker);appendFileSync(monitor,"# changed hook source\n");
+  failed(await source("repo_changes",{request:{path:root}}));
+  assert.equal(existsSync(monitorMarker),false);
+  const cancellationMarker=path.join(folder,"cancellation-started.txt");
+  writeFileSync(path.join(folder,".git/hooks/pre-commit"),`#!/bin/sh\nprintf 'started\\n' > ${shell(cancellationMarker)}\nsleep 10\n`);
+  const fresh=success(await source("preview_trust"));
+  success(await source("approve_trust",{previewId:fresh.previewId}));
+  writeFileSync(path.join(folder,"tracked.txt"),"pending cancelled commit\n");
+  success(await source("repo_stage",{request:{path:root,paths:["tracked.txt"],operationId:"source-stage-cancel-fixture"}}));
+  const doc=success(await call("workspace.files","open_file",{request:{path:path.join(root,"tracked.txt"),encoding:null}}));
+  const operationId="source-cancel-fixture";
+  const committing=source("repo_commit",{request:{path:root,message:"cancelled fixture",operationId}});
+  const started=Date.now();
+  while(!existsSync(cancellationMarker)&&Date.now()-started<5000)await new Promise(resolve=>setTimeout(resolve,25));
+  assert.equal(existsSync(cancellationMarker),true,"owned pre-commit did not start");
+  // The writer now waits for the native filesystem permit. A short original
+  // deadline expires while the owned hook is still live, before any file IO.
+  const blockedSave=await call("workspace.files","save_file",{request:nativeFileSave(doc,"must wait for Git\n")},500);
+  failed(blockedSave);assert.equal(blockedSave.value.issue,"request_expired");
+  assert.equal(readFileSync(path.join(folder,"tracked.txt"),"utf8"),"pending cancelled commit\n");
+  const recoverySaved=success(await call("workspace.files","save_recovery",{nativeRevision:success(await call("workspace.files","load_recovery",{})).nativeRevision,entries:[{path:doc.path,content:"editor buffer survives Git",base_hash:doc.contentHash,snapshot_at_ms:Date.now()}]}));
+  assert.equal(success(await source("repo_local_cancel",{request:{operationId}})),true);
+  failed(await committing);
+  success(await call("workspace.files","save_file",{request:nativeFileSave(doc,"editor saved after Git cancellation\n")}));
+  assert.equal(readFileSync(path.join(folder,"tracked.txt"),"utf8"),"editor saved after Git cancellation\n");
+  success(await call("workspace.files","discard_recovery",{path:doc.path,nativeRevision:recoverySaved.nativeRevision}));
+  success(await call("workspace.files","unwatch_file",{path:doc.path}));
+  await click("Git 실행 승인 철회");
+  await waitForRenderer(cdp,'document.querySelector(".workspace-source-trust")?.textContent.includes("Git 실행 승인을 철회했습니다.")',"Source revocation did not finish");
+  const registry=success(await call("workspace.registry","snapshot"));
+  assert.equal(registry.worktrees.find(tree=>tree.id===registered.context.worktreeId).trustedDigest,null);
+  success(await call("workspace.registry","select_project",{context:original}));
+  success(await call("workspace.registry","remove",{revision:registry.revision,context:registered.context}));
+  await cdp.command("Page.reload");
+  await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Original context did not reload");
+  return {unapprovedGitAndHooksNotExecuted:true,cancelledAndStaleApprovalDenied:true,uiExplicitGitApproval:true,rendererRootDenied:true,nativeWorktreeOverridesConfigRedirect:true,uiSelectedStage:true,commitReviewedAndHooksOwned:true,unselectedFilesPreserved:true,changedHookRevokesExecution:true,gitApprovalDoesNotGrantTaskTrust:true,sourceChangesAndDiffOpenFiles:true,gitDoesNotSaveOrCommitEditorDrafts:true,preAdmissionCancellationPreventsGit:true,worktreeReviewCancelAndConcurrentTarget:true,uiWorktreeCreateAndRegistrationProposal:true,linkedContextFilesStageCommit:true,cleanupRequiresSeparateSiblingScope:true,changedSiblingEvidenceRevokesOnlyCleanup:true,uiReviewedSiblingCleanupPreservesBranch:true,nativePickerDocumentBlocksSiblingCleanup:true,gitBlocksFileWritesButKeepsRecovery:true,expiredSaveIsNotReplayed:true,ownedGitCancellationReleasesEditor:true};
+}

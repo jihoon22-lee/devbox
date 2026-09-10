@@ -3,7 +3,6 @@
 use crate::commands::folder::{canonical_workspace, is_within_workspace};
 use devbox_markdown::{render, ImageResult};
 use serde::Serialize;
-use std::fs::File;
 use std::io::Read;
 use std::path::Path;
 
@@ -58,6 +57,7 @@ pub fn strip_frontmatter(content: &str) -> String {
 
 /// Renders the current in-memory document.  The workspace root is supplied by
 /// the frontend so a preview cannot load an image from an unrelated folder.
+#[cfg(feature = "desktop")]
 #[tauri::command]
 pub async fn render_preview(
     path: String,
@@ -71,11 +71,25 @@ pub async fn render_preview(
     .map_err(|error| format!("프리뷰 렌더 작업이 중단되었습니다: {error}"))?
 }
 
+#[cfg(any(feature = "desktop", test))]
 fn render_preview_blocking(
     path: &str,
     content: &str,
     workspace_root: &str,
 ) -> Result<PreviewResponse, String> {
+    render_preview_guarded(path, content, workspace_root, &|_| Ok(()), &|| Ok(()))
+}
+
+pub fn render_preview_guarded(
+    path: &str,
+    content: &str,
+    workspace_root: &str,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
+    check: &dyn Fn() -> Result<(), String>,
+) -> Result<PreviewResponse, String> {
+    check()?;
+    admit(Path::new(workspace_root))?;
+    admit(Path::new(path))?;
     let root = canonical_workspace(Path::new(workspace_root))?;
     let document = Path::new(path)
         .canonicalize()
@@ -83,13 +97,15 @@ fn render_preview_blocking(
     if !document.is_file() || !is_within_workspace(&root, &document) {
         return Err("프리뷰 문서가 작업 폴더 밖에 있습니다".to_string());
     }
+    admit(&root)?;
+    admit(&document)?;
 
     let extension = document
         .extension()
         .and_then(|extension| extension.to_str())
         .unwrap_or_default()
         .to_ascii_lowercase();
-    match extension.as_str() {
+    let result = match extension.as_str() {
         "mmd" => Ok(PreviewResponse {
             kind: "mermaid".to_string(),
             html: None,
@@ -100,7 +116,8 @@ fn render_preview_blocking(
             let document_parent = document
                 .parent()
                 .ok_or_else(|| "프리뷰 문서 부모 폴더를 확인할 수 없습니다".to_string())?;
-            let load_image = |src: &str| load_image(&root, document_parent, src);
+            let load_image =
+                |src: &str| load_image_guarded(&root, document_parent, src, admit, check);
             let body = strip_frontmatter(content);
             let (html, mermaid) = render(&body, &load_image);
             Ok(PreviewResponse {
@@ -111,12 +128,25 @@ fn render_preview_blocking(
             })
         }
         _ => Err("Markdown 또는 Mermaid 파일만 프리뷰할 수 있습니다".to_string()),
-    }
+    }?;
+    check()?;
+    admit(&root)?;
+    admit(&document)?;
+    Ok(result)
 }
 
 /// Loads a relative image into a data URI, retaining the markdown crate's
 /// `ImageResult` contract for missing, oversized, or unsafe paths.
 pub fn load_image(root: &Path, document_parent: &Path, src: &str) -> ImageResult {
+    load_image_guarded(root, document_parent, src, &|_| Ok(()), &|| Ok(()))
+}
+fn load_image_guarded(
+    root: &Path,
+    document_parent: &Path,
+    src: &str,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
+    check: &dyn Fn() -> Result<(), String>,
+) -> ImageResult {
     // The shared renderer normally bypasses http(s), but keep this loader
     // safe when called directly and reject every URI scheme here as well.
     if has_url_scheme(src) {
@@ -127,40 +157,67 @@ pub fn load_image(root: &Path, document_parent: &Path, src: &str) -> ImageResult
         return ImageResult::OutsideRoot;
     }
 
-    let candidate = document_parent.join(source);
-    let canonical = match candidate.canonicalize() {
-        Ok(path) => path,
-        Err(_) => return ImageResult::NotFound,
-    };
-    if !is_within_workspace(root, &canonical) {
+    // Resolve URL dot segments lexically before filesystem IO, then reject
+    // links/reparse points and require the actual root among the ancestors.
+    let mut candidate = std::path::PathBuf::new();
+    for component in document_parent.join(source).components() {
+        match component {
+            std::path::Component::ParentDir => {
+                if !candidate.pop() {
+                    return ImageResult::OutsideRoot;
+                }
+            }
+            std::path::Component::CurDir => {}
+            other => candidate.push(other),
+        }
+    }
+    if !is_within_workspace(root, &candidate) {
         return ImageResult::OutsideRoot;
     }
-
-    let metadata = match std::fs::metadata(&canonical) {
-        Ok(metadata) if metadata.is_file() => metadata,
-        _ => return ImageResult::NotFound,
+    if check().is_err() || admit(root).is_err() || admit(&candidate).is_err() {
+        return ImageResult::OutsideRoot;
+    }
+    if let Err(error) = devbox_filesystem::ensure_no_links(&candidate) {
+        return if error.kind() == std::io::ErrorKind::InvalidInput {
+            ImageResult::OutsideRoot
+        } else {
+            ImageResult::NotFound
+        };
+    }
+    let Ok(root_identity) = devbox_filesystem::filesystem_identity(root, true) else {
+        return ImageResult::NotFound;
+    };
+    let mut parent = candidate.parent();
+    let mut ancestors = Vec::new();
+    let mut owns_root = false;
+    while let Some(path) = parent {
+        let Ok((handle, identity)) = devbox_filesystem::open_filesystem_object(path, true) else {
+            return ImageResult::NotFound;
+        };
+        owns_root |= identity == root_identity;
+        ancestors.push((path.to_path_buf(), identity, handle));
+        parent = path.parent();
+    }
+    if !owns_root {
+        return ImageResult::OutsideRoot;
+    }
+    let Ok((mut file, identity)) = devbox_filesystem::open_filesystem_object(&candidate, false)
+    else {
+        return ImageResult::NotFound;
+    };
+    let Ok(metadata) = file.metadata() else {
+        return ImageResult::NotFound;
     };
     if metadata.len() > MAX_IMAGE_BYTES {
         return ImageResult::TooLarge;
     }
-    let Some(mime) = raster_mime_from_path(&canonical) else {
-        // SVG and unknown extensions are never converted to data URIs. The
-        // sanitizer also rejects arbitrary data: URLs at the HTML boundary.
+    let Some(mime) = raster_mime_from_path(&candidate) else {
         return ImageResult::NotFound;
-    };
-
-    // Read through a capped handle rather than `fs::read`: a replacement or
-    // symlink race after the metadata check must not allocate an unbounded
-    // buffer. The canonical/root check is repeated after the read before any
-    // bytes are returned to the renderer.
-    let mut file = match File::open(&canonical) {
-        Ok(file) => file,
-        Err(_) => return ImageResult::NotFound,
     };
     let mut bytes = Vec::new();
     if file
         .by_ref()
-        .take(MAX_IMAGE_BYTES.saturating_add(1))
+        .take(MAX_IMAGE_BYTES + 1)
         .read_to_end(&mut bytes)
         .is_err()
     {
@@ -169,20 +226,16 @@ pub fn load_image(root: &Path, document_parent: &Path, src: &str) -> ImageResult
     if bytes.len() as u64 > MAX_IMAGE_BYTES {
         return ImageResult::TooLarge;
     }
-    let Some(after) = canonical.canonicalize().ok() else {
-        return ImageResult::NotFound;
-    };
-    if after != canonical || !is_within_workspace(root, &after) {
+    if check().is_err()
+        || admit(root).is_err()
+        || admit(&candidate).is_err()
+        || devbox_filesystem::ensure_no_links(&candidate).is_err()
+        || devbox_filesystem::filesystem_identity(&candidate, false).ok() != Some(identity)
+        || ancestors.iter().any(|(path, expected, _)| {
+            devbox_filesystem::filesystem_identity(path, true).ok() != Some(*expected)
+        })
+    {
         return ImageResult::OutsideRoot;
-    }
-    let Ok(after_metadata) = std::fs::metadata(&after) else {
-        return ImageResult::NotFound;
-    };
-    if !after_metadata.is_file() {
-        return ImageResult::NotFound;
-    }
-    if after_metadata.len() > MAX_IMAGE_BYTES {
-        return ImageResult::TooLarge;
     }
     let data_uri = format!(
         "data:{};base64,{}",
@@ -224,10 +277,77 @@ fn has_url_scheme(value: &str) -> bool {
 
 use base64::Engine;
 
+/// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_render_preview(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        content: String,
+        workspace_root: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = render_preview(input.path, input.content, input.workspace_root).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn native_preview_rechecks_image_admission_and_returns_no_result_after_cancellation() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = directory.path().canonicalize().unwrap();
+        let document = root.join("notes.md");
+        let image = root.join("blocked.png");
+        fs::write(&document, b"# Notes").unwrap();
+        fs::write(&image, b"synthetic image").unwrap();
+        let image_checked = std::cell::Cell::new(false);
+        let admit = |path: &Path| {
+            if path == image {
+                image_checked.set(true);
+                Err("blocked".into())
+            } else {
+                Ok(())
+            }
+        };
+        let result = render_preview_guarded(
+            document.to_str().unwrap(),
+            "# Notes\n\n![blocked](blocked.png)",
+            root.to_str().unwrap(),
+            &admit,
+            &|| Ok(()),
+        )
+        .unwrap();
+        assert!(image_checked.get());
+        assert!(!result.html.unwrap().contains("data:image"));
+        let checks = std::cell::Cell::new(0);
+        let check = || {
+            checks.set(checks.get() + 1);
+            if checks.get() > 1 {
+                Err("cancelled".into())
+            } else {
+                Ok(())
+            }
+        };
+        assert_eq!(
+            render_preview_guarded(
+                document.to_str().unwrap(),
+                "# Notes\n\n![blocked](blocked.png)",
+                root.to_str().unwrap(),
+                &|_| Ok(()),
+                &check,
+            )
+            .unwrap_err(),
+            "cancelled"
+        );
+    }
 
     #[test]
     fn strips_only_a_closed_leading_frontmatter_block() {

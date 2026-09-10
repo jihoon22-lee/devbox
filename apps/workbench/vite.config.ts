@@ -37,6 +37,5 @@ export default defineConfig(async () => ({
   // vitest 설정 — 별도 vitest.config.ts 없이 이 파일에 병합한다.
   test: {
     environment: "jsdom",
-    setupFiles: ["./src/test/setup.ts"],
   },
 }));

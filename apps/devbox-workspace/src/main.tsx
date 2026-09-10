@@ -1,5 +1,5 @@
 import React from "react";
 import ReactDOM from "react-dom/client";
-import { ProductShell } from "@devbox/product-shell";
+import Workspace from "./Workspace";
 import "./App.css";
-ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><ProductShell product="workspace" /></React.StrictMode>);
+ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><Workspace /></React.StrictMode>);

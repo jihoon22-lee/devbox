@@ -1,7 +1,10 @@
+import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
+import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
+import { measureWorkspaceStartup } from "./windows-workspace-performance.mjs";
 // Runs only on a disposable GitHub-hosted Windows runner. Uses synthetic
 // product installations, never an installed user app or a legacy data store.
 import assert from "node:assert/strict";
-import { mkdtempSync, mkdirSync, copyFileSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import { mkdtempSync, mkdirSync, copyFileSync, cpSync, readFileSync, writeFileSync, existsSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { spawn, spawnSync } from "node:child_process";
@@ -63,10 +66,11 @@ async function connect(port, child, deadline = performance.now() + 30_000) {
         return {
           close: () => socket.close(),
           command,
-          async evaluate(expression) {
+          async evaluate(expression, {timeoutMs=10_000} = {}) {
+            if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1 || timeoutMs > 660_000) throw new Error("Invalid fixture CDP deadline");
             const next = ++id;
             const result = await new Promise((resolve, reject) => {
-              const timer = setTimeout(() => { pending.delete(next); writeFileSync("product-foundation-evidence/renderer-timeout.json", JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2)); reject(new Error(`CDP request timeout at ${currentProbe?.stage}`)); }, 10_000);
+              const timer = setTimeout(() => { pending.delete(next); writeFileSync("product-foundation-evidence/renderer-timeout.json", JSON.stringify({ currentProbe, diagnostics, expression: expression.slice(0, 240) }, null, 2)); reject(new Error(`CDP request timeout at ${currentProbe?.stage}`)); }, timeoutMs);
               pending.set(next, { resolve, reject, timer });
               socket.send(JSON.stringify({ id: next, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
             });
@@ -102,8 +106,14 @@ async function start(product, suffix) {
   const executable = path.join(directory, imageName);
   const built = path.resolve("target/debug", `devbox-${product.id}.exe`);
   assert.ok(existsSync(built), "packaged executable is missing"); copyFileSync(built, executable);
+  if (product.id === "workspace") {
+    cpSync(path.resolve("apps/devbox-workspace/src-tauri/resources/wsl"), path.join(directory, "resources/wsl"), { recursive: true });
+  }
+  writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:"debug",executableBytes:statSync(built).size},null,2));
   const port = await freePort();
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, "webview2") };
+  const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
+  if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
   const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
   let cdp, child;
   try {
@@ -121,7 +131,9 @@ async function start(product, suffix) {
       try {
         ready = await cdp.evaluate(product.id === "api-studio"
           ? '!!document.querySelector(".api-feature-requests .url-input")'
-          : product.id === "knowledge"
+          : product.id === "workspace"
+            ? 'Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "빈 Workspace 시작" && !button.disabled)'
+            : product.id === "knowledge"
             ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
             : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
       } catch (error) {
@@ -144,6 +156,13 @@ async function start(product, suffix) {
     }
     assert.ok(ready, `native route must render an accepted response: ${readinessError}`);
     const startupMs = Math.round(performance.now() - started);
+    // The second isolated installation starts while the first remains alive.
+    // Only the first can satisfy the one-app baseline measurement condition.
+    let performanceProbe;
+    if (product.id === "workspace" && suffix === "a") {
+      progress(product, suffix, "workspace-performance");
+      performanceProbe = await measureWorkspaceStartup({cdp, child, executable, env, started, startupMs});
+    }
     assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);
     progress(product, suffix, "description");
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
@@ -161,6 +180,10 @@ async function start(product, suffix) {
     })()`);
     assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
     let componentProbe;
+    if (product.id === "workspace") {
+      progress(product, suffix, "workspace-registration");
+      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network});
+    }
     if (product.id === "api-studio") {
       progress(product, suffix, "component-authority");
       componentProbe = await cdp.evaluate(`(async () => {
@@ -391,11 +414,12 @@ async function start(product, suffix) {
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
-    return { child, cdp, policy, handshake: description.handshake, startupMs, componentProbe };
-  } catch (error) { stop({ child, cdp, policy }); throw error; }
+    return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
+  } catch (error) { stop({ child, cdp, policy, network }); throw error; }
 }
 
 function stop(instance) {
+  instance?.network?.close();
   instance?.cdp?.close();
   if (instance?.child?.pid && instance.child.exitCode === null) {
     // Kill only the process tree created by this fixture.
@@ -412,7 +436,7 @@ try {
       assert.notEqual(first.handshake.installationId, second.handshake.installationId);
       assert.notEqual(first.handshake.sessionId, second.handshake.sessionId);
       assert.equal(first.child.exitCode, null);
-      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs], ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}) });
+      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs], ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}), ...(first.performanceProbe ? {performance: first.performanceProbe} : {}) });
     } finally { try { stop(second); } finally { stop(first); } }
   }
   evidence.result = "pass";

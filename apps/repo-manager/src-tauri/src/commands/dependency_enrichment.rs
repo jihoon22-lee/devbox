@@ -1,9 +1,7 @@
 //! Explicit two-step remote enrichment command boundary.
 
-use super::{
-    dependency_analysis_lock, repository_entry, revalidate_repository_context, spawn_git_task,
-    validated_repository_context,
-};
+use super::{dependency_analysis_lock, spawn_git_task};
+use crate::component::DependencyAccess;
 use crate::core::dependency_enrichment::{
     apply_cache_updates, build_enrichment_plan, combine_deps_dev, parse_cache, parse_deps_package,
     parse_deps_version, parse_osv_batch, preview_token, resolve_enrichment, serialize_cache,
@@ -13,7 +11,9 @@ use crate::core::dependency_enrichment::{
     DEPS_DEV_HOST, MAX_CACHE_BYTES, MAX_DEPS_PACKAGE_RESPONSE_BYTES,
     MAX_DEPS_VERSION_RESPONSE_BYTES, MAX_OSV_RESPONSE_BYTES, OSV_HOST, PREVIEW_TTL_MS,
 };
-use crate::core::dependency_lens::{analyze_repository, now_epoch_ms};
+#[cfg(test)]
+use crate::core::dependency_lens::analyze_repository;
+use crate::core::dependency_lens::now_epoch_ms;
 use futures_util::future::{join, join_all};
 use reqwest::{redirect::Policy, Client, ClientBuilder, Response, StatusCode, Url};
 use serde::Deserialize;
@@ -141,34 +141,40 @@ impl EnrichmentEndpoints {
     }
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
+#[cfg(feature = "desktop")]
 pub async fn dependency_enrichment_preview(
     request: DependencyEnrichmentPreviewRequest,
 ) -> Result<DependencyEnrichmentPreview, String> {
-    if !request.services.any() {
+    let access = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
+        DependencyAccess::legacy(&request.path)
+    })
+    .await?;
+    preview_with_access(access, request.services, request.force_refresh).await
+}
+
+pub(crate) async fn preview_with_access(
+    access: DependencyAccess,
+    services: EnrichmentSelection,
+    force_refresh: bool,
+) -> Result<DependencyEnrichmentPreview, String> {
+    if !services.any() {
         return Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into());
     }
     let now_ms = now_epoch_ms();
-    let common_root = devbox_integration::common_root();
     let prepared = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
         let _analysis = dependency_analysis_lock()
             .try_lock()
             .map_err(|_| DEPENDENCY_ENRICHMENT_BUSY.to_string())?;
-        let context = validated_repository_context(&request.path, DEPENDENCY_ENRICHMENT_ERROR)?;
-        let repository = repository_entry(&context.worktree)
+        access.verify()?;
+        let report = access
+            .analyze(ANALYSIS_BUDGET)
             .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
-        let report = analyze_repository(&context.worktree, ANALYSIS_BUDGET)
-            .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
-        revalidate_repository_context(&context, DEPENDENCY_ENRICHMENT_ERROR)?;
-        let cache = load_cache_in(&common_root, now_ms);
-        let plan = build_enrichment_plan(
-            &report,
-            request.services,
-            request.force_refresh,
-            &cache,
-            now_ms,
-        )?;
-        Ok((repository.canonical_key, plan))
+        access.verify()?;
+        let cache = load_cache_for(&access, now_ms)?;
+        let plan = build_enrichment_plan(&report, services, force_refresh, &cache, now_ms)?;
+        access.verify()?;
+        Ok((access.key.clone(), plan))
     })
     .await?;
 
@@ -195,21 +201,35 @@ pub async fn dependency_enrichment_preview(
     Ok(preview)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
+#[cfg(feature = "desktop")]
 pub async fn dependency_enrichment_execute(
     request: DependencyEnrichmentExecuteRequest,
 ) -> Result<DependencyEnrichmentReport, String> {
-    if !valid_preview_token(&request.preview_token) {
+    let access = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
+        DependencyAccess::legacy(&request.path)
+    })
+    .await?;
+    execute_with_access(access, request.preview_token).await
+}
+
+pub(crate) async fn execute_with_access(
+    access: DependencyAccess,
+    token: String,
+) -> Result<DependencyEnrichmentReport, String> {
+    if !valid_preview_token(&token) {
         return Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into());
     }
-    let _execution = ExecutionGuard::acquire()?;
+    // Blocking validation/cache workers keep single-flight ownership even if
+    // the product drops its network future at the request deadline.
+    let access = access.retaining(ExecutionGuard::acquire()?);
     let now_ms = now_epoch_ms();
     let stored = preview_store()
         .lock()
         .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?
-        .consume(&request.preview_token, now_ms)
+        .consume(&token, now_ms)
         .ok_or_else(|| DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.to_string())?;
-    validate_stored_plan(&request.path, &stored).await?;
+    validate_stored_plan(&access, &stored).await?;
 
     let client = production_client()?;
     let endpoints = EnrichmentEndpoints::production()?;
@@ -223,23 +243,25 @@ pub async fn dependency_enrichment_execute(
 
     // Do not attach the response to a repository whose reviewed lock inputs
     // changed while the external services were in flight.
-    validate_stored_plan(&request.path, &stored).await?;
+    validate_stored_plan(&access, &stored).await?;
     let completed_at_ms = now_epoch_ms();
     let mut resolved =
         resolve_enrichment(&stored.plan, osv_network, &deps_network, completed_at_ms);
 
-    let common_root = devbox_integration::common_root();
+    let cache_access = access.clone();
     let updates = resolved.updates.clone();
     let cache_persisted = spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
         if updates.is_empty() {
             return Ok(true);
         }
-        let mut cache = load_cache_in(&common_root, completed_at_ms);
+        let mut cache = load_cache_for(&cache_access, completed_at_ms)?;
         apply_cache_updates(&mut cache, &updates, completed_at_ms);
-        Ok(write_cache_in(&common_root, &cache, completed_at_ms).is_ok())
+        cache_access.verify()?;
+        Ok(write_cache_for(&cache_access, &cache, completed_at_ms).is_ok())
     })
     .await
     .unwrap_or(false);
+    spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || access.verify()).await?;
     resolved.report.cache_persisted = cache_persisted;
     Ok(resolved.report)
 }
@@ -266,29 +288,86 @@ impl Drop for ExecutionGuard {
     }
 }
 
-async fn validate_stored_plan(path: &str, stored: &StoredPreview) -> Result<(), String> {
-    let path = path.to_string();
+pub(crate) fn cancel_with_access(access: &DependencyAccess, token: &str) -> Result<(), String> {
+    access.verify()?;
+    let mut store = preview_store()
+        .lock()
+        .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
+    store
+        .entries
+        .retain(|entry| !(entry.token == token && entry.canonical_repository == access.key));
+    Ok(())
+}
+
+async fn validate_stored_plan(
+    access: &DependencyAccess,
+    stored: &StoredPreview,
+) -> Result<(), String> {
+    let access = access.clone();
     let expected_repository = stored.canonical_repository.clone();
     let expected_revision = stored.plan.revision.clone();
+    let expires_at_ms = stored.expires_at_ms;
     spawn_git_task(DEPENDENCY_ENRICHMENT_ERROR, move || {
         let _analysis = dependency_analysis_lock()
             .try_lock()
             .map_err(|_| DEPENDENCY_ENRICHMENT_BUSY.to_string())?;
-        let context = validated_repository_context(&path, DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED)?;
-        let repository = repository_entry(&context.worktree)
-            .map_err(|_| DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.to_string())?;
-        if repository.canonical_key != expected_repository {
+        access.verify()?;
+        if access.key != expected_repository || now_epoch_ms() >= expires_at_ms {
             return Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into());
         }
-        let report = analyze_repository(&context.worktree, ANALYSIS_BUDGET)
+        let report = access
+            .analyze(ANALYSIS_BUDGET)
             .map_err(|_| DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.to_string())?;
-        revalidate_repository_context(&context, DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED)?;
-        if report.revision != expected_revision {
+        access.verify()?;
+        if report.revision != expected_revision || now_epoch_ms() >= expires_at_ms {
             return Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into());
         }
         Ok(())
     })
     .await
+}
+
+fn load_cache_for(access: &DependencyAccess, now_ms: u64) -> Result<EnrichmentCache, String> {
+    access.verify()?;
+    if !access.strict_cache {
+        return Ok(load_cache_in(&access.common, now_ms));
+    }
+    // A corrupt, oversized, unreadable or future cache is never replaced with
+    // an empty cache in the product's private generation.
+    let result = match fs::symlink_metadata(cache_path(&access.common)) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            devbox_filesystem::ensure_no_links(&access.common)
+                .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
+            let directory = access.common.join(CACHE_DIRECTORY);
+            if directory.exists() {
+                devbox_filesystem::ensure_no_links(&directory)
+                    .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
+            }
+            EnrichmentCache::default()
+        }
+        Ok(_) => parse_cache(
+            &read_cache_bytes(&access.common).ok_or(DEPENDENCY_ENRICHMENT_ERROR)?,
+            now_ms,
+        )?,
+        Err(_) => return Err(DEPENDENCY_ENRICHMENT_ERROR.into()),
+    };
+    access.verify()?;
+    Ok(result)
+}
+
+fn write_cache_for(
+    access: &DependencyAccess,
+    cache: &EnrichmentCache,
+    now_ms: u64,
+) -> Result<(), String> {
+    load_cache_for(access, now_ms)?;
+    access.verify()?;
+    if access.strict_cache {
+        write_cache_checked(&access.common, cache, now_ms, false)?;
+    } else {
+        write_cache_in(&access.common, cache, now_ms)?;
+    }
+    access.verify()
 }
 
 fn production_client() -> Result<Client, String> {
@@ -465,8 +544,17 @@ fn read_cache_bytes(common_root: &Path) -> Option<Vec<u8>> {
 }
 
 fn write_cache_in(common_root: &Path, cache: &EnrichmentCache, now_ms: u64) -> Result<(), String> {
+    write_cache_checked(common_root, cache, now_ms, true)
+}
+
+fn write_cache_checked(
+    common_root: &Path,
+    cache: &EnrichmentCache,
+    now_ms: u64,
+    allow_create_common: bool,
+) -> Result<(), String> {
     let directory = common_root.join(CACHE_DIRECTORY);
-    prepare_cache_directory(common_root, &directory)?;
+    prepare_cache_directory(common_root, &directory, allow_create_common)?;
     let path = directory.join(CACHE_FILE);
     match fs::symlink_metadata(&path) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.file_type().is_file() => {
@@ -484,14 +572,18 @@ fn write_cache_in(common_root: &Path, cache: &EnrichmentCache, now_ms: u64) -> R
     devbox_filesystem::ensure_no_links(&path).map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())
 }
 
-fn prepare_cache_directory(common_root: &Path, directory: &Path) -> Result<(), String> {
+fn prepare_cache_directory(
+    common_root: &Path,
+    directory: &Path,
+    allow_create_common: bool,
+) -> Result<(), String> {
     match fs::symlink_metadata(common_root) {
         Ok(metadata) if metadata.file_type().is_symlink() || !metadata.file_type().is_dir() => {
             return Err(DEPENDENCY_ENRICHMENT_ERROR.into())
         }
         Ok(_) => devbox_filesystem::ensure_no_links(common_root)
             .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound && allow_create_common => {
             fs::create_dir_all(common_root).map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
             devbox_filesystem::ensure_no_links(common_root)
                 .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
@@ -510,6 +602,36 @@ fn prepare_cache_directory(common_root: &Path, directory: &Path) -> Result<(), S
     }
     devbox_filesystem::ensure_no_links(directory)
         .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_dependency_enrichment_preview(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: DependencyEnrichmentPreviewRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = dependency_enrichment_preview(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_dependency_enrichment_execute(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: DependencyEnrichmentExecuteRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = dependency_enrichment_execute(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
@@ -693,6 +815,183 @@ mod tests {
         }
     }
 
+    fn native_fixture_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn native_reader_publishes_privately_and_revalidates_enrichment_without_host_path_io() {
+        let _fixture = native_fixture_lock().lock().unwrap();
+        let root = tempdir().unwrap();
+        let common = tempdir().unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("Cargo.lock"),
+            "version = 3\n[[package]]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let report = analyze_repository(root.path(), Duration::from_secs(2)).unwrap();
+        let value = std::sync::Arc::new(Mutex::new(serde_json::to_value(report).unwrap()));
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reader_value = value.clone();
+        let reader_count = reads.clone();
+        let logical = format!("/native-inventory-fixture-{}", next_preview_sequence());
+        let access = DependencyAccess::for_native_inventory(
+            logical.clone(),
+            logical.clone(),
+            common.path().into(),
+            || Ok(()),
+            move |_| {
+                reader_count.fetch_add(1, Ordering::SeqCst);
+                Ok(reader_value.lock().unwrap().clone())
+            },
+        )
+        .unwrap();
+        let wrong = crate::runtime::block_on(crate::component::dispatch_dependencies(
+            access.clone(),
+            "dependency_inventory",
+            json!({"request":{"path":"/another-root"}}),
+        ));
+        assert_eq!(wrong.unwrap_err(), "dependency_context_changed");
+        assert_eq!(reads.load(Ordering::SeqCst), 0);
+        let result = crate::runtime::block_on(crate::component::dispatch_dependencies(
+            access.clone(),
+            "dependency_inventory",
+            json!({"request":{"path":logical}}),
+        ))
+        .unwrap();
+        assert_eq!(result["packageCount"], 1);
+        assert_eq!(result["summaryPublished"], true);
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        let preview = crate::runtime::block_on(preview_with_access(
+            access.clone(),
+            EnrichmentSelection {
+                osv: true,
+                deps_dev: true,
+            },
+            false,
+        ))
+        .unwrap();
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+        let stored = preview_store()
+            .lock()
+            .unwrap()
+            .consume(&preview.token, now_epoch_ms())
+            .unwrap();
+        value.lock().unwrap()["revision"] = json!(format!("sha256:{}", "0".repeat(64)));
+        assert_eq!(
+            crate::runtime::block_on(validate_stored_plan(&access, &stored)).unwrap_err(),
+            DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED
+        );
+        assert_eq!(reads.load(Ordering::SeqCst), 3);
+        assert!(!cache_path(common.path()).exists());
+        assert!(!std::path::Path::new(&logical).exists());
+    }
+
+    #[test]
+    fn product_dependencies_use_native_context_without_git_and_preserve_invalid_cache() {
+        let _fixture = native_fixture_lock().lock().unwrap();
+        let root = tempdir().unwrap();
+        let common = tempdir().unwrap();
+        // Plain folder: legacy Git admission would fail here. Local path-only
+        // packages produce no remote coordinates, so success requires no network.
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("Cargo.lock"),
+            "version = 4\n[[package]]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let current = std::sync::Arc::new(AtomicBool::new(true));
+        let active = current.clone();
+        let access = DependencyAccess::for_project(
+            root.path().into(),
+            "opaque-context-a".into(),
+            common.path().into(),
+            move || {
+                if active.load(Ordering::Acquire) {
+                    Ok(())
+                } else {
+                    Err("context_changed".into())
+                }
+            },
+        )
+        .unwrap();
+        let report = crate::runtime::block_on(super::super::dependency_inventory_with_access(
+            access.clone(),
+        ))
+        .unwrap();
+        assert_eq!(report.package_count, 1);
+        assert!(report.summary_published);
+        assert!(!root.path().join(".git").exists());
+        let wrong = crate::runtime::block_on(crate::component::dispatch_dependencies(
+            access.clone(),
+            "dependency_inventory",
+            json!({"request":{"path":common.path().to_string_lossy()}}),
+        ));
+        assert_eq!(wrong.unwrap_err(), "dependency_context_changed");
+        let selection = EnrichmentSelection {
+            osv: true,
+            deps_dev: true,
+        };
+        let preview =
+            crate::runtime::block_on(preview_with_access(access.clone(), selection, false))
+                .unwrap();
+        let success =
+            crate::runtime::block_on(execute_with_access(access.clone(), preview.token.clone()))
+                .unwrap();
+        assert_eq!(success.revision, report.revision);
+        assert!(
+            crate::runtime::block_on(execute_with_access(access.clone(), preview.token)).is_err()
+        );
+        let cancelled =
+            crate::runtime::block_on(preview_with_access(access.clone(), selection, false))
+                .unwrap();
+        cancel_with_access(&access, &cancelled.token).unwrap();
+        assert!(
+            crate::runtime::block_on(execute_with_access(access.clone(), cancelled.token)).is_err()
+        );
+        let stale = crate::runtime::block_on(preview_with_access(access.clone(), selection, false))
+            .unwrap();
+        current.store(false, Ordering::Release);
+        assert!(
+            crate::runtime::block_on(execute_with_access(access.clone(), stale.token)).is_err()
+        );
+        current.store(true, Ordering::Release);
+        let missing = common.path().join("deleted-generation");
+        assert!(
+            write_cache_checked(&missing, &EnrichmentCache::default(), now_epoch_ms(), false)
+                .is_err()
+        );
+        assert!(!missing.exists());
+        let directory = common.path().join(CACHE_DIRECTORY);
+        fs::create_dir_all(&directory).unwrap();
+        for bytes in [
+            b"corrupt".as_slice(),
+            br#"{"schemaVersion":999,"entries":[]}"#,
+        ] {
+            fs::write(cache_path(common.path()), bytes).unwrap();
+            assert!(load_cache_for(&access, now_epoch_ms()).is_err());
+            assert!(write_cache_for(&access, &EnrichmentCache::default(), now_epoch_ms()).is_err());
+            assert_eq!(fs::read(cache_path(common.path())).unwrap(), bytes);
+            // Cache failure cannot break the explicitly requested offline view.
+            assert!(
+                crate::runtime::block_on(super::super::dependency_inventory_with_access(
+                    access.clone()
+                ))
+                .is_ok()
+            );
+        }
+    }
+
     #[test]
     fn preview_store_is_bounded_expiring_and_one_time() {
         let mut store = PreviewStore::default();
@@ -708,12 +1007,27 @@ mod tests {
 
     #[test]
     fn dependency_enrichment_execution_guard_is_single_flight_and_releases() {
+        let _fixture = native_fixture_lock().lock().unwrap();
         let first = ExecutionGuard::acquire().unwrap();
         assert_eq!(
             ExecutionGuard::acquire().err(),
             Some(DEPENDENCY_ENRICHMENT_BUSY.to_string())
         );
         drop(first);
+        assert!(ExecutionGuard::acquire().is_ok());
+        let root = tempdir().unwrap();
+        let access = DependencyAccess::for_project(
+            root.path().into(),
+            "fixture".into(),
+            root.path().into(),
+            || Ok(()),
+        )
+        .unwrap()
+        .retaining(ExecutionGuard::acquire().unwrap());
+        let worker = access.clone();
+        drop(access);
+        assert!(ExecutionGuard::acquire().is_err());
+        drop(worker);
         assert!(ExecutionGuard::acquire().is_ok());
     }
 
@@ -753,7 +1067,7 @@ mod tests {
         let client = fixture_client(Duration::from_secs(1));
         let endpoints = fixture_endpoints(&base);
         let coordinate = coordinate();
-        let (osv, deps) = tauri::async_runtime::block_on(async {
+        let (osv, deps) = crate::runtime::block_on(async {
             join(
                 fetch_osv(&client, &endpoints, std::slice::from_ref(&coordinate)),
                 fetch_deps_dev(&client, &endpoints, std::slice::from_ref(&coordinate)),
@@ -811,7 +1125,7 @@ mod tests {
             headers: vec![("Location".into(), location.clone())],
             body: String::new(),
         });
-        let redirect_result = tauri::async_runtime::block_on(fetch_optional(
+        let redirect_result = crate::runtime::block_on(fetch_optional(
             &fixture_client(Duration::from_millis(250)),
             Url::parse(&base).unwrap(),
             1_024,
@@ -834,7 +1148,7 @@ mod tests {
                 "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}"
             );
         });
-        let timeout_result = tauri::async_runtime::block_on(fetch_optional(
+        let timeout_result = crate::runtime::block_on(fetch_optional(
             &fixture_client(Duration::from_millis(30)),
             url,
             1_024,
@@ -869,7 +1183,7 @@ mod tests {
         bad.package_ids = vec!["npm:bad@1.2.3".into()];
         let endpoints = fixture_endpoints(&base);
         let client = fixture_client(Duration::from_secs(1));
-        let network = tauri::async_runtime::block_on(fetch_deps_dev(
+        let network = crate::runtime::block_on(fetch_deps_dev(
             &client,
             &endpoints,
             &[good.clone(), bad.clone()],
@@ -927,6 +1241,7 @@ mod tests {
 
     #[test]
     fn dependency_enrichment_revision_change_requires_a_new_preview() {
+        let _fixture = native_fixture_lock().lock().unwrap();
         let root = tempdir().unwrap();
         assert!(Command::new("git")
             .args(["init", "--quiet"])
@@ -945,7 +1260,7 @@ mod tests {
         )
         .unwrap();
         let report = analyze_repository(root.path(), Duration::from_secs(2)).unwrap();
-        let repository = repository_entry(root.path()).unwrap();
+        let repository = super::super::repository_entry(root.path()).unwrap();
         let stored = StoredPreview {
             token: "d".repeat(64),
             canonical_repository: repository.canonical_key,
@@ -964,8 +1279,8 @@ mod tests {
             "version = 4\n\n[[package]]\nname = \"fixture\"\nversion = \"0.2.0\"\n",
         )
         .unwrap();
-        let result = tauri::async_runtime::block_on(validate_stored_plan(
-            &root.path().to_string_lossy(),
+        let result = crate::runtime::block_on(validate_stored_plan(
+            &DependencyAccess::legacy(&root.path().to_string_lossy()).unwrap(),
             &stored,
         ));
         assert_eq!(result, Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into()));

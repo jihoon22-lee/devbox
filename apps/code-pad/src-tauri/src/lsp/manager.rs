@@ -5,12 +5,14 @@
 //! mutations are staged and committed only after the corresponding JSON-RPC
 //! notification has been written successfully.
 
+pub mod recovery;
+
 use super::catalog::{LspConfig, ServerRef};
 use super::client::{CapabilitySet, ClientStatus, InitializeConfig, LspClient, ServerInfo};
 use super::config::{load_from_app_local_data_dir, save_to_app_local_data_dir, LoadedLspConfig};
 use super::documents::{
-    DidChange, DidClose, DidOpen, DidSave, DocumentSnapshot, DocumentStore, RequestSnapshot,
-    SyncKind, WorkspaceRoot,
+    DidChange, DidClose, DidOpen, DidSave, DocumentError, DocumentSnapshot, DocumentStore,
+    LspDocumentAuthority, RequestSnapshot, SyncKind, WorkspaceRoot,
 };
 use super::features::{
     apply_workspace_edit, build_completion_params, build_definition_params,
@@ -27,7 +29,7 @@ use super::installer::ManagedInstaller;
 use super::logs::{LanguageServerLog, LspLogLevel, LspLogStore, StderrLineSanitizer};
 use super::positions::{position_to_offset, LspPosition, LspRange, PositionEncoding};
 use super::process::{IncomingMessage, LspProcess, ProcessState};
-use super::runtime::RuntimeResolver;
+use super::runtime::{EnvironmentAllowlist, ResolvedProcess, RuntimeResolver};
 use super::transport::RequestCancellation;
 use crate::commands::file as file_commands;
 use crate::core::encoding::Encoding;
@@ -87,6 +89,8 @@ pub enum LspManagerError {
     Config(String),
     ConfigRecoveryRequired,
     Disabled,
+    ExecutionApprovalRequired,
+    ExecutionBusy,
     MissingWorkspace,
     UnsupportedWslWorkspace,
     MissingServer(String),
@@ -105,6 +109,10 @@ impl fmt::Display for LspManagerError {
                 "기존 LSP 설정 파일이 손상되었습니다. 명시적으로 복구를 선택해야 덮어쓸 수 있습니다",
             ),
             Self::Disabled => formatter.write_str("LSP가 비활성화되어 있습니다"),
+            Self::ExecutionApprovalRequired => {
+                formatter.write_str("현재 프로젝트의 언어 서버 실행 승인이 필요합니다")
+            }
+            Self::ExecutionBusy=>formatter.write_str("다른 작업이 실행 근거를 사용 중입니다"),
             Self::MissingWorkspace => formatter.write_str("LSP 작업 폴더가 설정되지 않았습니다"),
             Self::UnsupportedWslWorkspace => formatter.write_str(
                 "WSL 작업 폴더는 Windows host LSP를 지원하지 않습니다. 파일 편집과 5초 폴링 감시는 계속 사용할 수 있습니다",
@@ -362,7 +370,7 @@ struct PendingRename {
     language_id: String,
     session: Arc<LanguageSession>,
     session_generation: u64,
-    workspace_root: PathBuf,
+    workspace_root: WorkspaceRoot,
     created_at: Instant,
     open_documents: Vec<PendingRenameDocument>,
     plan: WorkspaceEditPlan,
@@ -436,12 +444,87 @@ impl Drop for StartReservation {
     }
 }
 
+/// Standalone Code Pad owns its existing recovery history. A product importing
+/// that history must preserve it until its native owner approves recovery;
+/// constructing a manager is not permission to touch recorded external paths.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum StartupRecovery {
+    RecoverOwnedJournals,
+    PreserveJournals,
+}
+
+/// Persistent native authority is checked for every start, including monitor
+/// retries. A per-command or thread-local guard cannot cover those retries.
+pub trait LspExecutionAuthority: Send + Sync {
+    /// Retain native context/filesystem/installation exclusion through the
+    /// entire startup, including probes and automatic retry initialization.
+    fn begin_start(&self) -> Result<Option<Box<dyn Send>>, LspManagerError> {
+        Ok(None)
+    }
+    /// Runs before workspace path IO or runtime resolution.
+    fn validate_config(&self, language_id: &str, config: &LspConfig)
+        -> Result<(), LspManagerError>;
+    /// Runs before a managed runtime probe and again before server spawn.
+    fn validate_process(&self, process: &ResolvedProcess) -> Result<(), LspManagerError>;
+    /// Native cancellation must keep a created probe/initializing child owned
+    /// until its cleanup finishes, instead of dropping the startup future.
+    fn startup_cancelled(
+        &self,
+    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = ()> + Send + '_>> {
+        Box::pin(std::future::pending())
+    }
+    /// Execution approval alone never authorizes documents. The default denies
+    /// access until the native context owner supplies a persistent path policy.
+    fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
+        Err(DocumentError::AccessDenied)
+    }
+    fn validate_document_write_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.validate_document_path(path)
+    }
+}
+
+struct ExecutionDocumentAuthority(Arc<dyn LspExecutionAuthority>);
+impl LspDocumentAuthority for ExecutionDocumentAuthority {
+    fn validate_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.0.validate_document_path(path)
+    }
+    fn validate_write_path(&self, path: &Path) -> Result<(), DocumentError> {
+        self.0.validate_document_write_path(path)
+    }
+}
+
+/// A hosted read-only manager has no execution authority. A later native
+/// context owner must construct its own manager with reviewed evidence.
+pub struct UnapprovedLspExecution;
+impl LspExecutionAuthority for UnapprovedLspExecution {
+    fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
+        Err(LspManagerError::ExecutionApprovalRequired)
+    }
+    fn validate_process(&self, _: &ResolvedProcess) -> Result<(), LspManagerError> {
+        Err(LspManagerError::ExecutionApprovalRequired)
+    }
+}
+
+/// Immutable inputs captured by a native execution owner after path inspection.
+/// Starts and automatic retries still invoke its authority at each boundary.
+pub struct ReviewedLspExecution {
+    pub config: LspConfig,
+    pub processes: BTreeMap<String, ResolvedProcess>,
+    pub environment: EnvironmentAllowlist,
+}
+
 #[derive(Clone)]
 pub struct LspManager {
-    app_local_data_dir: PathBuf,
+    app_local_data_dir: Option<PathBuf>,
     app_version: String,
     resolver: RuntimeResolver,
-    installer: Arc<ManagedInstaller>,
+    #[cfg(target_os = "linux")]
+    linux_supervisor: Option<PathBuf>,
+    #[cfg(target_os = "linux")]
+    native_retry_drive: Option<Arc<AtomicBool>>,
+    execution_authority: Option<Arc<dyn LspExecutionAuthority>>,
+    reviewed: Option<Arc<ReviewedLspExecution>>,
+    installer: Option<Arc<ManagedInstaller>>,
     state: Arc<Mutex<ManagerState>>,
     logs: Arc<Mutex<LspLogStore>>,
     events: broadcast::Sender<LspEvent>,
@@ -456,7 +539,7 @@ pub struct LspManager {
     /// not only when disk I/O starts. This closes the apply/cancel handoff
     /// race while the native command is validating its pending plan.
     active_rename_cancellations: Arc<Mutex<BTreeMap<String, Arc<AtomicBool>>>>,
-    rename_backup_root: PathBuf,
+    rename_backup_root: Option<PathBuf>,
     document_mutation_gate: Arc<Mutex<()>>,
 }
 
@@ -475,13 +558,52 @@ impl LspManager {
         app_version: impl Into<String>,
         installer: Arc<ManagedInstaller>,
     ) -> Self {
-        let app_local_data_dir = app_local_data_dir.into();
-        let rename_backup_root = app_local_data_dir.join("rename-backups");
-        let (events, _) = broadcast::channel(128);
-        let manager = Self {
+        Self::with_startup_recovery(
             app_local_data_dir,
-            app_version: app_version.into(),
+            app_version,
+            installer,
+            StartupRecovery::RecoverOwnedJournals,
+        )
+    }
+
+    pub fn with_startup_recovery(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+        recovery: StartupRecovery,
+    ) -> Self {
+        let manager = Self::from_native_owners(
+            Some(app_local_data_dir.into()),
+            app_version.into(),
+            Some(installer),
+        );
+        if recovery == StartupRecovery::RecoverOwnedJournals {
+            if let Some(root) = &manager.rename_backup_root {
+                recover_rename_journals(root);
+            }
+        }
+        manager
+    }
+
+    fn from_native_owners(
+        app_local_data_dir: Option<PathBuf>,
+        app_version: String,
+        installer: Option<Arc<ManagedInstaller>>,
+    ) -> Self {
+        let rename_backup_root = app_local_data_dir
+            .as_ref()
+            .map(|root| root.join("rename-backups"));
+        let (events, _) = broadcast::channel(128);
+        Self {
+            app_local_data_dir,
+            app_version,
             resolver: RuntimeResolver::new(),
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
+            #[cfg(target_os = "linux")]
+            native_retry_drive: None,
+            execution_authority: None,
+            reviewed: None,
             installer,
             state: Arc::new(Mutex::new(ManagerState::default())),
             logs: Arc::new(Mutex::new(LspLogStore::default())),
@@ -496,13 +618,92 @@ impl LspManager {
             active_rename_cancellations: Arc::new(Mutex::new(BTreeMap::new())),
             rename_backup_root,
             document_mutation_gate: Arc::new(Mutex::new(())),
-        };
-        recover_rename_journals(&manager.rename_backup_root);
+        }
+    }
+
+    pub fn with_execution_authority(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+        authority: Arc<dyn LspExecutionAuthority>,
+    ) -> Self {
+        let mut manager = Self::with_startup_recovery(
+            app_local_data_dir,
+            app_version,
+            installer,
+            StartupRecovery::PreserveJournals,
+        );
+        manager.execution_authority = Some(authority);
         manager
     }
 
     pub fn subscribe_events(&self) -> broadcast::Receiver<LspEvent> {
         self.events.subscribe()
+    }
+
+    /// Use the native host's reviewed first-party reaper for both version
+    /// probes and every server start/retry. This policy is never read from LSP
+    /// settings; the caller retains its executable and retirement authority.
+    #[cfg(target_os = "linux")]
+    pub fn with_linux_supervisor(mut self, executable: impl Into<PathBuf>) -> Self {
+        let executable = executable.into();
+        self.resolver = self.resolver.with_linux_supervisor(executable.clone());
+        self.linux_supervisor = Some(executable);
+        self
+    }
+
+    /// The host owns persistence and executable resolution. In particular a
+    /// retry must not open config/index paths before native revalidation.
+    pub fn with_reviewed_execution(
+        app_local_data_dir: impl Into<PathBuf>,
+        app_version: impl Into<String>,
+        installer: Arc<ManagedInstaller>,
+        authority: Arc<dyn LspExecutionAuthority>,
+        reviewed: ReviewedLspExecution,
+    ) -> Result<Self, LspManagerError> {
+        Self::with_execution_authority(app_local_data_dir, app_version, installer, authority)
+            .bind_reviewed(reviewed)
+    }
+
+    /// A native transport can provide reviewed commands without provisioning
+    /// any private persistent store. Disk-backed rename is unavailable until
+    /// its caller has supplied an owned journal/recovery boundary.
+    #[cfg(target_os = "linux")]
+    pub fn with_reviewed_read_only_execution(
+        app_version: impl Into<String>,
+        authority: Arc<dyn LspExecutionAuthority>,
+        reviewed: ReviewedLspExecution,
+    ) -> Result<Self, LspManagerError> {
+        let mut manager = Self::from_native_owners(None, app_version.into(), None);
+        manager.execution_authority = Some(authority);
+        manager.native_retry_drive = Some(Arc::new(AtomicBool::new(false)));
+        manager.bind_reviewed(reviewed)
+    }
+
+    /// The private native transport drives retries only within a fresh,
+    /// uncancelled poll admission. Ordinary standalone managers are unchanged.
+    #[cfg(target_os = "linux")]
+    pub fn drive_native_retries(&self, enabled: bool) {
+        if let Some(gate) = &self.native_retry_drive {
+            gate.store(enabled, Ordering::Release);
+        }
+    }
+
+    fn bind_reviewed(mut self, reviewed: ReviewedLspExecution) -> Result<Self, LspManagerError> {
+        reviewed
+            .config
+            .validate()
+            .map_err(|_| LspManagerError::Config("invalid reviewed configuration".into()))?;
+        if reviewed
+            .processes
+            .values()
+            .any(|process| process.env != *reviewed.environment.as_map())
+        {
+            return Err(LspManagerError::ExecutionApprovalRequired);
+        }
+        self.resolver = RuntimeResolver::new().with_environment(reviewed.environment.clone());
+        self.reviewed = Some(Arc::new(reviewed));
+        Ok(self)
     }
 
     fn next_rename_plan_id(&self) -> String {
@@ -608,8 +809,19 @@ impl LspManager {
     }
 
     pub fn load_config(&self) -> Result<LoadedLspConfig, LspManagerError> {
-        load_from_app_local_data_dir(&self.app_local_data_dir)
-            .map_err(|error| LspManagerError::Config(error.to_string()))
+        if let Some(reviewed) = &self.reviewed {
+            return Ok(LoadedLspConfig {
+                config: reviewed.config.clone(),
+                persist_allowed: true,
+                error: None,
+            });
+        }
+        load_from_app_local_data_dir(
+            self.app_local_data_dir
+                .as_ref()
+                .ok_or(LspManagerError::ExecutionApprovalRequired)?,
+        )
+        .map_err(|error| LspManagerError::Config(error.to_string()))
     }
 
     pub fn save_config(
@@ -617,12 +829,20 @@ impl LspManager {
         config: &LspConfig,
         recover_invalid: bool,
     ) -> Result<(), LspManagerError> {
+        if self.reviewed.is_some() {
+            return Err(LspManagerError::ExecutionApprovalRequired);
+        }
         let loaded = self.load_config()?;
         if !loaded.persist_allowed && !recover_invalid {
             return Err(LspManagerError::ConfigRecoveryRequired);
         }
-        save_to_app_local_data_dir(&self.app_local_data_dir, config)
-            .map_err(|error| LspManagerError::Config(error.to_string()))
+        save_to_app_local_data_dir(
+            self.app_local_data_dir
+                .as_ref()
+                .ok_or(LspManagerError::ExecutionApprovalRequired)?,
+            config,
+        )
+        .map_err(|error| LspManagerError::Config(error.to_string()))
     }
 
     pub async fn start(&self, language_id: &str) -> Result<(), LspManagerError> {
@@ -694,7 +914,7 @@ impl LspManager {
                     self.emit_status(language_id, None, false).await;
                     Ok(())
                 } else {
-                    let _ = session.client.stop().await;
+                    stop_unpublished(&session.client, &session.process).await;
                     Err(LspManagerError::Protocol(format!(
                         "{language_id} 언어 서버 시작이 취소되었습니다"
                     )))
@@ -756,6 +976,11 @@ impl LspManager {
     }
 
     async fn create_session(&self, language_id: &str) -> Result<LanguageSession, LspManagerError> {
+        let _native_start = self
+            .execution_authority
+            .as_ref()
+            .map(|authority| authority.begin_start())
+            .transpose()?;
         let generation = self
             .next_session_generation
             .fetch_add(1, Ordering::Relaxed)
@@ -775,11 +1000,23 @@ impl LspManager {
         if config.workspace_root.is_empty() {
             return Err(LspManagerError::MissingWorkspace);
         }
+        if let Some(authority) = &self.execution_authority {
+            authority.validate_config(language_id, &config)?;
+        }
         ensure_host_workspace_supported(&config.workspace_root)?;
 
-        let workspace = WorkspaceRoot::new(&config.workspace_root)
+        let document_authority = self.execution_authority.as_ref().map(|authority| {
+            Arc::new(ExecutionDocumentAuthority(authority.clone())) as Arc<dyn LspDocumentAuthority>
+        });
+        let workspace = WorkspaceRoot::with_authority(&config.workspace_root, document_authority)
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
-        let resolved = if let Some(server) = config.server_by_language.get(language_id) {
+        let resolved = if let Some(reviewed) = &self.reviewed {
+            reviewed
+                .processes
+                .get(language_id)
+                .cloned()
+                .ok_or_else(|| LspManagerError::MissingServer(language_id.to_owned()))?
+        } else if let Some(server) = config.server_by_language.get(language_id) {
             match server {
                 ServerRef::Managed {
                     manifest_id,
@@ -788,17 +1025,18 @@ impl LspManager {
                 } => {
                     let installation = self
                         .installer
+                        .as_ref()
+                        .ok_or(LspManagerError::ExecutionApprovalRequired)?
                         .resolve_managed_install(manifest_id, version)
                         .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
                     self.resolver
-                        .resolve_managed(
+                        .prepare_managed(
                             &installation.manifest,
                             language_id,
                             &installation.installed_path,
                             node_path.as_deref(),
                             workspace.path(),
                         )
-                        .await
                         .map_err(|error| LspManagerError::Protocol(error.to_string()))?
                 }
                 _ => self
@@ -818,19 +1056,58 @@ impl LspManager {
             return Err(LspManagerError::MissingServer(language_id.to_owned()));
         };
 
-        let process = LspProcess::spawn(resolved.process_spec())
+        let managed = matches!(
+            config.server_by_language.get(language_id),
+            Some(ServerRef::Managed { .. })
+        );
+        if (managed || self.reviewed.is_some())
+            && resolved
+                .runtime
+                .as_ref()
+                .is_some_and(|runtime| runtime.kind == super::catalog::RuntimeKind::Node)
+        {
+            if let Some(authority) = &self.execution_authority {
+                authority.validate_process(&resolved)?;
+            }
+            let cancellation = RequestCancellation::new();
+            let probe = self
+                .resolver
+                .probe_managed_runtime_cancellable(&resolved, &cancellation);
+            tokio::pin!(probe);
+            tokio::select! {
+                result=&mut probe=>result,
+                _=self.startup_cancelled()=>{cancellation.cancel();probe.await},
+            }
+            .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
+        }
+        if let Some(authority) = &self.execution_authority {
+            authority.validate_config(language_id, &config)?;
+            authority.validate_process(&resolved)?;
+        }
+        let spec = resolved.process_spec();
+        #[cfg(target_os = "linux")]
+        let spec = if let Some(supervisor) = &self.linux_supervisor {
+            spec.with_linux_supervisor(supervisor)
+        } else {
+            spec
+        };
+        let process = LspProcess::spawn(spec)
             .await
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         self.spawn_stderr_monitor(language_id.to_owned(), process.subscribe_stderr());
         let client = LspClient::new(process.clone());
-        let capabilities = match client
-            .initialize(&workspace, InitializeConfig::new(&self.app_version))
-            .await
-        {
-            Ok(capabilities) => capabilities,
-            Err(error) => {
-                let _ = client.stop().await;
-                return Err(LspManagerError::Protocol(error.to_string()));
+        let initialized = tokio::select! {
+            result=client.initialize(&workspace,InitializeConfig::new(&self.app_version))=>Some(result),
+            _=self.startup_cancelled()=>None,
+        };
+        let capabilities = match initialized {
+            Some(Ok(capabilities)) => capabilities,
+            failure => {
+                stop_unpublished(&client, &process).await;
+                return Err(match failure {
+                    Some(Err(error)) => LspManagerError::Protocol(error.to_string()),
+                    _ => LspManagerError::ExecutionApprovalRequired,
+                });
             }
         };
         let sync_kind = capabilities.sync_kind.unwrap_or(SyncKind::Full);
@@ -848,6 +1125,14 @@ impl LspManager {
             failure_handled: AtomicBool::new(false),
             stopping: AtomicBool::new(false),
         })
+    }
+
+    async fn startup_cancelled(&self) {
+        if let Some(authority) = &self.execution_authority {
+            authority.startup_cancelled().await;
+        } else {
+            std::future::pending::<()>().await;
+        }
     }
 
     pub async fn stop(&self, language_id: &str) -> Result<(), LspManagerError> {
@@ -1025,6 +1310,11 @@ impl LspManager {
     pub async fn shutdown_for_exit(&self) -> Result<(), LspManagerError> {
         self.shutting_down.store(true, Ordering::Release);
         let result = self.stop_all().await;
+        self.wait_for_startup_retirement().await;
+        result
+    }
+
+    pub async fn wait_for_startup_retirement(&self) {
         while self.active_starts.load(Ordering::Acquire) != 0 {
             let notified = self.start_finished.notified();
             if self.active_starts.load(Ordering::Acquire) == 0 {
@@ -1032,7 +1322,6 @@ impl LspManager {
             }
             notified.await;
         }
-        result
     }
 
     pub async fn statuses(&self) -> Vec<LanguageServerStatus> {
@@ -1057,6 +1346,10 @@ impl LspManager {
             let process = session.process.state().await;
             let process_state = process_state_label(process.clone());
             let document_count = session.documents.lock().await.len();
+            let mut capabilities = session.client.capabilities().await.for_status();
+            if self.rename_backup_root.is_none() {
+                capabilities = capabilities.without_disk_rename();
+            }
             statuses.push(LanguageServerStatus {
                 language_id: language_id.clone(),
                 // The process state is the authoritative failure boundary.
@@ -1070,7 +1363,7 @@ impl LspManager {
                 // serverInfo. Runtime identity is derived from reviewed config
                 // metadata in the UI, so do not forward this untrusted label.
                 server_info: None,
-                capabilities: session.client.capabilities().await,
+                capabilities,
                 document_count,
                 restart_attempt: restart_state
                     .get(&language_id)
@@ -1158,7 +1451,8 @@ impl LspManager {
         let session = self.session(language_id).await?;
         // Commit the authoritative document store before notifying the server:
         // a slow or dead child must not delay the store that a replacement
-        // session later replays from.
+        // session later replays from. During backoff, acknowledge the committed
+        // store without writing to the retired process; restart replays it.
         let opened = {
             let mut documents = session.documents.lock().await;
             let mut staged = documents.clone();
@@ -1168,11 +1462,12 @@ impl LspManager {
             *documents = staged;
             opened
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didOpen")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didOpen")
         {
             session
                 .process
@@ -1211,11 +1506,12 @@ impl LspManager {
             *documents = staged;
             changed
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didChange")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didChange")
         {
             session
                 .process
@@ -1249,11 +1545,12 @@ impl LspManager {
             *documents = staged;
             changed
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didChange")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didChange")
         {
             session
                 .process
@@ -1286,11 +1583,12 @@ impl LspManager {
             *documents = staged;
             saved
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didSave")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didSave")
         {
             session
                 .process
@@ -1320,11 +1618,12 @@ impl LspManager {
             *documents = staged;
             closed
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didClose")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didClose")
         {
             session
                 .process
@@ -1491,6 +1790,12 @@ impl LspManager {
         position: LspPosition,
         new_name: String,
     ) -> Result<RenamePreview, LspManagerError> {
+        if self.rename_backup_root.is_none() {
+            return Err(LspManagerError::UnsupportedFeature {
+                language_id: language_id.into(),
+                method: "textDocument/rename".into(),
+            });
+        }
         self.prune_pending_renames().await;
         let rename_epoch = self.rename_epoch.load(Ordering::Acquire);
         let normalized_id = normalized_language_id(language_id)?;
@@ -1613,7 +1918,7 @@ impl LspManager {
             language_id: normalized_id,
             session: Arc::clone(&context.session),
             session_generation: context.session.generation,
-            workspace_root: context.request_documents.workspace().path().to_path_buf(),
+            workspace_root: context.request_documents.workspace().clone(),
             created_at: Instant::now(),
             open_documents,
             plan,
@@ -1657,6 +1962,13 @@ impl LspManager {
     /// either phase fails, transaction-private backups restore every file that was
     /// committed and the caller receives a file-by-file outcome.
     pub async fn apply_rename(&self, plan_id: &str) -> Result<RenameApplyResult, LspManagerError> {
+        let backup_root =
+            self.rename_backup_root
+                .clone()
+                .ok_or_else(|| LspManagerError::UnsupportedFeature {
+                    language_id: "native".into(),
+                    method: "workspace/applyEdit".into(),
+                })?;
         self.prune_pending_renames().await;
         if !valid_rename_plan_id(plan_id) {
             return Err(LspManagerError::Protocol(
@@ -1699,7 +2011,7 @@ impl LspManager {
             .path()
             .to_path_buf();
         if !current_session
-            || current_workspace != pending.workspace_root
+            || current_workspace != pending.workspace_root.path()
             || !matches!(pending.session.process.state().await, ProcessState::Running)
         {
             self.clear_rename_cancellation(plan_id).await;
@@ -1714,7 +2026,6 @@ impl LspManager {
             }
         }
 
-        let backup_root = self.rename_backup_root.clone();
         let files = pending.files.clone();
         let workspace_root = pending.workspace_root.clone();
         let plan_id_for_worker = plan_id.to_owned();
@@ -2302,6 +2613,19 @@ impl LspManager {
             if self.shutting_down.load(Ordering::Acquire) {
                 return;
             }
+            #[cfg(target_os = "linux")]
+            while self
+                .native_retry_drive
+                .as_ref()
+                .is_some_and(|gate| !gate.load(Ordering::Acquire))
+            {
+                if self.shutting_down.load(Ordering::Acquire)
+                    || failed_session.stopping.load(Ordering::Acquire)
+                {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
+            }
             let _activity = self.begin_start_activity();
             let replacement_token = {
                 let mut state = self.state.lock().await;
@@ -2347,7 +2671,7 @@ impl LspManager {
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
                         let reason = error.to_string();
-                        let _ = session.client.stop().await;
+                        stop_unpublished(&session.client, &session.process).await;
                         let (next_delay, disabled) = self
                             .record_restart_failure(language_id, reason.clone())
                             .await;
@@ -2366,7 +2690,7 @@ impl LspManager {
                             .await;
                         let reason =
                             "replacement language server exited during document replay".to_owned();
-                        let _ = session.client.stop().await;
+                        stop_unpublished(&session.client, &session.process).await;
                         let (next_delay, disabled) = self
                             .record_restart_failure(language_id, reason.clone())
                             .await;
@@ -2403,7 +2727,7 @@ impl LspManager {
                     if !accepted {
                         self.clear_start_reservation(language_id, replacement_token)
                             .await;
-                        let _ = session.client.stop().await;
+                        stop_unpublished(&session.client, &session.process).await;
                         return;
                     }
                     self.spawn_session_monitor(language_id, Arc::clone(&session));
@@ -2744,6 +3068,7 @@ fn load_rename_documents(
             ));
         }
         if !disk_files.contains_key(&canonical_uri) {
+            validate_rename_access(store.workspace(), &path)?;
             let size = file_commands::preflight_size(&path).map_err(|_| {
                 LspManagerError::Protocol("이름 변경 대상 파일 크기를 확인하지 못했습니다".into())
             })?;
@@ -2769,6 +3094,7 @@ fn load_rename_documents(
                         .into(),
                 ));
             }
+            validate_rename_access(store.workspace(), &snapshot.path)?;
             let opened =
                 file_commands::open_path_limited(&snapshot.path, MAX_RENAME_TOTAL_BYTES as u64)
                     .map_err(|_| {
@@ -2783,6 +3109,7 @@ fn load_rename_documents(
             }
             opened
         } else {
+            validate_rename_access(store.workspace(), &path)?;
             let opened = file_commands::open_path_limited(&path, MAX_RENAME_TOTAL_BYTES as u64)
                 .map_err(|_| {
                     LspManagerError::Protocol(
@@ -2806,6 +3133,12 @@ fn load_rename_documents(
         disk_files.insert(canonical_uri, opened);
     }
     Ok((store, disk_files))
+}
+
+fn validate_rename_access(workspace: &WorkspaceRoot, path: &Path) -> Result<(), LspManagerError> {
+    workspace.validate_write_access(path).map_err(|_| {
+        LspManagerError::Protocol("LSP 문서 접근 권한이 변경되어 작업을 중단했습니다".into())
+    })
 }
 
 fn pending_rename_files(
@@ -3212,6 +3545,7 @@ fn validate_pending_rename_documents(
 #[derive(Debug, Clone)]
 struct RenameBackup {
     target: PathBuf,
+    workspace: WorkspaceRoot,
     backup: file_commands::CreatedBackup,
     applied_mtime: Option<i64>,
     applied_size: Option<u64>,
@@ -3220,7 +3554,7 @@ struct RenameBackup {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameJournal {
     schema: u8,
     plan_id: String,
@@ -3238,7 +3572,7 @@ enum RenameJournalState {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct RenameJournalEntry {
     target: String,
     backup: String,
@@ -3323,7 +3657,7 @@ fn apply_pending_rename_files(
     files: &[PendingRenameFile],
     backup_root: &Path,
     plan_id: &str,
-    workspace_root: &Path,
+    workspace_root: &WorkspaceRoot,
     cancellation: Arc<AtomicBool>,
     deadline: Instant,
 ) -> DiskRenameOutcome {
@@ -3350,7 +3684,11 @@ fn apply_pending_rename_files(
     // mtime/size/hash for delete-and-recreate races.
     let mut current_bytes = Vec::with_capacity(files.len());
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_write_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             results[index].error = Some(error.into());
             return DiskRenameOutcome {
                 success: false,
@@ -3425,7 +3763,11 @@ fn apply_pending_rename_files(
     let mut after_snapshots = Vec::with_capacity(files.len());
     let mut encoded_total_bytes = 0usize;
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_write_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             results[index].error = Some(error.into());
             return DiskRenameOutcome {
                 success: false,
@@ -3487,7 +3829,11 @@ fn apply_pending_rename_files(
     backup_dir = Some(directory.clone());
 
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_write_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             let _ = fs::remove_dir_all(&directory);
             results[index].error = Some(error.into());
             return DiskRenameOutcome {
@@ -3524,6 +3870,7 @@ fn apply_pending_rename_files(
         };
         backups.push(RenameBackup {
             target: file.path.clone(),
+            workspace: workspace_root.clone(),
             backup,
             applied_mtime: None,
             applied_size: None,
@@ -3535,7 +3882,7 @@ fn apply_pending_rename_files(
     let journal = RenameJournal {
         schema: 1,
         plan_id: plan_id.to_owned(),
-        workspace_root: workspace_root.to_string_lossy().into_owned(),
+        workspace_root: workspace_root.path().to_string_lossy().into_owned(),
         state: RenameJournalState::Applying,
         entries: files
             .iter()
@@ -3566,7 +3913,11 @@ fn apply_pending_rename_files(
     }
 
     for (index, file) in files.iter().enumerate() {
-        if let Err(error) = rename_checkpoint(&cancellation, deadline) {
+        if let Err(error) = rename_checkpoint(&cancellation, deadline).and_then(|()| {
+            workspace_root
+                .validate_write_access(&file.path)
+                .map_err(|_| "LSP 문서 접근 권한이 변경되었습니다")
+        }) {
             let mut outcome = DiskRenameOutcome {
                 success: false,
                 rolled_back: false,
@@ -3706,6 +4057,14 @@ fn rollback_rename_backups(backups: &[RenameBackup], count: usize) -> bool {
         ) else {
             continue;
         };
+        if backup
+            .workspace
+            .validate_write_access(&backup.target)
+            .is_err()
+        {
+            success = false;
+            continue;
+        }
         let current = match file_commands::read_stable_limited(
             &backup.target,
             Some(MAX_RENAME_TOTAL_BYTES as u64),
@@ -3732,6 +4091,14 @@ fn rollback_rename_backups(backups: &[RenameBackup], count: usize) -> bool {
             || current_mtime != expected_mtime
             || current.0.len() != expected_size
             || file_commands::content_hash(&current.1) != expected_hash
+        {
+            success = false;
+            continue;
+        }
+        if backup
+            .workspace
+            .validate_write_access(&backup.target)
+            .is_err()
         {
             success = false;
             continue;
@@ -4094,6 +4461,16 @@ fn validate_rename_name(new_name: &str) -> Result<(), LspManagerError> {
     Ok(())
 }
 
+async fn stop_unpublished(client: &LspClient, process: &LspProcess) {
+    loop {
+        let _ = client.stop().await;
+        if process.wait_for_exit(Duration::from_secs(2)).await {
+            return;
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+}
+
 fn normalized_language_id(language_id: &str) -> Result<String, LspManagerError> {
     let language_id = language_id.trim();
     if language_id.is_empty()
@@ -4163,6 +4540,203 @@ mod status_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn reviewed_execution_never_loads_or_overwrites_unreviewed_config() {
+        let data = tempfile::tempdir().unwrap();
+        let installer = Arc::new(ManagedInstaller::new(data.path()).unwrap());
+        let path = super::super::config::lsp_config_path(data.path());
+        let original = br#"{"version":99,"future":"preserve"}"#;
+        fs::write(&path, original).unwrap();
+        let config = LspConfig {
+            enabled: true,
+            workspace_root: data
+                .path()
+                .join("absent-project")
+                .to_string_lossy()
+                .into_owned(),
+            ..LspConfig::default()
+        };
+        let manager = LspManager::with_reviewed_execution(
+            data.path(),
+            "test",
+            installer,
+            Arc::new(UnapprovedLspExecution),
+            ReviewedLspExecution {
+                config: config.clone(),
+                processes: BTreeMap::new(),
+                environment: EnvironmentAllowlist::new(),
+            },
+        )
+        .unwrap();
+        assert_eq!(manager.load_config().unwrap().config, config);
+        assert!(manager.save_config(&config, true).is_err());
+        for _ in 0..2 {
+            assert!(matches!(
+                manager.start("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+            assert!(matches!(
+                manager.create_session("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+        }
+        assert_eq!(fs::read(path).unwrap(), original);
+    }
+
+    #[tokio::test]
+    async fn reviewed_process_revalidation_precedes_index_resolution_and_runtime_probe() {
+        struct DenyPrepared(ResolvedProcess);
+        impl LspExecutionAuthority for DenyPrepared {
+            fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
+                Ok(())
+            }
+            fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
+                Ok(())
+            }
+            fn validate_process(&self, process: &ResolvedProcess) -> Result<(), LspManagerError> {
+                assert_eq!(process, &self.0);
+                Err(LspManagerError::ExecutionApprovalRequired)
+            }
+        }
+        let data = tempfile::tempdir().unwrap();
+        let executable = data.path().join("unavailable-runtime");
+        let process = ResolvedProcess {
+            executable: executable.clone(),
+            args: vec![],
+            current_dir: data.path().to_owned(),
+            env: Default::default(),
+            runtime: Some(super::super::runtime::ResolvedRuntime {
+                kind: super::super::catalog::RuntimeKind::Node,
+                executable,
+                version_requirement: None,
+            }),
+        };
+        let config = LspConfig {
+            enabled: true,
+            workspace_root: data.path().to_string_lossy().into_owned(),
+            server_by_language: BTreeMap::from([(
+                "rust".into(),
+                ServerRef::Managed {
+                    manifest_id: "absent-installation".into(),
+                    version: "1.0.0".into(),
+                    node_path: None,
+                },
+            )]),
+            ..LspConfig::default()
+        };
+        let manager = LspManager::with_reviewed_execution(
+            data.path(),
+            "test",
+            Arc::new(ManagedInstaller::new(data.path()).unwrap()),
+            Arc::new(DenyPrepared(process.clone())),
+            ReviewedLspExecution {
+                config,
+                processes: BTreeMap::from([("rust".into(), process)]),
+                environment: EnvironmentAllowlist::new(),
+            },
+        )
+        .unwrap();
+        assert!(matches!(
+            manager.start("rust").await,
+            Err(LspManagerError::ExecutionApprovalRequired)
+        ));
+        assert!(manager.state.lock().await.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn hosted_execution_rejects_unapproved_roots_before_path_resolution() {
+        let data = tempfile::tempdir().unwrap();
+        let manager = LspManager::with_execution_authority(
+            data.path(),
+            "test",
+            Arc::new(ManagedInstaller::new(data.path()).unwrap()),
+            Arc::new(UnapprovedLspExecution),
+        );
+        manager
+            .save_config(
+                &LspConfig {
+                    enabled: true,
+                    workspace_root: data
+                        .path()
+                        .join("does-not-exist")
+                        .to_string_lossy()
+                        .into_owned(),
+                    ..LspConfig::default()
+                },
+                false,
+            )
+            .unwrap();
+        for _ in 0..2 {
+            assert!(matches!(
+                manager.start("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+            // The monitor's restart path uses the same session constructor.
+            assert!(matches!(
+                manager.create_session("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+        }
+        assert!(manager.state.lock().await.starting.is_empty());
+        assert!(manager.state.lock().await.sessions.is_empty());
+    }
+
+    #[tokio::test]
+    async fn hosted_execution_rechecks_the_resolved_command_before_spawn() {
+        struct DenyProcess(std::sync::atomic::AtomicUsize);
+        impl LspExecutionAuthority for DenyProcess {
+            fn validate_document_path(&self, _: &Path) -> Result<(), DocumentError> {
+                Ok(())
+            }
+            fn validate_config(&self, _: &str, _: &LspConfig) -> Result<(), LspManagerError> {
+                Ok(())
+            }
+            fn validate_process(&self, _: &ResolvedProcess) -> Result<(), LspManagerError> {
+                self.0.fetch_add(1, Ordering::AcqRel);
+                Err(LspManagerError::ExecutionApprovalRequired)
+            }
+        }
+        let data = tempfile::tempdir().unwrap();
+        let executable = data.path().join("server.exe");
+        fs::write(
+            &executable,
+            b"not an executable: spawn must not be attempted",
+        )
+        .unwrap();
+        let authority = Arc::new(DenyProcess(std::sync::atomic::AtomicUsize::new(0)));
+        let manager = LspManager::with_execution_authority(
+            data.path(),
+            "test",
+            Arc::new(ManagedInstaller::new(data.path()).unwrap()),
+            authority.clone(),
+        );
+        manager
+            .save_config(
+                &LspConfig {
+                    enabled: true,
+                    workspace_root: data.path().to_string_lossy().into_owned(),
+                    server_by_language: BTreeMap::from([(
+                        "rust".into(),
+                        ServerRef::Custom {
+                            executable: executable.to_string_lossy().into_owned(),
+                            args: vec![],
+                        },
+                    )]),
+                    ..LspConfig::default()
+                },
+                false,
+            )
+            .unwrap();
+        for _ in 0..2 {
+            assert!(matches!(
+                manager.start("rust").await,
+                Err(LspManagerError::ExecutionApprovalRequired)
+            ));
+        }
+        assert_eq!(authority.0.load(Ordering::Acquire), 2);
+        assert!(manager.state.lock().await.sessions.is_empty());
+    }
 
     #[test]
     fn windows_host_lsp_rejects_wsl_workspace_aliases_with_one_stable_reason() {
@@ -4362,6 +4936,65 @@ mod tests {
         assert!(!directory.exists());
     }
 
+    #[test]
+    fn hosted_startup_preserves_applying_and_committed_journals() {
+        for state in [RenameJournalState::Applying, RenameJournalState::Committed] {
+            let data = tempfile::tempdir().unwrap();
+            let workspace = tempfile::tempdir().unwrap();
+            let target = workspace.path().join("main.rs");
+            fs::write(&target, b"after\n").unwrap();
+            let directory = file_commands::create_private_backup_dir(
+                &data.path().join("rename-backups"),
+                "rename-hosted",
+            )
+            .unwrap();
+            let backup = directory.join("backup-test.bak");
+            fs::write(&backup, b"before\n").unwrap();
+            let journal = RenameJournal {
+                schema: 1,
+                plan_id: "rename-hosted".into(),
+                workspace_root: workspace.path().to_string_lossy().into_owned(),
+                state,
+                entries: vec![RenameJournalEntry {
+                    target: target.to_string_lossy().into_owned(),
+                    backup: backup.to_string_lossy().into_owned(),
+                    before_size: 7,
+                    before_hash: file_commands::content_hash(b"before\n"),
+                    after_size: 6,
+                    after_hash: file_commands::content_hash(b"after\n"),
+                }],
+            };
+            let journal_path = write_rename_journal(&directory, &journal).unwrap();
+            let original_journal = fs::read(&journal_path).unwrap();
+            let target_identity = devbox_filesystem::filesystem_identity(&target, false).unwrap();
+            let installer = Arc::new(ManagedInstaller::new(data.path()).unwrap());
+            let _hosted = LspManager::with_startup_recovery(
+                data.path(),
+                "test",
+                installer.clone(),
+                StartupRecovery::PreserveJournals,
+            );
+            assert_eq!(fs::read(&target).unwrap(), b"after\n");
+            assert_eq!(fs::read(&backup).unwrap(), b"before\n");
+            assert_eq!(fs::read(&journal_path).unwrap(), original_journal);
+            assert_eq!(
+                devbox_filesystem::filesystem_identity(&target, false).unwrap(),
+                target_identity
+            );
+
+            // The same recoverable fixture proves standalone parity and makes
+            // this test fail if product construction accidentally scans it.
+            let _standalone = LspManager::with_installer(data.path(), "test", installer);
+            let expected = if state == RenameJournalState::Applying {
+                b"before\n".as_slice()
+            } else {
+                b"after\n".as_slice()
+            };
+            assert_eq!(fs::read(&target).unwrap(), expected);
+            assert!(!directory.exists());
+        }
+    }
+
     #[tokio::test]
     async fn restart_backoff_resets_after_the_failure_window() {
         let manager = LspManager::new("/tmp/code-pad-lsp-test", "test");
@@ -4400,6 +5033,73 @@ mod tests {
         assert_eq!(entries.len(), 3);
         assert_eq!(entries[2].code, "auto-restart-disabled");
         assert!(!entries.iter().any(|entry| entry.message.contains("three")));
+    }
+
+    #[test]
+    fn disk_rename_retains_authority_through_apply_and_rollback() {
+        struct Approval(AtomicBool);
+        impl LspDocumentAuthority for Approval {
+            fn validate_path(&self, _: &Path) -> Result<(), DocumentError> {
+                if self.0.load(Ordering::Acquire) {
+                    Ok(())
+                } else {
+                    Err(DocumentError::AccessDenied)
+                }
+            }
+        }
+        let directory = tempfile::tempdir().unwrap();
+        let path = directory.path().join("document.rs");
+        fs::write(&path, b"before\n").unwrap();
+        let opened = file_commands::open_path(&path).unwrap();
+        let approval = Arc::new(Approval(AtomicBool::new(true)));
+        let workspace =
+            WorkspaceRoot::with_authority(directory.path(), Some(approval.clone())).unwrap();
+        let files = vec![PendingRenameFile {
+            path: path.clone(),
+            display_path: "document.rs".into(),
+            before_text: opened.text,
+            after_text: "after\n".into(),
+            encoding: opened.encoding,
+            line_ending: opened.line_ending,
+            expected_mtime: opened.mtime,
+            expected_size: opened.size,
+            expected_content_hash: opened.content_hash,
+            expected_identity: opened.identity,
+            ranges: Vec::new(),
+        }];
+        let backup_root = directory.path().join("backups");
+        let apply = || {
+            apply_pending_rename_files(
+                &files,
+                &backup_root,
+                "reviewed-plan",
+                &workspace,
+                Arc::new(AtomicBool::new(false)),
+                Instant::now() + Duration::from_secs(10),
+            )
+        };
+        approval.0.store(false, Ordering::Release);
+        let denied = apply();
+        assert!(!denied.success);
+        assert!(!backup_root.exists());
+        assert_eq!(fs::read(&path).unwrap(), b"before\n");
+
+        approval.0.store(true, Ordering::Release);
+        let mut applied = apply();
+        assert!(applied.success);
+        assert_eq!(fs::read(&path).unwrap(), b"after\n");
+        let backup_dir = applied.backup_dir.clone().unwrap();
+        let journal = fs::read(backup_dir.join("journal.json")).unwrap();
+        approval.0.store(false, Ordering::Release);
+        assert!(!rollback_disk_rename(&mut applied));
+        assert_eq!(fs::read(&path).unwrap(), b"after\n");
+        assert_eq!(fs::read(backup_dir.join("journal.json")).unwrap(), journal);
+        assert!(applied.backups[0].backup.path.exists());
+
+        approval.0.store(true, Ordering::Release);
+        assert!(rollback_disk_rename(&mut applied));
+        assert_eq!(fs::read(&path).unwrap(), b"before\n");
+        assert!(!backup_dir.exists());
     }
 
     #[test]
@@ -4449,7 +5149,7 @@ mod tests {
             &files,
             &backup_root,
             "rename-test",
-            directory.path(),
+            &WorkspaceRoot::new(directory.path()).unwrap(),
             Arc::new(AtomicBool::new(false)),
             Instant::now() + Duration::from_secs(10),
         );

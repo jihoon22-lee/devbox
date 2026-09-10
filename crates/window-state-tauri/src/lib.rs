@@ -6,6 +6,9 @@
 //! Only the `main` window is handled; dialogs, launchers, and other transient
 //! windows are never persisted.
 
+mod review;
+pub use review::{apply_main_window_review, review_main_window, MainWindowReview};
+
 use std::collections::HashMap;
 use std::fs::File;
 use std::io::Read;

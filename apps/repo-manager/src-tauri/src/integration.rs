@@ -193,7 +193,7 @@ fn publish_locked(map: &RepositoryMap) {
     };
     let _ = devbox_integration::write_named_view_snapshot_atomic(
         &envelope,
-        &devbox_integration::integration_root(),
+        &crate::component::integration_root(),
         VIEW_KIND,
     );
 }

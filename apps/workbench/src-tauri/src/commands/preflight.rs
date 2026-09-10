@@ -376,7 +376,11 @@ fn service_snapshot_probe(
     if profile.run_manager_service_ids.is_empty() {
         return Ok((ServiceSnapshotProbe::AllRunning, HashSet::new()));
     }
-    let result = match devbox_integration::read_snapshot("run-manager", 1) {
+    let result = match devbox_integration::read_snapshot_in(
+        &crate::component::integration_root(),
+        "run-manager",
+        1,
+    ) {
         Ok(None) => (ServiceSnapshotProbe::Missing, HashSet::new()),
         Err(_) => (ServiceSnapshotProbe::Unavailable, HashSet::new()),
         Ok(Some(snapshot)) => {
@@ -649,6 +653,102 @@ pub fn cancel_dependency_health(
             Some(&request_id),
         ))
         .map_err(str::to_string)
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_workspace_preflight(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        request_id: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = workspace_preflight(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+        input.request_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_dependency_health(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        request_id: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = dependency_health(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+        input.request_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_cancel_workspace_preflight(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        request_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_workspace_preflight(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+        input.request_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_cancel_dependency_health(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile_id: String,
+        request_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_dependency_health(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.profile_id,
+        input.request_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

@@ -15,6 +15,16 @@ edition = "2021"
 name = "workbench_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Product consumers reuse native components without embedding legacy web assets.
+[features]
+default = ["standalone"]
+standalone = []
+
+[[bin]]
+name = "workbench"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 

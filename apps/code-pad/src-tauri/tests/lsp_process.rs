@@ -224,3 +224,145 @@ async fn shutdown_sends_exit_then_kills_a_hung_server() {
     .await
     .expect("hung fake server should be force-killed");
 }
+
+#[cfg(windows)]
+mod windows_ownership {
+    use super::*;
+    use code_pad_lib::lsp::{
+        ResolvedProcess, ResolvedRuntime, RuntimeError, RuntimeKind, RuntimeResolver,
+    };
+    use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
+    use windows::Win32::System::Threading::{
+        OpenProcess, WaitForSingleObject, PROCESS_SYNCHRONIZE,
+    };
+
+    struct OwnedProcess(HANDLE);
+    impl OwnedProcess {
+        async fn from_marker(marker: &std::path::Path) -> Self {
+            let pid = tokio::time::timeout(Duration::from_secs(5), async {
+                loop {
+                    if let Ok(text) = std::fs::read_to_string(marker) {
+                        if let Ok(pid) = text.parse::<u32>() {
+                            break pid;
+                        }
+                    }
+                    tokio::time::sleep(Duration::from_millis(5)).await;
+                }
+            })
+            .await
+            .expect("fixture did not publish its descendant PID");
+            Self(unsafe { OpenProcess(PROCESS_SYNCHRONIZE, false, pid) }.unwrap())
+        }
+        fn assert_running(&self) {
+            assert_eq!(unsafe { WaitForSingleObject(self.0, 0) }, WAIT_TIMEOUT);
+        }
+        fn assert_exited(&self) {
+            assert_eq!(unsafe { WaitForSingleObject(self.0, 0) }, WAIT_OBJECT_0);
+        }
+    }
+    impl Drop for OwnedProcess {
+        fn drop(&mut self) {
+            unsafe {
+                let _ = CloseHandle(self.0);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn server_exit_and_forced_stop_confirm_owned_descendant_exit() {
+        for mode in ["", "hang_shutdown"] {
+            let root = tempfile::tempdir().unwrap();
+            let marker = root.path().join("descendant.pid");
+            let process = LspProcess::spawn(
+                fixture(mode).arg(format!("--fake-descendant-marker={}", marker.display())),
+            )
+            .await
+            .unwrap();
+            let descendant = OwnedProcess::from_marker(&marker).await;
+            descendant.assert_running();
+            assert!(!process.wait_for_exit(Duration::ZERO).await);
+            if mode.is_empty() {
+                process.shutdown().await.unwrap();
+            } else {
+                assert!(matches!(
+                    process
+                        .shutdown_with_timeout(Duration::from_millis(120))
+                        .await,
+                    Err(ProcessError::ShutdownTimeout)
+                ));
+            }
+            assert!(process.wait_for_exit(Duration::from_secs(2)).await);
+            descendant.assert_exited();
+        }
+    }
+
+    #[tokio::test]
+    async fn version_probe_owns_descendants_on_success_error_timeout_and_cancel() {
+        for behavior in [
+            "success",
+            "output-limit",
+            "failure",
+            "hang",
+            "cancel",
+            "cancel-result",
+        ] {
+            let root = tempfile::tempdir().unwrap();
+            std::fs::write(root.path().join("probe-mode"), behavior).unwrap();
+            let executable = fixture("").executable;
+            let resolved = ResolvedProcess {
+                executable: executable.clone(),
+                args: vec![],
+                current_dir: root.path().to_owned(),
+                env: Default::default(),
+                runtime: Some(ResolvedRuntime {
+                    kind: RuntimeKind::Node,
+                    executable,
+                    version_requirement: None,
+                }),
+            };
+            let resolver = RuntimeResolver::new();
+            let cancellation = RequestCancellation::new();
+            let mut probe =
+                Box::pin(resolver.probe_managed_runtime_cancellable(&resolved, &cancellation));
+            let marker = root.path().join("descendant.pid");
+            let descendant = tokio::select! {
+                result = &mut probe => panic!("probe completed before fixture release: {result:?}"),
+                descendant = OwnedProcess::from_marker(&marker) => descendant,
+            };
+            descendant.assert_running();
+            if behavior == "cancel-result" {
+                cancellation.cancel();
+                assert!(matches!(
+                    probe.await,
+                    Err(RuntimeError::RuntimeProbeCancelled)
+                ));
+                descendant.assert_exited();
+                continue;
+            }
+            if behavior == "cancel" {
+                // Dropping the future must close its Job even without a result.
+                drop(probe);
+                tokio::time::timeout(Duration::from_secs(2), async {
+                    while unsafe { WaitForSingleObject(descendant.0, 0) } == WAIT_TIMEOUT {
+                        tokio::time::sleep(Duration::from_millis(10)).await;
+                    }
+                })
+                .await
+                .unwrap();
+                descendant.assert_exited();
+                continue;
+            }
+            std::fs::write(root.path().join("probe-release"), b"release").unwrap();
+            let result = probe.await;
+            match behavior {
+                "success" => result.unwrap(),
+                "output-limit" => {
+                    assert!(matches!(result, Err(RuntimeError::RuntimeProbeOutputLimit)))
+                }
+                "hang" => assert!(matches!(result, Err(RuntimeError::RuntimeProbeTimeout))),
+                _ => assert!(matches!(result, Err(RuntimeError::RuntimeProbeFailed))),
+            }
+            descendant.assert_exited();
+        }
+    }
+}

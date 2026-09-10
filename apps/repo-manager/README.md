@@ -387,3 +387,50 @@ cleanup batch는 여러 branch/worktree mutation을 하나의 OS/Git transaction
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
 설계 문서: `docs/superpowers/specs/2026-08-14-repo-manager-design.md`
+
+### v0.8 component reuse
+
+The legacy executable still uses its original native startup and data namespace.
+Its shared frontend and tests now live in `packages/workspace-features/src/source`.
+The optional native `standalone` feature is enabled by default; Workspace can
+reuse the typed component adapter without embedding the legacy frontend or calling
+its startup. B04 product integration and platform acceptance remain in progress.
+
+Workspace Dependencies uses `component::DependencyAccess` supplied by the native
+Project Registry owner. It reuses the local parser, summary and opt-in remote
+engine without calling Git for admission. Standalone commands retain their Git
+repository checks and original cache namespace. Product cache failures preserve
+existing bytes; offline analysis remains available. The product owns the request
+deadline and retains project/single-flight guards through blocking worker cleanup.
+A native inventory reader now supports Workspace's WSL POSIX root without opening
+that path on Windows. The same parser receives Linux filesystem admission before
+discovery/read IO. Its bounded report is validated before use; inventory and remote
+review/revalidation all use this reader. Windows still owns publication, cache,
+transmission preview and explicit remote execution. Standalone parsing is unchanged.
+
+Workspace Source supplies a native `SourceAccess` and reviewed execution policy.
+Only that scope overrides the executable/environment and fixes the native Git
+worktree/gitdir. The scope follows async polls into blocking workers and retains
+cancellation/deadline ownership. Git-returned roots and metadata are admitted
+before IO, and operation IDs are namespaced by product context. The product
+Registry owns discovery/provider identity; these calls do not publish the legacy
+repository view. Standalone behavior and its existing storage remain unchanged.
+
+## Native component build
+
+The default `standalone` feature includes `desktop` and preserves the Tauri app,
+plugins and existing scheduler. Workspace explicitly enables `desktop` when it
+reuses the component. Building the library with `--no-default-features` leaves
+Git/Dependency logic and typed native Source dispatch available without Tauri,
+GTK/WebKit, window state or application bootstrap. The caller supplies a Tokio
+runtime and an `ExecutionPolicy` capability; a renderer path cannot mint one.
+Both consumers use the same parsers, operation IDs, argument checks and Git
+commands. Native Source dispatch suppresses standalone repository publication.
+This build boundary alone does not enable WSL Git execution or child retirement.
+
+
+Source status preserves Git's untracked directory placeholders (`folder/`), which
+can represent a nested repository or worktree, without treating them as selectable
+file pathspecs. The panel shows those folders separately. Their presence no longer
+blocks changes/status or selected staging of unrelated files; direct directory
+stage requests remain rejected.

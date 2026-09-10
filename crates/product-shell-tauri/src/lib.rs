@@ -149,6 +149,48 @@ pub fn authorize(
     Ok(provenance)
 }
 
+/// Native context for Workspace-owned background notifications. The owner
+/// retains its context permit through observation and delivery.
+pub fn workspace_context(window: &WebviewWindow) -> Result<Option<ProjectContext>, &'static str> {
+    let state = window.state::<ShellState>();
+    if state.product != "workspace" || !local_main(window) {
+        return Err("unauthorized_context_owner");
+    }
+    let context = state
+        .session
+        .lock()
+        .map_err(|_| "context_busy")?
+        .context()
+        .cloned();
+    Ok(context)
+}
+
+/// Called only after authenticated, fresh Registry admission. This native API
+/// changes selection; it grants no execution trust and is not a renderer command.
+pub fn replace_project_context(
+    window: &WebviewWindow,
+    expected: Option<&ProjectContext>,
+    next: Option<ProjectContext>,
+    deadline_ms: u64,
+) -> Result<(), &'static str> {
+    let state = window.state::<ShellState>();
+    if state.product != "workspace" || !local_main(window) {
+        return Err("unauthorized_context_owner");
+    }
+    let now = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map_err(|_| "context_unavailable")?
+        .as_millis();
+    if now > u128::from(deadline_ms) {
+        return Err("context_selection_expired");
+    }
+    let mut session = state.session.lock().map_err(|_| "context_busy")?;
+    if session.context() != expected {
+        return Err("stale_context");
+    }
+    session.bind_context(next)
+}
+
 pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
         .plugin(tauri_plugin_single_instance::init(|app, _, _| {

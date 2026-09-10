@@ -164,6 +164,26 @@ impl CapabilitySet {
         self.dynamic_methods.iter().map(String::as_str)
     }
 
+    pub(super) fn without_disk_rename(mut self) -> Self {
+        self.rename = false;
+        self.dynamic_methods.remove("textDocument/rename");
+        self
+    }
+
+    pub(super) fn for_status(mut self) -> Self {
+        // UI consumers read feature booleans, while request admission also
+        // understands dynamic registrations. Fold them into this snapshot only
+        // so unregistering never leaves a persistent static capability behind.
+        self.completion = self.supports("textDocument/completion");
+        self.hover = self.supports("textDocument/hover");
+        self.definition = self.supports("textDocument/definition");
+        self.references = self.supports("textDocument/references");
+        self.rename = self.supports("textDocument/rename");
+        self.formatting = self.supports("textDocument/formatting");
+        self.diagnostics = self.supports("textDocument/diagnostic");
+        self
+    }
+
     fn register(&mut self, method: String) {
         if is_supported_dynamic_method(&method) {
             self.dynamic_methods.insert(method);
@@ -525,7 +545,12 @@ fn parse_sync(value: Option<&Value>) -> Result<(Option<SyncKind>, bool, bool), C
         return Ok((None, false, false));
     };
     if let Some(number) = value.as_i64() {
-        return Ok((sync_kind(number)?, false, false));
+        // The original numeric sync form includes open/close and save when
+        // synchronization is enabled (the LSP reference client normalizes it
+        // this way). Object-form options remain individually opt-in.
+        let kind = sync_kind(number)?;
+        let enabled = kind.is_some();
+        return Ok((kind, enabled, enabled));
     }
     let object = value.as_object().ok_or_else(|| {
         ClientError::InvalidInitializeResult("textDocumentSync must be a number or object".into())
@@ -611,6 +636,33 @@ mod tests {
     use super::*;
 
     #[test]
+    fn numeric_sync_preserves_document_lifecycle_without_enabling_explicitly_disabled_options() {
+        for number in [0, 1, 2] {
+            let (capabilities, _) = CapabilitySet::from_initialize_result(&json!({
+                "capabilities": { "textDocumentSync": number }
+            }))
+            .unwrap();
+            for method in [
+                "textDocument/didOpen",
+                "textDocument/didChange",
+                "textDocument/didClose",
+                "textDocument/didSave",
+            ] {
+                assert_eq!(
+                    capabilities.supports(method),
+                    number != 0,
+                    "{number}: {method}"
+                );
+            }
+        }
+        let (capabilities, _) = CapabilitySet::from_initialize_result(&json!({
+            "capabilities": { "textDocumentSync": { "change": 2, "openClose": false, "save": false } }
+        })).unwrap();
+        assert!(capabilities.supports("textDocument/didChange"));
+        assert!(!capabilities.open_close && !capabilities.save);
+    }
+
+    #[test]
     fn normalizes_bool_object_sync_and_server_info() {
         let (capabilities, info) = CapabilitySet::from_initialize_result(&json!({
             "capabilities": {
@@ -666,8 +718,16 @@ mod tests {
         capabilities.register("textDocument/hover".into());
         capabilities.register("workspace/executeCommand".into());
         assert!(capabilities.supports("textDocument/hover"));
+        assert_eq!(
+            serde_json::to_value(capabilities.clone().for_status()).unwrap()["hover"],
+            true
+        );
         assert!(!capabilities.supports("workspace/executeCommand"));
         capabilities.unregister("textDocument/hover");
         assert!(!capabilities.supports("textDocument/hover"));
+        assert_eq!(
+            serde_json::to_value(capabilities.for_status()).unwrap()["hover"],
+            false
+        );
     }
 }

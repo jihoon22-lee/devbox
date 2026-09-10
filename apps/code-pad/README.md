@@ -17,6 +17,14 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
   runtime은 다이어그램이 실제로 나타나는 첫 프리뷰에서만 공용 renderer를 동적 로드하며,
   일반 Markdown의 초기 editor bundle에는 포함하지 않는다.
 - **LSP** — Windows 로컬 stdio 서버 관리(진단·자동완성·hover·정의·참조·이름 변경·포맷, 재시작 백오프).
+  Windows 서버와 관리형 Node 버전 확인은 일시 정지 상태로 생성해 Job Object에 편입한 뒤
+  실행하며, 종료 완료는 부모 회수와 Job의 전체 프로세스 종료 알림을 확인한다.
+  버전 확인은 출력과 부모 종료를 동시에 감시하고, 부모가 끝나면 소유한 자식을 종료해
+  상속된 출력 파이프 때문에 EOF를 기다리다 시간 초과가 되는 경우를 방지한다.
+  제품에서 재사용할 때는 검토된 설정·명령·환경을 유지하고 시작과 자동 재시작마다
+  native 권한을 재검증한다. 버전 확인과 초기화 중 취소도 생성한 프로세스의 종료를 확인한다.
+  Windows Node 실행에는 Windows API가 반환한 `SystemRoot`를 전달한다. Node의 스크립트
+  인자는 일반 경로 표기로 바꾸기 전에 canonical 대상이 같은 파일인지 확인한다.
   상태와 retry/circuit, 검증된 관리형 runtime cache를 한 화면에서 확인하고 `다시 시도`로 명시적 복구한다.
   최근 로그는 앱 실행 중 memory에 최대 64개 언어·언어별 200개만 보존하며, 제3자 서버 stderr는 native 경계에서
   절대 경로·URL·credential 패턴을 제거하고 길이를 제한한 뒤 표시한다. raw stderr·설정 오류는 IPC로
@@ -34,7 +42,10 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
   하나라도 쓰기 또는 LSP 반영에 실패하면 app-local `0700` transaction 디렉터리의
   identity/hash 검증 백업으로 이미 쓴 파일을 역순 되돌리고 파일별 결과를 표시한다.
   취소·timeout과 서버 중단 시에도 pending plan을 폐기하며, journal recovery는 외부 변경
-  파일을 덮어쓰지 않는다. 미리보기의 before/after와 range payload는 각각 UTF-8
+  파일을 덮어쓰지 않는다. Workspace host는 시작 시 journal을 보존하고 별도의 명시적
+  복구 검토를 제공한다. 서버 설정·실행 승인 없이도 현재 프로젝트와 원본 백업을 검증한다.
+  대상 탭을 닫은 뒤 승인하며, 부분 실패 시 원본과 journal을 보존해 다시 검토할 수 있다.
+  미리보기의 before/after와 range payload는 각각 UTF-8
   16KiB·전체 저장 결과는 정규화/인코딩 후 2MiB aggregate 안에서만 허용하며, UTF-16·CRLF
   확장으로 이 상한을 넘으면 적용 전에 거부한다. 미리보기에는 절대 경로·서버 오류·credential이
   포함되지 않으며, 서버가 반환한 전체 텍스트는 native pending plan에만 보관한다. Windows
@@ -66,3 +77,27 @@ Notepad++를 대체할 가벼운 코드 에디터. CodeMirror 6 기반, 언어 �
 - 실행/빌드(Windows): `pnpm tauri dev` / `pnpm tauri build`
 
 설계 문서: `docs/superpowers/specs/2026-08-12-code-pad-design.md`
+
+### v0.8 component reuse
+
+The legacy executable still uses its original native startup and data namespace.
+Its shared frontend and tests now live in `packages/workspace-features/src/files`.
+The optional native `standalone` feature is enabled by default; Workspace can
+reuse the typed component adapter without embedding the legacy frontend or calling
+its startup. B04 product integration and platform acceptance remain in progress.
+
+
+### GUI 없이 native 코어 재사용
+
+기본 `standalone`은 `desktop`을 포함해 기존 Windows 앱을 유지한다. 제품의 Tauri
+component 사용자는 `default-features = false, features = ["desktop"]`을 지정한다.
+`--no-default-features`는 파일 encoding/atomic save·세션 codec과 LSP native 코어만
+컴파일하며 Tauri/GTK/WebKit·window/app-link adapter를 포함하지 않는다. WSL 내부
+실행 파일에서 같은 저장·WorkspaceEdit 규칙을 재사용하기 위한 경계이며, 이 feature만으로
+WSL 연결이나 배포판 실행을 제공하지 않는다.
+
+Linux native 소비자는 검증한 first-party supervisor를 LSP manager에 지정해
+서버 시작·자동 재시도·런타임 버전 검사에 같은 자식 프로세스 소유권을 적용할 수 있다.
+Linux child는 마지막 signal까지 reap하지 않아 PID 재사용을 피하고, supervisor 취소는
+분리된 자식 정리가 끝날 때까지 기다린다. Windows Job 경계는 유지한다. 이 native API가
+독립 Code Pad의 WSL LSP UI를 활성화하지는 않는다.

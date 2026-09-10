@@ -77,6 +77,8 @@ def check(root=ROOT):
         assert capability["windows"] == ["main"]
         assert "remote" not in capability
         expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status"}
+        if product["id"] == "workspace":
+            expected_permissions.add("workspace:allow-execute")
         if product["id"] == "api-studio":
             expected_permissions.add("api-studio:allow-execute")
         if product["id"] == "knowledge":

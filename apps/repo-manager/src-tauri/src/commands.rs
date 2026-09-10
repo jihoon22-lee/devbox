@@ -11,8 +11,8 @@ use crate::core::cleanup::{
     MAX_CLEANUP_REF_BYTES, MAX_CLEANUP_SELECTIONS, MAX_CLEANUP_WORKTREES,
 };
 use crate::core::dependency_lens::{
-    analyze_repository, dependency_summary_entry, now_epoch_ms, publish_summary_in,
-    DependencyReport, DEPENDENCY_LENS_ERROR,
+    dependency_summary_entry, now_epoch_ms, publish_summary_in, DependencyReport,
+    DEPENDENCY_LENS_ERROR,
 };
 use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
 use crate::core::git_safety::{
@@ -43,6 +43,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
+#[cfg(feature = "desktop")]
 use tauri_plugin_opener::OpenerExt;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
@@ -134,7 +135,7 @@ pub struct ScanResult {
 
 /// root 아래 Git repository를 재귀 탐색한다 (canonical identity로 중복 제거).
 /// node_modules·target·AppData 등 흔한 비-repo 디렉터리는 진입 전에 가지치기한다.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn scan_root(root: String) -> Result<ScanResult, String> {
     let mut repos = Vec::new();
     let mut visited = 0usize;
@@ -360,6 +361,8 @@ fn parse_safety_marker_paths(output: &str, cwd: &Path) -> Result<[std::path::Pat
         if resolved.file_name().and_then(|name| name.to_str()) != Some(expected_name) {
             return Err(GIT_SAFETY_ERROR.to_string());
         }
+        source_metadata_before_io(cwd, &resolved, false)
+            .map_err(|_| GIT_SAFETY_ERROR.to_string())?;
         paths.push(resolved);
     }
     paths.try_into().map_err(|_| GIT_SAFETY_ERROR.to_string())
@@ -653,6 +656,7 @@ fn resolve_cleanup_worktree_path(
     parsed: &ParsedWorktree,
 ) -> Result<(PathBuf, FilesystemIdentity), String> {
     let path = PathBuf::from(&parsed.path);
+    source_root_before_io(&path).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     GitTarget::validate_host_absolute_path(&parsed.path)
         .map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
     let identity = filesystem_identity(&path, true).map_err(|_| GIT_CLEANUP_ERROR.to_string())?;
@@ -1248,9 +1252,13 @@ where
     T: Send + 'static,
     F: FnOnce() -> Result<T, String> + Send + 'static,
 {
-    tauri::async_runtime::spawn_blocking(operation)
-        .await
-        .map_err(|_| join_error.to_string())?
+    let policy = devbox_git::execution::current();
+    crate::runtime::spawn_blocking(move || match policy {
+        Some(policy) => policy.scope(operation),
+        None => operation(),
+    })
+    .await
+    .map_err(|_| join_error.to_string())?
 }
 
 fn run_git_remote_bounded(
@@ -1306,6 +1314,8 @@ fn remote_marker_exists(
     if marker_path.file_name().and_then(|name| name.to_str()) != Some(expected_marker) {
         return Err(GIT_REMOTE_ERROR.to_string());
     }
+    source_metadata_before_io(cwd, &marker_path, false)
+        .map_err(|_| GIT_REMOTE_ERROR.to_string())?;
     marker_present_with_error(&marker_path, GIT_REMOTE_ERROR)
 }
 
@@ -1538,6 +1548,7 @@ fn repository_context_for_worktree_with_options(
     cancellation: Option<&AtomicBool>,
     deadline: Option<Instant>,
 ) -> Result<RepositoryContext, String> {
+    source_root_before_io(&worktree).map_err(|_| error.to_string())?;
     repository_context_boundary(cancellation, deadline, error)?;
     let worktree_identity = filesystem_identity(&worktree, true)
         .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
@@ -1576,6 +1587,7 @@ fn repository_context_for_worktree_with_options(
         return Err(error.to_string());
     }
     let common = host_path_from_git(&worktree, value, error)?;
+    source_metadata_before_io(&worktree, &common, true).map_err(|_| error.to_string())?;
     let common = common
         .canonicalize()
         .map_err(|_| repository_context_filesystem_error(cancellation, error))?;
@@ -1625,6 +1637,7 @@ fn cleanup_validated_repository_context(
     deadline: Instant,
 ) -> Result<RepositoryContext, String> {
     repository_context_boundary(Some(cancellation), Some(deadline), error)?;
+    source_root_before_io(Path::new(path)).map_err(|_| error.to_string())?;
     if !valid_repository_path_syntax(path) {
         return Err(error.to_string());
     }
@@ -1914,7 +1927,7 @@ fn resolve_current_selection(
     Ok(expanded)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_status(path: String) -> Result<RepoSnapshot, String> {
     spawn_git_task(GIT_STATUS_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_STATUS_ERROR.to_string())?;
@@ -1953,7 +1966,7 @@ pub struct RepoPreflightRequest {
 /// The status and marker reads are independently bounded and every failure is
 /// mapped to the same redacted error. This command never changes repository
 /// files, refs, index state, remotes, or credentials.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_preflight(request: RepoPreflightRequest) -> Result<GitSafetySnapshot, String> {
     spawn_git_task(GIT_SAFETY_ERROR, move || {
         let path = validated_git_path(&request.path).map_err(|_| GIT_SAFETY_ERROR.to_string())?;
@@ -1974,7 +1987,7 @@ pub async fn repo_preflight(request: RepoPreflightRequest) -> Result<GitSafetySn
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
@@ -2005,7 +2018,11 @@ pub async fn worktrees(path: String) -> Result<Vec<String>, String> {
             .iter()
             .filter_map(|path| repository_entry(Path::new(path)).ok())
             .collect::<Vec<_>>();
-        crate::integration::add_worktree_repositories(entries);
+        // The product Registry owns project discovery/provider identity. Do
+        // not recreate a legacy snapshot namespace from a product Git query.
+        if !crate::component::is_product() && devbox_git::execution::current().is_none() {
+            crate::integration::add_worktree_repositories(entries);
+        }
         Ok(paths)
     })
     .await
@@ -2017,22 +2034,52 @@ pub struct WorktreeCreate {
     pub path: String,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn create_worktree(
     repo_path: String,
     branch: String,
     target_dir: String,
 ) -> Result<WorktreeCreate, String> {
+    create_worktree_with_admission(repo_path, branch, target_dir, None).await
+}
+pub(crate) fn valid_worktree_branch(branch: &str) -> bool {
+    branch.len() <= MAX_REMOTE_BRANCH_BYTES
+        && !branch.starts_with('-')
+        && valid_ref_path_fragment(branch)
+}
+pub(crate) async fn create_reviewed_worktree(
+    repo_path: String,
+    creation: crate::component::SourceCreation,
+) -> Result<WorktreeCreate, String> {
+    create_worktree_with_admission(
+        repo_path,
+        creation.branch,
+        creation.target_dir,
+        Some((creation.operation_id, creation.validate)),
+    )
+    .await
+}
+async fn create_worktree_with_admission(
+    repo_path: String,
+    branch: String,
+    target_dir: String,
+    admission: Option<(String, crate::component::SourceTargetValidation)>,
+) -> Result<WorktreeCreate, String> {
+    let operation = if let Some((id, _)) = &admission {
+        begin_git_operation(id, GIT_WORKTREE_ERROR, GIT_WORKTREE_ERROR)?
+    } else {
+        begin_internal_git_operation(GIT_WORKTREE_ERROR)?
+    };
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
-        if branch.len() > MAX_REMOTE_BRANCH_BYTES
-            || branch.starts_with('-')
-            || !valid_ref_path_fragment(&branch)
-        {
+        if !valid_worktree_branch(&branch) {
             return Err(GIT_WORKTREE_ERROR.to_string());
+        }
+        if let Some((_, validate)) = &admission {
+            validate()?;
         }
         let (target, target_parent_identity) = validated_new_worktree_target(&target_dir)?;
         let context = validated_repository_context(&repo_path, GIT_WORKTREE_ERROR)?;
-        let mut operation = begin_internal_git_operation(GIT_WORKTREE_ERROR)?;
+        let mut operation = operation;
         operation.bind_repository(
             context.common_git_identity,
             GIT_WORKTREE_ERROR,
@@ -2062,14 +2109,23 @@ pub async fn create_worktree(
             "--".to_string(),
             target_arg,
         ];
-        run_git_mutation(&args, &context.worktree)?;
+        if let Some((_, validate)) = &admission {
+            validate()?;
+            run_git_mutation_with_cancel(
+                &args,
+                &context.worktree,
+                operation.cancellation.as_ref(),
+            )?;
+        } else {
+            run_git_mutation(&args, &context.worktree)?;
+        }
         Ok(WorktreeCreate { path: result_path })
     })
     .await
 }
 
 /// remove 전 uncommitted/untracked 검사. 없으면 true.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn worktree_clean(path: String) -> Result<bool, String> {
     spawn_git_task(GIT_WORKTREE_ERROR, move || {
         let worktree = validated_git_path(&path).map_err(|_| GIT_WORKTREE_ERROR.to_string())?;
@@ -2551,7 +2607,7 @@ fn run_cleanup_request(
     })
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_cleanup_preview(
     request: CleanupPreviewRequest,
 ) -> Result<CleanupPreview, String> {
@@ -2606,7 +2662,7 @@ pub async fn repo_cleanup_preview(
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_cleanup(request: CleanupRequest) -> Result<CleanupResult, String> {
     if request.branch_names.len() > MAX_CLEANUP_SELECTIONS
         || request.worktree_paths.len() > MAX_CLEANUP_SELECTIONS
@@ -2636,7 +2692,7 @@ pub async fn repo_cleanup(request: CleanupRequest) -> Result<CleanupResult, Stri
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repo_cleanup_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     if !valid_remote_operation_id(&request.operation_id) {
         return Err(GIT_CLEANUP_ERROR.to_string());
@@ -2682,39 +2738,102 @@ pub struct DependencyInventoryRequest {
     pub path: String,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn dependency_inventory(
     request: DependencyInventoryRequest,
+) -> Result<DependencyReport, String> {
+    let access = spawn_git_task(DEPENDENCY_LENS_ERROR, move || {
+        legacy_dependency_access(&request.path)
+    })
+    .await?;
+    dependency_inventory_with_access(access).await
+}
+
+pub(crate) fn legacy_dependency_access(
+    path: &str,
+) -> Result<crate::component::DependencyAccess, String> {
+    let context = validated_repository_context(path, DEPENDENCY_LENS_ERROR)?;
+    let repository =
+        repository_entry(&context.worktree).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+    Ok(crate::component::DependencyAccess::legacy_parts(
+        context.worktree.clone(),
+        repository.canonical_key,
+        move || revalidate_repository_context(&context, DEPENDENCY_LENS_ERROR),
+    ))
+}
+
+pub(crate) async fn dependency_inventory_with_access(
+    access: crate::component::DependencyAccess,
 ) -> Result<DependencyReport, String> {
     spawn_git_task(DEPENDENCY_LENS_ERROR, move || {
         let _analysis = dependency_analysis_lock()
             .try_lock()
             .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
-        let context = validated_repository_context(&request.path, DEPENDENCY_LENS_ERROR)?;
-        let repository =
-            repository_entry(&context.worktree).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
-        let mut report = analyze_repository(&context.worktree, Duration::from_secs(10))?;
-        revalidate_repository_context(&context, DEPENDENCY_LENS_ERROR)?;
-
-        // Publishing is derived-state best effort: a corrupt/unsafe snapshot
-        // must not hide the successfully parsed local inventory, and it must
-        // never be overwritten with a partial replacement.
+        access.verify()?;
+        let mut report = access.analyze(Duration::from_secs(10))?;
+        access.verify()?;
         let now_ms = now_epoch_ms();
-        let published = dependency_summary_entry(&repository.canonical_key, &report, now_ms)
+        let published = dependency_summary_entry(&access.key, &report, now_ms)
             .and_then(|entry| {
                 let _write = dependency_summary_write_lock()
                     .lock()
-                    .map_err(|_| "dependency summary writer를 사용할 수 없습니다".to_string())?;
-                publish_summary_in(&devbox_integration::integration_root(), entry, now_ms)
+                    .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+                access.verify()?;
+                if access.strict_cache {
+                    crate::core::dependency_lens::publish_summary_with(
+                        &access.common.join("integration"),
+                        entry,
+                        now_ms,
+                        |envelope, directory| {
+                            access.verify()?;
+                            // Create only descendants of the admitted, existing generation.
+                            // Retained handles detect replacement and never recreate its root.
+                            let mut parent = access.common.clone();
+                            let mut pins = Vec::new();
+                            for part in directory
+                                .strip_prefix(&access.common)
+                                .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?
+                            {
+                                parent.push(part);
+                                match fs::create_dir(&parent) {
+                                    Ok(()) => {}
+                                    Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                                    Err(_) => return Err(DEPENDENCY_LENS_ERROR.into()),
+                                }
+                                devbox_filesystem::ensure_no_links(&parent)
+                                    .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+                                let (handle, identity) =
+                                    devbox_filesystem::open_filesystem_object(&parent, true)
+                                        .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+                                pins.push((parent.clone(), handle, identity));
+                                access.verify()?;
+                            }
+                            for (path, _, identity) in &pins {
+                                if filesystem_identity(path, true)
+                                    .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?
+                                    != *identity
+                                {
+                                    return Err(DEPENDENCY_LENS_ERROR.into());
+                                }
+                            }
+                            access.verify()?;
+                            devbox_integration::write_atomic_existing(envelope, directory)
+                        },
+                    )?;
+                } else {
+                    publish_summary_in(&access.common.join("integration"), entry, now_ms)?;
+                }
+                access.verify()
             })
             .is_ok();
         report.summary_published = published;
+        access.verify()?;
         Ok(report)
     })
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_history(request: HistoryRequest) -> Result<HistoryResult, String> {
     if !(1..=MAX_HISTORY_LIMIT).contains(&request.limit) {
         return Err(GIT_VIEW_ERROR.to_string());
@@ -2731,7 +2850,7 @@ pub async fn repo_history(request: HistoryRequest) -> Result<HistoryResult, Stri
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_commit_detail(request: CommitDetailRequest) -> Result<CommitDetail, String> {
     let commit_id = validate_commit_id(&request.commit_id)?;
     spawn_git_task(GIT_VIEW_ERROR, move || {
@@ -2742,7 +2861,7 @@ pub async fn repo_commit_detail(request: CommitDetailRequest) -> Result<CommitDe
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_diff(request: DiffRequest) -> Result<DiffResult, String> {
     let (args, scope, commit_id) = match request.commit_id {
         Some(value) => {
@@ -2796,7 +2915,7 @@ pub struct CommitRequest {
     pub operation_id: String,
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_changes(request: RepoChangesRequest) -> Result<Vec<ChangeEntry>, String> {
     spawn_git_task(GIT_MUTATION_ERROR, move || {
         let path = validated_git_path(&request.path).map_err(|_| GIT_MUTATION_ERROR.to_string())?;
@@ -2806,7 +2925,7 @@ pub async fn repo_changes(request: RepoChangesRequest) -> Result<Vec<ChangeEntry
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_stage(request: StagePathsRequest) -> Result<(), String> {
     let paths = validated_selected_paths(&request.paths)?;
     let operation = begin_git_operation(
@@ -2838,7 +2957,7 @@ pub async fn repo_stage(request: StagePathsRequest) -> Result<(), String> {
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
     let paths = validated_selected_paths(&request.paths)?;
     let operation = begin_git_operation(
@@ -2871,7 +2990,7 @@ pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
     let message = validate_commit_message(&request.message)?;
     let operation = begin_git_operation(
@@ -2953,7 +3072,7 @@ async fn run_remote_request(
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_remote_status(request: RemoteSyncRequest) -> Result<RemoteState, String> {
     spawn_git_task(GIT_REMOTE_ERROR, move || {
         let context = validated_repository_context(&request.path, GIT_REMOTE_ERROR)?;
@@ -2962,17 +3081,17 @@ pub async fn repo_remote_status(request: RemoteSyncRequest) -> Result<RemoteStat
     .await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_fetch(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Fetch).await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_pull(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Pull).await
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_push(request: RemoteOperationRequest) -> Result<(), String> {
     run_remote_request(request, RemoteAction::Push).await
 }
@@ -2981,7 +3100,7 @@ pub async fn repo_push(request: RemoteOperationRequest) -> Result<(), String> {
 /// operation remains owned by its original command until the child exits, so
 /// a caller can safely ignore the result and rely on the command's fixed
 /// cancellation error. No Git command is run by this handler.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     // Cancellation is addressed only by the opaque ID. It deliberately does
     // not re-canonicalize or touch the repository path, so unmount/deletion
@@ -2995,7 +3114,7 @@ pub fn repo_remote_cancel(request: RemoteCancelRequest) -> Result<bool, String> 
 /// Cancel an in-flight selected stage/unstage/commit operation. The shared ID
 /// registry also prevents a local and remote operation from reusing one ID or
 /// mutating the same common Git directory concurrently.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repo_local_cancel(request: RemoteCancelRequest) -> Result<bool, String> {
     if !valid_remote_operation_id(&request.operation_id) {
         return Err(GIT_MUTATION_ERROR.to_string());
@@ -3013,12 +3132,13 @@ fn available_open_targets() -> Vec<RepoOpenTarget> {
 
 /// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
 /// 경로는 frontend에 노출하지 않는다.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_targets() -> Vec<RepoOpenTarget> {
     available_open_targets()
 }
 
 fn repository_entry(path: &Path) -> Result<RepoEntry, &'static str> {
+    source_root_before_io(path)?;
     let canonical = path
         .canonicalize()
         .map_err(|_| "repository를 찾을 수 없습니다")?;
@@ -3034,6 +3154,48 @@ fn repository_entry(path: &Path) -> Result<RepoEntry, &'static str> {
         canonical_key,
         has_worktrees: canonical.join(".git").join("worktrees").is_dir(),
     })
+}
+
+fn source_root_before_io(path: &Path) -> Result<(), &'static str> {
+    if let Some(policy) = devbox_git::execution::current() {
+        let spelling = host_path_spelling(path, "source_context_changed")
+            .map_err(|_| "source_context_changed")?;
+        policy
+            .admit(&GitTarget::native(spelling))
+            .map_err(|_| "source_context_changed")?;
+    }
+    Ok(())
+}
+fn source_metadata_before_io(
+    cwd: &Path,
+    path: &Path,
+    common_only: bool,
+) -> Result<(), &'static str> {
+    if let Some(policy) = devbox_git::execution::current() {
+        let spelling = host_path_spelling(cwd, "source_context_changed")
+            .map_err(|_| "source_context_changed")?;
+        let repository = policy
+            .admit(&GitTarget::native(spelling))
+            .map_err(|_| "source_context_changed")?;
+        let normalized = |path: &Path| -> Result<String, &'static str> {
+            let path = host_path_spelling(path, "source_context_changed")
+                .map_err(|_| "source_context_changed")?;
+            devbox_filesystem::parse_safe_project_path(&path)
+                .map(|path| path.identity().to_owned())
+                .ok_or("source_context_changed")
+        };
+        let path = normalized(path)?;
+        let common = normalized(&repository.common_dir)?;
+        let git = normalized(&repository.git_dir)?;
+        let child = |base: &str| {
+            path.strip_prefix(base)
+                .is_some_and(|rest| rest.starts_with(['/', '\\']))
+        };
+        if path != common && (common_only || !(path == git || child(&common) || child(&git))) {
+            return Err("source_context_changed");
+        }
+    }
+    Ok(())
 }
 
 fn validated_repository(path: &str) -> Result<RepoEntry, &'static str> {
@@ -3100,12 +3262,12 @@ fn is_device_path(path: &str) -> bool {
 
 /// Inbound Path를 임의 등록하거나 Git 명령을 실행하지 않고, 기존 목록 선택 또는
 /// frontend 등록 초안에 쓸 검증된 metadata로만 변환한다.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn prepare_inbound_repository(path: String) -> Result<RepoEntry, String> {
     validated_repository(&path).map_err(str::to_string)
 }
 
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn open_in(app_id: String, path: String) -> Result<(), String> {
     let app_id = app_id.to_lowercase();
     let target = available_open_targets()
@@ -3118,7 +3280,7 @@ pub fn open_in(app_id: String, path: String) -> Result<(), String> {
 }
 
 /// 사용자가 명시적으로 복사를 선택한 순간에만 현재 Git repository 경로를 반환한다.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub fn repository_copy_path(path: String) -> Result<String, String> {
     validated_repository(&path)
         .map(|entry| entry.path)
@@ -3127,12 +3289,408 @@ pub fn repository_copy_path(path: String) -> Result<String, String> {
 
 /// 현재도 유효한 Git repository만 OS file manager로 연다. opener 상세 오류와 raw path는
 /// frontend error에 반향하지 않는다.
-#[tauri::command]
+#[cfg_attr(feature = "desktop", tauri::command)]
+#[cfg(feature = "desktop")]
 pub fn open_repository_folder(app: tauri::AppHandle, path: String) -> Result<(), String> {
     let repository = validated_repository(&path).map_err(str::to_string)?;
     app.opener()
         .open_path(repository.path, None::<&str>)
         .map_err(|_| "repository 폴더를 열 수 없습니다".to_string())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_scan_root(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        root: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = scan_root(input.root)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_prepare_inbound_repository(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = prepare_inbound_repository(input.path)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_status(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_status(input.path).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_worktrees(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = worktrees(input.path).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_create_worktree(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        repo_path: String,
+        branch: String,
+        target_dir: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = create_worktree(input.repo_path, input.branch, input.target_dir).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_worktree_clean(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = worktree_clean(input.path).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_cleanup_preview(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: CleanupPreviewRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_cleanup_preview(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_cleanup(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: CleanupRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_cleanup(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_cleanup_cancel(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteCancelRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_cleanup_cancel(input.request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_preflight(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RepoPreflightRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_preflight(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_history(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: HistoryRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_history(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_commit_detail(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: CommitDetailRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_commit_detail(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_diff(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: DiffRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_diff(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_dependency_inventory(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: DependencyInventoryRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = dependency_inventory(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_changes(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RepoChangesRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_changes(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_stage(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: StagePathsRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    repo_stage(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_unstage(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: UnstagePathsRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    repo_unstage(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_commit(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: CommitRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    repo_commit(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_local_cancel(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteCancelRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_local_cancel(input.request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_remote_status(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteSyncRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_remote_status(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_fetch(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteOperationRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    repo_fetch(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_pull(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteOperationRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    repo_pull(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_push(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteOperationRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    repo_push(input.request).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_remote_cancel(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: RemoteCancelRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repo_remote_cancel(input.request)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_open_targets(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = open_targets();
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_open_in(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        app_id: String,
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    open_in(input.app_id, input.path)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repository_copy_path(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = repository_copy_path(input.path)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; the native host owns caller/session/owner admission.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_open_repository_folder(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    open_repository_folder(_component_app.clone(), input.path)?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
@@ -3248,7 +3806,7 @@ mod scan_tests {
             .success());
 
         let path = repo.to_string_lossy().into_owned();
-        let history = tauri::async_runtime::block_on(repo_history(HistoryRequest {
+        let history = crate::runtime::block_on(repo_history(HistoryRequest {
             path: path.clone(),
             limit: 5,
         }))
@@ -3257,7 +3815,7 @@ mod scan_tests {
         assert!(!history.has_more);
         let commit_id = history.entries[0].id.clone();
 
-        let detail = tauri::async_runtime::block_on(repo_commit_detail(CommitDetailRequest {
+        let detail = crate::runtime::block_on(repo_commit_detail(CommitDetailRequest {
             path: path.clone(),
             commit_id: commit_id.clone(),
         }))
@@ -3271,7 +3829,7 @@ mod scan_tests {
             "space before\nspace after\n",
         )
         .unwrap();
-        let working = tauri::async_runtime::block_on(repo_diff(DiffRequest {
+        let working = crate::runtime::block_on(repo_diff(DiffRequest {
             path: path.clone(),
             commit_id: None,
         }))
@@ -3286,7 +3844,7 @@ mod scan_tests {
             file.path == "folder b/foo bar.txt" && file.patch.contains("+space after")
         }));
 
-        let commit = tauri::async_runtime::block_on(repo_diff(DiffRequest {
+        let commit = crate::runtime::block_on(repo_diff(DiffRequest {
             path,
             commit_id: Some(commit_id),
         }))
@@ -3337,21 +3895,21 @@ mod scan_tests {
         let path = repo.to_string_lossy().into_owned();
 
         let initial =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
                 .unwrap();
         assert_eq!(initial.len(), 2);
         assert!(initial
             .iter()
             .all(|change| change.unstaged && !change.staged));
 
-        tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
+        crate::runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
             operation_id: "stage-selected-initial".to_string(),
         }))
         .unwrap();
         let after_stage =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
                 .unwrap();
         let selected = after_stage
             .iter()
@@ -3366,14 +3924,14 @@ mod scan_tests {
                 .unstaged
         );
 
-        tauri::async_runtime::block_on(repo_unstage(UnstagePathsRequest {
+        crate::runtime::block_on(repo_unstage(UnstagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
             operation_id: "unstage-selected-initial".to_string(),
         }))
         .unwrap();
         let after_unstage =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
                 .unwrap();
         let selected = after_unstage
             .iter()
@@ -3381,13 +3939,13 @@ mod scan_tests {
             .unwrap();
         assert!(!selected.staged && selected.unstaged);
 
-        tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
+        crate::runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
             operation_id: "stage-selected-commit".to_string(),
         }))
         .unwrap();
-        tauri::async_runtime::block_on(repo_commit(CommitRequest {
+        crate::runtime::block_on(repo_commit(CommitRequest {
             path: path.clone(),
             message: "Commit selected\nfixture".to_string(),
             operation_id: "commit-selected".to_string(),
@@ -3395,7 +3953,7 @@ mod scan_tests {
         .unwrap();
 
         let after_commit =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
                 .unwrap();
         assert_eq!(after_commit.len(), 1);
         assert_eq!(after_commit[0].path, "left-unstaged.txt");
@@ -3421,20 +3979,20 @@ mod scan_tests {
         assert!(!credential_store.exists());
 
         fs::write(repo.join("selected.txt"), "selected again\n").unwrap();
-        tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
+        crate::runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
             operation_id: "stage-selected-again".to_string(),
         }))
         .unwrap();
-        tauri::async_runtime::block_on(repo_unstage(UnstagePathsRequest {
+        crate::runtime::block_on(repo_unstage(UnstagePathsRequest {
             path: path.clone(),
             paths: vec!["selected.txt".to_string()],
             operation_id: "unstage-selected-again".to_string(),
         }))
         .unwrap();
         let after_head_unstage =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path })).unwrap();
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path })).unwrap();
         let selected = after_head_unstage
             .iter()
             .find(|change| change.path == "selected.txt")
@@ -3478,7 +4036,7 @@ mod scan_tests {
         fs::write(linked.join("untracked-secret.txt"), "fixture\n").unwrap();
 
         let path = repo.to_string_lossy().into_owned();
-        let preview = tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+        let preview = crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
             path: path.clone(),
             operation_id: "cleanup-preview-blocked".to_string(),
         }))
@@ -3509,7 +4067,7 @@ mod scan_tests {
         assert!(linked_entry.blocked.contains(&"locked".to_string()));
         assert!(linked_entry.blocked.contains(&"untracked".to_string()));
         let preview_revision = preview.revision.clone();
-        let blocked_result = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+        let blocked_result = crate::runtime::block_on(repo_cleanup(CleanupRequest {
             path: path.clone(),
             branch_names: vec!["merged-candidate".to_string()],
             worktree_paths: vec![linked_entry.path.clone()],
@@ -3535,7 +4093,7 @@ mod scan_tests {
         init_real_git_dir(&repo);
         git_fixture(&repo, &["symbolic-ref", "HEAD", "refs/heads/main"]);
 
-        let preview = tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+        let preview = crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
             path: repo.to_string_lossy().into_owned(),
             operation_id: "cleanup-preview-unborn".to_string(),
         }))
@@ -3585,7 +4143,7 @@ mod scan_tests {
             .to_string();
 
         let linked_preview =
-            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
                 path: linked.to_string_lossy().into_owned(),
                 operation_id: "cleanup-preview-linked-head".to_string(),
             }))
@@ -3603,7 +4161,7 @@ mod scan_tests {
         assert!(!linked_branch.candidate);
 
         let primary_preview =
-            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
                 path: repo.to_string_lossy().into_owned(),
                 operation_id: "cleanup-preview-primary-head".to_string(),
             }))
@@ -3705,12 +4263,12 @@ mod scan_tests {
         git_fixture(&repo, &["branch", "merged-candidate"]);
         let path = repo.to_string_lossy().into_owned();
 
-        let preview = tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+        let preview = crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
             path: path.clone(),
             operation_id: "cleanup-preview-main".to_string(),
         }))
         .unwrap();
-        let result = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+        let result = crate::runtime::block_on(repo_cleanup(CleanupRequest {
             path: path.clone(),
             branch_names: vec!["merged-candidate".to_string()],
             worktree_paths: Vec::new(),
@@ -3735,7 +4293,7 @@ mod scan_tests {
             ],
         );
         let linked_context_preview =
-            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
                 path: linked.to_string_lossy().into_owned(),
                 operation_id: "cleanup-preview-linked-context".to_string(),
             }))
@@ -3749,7 +4307,7 @@ mod scan_tests {
             .blocked
             .contains(&"currentWorktree".to_string()));
         let second_preview =
-            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
                 path: path.clone(),
                 operation_id: "cleanup-preview-linked-main".to_string(),
             }))
@@ -3761,7 +4319,7 @@ mod scan_tests {
             .unwrap()
             .path
             .clone();
-        let linked_result = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+        let linked_result = crate::runtime::block_on(repo_cleanup(CleanupRequest {
             path: path.clone(),
             branch_names: Vec::new(),
             worktree_paths: vec![linked_path],
@@ -3773,14 +4331,13 @@ mod scan_tests {
         assert!(!linked.exists());
 
         git_fixture(&repo, &["branch", "stale-candidate"]);
-        let stale_preview =
-            tauri::async_runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
-                path: path.clone(),
-                operation_id: "cleanup-preview-stale".to_string(),
-            }))
-            .unwrap();
+        let stale_preview = crate::runtime::block_on(repo_cleanup_preview(CleanupPreviewRequest {
+            path: path.clone(),
+            operation_id: "cleanup-preview-stale".to_string(),
+        }))
+        .unwrap();
         git_fixture(&repo, &["branch", "new-after-preview"]);
-        let error = tauri::async_runtime::block_on(repo_cleanup(CleanupRequest {
+        let error = crate::runtime::block_on(repo_cleanup(CleanupRequest {
             path,
             branch_names: vec!["stale-candidate".to_string()],
             worktree_paths: Vec::new(),
@@ -3817,7 +4374,7 @@ mod scan_tests {
         let path = repo.to_string_lossy().into_owned();
         let started = Instant::now();
         let worker = std::thread::spawn(move || {
-            tauri::async_runtime::block_on(repo_commit(CommitRequest {
+            crate::runtime::block_on(repo_commit(CommitRequest {
                 path,
                 message: "cancelled commit".to_string(),
                 operation_id: "cancel-local-commit".to_string(),
@@ -3852,7 +4409,7 @@ mod scan_tests {
 
         let path = repo.to_string_lossy().into_owned();
         let changes =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path: path.clone() }))
                 .unwrap();
         assert!(changes
             .iter()
@@ -3861,7 +4418,7 @@ mod scan_tests {
             .iter()
             .any(|change| change.path == "new-name.txt" && change.kind == "untracked"));
 
-        tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
+        crate::runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec!["old-name.txt".to_string(), "new-name.txt".to_string()],
             operation_id: "stage-rename".to_string(),
@@ -3870,7 +4427,7 @@ mod scan_tests {
         let cached = git_fixture(repo, &["diff", "--cached", "--name-status"]);
         assert_eq!(cached, "R100\told-name.txt\tnew-name.txt\n");
 
-        tauri::async_runtime::block_on(repo_unstage(UnstagePathsRequest {
+        crate::runtime::block_on(repo_unstage(UnstagePathsRequest {
             path: path.clone(),
             paths: vec!["new-name.txt".to_string()],
             operation_id: "unstage-rename".to_string(),
@@ -3879,7 +4436,7 @@ mod scan_tests {
         assert!(git_fixture(repo, &["diff", "--cached", "--name-status"]).is_empty());
 
         let after_unstage =
-            tauri::async_runtime::block_on(repo_changes(RepoChangesRequest { path })).unwrap();
+            crate::runtime::block_on(repo_changes(RepoChangesRequest { path })).unwrap();
         assert!(after_unstage
             .iter()
             .any(|change| change.path == "old-name.txt" && change.kind == "deleted"));
@@ -3912,7 +4469,7 @@ mod scan_tests {
         fs::write(repo.join("keep.txt"), "keep\n").unwrap();
         let path = repo.to_string_lossy().into_owned();
         let secret = "credential-path-secret";
-        let error = tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
+        let error = crate::runtime::block_on(repo_stage(StagePathsRequest {
             path: path.clone(),
             paths: vec![format!("../{secret}")],
             operation_id: "stage-invalid-parent".to_string(),
@@ -3921,7 +4478,7 @@ mod scan_tests {
         assert_eq!(error, GIT_MUTATION_ERROR);
         assert!(!error.contains(secret));
 
-        let error = tauri::async_runtime::block_on(repo_stage(StagePathsRequest {
+        let error = crate::runtime::block_on(repo_stage(StagePathsRequest {
             path: repo.to_string_lossy().into_owned(),
             paths: vec!["not-in-status.txt".to_string()],
             operation_id: "stage-invalid-selection".to_string(),
@@ -3930,7 +4487,7 @@ mod scan_tests {
         assert_eq!(error, GIT_MUTATION_ERROR);
         assert!(!error.contains("not-in-status.txt"));
 
-        let error = tauri::async_runtime::block_on(repo_commit(CommitRequest {
+        let error = crate::runtime::block_on(repo_commit(CommitRequest {
             path,
             message: format!("invalid\0{secret}"),
             operation_id: "commit-invalid-message".to_string(),
@@ -4114,10 +4671,9 @@ mod scan_tests {
             .success());
 
         let path = repo.to_string_lossy().into_owned();
-        let clean = tauri::async_runtime::block_on(repo_preflight(RepoPreflightRequest {
-            path: path.clone(),
-        }))
-        .unwrap();
+        let clean =
+            crate::runtime::block_on(repo_preflight(RepoPreflightRequest { path: path.clone() }))
+                .unwrap();
         assert!(!clean.dirty);
         assert!(clean.no_upstream);
         assert!(!clean.detached);
@@ -4127,10 +4683,9 @@ mod scan_tests {
         assert_eq!(clean.issues, vec!["noUpstream"]);
 
         fs::write(repo.join("untracked.txt"), "untracked\n").unwrap();
-        let dirty = tauri::async_runtime::block_on(repo_preflight(RepoPreflightRequest {
-            path: path.clone(),
-        }))
-        .unwrap();
+        let dirty =
+            crate::runtime::block_on(repo_preflight(RepoPreflightRequest { path: path.clone() }))
+                .unwrap();
         assert!(dirty.dirty);
         assert!(dirty.issues.contains(&"dirty".to_string()));
 
@@ -4140,19 +4695,17 @@ mod scan_tests {
             .status()
             .unwrap()
             .success());
-        let detached = tauri::async_runtime::block_on(repo_preflight(RepoPreflightRequest {
-            path: path.clone(),
-        }))
-        .unwrap();
+        let detached =
+            crate::runtime::block_on(repo_preflight(RepoPreflightRequest { path: path.clone() }))
+                .unwrap();
         assert!(detached.detached);
         assert!(!detached.no_upstream);
 
         fs::create_dir(repo.join(".git/rebase-merge")).unwrap();
         fs::write(repo.join(".git/MERGE_HEAD"), "marker\n").unwrap();
-        let in_progress = tauri::async_runtime::block_on(repo_preflight(RepoPreflightRequest {
-            path: path.clone(),
-        }))
-        .unwrap();
+        let in_progress =
+            crate::runtime::block_on(repo_preflight(RepoPreflightRequest { path: path.clone() }))
+                .unwrap();
         assert!(in_progress.rebase_in_progress);
         assert!(in_progress.merge_in_progress);
 
@@ -4173,7 +4726,7 @@ mod scan_tests {
     fn preflight_failures_are_fixed_and_do_not_reflect_unmounted_or_secret_paths() {
         let tmp = tempfile::tempdir().unwrap();
         let secret = "unmounted-credential-path";
-        let error = tauri::async_runtime::block_on(repo_preflight(RepoPreflightRequest {
+        let error = crate::runtime::block_on(repo_preflight(RepoPreflightRequest {
             path: tmp.path().join(secret).to_string_lossy().into_owned(),
         }))
         .unwrap_err();
@@ -4365,14 +4918,13 @@ mod scan_tests {
         git_fixture(repo, &["commit", "--quiet", "-m", "fixture"]);
         let path = repo.to_string_lossy().into_owned();
 
-        let status = tauri::async_runtime::block_on(repo_remote_status(RemoteSyncRequest {
-            path: path.clone(),
-        }))
-        .unwrap();
+        let status =
+            crate::runtime::block_on(repo_remote_status(RemoteSyncRequest { path: path.clone() }))
+                .unwrap();
         assert!(status.current_branch.is_some());
         assert!(status.upstream.is_none());
 
-        let error = tauri::async_runtime::block_on(repo_pull(remote_operation_request(
+        let error = crate::runtime::block_on(repo_pull(remote_operation_request(
             path,
             "no-upstream-pull",
         )))
@@ -4407,7 +4959,7 @@ mod scan_tests {
         git_fixture(&updater, &["config", "user.name", "Remote Fixture"]);
         let local_path = local.to_string_lossy().into_owned();
 
-        let initial = tauri::async_runtime::block_on(repo_remote_status(RemoteSyncRequest {
+        let initial = crate::runtime::block_on(repo_remote_status(RemoteSyncRequest {
             path: local_path.clone(),
         }))
         .unwrap();
@@ -4482,7 +5034,7 @@ mod scan_tests {
         // Pull/push never start with uncommitted work in the working tree.
         fs::write(local.join("uncommitted.txt"), "dirty\n").unwrap();
         assert_eq!(
-            tauri::async_runtime::block_on(repo_pull(remote_operation_request(
+            crate::runtime::block_on(repo_pull(remote_operation_request(
                 local_path.clone(),
                 "dirty-pull",
             )))
@@ -4490,7 +5042,7 @@ mod scan_tests {
             "working tree에 변경 사항이 있어 pull/push를 실행할 수 없습니다."
         );
         assert_eq!(
-            tauri::async_runtime::block_on(repo_push(remote_operation_request(
+            crate::runtime::block_on(repo_push(remote_operation_request(
                 local_path.clone(),
                 "dirty-push",
             )))
@@ -4506,7 +5058,7 @@ mod scan_tests {
             .to_owned();
         git_fixture(&local, &["checkout", "--quiet", "--detach", "HEAD"]);
         assert_eq!(
-            tauri::async_runtime::block_on(repo_pull(remote_operation_request(
+            crate::runtime::block_on(repo_pull(remote_operation_request(
                 local_path.clone(),
                 "detached-pull",
             )))
@@ -4514,7 +5066,7 @@ mod scan_tests {
             "현재 HEAD가 detached 상태라 pull/push를 실행할 수 없습니다."
         );
         assert_eq!(
-            tauri::async_runtime::block_on(repo_push(remote_operation_request(
+            crate::runtime::block_on(repo_push(remote_operation_request(
                 local_path.clone(),
                 "detached-push",
             )))
@@ -4529,17 +5081,17 @@ mod scan_tests {
         git_fixture(&updater, &["add", "fixture.txt"]);
         git_fixture(&updater, &["commit", "--quiet", "-m", "remote update"]);
         git_fixture(&updater, &["push", "--quiet"]);
-        tauri::async_runtime::block_on(repo_fetch(remote_operation_request(
+        crate::runtime::block_on(repo_fetch(remote_operation_request(
             local_path.clone(),
             "ff-fetch",
         )))
         .unwrap();
-        let before_pull = tauri::async_runtime::block_on(repo_remote_status(RemoteSyncRequest {
+        let before_pull = crate::runtime::block_on(repo_remote_status(RemoteSyncRequest {
             path: local_path.clone(),
         }))
         .unwrap();
         assert_eq!(before_pull.behind, 1);
-        tauri::async_runtime::block_on(repo_pull(remote_operation_request(
+        crate::runtime::block_on(repo_pull(remote_operation_request(
             local_path.clone(),
             "ff-pull",
         )))
@@ -4555,7 +5107,7 @@ mod scan_tests {
         fs::write(local.join("fixture.txt"), "base\nremote\nlocal\n").unwrap();
         git_fixture(&local, &["add", "fixture.txt"]);
         git_fixture(&local, &["commit", "--quiet", "-m", "local update"]);
-        tauri::async_runtime::block_on(repo_push(remote_operation_request(
+        crate::runtime::block_on(repo_push(remote_operation_request(
             local_path.clone(),
             "normal-push",
         )))
@@ -4576,18 +5128,18 @@ mod scan_tests {
         fs::write(local.join("fixture.txt"), "base\nremote\nlocal\nlocal-2\n").unwrap();
         git_fixture(&local, &["add", "fixture.txt"]);
         git_fixture(&local, &["commit", "--quiet", "-m", "local update 2"]);
-        tauri::async_runtime::block_on(repo_fetch(remote_operation_request(
+        crate::runtime::block_on(repo_fetch(remote_operation_request(
             local_path.clone(),
             "diverged-fetch",
         )))
         .unwrap();
-        let diverged = tauri::async_runtime::block_on(repo_remote_status(RemoteSyncRequest {
+        let diverged = crate::runtime::block_on(repo_remote_status(RemoteSyncRequest {
             path: local_path.clone(),
         }))
         .unwrap();
         assert!(diverged.diverged);
         assert_eq!(
-            tauri::async_runtime::block_on(repo_pull(remote_operation_request(
+            crate::runtime::block_on(repo_pull(remote_operation_request(
                 local_path.clone(),
                 "diverged-pull",
             )))
@@ -4595,7 +5147,7 @@ mod scan_tests {
             "branch가 diverged 상태라 fast-forward pull/push를 실행할 수 없습니다."
         );
         assert_eq!(
-            tauri::async_runtime::block_on(repo_push(remote_operation_request(
+            crate::runtime::block_on(repo_push(remote_operation_request(
                 local_path,
                 "diverged-push",
             )))
@@ -4626,12 +5178,11 @@ mod scan_tests {
         };
         fs::write(git_dir, "0000000000000000000000000000000000000000\n").unwrap();
         let path = repo.to_string_lossy().into_owned();
-        let status = tauri::async_runtime::block_on(repo_remote_status(RemoteSyncRequest {
-            path: path.clone(),
-        }))
-        .unwrap();
+        let status =
+            crate::runtime::block_on(repo_remote_status(RemoteSyncRequest { path: path.clone() }))
+                .unwrap();
         assert!(status.operation_in_progress);
-        let error = tauri::async_runtime::block_on(repo_fetch(remote_operation_request(
+        let error = crate::runtime::block_on(repo_fetch(remote_operation_request(
             path,
             "in-progress-fetch",
         )))
@@ -4840,7 +5391,7 @@ mod scan_tests {
         assert!(linked_state.operation_in_progress);
         let blocked_target = tmp.path().join("blocked-worktree");
         assert_eq!(
-            tauri::async_runtime::block_on(create_worktree(
+            crate::runtime::block_on(create_worktree(
                 main.to_string_lossy().into_owned(),
                 "blocked-worktree-fixture".to_string(),
                 blocked_target.to_string_lossy().into_owned(),

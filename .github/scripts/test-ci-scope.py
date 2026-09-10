@@ -55,10 +55,10 @@ assert pnpm_lock_only.dependency_scope == "all"
 
 editor = resolve("packages/editor/src/index.ts")
 assert editor.frontend_packages == [
-    "apps/code-pad", "apps/devbox-knowledge", "apps/everything-plus", "apps/knowledge-base", "apps/life-log",
-    "packages/editor", "packages/knowledge-features",
+    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/repo-manager",
+    "apps/workbench", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
 ]
-assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "everything-plus", "knowledge-base", "life-log"]
+assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
 knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
 assert knowledge_features.frontend_apps == ["devbox-knowledge", "everything-plus", "knowledge-base", "life-log"]
 
@@ -96,15 +96,23 @@ secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == [
     "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
     "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
-    "secrets", "workbench",
+    "secrets", "workbench", "workspace-wsl",
 ]
 
+native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
+assert native_helper.frontend_scope == "none"
+assert native_helper.rust_packages == ["devbox-workspace", "workspace-wsl"]
+helper_manifest = resolve("apps/devbox-workspace/native/Cargo.toml")
+assert helper_manifest.dependency_scope == "all"
+assert helper_manifest.rust_packages == native_helper.rust_packages
 rust_graph = module.load_rust_graph(ROOT)
+assert rust_graph.nodes["workspace-wsl"].kind == "crate"
 wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["devbox-knowledge", "devbox-launcher", "devbox-manager", "everything-plus", "knowledge-base", "life-log", "repo-manager"]
+assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
+assert "packages/workspace-features" in catalog.frontend_packages
 assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages
 assert "launch" in catalog.rust_packages

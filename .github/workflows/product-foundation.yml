@@ -27,6 +27,8 @@ on:
       - 'Cargo.lock'
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/scripts/windows-workspace-*'
+      - '.github/scripts/workspace-wsl-*'
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-knowledge-migration.mjs'
       - '.github/scripts/windows-knowledge-wsl.*'
@@ -61,7 +63,53 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  workspace-wsl-helper:
+    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    name: Workspace static WSL helper
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    env:
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-wsl-musl
+      - name: Prepare static Linux compiler
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Test and build native helper
+        run: |
+          node --test .github/scripts/workspace-wsl-artifact.test.mjs
+          cargo test --locked -p workspace-wsl --features test-fixtures --target x86_64-unknown-linux-musl
+          cargo build --locked --release -p workspace-wsl --target x86_64-unknown-linux-musl
+          cargo build --locked --release -p workspace-wsl --features test-fixtures --bin workspace-lsp-fixture --target x86_64-unknown-linux-musl
+          node .github/scripts/workspace-wsl-artifact.mjs prepare target/x86_64-unknown-linux-musl/release/devbox-workspace-wsl "$GITHUB_SHA"
+          node .github/scripts/workspace-wsl-artifact.mjs verify "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl-${{ github.sha }}
+          path: |
+            apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl
+            apps/devbox-workspace/src-tauri/resources/wsl/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workspace-lsp-fixture-${{ github.sha }}
+          path: target/x86_64-unknown-linux-musl/release/workspace-lsp-fixture
+          if-no-files-found: error
+          retention-days: 7
+
   windows:
+    needs: workspace-wsl-helper
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
     name: Hidden products (Windows native)
     runs-on: windows-2025
@@ -83,18 +131,128 @@ jobs:
         with:
           shared-key: devbox-product-foundation
       - run: pnpm install --frozen-lockfile
+      - name: Check generated Workspace fixture requests
+        run: node --test .github/scripts/windows-workspace-registration.test.mjs
+      - name: Check native Workspace chooser driver
+        shell: powershell
+        run: .github/scripts/windows-workspace-file-dialog.test.ps1
+      - uses: actions/download-artifact@v8
+        with:
+          name: workspace-wsl-${{ github.sha }}
+          path: apps/devbox-workspace/src-tauri/resources/wsl
+      - uses: actions/download-artifact@v8
+        with:
+          name: workspace-lsp-fixture-${{ github.sha }}
+          path: target/native-lsp-fixture
+      - name: Select separate test-only native LSP server
+        shell: pwsh
+        run: '"DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV'
+      - name: Verify helper belongs to this product source
+        run: node .github/scripts/workspace-wsl-artifact.mjs verify "${{ github.sha }}"
+      - name: Prepare dedicated WSL1 filesystem fixture
+        if: ${{ !cancelled() }}
+        timeout-minutes: 10
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Inspect only the owned WSL backing path
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: .github/scripts/windows-workspace-wsl-storage.ps1
+      - name: Preserve WSL storage metadata before native tests
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl-preflight-${{ github.run_id }}
+          path: product-foundation-evidence/workspace-wsl-storage.json
+          if-no-files-found: error
+          retention-days: 7
+      - name: Provision Git only in the owned WSL fixture
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: .github/scripts/windows-workspace-wsl-git.ps1
+      - name: Exercise packaged Workspace helper on owned WSL
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-native.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p devbox-workspace --lib source_host::tests::owned_wsl_source_review_preserves_native_approval_and_changed_evidence -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source.log
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cargo test -p devbox-workspace --lib source_host::wsl_execution_tests::owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source-execution.log
+          exit $LASTEXITCODE
+      - name: Preserve native WSL results before independent acceptance
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl-runtime-${{ github.run_id }}
+          path: product-foundation-evidence/workspace-wsl-*
+          if-no-files-found: error
+          retention-days: 7
+      - name: Run native authority and WAL fixtures on Windows
+        if: ${{ !cancelled() }}
+        shell: pwsh
+        run: |
+          cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2 2>&1 | Tee-Object -FilePath product-foundation-evidence/native-authority.log
+          exit $LASTEXITCODE
+      - name: Preserve authority results before product packaging
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-native-authority-${{ github.run_id }}
+          path: product-foundation-evidence/native-authority.log
+          if-no-files-found: error
+          retention-days: 7
       - name: Build unpublished product installers
         id: product-build
+        if: ${{ !cancelled() }}
         shell: pwsh
         run: |
           foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
             pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
-      - name: Run native authority and WAL fixtures on Windows
-        run: cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -- --test-threads=2
       - name: Exercise packaged shell and installation namespace isolation
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
+      - name: Export Workspace build for owned local WSL2 WebView acceptance
+        id: workspace-export
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture'
+          if (Test-Path $destination) { throw 'Fixture export destination already exists' }
+          New-Item -ItemType Directory -Path (Join-Path $destination 'resources/wsl') -Force | Out-Null
+          $files = [ordered]@{
+            'devbox-workspace.exe' = 'target/debug/devbox-workspace.exe'
+            'resources/wsl/devbox-workspace-wsl' = 'apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl'
+            'resources/wsl/manifest.json' = 'apps/devbox-workspace/src-tauri/resources/wsl/manifest.json'
+            'THIRD_PARTY_NOTICES.md' = 'THIRD_PARTY_NOTICES.md'
+          }
+          $records = @()
+          foreach ($entry in $files.GetEnumerator()) {
+            $target = Join-Path $destination $entry.Key
+            Copy-Item -LiteralPath $entry.Value -Destination $target -ErrorAction Stop
+            $records += @{ path = $entry.Key; size = (Get-Item -LiteralPath $target).Length; sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          @{ schemaVersion = 1; purpose = 'owned-workspace-webview-acceptance'; sourceSha = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT; platform = 'windows-x86_64'; buildProfile = 'debug'; files = $records } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $destination 'fixture.json') -Encoding utf8
+      - name: Preserve Workspace acceptance executable for one day
+        if: ${{ !cancelled() && steps.workspace-export.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-webview-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/workspace-webview-fixture
+          retention-days: 1
+          if-no-files-found: error
+      - name: Preserve packaged shell results before migration acceptance
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: product-packaged-shell-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
+          retention-days: 7
       - name: Verify API Studio migration from pinned legacy storage
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:
@@ -106,11 +264,6 @@ jobs:
       - name: Verify API Studio end-to-end local workflow
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-workflow.mjs
-      - name: Prepare dedicated WSL1 filesystem fixture
-        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
-        timeout-minutes: 10
-        shell: pwsh
-        run: .github/scripts/windows-knowledge-wsl.ps1
       - name: Verify Knowledge migration, vault ownership and window lifetime
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:

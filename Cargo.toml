@@ -4,6 +4,7 @@ resolver = "2"
 # 예:
 members = [
     "apps/devbox-workspace/src-tauri",
+    "apps/devbox-workspace/native",
     "apps/devbox-api-studio/src-tauri",
     "apps/devbox-knowledge/src-tauri",
     "apps/devbox-control-center/src-tauri",

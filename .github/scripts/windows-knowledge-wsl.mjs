@@ -20,11 +20,21 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   const alternateCorpus = `${alternate}-indexed`;
   const posixCorpus = "/home/devbox-fixture/한글 project-indexed";
   const posixMoved = `${posixCorpus}-temporarily-unavailable`;
-  const moveCorpus = (from, to) => {
-    const moved = spawnSync("wsl.exe", ["--distribution", distro, "--user", "root", "--exec", "/bin/mv", "-T", "--", from, to], { encoding: "utf8", windowsHide: true, timeout: 30_000 });
-    if (moved.status !== 0) evidence.wsl.moveFailure = { status: moved.status, signal: moved.signal,
-      error: moved.error?.code, stderr: (moved.stderr ?? "").slice(0, 2048), stdout: (moved.stdout ?? "").slice(0, 512) };
-    assert.equal(moved.status, 0, `Owned WSL corpus move failed: ${JSON.stringify(evidence.wsl.moveFailure)}`);
+  const moveCorpus = async (from, to) => {
+    // Only this exclusively owned corpus is moved. WSL1 can retain Windows
+    // redirector handles briefly after native source retirement has drained.
+    // Retry an explicit, unchanged permission-denied rename; a timeout, signal
+    // or another failure has an ambiguous result and must not be repeated.
+    const end = performance.now() + 10_000;
+    for (let attempt = 1; ; attempt++) {
+      const moved = spawnSync("wsl.exe", ["--distribution", distro, "--user", "root", "--exec", "/bin/mv", "-T", "--", from, to], { encoding: "utf8", windowsHide: true, timeout: Math.max(1, Math.ceil(end - performance.now())) });
+      if (moved.status === 0) { evidence.wsl.moveAttempts = [...(evidence.wsl.moveAttempts ?? []), attempt]; return; }
+      evidence.wsl.moveFailure = { status: moved.status, signal: moved.signal,
+        error: moved.error?.code, stderr: (moved.stderr ?? "").slice(0, 2048), stdout: (moved.stdout ?? "").slice(0, 512) };
+      const retry = moved.status === 1 && !moved.signal && !moved.error && (moved.stderr ?? "").trimEnd().endsWith(": Permission denied");
+      if (!retry || performance.now() + 200 >= end) assert.equal(moved.status, 0, `Owned WSL corpus move failed: ${JSON.stringify(evidence.wsl.moveFailure)}`);
+      await delay(200);
+    }
   };
   mkdirSync(root); mkdirSync(notes); mkdirSync(corpus);
   writeFileSync(path.join(notes, "Case.md"), "# Upper case\nWSL preserved content\n", { flag: "wx" });
@@ -126,7 +136,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   // Move inside the owned distro: Windows UNC directory rename can fail with
   // EPERM while previously verified remote objects are being retired. A Linux
   // move models the source changing independently of the Windows client.
-  moveCorpus(posixCorpus, posixMoved);
+  await moveCorpus(posixCorpus, posixMoved);
   try {
     succeeded(await command(item, "knowledge.search-settings", "index_now"));
     await eventually(async () => {
@@ -148,7 +158,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
     const local = await sourceQuery(item, "files", "fixturesearch0001");
     assert.ok(local.rows.some(r => r.availability === "available")); await cancel(local);
     evidence.wsl.unavailableRootKeptLastGoodAndLocalSource = true;
-  } finally { moveCorpus(posixMoved, posixCorpus); }
+  } finally { await moveCorpus(posixMoved, posixCorpus); }
   unlinkSync(path.join(corpus, "wslfixture0001.txt"));
   writeFileSync(path.join(corpus, "wslfixture0500.txt"), "reconnected fixture\n", { flag: "wx" });
   // No explicit index_now: the existing WSL polling owner must reconcile the

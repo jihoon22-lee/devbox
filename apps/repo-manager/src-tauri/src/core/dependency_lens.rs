@@ -36,8 +36,8 @@ const MAX_SUMMARY_ENTRIES: usize = 256;
 const MAX_SUMMARY_AGE_MS: u64 = 90 * 24 * 60 * 60 * 1_000;
 const MAX_CLOCK_SKEW_MS: u64 = 5 * 60 * 1_000;
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub enum DependencyEcosystem {
     Cargo,
     Pnpm,
@@ -58,8 +58,8 @@ impl DependencyEcosystem {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub enum DependencySourceStatus {
     Ready,
     MissingLockfile,
@@ -68,8 +68,8 @@ pub enum DependencySourceStatus {
     Unsupported,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DependencySource {
     pub ecosystem: DependencyEcosystem,
     /// Repository-relative manifest or lockfile path. Absolute paths never
@@ -82,8 +82,8 @@ pub struct DependencySource {
     pub direct_count: usize,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DependencyPackage {
     pub id: String,
     pub ecosystem: DependencyEcosystem,
@@ -95,16 +95,16 @@ pub struct DependencyPackage {
     pub dependencies: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DuplicateDependency {
     pub ecosystem: DependencyEcosystem,
     pub name: String,
     pub versions: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
-#[serde(rename_all = "camelCase")]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct DependencyReport {
     pub revision: String,
     pub sources: Vec<DependencySource>,
@@ -230,8 +230,16 @@ struct DependencyCollection<'a> {
 }
 
 pub fn analyze_repository(root: &Path, budget: Duration) -> Result<DependencyReport, String> {
+    analyze_repository_with_admission(root, budget, &|_| Ok(()))
+}
+
+pub fn analyze_repository_with_admission(
+    root: &Path,
+    budget: Duration,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
+) -> Result<DependencyReport, String> {
     let deadline = Instant::now() + budget;
-    let discovery = discover_inputs(root, deadline)?;
+    let discovery = discover_inputs(root, deadline, admit)?;
     let revision = input_revision(&discovery.files, &discovery.problems);
     let mut nodes = Vec::new();
     let mut sources = Vec::new();
@@ -379,6 +387,82 @@ pub fn analyze_repository(root: &Path, budget: Duration) -> Result<DependencyRep
         truncated,
         summary_published: false,
     })
+}
+
+pub(crate) fn decode_native_report(value: serde_json::Value) -> Result<DependencyReport, String> {
+    let report: DependencyReport =
+        serde_json::from_value(value).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
+    let valid_path = |path: &str| {
+        !path.is_empty()
+            && path.len() <= MAX_RELATIVE_PATH_BYTES
+            && !path.starts_with('/')
+            && !path.contains('\\')
+            && !path.chars().any(char::is_control)
+            && path.split('/').all(|part| !matches!(part, "" | "." | ".."))
+    };
+    if report.revision.len() != 71
+        || !report.revision.starts_with("sha256:")
+        || !report.revision[7..]
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        || report.summary_published
+        || report.packages.len() > MAX_PACKAGES
+        || report.sources.len() > MAX_INPUT_FILES
+        || report.duplicates.len() > MAX_PACKAGES
+        || report.unresolved_dependency_count > MAX_EDGES
+        || report.package_count != report.packages.len()
+        || report.direct_count
+            != report
+                .packages
+                .iter()
+                .filter(|package| package.direct)
+                .count()
+        || report.transitive_count != report.package_count.saturating_sub(report.direct_count)
+        || report.missing_lockfile_count
+            != count_status(&report.sources, DependencySourceStatus::MissingLockfile)
+        || report.stale_lockfile_count
+            != count_status(&report.sources, DependencySourceStatus::StaleLockfile)
+        || report.unsupported_count
+            != count_status(&report.sources, DependencySourceStatus::Unsupported)
+        || report.invalid_count != count_status(&report.sources, DependencySourceStatus::Invalid)
+        || report.sources.iter().any(|source| {
+            !valid_path(&source.path)
+                || source.manifest_count > MAX_INPUT_FILES
+                || source.lockfile_count > MAX_INPUT_FILES
+                || source.package_count > MAX_PACKAGES
+                || source.direct_count > source.package_count
+        })
+    {
+        return Err(DEPENDENCY_LENS_ERROR.into());
+    }
+    let mut ids = HashSet::new();
+    let mut edges = 0usize;
+    for package in &report.packages {
+        if checked_package_name(&package.name).is_err()
+            || checked_version_text(&package.version).is_err()
+            || package.id != node_id(package.ecosystem, &package.name, &package.version)
+            || !ids.insert(&package.id)
+        {
+            return Err(DEPENDENCY_LENS_ERROR.into());
+        }
+        edges = edges
+            .checked_add(package.dependencies.len())
+            .ok_or(DEPENDENCY_LENS_ERROR)?;
+        if edges > MAX_EDGES {
+            return Err(DEPENDENCY_LENS_ERROR.into());
+        }
+    }
+    if report.packages.iter().any(|package| {
+        let mut seen = HashSet::new();
+        package
+            .dependencies
+            .iter()
+            .any(|id| !ids.contains(id) || !seen.insert(id))
+    }) || report.duplicates != duplicate_versions(&report.packages)
+    {
+        return Err(DEPENDENCY_LENS_ERROR.into());
+    }
+    Ok(report)
 }
 
 fn count_status(sources: &[DependencySource], status: DependencySourceStatus) -> usize {
@@ -562,7 +646,12 @@ fn append_parsed_source(
     }
 }
 
-fn discover_inputs(root: &Path, deadline: Instant) -> Result<InputDiscovery, String> {
+fn discover_inputs(
+    root: &Path,
+    deadline: Instant,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
+) -> Result<InputDiscovery, String> {
+    admit(root)?;
     if !root.is_absolute() || !root.is_dir() {
         return Err(DEPENDENCY_LENS_ERROR.into());
     }
@@ -578,6 +667,7 @@ fn discover_inputs(root: &Path, deadline: Instant) -> Result<InputDiscovery, Str
         &mut visited,
         &mut total_bytes,
         &mut discovery,
+        admit,
     )?;
     discovery
         .files
@@ -597,6 +687,7 @@ fn walk_inputs(
     visited: &mut usize,
     total_bytes: &mut usize,
     discovery: &mut InputDiscovery,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
 ) -> Result<(), String> {
     if Instant::now() >= deadline {
         discovery.truncated = true;
@@ -607,6 +698,10 @@ fn walk_inputs(
         return Ok(());
     }
     *visited += 1;
+    if admit(directory).is_err() || (depth > 0 && admit(&directory.join(".git")).is_err()) {
+        discovery.truncated = true;
+        return Ok(());
+    }
     if depth > 0 && directory.join(".git").exists() {
         return Ok(());
     }
@@ -645,6 +740,19 @@ fn walk_inputs(
             break;
         }
         let path = entry.path();
+        // These names never contribute dependency inputs. Skip them before
+        // native admission, including ordinary package-manager link directories.
+        if path
+            .file_name()
+            .and_then(|name| name.to_str())
+            .is_some_and(|name| name == ".git" || devbox_filesystem::is_ignored_dir(name))
+        {
+            continue;
+        }
+        if admit(&path).is_err() {
+            discovery.truncated = true;
+            continue;
+        }
         let metadata = match std::fs::symlink_metadata(&path) {
             Ok(metadata) => metadata,
             Err(_) => {
@@ -671,6 +779,7 @@ fn walk_inputs(
                 visited,
                 total_bytes,
                 discovery,
+                admit,
             )?;
             continue;
         }
@@ -707,7 +816,7 @@ fn walk_inputs(
             discovery.truncated = true;
             continue;
         }
-        match read_input_file(&path, relative.clone(), deadline) {
+        match read_input_file(&path, relative.clone(), deadline, admit) {
             Ok(file) => {
                 *total_bytes = total_bytes.saturating_add(file.bytes.len());
                 discovery.files.push(file);
@@ -724,7 +833,13 @@ fn walk_inputs(
     Ok(())
 }
 
-fn read_input_file(path: &Path, relative: String, deadline: Instant) -> Result<InputFile, String> {
+fn read_input_file(
+    path: &Path,
+    relative: String,
+    deadline: Instant,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
+) -> Result<InputFile, String> {
+    admit(path)?;
     devbox_filesystem::ensure_no_links(path).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
     let (mut file, identity) = devbox_filesystem::open_filesystem_object(path, false)
         .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
@@ -752,6 +867,7 @@ fn read_input_file(path: &Path, relative: String, deadline: Instant) -> Result<I
             return Err(DEPENDENCY_LENS_ERROR.into());
         }
     }
+    admit(path)?;
     devbox_filesystem::ensure_no_links(path).map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
     if devbox_filesystem::filesystem_identity(path, false)
         .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?
@@ -1882,6 +1998,20 @@ pub fn publish_summary_in(
     entry: DependencySummaryEntry,
     now_ms: u64,
 ) -> Result<(), String> {
+    publish_summary_with(
+        integration_root,
+        entry,
+        now_ms,
+        devbox_integration::write_atomic,
+    )
+}
+
+pub fn publish_summary_with(
+    integration_root: &Path,
+    entry: DependencySummaryEntry,
+    now_ms: u64,
+    write: impl FnOnce(&devbox_integration::Envelope, &Path) -> Result<(), String>,
+) -> Result<(), String> {
     validate_summary_entry(&entry, now_ms)?;
     let mut views = match devbox_integration::read_snapshot_in(
         integration_root,
@@ -1948,7 +2078,7 @@ pub fn publish_summary_in(
         env!("CARGO_PKG_VERSION"),
         views,
     );
-    devbox_integration::write_atomic(
+    write(
         &envelope,
         &devbox_integration::snapshot_dir_in(
             integration_root,
@@ -2030,6 +2160,82 @@ mod tests {
     use super::*;
     use std::fs;
     use tempfile::tempdir;
+
+    #[test]
+    fn native_inventory_rejects_paths_coordinates_and_graphs_the_scanner_cannot_produce() {
+        let root = tempdir().unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"local\"\nversion = \"0.1.0\"\n[dependencies]\nfixture = \"1\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("Cargo.lock"),
+            "version = 3\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\n",
+        )
+        .unwrap();
+        fs::write(root.path().join("build.gradle"), "plugins {}\n").unwrap();
+        let report = analyze_repository(root.path(), Duration::from_secs(2)).unwrap();
+        let value = serde_json::to_value(&report).unwrap();
+        assert_eq!(decode_native_report(value.clone()).unwrap(), report);
+        for path in ["../Cargo.lock", "/outside/Cargo.lock", "dir\\Cargo.lock"] {
+            let mut invalid = value.clone();
+            invalid["sources"][0]["path"] = serde_json::json!(path);
+            assert!(decode_native_report(invalid).is_err());
+        }
+        let mut invalid = value.clone();
+        invalid["packages"][0]["name"] = serde_json::json!("https://private.invalid/secret");
+        assert!(decode_native_report(invalid).is_err());
+        let mut invalid = value.clone();
+        invalid["packages"][0]["dependencies"] = serde_json::json!(["cargo:unknown@1.0.0"]);
+        assert!(decode_native_report(invalid).is_err());
+        for (field, bad) in [
+            ("packageCount", serde_json::json!(9999)),
+            ("summaryPublished", serde_json::json!(true)),
+            ("unknown", serde_json::json!(true)),
+        ] {
+            let mut invalid = value.clone();
+            invalid[field] = bad;
+            assert!(decode_native_report(invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn native_admission_precedes_discovery_and_denied_subtrees_leave_a_bounded_partial_report() {
+        let root = tempdir().unwrap();
+        let blocked = root.path().join("blocked");
+        fs::create_dir(&blocked).unwrap();
+        fs::write(blocked.join("Cargo.lock"), "unreadable native input").unwrap();
+        fs::write(
+            root.path().join("package.json"),
+            "{\"name\":\"fixture\",\"dependencies\":{}}",
+        )
+        .unwrap();
+        let seen = std::cell::RefCell::new(Vec::new());
+        let report =
+            analyze_repository_with_admission(root.path(), Duration::from_secs(2), &|path| {
+                seen.borrow_mut().push(path.to_path_buf());
+                if path.starts_with(&blocked) {
+                    Err("denied".into())
+                } else {
+                    Ok(())
+                }
+            })
+            .unwrap();
+        assert!(report.truncated);
+        assert_eq!(report.sources.len(), 1);
+        assert_eq!(report.sources[0].path, "package.json");
+        assert!(!seen
+            .borrow()
+            .iter()
+            .any(|path| path == &blocked.join("Cargo.lock")));
+        assert!(
+            analyze_repository_with_admission(root.path(), Duration::from_secs(2), &|_| Err(
+                "root denied".into()
+            ))
+            .is_err()
+        );
+    }
 
     #[test]
     fn parses_cargo_lock_and_marks_manifest_dependencies_direct() {
@@ -2525,8 +2731,12 @@ version = "2.0.0"
             file.set_len(MAX_FILE_BYTES as u64 + 1).unwrap();
         }
 
-        let discovery =
-            discover_inputs(root.path(), Instant::now() + Duration::from_secs(5)).unwrap();
+        let discovery = discover_inputs(
+            root.path(),
+            Instant::now() + Duration::from_secs(5),
+            &|_| Ok(()),
+        )
+        .unwrap();
         assert_eq!(
             discovery.files.len() + discovery.problems.len(),
             MAX_INPUT_FILES
@@ -2540,7 +2750,8 @@ version = "2.0.0"
             .join("../../..")
             .canonicalize()
             .unwrap();
-        let discovery = discover_inputs(&root, Instant::now() + Duration::from_secs(10)).unwrap();
+        let discovery =
+            discover_inputs(&root, Instant::now() + Duration::from_secs(10), &|_| Ok(())).unwrap();
         for manifest in matching_files(&discovery.files, "Cargo.toml") {
             let document: toml::Value = toml::from_str(manifest.text().unwrap()).unwrap();
             let table = document.as_table().unwrap();
@@ -2580,6 +2791,10 @@ version = "2.0.0"
         }
         let report = analyze_repository(&root, Duration::from_secs(10)).unwrap();
         assert!(!report.truncated);
+        assert_eq!(
+            decode_native_report(serde_json::to_value(&report).unwrap()).unwrap(),
+            report
+        );
         assert!(
             report.package_count > 100,
             "packages={}, invalid={}, unsupported={}, sources={:?}",

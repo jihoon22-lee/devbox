@@ -15,7 +15,9 @@
     "react": "^19.1.0",
     "react-dom": "^19.1.0",
     "@devbox/a11y": "workspace:*",
-    "@devbox/tokens": "workspace:*"
+    "@devbox/tokens": "workspace:*",
+    "@devbox/workspace-features": "workspace:*",
+    "@tauri-apps/api": "^2"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",
@@ -24,7 +26,7 @@
     "@vitejs/plugin-react": "^4.6.0",
     "typescript": "~5.8.3",
     "vite": "^7.0.4",
-    "vitest": "^4.1.10",
+    "vitest": "^4.1.11",
     "jsdom": "^30.0.1"
   }
 }
