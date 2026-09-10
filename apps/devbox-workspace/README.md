@@ -118,6 +118,14 @@ snapshot. Tabs remain mounted across routes, and dirty/busy/recovery states bloc
 project switching. Session and recovery metadata are private to each context.
 Recovery uses explicit native preview/apply tokens and preserves cancelled entries.
 
+WSL large-file reads retain Code Pad's 5-MiB editable and 64-MiB read-only limits.
+Large decoded text crosses the private helper pipe in bounded, ordered chunks;
+only complete text with a matching digest becomes an acknowledged file. Context,
+file replacement, expiry and replay checks remain active throughout the read.
+The Linux subprocess fixture covers the exact 64-MiB boundary with worst-case
+JSON escaping and Korean text; Windows host and WebView observations are recorded
+separately in the B04 workthrough.
+
 Project settings now inspect manifest/local-overlay definitions and their native
 source snapshots, with explicit one-time approval, cancellation and revocation.
 Changes to source files invalidate approval without changing editor context.

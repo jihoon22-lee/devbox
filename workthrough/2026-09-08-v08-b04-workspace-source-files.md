@@ -571,6 +571,50 @@ not WebView or LSP acceptance. Final all-scope `pnpm verify:affected` passed
 (**488.842 s**, sampled RSS **6,842,986,496 B**, enforced cgroup memory peak
 **6,445,158,400 B**, final cgroup swap **28,672 B** within the 1 GiB cap). The new tests preserve nested files and confirm
 that only the explicitly selected main-worktree file reaches the index.
+The resulting `2ebf036` passed both [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34434668792)
+and [Windows product acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34434668902),
+including the hosted WSL Source and packaged shell checks.
+
+## Large-file transport parity
+
+The former 64-MiB single JSON frame could not carry Code Pad's 64-MiB read-only
+file boundary, or smaller text that expands during JSON escaping. Files now pages
+decoded text above 5 MiB with one bounded, expiring transfer per helper connection.
+Each 1-MiB UTF-8 chunk retains the selected root/context/file/revision; the receiver
+checks order, size, completion and the full text digest before acknowledging the
+ordinary file result. The original request deadline and frame cap remain intact.
+
+Portable checks covered UTF-8 splits, forged/reordered/truncated/corrupt chunks,
+expired/oversized descriptors, root retirement and file replacement. The real
+helper pipe opened exact 64-MiB escaped text with a Korean tail and rejected one
+extra input byte (**20.57 s**); library/pipe/Linux strict Clippy completed in
+**40.739 s**, sampled RSS **1,877,692,416 B**. The added replacement/context fixture
+passed in **1.39 s**. Final MSVC strict Clippy and refreshed Windows test executable
+completed in **34.546 s**, sampled RSS **4,389,015,552 B**. The refreshed helper
+`330f1d5386568bde0b6258d4b40e73b81aed4ff64d876c24dea42ac641a9d307`
+passed actual Windows host execution: **WSL1 large-file read 9.626 s / full scenario
+88.06 s**, **WSL2 read 9.555 s / full scenario 69.96 s**. Both reads used the product's
+29-second deadline, followed by the existing Registry/Dependencies/Source and
+detached-hook cancellation assertions. Both owned distros and temporary directories
+were removed. WSL1 package-index DNS warnings preceded the test; the pinned fixture
+already contained Git, and WSL2 reused that installed fixture tool without fetching
+an index. Final all-scope affected verification passed in **527.970 s**, sampled
+RSS **7,666,323,456 B**, enforced cgroup memory peak **6,445,154,304 B** and final
+cgroup swap **24,576 B**, within the shared caps.
+
+The renderer's file-open request also now uses the native 29-second budget; its
+former five-second deadline would still reject these otherwise successful reads.
+A focused bridge regression accepts a synthetic six-second native response while
+remaining below the protocol ceiling. The initial full verification was cancelled
+to include this discovered UI fix; only the subsequent final run counts.
+The bridge regression and Workspace frontend build passed in **15.725 s**,
+sampled RSS **1,618,821,120 B**.
+
+Product CI additionally retains its Windows-built Workspace debug executable,
+packaged helper and notices for one day, with source/run identity and file hashes.
+This supports the owned local WSL2 WebView fixture; it is not a release candidate.
+Export YAML and native PowerShell syntax checks passed; the actual artifact step
+and WebView execution remain pending.
 
 ## Remaining acceptance and rollback limits
 

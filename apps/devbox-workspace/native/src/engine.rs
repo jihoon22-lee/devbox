@@ -58,6 +58,12 @@ impl RootLease for NativeFileLease<'_> {
     deny_unknown_fields
 )]
 enum FileMethod {
+    #[serde(rename = "files_open_chunk")]
+    OpenChunk {
+        context: ProjectContext,
+        token: String,
+        offset: usize,
+    },
     #[serde(rename = "files_reveal")]
     Reveal {
         context: ProjectContext,
@@ -132,6 +138,7 @@ impl FileMethod {
             | Self::List { context, .. }
             | Self::Preview { context, .. }
             | Self::Open { context, .. }
+            | Self::OpenChunk { context, .. }
             | Self::Save { context, .. }
             | Self::Rename { context, .. }
             | Self::Delete { context, .. }
@@ -142,6 +149,8 @@ impl FileMethod {
 }
 #[derive(Default)]
 pub struct Engine {
+    // One pending decoded text per connection, independent of root count.
+    transfer: Option<(String, crate::file_transfer::Pending)>,
     source_environment: crate::git_environment::SourceEnvironment,
     roots: BTreeMap<String, Root>,
 }
@@ -553,6 +562,7 @@ impl Engine {
     }
     fn file_request(&mut self, request: &Request, guard: &dyn Fn() -> Result<()>) -> Result<Value> {
         let method: FileMethod = input(&json!({"method":request.method,"args":request.args}))?;
+        let request_root = request.root_token.as_ref().ok_or("wsl_root_required")?;
         let root = self
             .roots
             .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
@@ -568,6 +578,29 @@ impl Engine {
             target: &access.context.target,
         };
         match method {
+            FileMethod::OpenChunk { token, offset, .. } => {
+                // Consume before validating: replay/error cannot keep a large
+                // abandoned allocation or resume a partially acknowledged read.
+                let (root_token, mut pending) =
+                    self.transfer.take().ok_or("file_transfer_stale")?;
+                if request.root_token.as_ref() != Some(&root_token) {
+                    return Err("file_context_changed");
+                }
+                guard()?;
+                access
+                    .owner
+                    .admitted_path(Some((&access.context, &lease)), &pending.path)?;
+                if access.owner.document_revision(&pending.path)? != pending.revision {
+                    return Err("file_snapshot_changed");
+                }
+                let (value, done) = pending.next(&token, offset)?;
+                guard()?;
+                lease.revalidate()?;
+                if !done {
+                    self.transfer = Some((root_token, pending));
+                }
+                Ok(value)
+            }
             FileMethod::Reveal { path, .. } => {
                 guard()?;
                 let admitted = access
@@ -659,12 +692,25 @@ impl Engine {
                 serde_json::to_value(result).map_err(|_| "wsl_response_invalid")
             }
             FileMethod::Open { request, .. } => {
-                let opened = access
+                let mut opened = access
                     .owner
                     .open(Some((&access.context, &lease)), request)?;
                 let revision = access.owner.document_revision(&opened.path)?;
+                let transfer = if opened.text.len() > crate::file_transfer::INLINE_BYTES {
+                    Some(crate::file_transfer::Pending::new(
+                        opened.path.clone(),
+                        revision.clone(),
+                        std::mem::take(&mut opened.text),
+                    )?)
+                } else {
+                    None
+                };
                 let mut value = serde_json::to_value(opened).map_err(|_| "wsl_response_invalid")?;
                 value["nativeRevision"] = json!(revision);
+                if let Some(transfer) = transfer {
+                    value["textTransfer"] = transfer.descriptor()?;
+                    self.transfer = Some((request_root.clone(), transfer));
+                }
                 Ok(value)
             }
             FileMethod::Save {
@@ -739,6 +785,16 @@ impl Engine {
         guard: &dyn Fn() -> Result<()>,
     ) -> Result<Value> {
         guard()?;
+        if !matches!(
+            request.method.as_str(),
+            "files_open_chunk" | "validate_root"
+        ) || self
+            .transfer
+            .as_ref()
+            .is_some_and(|(_, pending)| pending.expired())
+        {
+            self.transfer = None;
+        }
         self.roots
             // Attached native owners retain their bounded roots until release
             // or EOF. The Windows preview owner enforces its separate TTL;
@@ -757,6 +813,7 @@ impl Engine {
                 | "files_list"
                 | "files_preview"
                 | "files_open"
+                | "files_open_chunk"
                 | "files_save"
                 | "files_rename"
                 | "files_delete"

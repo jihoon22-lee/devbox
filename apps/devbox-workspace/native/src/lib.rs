@@ -241,6 +241,8 @@ mod tests {
 }
 
 #[cfg(feature = "files")]
+pub mod file_transfer;
+#[cfg(feature = "files")]
 pub mod files;
 #[cfg(feature = "files")]
 pub mod storage_paths;

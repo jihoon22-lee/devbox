@@ -200,6 +200,37 @@ jobs:
       - name: Exercise packaged shell and installation namespace isolation
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
+      - name: Export Workspace build for owned local WSL2 WebView acceptance
+        id: workspace-export
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $destination = Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture'
+          if (Test-Path $destination) { throw 'Fixture export destination already exists' }
+          New-Item -ItemType Directory -Path (Join-Path $destination 'resources/wsl') -Force | Out-Null
+          $files = [ordered]@{
+            'devbox-workspace.exe' = 'target/debug/devbox-workspace.exe'
+            'resources/wsl/devbox-workspace-wsl' = 'apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl'
+            'resources/wsl/manifest.json' = 'apps/devbox-workspace/src-tauri/resources/wsl/manifest.json'
+            'THIRD_PARTY_NOTICES.md' = 'THIRD_PARTY_NOTICES.md'
+          }
+          $records = @()
+          foreach ($entry in $files.GetEnumerator()) {
+            $target = Join-Path $destination $entry.Key
+            Copy-Item -LiteralPath $entry.Value -Destination $target -ErrorAction Stop
+            $records += @{ path = $entry.Key; size = (Get-Item -LiteralPath $target).Length; sha256 = (Get-FileHash -LiteralPath $target -Algorithm SHA256).Hash.ToLowerInvariant() }
+          }
+          @{ schemaVersion = 1; purpose = 'owned-workspace-webview-acceptance'; sourceSha = $env:GITHUB_SHA; runId = $env:GITHUB_RUN_ID; runAttempt = $env:GITHUB_RUN_ATTEMPT; platform = 'windows-x86_64'; buildProfile = 'debug'; files = $records } |
+            ConvertTo-Json -Depth 5 | Set-Content -LiteralPath (Join-Path $destination 'fixture.json') -Encoding utf8
+      - name: Preserve Workspace acceptance executable for one day
+        if: ${{ !cancelled() && steps.workspace-export.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-webview-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/workspace-webview-fixture
+          retention-days: 1
+          if-no-files-found: error
       - name: Preserve packaged shell results before migration acceptance
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         uses: actions/upload-artifact@v7

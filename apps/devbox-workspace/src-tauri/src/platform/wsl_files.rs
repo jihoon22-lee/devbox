@@ -229,6 +229,8 @@ impl WslFiles {
                     json!({"request":request}),
                     deadline,
                 )?;
+                crate::files_host::current_deadline(deadline)?;
+                self.revalidate(projects, context)?;
                 self.documents
                     .record(&self.lease.binding().root, &path, &result, true)?;
                 Ok(result)

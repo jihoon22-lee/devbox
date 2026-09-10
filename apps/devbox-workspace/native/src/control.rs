@@ -121,6 +121,7 @@ pub fn project_method(method: &str) -> bool {
             | "files_list"
             | "files_preview"
             | "files_open"
+            | "files_open_chunk"
             | "files_save"
             | "files_rename"
             | "files_delete"

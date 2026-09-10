@@ -30,6 +30,51 @@ struct Fixture {
     activity: ContextActivity,
 }
 impl Fixture {
+    fn check_large_files(&self) {
+        let path = format!("{}/큰 파일.txt", self.root);
+        let disk = self.unc.join("큰 파일.txt");
+        let mut expected =
+            "\u{1}".repeat(code_pad_lib::core::guard::MAX_OPENABLE_BYTES as usize - 6);
+        expected.push_str("한글");
+        fs::write(&disk, expected.as_bytes()).unwrap();
+        let projects = self.host.projects().unwrap();
+        let mut files = crate::platform::wsl_files::WslFiles::open(
+            &projects,
+            self.host.helper_directory().unwrap(),
+            &self.context,
+        )
+        .unwrap();
+        let started = Instant::now();
+        let deadline = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 29_000;
+        let opened = files
+            .execute(
+                &projects,
+                &self.context,
+                "open_file",
+                json!({"request":{"path":path,"encoding":null}}),
+                deadline,
+            )
+            .unwrap();
+        assert_eq!(opened["text"].as_str(), Some(expected.as_str()));
+        assert_eq!(opened["readOnly"], true);
+        assert_eq!(
+            opened["size"],
+            code_pad_lib::core::guard::MAX_OPENABLE_BYTES
+        );
+        assert!(opened.get("textTransfer").is_none());
+        files.documents.revision(&path).unwrap();
+        files.close(&path).unwrap();
+        files.shutdown().unwrap();
+        fs::remove_file(&disk).unwrap();
+        println!(
+            "WSL Files: 64-MiB escaped text and Korean tail received read-only in {:?}",
+            started.elapsed()
+        );
+    }
     fn new() -> Self {
         assert_eq!(std::env::var("GITHUB_ACTIONS").unwrap(), "true");
         assert_eq!(
@@ -679,6 +724,7 @@ fn owned_local_source_flow_preserves_native_ownership() {
 }
 
 fn exercise_source_flow(mut fixture: Fixture) {
+    fixture.check_large_files();
     fixture.check_wsl_profiles();
     fixture.check_dependencies();
     println!("WSL Dependencies: native inventory, private summary and stale context checks passed");

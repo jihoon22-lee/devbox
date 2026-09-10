@@ -82,6 +82,17 @@ The product WSL Files owner now delegates these methods and retains only acknowl
 revision/path metadata in Windows. Its sessions and recovery buffers remain in the
 private Windows store; native Windows chooser files retain their own grants.
 
+Decoded text above 5 MiB now uses private `files_open_chunk` responses. One pending
+text per connection is bounded by Code Pad's 64-MiB input and worst-case 3× UTF-8
+decoding expansion; each chunk contains at most 1 MiB of UTF-8 text. JSON escaping
+therefore stays below the existing 64-MiB frame cap. The 30-second, ordered token
+remains tied to its root, context, opened file and revision. Another Files operation
+or root release discards it; replacement and EOF cannot resume it. Windows keeps the
+connection lock and original request deadline through assembly, checks the full
+text digest and then publishes its ordinary file result/native revision. Partial
+text never becomes an acknowledged editor buffer. This preserves the inclusive
+5-MiB editable / 64-MiB read-only boundaries without increasing frame limits.
+
 Quick Open and Markdown/Mermaid preview reuse the Code Pad core without Tauri.
 The guarded listing is also used by Windows Files: it admits each directory before
 reading children, retains directory identity, checks cancellation and applies

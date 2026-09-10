@@ -140,7 +140,19 @@ mod native {
             args["context"] = serde_json::to_value(context).map_err(|_| "wsl_context_invalid")?;
             let mut connection = self.connection.lock().map_err(|_| "wsl_connection_busy")?;
             connection.validate(&self.token)?;
-            connection.file_request_until(method, &self.token, args, deadline)
+            let result = connection.file_request_until(method, &self.token, args, deadline)?;
+            if method == "files_open" {
+                workspace_wsl::file_transfer::receive(result, |token, offset| {
+                    connection.file_request_until(
+                        "files_open_chunk",
+                        &self.token,
+                        serde_json::json!({"context":context,"token":token,"offset":offset}),
+                        deadline,
+                    )
+                })
+            } else {
+                Ok(result)
+            }
         }
     }
 }

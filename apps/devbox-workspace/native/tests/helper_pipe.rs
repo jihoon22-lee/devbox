@@ -12,6 +12,7 @@ struct Helper {
     output: ChildStdout,
     session: String,
     sequence: u64,
+    budget_ms: u32,
 }
 impl Helper {
     fn start() -> Self {
@@ -32,6 +33,7 @@ impl Helper {
             output,
             session,
             sequence: 0,
+            budget_ms: 5000,
         }
     }
     fn send(&mut self, method: &str, root: Option<&str>, args: Value) -> Request {
@@ -44,7 +46,7 @@ impl Helper {
             session_id: self.session.clone(),
             request_id: uuid::Uuid::new_v4().to_string(),
             sequence: self.sequence,
-            budget_ms: 5000,
+            budget_ms: self.budget_ms,
             method: method.into(),
             root_token: root.map(str::to_owned),
             args,
@@ -82,6 +84,157 @@ impl Drop for Helper {
         let _ = self.child.wait();
     }
 }
+#[test]
+fn maximum_read_only_file_crosses_pipe_in_bounded_verified_chunks() {
+    use code_pad_lib::core::guard::MAX_OPENABLE_BYTES;
+    let directory = tempfile::Builder::new()
+        .prefix(".wsl-large-file-fixture-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let path = directory.path().join("큰 파일.txt");
+    // Every input byte expands to six JSON bytes. The old single response
+    // exceeded its frame cap even though Code Pad admits this exact file size.
+    let mut expected = "\u{1}".repeat(MAX_OPENABLE_BYTES as usize - 6);
+    expected.push_str("한글");
+    std::fs::write(&path, expected.as_bytes()).unwrap();
+    let mut helper = Helper::start();
+    helper.budget_ms = 30000;
+    helper.call("hello", None, json!({})).result.unwrap();
+    let report = helper
+        .call("observe_root", None, json!({"path":directory.path()}))
+        .result
+        .unwrap();
+    let root = report["token"].as_str().unwrap();
+    let context = json!({"projectId":"project","worktreeId":"tree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}});
+    helper
+        .call("files_attach", Some(root), json!({"context":context}))
+        .result
+        .unwrap();
+    let opened = helper
+        .call(
+            "files_open",
+            Some(root),
+            json!({"context":context,"request":{"path":path,"encoding":null}}),
+        )
+        .result
+        .unwrap();
+    assert_eq!(opened["readOnly"], true);
+    assert_eq!(opened["size"], MAX_OPENABLE_BYTES);
+    let descriptor = opened["textTransfer"].clone();
+    let opened = workspace_wsl::file_transfer::receive(opened, |token, offset| {
+        helper
+            .call(
+                "files_open_chunk",
+                Some(root),
+                json!({"context":context,"token":token,"offset":offset}),
+            )
+            .result
+            .map_err(|_| "chunk_failed")
+    })
+    .unwrap();
+    assert_eq!(opened["text"].as_str(), Some(expected.as_str()));
+    assert!(helper
+        .call(
+            "files_open_chunk",
+            Some(root),
+            json!({"context":context,"token":descriptor["token"],"offset":0})
+        )
+        .result
+        .is_err());
+    assert_eq!(std::fs::metadata(&path).unwrap().len(), MAX_OPENABLE_BYTES);
+    helper
+        .call(
+            "files_close",
+            Some(root),
+            json!({"context":context,"path":path}),
+        )
+        .result
+        .unwrap();
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_len(MAX_OPENABLE_BYTES + 1)
+        .unwrap();
+    assert!(helper
+        .call(
+            "files_open",
+            Some(root),
+            json!({"context":context,"request":{"path":path,"encoding":null}})
+        )
+        .result
+        .is_err());
+    helper.input.take();
+    helper.exited(0);
+}
+
+#[test]
+fn pending_file_text_cannot_cross_context_replacement_or_root_retirement() {
+    let directory = tempfile::Builder::new()
+        .prefix(".wsl-transfer-owner-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let path = directory.path().join("문서.txt");
+    let text = "한글".repeat(1024 * 1024);
+    std::fs::write(&path, &text).unwrap();
+    let mut helper = Helper::start();
+    let report = helper
+        .call("observe_root", None, json!({"path":directory.path()}))
+        .result
+        .unwrap();
+    let root = report["token"].as_str().unwrap();
+    let context = json!({"projectId":"project","worktreeId":"tree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}});
+    helper
+        .call("files_attach", Some(root), json!({"context":context}))
+        .result
+        .unwrap();
+    let args = json!({"context":context,"request":{"path":path,"encoding":null}});
+    let opened = helper
+        .call("files_open", Some(root), args.clone())
+        .result
+        .unwrap();
+    let first_revision = opened["nativeRevision"].clone();
+    let mut chunk = json!({"context":context,"token":opened["textTransfer"]["token"],"offset":0});
+    chunk["context"]["revision"] = json!(2);
+    assert!(helper
+        .call("files_open_chunk", Some(root), chunk.clone())
+        .result
+        .is_err());
+    chunk["context"] = context.clone();
+    helper
+        .call("validate_root", Some(root), json!({}))
+        .result
+        .unwrap();
+    let first = helper
+        .call("files_open_chunk", Some(root), chunk.clone())
+        .result
+        .unwrap();
+    chunk["offset"] = json!(first["text"].as_str().unwrap().len());
+    std::fs::rename(&path, directory.path().join("old.txt")).unwrap();
+    std::fs::write(&path, &text).unwrap();
+    assert!(helper
+        .call("files_open_chunk", Some(root), chunk)
+        .result
+        .is_err());
+    let opened = helper.call("files_open", Some(root), args).result.unwrap();
+    assert_ne!(opened["nativeRevision"], first_revision);
+    helper
+        .call("release_root", Some(root), json!({}))
+        .result
+        .unwrap();
+    assert!(helper
+        .call(
+            "files_open_chunk",
+            Some(root),
+            json!({"context":context,"token":opened["textTransfer"]["token"],"offset":0})
+        )
+        .result
+        .is_err());
+    assert_eq!(std::fs::read_to_string(&path).unwrap(), text);
+    helper.input.take();
+    helper.exited(0);
+}
+
 #[test]
 fn actual_helper_poll_preserves_dirty_authority_and_recovery_requires_fresh_review() {
     let directory = tempfile::Builder::new()
