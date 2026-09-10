@@ -235,3 +235,16 @@ operation, with no Windows filesystem admission or drive fallback. The Linux pip
 fixture rejects unopened/closed documents, stale context and leaf/parent replacement.
 The Windows host fixture checks the callback target and denied stale/closed requests;
 its actual execution and visible Explorer selection remain pending.
+
+
+The actual Windows Source scenario at `e3f05c8` passed creation, linked stage/commit,
+Dependencies, template/profile binding, reveal callback admission and cleanup,
+then failed staging in the primary worktree with the created nested worktree still
+present. The underlying Repo Manager parser rejected its untracked `folder/`
+record. Native pipe regression reproduced the failure and now verifies that only
+the selected ordinary file is staged, while both directory pathspellings remain
+ineligible. Directory records remain visible without file or stage actions.
+
+The corrected complete Windows Rust host scenario passed on owned WSL1 (71.37 s)
+and WSL2 (53.10 s), including hook cancellation and removal of each disposable
+fixture. These actual host results do not claim WebView or LSP acceptance.

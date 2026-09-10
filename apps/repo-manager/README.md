@@ -427,3 +427,10 @@ runtime and an `ExecutionPolicy` capability; a renderer path cannot mint one.
 Both consumers use the same parsers, operation IDs, argument checks and Git
 commands. Native Source dispatch suppresses standalone repository publication.
 This build boundary alone does not enable WSL Git execution or child retirement.
+
+
+Source status preserves Git's untracked directory placeholders (`folder/`), which
+can represent a nested repository or worktree, without treating them as selectable
+file pathspecs. The panel shows those folders separately. Their presence no longer
+blocks changes/status or selected staging of unrelated files; direct directory
+stage requests remain rejected.

@@ -335,6 +335,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
 
   const unstaged = pathsFor(changes, "stage");
   const staged = pathsFor(changes, "unstage");
+  const directories = (changes ?? []).filter(change => change.kind === "untracked-directory");
 
   return (
     <section className="stage-commit-panel" aria-label="Git stage 및 commit" aria-busy={busy}>
@@ -428,6 +429,12 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
           </fieldset>
         </div>
       ) : null}
+
+      {directories.length > 0 && <section aria-label="폴더 항목">
+        <h3>별도 확인이 필요한 폴더</h3>
+        <p>폴더 항목은 이 화면에서 stage하지 않습니다. 내부 파일은 해당 프로젝트에서 확인하세요.</p>
+        <ul>{directories.map(change => <li key={change.path} className="mono">{change.path}</li>)}</ul>
+      </section>}
 
       <div className="commit-form">
         <label htmlFor="repo-commit-message">커밋 메시지</label>

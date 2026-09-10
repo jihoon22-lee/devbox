@@ -533,9 +533,48 @@ fixture now exercises template cancel/stale/apply/replay and profile unlink/reli
 against the owned WSL root. Source execution records synthetic operation IDs,
 methods, duration and fixed issue codes to locate the unresolved `1d75608` failure.
 
+## Nested worktree staging and local Windows host reproduction
+
+The `e3f05c8` [Windows log](https://github.com/jihoon22-lee/devbox/actions/runs/34431494966)
+now identifies `cancel-stage`/`repo_stage` as the failure (**1.628 s**, combined
+scenario **48.91 s**). Earlier template/profile, Dependencies, creation/registration,
+linked stage/commit, reveal callback, scope revocation and cleanup checks passed.
+A separate Windows Rust fixture now accepts only an explicit current local owner
+record under a matching temporary directory and live distro GUID/name/mode. Its
+setup and cleanup use only the newly imported distribution; the GitHub test keeps
+its original hosted-run guards. Both invoke the same complete Source scenario.
+
+The first minimal rootfs could not provide the fixture's Windows file setup
+(Windows error 1225, **0.26 s** test); the distro and temporary folder were removed.
+The digest-pinned CI Ubuntu image reproduced `cancel-stage` in **2.372 s**, combined
+scenario **68.79 s**, and was also removed. Git provisioning is fixture-only.
+A new Linux native pipe regression reproduced `source_operation_unavailable`
+(**13.079 s** including build, **2.43 s** test), isolating the shared parser.
+
+Git reports an untracked nested repository/worktree as `folder/` even with full
+untracked-file enumeration. The strict file-path parser rejected that record and
+therefore blocked selected staging of an unrelated ordinary file. The parser now
+preserves validated directory records as display-only; the shared panel lists them
+without file/selection actions. Mutating path validation is unchanged. A forged
+normalized directory selection is also rejected by the current-status filter.
+
+Actual Source pipe **13 tests**, parser regressions, Stage/Commit UI **13 tests**
+and the shared frontend build passed (**57.067 s**, sampled RSS **2,400,493,568 B**).
+Final distinct directory-selection IDs, strict Linux/MSVC Clippy, refreshed static
+helper and Windows test executable passed (**110.557 s**, sampled RSS
+**4,072,177,664 B**). Refreshed native helper digest
+`f4ef11ae7a7c09f685a5b6b530c84604e3a0a64f5ae4148d0253d4a14bf28243`
+passed the complete actual Windows Rust host scenario on owned **WSL1 (71.37 s)**
+and **WSL2 (53.10 s)**. Both included the final stage/hook cancellation and confirmed
+owned distro/temporary directory removal. These are local native host results,
+not WebView or LSP acceptance. Final all-scope `pnpm verify:affected` passed
+(**488.842 s**, sampled RSS **6,842,986,496 B**, enforced cgroup memory peak
+**6,445,158,400 B**, final cgroup swap **28,672 B** within the 1 GiB cap). The new tests preserve nested files and confirm
+that only the explicitly selected main-worktree file reaches the index.
+
 ## Remaining acceptance and rollback limits
 
-- Native WSL LSP and full WSL2 Rust host/WebView
+- Native WSL LSP and full WSL2 WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration

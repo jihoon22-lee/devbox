@@ -230,7 +230,7 @@ export interface DiffResult {
   truncated: boolean;
 }
 
-export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "conflict";
+export type ChangeKind = "modified" | "added" | "deleted" | "renamed" | "copied" | "untracked" | "untracked-directory" | "conflict";
 
 export interface ChangeEntry {
   path: string;

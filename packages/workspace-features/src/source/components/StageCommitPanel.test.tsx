@@ -69,6 +69,21 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("StageCommitPanel", () => {
+  it("shows untracked directory records without file actions while staging only the selected file", async () => {
+    const directory: ChangeEntry = {...unstaged, path:"nested 한글 tree/", kind:"untracked-directory", indexStatus:"?", worktreeStatus:"?", staged:false, unstaged:false};
+    repoChangesMock.mockResolvedValue([directory, unstaged]);
+    const open = vi.fn();
+    render(<StageCommitPanel repo={repo} onOpenFile={open}/>);
+    fireEvent.click(screen.getByRole("button", {name:"변경 파일 불러오기"}));
+    await screen.findByText("nested 한글 tree/");
+    expect(screen.queryByRole("checkbox", {name:"stage nested 한글 tree/"})).toBeNull();
+    expect(screen.queryByRole("button", {name:"Files에서 nested 한글 tree/ 열기"})).toBeNull();
+    fireEvent.click(screen.getByRole("checkbox", {name:"stage src/main.ts"}));
+    fireEvent.click(screen.getByRole("button", {name:"선택 항목 stage (1)"}));
+    await waitFor(() => expect(repoStageMock).toHaveBeenCalledWith(repo.path, [unstaged.path], expect.any(String)));
+    expect(open).not.toHaveBeenCalled();
+  });
+
   it("does not call native commit before explicit confirmation and redacts the message", async () => {
     repoChangesMock.mockResolvedValueOnce([staged]);
     render(<StageCommitPanel repo={repo} />);

@@ -338,3 +338,15 @@ the expanded actual Windows fixture is pending.
 The Source execution fixture now records only its synthetic operation ID/method,
 elapsed time and fixed issue code, so subsequent Windows failures identify the
 operation without publishing paths, Git output or environment values.
+
+
+The `e3f05c8` Windows fixture passed WSL templates/profile binding, Dependencies,
+worktree creation/registration/linked stage and commit, reveal callback admission,
+cleanup protection/revocation and successful cleanup. Its final main-worktree
+`cancel-stage` failed before testing hook cancellation. The same sequence reproduced
+on a dedicated local Windows/WSL1 Ubuntu fixture. A focused Linux pipe regression
+identified the shared status parser rejecting Git's `nested-worktree/` directory
+placeholder. Those entries are now display-only while ordinary selected-file stage
+continues. Linux pipe/parser/UI tests and the complete actual Windows Rust host scenario passed
+after the fix on owned WSL1 (71.37 s) and WSL2 (53.10 s), including final hook
+cancellation and fixture cleanup. Packaged/WebView and LSP acceptance remain separate.

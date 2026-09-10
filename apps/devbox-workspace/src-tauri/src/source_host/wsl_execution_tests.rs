@@ -39,6 +39,9 @@ impl Fixture {
         let name = std::env::var("DEVBOX_KNOWLEDGE_WSL_DISTRO").unwrap();
         let run = std::env::var("GITHUB_RUN_ID").unwrap();
         assert!(name.starts_with(&format!("DevboxKnowledgeFixture-{run}-")));
+        Self::for_distro(name, Path::new(env!("CARGO_MANIFEST_DIR")).into())
+    }
+    fn for_distro(name: String, resources: PathBuf) -> Self {
         let distro = crate::platform::wsl_distro::list()
             .unwrap()
             .into_iter()
@@ -52,10 +55,7 @@ impl Fixture {
         fs::create_dir(&unc).unwrap();
         fs::write(unc.join("empty.config"), b"").unwrap();
         let store = tempfile::tempdir().unwrap();
-        let host = Arc::new(
-            Host::open_with_resources(store.path(), Path::new(env!("CARGO_MANIFEST_DIR")).into())
-                .unwrap(),
-        );
+        let host = Arc::new(Host::open_with_resources(store.path(), resources).unwrap());
         host.start_empty().unwrap();
         let raw = |args: &[&str]| Self::linux(&name, args);
         assert!(raw(&[
@@ -604,7 +604,81 @@ impl Fixture {
 #[test]
 #[ignore = "requires the current run-owned hosted WSL distro, Git and packaged helper"]
 fn owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership() {
-    let mut fixture = Fixture::new();
+    exercise_source_flow(Fixture::new());
+}
+
+#[test]
+#[ignore = "requires an exclusively owned local Windows WSL fixture and pinned helper"]
+fn owned_local_source_flow_preserves_native_ownership() {
+    use std::io::Read;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Owner {
+        schema: u32,
+        name: String,
+        distro_id: String,
+        version: u32,
+    }
+    let path = PathBuf::from(
+        std::env::var_os("DEVBOX_WORKSPACE_LOCAL_OWNER")
+            .expect("explicit local fixture owner required"),
+    );
+    assert_eq!(
+        path.file_name().and_then(|name| name.to_str()),
+        Some("owner.json")
+    );
+    devbox_filesystem::ensure_no_links(&path).expect("local fixture owner has no aliases");
+    let mut bytes = Vec::new();
+    fs::File::open(&path)
+        .unwrap()
+        .take(4097)
+        .read_to_end(&mut bytes)
+        .unwrap();
+    assert!(bytes.len() <= 4096);
+    let bytes = bytes.strip_prefix(&[0xef, 0xbb, 0xbf]).unwrap_or(&bytes);
+    let owner: Owner = serde_json::from_slice(bytes).unwrap();
+    assert_eq!(owner.schema, 1);
+    assert!(matches!(owner.version, 1 | 2));
+    let nonce = owner
+        .name
+        .strip_prefix("DevboxWorkspaceFixture-")
+        .expect("owned local distro prefix required");
+    assert_eq!(
+        uuid::Uuid::parse_str(nonce).unwrap().simple().to_string(),
+        nonce
+    );
+    assert!(uuid::Uuid::parse_str(&owner.distro_id).is_ok());
+    let directory = path.parent().unwrap();
+    assert_eq!(
+        directory.file_name().and_then(|name| name.to_str()),
+        Some(owner.name.as_str())
+    );
+    assert_eq!(
+        fs::canonicalize(directory.parent().unwrap()).unwrap(),
+        fs::canonicalize(std::env::temp_dir()).unwrap()
+    );
+    assert_eq!(
+        fs::read_to_string(directory.join("owner.txt")).unwrap(),
+        owner.name
+    );
+    let distro = crate::platform::wsl_distro::list()
+        .unwrap()
+        .into_iter()
+        .find(|distro| distro.id == owner.distro_id && distro.name == owner.name)
+        .expect("current owned distro registration required");
+    assert_eq!(distro.version, owner.version);
+    assert!(
+        distro.running,
+        "local fixture runner must explicitly start its own distro"
+    );
+    println!(
+        "Actual Windows Rust Source fixture: owned WSL{}",
+        owner.version
+    );
+    exercise_source_flow(Fixture::for_distro(owner.name, directory.into()));
+}
+
+fn exercise_source_flow(mut fixture: Fixture) {
     fixture.check_wsl_profiles();
     fixture.check_dependencies();
     println!("WSL Dependencies: native inventory, private summary and stale context checks passed");

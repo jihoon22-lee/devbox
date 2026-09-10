@@ -109,7 +109,20 @@ pub fn parse_status_changes(input: &str) -> Result<Vec<ChangeEntry>, String> {
         if !valid_status_code(index_status) || !valid_status_code(worktree_status) {
             return Err(fixed_error());
         }
-        let path = validate_change_path(&record[3..])?;
+        let raw_path = &record[3..];
+        // Even with --untracked-files=all, Git reports an embedded repository
+        // (including a nested worktree) as an untracked directory ending in '/'.
+        // Preserve that display record without allowing a directory pathspec.
+        let directory = index_status == '?' && worktree_status == '?' && raw_path.ends_with('/');
+        let path = if directory {
+            if raw_path.len() > MAX_CHANGE_PATH_BYTES {
+                return Err(fixed_error());
+            }
+            validate_change_path(raw_path.strip_suffix('/').unwrap())?;
+            raw_path.to_owned()
+        } else {
+            validate_change_path(raw_path)?
+        };
         let rename_or_copy =
             matches!(index_status, 'R' | 'C') || matches!(worktree_status, 'R' | 'C');
         let old_path = if rename_or_copy {
@@ -120,13 +133,17 @@ pub fn parse_status_changes(input: &str) -> Result<Vec<ChangeEntry>, String> {
             None
         };
         let staged = index_status != ' ' && index_status != '?';
-        let unstaged = worktree_status != ' ' && worktree_status != '!';
+        let unstaged = !directory && worktree_status != ' ' && worktree_status != '!';
         entries.push(ChangeEntry {
             path,
             old_path,
             index_status: index_status.to_string(),
             worktree_status: worktree_status.to_string(),
-            kind: classify_kind(index_status, worktree_status),
+            kind: if directory {
+                "untracked-directory".into()
+            } else {
+                classify_kind(index_status, worktree_status)
+            },
             staged,
             unstaged,
         });
@@ -199,6 +216,27 @@ mod tests {
             let error = parse_status_changes(input).unwrap_err();
             assert_eq!(error, GIT_MUTATION_ERROR);
             assert!(!error.contains(secret));
+        }
+    }
+
+    #[test]
+    fn untracked_directory_records_are_display_only_and_do_not_hide_file_changes() {
+        let entries = parse_status_changes("?? nested 한글 tree/\0 M tracked.txt\0").unwrap();
+        assert_eq!(entries.len(), 2);
+        assert_eq!(entries[0].path, "nested 한글 tree/");
+        assert_eq!(entries[0].kind, "untracked-directory");
+        assert!(!entries[0].staged && !entries[0].unstaged);
+        assert!(entries[1].unstaged);
+        assert!(validate_change_path(&entries[0].path).is_err());
+        for input in [
+            "?? ../outside/\0",
+            "?? folder//\0",
+            "?? /\0",
+            "?? C:folder/\0",
+            " M folder/\0",
+            "R  folder/\0old\0",
+        ] {
+            assert_eq!(parse_status_changes(input).unwrap_err(), GIT_MUTATION_ERROR);
         }
     }
 

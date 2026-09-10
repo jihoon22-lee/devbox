@@ -815,3 +815,53 @@ fn dependency_inventory_uses_native_files_and_context_without_executing_tools() 
     assert!(!root.join("target").exists());
     helper.retire();
 }
+
+#[test]
+fn selected_stage_survives_an_unselected_nested_worktree() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let nested = root.join("nested 한글 tree");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "nested",
+            nested.to_str().unwrap(),
+        ],
+    );
+    fs::write(root.join("tracked.txt"), b"selected main change\n").unwrap();
+    let status = git(
+        root,
+        &["status", "--porcelain=v1", "-z", "--untracked-files=all"],
+    );
+    assert!(status.contains("?? nested 한글 tree/\0"));
+    let mut helper = Helper::start(root);
+    helper.execute(
+        "repo_stage",
+        json!({"request":{"path":root,"paths":["tracked.txt"],"operationId":"stage-after-nested"}}),
+    );
+    helper.complete(true).result.unwrap();
+    assert_eq!(
+        git(root, &["diff", "--cached", "--name-only"]),
+        "tracked.txt"
+    );
+    for (index, path) in ["nested 한글 tree", "nested 한글 tree/"]
+        .into_iter()
+        .enumerate()
+    {
+        helper.execute(
+            "repo_stage",
+            json!({"request":{"path":root,"paths":[path],"operationId":format!("reject-directory-stage-{index}")}}),
+        );
+        assert!(helper.complete(true).result.is_err());
+    }
+    assert_eq!(
+        git(root, &["diff", "--cached", "--name-only"]),
+        "tracked.txt"
+    );
+    assert_eq!(fs::read(nested.join("tracked.txt")).unwrap(), b"original\n");
+    helper.retire();
+}
