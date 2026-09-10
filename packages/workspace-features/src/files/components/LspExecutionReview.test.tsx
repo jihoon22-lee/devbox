@@ -56,3 +56,12 @@ it("consumes failed approvals and supports explicit revocation", async () => {
   fireEvent.click(view.getByText("실행 승인 해제"));
   await waitFor(() => expect(revokeLspExecution).toHaveBeenCalledOnce());
 });
+
+it("shows native WSL review with environment names and no values", async () => {
+  vi.mocked(previewLspExecution).mockResolvedValue({ ...preview, workspaceRoot: "/home/fixture", environment: undefined, environmentKeys: ["HOME", "PATH"], commands: [{languageId: "rust", executable: "/usr/bin/server", args: ["--stdio"], runtime: null}] });
+  const view = render(<LspExecutionReview disabled={false} nativeRevision="revision-1"/>);
+  fireEvent.click(view.getByText("실행 설정 검토"));
+  await view.findByText("이 설정의 실행 승인");
+  expect(view.getByText("/usr/bin/server")).toBeTruthy();
+  expect(view.getByText("변수 이름: HOME, PATH")).toBeTruthy();
+});

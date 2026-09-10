@@ -16,10 +16,16 @@ struct Helper {
 }
 impl Helper {
     fn start() -> Self {
+        Self::start_with_environment(None)
+    }
+    fn start_with_environment(home: Option<&std::path::Path>) -> Self {
         let session = uuid::Uuid::new_v4().to_string();
-        let mut child = Command::new(env!("CARGO_BIN_EXE_devbox-workspace-wsl"))
-            .args(["--session", &session])
-            .env_clear()
+        let mut command = Command::new(env!("CARGO_BIN_EXE_devbox-workspace-wsl"));
+        command.args(["--session", &session]).env_clear();
+        if let Some(home) = home {
+            command.env("HOME", home).env("PATH", home.join("bin"));
+        }
+        let mut child = command
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -610,4 +616,90 @@ fn actual_reveal_requires_open_context_and_rejects_replaced_leaf_or_parent() {
         .call("files_reveal", Some(root), args)
         .result
         .is_err());
+}
+
+#[test]
+fn lsp_review_uses_closed_context_messages_and_never_executes_scripts_or_servers() {
+    use code_pad_lib::lsp::{LspConfig, ServerRef};
+    use std::os::unix::fs::PermissionsExt;
+    let fixture = tempfile::Builder::new()
+        .prefix(".wsl-lsp-pipe-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let folder = fixture.path();
+    std::fs::create_dir(folder.join("bin")).unwrap();
+    let program = folder.join("bin/server");
+    let marker = folder.join("must-not-exist");
+    std::fs::write(
+        &program,
+        format!("#!/bin/sh\ntouch '{}'\n", marker.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+    let mut helper = Helper::start_with_environment(Some(folder));
+    let observed = helper
+        .call("observe_root", None, json!({"path":folder}))
+        .result
+        .unwrap();
+    let root = observed["token"].as_str().unwrap();
+    let context = json!({"projectId":"project","worktreeId":"tree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}});
+    let mut config = LspConfig::empty();
+    config.enabled = true;
+    config.workspace_root = folder.to_str().unwrap().into();
+    config.server_by_language.insert(
+        "rust".into(),
+        ServerRef::custom("server", vec![marker.to_str().unwrap().into()]),
+    );
+    let args = json!({"context":context,"config":config});
+    assert_eq!(
+        helper
+            .call("lsp_capture", Some(root), args.clone())
+            .result
+            .unwrap_err(),
+        "lsp_executable_format_unsupported"
+    );
+    assert!(!marker.exists());
+    std::fs::copy("/usr/bin/touch", &program).unwrap();
+    let mut invalid = args.clone();
+    invalid["config"]["server_by_language"]["rust"]["shell"] = json!(true);
+    assert_eq!(
+        helper
+            .call("lsp_capture", Some(root), invalid)
+            .result
+            .unwrap_err(),
+        "wsl_request_invalid"
+    );
+    let view = helper
+        .call("lsp_capture", Some(root), args.clone())
+        .result
+        .unwrap();
+    assert_eq!(view["commands"][0]["executable"], json!(program));
+    assert!(!marker.exists());
+    let validate = json!({"context":context,"digest":view["digest"]});
+    helper
+        .call("lsp_validate", Some(root), validate.clone())
+        .result
+        .unwrap();
+    std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o600)).unwrap();
+    assert_eq!(
+        helper
+            .call("lsp_validate", Some(root), validate)
+            .result
+            .unwrap_err(),
+        "lsp_sources_changed"
+    );
+    assert_eq!(
+        helper
+            .call("lsp_capture", Some(root), args)
+            .result
+            .unwrap_err(),
+        "lsp_sources_changed"
+    );
+    helper
+        .call("release_root", Some(root), json!({}))
+        .result
+        .unwrap();
+    assert!(!marker.exists());
+    helper.input.take();
+    helper.exited(0);
 }

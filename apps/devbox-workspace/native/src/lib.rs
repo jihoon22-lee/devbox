@@ -284,3 +284,8 @@ pub mod control;
 
 #[cfg(feature = "git")]
 pub mod lsp_evidence;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod lsp_environment;
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod lsp_review;

@@ -271,7 +271,12 @@ mod native {
                 .duration_since(std::time::UNIX_EPOCH)
                 .map_err(|_| "wsl_timeout")?
                 .as_millis();
-            let remaining = u128::from(deadline).saturating_sub(now).min(15000) as u32;
+            let maximum = if matches!(method, "lsp_capture" | "lsp_validate") {
+                29000
+            } else {
+                15000
+            };
+            let remaining = u128::from(deadline).saturating_sub(now).min(maximum) as u32;
             if remaining == 0 {
                 return Err("wsl_timeout");
             }
@@ -653,6 +658,20 @@ mod native {
                 "file_preview_unavailable" => "file_preview_unavailable",
                 "file_unavailable" => "file_unavailable",
                 "file_changed" => "file_changed",
+                "lsp_source_transport_denied" => "lsp_source_transport_denied",
+                "lsp_source_limit" => "lsp_source_limit",
+                "lsp_source_path_invalid" => "lsp_source_path_invalid",
+                "lsp_source_unavailable" => "lsp_source_unavailable",
+                "lsp_sources_changed" => "lsp_sources_changed",
+                "lsp_environment_unavailable" => "lsp_environment_unavailable",
+                "lsp_config_invalid" => "lsp_config_invalid",
+                "lsp_settings_save_required" => "lsp_settings_save_required",
+                "lsp_settings_changed" => "lsp_settings_changed",
+                "lsp_command_unavailable" => "lsp_command_unavailable",
+                "lsp_executable_format_unsupported" => "lsp_executable_format_unsupported",
+                "lsp_context_changed" => "lsp_context_changed",
+                "wsl_lsp_installed_target_required" => "wsl_lsp_installed_target_required",
+                "wsl_lsp_language_unsupported" => "wsl_lsp_language_unsupported",
                 _ => "wsl_operation_failed",
             })
         }

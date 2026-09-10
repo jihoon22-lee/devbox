@@ -430,6 +430,15 @@ async fn execute_lsp(
         }
         if let Some(paths) = chosen {
             owner.choose(&host, &paths, deadline)
+        } else if crate::lsp_host::review_method(&request.method) {
+            owner.execute_review(
+                &app,
+                &host,
+                &request.method,
+                request.args,
+                request.header.context.as_ref(),
+                deadline,
+            )
         } else {
             tauri::async_runtime::block_on(owner.execute(
                 &app,

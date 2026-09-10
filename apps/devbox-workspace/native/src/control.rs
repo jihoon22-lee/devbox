@@ -106,7 +106,9 @@ impl FrameCursor {
 pub fn project_method(method: &str) -> bool {
     matches!(
         method,
-        "source_capture"
+        "lsp_capture"
+            | "lsp_validate"
+            | "source_capture"
             | "source_validate"
             | "source_worktree_preview"
             | "dependency_inventory"

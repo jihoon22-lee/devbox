@@ -26,6 +26,7 @@ struct Root {
     files: Option<FileAccess>,
     definitions: Option<crate::definitions::Definitions>,
     source: Option<crate::git_review::Review>,
+    lsp: Option<crate::lsp_review::Review>,
 }
 struct FileAccess {
     context: ProjectContext,
@@ -152,6 +153,7 @@ pub struct Engine {
     // One pending decoded text per connection, independent of root count.
     transfer: Option<(String, crate::file_transfer::Pending)>,
     source_environment: crate::git_environment::SourceEnvironment,
+    lsp_environment: crate::lsp_environment::Environment,
     roots: BTreeMap<String, Root>,
 }
 #[derive(Deserialize)]
@@ -395,6 +397,94 @@ impl Engine {
         root.touched = Instant::now();
         Ok(report)
     }
+    fn lsp_request(&mut self, request: &Request, guard: &dyn Fn() -> Result<()>) -> Result<Value> {
+        use crate::lsp_review::{Method, Review};
+        let method: Method = input(&json!({"method":request.method,"args":request.args}))?;
+        if let Method::Capture { config, .. } = &method {
+            // This private Windows-to-helper message carries the complete
+            // normalized schema. Unknown nested fields cannot disappear.
+            if serde_json::to_value(config).map_err(|_| "lsp_config_invalid")?
+                != request.args["config"]
+            {
+                return Err("wsl_request_invalid");
+            }
+        }
+        method
+            .context()
+            .validate()
+            .map_err(|_| "wsl_context_invalid")?;
+        if !matches!(&method.context().target, ExecutionTarget::Wsl { distro_id } if crate::token(distro_id))
+        {
+            return Err("wsl_context_invalid");
+        }
+        let count = self
+            .roots
+            .values()
+            .filter(|root| root.lsp.is_some())
+            .count();
+        let root = self
+            .roots
+            .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+            .ok_or("wsl_root_expired")?;
+        if root
+            .files
+            .as_ref()
+            .is_some_and(|access| &access.context != method.context())
+            || root
+                .definitions
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+            || root
+                .source
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+            || root
+                .lsp
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+        {
+            return Err("lsp_context_changed");
+        }
+        root.observation.revalidate()?;
+        let result = match method {
+            Method::Capture { context, config } => {
+                if let Some(access) = &root.lsp {
+                    if access.config() != &config {
+                        return Err("lsp_settings_changed");
+                    }
+                } else {
+                    if count >= 4 {
+                        return Err("lsp_source_limit");
+                    }
+                    root.lsp = Some(Review::capture(
+                        root.observation.root(),
+                        context,
+                        config,
+                        &self.lsp_environment,
+                        guard,
+                    )?);
+                }
+                let access = root.lsp.as_ref().ok_or("wsl_context_required")?;
+                let view = access.view()?;
+                access.revalidate(
+                    view["digest"].as_str().ok_or("wsl_response_invalid")?,
+                    guard,
+                )?;
+                view
+            }
+            Method::Validate { digest, .. } => {
+                root.lsp
+                    .as_ref()
+                    .ok_or("wsl_context_required")?
+                    .revalidate(&digest, guard)?;
+                Value::Null
+            }
+        };
+        guard()?;
+        root.observation.revalidate()?;
+        root.touched = Instant::now();
+        Ok(result)
+    }
     fn source_request(
         &mut self,
         request: &Request,
@@ -429,6 +519,10 @@ impl Engine {
                 .is_some_and(|access| access.context() != method.context())
             || root
                 .source
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+            || root
+                .lsp
                 .as_ref()
                 .is_some_and(|access| access.context() != method.context())
         {
@@ -518,6 +612,10 @@ impl Engine {
                 .is_some_and(|access| access.context() != method.context())
             || root
                 .source
+                .as_ref()
+                .is_some_and(|access| access.context() != method.context())
+            || root
+                .lsp
                 .as_ref()
                 .is_some_and(|access| access.context() != method.context())
         {
@@ -803,6 +901,7 @@ impl Engine {
                 root.files.is_some()
                     || root.definitions.is_some()
                     || root.source.is_some()
+                    || root.lsp.is_some()
                     || root.touched.elapsed() < ROOT_TTL
             });
         if matches!(
@@ -837,6 +936,9 @@ impl Engine {
         ) {
             return self.source_request(request, guard);
         }
+        if matches!(request.method.as_str(), "lsp_capture" | "lsp_validate") {
+            return self.lsp_request(request, guard);
+        }
         if request.method == "dependency_inventory" {
             return self.dependency_inventory(request, guard);
         }
@@ -866,6 +968,13 @@ impl Engine {
                 }
                 if root
                     .source
+                    .as_ref()
+                    .is_some_and(|access| access.context() != &args.context)
+                {
+                    return Err("file_context_changed");
+                }
+                if root
+                    .lsp
                     .as_ref()
                     .is_some_and(|access| access.context() != &args.context)
                 {
@@ -958,6 +1067,7 @@ impl Engine {
                         files: None,
                         definitions: None,
                         source: None,
+                        lsp: None,
                     },
                 );
                 Ok(value)
@@ -986,6 +1096,137 @@ impl Engine {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn lsp_review_pins_context_code_mode_and_settings_without_starting_a_program() {
+        use code_pad_lib::lsp::{CustomServer, LspConfig, RuntimeKind, RuntimeSpec, ServerRef};
+        use std::os::unix::fs::PermissionsExt;
+        let fixture = tempfile::Builder::new()
+            .prefix(".wsl-lsp-review-")
+            .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+            .unwrap();
+        let root = fixture.path();
+        let bin = root.join("bin");
+        std::fs::create_dir(&bin).unwrap();
+        let program = bin.join("fixture-server");
+        // A real native ELF would create this marker if review accidentally
+        // spawned it. No user executable, home contents, or secrets are read.
+        std::fs::copy("/usr/bin/touch", &program).unwrap();
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        let marker = root.join("must-not-exist");
+        let mut engine = Engine {
+            lsp_environment: crate::lsp_environment::Environment::fixture(&bin, root),
+            ..Engine::default()
+        };
+        let report = engine
+            .dispatch(&request("observe_root", None, json!({"path":root})))
+            .unwrap();
+        let token = report["token"].as_str().unwrap().to_owned();
+        let context = ProjectContext {
+            project_id: "fixture-project".into(),
+            worktree_id: "fixture-worktree".into(),
+            revision: 1,
+            target: ExecutionTarget::Wsl {
+                distro_id: uuid::Uuid::new_v4().to_string(),
+            },
+        };
+        let mut config = LspConfig::empty();
+        config.enabled = true;
+        config.workspace_root = root.to_str().unwrap().into();
+        config.server_by_language.insert(
+            "rust".into(),
+            ServerRef::custom("fixture-server", vec![marker.to_str().unwrap().into()]),
+        );
+        // Node resolution also stays observational; this ELF is deliberately
+        // not Node and must never be invoked as a version probe during review.
+        let script = root.join("server.js");
+        std::fs::write(&script, b"reviewed entry").unwrap();
+        config.custom_servers.push(CustomServer {
+            source: "fixture".into(),
+            license: "fixture".into(),
+            version: "1".into(),
+            language_ids: vec!["typescript".into()],
+            executable: script.to_str().unwrap().into(),
+            args: vec!["--stdio".into()],
+            runtime: RuntimeSpec {
+                kind: RuntimeKind::Node,
+                executable: program.to_str().unwrap().into(),
+                min_version: None,
+            },
+        });
+        let capture = request(
+            "lsp_capture",
+            Some(token.clone()),
+            json!({"context":context,"config":config}),
+        );
+        let view = engine.dispatch(&capture).unwrap();
+        assert_eq!(view["commands"].as_array().unwrap().len(), 2);
+        assert_eq!(view["environmentKeys"], json!(["HOME", "PATH"]));
+        assert!(!marker.exists());
+        let validate = request(
+            "lsp_validate",
+            Some(token.clone()),
+            json!({"context":context,"digest":view["digest"]}),
+        );
+        engine.dispatch(&validate).unwrap();
+        let mut foreign = context.clone();
+        foreign.revision += 1;
+        for method in ["files_attach", "definitions_attach", "source_capture"] {
+            assert!(engine
+                .dispatch(&request(
+                    method,
+                    Some(token.clone()),
+                    json!({"context":foreign})
+                ))
+                .is_err());
+        }
+        assert_eq!(
+            engine
+                .dispatch(&request(
+                    "lsp_validate",
+                    Some(token.clone()),
+                    json!({"context":foreign,"digest":view["digest"]})
+                ))
+                .unwrap_err(),
+            "lsp_context_changed"
+        );
+        let mut changed = config.clone();
+        changed.custom_servers[0].args.push("new".into());
+        assert_eq!(
+            engine
+                .dispatch(&request(
+                    "lsp_capture",
+                    Some(token.clone()),
+                    json!({"context":context,"config":changed})
+                ))
+                .unwrap_err(),
+            "lsp_settings_changed"
+        );
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o600)).unwrap();
+        assert_eq!(
+            engine.dispatch(&validate).unwrap_err(),
+            "lsp_sources_changed"
+        );
+        assert_eq!(
+            engine.dispatch(&capture).unwrap_err(),
+            "lsp_sources_changed"
+        );
+        std::fs::set_permissions(&program, std::fs::Permissions::from_mode(0o700)).unwrap();
+        engine.dispatch(&validate).unwrap();
+        std::fs::write(&script, b"unreviewed entry").unwrap();
+        assert_eq!(
+            engine.dispatch(&validate).unwrap_err(),
+            "lsp_sources_changed"
+        );
+        std::fs::write(&script, b"reviewed entry").unwrap();
+        engine.dispatch(&validate).unwrap();
+        std::fs::rename(&program, bin.join("former-server")).unwrap();
+        std::fs::copy(bin.join("former-server"), &program).unwrap();
+        assert_eq!(
+            engine.dispatch(&capture).unwrap_err(),
+            "lsp_sources_changed"
+        );
+        assert!(!marker.exists());
+    }
     #[test]
     fn source_review_is_context_bound_and_never_executes_the_discovered_tool() {
         use std::os::unix::fs::PermissionsExt;

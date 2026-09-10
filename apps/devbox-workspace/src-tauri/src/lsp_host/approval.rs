@@ -33,7 +33,7 @@ use std::{
     time::{Duration, Instant},
 };
 type Result<T> = std::result::Result<T, &'static str>;
-const FILE: &str = "execution-approval.json";
+pub(super) const FILE: &str = "execution-approval.json";
 const TTL: Duration = Duration::from_secs(180);
 const MAX_PENDING: usize = 4;
 #[derive(Clone, Default)]
@@ -54,13 +54,13 @@ fn native_target(context: &ProjectContext) -> bool {
 
 #[derive(Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Record {
-    schema_version: u32,
-    context: ProjectContext,
-    config_revision: String,
-    digest: String,
+pub(super) struct Record {
+    pub(super) schema_version: u32,
+    pub(super) context: ProjectContext,
+    pub(super) config_revision: String,
+    pub(super) digest: String,
 }
-fn record(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<Record>> {
+pub(super) fn record(bytes: Option<&[u8]>, context: &ProjectContext) -> Result<Option<Record>> {
     let Some(bytes) = bytes else {
         return Ok(None);
     };
@@ -700,8 +700,47 @@ impl LspExecutionAuthority for Snapshot {
     }
 }
 
+pub(super) enum ReviewSnapshot {
+    Native(Box<Snapshot>),
+    #[cfg(windows)]
+    Wsl(Box<super::wsl_approval::Snapshot>),
+}
+impl From<Snapshot> for ReviewSnapshot {
+    fn from(snapshot: Snapshot) -> Self {
+        Self::Native(Box::new(snapshot))
+    }
+}
+#[cfg(windows)]
+impl From<super::wsl_approval::Snapshot> for ReviewSnapshot {
+    fn from(snapshot: super::wsl_approval::Snapshot) -> Self {
+        Self::Wsl(Box::new(snapshot))
+    }
+}
+impl ReviewSnapshot {
+    fn context(&self) -> &ProjectContext {
+        match self {
+            Self::Native(snapshot) => snapshot.context(),
+            #[cfg(windows)]
+            Self::Wsl(snapshot) => snapshot.context(),
+        }
+    }
+    fn view(&self) -> Result<Value> {
+        match self {
+            Self::Native(snapshot) => snapshot.view(),
+            #[cfg(windows)]
+            Self::Wsl(snapshot) => snapshot.view(),
+        }
+    }
+    fn approve(&self, deadline: u64) -> Result<()> {
+        match self {
+            Self::Native(snapshot) => snapshot.approve(deadline),
+            #[cfg(windows)]
+            Self::Wsl(snapshot) => snapshot.approve(deadline),
+        }
+    }
+}
 struct Pending {
-    snapshot: Snapshot,
+    snapshot: ReviewSnapshot,
     created: Instant,
 }
 #[derive(Default)]
@@ -713,7 +752,8 @@ impl Approvals {
         self.pending
             .retain(|_, pending| pending.created.elapsed() < TTL);
     }
-    pub(super) fn preview(&mut self, snapshot: Snapshot) -> Result<Value> {
+    pub(super) fn preview(&mut self, snapshot: impl Into<ReviewSnapshot>) -> Result<Value> {
+        let snapshot = snapshot.into();
         self.expire();
         if self.pending.len() >= MAX_PENDING {
             return Err("lsp_review_busy");

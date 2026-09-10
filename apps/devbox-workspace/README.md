@@ -358,3 +358,11 @@ placeholder. Those entries are now display-only while ordinary selected-file sta
 continues. Linux pipe/parser/UI tests and the complete actual Windows Rust host scenario passed
 after the fix on owned WSL1 (71.37 s) and WSL2 (53.10 s), including final hook
 cancellation and fixture cleanup. Packaged/WebView and LSP acceptance remain separate.
+
+WSL LSP execution review now delegates saved installed-target resolution and bounded
+code/permission evidence to Linux while retaining settings, definition evidence
+and one-use approval in the Windows private store. Review executes no server or
+runtime probe. Native LSP lifecycle/document transport remains in progress.
+The `d8f76a4` CI Windows debug artifact passed an owned WSL2 WebView scenario for
+registration, dirty-buffer retention, CRLF save, selected stage/commit and exact
+64-MiB read-only editor content. This evidence does not cover the newer LSP path.

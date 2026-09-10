@@ -69,6 +69,10 @@ impl ExecutionDefinitions {
     pub(crate) fn revalidate(&self) -> Result<()> {
         self.0.revalidate()
     }
+    #[cfg(windows)]
+    pub(crate) fn revalidate_until(&self, deadline: u64) -> Result<()> {
+        self.0.revalidate_until(deadline)
+    }
 }
 impl Snapshot {
     fn capture(

@@ -8,6 +8,8 @@ mod evidence;
 mod recovery;
 mod settings;
 mod settings_import;
+#[cfg(windows)]
+mod wsl_approval;
 use crate::{
     host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
 };
@@ -20,6 +22,8 @@ use std::{
     time::Duration,
 };
 use tauri::{Emitter, Manager};
+#[cfg(all(test, windows))]
+pub(crate) use wsl_approval::check_owned_fixture as check_wsl_approval_fixture;
 type Result<T> = std::result::Result<T, &'static str>;
 pub(crate) struct Invocation<'a> {
     pub method: &'a str,
@@ -27,6 +31,16 @@ pub(crate) struct Invocation<'a> {
     pub context: Option<&'a product_contract::ProjectContext>,
     pub deadline: u64,
     pub start: Option<crate::core::source_operations::Request>,
+}
+
+pub(crate) fn review_method(method: &str) -> bool {
+    matches!(
+        method,
+        "lsp_execution_preview"
+            | "lsp_execution_approve"
+            | "lsp_execution_cancel"
+            | "lsp_execution_revoke"
+    )
 }
 
 pub(crate) fn text_request(method: &str) -> bool {
@@ -346,6 +360,83 @@ impl LspHost {
         self.storage.revalidate(host)?;
         Ok(json!(tokens))
     }
+    /// Runs on the existing bounded native worker, outside an async runtime.
+    /// WSL leases own their own pipe runtime, including their Drop cleanup.
+    pub(crate) fn execute_review(
+        &self,
+        app: &tauri::AppHandle,
+        host: &Arc<Host>,
+        method: &str,
+        args: Value,
+        context: Option<&product_contract::ProjectContext>,
+        deadline: u64,
+    ) -> Result<Value> {
+        self.storage.revalidate(host)?;
+        crate::files_host::current_deadline(deadline)?;
+        match method {
+            "lsp_execution_preview" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                let context = context.ok_or("project_selection_required")?;
+                #[cfg(windows)]
+                if matches!(
+                    context.target,
+                    product_contract::ExecutionTarget::Wsl { .. }
+                ) {
+                    let snapshot =
+                        wsl_approval::Snapshot::capture(host.clone(), context, deadline, false)?;
+                    return self
+                        .approvals
+                        .lock()
+                        .map_err(|_| "lsp_unavailable")?
+                        .preview(snapshot);
+                }
+                let snapshot = approval::Snapshot::capture(
+                    host.clone(),
+                    context,
+                    &mut Default::default(),
+                    app.state::<Arc<ManagedInstaller>>().inner().clone(),
+                    self.protected.clone(),
+                    deadline,
+                    false,
+                )?;
+                self.approvals
+                    .lock()
+                    .map_err(|_| "lsp_unavailable")?
+                    .preview(snapshot)
+            }
+            "lsp_execution_approve" | "lsp_execution_cancel" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Token {
+                    preview_id: String,
+                }
+                let token: Token = input(args)?;
+                let context = context.ok_or("project_selection_required")?;
+                if method == "lsp_execution_approve" {
+                    tauri::async_runtime::block_on(self.retire())?;
+                }
+                let mut approvals = self.approvals.lock().map_err(|_| "lsp_unavailable")?;
+                if method == "lsp_execution_approve" {
+                    approvals.approve(context, &token.preview_id, deadline)
+                } else {
+                    approvals.cancel(context, &token.preview_id)
+                }
+            }
+            "lsp_execution_revoke" => {
+                if args.as_object().is_none_or(|value| !value.is_empty()) {
+                    return Err("invalid_request");
+                }
+                tauri::async_runtime::block_on(self.retire())?;
+                self.approvals
+                    .lock()
+                    .map_err(|_| "lsp_unavailable")?
+                    .revoke(host, context.ok_or("project_selection_required")?, deadline)
+            }
+            _ => Err("invalid_request"),
+        }
+    }
     pub(crate) async fn execute(
         &self,
         app: &tauri::AppHandle,
@@ -405,52 +496,6 @@ impl LspHost {
                 }
             }
 
-            "lsp_execution_preview" => {
-                if args.as_object().is_none_or(|value| !value.is_empty()) {
-                    return Err("invalid_request");
-                }
-                let snapshot = approval::Snapshot::capture(
-                    host.clone(),
-                    context.ok_or("project_selection_required")?,
-                    &mut Default::default(),
-                    app.state::<Arc<ManagedInstaller>>().inner().clone(),
-                    self.protected.clone(),
-                    deadline,
-                    false,
-                )?;
-                self.approvals
-                    .lock()
-                    .map_err(|_| "lsp_unavailable")?
-                    .preview(snapshot)
-            }
-            "lsp_execution_approve" | "lsp_execution_cancel" => {
-                #[derive(Deserialize)]
-                #[serde(rename_all = "camelCase", deny_unknown_fields)]
-                struct Token {
-                    preview_id: String,
-                }
-                let token: Token = input(args)?;
-                let context = context.ok_or("project_selection_required")?;
-                if method == "lsp_execution_approve" {
-                    self.retire().await?;
-                }
-                let mut approvals = self.approvals.lock().map_err(|_| "lsp_unavailable")?;
-                if method == "lsp_execution_approve" {
-                    approvals.approve(context, &token.preview_id, deadline)
-                } else {
-                    approvals.cancel(context, &token.preview_id)
-                }
-            }
-            "lsp_execution_revoke" => {
-                if args.as_object().is_none_or(|value| !value.is_empty()) {
-                    return Err("invalid_request");
-                }
-                self.retire().await?;
-                self.approvals
-                    .lock()
-                    .map_err(|_| "lsp_unavailable")?
-                    .revoke(host, context.ok_or("project_selection_required")?, deadline)
-            }
             "load_lsp_config" => {
                 if args.as_object().is_none_or(|value| !value.is_empty()) {
                     return Err("invalid_request");

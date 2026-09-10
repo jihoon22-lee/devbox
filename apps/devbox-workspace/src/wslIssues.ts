@@ -1,4 +1,6 @@
 const issues:Record<string,string>={
+  wsl_lsp_installed_target_required: "WSL 배포판에 설치된 언어 서버 또는 Node 진입 파일을 직접 지정해 주세요.",
+  wsl_lsp_language_unsupported: "이 WSL 언어 서버의 언어는 아직 지원하지 않습니다.",
   wsl_distro_stopped: "WSL 배포판이 중지되어 있습니다. 목록을 새로 고친 뒤 시작 여부를 선택해 주세요.",
   wsl_distro_missing: "WSL 배포판 등록을 찾을 수 없습니다. 목록을 새로 고쳐 주세요.",
   wsl_storage_path_unsafe: "WSL 저장 폴더 경로에 링크나 접근할 수 없는 폴더가 있습니다. 배포판 저장 위치를 확인해 주세요.",

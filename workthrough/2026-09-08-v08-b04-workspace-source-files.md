@@ -654,13 +654,78 @@ Windows strict checks passed in **16.491 s** (sampled RSS **1,984,987,136 B**).
 Final all-scope affected verification passed in **524.758 s**, sampled RSS
 **6,070,919,168 B**, enforced cgroup memory peak **6,443,941,888 B** and zero swap.
 
+## WSL LSP execution review
+
+The private helper now captures configured Linux ELF servers and explicit Node
+entry files without executing them or probing runtimes. It freezes an allowlist
+of PATH/HOME, rejects linked and foreign filesystem sources, streams bounded
+content hashes, and retains file/parent identity and Unix mode. Configuration,
+context, environment and code evidence all contribute to the digest; reattachment
+cannot replace changed evidence. Managed Windows installations are not treated
+as Linux installations. This first path supports already installed Linux targets.
+
+Windows retains settings, project-definition evidence and the one-use approval
+record in the existing private store. Approval revalidates Linux evidence and
+Windows metadata; changing code, saved settings, context or approval invalidates
+the review. The UI shows native command arguments and environment names.
+Language-server execution/document transport and WSL WorkspaceEdit remain pending.
+
+Focused native evidence/engine checks passed (**3 tests**, **11.729 s**, strict
+Clippy included). Existing host LSP regressions (**22 tests**), Linux strict checks
+and Windows-target strict compilation passed in **78.380 s**. The UI review (**5 tests**) and typecheck, native evidence/engine (**3 tests**),
+actual closed-pipe LSP review (**1 test**) and Linux strict checks then passed in
+**37.485 s**, sampled RSS **1,528,291,328 B**, cgroup memory peak **6,443,470,848 B**,
+zero swap. Final Windows-target strict compilation and linked test build passed in
+**55.798 s**, sampled RSS **4,462,043,136 B**, cgroup peak **6,344,712,192 B**, zero swap.
+The actual Windows host then passed the new LSP approval plus full Source/Files
+fixture on owned **WSL1 (85.63 s)** and **WSL2 (67.67 s)**. Both checked one-use
+approval, persisted approval reuse, native code mutation and explicit revocation
+without executing the selected server. Existing 64-MiB reads, profiles,
+Dependencies, stage/commit, worktree creation/cleanup and hook cancellation also
+passed; both owned distributions/directories were removed. The helper was
+**5,424,080 B**, SHA-256
+`ac6baf314cc1aa3e934c0a57825947f66f77e2d7ecd3efeb7a67b54602e5afec`;
+the Windows test executable SHA-256 was
+`d2305a73397d099a5901648e34b5d1e122bb58b3b307d1c0bf785f303daef6d6`.
+A preceding WSL2 setup attempt returned `Wsl/Service/E_UNEXPECTED` before the
+product test and cleaned up; it is not counted as a product test result.
+The separate native-review shape test also passed on Windows (**1 test**, **0.03 s**).
+Final all-scope affected verification passed in **520.386 s**, sampled RSS
+**5,834,452,992 B**, sampled swap peak **175,726,592 B**, cgroup memory peak
+**6,445,121,536 B**, final cgroup swap **5,320,704 B**. An earlier run stopped at the
+initial bundle budget (**280,023 > 280,000 B**); moving the new WSL-only messages
+to the existing lazy error module reduced initial JS to **279,789 B**
+(gzip **82,529 B**, budget **90,000 B**) without changing the budget.
+The final host review dispatch runs outside the async runtime so the WSL pipe can
+own its native runtime; error mapping preserves the bounded LSP conflict codes.
+
+Owned Windows/WSL2 WebView observations of CI source
+`8d2ae49226f96a1f3521f251e116b8538c9eae9a` (PR head `d8f76a4`,
+[product run 34437236806](https://github.com/jihoon22-lee/devbox/actions/runs/34437236806))
+passed project registration, dirty-buffer context retention, explicit CRLF save,
+Git review, selected stage and reviewed commit. The exact **64 MiB** file opened
+read-only in **21.016 s**; reading the actual CodeMirror document in bounded slices
+confirmed **67,108,864 bytes** and SHA-256
+`66e74f95e41271d01f9d2705e0ed01bb22b96c697d06b7b17822f0eaac0c3ec3`.
+The Windows scenario took **46.226 s**, including full document hashing and app
+closure; total owned-fixture setup/run/cleanup took **77.431 s**. It confirmed app,
+private-data, owned-distro and fixture-directory cleanup. This is a debug CI
+artifact, not a release candidate, and does not prove the newer LSP approval path.
+
+Earlier attempts exposed fixture selector escaping and an immutable Tauri invoke
+property; the successful run observes the editor state and does not replace native
+responses. An interrupted owned distro was identified by GUID/storage/owner marker
+and removed. When the host's binfmt registration disappeared, the private runner
+used the existing [WSL `/init` interop entry point](https://github.com/microsoft/WSL/blob/master/doc/docs/technical-documentation/interop.md); no global service/configuration
+or user distro was changed.
+
 ## Remaining acceptance and rollback limits
 
-- Native WSL LSP and full WSL2 WebView
-  acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
+- Native WSL LSP and its final combined WebView acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration
-  comparison and maximum read-only file/frame parity remain required.
+  comparison remain required. Maximum read-only file/frame parity now has native
+  WSL1/2 and actual WSL2 WebView evidence above.
 - B05/B06 own process/service and terminal/session lifecycle; B07 owns secondary
   windows and product-wide provider integration. B08/B09 own suite migration,
   activation, installer recovery and exact-main stable promotion.

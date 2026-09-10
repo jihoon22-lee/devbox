@@ -458,7 +458,8 @@ export interface LspExecutionPreview {
   workspaceRoot: string;
   configRevision: string;
   commands: Array<{ languageId: string; executable: string; args: string[]; runtime: string | null }>;
-  environment: Record<string, string>;
+  environment?: Record<string, string>;
+  environmentKeys?: string[];
   definitionsDigest: string;
 }
 export function previewLspExecution(): Promise<LspExecutionPreview> {

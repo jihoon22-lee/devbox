@@ -60,7 +60,14 @@ retirement with SIGTERM instead of killing the reaper. Probe cancellation waits
 for confirmed retirement. The manager applies this native-only policy to starts,
 retries and probes; it is not a setting supplied by the renderer. Actual WSL1/2
 fixtures covered normal exit, cancellation and owner drop with detached children
-and another unaffected job. Project approval/document transport is still pending.
+and another unaffected job. The pipe now exposes bounded `lsp_capture` and
+`lsp_validate` observations for saved configurations. Native x86_64 ELF servers,
+explicit Node runtimes/entry files, parent identity, permissions and content hashes
+are retained with the selected context and a frozen PATH/HOME allowlist. No server,
+version probe or installer runs during review. Linked/foreign filesystems and
+Windows managed installations are rejected. Windows owns the saved configuration,
+definition evidence and one-use execution approval; native server/document
+transport is still pending.
 
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,

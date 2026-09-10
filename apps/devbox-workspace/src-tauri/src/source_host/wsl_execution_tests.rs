@@ -724,6 +724,24 @@ fn owned_local_source_flow_preserves_native_ownership() {
 }
 
 fn exercise_source_flow(mut fixture: Fixture) {
+    let program = format!("{}/owned-lsp-server", fixture.root);
+    assert!(
+        Fixture::linux(&fixture.name, &["/usr/bin/cp", "/usr/bin/touch", &program])
+            .status
+            .success()
+    );
+    assert!(
+        Fixture::linux(&fixture.name, &["/usr/bin/chmod", "700", &program])
+            .status
+            .success()
+    );
+    crate::lsp_host::check_wsl_approval_fixture(
+        fixture.host.clone(),
+        &fixture.context,
+        &program,
+        &fixture.unc.join("owned-lsp-server"),
+    );
+    fs::remove_file(fixture.unc.join("owned-lsp-server")).unwrap();
     fixture.check_large_files();
     fixture.check_wsl_profiles();
     fixture.check_dependencies();

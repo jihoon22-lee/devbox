@@ -1,10 +1,12 @@
 //! Retained native objects and bounded streaming hashes for reviewed LSP code.
 //! Unlike Git text evidence, a native server executable can exceed 48 MiB.
-use crate::{git_files, storage_paths::display};
+use crate::{files::Admission, git_files, storage_paths::display};
 use devbox_filesystem::{
     ensure_no_links, filesystem_identity, open_filesystem_object, FilesystemIdentity,
 };
 use sha2::{Digest, Sha256};
+#[cfg(unix)]
+use std::os::unix::fs::PermissionsExt;
 use std::{
     collections::{BTreeMap, BTreeSet},
     fs::{self, File},
@@ -17,7 +19,11 @@ const MAX_FILE: u64 = 256 * 1024 * 1024;
 const MAX_TOTAL: u64 = 512 * 1024 * 1024;
 
 pub fn transport(root: &Path, path: &Path) -> Result<()> {
-    git_files::transport(root, path).map_err(|_| "lsp_source_transport_denied")
+    transport_with_admission(root, path, crate::windows_path::admit)
+}
+pub fn transport_with_admission(root: &Path, path: &Path, admission: Admission) -> Result<()> {
+    git_files::transport_with_admission(root, path, admission)
+        .map_err(|_| "lsp_source_transport_denied")
 }
 
 /// Check every candidate before any resolver may follow one of them. A bare
@@ -27,11 +33,19 @@ pub fn inspect_candidates(
     paths: &BTreeSet<PathBuf>,
     check: &dyn Fn() -> Result<()>,
 ) -> Result<()> {
+    inspect_candidates_with_admission(root, paths, check, crate::windows_path::admit)
+}
+pub fn inspect_candidates_with_admission(
+    root: &Path,
+    paths: &BTreeSet<PathBuf>,
+    check: &dyn Fn() -> Result<()>,
+    admission: Admission,
+) -> Result<()> {
     if paths.len() > 4096 {
         return Err("lsp_source_limit");
     }
     for path in paths {
-        transport(root, path)?;
+        transport_with_admission(root, path, admission)?;
     }
     for path in paths {
         check()?;
@@ -103,15 +117,29 @@ struct Object {
     identity: FilesystemIdentity,
     directory: bool,
     _handle: File,
+    #[cfg(unix)]
+    mode: u32,
     digest: Option<String>,
     names: Option<Vec<String>>,
 }
-#[derive(Default)]
 pub struct Evidence {
+    admission: Admission,
     objects: BTreeMap<PathBuf, Object>,
     total: u64,
 }
+impl Default for Evidence {
+    fn default() -> Self {
+        Self::with_admission(crate::windows_path::admit)
+    }
+}
 impl Evidence {
+    pub fn with_admission(admission: Admission) -> Self {
+        Self {
+            admission,
+            objects: BTreeMap::new(),
+            total: 0,
+        }
+    }
     fn object(
         &mut self,
         path: &Path,
@@ -119,7 +147,7 @@ impl Evidence {
         check: &dyn Fn() -> Result<()>,
     ) -> Result<()> {
         check()?;
-        crate::windows_path::admit(path).map_err(|_| "lsp_source_transport_denied")?;
+        (self.admission)(path).map_err(|_| "lsp_source_transport_denied")?;
         ensure_no_links(path).map_err(|_| "lsp_source_path_invalid")?;
         if !directory
             && !fs::symlink_metadata(path)
@@ -146,6 +174,12 @@ impl Evidence {
             Object {
                 identity,
                 directory,
+                #[cfg(unix)]
+                mode: handle
+                    .metadata()
+                    .map_err(|_| "lsp_source_unavailable")?
+                    .permissions()
+                    .mode(),
                 _handle: handle,
                 digest: None,
                 names: None,
@@ -161,7 +195,7 @@ impl Evidence {
         check: &dyn Fn() -> Result<()>,
     ) -> Result<()> {
         let path = display(path)?;
-        transport(root, &path)?;
+        transport_with_admission(root, &path, self.admission)?;
         let mut parts: Vec<_> = path
             .ancestors()
             .filter(|path| !path.as_os_str().is_empty())
@@ -226,14 +260,24 @@ impl Evidence {
         Ok(())
     }
     pub fn revalidate(&self, root: &Path, check: &dyn Fn() -> Result<()>) -> Result<()> {
-        transport(root, root)?;
+        transport_with_admission(root, root, self.admission)?;
         for (path, object) in &self.objects {
             check()?;
-            crate::windows_path::admit(path).map_err(|_| "lsp_source_transport_denied")?;
+            (self.admission)(path).map_err(|_| "lsp_source_transport_denied")?;
             ensure_no_links(path).map_err(|_| "lsp_sources_changed")?;
             let (handle, identity) = open_filesystem_object(path, object.directory)
                 .map_err(|_| "lsp_sources_changed")?;
             if identity != object.identity {
+                return Err("lsp_sources_changed");
+            }
+            #[cfg(unix)]
+            if handle
+                .metadata()
+                .map_err(|_| "lsp_sources_changed")?
+                .permissions()
+                .mode()
+                != object.mode
+            {
                 return Err("lsp_sources_changed");
             }
             if let Some(expected) = &object.digest {
@@ -262,6 +306,8 @@ impl Evidence {
                     format!("{:?}", object.identity),
                     &object.digest,
                     &object.names,
+                    #[cfg(unix)]
+                    object.mode,
                 )
             })
             .collect::<Vec<_>>();

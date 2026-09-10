@@ -84,7 +84,8 @@ export default function LspExecutionReview({ disabled, nativeRevision }: { disab
         <p>인자</p><pre>{command.args.length ? command.args.join("\n") : "없음"}</pre>
       </article>)}
       <details><summary>프로세스에 전달할 환경 변수</summary>
-        <dl>{Object.entries(preview.environment).map(([name, value]) => <div key={name}><dt>{name}</dt><dd><code>{value}</code></dd></div>)}</dl>
+        <dl>{Object.entries(preview.environment ?? {}).map(([name, value]) => <div key={name}><dt>{name}</dt><dd><code>{value}</code></dd></div>)}</dl>
+        {preview.environmentKeys && <p>변수 이름: {preview.environmentKeys.join(", ")}</p>}
       </details>
       <button type="button" className="toolbar-button selected" disabled={disabled || busy} onClick={approve}>이 설정의 실행 승인</button>
       <button type="button" className="toolbar-button" disabled={busy} onClick={cancel}>검토 취소</button>
