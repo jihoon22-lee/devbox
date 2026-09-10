@@ -515,14 +515,16 @@ pub struct ReviewedLspExecution {
 
 #[derive(Clone)]
 pub struct LspManager {
-    app_local_data_dir: PathBuf,
+    app_local_data_dir: Option<PathBuf>,
     app_version: String,
     resolver: RuntimeResolver,
     #[cfg(target_os = "linux")]
     linux_supervisor: Option<PathBuf>,
+    #[cfg(target_os = "linux")]
+    native_retry_drive: Option<Arc<AtomicBool>>,
     execution_authority: Option<Arc<dyn LspExecutionAuthority>>,
     reviewed: Option<Arc<ReviewedLspExecution>>,
-    installer: Arc<ManagedInstaller>,
+    installer: Option<Arc<ManagedInstaller>>,
     state: Arc<Mutex<ManagerState>>,
     logs: Arc<Mutex<LspLogStore>>,
     events: broadcast::Sender<LspEvent>,
@@ -537,7 +539,7 @@ pub struct LspManager {
     /// not only when disk I/O starts. This closes the apply/cancel handoff
     /// race while the native command is validating its pending plan.
     active_rename_cancellations: Arc<Mutex<BTreeMap<String, Arc<AtomicBool>>>>,
-    rename_backup_root: PathBuf,
+    rename_backup_root: Option<PathBuf>,
     document_mutation_gate: Arc<Mutex<()>>,
 }
 
@@ -570,15 +572,36 @@ impl LspManager {
         installer: Arc<ManagedInstaller>,
         recovery: StartupRecovery,
     ) -> Self {
-        let app_local_data_dir = app_local_data_dir.into();
-        let rename_backup_root = app_local_data_dir.join("rename-backups");
+        let manager = Self::from_native_owners(
+            Some(app_local_data_dir.into()),
+            app_version.into(),
+            Some(installer),
+        );
+        if recovery == StartupRecovery::RecoverOwnedJournals {
+            if let Some(root) = &manager.rename_backup_root {
+                recover_rename_journals(root);
+            }
+        }
+        manager
+    }
+
+    fn from_native_owners(
+        app_local_data_dir: Option<PathBuf>,
+        app_version: String,
+        installer: Option<Arc<ManagedInstaller>>,
+    ) -> Self {
+        let rename_backup_root = app_local_data_dir
+            .as_ref()
+            .map(|root| root.join("rename-backups"));
         let (events, _) = broadcast::channel(128);
-        let manager = Self {
+        Self {
             app_local_data_dir,
-            app_version: app_version.into(),
+            app_version,
             resolver: RuntimeResolver::new(),
             #[cfg(target_os = "linux")]
             linux_supervisor: None,
+            #[cfg(target_os = "linux")]
+            native_retry_drive: None,
             execution_authority: None,
             reviewed: None,
             installer,
@@ -595,11 +618,7 @@ impl LspManager {
             active_rename_cancellations: Arc::new(Mutex::new(BTreeMap::new())),
             rename_backup_root,
             document_mutation_gate: Arc::new(Mutex::new(())),
-        };
-        if recovery == StartupRecovery::RecoverOwnedJournals {
-            recover_rename_journals(&manager.rename_backup_root);
         }
-        manager
     }
 
     pub fn with_execution_authority(
@@ -642,6 +661,35 @@ impl LspManager {
         authority: Arc<dyn LspExecutionAuthority>,
         reviewed: ReviewedLspExecution,
     ) -> Result<Self, LspManagerError> {
+        Self::with_execution_authority(app_local_data_dir, app_version, installer, authority)
+            .bind_reviewed(reviewed)
+    }
+
+    /// A native transport can provide reviewed commands without provisioning
+    /// any private persistent store. Disk-backed rename is unavailable until
+    /// its caller has supplied an owned journal/recovery boundary.
+    #[cfg(target_os = "linux")]
+    pub fn with_reviewed_read_only_execution(
+        app_version: impl Into<String>,
+        authority: Arc<dyn LspExecutionAuthority>,
+        reviewed: ReviewedLspExecution,
+    ) -> Result<Self, LspManagerError> {
+        let mut manager = Self::from_native_owners(None, app_version.into(), None);
+        manager.execution_authority = Some(authority);
+        manager.native_retry_drive = Some(Arc::new(AtomicBool::new(false)));
+        manager.bind_reviewed(reviewed)
+    }
+
+    /// The private native transport drives retries only within a fresh,
+    /// uncancelled poll admission. Ordinary standalone managers are unchanged.
+    #[cfg(target_os = "linux")]
+    pub fn drive_native_retries(&self, enabled: bool) {
+        if let Some(gate) = &self.native_retry_drive {
+            gate.store(enabled, Ordering::Release);
+        }
+    }
+
+    fn bind_reviewed(mut self, reviewed: ReviewedLspExecution) -> Result<Self, LspManagerError> {
         reviewed
             .config
             .validate()
@@ -653,11 +701,9 @@ impl LspManager {
         {
             return Err(LspManagerError::ExecutionApprovalRequired);
         }
-        let mut manager =
-            Self::with_execution_authority(app_local_data_dir, app_version, installer, authority);
-        manager.resolver = RuntimeResolver::new().with_environment(reviewed.environment.clone());
-        manager.reviewed = Some(Arc::new(reviewed));
-        Ok(manager)
+        self.resolver = RuntimeResolver::new().with_environment(reviewed.environment.clone());
+        self.reviewed = Some(Arc::new(reviewed));
+        Ok(self)
     }
 
     fn next_rename_plan_id(&self) -> String {
@@ -770,8 +816,12 @@ impl LspManager {
                 error: None,
             });
         }
-        load_from_app_local_data_dir(&self.app_local_data_dir)
-            .map_err(|error| LspManagerError::Config(error.to_string()))
+        load_from_app_local_data_dir(
+            self.app_local_data_dir
+                .as_ref()
+                .ok_or(LspManagerError::ExecutionApprovalRequired)?,
+        )
+        .map_err(|error| LspManagerError::Config(error.to_string()))
     }
 
     pub fn save_config(
@@ -786,8 +836,13 @@ impl LspManager {
         if !loaded.persist_allowed && !recover_invalid {
             return Err(LspManagerError::ConfigRecoveryRequired);
         }
-        save_to_app_local_data_dir(&self.app_local_data_dir, config)
-            .map_err(|error| LspManagerError::Config(error.to_string()))
+        save_to_app_local_data_dir(
+            self.app_local_data_dir
+                .as_ref()
+                .ok_or(LspManagerError::ExecutionApprovalRequired)?,
+            config,
+        )
+        .map_err(|error| LspManagerError::Config(error.to_string()))
     }
 
     pub async fn start(&self, language_id: &str) -> Result<(), LspManagerError> {
@@ -970,6 +1025,8 @@ impl LspManager {
                 } => {
                     let installation = self
                         .installer
+                        .as_ref()
+                        .ok_or(LspManagerError::ExecutionApprovalRequired)?
                         .resolve_managed_install(manifest_id, version)
                         .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
                     self.resolver
@@ -1289,6 +1346,10 @@ impl LspManager {
             let process = session.process.state().await;
             let process_state = process_state_label(process.clone());
             let document_count = session.documents.lock().await.len();
+            let mut capabilities = session.client.capabilities().await;
+            if self.rename_backup_root.is_none() {
+                capabilities = capabilities.without_disk_rename();
+            }
             statuses.push(LanguageServerStatus {
                 language_id: language_id.clone(),
                 // The process state is the authoritative failure boundary.
@@ -1302,7 +1363,7 @@ impl LspManager {
                 // serverInfo. Runtime identity is derived from reviewed config
                 // metadata in the UI, so do not forward this untrusted label.
                 server_info: None,
-                capabilities: session.client.capabilities().await,
+                capabilities,
                 document_count,
                 restart_attempt: restart_state
                     .get(&language_id)
@@ -1390,7 +1451,8 @@ impl LspManager {
         let session = self.session(language_id).await?;
         // Commit the authoritative document store before notifying the server:
         // a slow or dead child must not delay the store that a replacement
-        // session later replays from.
+        // session later replays from. During backoff, acknowledge the committed
+        // store without writing to the retired process; restart replays it.
         let opened = {
             let mut documents = session.documents.lock().await;
             let mut staged = documents.clone();
@@ -1400,11 +1462,12 @@ impl LspManager {
             *documents = staged;
             opened
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didOpen")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didOpen")
         {
             session
                 .process
@@ -1443,11 +1506,12 @@ impl LspManager {
             *documents = staged;
             changed
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didChange")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didChange")
         {
             session
                 .process
@@ -1481,11 +1545,12 @@ impl LspManager {
             *documents = staged;
             changed
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didChange")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didChange")
         {
             session
                 .process
@@ -1518,11 +1583,12 @@ impl LspManager {
             *documents = staged;
             saved
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didSave")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didSave")
         {
             session
                 .process
@@ -1552,11 +1618,12 @@ impl LspManager {
             *documents = staged;
             closed
         };
-        if session
-            .client
-            .capabilities()
-            .await
-            .supports("textDocument/didClose")
+        if matches!(session.process.state().await, ProcessState::Running)
+            && session
+                .client
+                .capabilities()
+                .await
+                .supports("textDocument/didClose")
         {
             session
                 .process
@@ -1723,6 +1790,12 @@ impl LspManager {
         position: LspPosition,
         new_name: String,
     ) -> Result<RenamePreview, LspManagerError> {
+        if self.rename_backup_root.is_none() {
+            return Err(LspManagerError::UnsupportedFeature {
+                language_id: language_id.into(),
+                method: "textDocument/rename".into(),
+            });
+        }
         self.prune_pending_renames().await;
         let rename_epoch = self.rename_epoch.load(Ordering::Acquire);
         let normalized_id = normalized_language_id(language_id)?;
@@ -1889,6 +1962,13 @@ impl LspManager {
     /// either phase fails, transaction-private backups restore every file that was
     /// committed and the caller receives a file-by-file outcome.
     pub async fn apply_rename(&self, plan_id: &str) -> Result<RenameApplyResult, LspManagerError> {
+        let backup_root =
+            self.rename_backup_root
+                .clone()
+                .ok_or_else(|| LspManagerError::UnsupportedFeature {
+                    language_id: "native".into(),
+                    method: "workspace/applyEdit".into(),
+                })?;
         self.prune_pending_renames().await;
         if !valid_rename_plan_id(plan_id) {
             return Err(LspManagerError::Protocol(
@@ -1946,7 +2026,6 @@ impl LspManager {
             }
         }
 
-        let backup_root = self.rename_backup_root.clone();
         let files = pending.files.clone();
         let workspace_root = pending.workspace_root.clone();
         let plan_id_for_worker = plan_id.to_owned();
@@ -2533,6 +2612,19 @@ impl LspManager {
             tokio::time::sleep(delay).await;
             if self.shutting_down.load(Ordering::Acquire) {
                 return;
+            }
+            #[cfg(target_os = "linux")]
+            while self
+                .native_retry_drive
+                .as_ref()
+                .is_some_and(|gate| !gate.load(Ordering::Acquire))
+            {
+                if self.shutting_down.load(Ordering::Acquire)
+                    || failed_session.stopping.load(Ordering::Acquire)
+                {
+                    return;
+                }
+                tokio::time::sleep(Duration::from_millis(5)).await;
             }
             let _activity = self.begin_start_activity();
             let replacement_token = {

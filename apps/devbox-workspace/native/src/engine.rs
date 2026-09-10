@@ -26,7 +26,7 @@ struct Root {
     files: Option<FileAccess>,
     definitions: Option<crate::definitions::Definitions>,
     source: Option<crate::git_review::Review>,
-    lsp: Option<crate::lsp_review::Review>,
+    lsp: Option<std::sync::Arc<crate::lsp_review::Review>>,
 }
 struct FileAccess {
     context: ProjectContext,
@@ -59,6 +59,13 @@ impl RootLease for NativeFileLease<'_> {
     deny_unknown_fields
 )]
 enum FileMethod {
+    #[serde(rename = "files_lsp_snapshot")]
+    LspSnapshot {
+        context: ProjectContext,
+        path: String,
+        native_revision: String,
+        verify_disk: bool,
+    },
     #[serde(rename = "files_open_chunk")]
     OpenChunk {
         context: ProjectContext,
@@ -133,7 +140,8 @@ enum FileMethod {
 impl FileMethod {
     fn context(&self) -> &ProjectContext {
         match self {
-            Self::Reveal { context, .. }
+            Self::LspSnapshot { context, .. }
+            | Self::Reveal { context, .. }
             | Self::Poll { context, .. }
             | Self::Recover { context, .. }
             | Self::List { context, .. }
@@ -155,6 +163,7 @@ pub struct Engine {
     source_environment: crate::git_environment::SourceEnvironment,
     lsp_environment: crate::lsp_environment::Environment,
     roots: BTreeMap<String, Root>,
+    lsp_runtime: Option<crate::lsp_runtime::Runtime>,
 }
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -297,6 +306,47 @@ pub fn admit(path: &Path) -> Result<()> {
 }
 impl Engine {
     /// Only the binary's process/pipe owner supplies these native capabilities.
+    pub fn execute_lsp<T: Send + Sync + 'static>(
+        &mut self,
+        request: &Request,
+        guard: &dyn Fn() -> Result<()>,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        authorize: SourceAuthorization,
+        retained: std::sync::Arc<T>,
+    ) -> Result<Value> {
+        if request.method != "lsp_execute" {
+            return Err("wsl_request_invalid");
+        }
+        let args: crate::lsp_wire::Execution = input(&request.args)?;
+        let command = crate::lsp_wire::Command::parse(&args.method, args.args)?;
+        args.context.validate().map_err(|_| "wsl_context_invalid")?;
+        let token = request.root_token.as_ref().ok_or("wsl_root_required")?;
+        let root = self.roots.get(token).ok_or("wsl_root_expired")?;
+        let review = root.lsp.as_ref().ok_or("wsl_context_required")?;
+        if review.context() != &args.context || review.digest() != args.digest {
+            return Err("lsp_execution_approval_required");
+        }
+        guard()?;
+        if self.lsp_runtime.is_none() {
+            self.lsp_runtime = Some(crate::lsp_runtime::Runtime::new(
+                token.clone(),
+                &root.observation,
+                review.clone(),
+                Box::new(retained),
+            )?);
+        }
+        let runtime = self.lsp_runtime.as_mut().ok_or("lsp_unavailable")?;
+        if runtime.root_token != *token || !runtime.matches(&args.context, &args.digest) {
+            return Err("lsp_context_changed");
+        }
+        let scope = crate::lsp_authority::RequestScope {
+            authorize,
+            cancelled,
+            expires: Instant::now() + Duration::from_millis(u64::from(request.budget_ms)),
+        };
+        serde_json::to_value(runtime.run(command, args.document, scope)?)
+            .map_err(|_| "wsl_response_invalid")
+    }
     pub fn execute_source<T: Send + Sync + 'static>(
         &mut self,
         request: &Request,
@@ -314,6 +364,9 @@ impl Engine {
             args: Value,
             #[serde(default)]
             members: Vec<crate::git_review::CleanupMember>,
+        }
+        if self.lsp_runtime.is_some() {
+            return Err("wsl_execution_conflict");
         }
         if request.method != "source_execute" {
             return Err("wsl_request_invalid");
@@ -456,13 +509,13 @@ impl Engine {
                     if count >= 4 {
                         return Err("lsp_source_limit");
                     }
-                    root.lsp = Some(Review::capture(
+                    root.lsp = Some(std::sync::Arc::new(Review::capture(
                         root.observation.root(),
                         context,
                         config,
                         &self.lsp_environment,
                         guard,
-                    )?);
+                    )?));
                 }
                 let access = root.lsp.as_ref().ok_or("wsl_context_required")?;
                 let view = access.view()?;
@@ -676,6 +729,23 @@ impl Engine {
             target: &access.context.target,
         };
         match method {
+            FileMethod::LspSnapshot {
+                path,
+                native_revision,
+                verify_disk,
+                ..
+            } => {
+                let proof = access.owner.editor_proof(
+                    Some((&access.context, &lease)),
+                    &crate::lsp_wire::ProofRequest {
+                        path,
+                        native_revision,
+                        verify_disk,
+                    },
+                    guard,
+                )?;
+                serde_json::to_value(proof).map_err(|_| "wsl_response_invalid")
+            }
             FileMethod::OpenChunk { token, offset, .. } => {
                 // Consume before validating: replay/error cannot keep a large
                 // abandoned allocation or resume a partially acknowledged read.
@@ -906,7 +976,8 @@ impl Engine {
             });
         if matches!(
             request.method.as_str(),
-            "files_reveal"
+            "files_lsp_snapshot"
+                | "files_reveal"
                 | "files_poll"
                 | "files_recover"
                 | "files_list"
@@ -1084,6 +1155,13 @@ impl Engine {
             }
             "release_root" => {
                 let _: Empty = input(&request.args)?;
+                if self
+                    .lsp_runtime
+                    .as_ref()
+                    .is_some_and(|runtime| Some(&runtime.root_token) == request.root_token.as_ref())
+                {
+                    self.lsp_runtime.take();
+                }
                 self.roots
                     .remove(request.root_token.as_ref().ok_or("wsl_root_required")?);
                 Ok(Value::Null)

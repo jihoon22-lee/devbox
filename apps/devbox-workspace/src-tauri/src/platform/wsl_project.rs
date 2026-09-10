@@ -115,6 +115,28 @@ mod native {
             connection.validate(&self.token)?;
             connection.execute_source(&self.token, args, expires, cancelled, authorize)
         }
+        pub fn execute_lsp(
+            &self,
+            context: &ProjectContext,
+            mut args: Value,
+            expires: std::time::Instant,
+            cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            authorize: &dyn Fn(&str) -> Result<()>,
+        ) -> Result<Value> {
+            if cancelled.load(std::sync::atomic::Ordering::Acquire) {
+                return Err("lsp_operation_cancelled");
+            }
+            context.validate().map_err(|_| "wsl_context_invalid")?;
+            if context.target != self.binding.target
+                || !args.is_object()
+                || args.get("context").is_some()
+            {
+                return Err("wsl_context_invalid");
+            }
+            args["context"] = serde_json::to_value(context).map_err(|_| "wsl_context_invalid")?;
+            let mut connection = self.connection.lock().map_err(|_| "wsl_connection_busy")?;
+            connection.execute_lsp(&self.token, args, expires, cancelled, authorize)
+        }
         pub fn file_request(
             &self,
             context: &ProjectContext,

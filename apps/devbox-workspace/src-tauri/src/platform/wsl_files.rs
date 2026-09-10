@@ -101,6 +101,36 @@ impl WslFiles {
         }
         self.lease.revalidate()
     }
+    pub fn editor_proof(
+        &self,
+        projects: &ProjectOwner,
+        context: &ProjectContext,
+        request: workspace_wsl::lsp_wire::ProofRequest,
+        deadline: u64,
+    ) -> Result<workspace_wsl::lsp_wire::DocumentProof> {
+        self.revalidate(projects, context)?;
+        if self.documents.revision(&request.path)? != request.native_revision {
+            return Err("file_snapshot_changed");
+        }
+        let value = self.lease.file_request_until(
+            context,
+            "files_lsp_snapshot",
+            serde_json::to_value(&request).map_err(|_| "invalid_request")?,
+            deadline,
+        )?;
+        let proof: workspace_wsl::lsp_wire::DocumentProof =
+            serde_json::from_value(value).map_err(|_| "wsl_protocol_invalid")?;
+        proof.validate()?;
+        if proof.context != *context
+            || proof.path != request.path
+            || proof.revision != request.native_revision
+        {
+            return Err("wsl_protocol_invalid");
+        }
+        self.revalidate(projects, context)?;
+        crate::files_host::current_deadline(deadline)?;
+        Ok(proof)
+    }
     pub fn reveal(
         &self,
         projects: &ProjectOwner,

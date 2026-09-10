@@ -51,6 +51,12 @@ struct Pending {
     sequence: u64,
     admission_id: String,
     sender: mpsc::SyncSender<bool>,
+    cancelled: Arc<AtomicBool>,
+}
+struct LspRequest {
+    request_id: String,
+    sequence: u64,
+    cancelled: Arc<AtomicBool>,
 }
 pub struct Broker {
     session: String,
@@ -58,6 +64,7 @@ pub struct Broker {
     serial: Mutex<()>,
     pending: Mutex<Option<Pending>>,
     cancelled: Arc<AtomicBool>,
+    lsp_request: Mutex<Option<LspRequest>>,
 }
 impl Broker {
     pub fn new(session: String, cancelled: Arc<AtomicBool>) -> Arc<Self> {
@@ -67,17 +74,47 @@ impl Broker {
             serial: Mutex::new(()),
             pending: Mutex::new(None),
             cancelled,
+            lsp_request: Mutex::new(None),
         })
     }
     pub fn reply(&self, reply: ControlInput) -> Result<()> {
-        let ControlInput::AdmissionReply {
-            version,
-            session_id,
-            request_id,
-            sequence,
-            admission_id,
-            approved,
-        } = reply;
+        let (version, session_id, request_id, sequence, admission_id, approved) = match reply {
+            ControlInput::Cancel {
+                version,
+                session_id,
+                request_id,
+                sequence,
+            } => {
+                if version != workspace_wsl::VERSION || session_id != self.session {
+                    return Err("wsl_protocol_invalid");
+                }
+                let current = self
+                    .lsp_request
+                    .lock()
+                    .map_err(|_| "wsl_protocol_invalid")?;
+                let current = current.as_ref().ok_or("wsl_protocol_invalid")?;
+                if current.request_id != request_id || current.sequence != sequence {
+                    return Err("wsl_protocol_invalid");
+                }
+                current.cancelled.store(true, Ordering::Release);
+                return Ok(());
+            }
+            ControlInput::AdmissionReply {
+                version,
+                session_id,
+                request_id,
+                sequence,
+                admission_id,
+                approved,
+            } => (
+                version,
+                session_id,
+                request_id,
+                sequence,
+                admission_id,
+                approved,
+            ),
+        };
         let mut pending = self.pending.lock().map_err(|_| "wsl_protocol_invalid")?;
         let expected = pending.as_ref().ok_or("wsl_protocol_invalid")?;
         if version != workspace_wsl::VERSION
@@ -89,10 +126,43 @@ impl Broker {
             return Err("wsl_protocol_invalid");
         }
         let expected = pending.take().ok_or("wsl_protocol_invalid")?;
+        // Cancellation may retire the waiting startup before this exact reply
+        // arrives. Consume its ticket without granting or closing other servers.
+        if expected.cancelled.load(Ordering::Acquire) || self.cancelled.load(Ordering::Acquire) {
+            return Ok(());
+        }
         expected
             .sender
             .try_send(approved)
             .map_err(|_| "wsl_protocol_invalid")
+    }
+    pub fn prepare_lsp_request(&self, request: &Request) -> Result<()> {
+        request
+            .validate(&self.session)
+            .map_err(|_| "wsl_protocol_invalid")?;
+        if request.method != "lsp_execute" {
+            return Err("wsl_protocol_invalid");
+        }
+        *self
+            .lsp_request
+            .lock()
+            .map_err(|_| "wsl_protocol_invalid")? = Some(LspRequest {
+            request_id: request.request_id.clone(),
+            sequence: request.sequence,
+            cancelled: Arc::new(AtomicBool::new(false)),
+        });
+        Ok(())
+    }
+    pub fn lsp_cancellation(&self, request: &Request) -> Result<Arc<AtomicBool>> {
+        let current = self
+            .lsp_request
+            .lock()
+            .map_err(|_| "wsl_protocol_invalid")?;
+        let current = current.as_ref().ok_or("wsl_protocol_invalid")?;
+        if current.request_id != request.request_id || current.sequence != request.sequence {
+            return Err("wsl_protocol_invalid");
+        }
+        Ok(current.cancelled.clone())
     }
     pub fn authorization(
         self: &Arc<Self>,
@@ -113,7 +183,7 @@ impl Broker {
         sequence: u64,
         root: &str,
         expires: Instant,
-        operation_cancelled: &AtomicBool,
+        operation_cancelled: &Arc<AtomicBool>,
     ) -> Result<()> {
         let boundary = || {
             if self.cancelled.load(Ordering::Acquire) || operation_cancelled.load(Ordering::Acquire)
@@ -137,6 +207,7 @@ impl Broker {
             sequence,
             admission_id: admission_id.clone(),
             sender,
+            cancelled: operation_cancelled.clone(),
         });
         let result = (|| {
             workspace_wsl::write_frame(
@@ -166,10 +237,14 @@ impl Broker {
         })();
         // Removal also consumes a denied/cancelled ticket. A late ACK cannot
         // release another command waiting for its own native authorization.
-        self.pending
-            .lock()
-            .map_err(|_| "wsl_protocol_invalid")?
-            .take();
+        // Keep only a cancelled in-flight ticket until its matching late ACK.
+        // The Windows stream orders that ACK before the next LSP request.
+        if !operation_cancelled.load(Ordering::Acquire) {
+            self.pending
+                .lock()
+                .map_err(|_| "wsl_protocol_invalid")?
+                .take();
+        }
         result
     }
     pub fn retired(&self, sequence: u64) -> io::Result<()> {

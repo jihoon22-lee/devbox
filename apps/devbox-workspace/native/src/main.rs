@@ -73,6 +73,13 @@ fn main() {
         loop {
             let code = match read_frame::<_, Input>(&mut input) {
                 Ok(Some(Input::Request(request))) => {
+                    if request.method == "lsp_execute"
+                        && reader_broker.prepare_lsp_request(&request).is_err()
+                    {
+                        reader_stop.store(2, Ordering::Release);
+                        reader_cancelled.store(true, Ordering::Release);
+                        break;
+                    }
                     if sender.try_send(request).is_ok() {
                         continue;
                     }
@@ -128,8 +135,20 @@ fn main() {
                 prepared = true;
                 Ok(serde_json::json!({"retirement":true}))
             }
-        } else if request.method == "source_execute" && !prepared {
+        } else if matches!(request.method.as_str(), "source_execute" | "lsp_execute") && !prepared {
             Err("wsl_execution_required")
+        } else if request.method == "lsp_execute" {
+            broker
+                .lsp_cancellation(&request)
+                .and_then(|operation_cancelled| {
+                    if let Ok(mut active) = active.lock() {
+                        *active = operation_cancelled.clone();
+                    }
+                    gate.enter().and_then(|permit| {
+                        let authorize = broker.authorization(&request, operation_cancelled.clone());
+                        engine.execute_lsp(&request, &guard, operation_cancelled, authorize, permit)
+                    })
+                })
         } else if request.method == "source_execute" {
             let operation_cancelled = Arc::new(AtomicBool::new(cancelled.load(Ordering::Acquire)));
             if let Ok(mut active) = active.lock() {

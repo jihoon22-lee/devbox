@@ -6,6 +6,13 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Deserialize, Serialize)]
 #[serde(tag = "kind", rename_all_fields = "camelCase", deny_unknown_fields)]
 pub enum ControlInput {
+    #[serde(rename = "execution_cancel")]
+    Cancel {
+        version: u32,
+        session_id: String,
+        request_id: String,
+        sequence: u64,
+    },
     #[serde(rename = "execution_admission_reply")]
     AdmissionReply {
         version: u32,
@@ -117,6 +124,7 @@ pub fn project_method(method: &str) -> bool {
             | "definitions_validate"
             | "definitions_write"
             | "files_attach"
+            | "files_lsp_snapshot"
             | "files_reveal"
             | "files_poll"
             | "files_recover"

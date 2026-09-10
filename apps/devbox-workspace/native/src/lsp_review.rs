@@ -162,6 +162,17 @@ pub(crate) struct Review {
     digest: String,
 }
 impl Review {
+    pub(crate) fn digest(&self) -> &str {
+        &self.digest
+    }
+    pub(crate) fn reviewed(&self) -> code_pad_lib::lsp::ReviewedLspExecution {
+        code_pad_lib::lsp::ReviewedLspExecution {
+            config: self.config.clone(),
+            processes: self.processes.clone(),
+            environment: self.environment.clone(),
+        }
+    }
+
     pub(crate) fn capture(
         root: &Path,
         context: ProjectContext,

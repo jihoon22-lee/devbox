@@ -204,6 +204,21 @@ pub struct FilesHost {
     recovery_imports: HashMap<String, recovery_import::ImportPreview>,
 }
 impl FilesHost {
+    #[cfg(windows)]
+    pub(crate) fn wsl_editor_proof(
+        &self,
+        host: &Host,
+        context: &ProjectContext,
+        request: workspace_wsl::lsp_wire::ProofRequest,
+        deadline: u64,
+    ) -> Result<workspace_wsl::lsp_wire::DocumentProof> {
+        self.wsl_owner(Some(context))?.editor_proof(
+            host.projects()?.as_ref(),
+            context,
+            request,
+            deadline,
+        )
+    }
     pub(crate) fn has_documents(&self) -> bool {
         self.document_count() != 0
     }
@@ -277,6 +292,17 @@ impl FilesHost {
             owner,
             ..Self::default()
         }
+    }
+    #[cfg(all(test, windows))]
+    pub(crate) fn execute_wsl_editor_fixture(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        method: &str,
+        args: Value,
+        deadline: u64,
+    ) -> Result<Value> {
+        self.execute_wsl(host, Some(context), method, args, deadline)
     }
     #[cfg(all(test, windows))]
     pub(crate) fn set_wsl_document_fixture(

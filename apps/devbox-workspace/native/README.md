@@ -35,7 +35,7 @@ while retiring the helper and never replays a save. Sessions prepared for child
 execution retain their owner until native process retirement is acknowledged.
 
 The private `--supervise -- <absolute program> <argv...>` entry point now provides
-that owner for Git execution and the upcoming LSP transport. It starts before helper threads, sets
+that owner for Git and LSP execution. It starts before helper threads, sets
 Linux subreaper and parent-death notification, and inherits the caller's explicit
 cwd/environment/stdio. Each job has its own owner. After root exit or cancellation,
 it discovers candidates through `/proc`, proves direct-child ownership with
@@ -50,8 +50,8 @@ unreaped until the final group signal. Windows Job ownership is unchanged.
 Actual owned WSL1 and WSL2 fixtures verified normal exit, double-fork/setsid cleanup,
 cancellation without touching another job, parent death and mapped-image reexecution.
 The Rust integration tests cover these behaviors locally and in the helper CI job.
-Git pipe admission and cancellation-aware shutdown now use that owner. LSP transport
-remains incomplete; the file-only session watchdog is unchanged.
+Git and LSP pipe admission and cancellation-aware shutdown use that owner; the
+file-only session watchdog is unchanged.
 
 Code Pad's Linux LSP process and runtime-probe owners now accept this reviewed
 first-party supervisor. Both use non-reaping `waitid` ownership checks before
@@ -66,8 +66,17 @@ explicit Node runtimes/entry files, parent identity, permissions and content has
 are retained with the selected context and a frozen PATH/HOME allowlist. No server,
 version probe or installer runs during review. Linked/foreign filesystems and
 Windows managed installations are rejected. Windows owns the saved configuration,
-definition evidence and one-use execution approval; native server/document
-transport is still pending.
+definition evidence and one-use execution approval. The private `lsp_execute`
+channel now drives lifecycle, cancellation and editor requests. Automatic retries
+run only during a fresh authenticated poll; each startup retains Windows context
+and filesystem permits until native retirement acknowledgement. A separate
+Files connection attests the opened file revision and identities, while LSP keeps
+its own native descriptors and editor versions. Formatting changes memory only;
+explicit Files save remains required. Disk rename/WorkspaceEdit is unsupported.
+The synthetic ELF server is built only with `test-fixtures` and shipped to CI as a
+separate test artifact, never as a packaged helper resource. Actual Windows actor
+fixtures passed on owned WSL1/2. UI exposure and final WebView acceptance remain
+pending.
 
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,

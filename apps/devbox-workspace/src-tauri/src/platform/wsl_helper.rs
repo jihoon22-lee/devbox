@@ -293,7 +293,33 @@ mod native {
             cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
             authorize: &dyn Fn(&str) -> Result<()>,
         ) -> Result<Value> {
+            self.execute_controlled("source_execute", root, args, expires, cancelled, authorize)
+        }
+        pub fn execute_lsp(
+            &mut self,
+            root: &str,
+            args: Value,
+            expires: std::time::Instant,
+            cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            authorize: &dyn Fn(&str) -> Result<()>,
+        ) -> Result<Value> {
+            self.execute_controlled("lsp_execute", root, args, expires, cancelled, authorize)
+        }
+        fn execute_controlled(
+            &mut self,
+            method: &str,
+            root: &str,
+            args: Value,
+            expires: std::time::Instant,
+            cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+            authorize: &dyn Fn(&str) -> Result<()>,
+        ) -> Result<Value> {
             use workspace_wsl::control::{ControlInput, ControlOutput, Output};
+            if !matches!(method, "source_execute" | "lsp_execute") {
+                return Err("wsl_request_invalid");
+            }
+            let lsp = method == "lsp_execute";
+            let uncancelled = std::sync::atomic::AtomicBool::new(false);
             if self.failed || self.retired {
                 return Err("wsl_connection_closed");
             }
@@ -314,7 +340,11 @@ mod native {
                 }
             };
             if cancelled.load(std::sync::atomic::Ordering::Acquire) {
-                return Err("source_cancelled");
+                return Err(if lsp {
+                    "lsp_operation_cancelled"
+                } else {
+                    "source_cancelled"
+                });
             }
             self.lease.revalidate()?;
             if !self.requires_retirement {
@@ -333,17 +363,48 @@ mod native {
                 request_id: uuid::Uuid::new_v4().to_string(),
                 sequence: self.sequence.checked_add(1).ok_or("wsl_protocol_invalid")?,
                 budget_ms: budget()?,
-                method: "source_execute".into(),
+                method: method.into(),
                 root_token: Some(root.into()),
                 args,
             };
             request.validate(&self.session)?;
             self.sequence = request.sequence;
-            self.write_source_frame(&request, expires, &cancelled)?;
+            // Finish the initial LSP frame before sending its separate cancel
+            // frame. A per-request cancel must not corrupt shared stdio.
+            self.write_source_frame(
+                &request,
+                expires,
+                if lsp { &uncancelled } else { &cancelled },
+            )?;
             let mut tickets = std::collections::BTreeSet::new();
             let mut denied = None;
+            let mut cancellation_sent = false;
             loop {
-                let packet = self.next_source_packet(expires, &cancelled)?;
+                if lsp && !cancellation_sent && cancelled.load(std::sync::atomic::Ordering::Acquire)
+                {
+                    self.write_source_frame(
+                        &ControlInput::Cancel {
+                            version: VERSION,
+                            session_id: self.session.clone(),
+                            request_id: request.request_id.clone(),
+                            sequence: request.sequence,
+                        },
+                        expires,
+                        &uncancelled,
+                    )?;
+                    cancellation_sent = true;
+                }
+                let packet = match self.next_source_packet(
+                    expires,
+                    if cancellation_sent {
+                        &uncancelled
+                    } else {
+                        &cancelled
+                    },
+                ) {
+                    Err("source_cancelled") if lsp => continue,
+                    result => result?,
+                };
                 match packet {
                     Output::Response(response) => {
                         if response.version != VERSION
@@ -394,7 +455,11 @@ mod native {
                             admission_id,
                             approved: denied.is_none(),
                         };
-                        self.write_source_frame(&reply, expires, &cancelled)?;
+                        self.write_source_frame(
+                            &reply,
+                            expires,
+                            if lsp { &uncancelled } else { &cancelled },
+                        )?;
                     }
                     Output::Control(ControlOutput::Retired {
                         version,
@@ -670,6 +735,14 @@ mod native {
                 "lsp_command_unavailable" => "lsp_command_unavailable",
                 "lsp_executable_format_unsupported" => "lsp_executable_format_unsupported",
                 "lsp_context_changed" => "lsp_context_changed",
+                "lsp_unavailable" => "lsp_unavailable",
+                "lsp_operation_cancelled" => "lsp_operation_cancelled",
+                "lsp_execution_approval_required" => "lsp_execution_approval_required",
+                "lsp_response_limit" => "lsp_response_limit",
+                "lsp_document_denied" => "lsp_document_denied",
+                "lsp_feature_unsupported" => "lsp_feature_unsupported",
+                "wsl_document_proof_invalid" => "wsl_document_proof_invalid",
+                "wsl_execution_conflict" => "wsl_execution_conflict",
                 "wsl_lsp_installed_target_required" => "wsl_lsp_installed_target_required",
                 "wsl_lsp_language_unsupported" => "wsl_lsp_language_unsupported",
                 _ => "wsl_operation_failed",

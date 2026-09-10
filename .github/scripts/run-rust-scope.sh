@@ -32,6 +32,13 @@ elif [[ $scope != all ]]; then
   exit 2
 fi
 
+# The native integration fixture is a test-only executable, excluded from
+# ordinary helper/product builds. Enable it whenever its package is verified.
+feature_args=()
+if [[ $scope == all || ",$packages," == *,workspace-wsl,* ]]; then
+  feature_args=(--features workspace-wsl/test-fixtures)
+fi
+
 test_threads=()
 if [[ -n ${DEVBOX_VERIFY_RUST_TEST_THREADS:-} ]]; then
   [[ $DEVBOX_VERIFY_RUST_TEST_THREADS =~ ^[1-9][0-9]*$ ]] || { echo "Invalid test thread count" >&2; exit 2; }
@@ -40,19 +47,19 @@ fi
 
 case "$action" in
   check)
-    if [[ $scope == all ]]; then cargo check --workspace; else cargo check "${package_args[@]}"; fi
+    if [[ $scope == all ]]; then cargo check --workspace "${feature_args[@]}"; else cargo check "${package_args[@]}" "${feature_args[@]}"; fi
     ;;
   clippy)
     if [[ $scope == all ]]; then
-      cargo clippy --workspace --all-targets -- -D warnings
+      cargo clippy --workspace --all-targets "${feature_args[@]}" -- -D warnings
     else
-      cargo clippy "${package_args[@]}" --all-targets -- -D warnings
+      cargo clippy "${package_args[@]}" --all-targets "${feature_args[@]}" -- -D warnings
     fi
     ;;
   fmt)
     cargo fmt --all --check
     ;;
   test)
-    if [[ $scope == all ]]; then cargo test --workspace "${test_threads[@]}"; else cargo test "${package_args[@]}" "${test_threads[@]}"; fi
+    if [[ $scope == all ]]; then cargo test --workspace "${feature_args[@]}" "${test_threads[@]}"; else cargo test "${package_args[@]}" "${feature_args[@]}" "${test_threads[@]}"; fi
     ;;
 esac

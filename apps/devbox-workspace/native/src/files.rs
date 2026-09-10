@@ -840,6 +840,66 @@ impl FileOwner {
         }
         Ok(())
     }
+    /// Private native attestation for a separate LSP helper. This cannot be
+    /// reconstructed from renderer hashes or a matching path spelling.
+    #[cfg(all(feature = "helper", target_os = "linux"))]
+    pub fn editor_proof(
+        &self,
+        scope: Scope<'_>,
+        request: &crate::lsp_wire::ProofRequest,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<crate::lsp_wire::DocumentProof> {
+        guard()?;
+        let (context, _) = scope.ok_or("file_context_changed")?;
+        if !matches!(
+            context.target,
+            product_contract::ExecutionTarget::Wsl { .. }
+        ) {
+            return Err("file_context_changed");
+        }
+        let path = self.admitted_path(scope, &request.path)?;
+        let document = self
+            .documents
+            .get(&key(&path)?)
+            .ok_or("file_selection_required")?;
+        if document.size > code_pad_lib::core::guard::MAX_EDITABLE_BYTES {
+            return Err("file_limit");
+        }
+        self.editor_snapshot(
+            scope,
+            &request.path,
+            &request.native_revision,
+            request.verify_disk,
+        )?;
+        guard()?;
+        document.grant.admit(scope)?;
+        let proof = crate::lsp_wire::DocumentProof {
+            context: context.clone(),
+            path: path.to_str().ok_or("invalid_file_path")?.into(),
+            revision: document.revision.clone(),
+            identity: document.grant.file.identity.components(),
+            parents: document
+                .grant
+                .parents
+                .iter()
+                .map(|parent| {
+                    Ok((
+                        parent.path.to_str().ok_or("invalid_file_path")?.into(),
+                        parent.identity.components(),
+                    ))
+                })
+                .collect::<Result<_>>()?,
+            mtime_nanos: document.mtime.to_string(),
+            size: document.size,
+            content_hash: document.hash.clone(),
+            encoding: document.encoding,
+            baseline_text_hash: document.baseline_text_hash,
+            buffer_text_hash: document.buffer_text_hash,
+        };
+        proof.validate()?;
+        guard()?;
+        Ok(proof)
+    }
     pub fn editor_snapshot(
         &self,
         scope: Scope<'_>,

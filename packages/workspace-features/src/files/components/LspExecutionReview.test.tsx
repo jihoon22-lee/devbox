@@ -1,3 +1,4 @@
+import { useLayoutEffect } from "react";
 import { act, cleanup, fireEvent, render, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { approveLspExecution, cancelLspExecutionReview, previewLspExecution, revokeLspExecution, type LspExecutionPreview } from "../api";
@@ -64,4 +65,16 @@ it("shows native WSL review with environment names and no values", async () => {
   await view.findByText("이 설정의 실행 승인");
   expect(view.getByText("/usr/bin/server")).toBeTruthy();
   expect(view.getByText("변수 이름: HOME, PATH")).toBeTruthy();
+});
+
+it("keeps an explicit review started immediately after the new saved revision is painted", async () => {
+  function PaintedReview() {
+    useLayoutEffect(() => {
+      document.querySelector<HTMLButtonElement>('section[aria-label="언어 서버 실행 승인"] button')!.click();
+    }, []);
+    return <LspExecutionReview disabled={false} nativeRevision="revision-1"/>;
+  }
+  const view = render(<PaintedReview/>);
+  await view.findByText("이 설정의 실행 승인");
+  expect(cancelLspExecutionReview).not.toHaveBeenCalled();
 });

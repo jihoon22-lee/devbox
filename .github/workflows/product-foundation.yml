@@ -88,8 +88,9 @@ jobs:
       - name: Test and build native helper
         run: |
           node --test .github/scripts/workspace-wsl-artifact.test.mjs
-          cargo test --locked -p workspace-wsl --target x86_64-unknown-linux-musl
+          cargo test --locked -p workspace-wsl --features test-fixtures --target x86_64-unknown-linux-musl
           cargo build --locked --release -p workspace-wsl --target x86_64-unknown-linux-musl
+          cargo build --locked --release -p workspace-wsl --features test-fixtures --bin workspace-lsp-fixture --target x86_64-unknown-linux-musl
           node .github/scripts/workspace-wsl-artifact.mjs prepare target/x86_64-unknown-linux-musl/release/devbox-workspace-wsl "$GITHUB_SHA"
           node .github/scripts/workspace-wsl-artifact.mjs verify "$GITHUB_SHA"
       - uses: actions/upload-artifact@v7
@@ -98,6 +99,12 @@ jobs:
           path: |
             apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl
             apps/devbox-workspace/src-tauri/resources/wsl/manifest.json
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: workspace-lsp-fixture-${{ github.sha }}
+          path: target/x86_64-unknown-linux-musl/release/workspace-lsp-fixture
           if-no-files-found: error
           retention-days: 7
 
@@ -133,6 +140,13 @@ jobs:
         with:
           name: workspace-wsl-${{ github.sha }}
           path: apps/devbox-workspace/src-tauri/resources/wsl
+      - uses: actions/download-artifact@v8
+        with:
+          name: workspace-lsp-fixture-${{ github.sha }}
+          path: target/native-lsp-fixture
+      - name: Select separate test-only native LSP server
+        shell: pwsh
+        run: '"DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV'
       - name: Verify helper belongs to this product source
         run: node .github/scripts/workspace-wsl-artifact.mjs verify "${{ github.sha }}"
       - name: Prepare dedicated WSL1 filesystem fixture

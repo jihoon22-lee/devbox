@@ -6,6 +6,7 @@ edition.workspace = true
 
 [features]
 default = ["helper"]
+test-fixtures = ["helper"]
 helper = ["git", "files", "dep:libc", "code-pad/preview", "dep:repo-manager", "dep:tokio"]
 files = ["dep:code-pad", "dep:product-contract", "dep:devbox-wsl", "dep:devbox-filesystem", "dep:sha2", "dep:windows"]
 
@@ -64,3 +65,14 @@ optional = true
 version = "1"
 features = ["rt", "time", "sync"]
 optional = true
+
+[[bin]]
+name = "workspace-lsp-fixture"
+path = "tests/support/lsp_fixture.rs"
+required-features = ["test-fixtures"]
+test = false
+
+[[test]]
+name = "lsp_pipe"
+path = "tests/lsp_pipe.rs"
+required-features = ["test-fixtures"]

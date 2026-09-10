@@ -9,6 +9,8 @@ mod recovery;
 mod settings;
 mod settings_import;
 #[cfg(windows)]
+mod wsl_actor;
+#[cfg(windows)]
 mod wsl_approval;
 use crate::{
     host::Host, platform::storage_paths::ProtectedStorage, private_metadata::MetadataRoot,
@@ -24,6 +26,10 @@ use std::{
 use tauri::{Emitter, Manager};
 #[cfg(all(test, windows))]
 pub(crate) use wsl_approval::check_owned_fixture as check_wsl_approval_fixture;
+#[cfg(all(test, windows))]
+mod wsl_actor_fixture;
+#[cfg(all(test, windows))]
+pub(crate) use wsl_actor_fixture::check_owned_fixture as check_wsl_runtime_fixture;
 type Result<T> = std::result::Result<T, &'static str>;
 pub(crate) struct Invocation<'a> {
     pub method: &'a str,
@@ -161,6 +167,66 @@ impl Storage {
         self.archives.revalidate()
     }
 }
+enum Instance {
+    Native(actor::Actor),
+    #[cfg(windows)]
+    Wsl(wsl_actor::Actor),
+}
+impl Instance {
+    fn context(&self) -> &product_contract::ProjectContext {
+        match self {
+            Self::Native(actor) => actor.context(),
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.context(),
+        }
+    }
+    fn uses_installation(&self, id: &str, version: &str) -> bool {
+        match self {
+            Self::Native(actor) => actor.uses_installation(id, version),
+            #[cfg(windows)]
+            Self::Wsl(_) => false,
+        }
+    }
+    async fn retire(&self) -> Result<()> {
+        match self {
+            Self::Native(actor) => actor.retire().await,
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.retire().await,
+        }
+    }
+    async fn request(
+        &self,
+        method: &str,
+        args: Value,
+        deadline: u64,
+        cancelled: Option<Arc<std::sync::atomic::AtomicBool>>,
+    ) -> Result<Value> {
+        match self {
+            Self::Native(actor) => actor.request(method, args, deadline, cancelled).await,
+            #[cfg(windows)]
+            Self::Wsl(actor) => actor.request(method, args, deadline, cancelled).await,
+        }
+    }
+}
+#[cfg(windows)]
+fn wsl_error(error: &str) -> &'static str {
+    match error {
+        "lsp_operation_cancelled" => "lsp_operation_cancelled",
+        "lsp_execution_approval_required" => "lsp_execution_approval_required",
+        "lsp_busy" => "lsp_busy",
+        "lsp_already_running" => "lsp_already_running",
+        "lsp_start_in_progress" => "lsp_start_in_progress",
+        "lsp_not_running" => "lsp_not_running",
+        "lsp_disabled" => "lsp_disabled",
+        "lsp_feature_unsupported" => "lsp_feature_unsupported",
+        "lsp_document_denied" => "lsp_document_denied",
+        "file_snapshot_changed" => "file_snapshot_changed",
+        "file_selection_required" => "file_selection_required",
+        "file_limit" => "file_limit",
+        "request_expired" => "request_expired",
+        _ => "lsp_unavailable",
+    }
+}
 pub(crate) struct LspHost {
     storage: Storage,
     selections: Mutex<archives::Selections>,
@@ -168,7 +234,7 @@ pub(crate) struct LspHost {
     recovery: Mutex<recovery::Recovery>,
     config_imports: Mutex<settings_import::Imports>,
     protected: ProtectedStorage,
-    actor: Mutex<Option<Arc<actor::Actor>>>,
+    actor: Mutex<Option<Arc<Instance>>>,
     preparing: std::sync::atomic::AtomicBool,
     activities: approval::Activities,
     files: Arc<Mutex<crate::files_host::FilesHost>>,
@@ -307,6 +373,44 @@ impl LspHost {
                     .await;
             }
             let start = start.as_ref().ok_or("invalid_request")?;
+            #[cfg(windows)]
+            if matches!(
+                context.target,
+                product_contract::ExecutionTarget::Wsl { .. }
+            ) {
+                let context_copy = context.clone();
+                let host_copy = host.clone();
+                let events_app = app.clone();
+                let activities = self.activities.clone();
+                let files = self.files.clone();
+                let owner_shutdown = shutdown.clone();
+                let cancelled = start.flag();
+                let actor = tauri::async_runtime::spawn_blocking(move || {
+                    if cancelled.load(Ordering::Acquire) || owner_shutdown.is_cancelled() {
+                        return Err("lsp_operation_cancelled");
+                    }
+                    let snapshot =
+                        wsl_approval::Snapshot::capture(host_copy, &context_copy, deadline, true)?;
+                    if cancelled.load(Ordering::Acquire) || owner_shutdown.is_cancelled() {
+                        return Err("lsp_operation_cancelled");
+                    }
+                    let sink: actor::Events = Arc::new(move |name, value| {
+                        let _ = events_app.emit_to("main", name, value);
+                    });
+                    wsl_actor::Actor::spawn(sink, snapshot, activities, files, owner_shutdown)
+                })
+                .await
+                .map_err(|_| "lsp_unavailable")??;
+                let instance = Arc::new(Instance::Wsl(actor));
+                if shutdown.is_cancelled() || start.check().is_err() {
+                    instance.retire().await?;
+                    return Err("lsp_operation_cancelled");
+                }
+                *self.actor.lock().map_err(|_| "lsp_unavailable")? = Some(instance.clone());
+                return instance
+                    .request(method, args, deadline, Some(start.flag()))
+                    .await;
+            }
             let installer = app.state::<Arc<ManagedInstaller>>().inner().clone();
             let snapshot = actor::start_scope(start.flag(), shutdown.clone(), deadline, async {
                 approval::Snapshot::capture(
@@ -328,13 +432,13 @@ impl LspHost {
             let sink: actor::Events = Arc::new(move |name, value| {
                 let _ = event_app.emit_to("main", name, value);
             });
-            let instance = Arc::new(actor::Actor::spawn(
+            let instance = Arc::new(Instance::Native(actor::Actor::spawn(
                 sink,
                 snapshot,
                 installer,
                 shutdown.clone(),
                 self.files.clone(),
-            )?);
+            )?));
             *self.actor.lock().map_err(|_| "lsp_unavailable")? = Some(instance.clone());
             instance
         };

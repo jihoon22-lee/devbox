@@ -362,7 +362,11 @@ cancellation and fixture cleanup. Packaged/WebView and LSP acceptance remain sep
 WSL LSP execution review now delegates saved installed-target resolution and bounded
 code/permission evidence to Linux while retaining settings, definition evidence
 and one-use approval in the Windows private store. Review executes no server or
-runtime probe. Native LSP lifecycle/document transport remains in progress.
+runtime probe. The native lifecycle/document transport now passes actual Windows
+actor fixtures on owned WSL1/2, including authenticated file proofs, UTF-16 edits,
+explicit save and cancellation with detached-child retirement. UI exposure,
+installed-language-server baselines and final WebView acceptance remain pending;
+WSL disk rename/WorkspaceEdit remains unsupported.
 The `d8f76a4` CI Windows debug artifact passed an owned WSL2 WebView scenario for
 registration, dirty-buffer retention, CRLF save, selected stage/commit and exact
 64-MiB read-only editor content. This evidence does not cover the newer LSP path.

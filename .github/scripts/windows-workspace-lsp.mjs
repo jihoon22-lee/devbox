@@ -174,7 +174,7 @@ export function installWorkspaceEditorTrace() {
       if (url.hostname === "ipc.localhost" && decodeURIComponent(url.pathname) === "/plugin:workspace|execute" && typeof init?.body === "string") request = JSON.parse(init.body).request;
     } catch { /* Non-IPC fetches remain untouched. */ }
     const method = request?.method;
-    const tracked = request?.component === "workspace.lsp" && (/^(open|change|reload|save|close)_lsp_document$/.test(method) || /^lsp_recovery_(list|preview|apply|cancel)$/.test(method))
+    const tracked = request?.component === "workspace.lsp" && (/^(open|change|reload|save|close)_lsp_document$/.test(method) || /^lsp_recovery_(list|preview|apply|cancel)$/.test(method) || /^lsp_execution_(preview|approve|cancel|revoke)$/.test(method) || ["load_lsp_config", "save_lsp_config"].includes(method))
       || request?.component === "workspace.files" && ["save_file", "sync_editor_document"].includes(method);
     if (!tracked) return original.call(this, input, init);
     const row = {method, phase:"pending", elapsedMs:0}, started = performance.now();

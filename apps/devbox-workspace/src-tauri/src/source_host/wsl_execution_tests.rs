@@ -742,6 +742,35 @@ fn exercise_source_flow(mut fixture: Fixture) {
         &fixture.unc.join("owned-lsp-server"),
     );
     fs::remove_file(fixture.unc.join("owned-lsp-server")).unwrap();
+    let binary = std::env::var_os("DEVBOX_WORKSPACE_LSP_FIXTURE")
+        .expect("separate native LSP fixture artifact required");
+    let program = format!("{}/owned-lsp-fixture", fixture.root);
+    let disk = fixture.unc.join("owned-lsp-fixture");
+    fs::copy(binary, &disk).unwrap();
+    assert!(
+        Fixture::linux(&fixture.name, &["/usr/bin/chmod", "700", &program])
+            .status
+            .success()
+    );
+    crate::lsp_host::check_wsl_runtime_fixture(
+        fixture.host.clone(),
+        &fixture.context,
+        &program,
+        &disk,
+        fixture.files.clone(),
+        &|pid| {
+            let output = Fixture::linux(
+                &fixture.name,
+                &["/usr/bin/test", "-e", &format!("/proc/{pid}/stat")],
+            );
+            assert!(
+                matches!(output.status.code(), Some(0 | 1)),
+                "owned PID observer failed"
+            );
+            output.status.success()
+        },
+    );
+    fs::remove_file(disk).unwrap();
     fixture.check_large_files();
     fixture.check_wsl_profiles();
     fixture.check_dependencies();

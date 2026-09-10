@@ -11,7 +11,8 @@ export default function LspExecutionReview({ disabled, nativeRevision }: { disab
   const working = useRef(false);
 
   useEffect(() => {
-    generation.current += 1;
+    // A click can arrive after paint but before this passive effect. Only
+    // cleanup invalidates that request; mounting must not silently cancel it.
     return () => {
       generation.current += 1;
       const id = pending.current;

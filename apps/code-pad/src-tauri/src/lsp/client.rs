@@ -164,6 +164,12 @@ impl CapabilitySet {
         self.dynamic_methods.iter().map(String::as_str)
     }
 
+    pub(super) fn without_disk_rename(mut self) -> Self {
+        self.rename = false;
+        self.dynamic_methods.remove("textDocument/rename");
+        self
+    }
+
     fn register(&mut self, method: String) {
         if is_supported_dynamic_method(&method) {
             self.dynamic_methods.insert(method);

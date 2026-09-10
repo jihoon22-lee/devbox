@@ -289,3 +289,14 @@ pub mod lsp_evidence;
 mod lsp_environment;
 #[cfg(all(feature = "helper", target_os = "linux"))]
 mod lsp_review;
+
+#[cfg(feature = "files")]
+pub mod lsp_wire;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod lsp_authority;
+
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod lsp_documents;
+#[cfg(all(feature = "helper", target_os = "linux"))]
+mod lsp_runtime;

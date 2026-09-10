@@ -129,11 +129,11 @@ impl Snapshot {
     pub(super) fn context(&self) -> &ProjectContext {
         &self.settings.context
     }
-    fn approved(&self) -> Result<bool> {
+    pub(super) fn approved(&self) -> Result<bool> {
         Ok(record(self.approval_bytes.as_deref(), self.context())?
             .is_some_and(|record| record.digest == self.digest))
     }
-    fn metadata(&self, deadline: u64) -> Result<()> {
+    pub(super) fn metadata(&self, deadline: u64) -> Result<()> {
         crate::files_host::current_deadline(deadline)?;
         self.settings.revalidate(&self.host)?;
         if self.lease.binding() != self.settings.binding() {
@@ -154,6 +154,40 @@ impl Snapshot {
             deadline,
         )?;
         self.metadata(deadline)
+    }
+    pub(super) fn host(&self) -> &Host {
+        &self.host
+    }
+    pub(super) fn root(&self) -> &str {
+        &self.settings.binding().root
+    }
+    pub(super) fn shutdown(&self) -> Result<()> {
+        self.lease.shutdown()
+    }
+    pub(super) fn request(
+        &self,
+        method: &str,
+        args: Value,
+        document: Option<workspace_wsl::lsp_wire::DocumentProof>,
+        deadline: u64,
+        cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
+        authorize: &dyn Fn(&str) -> Result<()>,
+    ) -> Result<Value> {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis();
+        let remaining = u128::from(deadline).saturating_sub(now).min(29000) as u64;
+        if remaining == 0 {
+            return Err("request_expired");
+        }
+        self.lease.execute_lsp(
+            self.context(),
+            json!({"digest":self.native.digest,"method":method,"args":args,"document":document}),
+            std::time::Instant::now() + std::time::Duration::from_millis(remaining),
+            cancelled,
+            authorize,
+        )
     }
     pub(super) fn view(&self) -> Result<Value> {
         Ok(

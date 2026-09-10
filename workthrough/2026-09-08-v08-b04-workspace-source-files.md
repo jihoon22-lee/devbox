@@ -668,7 +668,7 @@ Windows retains settings, project-definition evidence and the one-use approval
 record in the existing private store. Approval revalidates Linux evidence and
 Windows metadata; changing code, saved settings, context or approval invalidates
 the review. The UI shows native command arguments and environment names.
-Language-server execution/document transport and WSL WorkspaceEdit remain pending.
+The following runtime section extends this review-only checkpoint.
 
 Focused native evidence/engine checks passed (**3 tests**, **11.729 s**, strict
 Clippy included). Existing host LSP regressions (**22 tests**), Linux strict checks
@@ -719,9 +719,56 @@ and removed. When the host's binfmt registration disappeared, the private runner
 used the existing [WSL `/init` interop entry point](https://github.com/microsoft/WSL/blob/master/doc/docs/technical-documentation/interop.md); no global service/configuration
 or user distro was changed.
 
+## Native WSL LSP runtime
+
+The reviewed Linux runtime now drives startup, restart, stop, diagnostics and
+editor features through the private helper connection. Automatic retries require
+a fresh Windows poll and never borrow another explicit start's cancellation.
+Windows retains context/filesystem permits until native acknowledgement; cancelling
+one startup reaps its detached descendants without stopping another ready server.
+Files supplies an authenticated revision/identity proof, and LSP retains separate
+native descriptors. UTF-16 versions and buffered formatting reuse Code Pad;
+explicit Files save remains authoritative. Backoff edits now acknowledge the
+committed buffer and replay its latest text into the replacement session.
+No native app-data store or installer is fabricated. Disk rename/WorkspaceEdit
+stays unsupported until its journal/rollback boundary is implemented.
+
+The [closed-pipe tests](../apps/devbox-workspace/native/tests/lsp_pipe.rs) passed
+**4 tests (6.19 s)** for proofs, cancellation, restart and rejected foreign URIs.
+Strict Linux and Windows-target compilation passed. The combined musl helper,
+separate test-only ELF and Windows test build passed in **141.948 s**, sampled RSS
+**4,506,841,088 B**, cgroup memory peak **4,755,558,400 B**. The actual
+[Windows actor fixture](../apps/devbox-workspace/src-tauri/src/lsp_host/wsl_actor_fixture.rs)
+then passed with the existing Source/Files suite on owned **WSL1 (108.74 s)** and
+**WSL2 (81.55 s)**. Both verified UTF-16 edits, memory-only formatting, explicit
+save, contextual events, retained Windows permits, selective cancellation and
+actual PID absence after native retirement; both fixture distros/directories
+were removed. Helper SHA-256:
+`5166213e0addd520320dccc3b23ea5454aa27596897fd3ada37bad64b917200a`;
+Windows test SHA-256:
+`8819f814f13e6586abb151b27009ee3d39fcf84d472b5b7b43226a911bcc6f7c`.
+These are the modified-tree backend fixtures; UI exposure and full installed
+language-server/WebView acceptance remain required.
+
+[Product CI 34477814971](https://github.com/jihoon22-lee/devbox/actions/runs/34477814971)
+failed at execution-review rendering and Knowledge configured-vault startup.
+The review's mount effect could silently cancel a click received immediately
+after paint. A regression reproduced that race before the cleanup-only generation
+fix, after which all **6 review tests** passed. Existing native fixture driver
+checks (**10 tests**) and fixture-selection/test-thread checks also passed.
+CI now retains bounded execution-review method/outcome metadata for diagnosis.
+The Knowledge startup failure and final product CI must still be resolved.
+
+Final all-scope `pnpm verify:affected` passed in **550.313 s**, sampled RSS
+**5,086,511,104 B**, cgroup memory peak **6,445,371,392 B**, final swap
+**4,653,056 B**. The first run stopped at stale fake-Cargo argv expectations;
+those now cover the test-only feature and preserved thread limit. The corrected
+full run includes all **4 native LSP pipe tests (6.17 s)**. Initial Workspace
+bundle remains **279,789 / 280,000 B** (gzip **82,531 / 90,000 B**).
+
 ## Remaining acceptance and rollback limits
 
-- Native WSL LSP and its final combined WebView acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
+- Native WSL LSP UI exposure, installed-server baselines and final combined WebView acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration
   comparison remain required. Maximum read-only file/frame parity now has native
