@@ -101,6 +101,32 @@ impl FrameCursor {
     }
 }
 
+/// Context-bound project calls accepted by the Windows connection. Actual
+/// pipe fixtures share this gate so native-only tests cannot bypass it.
+pub fn project_method(method: &str) -> bool {
+    matches!(
+        method,
+        "source_capture"
+            | "source_validate"
+            | "source_worktree_preview"
+            | "definitions_attach"
+            | "definitions_read"
+            | "definitions_validate"
+            | "definitions_write"
+            | "files_attach"
+            | "files_poll"
+            | "files_recover"
+            | "files_list"
+            | "files_preview"
+            | "files_open"
+            | "files_save"
+            | "files_rename"
+            | "files_delete"
+            | "files_close"
+            | "files_sync_editor"
+    )
+}
+
 /// Project Git dispatch methods. Creation additionally consumes a retained
 /// destination preview; sibling cleanup needs a separate native capability.
 pub fn source_method(method: &str) -> bool {

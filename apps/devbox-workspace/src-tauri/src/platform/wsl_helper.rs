@@ -259,26 +259,7 @@ mod native {
             args: Value,
             deadline: u64,
         ) -> Result<Value> {
-            if !matches!(
-                method,
-                "source_capture"
-                    | "source_validate"
-                    | "definitions_attach"
-                    | "definitions_read"
-                    | "definitions_validate"
-                    | "definitions_write"
-                    | "files_attach"
-                    | "files_poll"
-                    | "files_recover"
-                    | "files_list"
-                    | "files_preview"
-                    | "files_open"
-                    | "files_save"
-                    | "files_rename"
-                    | "files_delete"
-                    | "files_close"
-                    | "files_sync_editor"
-            ) {
+            if !workspace_wsl::control::project_method(method) {
                 return Err("wsl_request_invalid");
             }
             if args["context"]["target"]["kind"] != "wsl"

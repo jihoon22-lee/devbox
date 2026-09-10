@@ -120,6 +120,15 @@ impl Helper {
         helper
     }
     fn send(&mut self, method: &str, args: Value) {
+        if !matches!(
+            method,
+            "observe_root" | "execution_prepare" | "source_execute"
+        ) {
+            assert!(
+                workspace_wsl::control::project_method(method),
+                "Windows project gate rejected {method}"
+            );
+        }
         self.sequence += 1;
         self.request_id = uuid::Uuid::new_v4().to_string();
         workspace_wsl::write_frame(
