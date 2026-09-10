@@ -836,11 +836,46 @@ Knowledge failure did not recur; its cause was not established. Final
 sampled RSS **6,935,654,400 B**, cgroup memory peak **6,446,018,560 B** under the
 shared resource limit. CI for these UI/compatibility changes remains pending.
 
+## Original IDs and native provider handoff
+
+Workbench reference lookup now follows the persisted original ID through each
+reviewed import and target binding. It returns all candidates for keep-both and
+Windows/WSL variants, with optional exact import/target filters, current context
+revisions and source snapshot provenance. Template-generated profiles are excluded
+because their fresh IDs did not occur in the old profile source. Lookup does not
+probe or select a root, execute a command or alter trust. The Overview UI loads
+on request and uses existing `select_project` admission after an explicit click.
+
+Native owner link/unlink APIs persist other owner-reviewed references with Registry
+CAS and current-context checks. Exact long path keys are retained within the
+existing bounded Registry file; a conflicting remap fails, and referenced worktrees
+cannot be removed before unlink. No renderer write API was added. The README maps
+the concrete project/editor/problem/command handoff surfaces to B05/B06/B07, including
+the authenticated Knowledge projection that B07 must deliver. Task/session imports
+and cross-product transport remain their owning bundles' work.
+
+Focused reference tests cover dual targets, duplicate original IDs, target/import
+filters, stale Registry/context, rebind, unlink, exact owner namespaces, restart
+persistence, malformed filters, no trust mutation and ignored stale UI results.
+The Windows product fixture now also imports a real synthetic legacy profile from
+the verified snapshot, binds it, opens the lookup UI, checks no selection/trust
+change and preserves the source ID after unlink. That expanded Windows scenario
+has not run yet. Final focused checks passed: **3 reference**, **8 ProjectOwner**,
+**1 role-admission** and **17 UI tests**, plus Linux strict Clippy, frontend build
+and the unchanged initial bundle budgets (**276,193 raw / 81,545 gzip bytes**).
+MSVC strict Clippy passed in **9.002 s**, sampled RSS **2,017,746,944 B**, cgroup
+memory peak **1,861,902,336 B**. Its first attempt lacked the privately provisioned
+clang-cl path; the configured rerun passed. This is compile evidence, not Windows
+execution. Final `pnpm verify:affected` selected the entire repository and passed
+in **510.887 s**, sampled RSS **6,635,257,856 B**, cgroup memory peak
+**6,444,929,024 B**, within the shared resource budget. The expanded Windows
+reference scenario and new CI remain pending.
+
 ## Remaining acceptance and rollback limits
 
 - Native WSL LSP has installed-server, combined Windows/WebView and final affected evidence above; final CI verification of these changes remains required. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
-- Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration
+- Final reference handoff verification and R24 Run Manager baseline/PTY/integration
   comparison remain required. Maximum read-only file/frame parity now has native
   WSL1/2 and actual WSL2 WebView evidence above.
 - B05/B06 own process/service and terminal/session lifecycle; B07 owns secondary

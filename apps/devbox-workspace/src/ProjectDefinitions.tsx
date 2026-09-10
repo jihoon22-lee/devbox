@@ -1,6 +1,6 @@
-import {useEffect, useRef, useState} from "react";
+import {lazy, Suspense, useEffect, useRef, useState} from "react";
 import type {Description} from "@devbox/product-shell/api";
-import DefinitionEditor from "./DefinitionEditor";
+const DefinitionEditor = lazy(() => import("./DefinitionEditor"));
 import {componentCall, nativeCall} from "./native";
 
 interface View {
@@ -64,7 +64,7 @@ export default function ProjectDefinitions({description,onDirtyChange,onChanged}
         {view.unavailableSources.length>0&&<p role="status">확인할 수 없는 실행 소스: {view.unavailableSources.join(", ")}</p>}
         <details><summary>공유 프로젝트 정의</summary><pre>{JSON.stringify(view.project,null,2)}</pre></details>
         <details><summary>이 컴퓨터의 설정</summary><pre>{JSON.stringify(view.local,null,2)}</pre></details>
-        {!preview&&<DefinitionEditor key={contextKey} description={description} view={view} disabled={busy} onDirtyChange={setEditing} onSaved={()=>{onChanged();void act(load);}}/>}
+        {!preview&&<Suspense fallback={<p role="status">설정 편집 화면을 불러오고 있습니다…</p>}><DefinitionEditor key={contextKey} description={description} view={view} disabled={busy} onDirtyChange={setEditing} onSaved={()=>{onChanged();void act(load);}}/></Suspense>}
         {!preview&&!editing&&<button type="button" disabled={busy||view.unavailableSources.length>0} onClick={()=>void act(async request=>{
           const next=await call<Preview>("preview_trust");
           if(sequence.current!==request){void nativeCall("workspace.definitions","cancel",{previewId:next.previewId}).catch(()=>{});return;}

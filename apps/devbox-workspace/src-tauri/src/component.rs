@@ -286,6 +286,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 && matches!(
                     method,
                     "save_template"
+                        | "resolve_legacy_reference"
                         | "archive_template"
                         | "list_wsl_distros"
                         | "preview_wsl"
@@ -1085,6 +1086,7 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             empty(&args)?;
             Ok(json!(host.projects()?.snapshot()?))
         }
+        "resolve_legacy_reference" => Ok(json!(host.projects()?.resolve_legacy(&input(args)?)?)),
         "select_project" => {
             let value: Select = input(args)?;
             let binding = if cfg!(windows)
@@ -1936,6 +1938,19 @@ mod tests {
     }
     #[test]
     fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
+        assert!(allowed(
+            "workspace.registry",
+            "overview",
+            "resolve_legacy_reference"
+        ));
+        for route in ["files", "source", "runtime", "terminal", "dependencies"] {
+            assert!(!allowed(
+                "workspace.registry",
+                route,
+                "resolve_legacy_reference"
+            ));
+        }
+        assert!(!project_probe("resolve_legacy_reference"));
         assert!(allowed("workspace.registry", "overview", "preview_windows"));
         for method in [
             "list_wsl_distros",

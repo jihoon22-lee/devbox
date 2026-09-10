@@ -281,7 +281,8 @@ writing, and an unacknowledged write requires reopening rather than replay.
 The host excludes concurrent Git/editor writes during definition operations.
 Actual local WSL1/WSL2 pipe checks passed for definition creation/read/change/replay
 boundaries. The expanded Windows Registry/overlay fixture passed at `90f919f`.
-WSL LSP, references/providers and remaining R24 acceptance are incomplete.
+Subsequent WSL LSP and reference work is recorded below; cross-product provider
+delivery and final R24 comparison belong to the later integration gates.
 
 File saves and reviewed definition writes wait for active filesystem readers before
 entering their native worker, within the original deadline. Waiting holds no Files
@@ -364,9 +365,8 @@ code/permission evidence to Linux while retaining settings, definition evidence
 and one-use approval in the Windows private store. Review executes no server or
 runtime probe. The native lifecycle/document transport now passes actual Windows
 actor fixtures on owned WSL1/2, including authenticated file proofs, UTF-16 edits,
-explicit save and cancellation with detached-child retirement. UI exposure,
-installed-language-server baselines and final WebView acceptance remain pending;
-WSL disk rename/WorkspaceEdit remains unsupported.
+explicit save and cancellation with detached-child retirement. Installed-server
+and WebView evidence follows below; WSL disk rename/WorkspaceEdit remains unsupported.
 Files now offers installed Linux ELF and explicit Node entry/runtime settings,
 with Windows installation controls confined to Windows contexts. Numeric LSP
 synchronization retains open/change/save/close notifications; dynamic feature
@@ -379,3 +379,43 @@ registration, dirty-buffer retention, CRLF save, selected stage/commit and exact
 that flow with installed TypeScript LSP configuration/review/start, buffered
 formatting, explicit save, stop and revocation; the B04 workthrough records the
 exact executable/helper hashes and modified-tree provenance.
+
+### Legacy reference handoff
+
+`ProjectOwner::resolve_legacy` returns versioned `unmapped`, `resolved` or
+`ambiguous` metadata with the current Registry revision, exact original ID,
+candidate `ProjectContext`s and import provenance. Workbench profile bindings
+provide the original profile ID → preserved import → Windows/WSL worktree links.
+Keep-both imports and dual targets remain separate candidates; optional exact
+import and execution-target filters disambiguate them. Profiles instantiated
+from templates have fresh IDs and are not advertised as legacy profile IDs.
+
+The Overview-only `workspace.registry/resolve_legacy_reference` command consumes
+this API. Its lazy lookup UI never chooses a candidate automatically. A click
+uses normal `select_project` admission, so stale contexts, stopped/missing distros
+and replaced roots retain their existing checks. Lookup itself runs no probe,
+server, task or trust mutation. Unbinding removes the association but preserves
+the imported profile and source ID. Definition editing loads after the settings
+screen is opened, keeping both optional panels out of the initial bundle.
+
+The native `link_legacy_reference` / `unlink_legacy_reference` APIs are the single
+writer handoff for owner-reviewed Life Log, Repo Manager, Terminal and task
+records. They require Registry CAS and the exact current context, preserve old
+IDs up to 32 KiB within the existing 4 MiB store limit, reject conflicting
+remaps and block worktree removal until explicit unlink. No renderer command
+exposes those writes. Life Log uses saved path keys; Repo Manager uses its
+existing path/canonical key. They are not replaced with basenames or newly
+invented UUIDs. Owner-specific task/session imports attach these links in B05/B06;
+B07 delivers authenticated project/activity projections to other products.
+
+The existing integration surfaces for those bundles are:
+
+| Consumer | B04 owner surface | Required admission retained |
+| --- | --- | --- |
+| B05 task/service and B06 session owners | `Host::projects`, Registry context/profile bindings, native reference APIs and `Definitions` | Metadata does not grant execution; each owner reviews its command sources and retains its own process lifecycle |
+| B07 editor/commands/problems | `workspace.files`, `workspace.lsp`, versioned Files requests and bounded LSP events | Existing role allowlists, current context, document revision and cancellation; no generic command forwarding |
+| B07 project search and Knowledge activity | Registry snapshot and reference resolution; Knowledge's native `install_project_snapshot` / disconnect entrypoints | Authenticate the owner, resolve Windows/registered-WSL paths, publish monotonic snapshots, revoke stale references; never open Workspace's store from another app |
+
+These APIs and local lookup are implemented. Cross-product transport, global
+search routing and the B05/B06 owner imports are not represented as completed
+by this handoff.

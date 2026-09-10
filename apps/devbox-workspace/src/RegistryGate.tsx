@@ -3,6 +3,7 @@ import type { ProjectContext } from "@devbox/product-shell/api";
 import { nativeCall, issueMessage } from "./native";
 const WorkspaceTemplateManager=lazy(()=>import("./WorkspaceTemplateManager"));
 const WslProjectForm=lazy(()=>import("./WslProjectForm"));
+const LegacyReferenceLookup=lazy(()=>import("./LegacyReferenceLookup"));
 import LegacyImports from "./LegacyImports";
 import {TemplateMetadata,type ImportedTemplate} from "./LegacyTemplateImport";
 import {ProfileMetadata,type ImportedProfile,type ProfileBinding} from "./LegacyProfileImport";
@@ -32,6 +33,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const [rename, setRename] = useState<{id: string; name: string} | null>(null);
   const [remove, setRemove] = useState<Worktree | null>(null);
   const [unlinkProfile,setUnlinkProfile]=useState<ProfileBinding|null>(null);
+  const [referenceImport,setReferenceImport]=useState<string|null>(null);
   const alive = useRef(true);
   const currentPreview = useRef<string | null>(null);
   const loadId = useRef(0);
@@ -169,6 +171,12 @@ export default function RegistryGate({context = null, onContextChanged = async (
       {(registry?.importedProfiles??[]).map(imported=><section key={imported.id} aria-label={`${imported.local?"프로필":"가져온 프로필"} ${imported.profile.name}`}>
         <h2>{imported.local?"프로필":"가져온 프로필"}: {imported.profile.name}</h2>
         <ProfileMetadata profile={imported.profile}/>
+        {!imported.local&&!imported.sourceTemplateId&&<>
+          <button disabled={busy} aria-expanded={referenceImport===imported.id} onClick={()=>setReferenceImport(referenceImport===imported.id?null:imported.id)}>기존 참조 연결 확인</button>
+          {referenceImport===imported.id&&registry&&<Suspense fallback={<p role="status">참조 조회 화면을 불러오고 있습니다…</p>}>
+            <LegacyReferenceLookup key={`${registry.revision}:${imported.id}`} registry={registry} imported={imported} disabled={busy||editing} onSelect={next=>void act(async()=>{await registryCall("select_project",{context:next});await onContextChanged();})}/>
+          </Suspense>}
+        </>}
         <p>환경 설정과 서비스 참조는 보관되었습니다. 실행 연결은 해당 기능에서 확인해야 합니다.</p>
         {!(registry?.importedProfileBindings??[]).some(binding=>binding.importedId===imported.id)&&<p>아직 프로젝트 폴더에 연결하지 않았습니다.</p>}
         <button disabled={busy||editing||!imported.profile.windowsPath} onClick={()=>void act(async()=>{

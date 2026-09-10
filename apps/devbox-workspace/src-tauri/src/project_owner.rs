@@ -130,6 +130,64 @@ impl ProjectOwner {
     pub fn snapshot(&self) -> Result<Registry> {
         self.store.read()
     }
+    /// Typed metadata handoff; callers still use normal admission to open or run.
+    pub fn resolve_legacy(
+        &self,
+        query: &crate::core::legacy_references::Query,
+    ) -> Result<crate::core::legacy_references::Resolution> {
+        crate::core::legacy_references::resolve(&self.snapshot()?, query)
+    }
+    /// Native importer handoff after its owner has reviewed the source record.
+    /// No renderer command exposes these writes or turns a mapping into a grant.
+    pub fn link_legacy_reference(
+        &self,
+        revision: u64,
+        context: &ProjectContext,
+        owner: crate::core::registry::LegacyOwner,
+        old_id: String,
+    ) -> Result<Registry> {
+        self.change_legacy_reference(revision, context, owner, old_id, true)
+    }
+    pub fn unlink_legacy_reference(
+        &self,
+        revision: u64,
+        context: &ProjectContext,
+        owner: crate::core::registry::LegacyOwner,
+        old_id: String,
+    ) -> Result<Registry> {
+        self.change_legacy_reference(revision, context, owner, old_id, false)
+    }
+    fn change_legacy_reference(
+        &self,
+        revision: u64,
+        context: &ProjectContext,
+        owner: crate::core::registry::LegacyOwner,
+        old_id: String,
+        link: bool,
+    ) -> Result<Registry> {
+        self.store
+            .update(revision, |registry| {
+                context.validate().map_err(|_| "invalid_context")?;
+                if !registry
+                    .worktrees
+                    .iter()
+                    .any(|tree| tree.context() == *context)
+                {
+                    return Err("stale_context");
+                }
+                let reference = crate::core::registry::LegacyReference {
+                    owner,
+                    old_id,
+                    worktree_id: context.worktree_id.clone(),
+                };
+                if link {
+                    registry.map_legacy(revision, reference)
+                } else {
+                    registry.unlink_legacy(revision, &reference)
+                }
+            })
+            .map(|(registry, ())| registry)
+    }
     pub(crate) fn preview_profile_import(
         &self,
         snapshot_id: String,
@@ -934,6 +992,17 @@ mod tests {
         assert_eq!(profile.source_snapshot_id, imported.source_snapshot_id);
         assert_ne!(profile.profile.id, template.id);
         assert_eq!(profile.profile.name, "검토한 이름");
+        let query = crate::core::legacy_references::Query {
+            registry_revision: registered.revision,
+            owner: crate::core::registry::LegacyOwner::Workbench,
+            old_id: profile.profile.id.clone(),
+            target: None,
+            imported_id: Some(profile.id.clone()),
+        };
+        assert_eq!(
+            owner.resolve_legacy(&query).unwrap().state,
+            crate::core::legacy_references::State::Unmapped
+        );
         assert_eq!(profile.profile.expected_ports, vec![4321]);
         assert!(profile.profile.environment.is_none());
         assert!(registered.worktrees[0].trusted_digest.is_none());
@@ -1018,6 +1087,20 @@ mod tests {
             )
             .unwrap();
         assert_eq!(saved.imported_profile_bindings.len(), 1);
+        let query = crate::core::legacy_references::Query {
+            registry_revision: saved.revision,
+            owner: crate::core::registry::LegacyOwner::Workbench,
+            old_id: saved.imported_profiles[0].profile.id.clone(),
+            target: Some(context.target.clone()),
+            imported_id: Some(ids[0].clone()),
+        };
+        let resolved = owner.resolve_legacy(&query).unwrap();
+        assert_eq!(
+            resolved.state,
+            crate::core::legacy_references::State::Resolved
+        );
+        assert_eq!(resolved.candidates[0].context, context);
+        assert_eq!(owner.snapshot().unwrap(), saved);
         assert_eq!(
             saved.imported_profile_bindings[0].worktree_id,
             context.worktree_id
@@ -1041,6 +1124,85 @@ mod tests {
         assert_eq!(saved.imported_profiles.len(), 2);
         assert_eq!(saved.worktrees.len(), 1);
         assert!(saved.worktrees[0].trusted_digest.is_none());
+    }
+
+    #[test]
+    fn native_reference_handoff_persists_exact_ids_and_requires_current_context_for_unlink() {
+        use crate::core::{
+            legacy_references::{Query, State},
+            registry::LegacyOwner,
+        };
+        let directory = tempfile::tempdir().unwrap();
+        let root = tempfile::tempdir().unwrap();
+        let owner = ProjectOwner::open(directory.path()).unwrap();
+        let preview = owner.preview_fixture(root.path()).unwrap();
+        let (saved, context) = owner
+            .apply(
+                &preview.preview_id,
+                "reference fixture",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        // Life Log source keys may be long Windows/WSL paths. Preserve the
+        // exact string as metadata, never parse it as a new project identity.
+        let old_id = format!("C:/previous/{}/한글", "segment/".repeat(80));
+        let linked = owner
+            .link_legacy_reference(
+                saved.revision,
+                &context,
+                LegacyOwner::LifeLog,
+                old_id.clone(),
+            )
+            .unwrap();
+        assert_eq!(
+            owner
+                .link_legacy_reference(
+                    linked.revision,
+                    &context,
+                    LegacyOwner::LifeLog,
+                    old_id.clone()
+                )
+                .unwrap(),
+            linked
+        );
+        assert_eq!(
+            owner.remove(linked.revision, &context).unwrap_err(),
+            "referenced_worktree"
+        );
+        assert!(linked.worktrees[0].trusted_digest.is_none());
+        drop(owner);
+        let owner = ProjectOwner::open(directory.path()).unwrap();
+        let mut query = Query {
+            registry_revision: linked.revision,
+            owner: LegacyOwner::LifeLog,
+            old_id: old_id.clone(),
+            target: None,
+            imported_id: None,
+        };
+        let result = owner.resolve_legacy(&query).unwrap();
+        assert_eq!(result.old_id, old_id);
+        assert_eq!(result.candidates[0].context, context);
+        let mut stale = context.clone();
+        stale.revision += 1;
+        assert_eq!(
+            owner
+                .unlink_legacy_reference(
+                    linked.revision,
+                    &stale,
+                    LegacyOwner::LifeLog,
+                    old_id.clone()
+                )
+                .unwrap_err(),
+            "stale_context"
+        );
+        assert_eq!(owner.snapshot().unwrap(), linked);
+        let unlinked = owner
+            .unlink_legacy_reference(linked.revision, &context, LegacyOwner::LifeLog, old_id)
+            .unwrap();
+        query.registry_revision = unlinked.revision;
+        assert_eq!(owner.resolve_legacy(&query).unwrap().state, State::Unmapped);
+        assert_eq!(unlinked.worktrees, linked.worktrees);
+        assert!(root.path().is_dir());
     }
     #[test]
     fn profile_import_tokens_are_one_time_and_the_registry_is_the_only_commit_point() {

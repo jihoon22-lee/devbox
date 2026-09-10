@@ -333,7 +333,7 @@ impl Registry {
         }
         let mut references = BTreeSet::new();
         for reference in &self.legacy_references {
-            if !bounded_text(&reference.old_id, 512)
+            if !bounded_text(&reference.old_id, 32_768)
                 || !worktrees.contains(&reference.worktree_id)
                 || !references.insert((&reference.owner, &reference.old_id))
             {

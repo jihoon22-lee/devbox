@@ -14,12 +14,17 @@ export async function exerciseWorkspaceTemplateImport({cdp,directory,call,succes
   const template={id:randomUUID(),name:"한글 Web 기본값",windowsPath:null,wsl:{distro:"Missing fixture distro",path:"/home/fixture"},gitRoot:null,expectedPorts:[4321],runManagerServiceIds:["never-run-service"]};
   const bytes=JSON.stringify({version:1,templates:[template]});
   writeFileSync(path.join(sourceRoot,"profile-templates.json"),bytes,{flag:"wx"});
+  const profileRoot=path.join(directory,"기존 프로필 참조");mkdirSync(profileRoot);
+  const legacyProfile={id:randomUUID(),name:"기존 참조 fixture",windowsPath:profileRoot,wsl:null,gitRoot:null,expectedPorts:[],runManagerServiceIds:["never-run-service"],environment:null};
+  const profileBytes=JSON.stringify({version:1,profiles:[legacyProfile]});
+  writeFileSync(path.join(sourceRoot,"project-profiles.json"),profileBytes,{flag:"wx"});
   let removed=false;
   const removeOwnedSource=()=>{
     assert.equal(realpathSync.native(sourceRoot),ownedRoot);assert.equal(readFileSync(marker,"utf8"),nonce);
     assert.equal(readFileSync(path.join(sourceRoot,"profile-templates.json"),"utf8"),bytes);
-    assert.deepEqual(readdirSync(sourceRoot).sort(),[".workspace-fixture-owner","profile-templates.json"]);
-    unlinkSync(path.join(sourceRoot,"profile-templates.json"));unlinkSync(marker);rmdirSync(sourceRoot);removed=true;
+    assert.equal(readFileSync(path.join(sourceRoot,"project-profiles.json"),"utf8"),profileBytes);
+    assert.deepEqual(readdirSync(sourceRoot).sort(),[".workspace-fixture-owner","profile-templates.json","project-profiles.json"]);
+    unlinkSync(path.join(sourceRoot,"project-profiles.json"));unlinkSync(path.join(sourceRoot,"profile-templates.json"));unlinkSync(marker);rmdirSync(sourceRoot);removed=true;
   };
   const migration=(method,args={})=>call("workspace.migration",method,args);
   const registry=(method,args={})=>call("workspace.registry",method,args);
@@ -67,6 +72,7 @@ export async function exerciseWorkspaceTemplateImport({cdp,directory,call,succes
     const tree=registered.worktrees.find(tree=>tree.id===binding.worktreeId);assert.equal(tree.trustedDigest,null);
     assert.deepEqual((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,selectedBefore);
     const editorChecks=await exerciseTemplateEditor({cdp,directory,registry,migration,success,waitForRenderer,click,jobId:job.id,imported,registered,profile});
+    const referenceChecks=await exerciseLegacyReferences({cdp,registry,migration,success,waitForRenderer,click,jobId:job.id,legacyProfile,selectedBefore});
     const current=success(await registry("snapshot"));
     const context={projectId:tree.projectId,worktreeId:tree.id,revision:tree.revision,target:tree.binding.target};
     const unbound=success(await registry("unbind_imported_profile",{revision:current.revision,importedId:profile.id,target:"windows"}));
@@ -74,8 +80,37 @@ export async function exerciseWorkspaceTemplateImport({cdp,directory,call,succes
     assert.deepEqual(cleaned.projects,before.projects);assert.deepEqual(cleaned.worktrees,before.worktrees);
     assert.deepEqual(cleaned.importedTemplates,current.importedTemplates);assert.equal(readFileSync(projectMarker,"utf8"),nonce);
     await click("목록 새로 고침");
-    return {...editorChecks,sourcePreserved:true,verifiedSnapshotIndependentOfSource:true,originalTemplateIdAndDefaults:true,repeatReuses:true,tokenReplayRejected:true,actualTemplateCreationUi:true,atomicProfileAndBinding:true,explicitRegistrationWithoutSelectionOrTrust:true,unbindingPreservesMetadataAndFiles:true};
+    return {...editorChecks,...referenceChecks,sourcePreserved:true,verifiedSnapshotIndependentOfSource:true,originalTemplateIdAndDefaults:true,repeatReuses:true,tokenReplayRejected:true,actualTemplateCreationUi:true,atomicProfileAndBinding:true,explicitRegistrationWithoutSelectionOrTrust:true,unbindingPreservesMetadataAndFiles:true};
   } finally {if(!removed)removeOwnedSource();}
+}
+
+async function exerciseLegacyReferences({cdp,registry,migration,success,waitForRenderer,click,jobId,legacyProfile,selectedBefore}) {
+  const preview=success(await migration("preview_profile_import",{jobId}));
+  const imported=success(await migration("apply_profile_import",{previewId:preview.previewId,choices:[{sourceId:legacyProfile.id,decision:"import"}]}));
+  const saved=imported.registry.importedProfiles.find(entry=>entry.profile.id===legacyProfile.id);
+  assert.deepEqual(saved.profile,legacyProfile);assert.notEqual(saved.id,legacyProfile.id);
+  const query=revision=>({registryRevision:revision,owner:"workbench",oldId:legacyProfile.id,target:null,importedId:null});
+  assert.equal(success(await registry("resolve_legacy_reference",query(imported.registry.revision))).state,"unmapped");
+  const proposal=success(await registry("preview_imported_profile_windows",{importedId:saved.id}));
+  const registered=success(await registry("apply_registration",{previewId:proposal.previewId,name:legacyProfile.name,action:"register"}));
+  const resolved=success(await registry("resolve_legacy_reference",query(registered.registry.revision)));
+  assert.equal(resolved.state,"resolved");assert.equal(resolved.oldId,legacyProfile.id);
+  assert.deepEqual(resolved.candidates[0].context,registered.context);
+  assert.equal(resolved.candidates[0].origins[0].importedId,saved.id);
+  assert.equal((await registry("resolve_legacy_reference",query(imported.registry.revision))).operation.outcome.state,"failed");
+  await click("목록 새로 고침");
+  const section=`Array.from(document.querySelectorAll('.workspace-registry section')).find(s=>s.getAttribute('aria-label')===${JSON.stringify(`가져온 프로필 ${legacyProfile.name}`)})`;
+  await waitForRenderer(cdp,`(()=>{const button=Array.from((${section})?.querySelectorAll('button')??[]).find(b=>b.textContent==='기존 참조 연결 확인'&&!b.disabled);if(!button)return false;button.click();return true;})()`,"Legacy reference lookup did not open");
+  await click("참조 연결 조회");
+  await waitForRenderer(cdp,`!!document.querySelector('section[aria-label="기존 프로필 참조 연결"]')?.textContent.includes('연결된 프로젝트를 확인했습니다')`,"Legacy reference result did not render");
+  assert.deepEqual(success(await registry("snapshot")),registered.registry);
+  assert.deepEqual((await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context,selectedBefore);
+  assert.equal(registered.registry.worktrees.find(tree=>tree.id===registered.context.worktreeId).trustedDigest,null);
+  const unbound=success(await registry("unbind_imported_profile",{revision:registered.registry.revision,importedId:saved.id,target:"windows"}));
+  const removed=success(await registry("remove",{revision:unbound.revision,context:registered.context}));
+  assert.equal(success(await registry("resolve_legacy_reference",query(removed.revision))).state,"unmapped");
+  assert.deepEqual(removed.importedProfiles.find(entry=>entry.id===saved.id),saved);
+  return {actualLegacyReferenceUi:true,originalProfileIdResolved:true,staleReferenceRejected:true,referenceLookupWithoutSelectionOrTrust:true,unlinkedReferencePreserved:true};
 }
 
 
