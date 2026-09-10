@@ -759,3 +759,59 @@ fn cleanup_revocation_after_native_preparation_preserves_the_linked_worktree() {
     assert!(linked.join("tracked.txt").is_file());
     helper.retire();
 }
+
+#[test]
+fn dependency_inventory_uses_native_files_and_context_without_executing_tools() {
+    let fixture = fixture();
+    let root = fixture.path();
+    fs::write(
+        root.join("Cargo.toml"),
+        "[package]\nname = \"local\"\nversion = \"0.1.0\"\n[dependencies]\nfixture = \"1\"\n",
+    )
+    .unwrap();
+    let lock = "version = 3\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\ndependencies = [\"nested 2.0.0\"]\nsource = \"registry+https://private.invalid/synthetic-marker\"\n[[package]]\nname = \"nested\"\nversion = \"2.0.0\"\n";
+    fs::write(root.join("Cargo.lock"), lock).unwrap();
+    fs::write(
+        root.join("build.rs"),
+        "fn main() { panic!(\"must not execute\"); }",
+    )
+    .unwrap();
+    let mut helper = Helper::start(root);
+    helper.send("files_attach", json!({"context":helper.context}));
+    helper.complete(true).result.unwrap();
+    helper.send(
+        "dependency_inventory",
+        json!({"context":helper.context,"budgetMs":10000}),
+    );
+    let report = helper.complete(true).result.unwrap();
+    assert_eq!(report["packageCount"], 2);
+    assert_eq!(report["directCount"], 1);
+    assert_eq!(report["transitiveCount"], 1);
+    assert_eq!(report["summaryPublished"], false);
+    assert!(!report.to_string().contains("synthetic-marker"));
+    assert!(!report.to_string().contains(root.to_str().unwrap()));
+    let mut stale = helper.context.clone();
+    stale["revision"] = json!(2);
+    helper.send(
+        "dependency_inventory",
+        json!({"context":stale,"budgetMs":10000}),
+    );
+    assert_eq!(
+        helper.complete(true).result.unwrap_err(),
+        "dependency_context_changed"
+    );
+    fs::write(
+        root.join("Cargo.lock"),
+        format!("{lock}\n# changed reviewed input\n"),
+    )
+    .unwrap();
+    helper.send(
+        "dependency_inventory",
+        json!({"context":helper.context,"budgetMs":10000}),
+    );
+    let changed = helper.complete(true).result.unwrap();
+    assert_ne!(changed["revision"], report["revision"]);
+    assert_eq!(helper.admissions, 0);
+    assert!(!root.join("target").exists());
+    helper.retire();
+}

@@ -1,7 +1,6 @@
 //! Reuse the existing native engine without starting its standalone application.
 //! Product initialization and native caller/owner checks precede every dispatch.
 
-#[cfg(feature = "desktop")]
 use std::path::Path;
 use std::path::PathBuf;
 use std::sync::OnceLock;
@@ -369,7 +368,22 @@ pub struct DependencyAccess {
     pub(crate) key: String,
     pub(crate) common: PathBuf,
     pub(crate) strict_cache: bool,
+    inventory: Option<std::sync::Arc<NativeInventory>>,
     verify: std::sync::Arc<dyn Fn() -> Result<(), String> + Send + Sync>,
+}
+type NativeInventory =
+    dyn Fn(std::time::Duration) -> Result<serde_json::Value, String> + Send + Sync;
+
+/// The native helper supplies filesystem admission; this function only parses
+/// local files. It never publishes Windows metadata or enables remote queries.
+pub fn native_dependency_inventory(
+    root: &Path,
+    budget: std::time::Duration,
+    admit: &dyn Fn(&Path) -> Result<(), String>,
+) -> Result<serde_json::Value, String> {
+    let report =
+        crate::core::dependency_lens::analyze_repository_with_admission(root, budget, admit)?;
+    serde_json::to_value(report).map_err(|_| "dependency_operation_failed".into())
 }
 impl DependencyAccess {
     pub fn for_project(
@@ -386,10 +400,50 @@ impl DependencyAccess {
             key,
             common,
             strict_cache: true,
+            inventory: None,
             verify: std::sync::Arc::new(verify),
         };
         access.verify()?;
         Ok(access)
+    }
+    /// A POSIX root is only a UI selection key on Windows. The mandatory native
+    /// reader owns all filesystem access; the common directory stays on Windows.
+    pub fn for_native_inventory(
+        root: String,
+        key: String,
+        common: PathBuf,
+        verify: impl Fn() -> Result<(), String> + Send + Sync + 'static,
+        read: impl Fn(std::time::Duration) -> Result<serde_json::Value, String> + Send + Sync + 'static,
+    ) -> Result<Self, String> {
+        if !devbox_filesystem::parse_safe_project_path(&root)
+            .is_some_and(|path| path.kind() == devbox_filesystem::ProjectPathKind::Posix)
+            || !common.is_absolute()
+            || key.is_empty()
+        {
+            return Err("dependency_access_invalid".into());
+        }
+        let access = Self {
+            root: root.into(),
+            key,
+            common,
+            strict_cache: true,
+            inventory: Some(std::sync::Arc::new(read)),
+            verify: std::sync::Arc::new(verify),
+        };
+        access.verify()?;
+        Ok(access)
+    }
+    pub(crate) fn analyze(
+        &self,
+        budget: std::time::Duration,
+    ) -> Result<crate::core::dependency_lens::DependencyReport, String> {
+        self.verify()?;
+        let report = match &self.inventory {
+            Some(read) => crate::core::dependency_lens::decode_native_report(read(budget)?)?,
+            None => crate::core::dependency_lens::analyze_repository(&self.root, budget)?,
+        };
+        self.verify()?;
+        Ok(report)
     }
     #[cfg(any(feature = "desktop", test))]
     pub(crate) fn legacy(path: &str) -> Result<Self, String> {
@@ -405,6 +459,7 @@ impl DependencyAccess {
             key,
             common: common_root(),
             strict_cache: false,
+            inventory: None,
             verify: std::sync::Arc::new(verify),
         }
     }

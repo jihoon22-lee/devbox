@@ -328,6 +328,58 @@ impl Engine {
         root.touched = Instant::now();
         Ok(value)
     }
+    fn dependency_inventory(
+        &mut self,
+        request: &Request,
+        guard: &dyn Fn() -> Result<()>,
+    ) -> Result<Value> {
+        #[derive(Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Inventory {
+            context: ProjectContext,
+            budget_ms: u32,
+        }
+        let args: Inventory = input(&request.args)?;
+        if !(1..=10_000).contains(&args.budget_ms) {
+            return Err("invalid_request");
+        }
+        let root = self
+            .roots
+            .get_mut(request.root_token.as_ref().ok_or("wsl_root_required")?)
+            .ok_or("wsl_root_expired")?;
+        if root.files.as_ref().map(|files| &files.context) != Some(&args.context) {
+            return Err("dependency_context_changed");
+        }
+        guard()?;
+        root.observation.revalidate()?;
+        let budget = Duration::from_millis(u64::from(request.budget_ms));
+        let expires = Instant::now() + budget;
+        let report = repo_manager_lib::component::native_dependency_inventory(
+            root.observation.root(),
+            budget.min(Duration::from_millis(u64::from(args.budget_ms))),
+            &|path| {
+                guard().map_err(str::to_owned)?;
+                if Instant::now() >= expires {
+                    return Err("request_expired".into());
+                }
+                crate::linux_files::admit(path).map_err(str::to_owned)
+            },
+        )
+        .map_err(|error| {
+            if error == "request_expired" {
+                "request_expired"
+            } else {
+                "dependency_operation_failed"
+            }
+        })?;
+        guard()?;
+        if Instant::now() >= expires {
+            return Err("request_expired");
+        }
+        root.observation.revalidate()?;
+        root.touched = Instant::now();
+        Ok(report)
+    }
     fn source_request(
         &mut self,
         request: &Request,
@@ -711,6 +763,9 @@ impl Engine {
             "source_capture" | "source_validate" | "source_worktree_preview"
         ) {
             return self.source_request(request, guard);
+        }
+        if request.method == "dependency_inventory" {
+            return self.dependency_inventory(request, guard);
         }
         match request.method.as_str() {
             "files_attach" => {

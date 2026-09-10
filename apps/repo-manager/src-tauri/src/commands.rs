@@ -11,8 +11,8 @@ use crate::core::cleanup::{
     MAX_CLEANUP_REF_BYTES, MAX_CLEANUP_SELECTIONS, MAX_CLEANUP_WORKTREES,
 };
 use crate::core::dependency_lens::{
-    analyze_repository, dependency_summary_entry, now_epoch_ms, publish_summary_in,
-    DependencyReport, DEPENDENCY_LENS_ERROR,
+    dependency_summary_entry, now_epoch_ms, publish_summary_in, DependencyReport,
+    DEPENDENCY_LENS_ERROR,
 };
 use crate::core::git::{parse_status, parse_worktrees, RepoSnapshot};
 use crate::core::git_safety::{
@@ -2770,7 +2770,7 @@ pub(crate) async fn dependency_inventory_with_access(
             .try_lock()
             .map_err(|_| DEPENDENCY_LENS_ERROR.to_string())?;
         access.verify()?;
-        let mut report = analyze_repository(&access.root, Duration::from_secs(10))?;
+        let mut report = access.analyze(Duration::from_secs(10))?;
         access.verify()?;
         let now_ms = now_epoch_ms();
         let published = dependency_summary_entry(&access.key, &report, now_ms)

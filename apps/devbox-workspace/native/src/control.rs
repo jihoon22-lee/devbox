@@ -109,6 +109,7 @@ pub fn project_method(method: &str) -> bool {
         "source_capture"
             | "source_validate"
             | "source_worktree_preview"
+            | "dependency_inventory"
             | "definitions_attach"
             | "definitions_read"
             | "definitions_validate"

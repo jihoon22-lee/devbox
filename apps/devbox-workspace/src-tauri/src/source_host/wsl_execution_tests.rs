@@ -202,6 +202,60 @@ impl Fixture {
             )
             .unwrap();
     }
+    fn dependency_inventory(&self) -> Value {
+        let deadline = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_millis() as u64
+            + 30_000;
+        let access =
+            crate::dependencies_host::access(self.host.clone(), self.context.clone(), deadline, ())
+                .unwrap();
+        tauri::async_runtime::block_on(repo_manager_lib::component::dispatch_dependencies(
+            access,
+            "dependency_inventory",
+            json!({"request":{"path":self.root}}),
+        ))
+        .unwrap()
+    }
+    fn check_dependencies(&self) {
+        fs::write(
+            self.unc.join("Cargo.toml"),
+            "[package]\nname = \"local\"\nversion = \"0.1.0\"\n[dependencies]\nfixture = \"1\"\n",
+        )
+        .unwrap();
+        let lock = "version = 3\n[[package]]\nname = \"fixture\"\nversion = \"1.0.0\"\nsource = \"registry+https://private.invalid/native-fixture-source\"\n";
+        fs::write(self.unc.join("Cargo.lock"), lock).unwrap();
+        fs::write(
+            self.unc.join("build.rs"),
+            "fn main() { panic!(\"must not execute\"); }",
+        )
+        .unwrap();
+        let report = self.dependency_inventory();
+        assert_eq!(report["packageCount"], 1);
+        assert_eq!(report["directCount"], 1);
+        assert_eq!(report["summaryPublished"], true);
+        assert!(!report.to_string().contains(&self.root));
+        assert!(!report.to_string().contains("native-fixture-source"));
+        assert!(!self.unc.join("target").exists());
+        assert!(!self
+            .host
+            .component("common")
+            .unwrap()
+            .join("repo-manager/dependency-enrichment-v1.json")
+            .exists());
+        fs::write(
+            self.unc.join("Cargo.lock"),
+            format!("{lock}\n# changed native input\n"),
+        )
+        .unwrap();
+        let changed = self.dependency_inventory();
+        assert_ne!(changed["revision"], report["revision"]);
+        assert_eq!(changed["summaryPublished"], true);
+        let mut stale = self.context.clone();
+        stale.revision += 1;
+        assert!(crate::dependencies_host::access(self.host.clone(), stale, u64::MAX, ()).is_err());
+    }
     fn approve_cleanup(&mut self, context: &ProjectContext) {
         let preview = self
             .source
@@ -361,6 +415,7 @@ impl Fixture {
 #[ignore = "requires the current run-owned hosted WSL distro, Git and packaged helper"]
 fn owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership() {
     let mut fixture = Fixture::new();
+    fixture.check_dependencies();
     fixture.approve();
     fs::write(fixture.unc.join("tracked.txt"), b"selected native change\n").unwrap();
     fs::write(

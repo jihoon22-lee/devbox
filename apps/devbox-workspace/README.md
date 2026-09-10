@@ -301,4 +301,11 @@ the expanded Windows host fixture is pending. WSL cleanup now admits explicitly
 reviewed registered siblings through native repository/evidence checks, blocks open
 Editor documents and observes scope revocation on every Git command. Its Linux
 actual-pipe tests passed; the expanded Windows cleanup fixture remains pending.
-WSL Dependencies, LSP, reveal and templates still require their native adapters.
+WSL Dependencies now analyzes native lockfiles without Windows path fallback,
+using the same parser and keeping summary/cache/remote approval on Windows. Linux
+regressions and Windows compilation passed; the expanded host fixture is pending.
+WSL LSP, reveal and templates still require their native adapters.
+
+The `fd48dd3` Windows WSL fixture found a missing worktree-preview method in the
+Windows connection gate. The corrected gate is shared with actual pipe fixtures;
+its new Windows execution remains pending.

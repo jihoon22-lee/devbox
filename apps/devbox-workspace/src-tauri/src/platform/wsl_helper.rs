@@ -612,6 +612,8 @@ mod native {
                 "git_sources_changed" => "git_sources_changed",
                 "source_requires_repository" => "source_requires_repository",
                 "source_context_changed" => "source_context_changed",
+                "dependency_context_changed" => "dependency_context_changed",
+                "dependency_operation_failed" => "dependency_operation_failed",
                 "source_cleanup_scope_invalid" => "source_cleanup_scope_invalid",
                 "source_cleanup_scope_changed" => "source_cleanup_scope_changed",
                 "git_home_unavailable" => "git_home_unavailable",

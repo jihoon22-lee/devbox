@@ -547,30 +547,7 @@ async fn execute_dependencies(
     let deadline = request.header.deadline_ms;
     let context = request.header.context.ok_or("project_selection_required")?;
     let access = tauri::async_runtime::spawn_blocking(move || {
-        crate::files_host::current_deadline(deadline)?;
-        let owner = host.projects()?;
-        let lease = owner.admit(&context)?;
-        let root = std::path::PathBuf::from(&lease.binding().root);
-        let common = crate::private_metadata::MetadataRoot::open(&host.component("common")?)?;
-        let key = serde_json::to_string(&context).map_err(|_| "invalid_context")?;
-        repo_manager_lib::component::DependencyAccess::for_project(
-            root,
-            key,
-            common.path().into(),
-            move || {
-                let _retained = (&permit, &context_permit);
-                crate::files_host::current_deadline(deadline).map_err(str::to_string)?;
-                if host.component("common").map_err(str::to_string)? != common.path()
-                    || owner.binding(&context).map_err(str::to_string)? != *lease.binding()
-                {
-                    return Err("dependency_context_changed".into());
-                }
-                common.revalidate().map_err(str::to_string)?;
-                lease.revalidate().map_err(str::to_string)?;
-                crate::files_host::current_deadline(deadline).map_err(str::to_string)
-            },
-        )
-        .map_err(|_| "dependency_context_changed")
+        crate::dependencies_host::access(host, context, deadline, (permit, context_permit))
     })
     .await
     .unwrap_or(Err("worker_unavailable"))?;

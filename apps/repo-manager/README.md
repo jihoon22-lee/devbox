@@ -402,6 +402,11 @@ engine without calling Git for admission. Standalone commands retain their Git
 repository checks and original cache namespace. Product cache failures preserve
 existing bytes; offline analysis remains available. The product owns the request
 deadline and retains project/single-flight guards through blocking worker cleanup.
+A native inventory reader now supports Workspace's WSL POSIX root without opening
+that path on Windows. The same parser receives Linux filesystem admission before
+discovery/read IO. Its bounded report is validated before use; inventory and remote
+review/revalidation all use this reader. Windows still owns publication, cache,
+transmission preview and explicit remote execution. Standalone parsing is unchanged.
 
 Workspace Source supplies a native `SourceAccess` and reviewed execution policy.
 Only that scope overrides the executable/environment and fixes the native Git

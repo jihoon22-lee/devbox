@@ -211,3 +211,17 @@ Actual Source-pipe tests cover approved cleanup, unapproved siblings, foreign
 repository/context, duplicate descriptors, changed evidence and late denied approval.
 The Windows fixture adds real Files open/close and cleanup-scope revocation; its
 actual hosted execution remains pending.
+
+`dependency_inventory` requires the attached project context and uses Repo Manager's
+bounded offline parser. Native filesystem admission precedes directory enumeration,
+metadata and file reads; blocked subtrees yield a bounded partial report. Collection
+has its own budget of at most ten seconds within the overall pipe deadline, leaving
+room to serialize and return a truncated result. No Git, package manager, script,
+network call or Linux cache publication occurs. Windows validates report paths,
+coordinates, graph/count bounds and revision before publishing its private summary.
+The same native reader revalidates lock revisions for existing remote-review tokens.
+
+The Windows connection's project-method gate is now shared with actual pipe tests.
+This fixes `fd48dd3`'s actual Windows rejection of `source_worktree_preview`, which
+Linux-only dispatch tests had missed. Source/Dependency pipe tests and MSVC compile
+checks passed after the correction; new actual Windows results remain pending.

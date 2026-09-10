@@ -11,7 +11,9 @@ use crate::core::dependency_enrichment::{
     DEPS_DEV_HOST, MAX_CACHE_BYTES, MAX_DEPS_PACKAGE_RESPONSE_BYTES,
     MAX_DEPS_VERSION_RESPONSE_BYTES, MAX_OSV_RESPONSE_BYTES, OSV_HOST, PREVIEW_TTL_MS,
 };
-use crate::core::dependency_lens::{analyze_repository, now_epoch_ms};
+#[cfg(test)]
+use crate::core::dependency_lens::analyze_repository;
+use crate::core::dependency_lens::now_epoch_ms;
 use futures_util::future::{join, join_all};
 use reqwest::{redirect::Policy, Client, ClientBuilder, Response, StatusCode, Url};
 use serde::Deserialize;
@@ -165,7 +167,8 @@ pub(crate) async fn preview_with_access(
             .try_lock()
             .map_err(|_| DEPENDENCY_ENRICHMENT_BUSY.to_string())?;
         access.verify()?;
-        let report = analyze_repository(&access.root, ANALYSIS_BUDGET)
+        let report = access
+            .analyze(ANALYSIS_BUDGET)
             .map_err(|_| DEPENDENCY_ENRICHMENT_ERROR.to_string())?;
         access.verify()?;
         let cache = load_cache_for(&access, now_ms)?;
@@ -312,7 +315,8 @@ async fn validate_stored_plan(
         if access.key != expected_repository || now_epoch_ms() >= expires_at_ms {
             return Err(DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.into());
         }
-        let report = analyze_repository(&access.root, ANALYSIS_BUDGET)
+        let report = access
+            .analyze(ANALYSIS_BUDGET)
             .map_err(|_| DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED.to_string())?;
         access.verify()?;
         if report.revision != expected_revision || now_epoch_ms() >= expires_at_ms {
@@ -814,6 +818,79 @@ mod tests {
     fn native_fixture_lock() -> &'static Mutex<()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
         LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn native_reader_publishes_privately_and_revalidates_enrichment_without_host_path_io() {
+        let _fixture = native_fixture_lock().lock().unwrap();
+        let root = tempdir().unwrap();
+        let common = tempdir().unwrap();
+        fs::write(
+            root.path().join("Cargo.toml"),
+            "[package]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        fs::write(
+            root.path().join("Cargo.lock"),
+            "version = 3\n[[package]]\nname = \"fixture\"\nversion = \"0.1.0\"\n",
+        )
+        .unwrap();
+        let report = analyze_repository(root.path(), Duration::from_secs(2)).unwrap();
+        let value = std::sync::Arc::new(Mutex::new(serde_json::to_value(report).unwrap()));
+        let reads = std::sync::Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let reader_value = value.clone();
+        let reader_count = reads.clone();
+        let logical = format!("/native-inventory-fixture-{}", next_preview_sequence());
+        let access = DependencyAccess::for_native_inventory(
+            logical.clone(),
+            logical.clone(),
+            common.path().into(),
+            || Ok(()),
+            move |_| {
+                reader_count.fetch_add(1, Ordering::SeqCst);
+                Ok(reader_value.lock().unwrap().clone())
+            },
+        )
+        .unwrap();
+        let wrong = crate::runtime::block_on(crate::component::dispatch_dependencies(
+            access.clone(),
+            "dependency_inventory",
+            json!({"request":{"path":"/another-root"}}),
+        ));
+        assert_eq!(wrong.unwrap_err(), "dependency_context_changed");
+        assert_eq!(reads.load(Ordering::SeqCst), 0);
+        let result = crate::runtime::block_on(crate::component::dispatch_dependencies(
+            access.clone(),
+            "dependency_inventory",
+            json!({"request":{"path":logical}}),
+        ))
+        .unwrap();
+        assert_eq!(result["packageCount"], 1);
+        assert_eq!(result["summaryPublished"], true);
+        assert_eq!(reads.load(Ordering::SeqCst), 1);
+        let preview = crate::runtime::block_on(preview_with_access(
+            access.clone(),
+            EnrichmentSelection {
+                osv: true,
+                deps_dev: true,
+            },
+            false,
+        ))
+        .unwrap();
+        assert_eq!(reads.load(Ordering::SeqCst), 2);
+        let stored = preview_store()
+            .lock()
+            .unwrap()
+            .consume(&preview.token, now_epoch_ms())
+            .unwrap();
+        value.lock().unwrap()["revision"] = json!(format!("sha256:{}", "0".repeat(64)));
+        assert_eq!(
+            crate::runtime::block_on(validate_stored_plan(&access, &stored)).unwrap_err(),
+            DEPENDENCY_ENRICHMENT_REVIEW_REQUIRED
+        );
+        assert_eq!(reads.load(Ordering::SeqCst), 3);
+        assert!(!cache_path(common.path()).exists());
+        assert!(!std::path::Path::new(&logical).exists());
     }
 
     #[test]

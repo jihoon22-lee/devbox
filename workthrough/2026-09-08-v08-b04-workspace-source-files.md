@@ -449,9 +449,43 @@ was included in that final run. Final all-scope `pnpm verify:affected` passed
 (**502.774 s**, sampled RSS **6,085,603,328 B**, enforced cgroup memory peak
 **6,443,978,752 B**). Actual expanded Windows execution remains pending.
 
+## WSL project request gate and Dependencies
+
+Actual Windows acceptance at `fd48dd3` failed in Source worktree preview with
+`wsl_request_invalid` ([run 34427180152](https://github.com/jihoon22-lee/devbox/actions/runs/34427180152),
+`workspace-wsl-source-execution.log`, 5.72 s). The Windows connection omitted
+`source_worktree_preview` from its allowed request list. That list is now shared
+with actual pipe fixtures, so new native methods cannot silently bypass the Windows
+gate in Linux tests. This is a confirmed bridge defect, not a Windows PASS.
+
+Workspace Dependencies now reads lockfiles/manifests in the selected Linux helper
+with the existing Repo Manager parser and per-path native admission before IO.
+Windows never opens the logical POSIX path. The native report is validated for
+relative paths, coordinates, graph/count limits and revision before Windows owns
+summary/cache publication. Existing transmission preview, one-use remote approval
+and lock-revision revalidation all retain the same native inventory reader. Parser
+collection keeps a separate ten-second budget inside the total request deadline;
+blocked subtrees remain bounded partial results. No auto-install or external query
+was added. Standalone parsing and cache namespaces stay with their existing owners.
+
+Existing analyzer **23 tests** and helper/Workspace Linux strict Clippy passed
+(**32.236 s**, sampled RSS **2,072,252,416 B**). Expanded Dependencies **47 tests**
+and the real native inventory pipe passed (**28.515 s**, sampled RSS
+**1,977,417,728 B**), including private summary publication, invalid native reports,
+foreign paths and revalidation of remote review through the native reader. All
+Source/Dependency pipe **12 tests**, Repo Manager Linux and full Workspace MSVC
+strict Clippy passed (**43.630 s**, sampled RSS **1,983,614,976 B**). The expanded
+Windows fixture analyzes WSL Cargo inputs before any Source approval, verifies
+private Windows summary publication and observes input revision changes. The real
+monorepo report also passed the native transport validator (**3.900 s**, sampled RSS
+**1,715,576,832 B**). Final all-scope `pnpm verify:affected` passed (**527.083 s**,
+sampled RSS **7,095,169,024 B**, enforced cgroup memory peak **6,105,112,576 B**;
+sampled swap **3,260,416 B** within the 1 GiB cap). New actual Windows execution
+remains pending.
+
 ## Remaining acceptance and rollback limits
 
-- WSL template instantiation, reveal, Dependencies, native LSP and full WSL2 Rust host/WebView
+- WSL template instantiation, reveal, native LSP and full WSL2 Rust host/WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration
