@@ -358,7 +358,7 @@ function nativeWindowState(pid, expectedTitle, minimize = false) {
   return output ? JSON.parse(output) : null;
 }
 
-async function displaceOwnedWindow(pid, expectedTitle, allowInitiallyHidden, allowHostedFallback) {
+export async function displaceOwnedWindow(pid, expectedTitle, allowInitiallyHidden, allowHostedFallback) {
   const initial = nativeWindowState(pid, expectedTitle);
   if (!initial) fail("packaged main window state was unavailable");
   if (!initial.HasHandle || !initial.Visible) {
@@ -419,7 +419,7 @@ function firstInstanceContract(processInfo, nativeWindow, expectedTitle, allowHi
   };
 }
 
-async function waitForOwnedRestoredWindow(pid, expectedTitle, timeoutMilliseconds = 5_000) {
+export async function waitForOwnedRestoredWindow(pid, expectedTitle, timeoutMilliseconds = 5_000) {
   const deadline = Date.now() + timeoutMilliseconds;
   while (Date.now() < deadline) {
     const current = nativeWindowState(pid, expectedTitle);

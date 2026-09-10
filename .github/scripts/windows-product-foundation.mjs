@@ -1,5 +1,6 @@
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
+import { measureWorkspaceStartup } from "./windows-workspace-performance.mjs";
 // Runs only on a disposable GitHub-hosted Windows runner. Uses synthetic
 // product installations, never an installed user app or a legacy data store.
 import assert from "node:assert/strict";
@@ -155,6 +156,13 @@ async function start(product, suffix) {
     }
     assert.ok(ready, `native route must render an accepted response: ${readinessError}`);
     const startupMs = Math.round(performance.now() - started);
+    // The second isolated installation starts while the first remains alive.
+    // Only the first can satisfy the one-app baseline measurement condition.
+    let performanceProbe;
+    if (product.id === "workspace" && suffix === "a") {
+      progress(product, suffix, "workspace-performance");
+      performanceProbe = await measureWorkspaceStartup({cdp, child, executable, env, started, startupMs});
+    }
     assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);
     progress(product, suffix, "description");
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
@@ -406,7 +414,7 @@ async function start(product, suffix) {
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
-    return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe };
+    return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
   } catch (error) { stop({ child, cdp, policy, network }); throw error; }
 }
 
@@ -428,7 +436,7 @@ try {
       assert.notEqual(first.handshake.installationId, second.handshake.installationId);
       assert.notEqual(first.handshake.sessionId, second.handshake.sessionId);
       assert.equal(first.child.exitCode, null);
-      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs], ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}) });
+      evidence.products.push({ product: product.id, nativeRoute: "pass", replay: "rejected", foreignInstallation: "rejected", sameInstallationSecondInstance: "exited", separateInstallations: "isolated", startupMs: [first.startupMs, second.startupMs], ...(first.componentProbe ? { components: [first.componentProbe, second.componentProbe] } : {}), ...(first.performanceProbe ? {performance: first.performanceProbe} : {}) });
     } finally { try { stop(second); } finally { stop(first); } }
   }
   evidence.result = "pass";

@@ -871,6 +871,32 @@ in **510.887 s**, sampled RSS **6,635,257,856 B**, cgroup memory peak
 **6,444,929,024 B**, within the shared resource budget. The expanded Windows
 reference scenario and new CI remain pending.
 
+## Workspace startup performance
+
+The hosted product fixture now records the first isolated Workspace's onboarding
+cold readiness, F24 acknowledgement and first-input observation, ten-second
+startup survival, five-second owned-process idle sample and same-installation
+relaunch. PID/creation/image identities and native executable objects scope the
+measurement. Relaunch must retain the handshake, a responsive onboarding renderer
+and the owned visible primary window. The existing baseline window-displacement
+probe is reused; hosted fallback is recorded rather than labelled direct restore.
+
+Measurements precede all project workloads and the second installation. Existing
+CPU/RSS/process/startup/input/relaunch budgets are unchanged. The debug build,
+empty onboarding profile and separate baseline runner are stated in the report;
+this is not a same-machine packaged performance comparison or global R24 PASS.
+Syntax/module-loading checks, the existing performance sampler and packaged-smoke
+self-tests, and all **10 Workspace fixture-driver tests** passed. The resource
+wrapper initially rejected a malformed command invocation before any check ran;
+the correctly invoked run passed. Final `pnpm verify:affected` selected the whole
+repository and passed in **424.812 s**, sampled RSS **1,650,847,744 B**, cgroup
+memory peak **1,604,698,112 B**, with no sampled swap use. Actual Windows
+measurement remains pending for this fixture addition. The preceding `1cd549c`
+[general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34493171783) passed;
+its product artifact records all four native routes and installation isolation as
+PASS at PR merge source `2d6962dcfff3e2fa15ca23748d220b5f1b8f7f98`. The complete
+product workflow, including later Knowledge migration, is still pending.
+
 ## Remaining acceptance and rollback limits
 
 - Native WSL LSP has installed-server, combined Windows/WebView and final affected evidence above; final CI verification of these changes remains required. Windows and WSL WorkspaceEdit must retain identical

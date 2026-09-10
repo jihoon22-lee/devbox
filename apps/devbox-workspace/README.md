@@ -214,8 +214,8 @@ and installed-resource-path probes passed. At `01db848`, the packaged Rust clien
 and hosted WSL1 Registry/Files/reconnect fixture also passed. A lazy WSL folder form now lists registered
 GUIDs without startup, requires an explicit stopped-distro start choice, and uses
 the existing native registration/rebind review and byte CAS. Late UI results are
-cancelled. Selected WSL Files operations now have a separate native admission
-path; Git and language-server delegation remain incomplete. Resource-file and ancestor leases prevent launch-path
+cancelled. Selected WSL Files, Git and installed language-server operations use
+the same verified helper with separate native admission. Resource-file and ancestor leases prevent launch-path
 substitution. Backing-image checks request metadata only, without reading disk
 contents.
 
@@ -233,8 +233,7 @@ Cancellation rechecks precede atomic replacement; owned staging files retain nat
 parent/file identities. Unacknowledged saves require reconciliation and are never
 replayed automatically. It restricts file content to the selected distro's root filesystem;
 Windows aliases and other mounts are not admitted through a POSIX spelling. The
-WSL Files route delegates to the helper; language servers remain
-unconnected. LSP text updates
+WSL Files route and installed language servers delegate to the helper. LSP text updates
 now stay in the server document owner: NativeEditorMirror alone acknowledges UI
 buffer hashes, so an older queued notification cannot clear a newer unsaved buffer.
 
@@ -283,6 +282,15 @@ Actual local WSL1/WSL2 pipe checks passed for definition creation/read/change/re
 boundaries. The expanded Windows Registry/overlay fixture passed at `90f919f`.
 Subsequent WSL LSP and reference work is recorded below; cross-product provider
 delivery and final R24 comparison belong to the later integration gates.
+
+The Windows product fixture measures Workspace onboarding cold readiness, first
+F24 acknowledgement, five-second idle CPU/working-set/process count after ten
+seconds of startup survival, and same-installation relaunch with the owned
+primary window visible and responsive. It runs before project workloads or the
+second installation, verifies executable/process identities and uses the original
+performance budgets. The report records whether actual window displacement was
+possible in the hosted session. These debug measurements are not the final
+same-machine packaged release comparison; that remains B09 acceptance.
 
 File saves and reviewed definition writes wait for active filesystem readers before
 entering their native worker, within the original deadline. Waiting holds no Files
