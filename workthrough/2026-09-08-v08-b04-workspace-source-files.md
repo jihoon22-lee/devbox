@@ -643,6 +643,17 @@ project approval, editor/LSP or WebView acceptance. Final all-scope affected
 verification passed in **566.989 s**, sampled RSS **6,590,799,872 B**, enforced
 cgroup memory peak **6,444,933,120 B** and zero final swap.
 
+## Shared LSP execution evidence
+
+Moved the existing retained-object/streaming-hash traversal into the native
+library, with a thin Windows host re-export. This mechanical move preserves
+Windows path admission, limits and digest encoding; WSL-specific admission is
+a subsequent change. The moved evidence tests, LSP host **22** regressions and
+Linux strict checks passed in **91.946 s** (sampled RSS **3,358,605,312 B**).
+Windows strict checks passed in **16.491 s** (sampled RSS **1,984,987,136 B**).
+Final all-scope affected verification passed in **524.758 s**, sampled RSS
+**6,070,919,168 B**, enforced cgroup memory peak **6,443,941,888 B** and zero swap.
+
 ## Remaining acceptance and rollback limits
 
 - Native WSL LSP and full WSL2 WebView

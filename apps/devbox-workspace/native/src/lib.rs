@@ -281,3 +281,6 @@ mod git_creation;
 mod git_review;
 
 pub mod control;
+
+#[cfg(feature = "git")]
+pub mod lsp_evidence;
