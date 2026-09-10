@@ -21,6 +21,24 @@ pub fn eligible(root: &str, raw: &str) -> bool {
         .strip_prefix(&root)
         .is_some_and(|suffix| suffix.starts_with('/'))
 }
+/// Display-only mapping after native file admission. Never use this path for IO
+/// authorization or map /mnt/<drive> onto an unrelated Windows drive.
+pub fn explorer_path(distro: &str, root: &str, native: &str) -> Result<String> {
+    if distro.is_empty()
+        || distro.contains(['/', '\\'])
+        || !eligible(root, native)
+        || path(native)? != native
+        || native.contains('\\')
+    {
+        return Err("wsl_reveal_path_unavailable");
+    }
+    let target = format!("\\\\wsl.localhost\\{}{}", distro, native.replace('/', "\\"));
+    let parsed = parse_safe_project_path(&target).ok_or("wsl_reveal_path_unavailable")?;
+    if parsed.kind() != ProjectPathKind::WindowsUnc || parsed.as_str() != target {
+        return Err("wsl_reveal_path_unavailable");
+    }
+    Ok(target)
+}
 #[derive(Clone, Default)]
 pub struct Documents {
     revisions: HashMap<String, Option<String>>,
@@ -185,6 +203,42 @@ impl Documents {
 mod tests {
     use super::*;
     use serde_json::json;
+    #[test]
+    fn explorer_mapping_preserves_distro_and_linux_case_without_drive_fallback() {
+        assert_eq!(
+            explorer_path("Ubuntu Test", "/mnt/c/Repo", "/mnt/c/Repo/한글 File.txt").unwrap(),
+            r"\\wsl.localhost\Ubuntu Test\mnt\c\Repo\한글 File.txt"
+        );
+        for native in [
+            "/root/repo-other/file",
+            "/root/Repo/file",
+            "/root/repo/../file",
+            "/root/repo/file:stream",
+            "/root/repo/CON.txt",
+            "/root/repo/file.",
+            "/root/repo/file ",
+            r"/root/repo/dir\file",
+            "/root/repo",
+        ] {
+            assert!(
+                explorer_path("Ubuntu", "/root/repo", native).is_err(),
+                "{native}"
+            );
+        }
+        for distro in [
+            "",
+            "../Ubuntu",
+            r"Ubuntu\other",
+            "Ubuntu:",
+            "Ubuntu.",
+            "Ubuntu ",
+        ] {
+            assert!(
+                explorer_path(distro, "/root/repo", "/root/repo/file").is_err(),
+                "{distro}"
+            );
+        }
+    }
     #[test]
     fn native_metadata_never_accepts_foreign_paths_or_acknowledges_watcher_changes() {
         let mut docs = Documents::default();

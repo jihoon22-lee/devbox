@@ -115,6 +115,7 @@ pub fn project_method(method: &str) -> bool {
             | "definitions_validate"
             | "definitions_write"
             | "files_attach"
+            | "files_reveal"
             | "files_poll"
             | "files_recover"
             | "files_list"

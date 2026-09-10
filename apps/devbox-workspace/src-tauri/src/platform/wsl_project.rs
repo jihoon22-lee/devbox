@@ -72,6 +72,21 @@ mod native {
                 .lock()
                 .is_ok_and(|connection| connection.is_open())
         }
+        pub fn reveal_admitted_file(
+            &self,
+            native: &str,
+            reveal: &dyn Fn(&Path) -> Result<()>,
+        ) -> Result<()> {
+            let mut connection = self.connection.lock().map_err(|_| "wsl_connection_busy")?;
+            connection.validate(&self.token)?;
+            let target = crate::core::wsl_files::explorer_path(
+                connection.lease().name(),
+                &self.binding.root,
+                native,
+            )?;
+            reveal(Path::new(&target))?;
+            connection.validate(&self.token)
+        }
         pub fn execute_source(
             &self,
             context: &ProjectContext,

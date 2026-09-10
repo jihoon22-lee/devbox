@@ -35,6 +35,9 @@ impl Helper {
         }
     }
     fn send(&mut self, method: &str, root: Option<&str>, args: Value) -> Request {
+        if args.get("context").is_some() {
+            assert!(workspace_wsl::control::project_method(method));
+        }
         self.sequence += 1;
         let request = Request {
             version: VERSION,
@@ -376,4 +379,82 @@ fn actual_helper_lists_and_mutates_only_its_opened_native_revision() {
     helper.exited(0);
     assert!(!directory.path().join("renamed 한글.md").exists());
     assert_eq!(std::fs::read(&sentinel).unwrap(), b"preserved");
+}
+
+#[test]
+fn actual_reveal_requires_open_context_and_rejects_replaced_leaf_or_parent() {
+    let directory = tempfile::Builder::new()
+        .prefix(".wsl-reveal-fixture-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let parent = directory.path().join("Case 한글");
+    std::fs::create_dir(&parent).unwrap();
+    let path = parent.join("File.txt");
+    std::fs::write(&path, b"baseline").unwrap();
+    let mut helper = Helper::start();
+    helper.call("hello", None, json!({})).result.unwrap();
+    let report = helper
+        .call("observe_root", None, json!({"path":directory.path()}))
+        .result
+        .unwrap();
+    let root = report["token"].as_str().unwrap();
+    let context = json!({"projectId":"project","worktreeId":"tree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}});
+    helper
+        .call("files_attach", Some(root), json!({"context":context}))
+        .result
+        .unwrap();
+    let args = json!({"context":context,"path":path});
+    assert!(helper
+        .call("files_reveal", Some(root), args.clone())
+        .result
+        .is_err());
+    helper
+        .call(
+            "files_open",
+            Some(root),
+            json!({"context":context,"request":{"path":path,"encoding":null}}),
+        )
+        .result
+        .unwrap();
+    assert_eq!(
+        helper
+            .call("files_reveal", Some(root), args.clone())
+            .result
+            .unwrap(),
+        json!(path)
+    );
+    let mut stale = args.clone();
+    stale["context"]["revision"] = json!(2);
+    assert!(helper
+        .call("files_reveal", Some(root), stale)
+        .result
+        .is_err());
+    std::fs::rename(&path, parent.join("previous.txt")).unwrap();
+    std::fs::write(&path, b"replacement").unwrap();
+    assert!(helper
+        .call("files_reveal", Some(root), args.clone())
+        .result
+        .is_err());
+    helper
+        .call(
+            "files_open",
+            Some(root),
+            json!({"context":context,"request":{"path":path,"encoding":null}}),
+        )
+        .result
+        .unwrap();
+    std::fs::rename(&parent, directory.path().join("old-parent")).unwrap();
+    std::os::unix::fs::symlink(directory.path().join("old-parent"), &parent).unwrap();
+    assert!(helper
+        .call("files_reveal", Some(root), args.clone())
+        .result
+        .is_err());
+    helper
+        .call("files_close", Some(root), args.clone())
+        .result
+        .unwrap();
+    assert!(helper
+        .call("files_reveal", Some(root), args)
+        .result
+        .is_err());
 }

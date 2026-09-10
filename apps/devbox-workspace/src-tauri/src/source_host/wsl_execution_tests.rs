@@ -316,6 +316,40 @@ impl Fixture {
             .unwrap()
             .set_wsl_document_fixture(&self.host, &context, &document, true)
             .unwrap();
+        let revealed = std::cell::RefCell::new(None);
+        self.files
+            .lock()
+            .unwrap()
+            .reveal_wsl(
+                &self.host,
+                &context,
+                json!({"path":document}),
+                u64::MAX,
+                &|path| {
+                    *revealed.borrow_mut() = Some(path.to_owned());
+                    Ok(())
+                },
+            )
+            .unwrap();
+        let target = revealed.into_inner().unwrap();
+        let mapped = devbox_wsl::path::parse_wsl_unc_path(target.to_str().unwrap())
+            .unwrap()
+            .unwrap();
+        assert_eq!(mapped.linux_path(), document);
+        let mut stale = context.clone();
+        stale.revision += 1;
+        assert!(self
+            .files
+            .lock()
+            .unwrap()
+            .reveal_wsl(
+                &self.host,
+                &stale,
+                json!({"path":document}),
+                u64::MAX,
+                &|_| panic!("stale context reached Explorer")
+            )
+            .is_err());
         let prepared = self.prepare(
             "repo_cleanup_preview",
             json!({"request":{"path":root,"operationId":"open-cleanup-preview"}}),
@@ -331,6 +365,18 @@ impl Fixture {
             .unwrap()
             .set_wsl_document_fixture(&self.host, &context, &document, false)
             .unwrap();
+        assert!(self
+            .files
+            .lock()
+            .unwrap()
+            .reveal_wsl(
+                &self.host,
+                &context,
+                json!({"path":document}),
+                u64::MAX,
+                &|_| panic!("closed document reached Explorer")
+            )
+            .is_err());
         let preview = self.execute(
             "repo_cleanup_preview",
             json!({"request":{"path":root,"operationId":"cleanup-preview"}}),

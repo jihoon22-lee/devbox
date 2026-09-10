@@ -12,7 +12,7 @@ const issues:Record<string,string>={
   wsl_backing_path_unsafe: "WSL 가상 디스크 경로가 바뀌었습니다. 배포판 저장 위치를 확인해 주세요.",
   wsl_backing_unavailable: "WSL 가상 디스크의 식별 정보를 읽지 못했습니다.",
   wsl_backing_object_changed: "WSL 가상 디스크가 교체되었습니다. 폴더 연결을 다시 검토해 주세요.",
-  wsl_reveal_unavailable: "WSL 파일의 탐색기 연결은 아직 사용할 수 없습니다.",
+  wsl_reveal_path_unavailable: "이 WSL 파일 이름은 Windows 탐색기에서 표시할 수 없습니다.",
   wsl_retained_registration_changed: "WSL 배포판의 등록 값이 바뀌었습니다. 폴더 연결을 다시 검토해 주세요.",
   wsl_registration_changed: "WSL 배포판 등록이 교체되었습니다. 폴더 연결을 다시 검토해 주세요.",
   wsl_storage_object_changed: "WSL 배포판 저장 폴더가 교체되었습니다. 폴더 연결을 다시 검토해 주세요.",

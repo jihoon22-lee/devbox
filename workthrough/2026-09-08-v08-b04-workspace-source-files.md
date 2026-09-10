@@ -483,9 +483,36 @@ sampled RSS **7,095,169,024 B**, enforced cgroup memory peak **6,105,112,576 B**
 sampled swap **3,260,416 B** within the 1 GiB cap). New actual Windows execution
 remains pending.
 
+At `1d75608`, the [actual Windows run](https://github.com/jihoon22-lee/devbox/actions/runs/34429225528)
+passed Registry/Files/definitions (**8.11 s**) and Source approval (**6.65 s**).
+The combined Source execution fixture completed its preceding Dependencies checks
+but failed at its shared execute helper with `source_operation_unavailable`
+(**43.45 s**). The log does not identify which Git operation failed. This remains
+an unresolved actual Windows failure; later independent workflow steps do not
+convert it into a pass. Per-operation fixture diagnostics are required next.
+
+## WSL Explorer reveal
+
+The existing Files action now asks the Linux owner to admit the exact open document
+before mapping its path to the retained distro's `wsl.localhost` share. The callback
+uses the existing native opener; the path never grants Windows filesystem access.
+Registry/distro/root and document evidence are rechecked around the action. Linux
+names that cannot be represented safely in Explorer receive a fixed error; no
+`/mnt/c` drive alias, leaf replacement or cross-context fallback is accepted.
+
+Actual helper pipe **6 tests** passed, including open/closed/stale-context and
+replaced leaf/parent admission. Mapping **2 tests** and strict helper/Workspace Linux Clippy also passed
+(**81.370 s**, sampled RSS **4,609,028,096 B**). The initial MSVC compile caught
+a temporary `Arc<ProjectOwner>` borrow mismatch; after the explicit reference
+correction, full MSVC strict Clippy passed (**4.691 s**, sampled RSS
+**1,511,698,432 B**). Final all-scope `pnpm verify:affected` passed
+(**492.284 s**, sampled RSS **6,170,562,560 B**, enforced cgroup memory peak
+**6,445,056,000 B**). The expanded Windows fixture verifies the admitted callback target and
+closed/stale rejection; actual host and visible Explorer evidence remain pending.
+
 ## Remaining acceptance and rollback limits
 
-- WSL template instantiation, reveal, native LSP and full WSL2 Rust host/WebView
+- WSL template instantiation, native LSP and full WSL2 Rust host/WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration

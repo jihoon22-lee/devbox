@@ -225,3 +225,13 @@ The Windows connection's project-method gate is now shared with actual pipe test
 This fixes `fd48dd3`'s actual Windows rejection of `source_worktree_preview`, which
 Linux-only dispatch tests had missed. Source/Dependency pipe tests and MSVC compile
 checks passed after the correction; new actual Windows results remain pending.
+
+
+`files_reveal` returns only a currently opened document's admitted canonical path.
+It checks the exact attached context, retained file/parent/root objects and request
+lifetime. Windows validates that response against its acknowledged document before
+mapping the retained distro name to an Explorer share path. This is a display-only
+operation, with no Windows filesystem admission or drive fallback. The Linux pipe
+fixture rejects unopened/closed documents, stale context and leaf/parent replacement.
+The Windows host fixture checks the callback target and denied stale/closed requests;
+its actual execution and visible Explorer selection remain pending.

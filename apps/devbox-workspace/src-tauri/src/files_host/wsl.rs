@@ -6,6 +6,23 @@ pub(super) fn posix(raw: &str) -> bool {
         .is_some_and(|path| path.kind() == devbox_filesystem::ProjectPathKind::Posix)
 }
 impl FilesHost {
+    pub(crate) fn reveal_wsl(
+        &self,
+        host: &Host,
+        context: &ProjectContext,
+        args: Value,
+        deadline: u64,
+        reveal: &dyn Fn(&std::path::Path) -> Result<()>,
+    ) -> Result<Value> {
+        self.wsl_owner(Some(context))?.reveal(
+            host.projects()?.as_ref(),
+            context,
+            args,
+            deadline,
+            reveal,
+        )
+    }
+
     pub(super) fn wsl_owner(&self, context: Option<&ProjectContext>) -> Result<&WslFiles> {
         self.wsl
             .iter()

@@ -101,6 +101,39 @@ impl WslFiles {
         }
         self.lease.revalidate()
     }
+    pub fn reveal(
+        &self,
+        projects: &ProjectOwner,
+        context: &ProjectContext,
+        args: Value,
+        deadline: u64,
+        reveal: &dyn Fn(&Path) -> Result<()>,
+    ) -> Result<Value> {
+        let value: PathInput = input(args)?;
+        self.revalidate(projects, context)?;
+        if !self.documents.has(&value.path) {
+            return Err("file_selection_required");
+        }
+        let proof = || -> Result<()> {
+            let admitted = self.lease.file_request_until(
+                context,
+                "files_reveal",
+                json!({"path":value.path}),
+                deadline,
+            )?;
+            if admitted.as_str() != Some(value.path.as_str()) {
+                return Err("wsl_protocol_invalid");
+            }
+            Ok(())
+        };
+        proof()?;
+        self.revalidate(projects, context)?;
+        crate::files_host::current_deadline(deadline)?;
+        self.lease.reveal_admitted_file(&value.path, reveal)?;
+        proof()?;
+        self.revalidate(projects, context)?;
+        Ok(Value::Null)
+    }
     pub fn close(&mut self, path: &str) -> Result<()> {
         // Always release known local metadata even when the distro disappeared.
         // A cleanup request never creates a connection or starts a distribution.
@@ -312,7 +345,6 @@ impl WslFiles {
                 }
                 self.lease.file_request_until(context, "files_preview", json!({"path":value.path,"content":value.content,"workspaceRoot":value.workspace_root}), deadline)
             }
-            "reveal_file_action" => Err("wsl_reveal_unavailable"),
             _ => Err("invalid_request"),
         }
     }

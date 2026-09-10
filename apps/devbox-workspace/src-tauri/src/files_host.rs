@@ -891,6 +891,15 @@ impl FilesHost {
                 )
             })
         {
+            if method == "reveal_file_action" {
+                use tauri_plugin_opener::OpenerExt;
+                let context = context.ok_or("project_selection_required")?;
+                return self.reveal_wsl(host, context, args, deadline, &|path| {
+                    app.opener()
+                        .reveal_item_in_dir(path)
+                        .map_err(|_| "file_action_unavailable")
+                });
+            }
             return self.execute_wsl(host, context, method, args, deadline);
         }
         let needs_project = matches!(

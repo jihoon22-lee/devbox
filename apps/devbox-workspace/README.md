@@ -273,7 +273,7 @@ writing, and an unacknowledged write requires reopening rather than replay.
 The host excludes concurrent Git/editor writes during definition operations.
 Actual local WSL1/WSL2 pipe checks passed for definition creation/read/change/replay
 boundaries. The expanded Windows Registry/overlay fixture passed at `90f919f`.
-WSL reveal, Git/LSP, references/providers and remaining R24 acceptance are incomplete.
+WSL LSP, references/providers and remaining R24 acceptance are incomplete.
 
 File saves and reviewed definition writes wait for active filesystem readers before
 entering their native worker, within the original deadline. Waiting holds no Files
@@ -304,8 +304,18 @@ actual-pipe tests passed; the expanded Windows cleanup fixture remains pending.
 WSL Dependencies now analyzes native lockfiles without Windows path fallback,
 using the same parser and keeping summary/cache/remote approval on Windows. Linux
 regressions and Windows compilation passed; the expanded host fixture is pending.
-WSL LSP, reveal and templates still require their native adapters.
+WSL LSP and templates still require their native adapters.
+
+Explicit Explorer reveal now revalidates the currently opened WSL document through
+the native helper. Only its exact acknowledged path is mapped to the retained
+distribution's `wsl.localhost` share; `/mnt/c` never becomes a Windows drive alias.
+Windows-incompatible Linux names remain editable but reveal returns an explicit
+unavailable message. Neither the mapping nor Explorer supplies file IO authority.
+The native grant and current Registry/distro binding are checked around the action.
+Actual Linux admission tests passed; Windows host and Explorer UI evidence is pending.
 
 The `fd48dd3` Windows WSL fixture found a missing worktree-preview method in the
 Windows connection gate. The corrected gate is shared with actual pipe fixtures;
-its new Windows execution remains pending.
+the next run (`1d75608`) passed Dependencies assertions and Registry/approval checks
+but failed a later Source execution with `source_operation_unavailable`. The shared
+fixture needs per-operation diagnostics before that failure can be located.

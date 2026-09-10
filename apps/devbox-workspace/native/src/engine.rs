@@ -58,6 +58,11 @@ impl RootLease for NativeFileLease<'_> {
     deny_unknown_fields
 )]
 enum FileMethod {
+    #[serde(rename = "files_reveal")]
+    Reveal {
+        context: ProjectContext,
+        path: String,
+    },
     #[serde(rename = "files_poll")]
     Poll {
         context: ProjectContext,
@@ -121,7 +126,8 @@ enum FileMethod {
 impl FileMethod {
     fn context(&self) -> &ProjectContext {
         match self {
-            Self::Poll { context, .. }
+            Self::Reveal { context, .. }
+            | Self::Poll { context, .. }
             | Self::Recover { context, .. }
             | Self::List { context, .. }
             | Self::Preview { context, .. }
@@ -562,6 +568,15 @@ impl Engine {
             target: &access.context.target,
         };
         match method {
+            FileMethod::Reveal { path, .. } => {
+                guard()?;
+                let admitted = access
+                    .owner
+                    .admitted_path(Some((&access.context, &lease)), &path)?;
+                guard()?;
+                lease.revalidate()?;
+                Ok(json!(admitted.to_str().ok_or("invalid_file_path")?))
+            }
             FileMethod::Poll { paths, .. } => {
                 if paths.len() > 64 || paths.iter().any(|path| path.len() > 32768) {
                     return Err("file_limit");
@@ -736,7 +751,8 @@ impl Engine {
             });
         if matches!(
             request.method.as_str(),
-            "files_poll"
+            "files_reveal"
+                | "files_poll"
                 | "files_recover"
                 | "files_list"
                 | "files_preview"
