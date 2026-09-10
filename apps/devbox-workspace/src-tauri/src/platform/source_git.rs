@@ -159,6 +159,7 @@ impl SourceGit {
         &self,
         method: &str,
         args: serde_json::Value,
+        members: Vec<serde_json::Value>,
         expires: std::time::Instant,
         cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
         authorize: &dyn Fn(&str) -> Result<()>,
@@ -173,7 +174,7 @@ impl SourceGit {
         };
         lease.execute_source(
             context,
-            serde_json::json!({"digest":report.digest,"method":method,"args":args}),
+            serde_json::json!({"digest":report.digest,"method":method,"args":args,"members":members}),
             expires,
             cancelled,
             authorize,

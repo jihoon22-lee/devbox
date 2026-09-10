@@ -278,6 +278,41 @@ impl FilesHost {
             ..Self::default()
         }
     }
+    #[cfg(all(test, windows))]
+    pub(crate) fn set_wsl_document_fixture(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        path: &str,
+        open: bool,
+    ) -> Result<()> {
+        if open {
+            self.execute_wsl(
+                host,
+                Some(context),
+                "open_file",
+                json!({"request":{"path":path,"encoding":null}}),
+                std::time::SystemTime::now()
+                    .duration_since(std::time::UNIX_EPOCH)
+                    .unwrap()
+                    .as_millis() as u64
+                    + 30_000,
+            )
+            .map(|_| ())
+        } else {
+            self.close_wsl(Some(context), path)
+        }
+    }
+    #[cfg(windows)]
+    pub(crate) fn has_wsl_documents(&self, context: &ProjectContext) -> bool {
+        self.wsl.iter().any(|owner| {
+            let owned = owner.context();
+            owned.project_id == context.project_id
+                && owned.worktree_id == context.worktree_id
+                && owned.target == context.target
+                && !owner.documents.is_empty()
+        })
+    }
     pub(crate) fn has_documents_under(&self, root: devbox_filesystem::FilesystemIdentity) -> bool {
         self.owner.has_documents_under(root)
     }

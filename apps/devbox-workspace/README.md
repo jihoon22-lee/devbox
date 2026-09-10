@@ -297,5 +297,8 @@ retire. The static helper reuses Repo Manager's existing execution policies with
 Tauri. Linux actual-pipe tests, Windows compilation and actual Windows WSL1
 Source execution passed at `3011ef9` (11.07 seconds). WSL worktree creation now retains a one-use native destination review and offers
 registration in the same distro. Its Linux execution and Windows compilation passed;
-the expanded Windows host fixture is pending. WSL cleanup and LSP still require
-their additional native sibling/edit capabilities.
+the expanded Windows host fixture is pending. WSL cleanup now admits explicitly
+reviewed registered siblings through native repository/evidence checks, blocks open
+Editor documents and observes scope revocation on every Git command. Its Linux
+actual-pipe tests passed; the expanded Windows cleanup fixture remains pending.
+WSL Dependencies, LSP, reveal and templates still require their native adapters.

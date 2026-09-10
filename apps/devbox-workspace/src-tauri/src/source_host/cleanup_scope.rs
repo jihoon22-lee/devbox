@@ -92,7 +92,7 @@ fn selected(
 struct Member {
     context: ProjectContext,
     binding: Binding,
-    git: GitTrust,
+    git: SourceGit,
     definitions: ExecutionDefinitions,
 }
 impl Member {
@@ -104,24 +104,19 @@ impl Member {
         budget: Budget,
     ) -> Result<Self> {
         budget.check()?;
-        let lease = host.projects()?.admit(context)?;
-        let binding = lease.binding().clone();
-        if binding.repository_object != root.binding.repository_object
-            || binding.target != root.binding.target
+        let expected = host.projects()?.binding(context)?;
+        if expected.repository_object != root.binding.repository_object
+            || expected.target != root.binding.target
         {
             return Err("source_cleanup_scope_changed");
         }
-        let environment = native_environment(
-            std::path::Path::new(&binding.root),
-            host.source_environment(),
-            budget.deadline_ms,
-        )?;
-        if environment.program != root.git.native()?.environment.program
-            || environment.environment != root.git.native()?.environment.environment
+        let (binding, git) = SourceGit::capture(host, context, budget.deadline_ms)?;
+        if binding != expected
+            || git.review().executable != root.git.review().executable
+            || git.evidence_digests().1 != root.git.evidence_digests().1
         {
             return Err("source_cleanup_scope_changed");
         }
-        let git = GitTrust::capture(lease, environment, budget.deadline_ms)?;
         let definitions = definitions.execution_evidence(host, context, budget.deadline_ms)?;
         let member = Self {
             context: context.clone(),
@@ -302,7 +297,7 @@ impl Owner {
                 root.revalidate(host, budget.deadline_ms)?;
                 budget.check()?;
                 let id = uuid::Uuid::new_v4().to_string();
-                let view = json!({"previewId":id,"members":evidence.members.iter().map(|m| json!({"id":m.context.worktree_id,"root":m.binding.root,"review":m.git.review})).collect::<Vec<_>>()});
+                let view = json!({"previewId":id,"members":evidence.members.iter().map(|m| json!({"id":m.context.worktree_id,"root":m.binding.root,"review":m.git.review()})).collect::<Vec<_>>()});
                 self.pending.insert(
                     id,
                     Pending {
@@ -403,6 +398,47 @@ impl Execution {
             files,
         }))
     }
+    #[cfg(windows)]
+    pub(super) fn native_members(&self) -> Vec<Value> {
+        self.evidence
+            .members
+            .iter()
+            .map(|member| {
+                json!({
+                    "context": member.context,
+                    "root": member.binding.root,
+                    "digest": member.git.digest(),
+                })
+            })
+            .collect()
+    }
+    #[cfg(windows)]
+    pub(super) fn authorize_wsl(&self, host: &Host, root: &str, budget: Budget) -> Result<()> {
+        let member = self
+            .evidence
+            .members
+            .iter()
+            .find(|member| member.binding.root == root)
+            .ok_or("source_context_changed")?;
+        self.revalidate_approval()?;
+        member.revalidate_metadata(host, budget)?;
+        if self
+            .files
+            .try_lock()
+            .map_err(|_| "busy")?
+            .has_wsl_documents(&member.context)
+        {
+            return Err("source_cleanup_open_files");
+        }
+        Ok(())
+    }
+    #[cfg(windows)]
+    pub(super) fn revalidate_approval(&self) -> Result<()> {
+        if self.private.read(FILE)?.as_deref() != Some(self.bytes.as_slice()) {
+            return Err("source_cleanup_scope_changed");
+        }
+        Ok(())
+    }
     pub(super) fn matches(&self, target: &devbox_git::GitTarget) -> bool {
         self.evidence
             .members
@@ -426,7 +462,7 @@ impl Execution {
             .files
             .try_lock()
             .map_err(|_| "busy")?
-            .has_documents_under(member.git.native_root_identity())
+            .has_documents_under(member.git.native()?.native_root_identity())
         {
             return Err("source_cleanup_open_files");
         }

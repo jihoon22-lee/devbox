@@ -177,8 +177,8 @@ as proof of Linux child retirement. An unconfirmed retirement keeps the owner he
 Real subprocess regressions cover selected stage/commit, denied approval, forged
 tickets, partial command EOF and cancellation with a detached hook descendant.
 The Windows fixture passed at `3011ef9` in 11.07 seconds, covering the full Source
-host boundary, approval revocation and retained filesystem permits. WSL worktree
-cleanup still needs additional sibling capabilities and remains gated.
+host boundary, approval revocation and retained filesystem permits. Its general
+and product CI runs both completed successfully.
 
 
 `source_worktree_preview` retains the existing native parent and missing target
@@ -195,3 +195,19 @@ Actual Linux tests cover creation, preserved unrelated files, token replay and a
 destination created while approval is pending. The expanded Windows fixture also
 registers the linked worktree and stages/commits in its own context; compilation
 passed but that new actual Windows result remains pending.
+
+WSL cleanup now uses the existing Repo Manager preview and non-force removal.
+Windows admits at most eight explicitly reviewed, registered siblings of the same
+project/repository/distro, with a combined 64 MiB Git-evidence budget. Only this
+stored approval supplies the native member list; renderer paths cannot extend it.
+Linux independently captures those roots, compares common-repository object and
+Git environment, and binds each command to its retained root evidence. Unknown
+Git-returned worktree paths fail before filesystem IO. Windows rechecks scope
+revocation on every command and member definitions/open editor documents before
+sibling admission. An open sibling document stops the scope operation with the
+existing close-tabs message. Native retirement still owns the entire request.
+
+Actual Source-pipe tests cover approved cleanup, unapproved siblings, foreign
+repository/context, duplicate descriptors, changed evidence and late denied approval.
+The Windows fixture adds real Files open/close and cleanup-scope revocation; its
+actual hosted execution remains pending.

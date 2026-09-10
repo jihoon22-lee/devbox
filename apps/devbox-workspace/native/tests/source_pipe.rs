@@ -56,17 +56,21 @@ struct Helper {
     context: Value,
     digest: String,
     admissions: usize,
+    allowed_roots: Vec<PathBuf>,
 }
 impl Helper {
     fn start(root: &Path) -> Self {
+        Self::start_with_home(root, root)
+    }
+    fn start_with_home(root: &Path, environment_home: &Path) -> Self {
         let session = uuid::Uuid::new_v4().to_string();
         let mut child = Command::new(env!("CARGO_BIN_EXE_devbox-workspace-wsl"))
             .args(["--session", &session])
             .env_clear()
-            .env("HOME", root)
+            .env("HOME", environment_home)
             .env("PATH", "/usr/bin:/bin")
-            .env("GIT_CONFIG_SYSTEM", root.join("empty.config"))
-            .env("GIT_CONFIG_GLOBAL", root.join("empty.config"))
+            .env("GIT_CONFIG_SYSTEM", environment_home.join("empty.config"))
+            .env("GIT_CONFIG_GLOBAL", environment_home.join("empty.config"))
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::null())
@@ -100,6 +104,7 @@ impl Helper {
             context: json!({"projectId":"source-fixture","worktreeId":"source-worktree","revision":1,"target":{"kind":"wsl","distroId":uuid::Uuid::new_v4().to_string()}}),
             digest: String::new(),
             admissions: 0,
+            allowed_roots: vec![root.into()],
         };
         helper.send("observe_root", json!({"path":root}));
         let report = helper.complete(true).result.unwrap();
@@ -158,7 +163,10 @@ impl Helper {
         assert_eq!(session_id, self.session);
         assert_eq!(request_id, self.request_id);
         assert_eq!(sequence, self.sequence);
-        assert_eq!(target_root, self.root.to_string_lossy());
+        assert!(self
+            .allowed_roots
+            .iter()
+            .any(|root| root.to_string_lossy() == target_root));
         assert!(workspace_wsl::token(&admission_id));
         self.admissions += 1;
         workspace_wsl::write_frame(
@@ -592,5 +600,153 @@ fn a_wrong_worktree_token_cannot_be_retried_with_the_original_token() {
     }
     assert!(!target.exists());
     assert_eq!(helper.admissions, 0);
+    helper.retire();
+}
+
+fn cleanup_member(helper: &Helper, linked: &Path) -> Value {
+    let mut sibling = Helper::start_with_home(linked, &helper.root);
+    let mut context = helper.context.clone();
+    context["worktreeId"] = json!("approved-sibling");
+    let member = json!({"context":context,"root":linked,"digest":sibling.digest});
+    sibling.retire();
+    member
+}
+fn cleanup_execute(helper: &mut Helper, method: &str, args: Value, members: Value) {
+    helper.send(
+        "source_execute",
+        json!({"context":helper.context,"digest":helper.digest,
+        "method":method,"args":args,"members":members}),
+    );
+}
+#[test]
+fn cleanup_admits_only_explicit_native_siblings_and_removes_the_reviewed_worktree() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let linked = root.join("linked 한글 cleanup");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "merged-linked",
+            linked.to_str().unwrap(),
+        ],
+    );
+    let mut helper = Helper::start(root);
+    let member = cleanup_member(&helper, &linked);
+    let args = json!({"request":{"path":root,"operationId":"scope-preview"}});
+    helper.execute("repo_cleanup_preview", args.clone());
+    let denied = helper.complete(true).result.unwrap();
+    let entry = denied["worktrees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == linked.to_str().unwrap())
+        .unwrap();
+    assert_eq!(entry["eligible"], false);
+    helper.allowed_roots.push(linked.clone());
+    cleanup_execute(&mut helper, "repo_cleanup_preview", args, json!([member]));
+    let preview = helper.complete(true).result.unwrap();
+    let entry = preview["worktrees"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|entry| entry["path"] == linked.to_str().unwrap())
+        .unwrap();
+    assert_eq!(entry["eligible"], true, "{preview}");
+    cleanup_execute(
+        &mut helper,
+        "repo_cleanup",
+        json!({"request":{"path":root,"operationId":"scope-remove",
+        "previewRevision":preview["revision"],"branchNames":[],"worktreePaths":[linked]}}),
+        json!([member]),
+    );
+    let removed = helper.complete(true).result.unwrap();
+    assert_eq!(removed["removed"], 1, "{removed}");
+    assert!(!linked.exists());
+    assert_eq!(fs::read(root.join("tracked.txt")).unwrap(), b"original\n");
+    assert!(!git(root, &["branch", "--list", "merged-linked"]).is_empty());
+    helper.retire();
+}
+#[test]
+fn cleanup_rejects_foreign_duplicate_and_changed_evidence_before_git_admission() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let linked = root.join("linked");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "linked",
+            linked.to_str().unwrap(),
+        ],
+    );
+    let mut helper = Helper::start(root);
+    let member = cleanup_member(&helper, &linked);
+    let mut foreign = member.clone();
+    foreign["context"]["projectId"] = json!("foreign");
+    let mut changed = member.clone();
+    changed["digest"] = json!("0".repeat(64));
+    let other = self::fixture();
+    let mut foreign_repository = member.clone();
+    foreign_repository["root"] = json!(other.path());
+    for members in [
+        json!([foreign]),
+        json!([foreign_repository]),
+        json!([member.clone(), member.clone()]),
+        json!([changed]),
+    ] {
+        cleanup_execute(
+            &mut helper,
+            "repo_cleanup_preview",
+            json!({"request":{"path":root,"operationId":"rejected-scope"}}),
+            members,
+        );
+        assert!(helper.complete(true).result.is_err());
+        assert_eq!(helper.admissions, 0);
+        assert!(linked.join("tracked.txt").is_file());
+    }
+    helper.retire();
+}
+#[test]
+fn cleanup_revocation_after_native_preparation_preserves_the_linked_worktree() {
+    let fixture = fixture();
+    let root = fixture.path();
+    let linked = root.join("linked");
+    git(
+        root,
+        &[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "linked",
+            linked.to_str().unwrap(),
+        ],
+    );
+    let mut helper = Helper::start(root);
+    helper.allowed_roots.push(linked.clone());
+    let member = cleanup_member(&helper, &linked);
+    cleanup_execute(
+        &mut helper,
+        "repo_cleanup_preview",
+        json!({"request":{"path":root,"operationId":"revoked-preview"}}),
+        json!([member]),
+    );
+    let preview = helper.complete(true).result.unwrap();
+    cleanup_execute(
+        &mut helper,
+        "repo_cleanup",
+        json!({"request":{"path":root,"operationId":"revoked-remove",
+        "previewRevision":preview["revision"],"branchNames":[],"worktreePaths":[linked]}}),
+        json!([member]),
+    );
+    assert!(helper.complete(false).result.is_err());
+    assert!(linked.join("tracked.txt").is_file());
     helper.retire();
 }

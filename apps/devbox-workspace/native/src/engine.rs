@@ -295,6 +295,8 @@ impl Engine {
             digest: String,
             method: String,
             args: Value,
+            #[serde(default)]
+            members: Vec<crate::git_review::CleanupMember>,
         }
         if request.method != "source_execute" {
             return Err("wsl_request_invalid");
@@ -318,6 +320,8 @@ impl Engine {
             cancelled,
             authorize,
             retained,
+            members: args.members,
+            source: &self.source_environment,
         })?;
         guard()?;
         root.observation.revalidate()?;

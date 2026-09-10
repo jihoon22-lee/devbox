@@ -395,8 +395,10 @@ The actual Windows→WSL1 Source execution fixture at `3011ef9` passed in
 **11.07 s** ([run 34424819336](https://github.com/jihoon22-lee/devbox/actions/runs/34424819336),
 `workspace-wsl-source-execution.log`). It confirms selected stage/commit, approval
 revocation after preparation, cancellation with a detached hook and retained
-filesystem ownership through child retirement. The overall product run and the
-later linked-worktree expansion remain separate pending acceptance.
+filesystem ownership through child retirement. Both the [general CI](https://github.com/jihoon22-lee/devbox/actions/runs/34424819342)
+and that product run completed successfully. Packaged Source/Files/Definitions/
+Dependencies/LSP installer and coexistence gates passed for both installation
+variants. The later linked-worktree/cleanup expansion remains pending acceptance.
 
 ## Native WSL worktree creation
 
@@ -424,9 +426,32 @@ Final all-scope `pnpm verify:affected` passed (**480.077 s**, sampled process-gr
 RSS **7,801,643,008 B**, enforced cgroup memory peak **6,405,210,112 B**).
 Actual Windows execution of the expanded linked-context fixture is pending.
 
+## Native WSL worktree cleanup
+
+Cleanup scopes now retain Source evidence in the selected target. Windows keeps
+explicit approval/private metadata and only registered same-project/repository/distro
+siblings can enter the member list. Linux independently verifies the repository
+object, original root, executable/environment and exact reviewed Git digest before
+using the existing Repo Manager cleanup. Unknown Git-returned roots fail before IO;
+combined evidence remains capped at 64 MiB and eight siblings. Scope revocation is
+checked on each command. Open WSL editor documents reject the operation with the
+existing close-tabs message. Preview/state revalidation and non-force removal stay
+in Repo Manager; native retirement retains the complete filesystem/request owner.
+
+Actual Source pipe **11 tests**, Linux helper/Workspace strict Clippy passed
+(**39.803 s**, sampled RSS **1,697,767,424 B**). MSVC all-target strict Clippy passed
+(**7.304 s**, sampled RSS **1,603,010,560 B**). The Windows fixture now exercises
+open/close document protection, approval revocation after preparation, successful
+cleanup and preserved unrelated files. Final Source pipe **11 tests**, existing
+cleanup metadata **2 tests**, helper strict Clippy and full MSVC strict Clippy passed
+(**78.287 s**, sampled RSS **4,745,330,688 B**). Foreign repository object rejection
+was included in that final run. Final all-scope `pnpm verify:affected` passed
+(**502.774 s**, sampled RSS **6,085,603,328 B**, enforced cgroup memory peak
+**6,443,978,752 B**). Actual expanded Windows execution remains pending.
+
 ## Remaining acceptance and rollback limits
 
-- WSL template instantiation, reveal, Git worktree cleanup, native LSP and full WSL2 Rust host/WebView
+- WSL template instantiation, reveal, Dependencies, native LSP and full WSL2 Rust host/WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration

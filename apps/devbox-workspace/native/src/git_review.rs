@@ -39,6 +39,7 @@ pub(crate) struct Review {
     context: ProjectContext,
     trust: std::sync::Arc<GitTrust<Lease>>,
     creation: Option<crate::git_creation::Creation>,
+    repository_identity: Option<FilesystemIdentity>,
 }
 impl Review {
     pub(crate) fn execute<T: Send + Sync + 'static>(
@@ -53,9 +54,11 @@ impl Review {
             cancelled,
             authorize,
             retained,
+            members,
+            source,
         } = execution;
-        // Cleanup still needs explicit sibling capabilities. Cancellation uses
-        // the current pipe owner rather than another request's operation ID.
+        // Cancellation uses this pipe owner; renderer operation IDs never
+        // acquire authority over another request.
         if !crate::control::source_method(method) {
             return Err("wsl_source_method_unavailable");
         }
@@ -75,6 +78,63 @@ impl Review {
         } else {
             (None, None, args)
         };
+        let cleanup = matches!(method, "repo_cleanup_preview" | "repo_cleanup");
+        if members.len() > 8 || (!cleanup && !members.is_empty()) {
+            return Err("source_cleanup_scope_invalid");
+        }
+        let mut seen_roots = std::collections::HashSet::new();
+        let mut seen_contexts = std::collections::HashSet::new();
+        // Validate every descriptor before observing any sibling filesystem.
+        for member in &members {
+            member
+                .context
+                .validate()
+                .map_err(|_| "source_cleanup_scope_invalid")?;
+            crate::engine::admit(Path::new(&member.root))?;
+            if member.context.project_id != self.context.project_id
+                || member.context.target != self.context.target
+                || member.context.worktree_id == self.context.worktree_id
+                || member.root == self.trust.root().to_string_lossy()
+                || !seen_roots.insert(&member.root)
+                || !seen_contexts.insert(&member.context.worktree_id)
+                || member.digest.len() != 64
+                || !member.digest.bytes().all(|b| b.is_ascii_hexdigit())
+            {
+                return Err("source_cleanup_scope_invalid");
+            }
+        }
+        let mut siblings = Vec::new();
+        let mut bytes = self.trust.bytes();
+        for member in &members {
+            let observation =
+                ProjectObservation::capture(Path::new(&member.root), crate::linux_files::admit)?;
+            if self.repository_identity.is_none()
+                || observation.repository_identity() != self.repository_identity
+                || observation.root().to_str() != Some(member.root.as_str())
+            {
+                return Err("source_cleanup_scope_changed");
+            }
+            let review = Self::capture(
+                &observation,
+                member.context.clone(),
+                source,
+                deadline,
+                &|| Ok(()),
+            )?;
+            if review.trust.environment.program != self.trust.environment.program
+                || review.trust.environment.environment != self.trust.environment.environment
+            {
+                return Err("source_cleanup_scope_changed");
+            }
+            review.revalidate(&member.digest, deadline)?;
+            bytes = bytes
+                .checked_add(review.trust.bytes())
+                .ok_or("git_source_limit")?;
+            if bytes > 64 * 1024 * 1024 {
+                return Err("git_source_limit");
+            }
+            siblings.push(review.trust);
+        }
         let program = self.trust.environment.program.clone();
         let environment = self.trust.environment.environment.clone();
         let root = self.trust.root().to_path_buf();
@@ -91,12 +151,24 @@ impl Review {
                     target.revalidate(deadline).map_err(str::to_owned)?;
                 }
                 // Unknown targets fail before filesystem IO or Windows authorization.
-                trust.repository(target, deadline).map_err(str::to_owned)?;
+                let selected = if trust.matches(target) {
+                    &trust
+                } else {
+                    siblings
+                        .iter()
+                        .find(|member| member.matches(target))
+                        .ok_or("source_context_changed")?
+                };
+                trust.revalidate(deadline).map_err(str::to_owned)?;
+                selected
+                    .repository(target, deadline)
+                    .map_err(str::to_owned)?;
                 authorize(target.cwd()).map_err(str::to_owned)?;
                 if let Some(target) = &target_boundary {
                     target.revalidate(deadline).map_err(str::to_owned)?;
                 }
-                trust.repository(target, deadline).map_err(str::to_owned)
+                trust.revalidate(deadline).map_err(str::to_owned)?;
+                selected.repository(target, deadline).map_err(str::to_owned)
             },
         )
         .map_err(|_| "source_context_changed")?
@@ -163,6 +235,7 @@ impl Review {
             context,
             trust: std::sync::Arc::new(trust),
             creation: None,
+            repository_identity: original.repository_identity(),
         })
     }
     pub(crate) fn preview_worktree(
@@ -244,4 +317,16 @@ pub(crate) struct Execution<'a, T> {
     pub cancelled: std::sync::Arc<std::sync::atomic::AtomicBool>,
     pub authorize: crate::engine::SourceAuthorization,
     pub retained: T,
+    pub members: Vec<CleanupMember>,
+    pub source: &'a SourceEnvironment,
+}
+
+/// Only the Windows Source owner constructs this list from its stored explicit
+/// cleanup approval. It is never forwarded from renderer command arguments.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct CleanupMember {
+    context: ProjectContext,
+    root: String,
+    digest: String,
 }

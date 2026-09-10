@@ -202,6 +202,128 @@ impl Fixture {
             )
             .unwrap();
     }
+    fn approve_cleanup(&mut self, context: &ProjectContext) {
+        let preview = self
+            .source
+            .manage(
+                &self.host,
+                &mut self.definitions,
+                &self.context,
+                "preview_cleanup_scope",
+                json!({"worktreeIds":[context.worktree_id]}),
+                Self::budget(),
+            )
+            .unwrap();
+        self.source
+            .manage(
+                &self.host,
+                &mut self.definitions,
+                &self.context,
+                "approve_cleanup_scope",
+                json!({"previewId":preview["previewId"]}),
+                Self::budget(),
+            )
+            .unwrap();
+    }
+    fn check_cleanup(&mut self) {
+        let root = self.root.clone();
+        let linked = format!("{root}/cleanup worktree 한글");
+        self.git(&[
+            "worktree",
+            "add",
+            "--quiet",
+            "-b",
+            "cleanup-linked",
+            &linked,
+        ]);
+        let product_contract::ExecutionTarget::Wsl { distro_id } = &self.context.target else {
+            panic!("expected WSL target")
+        };
+        let projects = self.host.projects().unwrap();
+        let proposal = projects
+            .preview_wsl(
+                self.host.helper_directory().unwrap(),
+                distro_id,
+                &linked,
+                false,
+            )
+            .unwrap();
+        let (_, context) = projects
+            .apply(
+                &proposal.preview_id,
+                "Cleanup worktree",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        self.approve_cleanup(&context);
+        let document = format!("{linked}/tracked.txt");
+        self.files
+            .lock()
+            .unwrap()
+            .set_wsl_document_fixture(&self.host, &context, &document, true)
+            .unwrap();
+        let prepared = self.prepare(
+            "repo_cleanup_preview",
+            json!({"request":{"path":root,"operationId":"open-cleanup-preview"}}),
+            "open-cleanup-preview",
+            (),
+        );
+        assert!(matches!(
+            prepared.finish_on_worker(),
+            Err("source_cleanup_open_files")
+        ));
+        self.files
+            .lock()
+            .unwrap()
+            .set_wsl_document_fixture(&self.host, &context, &document, false)
+            .unwrap();
+        let preview = self.execute(
+            "repo_cleanup_preview",
+            json!({"request":{"path":root,"operationId":"cleanup-preview"}}),
+            "cleanup-preview",
+        );
+        let entry = preview["worktrees"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|entry| entry["path"] == linked)
+            .unwrap();
+        assert_eq!(entry["eligible"], true, "{preview}");
+        let args = json!({"request":{"path":root,"operationId":"revoked-cleanup",
+            "previewRevision":preview["revision"],"branchNames":[],"worktreePaths":[linked]}});
+        let prepared = self.prepare("repo_cleanup", args, "revoked-cleanup", ());
+        self.source
+            .manage(
+                &self.host,
+                &mut self.definitions,
+                &self.context,
+                "revoke_cleanup_scope",
+                json!({}),
+                Self::budget(),
+            )
+            .unwrap();
+        assert!(prepared.finish_on_worker().is_err());
+        assert!(self.unc.join("cleanup worktree 한글/tracked.txt").is_file());
+        self.approve_cleanup(&context);
+        let preview = self.execute(
+            "repo_cleanup_preview",
+            json!({"request":{"path":root,"operationId":"approved-cleanup-preview"}}),
+            "approved-cleanup-preview",
+        );
+        let result = self.execute(
+            "repo_cleanup",
+            json!({"request":{"path":root,"operationId":"approved-cleanup",
+            "previewRevision":preview["revision"],"branchNames":[],"worktreePaths":[linked]}}),
+            "approved-cleanup",
+        );
+        assert_eq!(result["removed"], 1, "{result}");
+        assert!(!self.unc.join("cleanup worktree 한글").exists());
+        assert!(!self.git(&["branch", "--list", "cleanup-linked"]).is_empty());
+        assert_eq!(
+            fs::read(self.unc.join("unselected.txt")).unwrap(),
+            b"preserved unselected\n"
+        );
+    }
     fn prepare<T: Send + Sync + 'static>(
         &mut self,
         method: &str,
@@ -363,6 +485,7 @@ fn owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership()
         .unwrap();
     assert!(!fixture.unc.join("cancelled worktree").exists());
     assert_eq!(fixture.git(&["branch", "--list", "cancelled-preview"]), "");
+    fixture.check_cleanup();
     fs::write(fixture.unc.join("tracked.txt"), b"revoked pending change\n").unwrap();
     let prepared = fixture.prepare(
         "repo_stage",

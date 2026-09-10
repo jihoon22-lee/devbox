@@ -7,10 +7,7 @@ use crate::{
     definitions::{self, Definitions, ExecutionDefinitions},
     host::Host,
     platform::{
-        definition_write::DefinitionTarget,
-        git_trust::{native_environment, GitTrust},
-        git_worktree::WorktreeTarget,
-        source_git::SourceGit,
+        definition_write::DefinitionTarget, git_worktree::WorktreeTarget, source_git::SourceGit,
         storage_paths::ProtectedStorage,
     },
     private_metadata::MetadataRoot,
@@ -121,6 +118,7 @@ impl PreparedSource {
 #[cfg(windows)]
 pub(crate) struct WslExecution {
     snapshot: Snapshot,
+    cleanup: Option<cleanup_scope::Execution>,
     host: Arc<Host>,
     method: String,
     args: Value,
@@ -136,14 +134,15 @@ impl WslExecution {
         self.snapshot.git.execute_source(
             &self.method,
             args,
+            self.cleanup
+                .as_ref()
+                .map(|scope| scope.native_members())
+                .unwrap_or_default(),
             self.budget.expires,
             self.cancelled.clone(),
             &|root| {
                 if self.cancelled.load(std::sync::atomic::Ordering::Acquire) {
                     return Err("source_cancelled");
-                }
-                if root != self.snapshot.binding.root {
-                    return Err("source_context_changed");
                 }
                 self.budget.check()?;
                 // Git files are checked in Linux. Calling that same pipe here would
@@ -153,6 +152,15 @@ impl WslExecution {
                     .revalidate_metadata(&self.host, self.budget.deadline_ms)?;
                 if !self.snapshot.approved()? {
                     return Err("source_review_required");
+                }
+                if let Some(cleanup) = &self.cleanup {
+                    cleanup.revalidate_approval()?;
+                }
+                if root != self.snapshot.binding.root {
+                    self.cleanup
+                        .as_ref()
+                        .ok_or("source_context_changed")?
+                        .authorize_wsl(&self.host, root, self.budget)?;
                 }
                 self.budget.check()
             },
@@ -591,6 +599,7 @@ impl SourceHost {
                 admitted.check()?;
                 return Ok(PreparedSource::Wsl(Box::new(WslExecution {
                     snapshot: pending.snapshot,
+                    cleanup: None,
                     host,
                     method,
                     args: json!({"previewId":pending.native_preview,"operationId":input.operation_id}),
@@ -627,6 +636,11 @@ impl SourceHost {
                 .ok_or("source_owner_unavailable")?
                 .ensure_user_path(pending.target.path())?;
         }
+        let cleanup = if matches!(method.as_str(), "repo_cleanup_preview" | "repo_cleanup") {
+            cleanup_scope::Execution::capture(&host, definitions, &snapshot, files, budget)?
+        } else {
+            None
+        };
         #[cfg(windows)]
         if snapshot.git.is_wsl() {
             if creation.is_some() || !workspace_wsl::control::source_method(&method) {
@@ -634,6 +648,7 @@ impl SourceHost {
             }
             return Ok(PreparedSource::Wsl(Box::new(WslExecution {
                 snapshot,
+                cleanup,
                 host,
                 method,
                 args,
@@ -642,11 +657,6 @@ impl SourceHost {
                 _retained: Box::new(retained),
             })));
         }
-        let cleanup = if matches!(method.as_str(), "repo_cleanup_preview" | "repo_cleanup") {
-            cleanup_scope::Execution::capture(&host, definitions, &snapshot, files, budget)?
-        } else {
-            None
-        };
         let target_boundary = creation.as_ref().map(|(pending, _)| pending.target.clone());
         let program = snapshot.git.native()?.environment.program.clone();
         let environment = snapshot.git.native()?.environment.environment.clone();

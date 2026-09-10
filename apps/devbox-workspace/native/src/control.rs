@@ -122,6 +122,8 @@ pub fn source_method(method: &str) -> bool {
             | "repo_fetch"
             | "repo_pull"
             | "repo_push"
+            | "repo_cleanup_preview"
+            | "repo_cleanup"
     )
 }
 
