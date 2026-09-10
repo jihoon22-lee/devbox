@@ -10,6 +10,8 @@ pub mod config;
 pub mod documents;
 pub mod features;
 pub mod installer;
+#[cfg(target_os = "linux")]
+mod linux_child;
 pub mod logs;
 pub mod manager;
 pub mod node_lock;

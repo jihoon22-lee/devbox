@@ -22,6 +22,7 @@ use tokio::time::{timeout, Duration};
 
 const RUNTIME_PROBE_TIMEOUT: Duration = Duration::from_secs(5);
 const RUNTIME_PROBE_OUTPUT_LIMIT: usize = 8 * 1024;
+#[cfg(not(target_os = "linux"))]
 const RUNTIME_PROBE_REAP_TIMEOUT: Duration = Duration::from_secs(1);
 
 /// Environment values that may cross the child-process boundary.
@@ -378,6 +379,8 @@ impl ResolvedProcess {
             args: self.args.clone(),
             current_dir: self.current_dir.clone(),
             env: self.env.clone(),
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
     }
 }
@@ -415,6 +418,8 @@ fn node_script_argument(path: &Path) -> Result<OsString, RuntimeError> {
 pub struct RuntimeResolver {
     search_path: Option<OsString>,
     environment: EnvironmentAllowlist,
+    #[cfg(target_os = "linux")]
+    linux_supervisor: Option<PathBuf>,
 }
 
 impl Default for RuntimeResolver {
@@ -430,6 +435,8 @@ impl RuntimeResolver {
         Self {
             search_path,
             environment,
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
     }
 
@@ -441,12 +448,22 @@ impl RuntimeResolver {
         Self {
             search_path,
             environment,
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
     }
 
     pub fn with_environment(mut self, environment: EnvironmentAllowlist) -> Self {
         self.search_path = environment.get(OsStr::new("PATH")).cloned();
         self.environment = environment;
+        self
+    }
+
+    /// Select the caller's reviewed first-party descendant reaper for probes.
+    /// It has the same native-only contract as ProcessSpec::with_linux_supervisor.
+    #[cfg(target_os = "linux")]
+    pub fn with_linux_supervisor(mut self, executable: impl Into<PathBuf>) -> Self {
+        self.linux_supervisor = Some(executable.into());
         self
     }
 
@@ -765,6 +782,22 @@ impl RuntimeResolver {
         if cancellation.is_cancelled() {
             return Err(RuntimeError::RuntimeProbeCancelled);
         }
+        #[cfg(target_os = "linux")]
+        let mut command = if let Some(supervisor) = &self.linux_supervisor {
+            if !supervisor.is_absolute() {
+                return Err(RuntimeError::RuntimeProbeFailed);
+            }
+            let mut command = Command::new(supervisor);
+            command.args([
+                OsStr::new("--supervise"),
+                OsStr::new("--"),
+                runtime.executable.as_os_str(),
+            ]);
+            command
+        } else {
+            Command::new(&runtime.executable)
+        };
+        #[cfg(not(target_os = "linux"))]
         let mut command = Command::new(&runtime.executable);
         command
             .arg("--version")
@@ -774,6 +807,10 @@ impl RuntimeResolver {
             .stdout(Stdio::piped())
             .stderr(Stdio::piped())
             .kill_on_drop(true);
+        #[cfg(target_os = "linux")]
+        command
+            .process_group(0)
+            .kill_on_drop(self.linux_supervisor.is_none());
         for (key, value) in self.environment.iter() {
             command.env(key, value);
         }
@@ -782,20 +819,25 @@ impl RuntimeResolver {
         let mut child = command
             .spawn()
             .map_err(|_| RuntimeError::RuntimeProbeFailed)?;
+        let owner = ProbeChild {
+            #[cfg(target_os = "linux")]
+            linux: super::linux_child::LinuxChild::capture(&child, self.linux_supervisor.is_some())
+                .map_err(|_| RuntimeError::RuntimeProbeFailed)?,
+        };
         #[cfg(windows)]
         let job = match super::process::windows_job::WindowsJobObject::assign_to(&child) {
             Ok(job) => job,
             Err(_) => {
-                kill_and_reap(&mut child).await;
+                owner.kill_and_reap(&mut child).await;
                 return Err(RuntimeError::RuntimeProbeFailed);
             }
         };
         let Some(stdout) = child.stdout.take() else {
-            kill_and_reap(&mut child).await;
+            owner.kill_and_reap(&mut child).await;
             return Err(RuntimeError::RuntimeProbeFailed);
         };
         let Some(stderr) = child.stderr.take() else {
-            kill_and_reap(&mut child).await;
+            owner.kill_and_reap(&mut child).await;
             return Err(RuntimeError::RuntimeProbeFailed);
         };
         let probe = async {
@@ -808,7 +850,7 @@ impl RuntimeResolver {
             let mut status = None;
             while stdout_bytes.is_none() || stderr_bytes.is_none() || status.is_none() {
                 tokio::select! {
-                    result = child.wait(), if status.is_none() => {
+                    result = owner.wait(&mut child), if status.is_none() => {
                         status = Some(result.map_err(|_| RuntimeError::RuntimeProbeFailed)?);
                         // A descendant can inherit a pipe handle even when its
                         // own standard output is redirected. Reap the root
@@ -852,7 +894,7 @@ impl RuntimeResolver {
             result=timeout(RUNTIME_PROBE_TIMEOUT,probe)=>result.unwrap_or(Err(RuntimeError::RuntimeProbeTimeout)),
         };
         if result.is_err() {
-            kill_and_reap(&mut child).await;
+            owner.kill_and_reap(&mut child).await;
         }
         #[cfg(windows)]
         job.terminate_and_wait()
@@ -1192,9 +1234,38 @@ where
     }
 }
 
-async fn kill_and_reap(child: &mut tokio::process::Child) {
-    let _ = child.start_kill();
-    let _ = timeout(RUNTIME_PROBE_REAP_TIMEOUT, child.wait()).await;
+struct ProbeChild {
+    #[cfg(target_os = "linux")]
+    linux: super::linux_child::LinuxChild,
+}
+impl ProbeChild {
+    async fn wait(
+        &self,
+        child: &mut tokio::process::Child,
+    ) -> io::Result<std::process::ExitStatus> {
+        #[cfg(target_os = "linux")]
+        {
+            self.linux.wait(child).await
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            child.wait().await
+        }
+    }
+    async fn kill_and_reap(&self, child: &mut tokio::process::Child) {
+        #[cfg(target_os = "linux")]
+        {
+            let _ = self.linux.terminate();
+            // Cancellation retains a supervisor until its descendants retire.
+            // Never replace an unconfirmed reaper with a process-only kill.
+            let _ = self.linux.wait(child).await;
+        }
+        #[cfg(not(target_os = "linux"))]
+        {
+            let _ = child.start_kill();
+            let _ = timeout(RUNTIME_PROBE_REAP_TIMEOUT, child.wait()).await;
+        }
+    }
 }
 
 fn contains_path_separator(value: &str) -> bool {

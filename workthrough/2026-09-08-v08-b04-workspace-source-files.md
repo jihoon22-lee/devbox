@@ -616,6 +616,33 @@ This supports the owned local WSL2 WebView fixture; it is not a release candidat
 Export YAML and native PowerShell syntax checks passed; the actual artifact step
 and WebView execution remain pending.
 
+## Native LSP child ownership
+
+The shared Code Pad Linux process and runtime-probe paths now keep child IDs
+unreaped through final signaling. Native consumers can supply their reviewed
+first-party supervisor to the manager for both server starts/retries and probes.
+Cancellation sends SIGTERM to that owner and waits for descendant retirement;
+dropping a transport cannot kill the reaper before it collects detached children.
+Windows Job behavior and managed installation remain unchanged. No renderer
+configuration field selects a supervisor, and WSL LSP is not yet exposed by this API.
+
+Existing process **6**, runtime **13** and manager **15** regressions passed.
+New real-helper tests **4** verified normal exit, explicit cancellation, owner
+drop, runtime-probe success/cancellation, detached pipe holders and an unaffected
+second job. The manager/native-helper/Linux strict checks passed in **52.344 s**
+(sampled RSS **4,107,042,816 B**); the final static test build and strict MSVC checks
+passed in **90.369 s** (sampled RSS **1,791,954,944 B**).
+
+The same static test binary (`e1e5491540cfab937e80434f8fd331b7af231c6b6ea15356fb5f4de3c3f951f1`)
+and helper (`d2f5bc19f137eba6bd60cff5c6e7858bd0a899dd4ffcee9028ac7daec429790c`)
+ran inside exclusively owned **WSL1 (4 tests, 0.26 s)** and **WSL2 (4 tests, 0.14 s)**.
+Both runs verified executable hashes after copying into Linux, confirmed child
+retirement and removed their owned distro/resource directory. These execute the
+actual Linux LSP process/probe code on WSL; they do not replace Windows host,
+project approval, editor/LSP or WebView acceptance. Final all-scope affected
+verification passed in **566.989 s**, sampled RSS **6,590,799,872 B**, enforced
+cgroup memory peak **6,444,933,120 B** and zero final swap.
+
 ## Remaining acceptance and rollback limits
 
 - Native WSL LSP and full WSL2 WebView

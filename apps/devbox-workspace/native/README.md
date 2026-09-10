@@ -53,6 +53,15 @@ The Rust integration tests cover these behaviors locally and in the helper CI jo
 Git pipe admission and cancellation-aware shutdown now use that owner. LSP transport
 remains incomplete; the file-only session watchdog is unchanged.
 
+Code Pad's Linux LSP process and runtime-probe owners now accept this reviewed
+first-party supervisor. Both use non-reaping `waitid` ownership checks before
+signals, retain the leader until the last group signal, and request supervisor
+retirement with SIGTERM instead of killing the reaper. Probe cancellation waits
+for confirmed retirement. The manager applies this native-only policy to starts,
+retries and probes; it is not a setting supplied by the renderer. Actual WSL1/2
+fixtures covered normal exit, cancellation and owner drop with detached children
+and another unaffected job. Project approval/document transport is still pending.
+
 Linux persistent evidence combines filesystem ID/type, inode and birth time from
 retained descriptors. Live revalidation additionally checks device/inode handles,
 root ancestry and Git pointer/backlink bytes. Windows binds this evidence to the

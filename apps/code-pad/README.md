@@ -95,3 +95,9 @@ component 사용자는 `default-features = false, features = ["desktop"]`을 지
 컴파일하며 Tauri/GTK/WebKit·window/app-link adapter를 포함하지 않는다. WSL 내부
 실행 파일에서 같은 저장·WorkspaceEdit 규칙을 재사용하기 위한 경계이며, 이 feature만으로
 WSL 연결이나 배포판 실행을 제공하지 않는다.
+
+Linux native 소비자는 검증한 first-party supervisor를 LSP manager에 지정해
+서버 시작·자동 재시도·런타임 버전 검사에 같은 자식 프로세스 소유권을 적용할 수 있다.
+Linux child는 마지막 signal까지 reap하지 않아 PID 재사용을 피하고, supervisor 취소는
+분리된 자식 정리가 끝날 때까지 기다린다. Windows Job 경계는 유지한다. 이 native API가
+독립 Code Pad의 WSL LSP UI를 활성화하지는 않는다.

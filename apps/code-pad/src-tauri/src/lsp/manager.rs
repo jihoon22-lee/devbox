@@ -518,6 +518,8 @@ pub struct LspManager {
     app_local_data_dir: PathBuf,
     app_version: String,
     resolver: RuntimeResolver,
+    #[cfg(target_os = "linux")]
+    linux_supervisor: Option<PathBuf>,
     execution_authority: Option<Arc<dyn LspExecutionAuthority>>,
     reviewed: Option<Arc<ReviewedLspExecution>>,
     installer: Arc<ManagedInstaller>,
@@ -575,6 +577,8 @@ impl LspManager {
             app_local_data_dir,
             app_version: app_version.into(),
             resolver: RuntimeResolver::new(),
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
             execution_authority: None,
             reviewed: None,
             installer,
@@ -616,6 +620,17 @@ impl LspManager {
 
     pub fn subscribe_events(&self) -> broadcast::Receiver<LspEvent> {
         self.events.subscribe()
+    }
+
+    /// Use the native host's reviewed first-party reaper for both version
+    /// probes and every server start/retry. This policy is never read from LSP
+    /// settings; the caller retains its executable and retirement authority.
+    #[cfg(target_os = "linux")]
+    pub fn with_linux_supervisor(mut self, executable: impl Into<PathBuf>) -> Self {
+        let executable = executable.into();
+        self.resolver = self.resolver.with_linux_supervisor(executable.clone());
+        self.linux_supervisor = Some(executable);
+        self
     }
 
     /// The host owns persistence and executable resolution. In particular a
@@ -1012,7 +1027,14 @@ impl LspManager {
             authority.validate_config(language_id, &config)?;
             authority.validate_process(&resolved)?;
         }
-        let process = LspProcess::spawn(resolved.process_spec())
+        let spec = resolved.process_spec();
+        #[cfg(target_os = "linux")]
+        let spec = if let Some(supervisor) = &self.linux_supervisor {
+            spec.with_linux_supervisor(supervisor)
+        } else {
+            spec
+        };
+        let process = LspProcess::spawn(spec)
             .await
             .map_err(|error| LspManagerError::Protocol(error.to_string()))?;
         self.spawn_stderr_monitor(language_id.to_owned(), process.subscribe_stderr());

@@ -48,6 +48,10 @@ pub struct ProcessSpec {
     /// environment is otherwise cleared, preventing unrelated secrets from
     /// reaching a language server.
     pub env: BTreeMap<OsString, OsString>,
+    /// Native callers may select their reviewed first-party descendant reaper.
+    /// This is not persisted configuration or a renderer-controlled executable.
+    #[cfg(target_os = "linux")]
+    pub linux_supervisor: Option<PathBuf>,
 }
 
 impl ProcessSpec {
@@ -57,6 +61,8 @@ impl ProcessSpec {
             args: Vec::new(),
             current_dir: current_dir.into(),
             env: BTreeMap::new(),
+            #[cfg(target_os = "linux")]
+            linux_supervisor: None,
         }
     }
 
@@ -79,7 +85,25 @@ impl ProcessSpec {
         self
     }
 
+    /// The caller must own and verify this first-party executable. It implements
+    /// `--supervise -- <program> <argv...>` and exits only after ECHILD. Keep a
+    /// mapped `/proc/self/exe` spelling intact when the caller is that helper.
+    #[cfg(target_os = "linux")]
+    pub fn with_linux_supervisor(mut self, executable: impl Into<PathBuf>) -> Self {
+        self.linux_supervisor = Some(executable.into());
+        self
+    }
+
     fn validate(&self) -> Result<(), ProcessError> {
+        #[cfg(target_os = "linux")]
+        if let Some(supervisor) = &self.linux_supervisor {
+            reject_nul("supervisor", supervisor.as_os_str())?;
+            if !supervisor.is_absolute() {
+                return Err(ProcessError::InvalidSpec(
+                    "supervisor must be absolute".into(),
+                ));
+            }
+        }
         if self.executable.as_os_str().is_empty() {
             return Err(ProcessError::InvalidSpec(
                 "executable cannot be empty".into(),
@@ -317,7 +341,7 @@ enum ChildCommand {
     Kill,
 }
 
-#[cfg(unix)]
+#[cfg(all(unix, not(target_os = "linux")))]
 fn kill_process_group(process_group: libc::pid_t) {
     // A negative pid targets the process group created for this LSP child. Do
     // not ever send a group signal to the caller's own process group.
@@ -332,20 +356,24 @@ fn kill_process_group(process_group: libc::pid_t) {
 struct ProcessTreeCleanup {
     #[cfg(windows)]
     job: Arc<WindowsJobObject>,
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "linux")))]
     process_group: libc::pid_t,
-    #[cfg(unix)]
+    #[cfg(all(unix, not(target_os = "linux")))]
     process_group_alive: Arc<AtomicBool>,
+    #[cfg(target_os = "linux")]
+    linux: super::linux_child::LinuxChild,
 }
 
 impl ProcessTreeCleanup {
     fn terminate(&self) {
         #[cfg(windows)]
         let _ = self.job.terminate();
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "linux")))]
         if self.process_group_alive.swap(false, Ordering::AcqRel) {
             kill_process_group(self.process_group);
         }
+        #[cfg(target_os = "linux")]
+        let _ = self.linux.terminate();
     }
 }
 
@@ -403,6 +431,19 @@ impl LspProcess {
             return Err(ProcessError::CurrentDirNotFound(current_dir));
         }
 
+        #[cfg(target_os = "linux")]
+        let mut command = if let Some(supervisor) = &spec.linux_supervisor {
+            let mut command = Command::new(supervisor);
+            command.args([
+                std::ffi::OsStr::new("--supervise"),
+                std::ffi::OsStr::new("--"),
+                executable.as_os_str(),
+            ]);
+            command
+        } else {
+            Command::new(&executable)
+        };
+        #[cfg(not(target_os = "linux"))]
         let mut command = Command::new(&executable);
         command
             .args(&spec.args)
@@ -415,6 +456,12 @@ impl LspProcess {
             .kill_on_drop(true);
         #[cfg(unix)]
         command.process_group(0);
+        #[cfg(target_os = "linux")]
+        if spec.linux_supervisor.is_some() {
+            // Dropping the transport asks the reaper to retire. SIGKILL would
+            // destroy its ownership of detached descendants before cleanup.
+            command.kill_on_drop(false);
+        }
         #[cfg(windows)]
         {
             const CREATE_NO_WINDOW: u32 = 0x0800_0000;
@@ -422,7 +469,7 @@ impl LspProcess {
             command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
         }
         let mut child = command.spawn().map_err(ProcessError::Spawn)?;
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "linux")))]
         let process_group = match child.id().and_then(|id| i32::try_from(id).ok()) {
             Some(id) if id > 1 => id,
             _ => {
@@ -433,6 +480,10 @@ impl LspProcess {
                 )));
             }
         };
+        #[cfg(target_os = "linux")]
+        let linux =
+            super::linux_child::LinuxChild::capture(&child, spec.linux_supervisor.is_some())
+                .map_err(ProcessError::Spawn)?;
         #[cfg(windows)]
         let job = match WindowsJobObject::assign_to(&child) {
             Ok(job) => Arc::new(job),
@@ -460,15 +511,17 @@ impl LspProcess {
         let (messages, _) = broadcast::channel(64);
         let (stderr_events, _) = broadcast::channel(64);
         let stderr = Arc::new(Mutex::new(BoundedStderr::new(stderr_capacity)));
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "linux")))]
         let process_group_alive = Arc::new(AtomicBool::new(true));
         let cleanup = ProcessTreeCleanup {
             #[cfg(windows)]
             job: Arc::clone(&job),
-            #[cfg(unix)]
+            #[cfg(all(unix, not(target_os = "linux")))]
             process_group,
-            #[cfg(unix)]
+            #[cfg(all(unix, not(target_os = "linux")))]
             process_group_alive: Arc::clone(&process_group_alive),
+            #[cfg(target_os = "linux")]
+            linux,
         };
         let inner = Arc::new(ProcessInner {
             writer: Mutex::new(JsonRpcWriter::with_limits(stdin, frame_limits)),
@@ -870,25 +923,26 @@ fn spawn_wait_task(
 ) {
     tokio::spawn(async move {
         let (status, kill_requested) = tokio::select! {
-            result = child.wait() => (result, false),
+            result = wait_owned_child(&mut child, &cleanup) => (result, false),
             command = commands.recv() => {
                 let kill_requested = matches!(command, Some(ChildCommand::Kill));
                 if kill_requested {
                     cleanup.terminate();
+                    #[cfg(not(target_os = "linux"))]
                     let _ = child.start_kill();
                 }
                 // A closed command channel is not an explicit kill request.
                 // The child still gets reaped, but on Unix the post-exit
                 // process-group cleanup must remain enabled so descendants
                 // cannot survive after an unexpected owner/task shutdown.
-                (child.wait().await, kill_requested)
+                (wait_owned_child(&mut child, &cleanup).await, kill_requested)
             }
         };
-        #[cfg(windows)]
+        #[cfg(any(windows, target_os = "linux"))]
         let _ = kill_requested;
         #[cfg(windows)]
         cleanup.terminate();
-        #[cfg(unix)]
+        #[cfg(all(unix, not(target_os = "linux")))]
         if !kill_requested {
             // The leader can exit while descendants keep the group alive;
             // clean that group once, but never again from Drop after the
@@ -923,6 +977,21 @@ fn spawn_wait_task(
         }
         exit.notify.notify_waiters();
     });
+}
+
+async fn wait_owned_child(
+    child: &mut Child,
+    cleanup: &ProcessTreeCleanup,
+) -> io::Result<std::process::ExitStatus> {
+    #[cfg(target_os = "linux")]
+    {
+        cleanup.linux.wait(child).await
+    }
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = cleanup;
+        child.wait().await
+    }
 }
 
 #[cfg(test)]
