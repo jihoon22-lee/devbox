@@ -72,6 +72,11 @@ mod native {
                 .lock()
                 .is_ok_and(|connection| connection.is_open())
         }
+        pub fn distro_name(&self) -> Result<String> {
+            let mut connection = self.connection.lock().map_err(|_| "wsl_connection_busy")?;
+            connection.validate(&self.token)?;
+            Ok(connection.lease().name().to_owned())
+        }
         pub fn reveal_admitted_file(
             &self,
             native: &str,

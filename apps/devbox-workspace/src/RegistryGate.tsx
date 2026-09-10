@@ -25,6 +25,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
   const [templateBusy,setTemplateBusy]=useState(false);
   const [templatesOpen,setTemplatesOpen]=useState(false);
   const [wslOpen,setWslOpen]=useState(false);
+  const [wslProfile,setWslProfile]=useState<ImportedProfile|undefined>();
   const [wslBusy,setWslBusy]=useState(false);
   const busy=operationBusy||templateBusy||wslBusy;
   const [error, setError] = useState("");
@@ -125,8 +126,8 @@ export default function RegistryGate({context = null, onContextChanged = async (
         <input id="workspace-project-path" value={root} maxLength={32768} disabled={busy || !!preview} onChange={event => setRoot(event.target.value)} required />
         <button disabled={busy || !root.trim() || !!preview}>폴더 확인</button>
       </form>
-      <button disabled={busy||!!preview||editing} aria-expanded={wslOpen} onClick={()=>{if(!wslOpen)setWslBusy(true);setWslOpen(value=>!value);}}>{wslOpen?"WSL 폴더 입력 닫기":"WSL 프로젝트 추가"}</button>
-      {wslOpen&&<Suspense fallback={<p role="status">WSL 폴더 입력 화면을 불러오고 있습니다…</p>}><WslProjectForm disabled={operationBusy||templateBusy||!!preview||editing} onBusyChange={setWslBusy} onReviewed={(next,suggestedName)=>{currentPreview.current=next.previewId;setPreview(next);setName(suggestedName);setTemplateId("");setWslOpen(false);}}/></Suspense>}
+      <button disabled={busy||!!preview||editing} aria-expanded={wslOpen} onClick={()=>{if(!wslOpen){setWslProfile(undefined);setWslBusy(true);}setWslOpen(value=>!value);}}>{wslOpen?"WSL 폴더 입력 닫기":"WSL 프로젝트 추가"}</button>
+      {wslOpen&&<Suspense fallback={<p role="status">WSL 폴더 입력 화면을 불러오고 있습니다…</p>}><WslProjectForm key={wslProfile?.id??"new"} profile={wslProfile} templates={registry?.importedTemplates??[]} disabled={operationBusy||templateBusy||!!preview||editing} onBusyChange={setWslBusy} onReviewed={(next,suggestedName)=>{currentPreview.current=next.previewId;setPreview(next);setName(suggestedName);setTemplateId("");setWslOpen(false);setWslProfile(undefined);}}/></Suspense>}
       {preview && <section aria-label="프로젝트 등록 확인">
         <h2>등록 확인</h2><p>{discoveryLabels[preview.discovery.kind]}</p><p>{preview.binding.root}</p>
         <p>명령 실행에 대한 신뢰는 별도로 확인합니다.</p>
@@ -177,7 +178,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
           currentPreview.current=next.previewId;setPreview(next);setRoot(next.binding.root);setName(imported.profile.name);setTemplateId("");
           document.getElementById("workspace-project-path")?.scrollIntoView?.({block:"nearest"});
         })}>Windows 폴더 연결 검토</button>
-        {imported.profile.wsl&&<p>WSL 폴더는 보관되어 있으며 연결 기능을 준비 중입니다.</p>}
+        {imported.profile.wsl&&<button disabled={busy||editing||!!preview} onClick={()=>{setWslProfile(imported);setWslBusy(true);setWslOpen(true);}}>WSL 폴더 연결 검토</button>}
         {(registry?.importedProfileBindings??[]).filter(binding=>binding.importedId===imported.id).map(binding=><div key={binding.target}>
           <p>연결한 폴더: {registry?.worktrees.find(tree=>tree.id===binding.worktreeId)?.binding.root}</p>
           <button disabled={busy||editing} onClick={()=>setUnlinkProfile(binding)}>프로필 연결 해제</button>

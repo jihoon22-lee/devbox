@@ -218,6 +218,142 @@ impl Fixture {
         ))
         .unwrap()
     }
+    fn check_wsl_profiles(&self) {
+        use workbench_lib::component::{ProfileTemplate, WslProfile};
+        let projects = self.host.projects().unwrap();
+        let resources = self.host.helper_directory().unwrap();
+        let product_contract::ExecutionTarget::Wsl { distro_id } = &self.context.target else {
+            panic!("WSL required")
+        };
+        let root = format!("{}/template 한글 folder", self.root);
+        let directory = self.unc.join("template 한글 folder");
+        fs::create_dir(&directory).unwrap();
+        fs::write(directory.join("original.txt"), b"preserve template fixture").unwrap();
+        let mut template = ProfileTemplate::new("WSL template fixture");
+        template.id.clear();
+        template.expected_ports = vec![4321];
+        template.run_manager_service_ids = vec!["synthetic-service".into()];
+        template.wsl = Some(WslProfile {
+            distro: "Missing preset fixture".into(),
+            path: "/missing/preset".into(),
+        });
+        let saved = projects
+            .save_template(projects.snapshot().unwrap().revision, None, template)
+            .unwrap();
+        let entry = saved.imported_templates.last().unwrap().clone();
+        let preview = || {
+            projects.preview_template_profile_wsl(resources, serde_json::from_value(json!({
+            "templateId":entry.id,"distroId":distro_id,"root":root,"name":"Created WSL profile","startStopped":false
+        })).unwrap()).unwrap()
+        };
+        let cancelled = preview();
+        assert_eq!(projects.snapshot().unwrap(), saved);
+        projects.cancel(&cancelled.preview_id).unwrap();
+        assert!(projects
+            .apply(
+                &cancelled.preview_id,
+                "Cancelled",
+                RegistrationAction::Register
+            )
+            .is_err());
+        let stale = preview();
+        let mut edited = entry.template.clone();
+        edited.expected_ports = vec![4322];
+        let edited = projects
+            .save_template(saved.revision, Some(&entry.id), edited)
+            .unwrap();
+        assert!(projects
+            .apply(&stale.preview_id, "Stale", RegistrationAction::Register)
+            .is_err());
+        assert_eq!(projects.snapshot().unwrap(), edited);
+        let reviewed = preview();
+        let candidate = reviewed.template_profile.as_ref().unwrap();
+        assert_eq!(candidate.profile.wsl.as_ref().unwrap().distro, self.name);
+        assert_eq!(candidate.profile.wsl.as_ref().unwrap().path, root);
+        assert!(
+            candidate.profile.windows_path.is_none() && candidate.profile.environment.is_none()
+        );
+        let (registered, context) = projects
+            .apply(
+                &reviewed.preview_id,
+                "Created WSL profile",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        assert_eq!(context.target, self.context.target);
+        let candidate = registered.imported_profile_for(&context).unwrap().unwrap();
+        assert_eq!(
+            candidate.source_template_id.as_deref(),
+            Some(entry.id.as_str())
+        );
+        assert_eq!(candidate.profile.expected_ports, vec![4322]);
+        assert_eq!(
+            candidate.profile.run_manager_service_ids,
+            vec!["synthetic-service"]
+        );
+        assert!(registered
+            .worktrees
+            .iter()
+            .find(|tree| tree.id == context.worktree_id)
+            .unwrap()
+            .trusted_digest
+            .is_none());
+        assert!(projects
+            .apply(&reviewed.preview_id, "Replay", RegistrationAction::Register)
+            .is_err());
+        let imported_id = candidate.id.clone();
+        let unbound = projects
+            .unbind_imported_profile(
+                registered.revision,
+                &imported_id,
+                crate::core::legacy_profiles::ProfileTarget::Wsl,
+            )
+            .unwrap();
+        assert_eq!(unbound.imported_profiles, registered.imported_profiles);
+        assert_eq!(unbound.worktrees, registered.worktrees);
+        assert!(matches!(
+            projects.preview_imported_profile_wsl(
+                resources,
+                &imported_id,
+                &uuid::Uuid::new_v4().to_string(),
+                false
+            ),
+            Err("legacy_profile_distro_mismatch")
+        ));
+        let cancelled = projects
+            .preview_imported_profile_wsl(resources, &imported_id, distro_id, false)
+            .unwrap();
+        projects.cancel(&cancelled.preview_id).unwrap();
+        assert_eq!(projects.snapshot().unwrap(), unbound);
+        let reviewed = projects
+            .preview_imported_profile_wsl(resources, &imported_id, distro_id, false)
+            .unwrap();
+        assert_eq!(
+            reviewed.imported_profile_id.as_deref(),
+            Some(imported_id.as_str())
+        );
+        let (rebound, rebound_context) = projects
+            .apply(
+                &reviewed.preview_id,
+                "Created WSL profile",
+                RegistrationAction::Register,
+            )
+            .unwrap();
+        assert_eq!(rebound_context, context);
+        assert_eq!(rebound.imported_profiles, registered.imported_profiles);
+        assert_eq!(
+            rebound.imported_profile_bindings,
+            registered.imported_profile_bindings
+        );
+        assert_eq!(
+            fs::read(directory.join("original.txt")).unwrap(),
+            b"preserve template fixture"
+        );
+        assert!(!directory.join(".git").exists());
+        println!(
+            "WSL Registry: template review, stale/cancel/replay and profile rebind checks passed"
+        );
+    }
     fn check_dependencies(&self) {
         fs::write(
             self.unc.join("Cargo.toml"),
@@ -450,10 +586,18 @@ impl Fixture {
             .unwrap()
     }
     fn execute(&mut self, method: &str, args: Value, id: &str) -> Value {
+        let began = Instant::now();
+        println!("WSL Source {id}: starting {method}");
         let prepared = self.prepare(method, args, id, ());
-        let ReadySource::Complete(value) = prepared.finish_on_worker().unwrap() else {
+        let ReadySource::Complete(value) = prepared.finish_on_worker().unwrap_or_else(|issue| {
+            panic!(
+                "WSL Source {id}: {method} failed with {issue} after {:?}",
+                began.elapsed()
+            )
+        }) else {
             panic!("WSL used Windows Git")
         };
+        println!("WSL Source {id}: {method} passed in {:?}", began.elapsed());
         value
     }
 }
@@ -461,7 +605,9 @@ impl Fixture {
 #[ignore = "requires the current run-owned hosted WSL distro, Git and packaged helper"]
 fn owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership() {
     let mut fixture = Fixture::new();
+    fixture.check_wsl_profiles();
     fixture.check_dependencies();
+    println!("WSL Dependencies: native inventory, private summary and stale context checks passed");
     fixture.approve();
     fs::write(fixture.unc.join("tracked.txt"), b"selected native change\n").unwrap();
     fs::write(

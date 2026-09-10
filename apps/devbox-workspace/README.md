@@ -46,7 +46,7 @@ is resolved, runtime installed or execution approval inherited by conversion.
 Overview reads the single last workspace from a verified Code Pad session without
 resolving its path. Explicit Windows folder review uses the native snapshot job ID
 and existing Registry discovery/registration; it grants no selection or execution
-trust. WSL/unsupported paths remain visible without automatic probes. WSL bindings remain incomplete. Repo Manager's
+trust. WSL/unsupported paths remain visible without automatic probes. WSL profile binding now requires its own native distro/root review. Repo Manager's
 scan root and selection are transient React state, with no persistent preference
 file to migrate. The explicit Code Pad (older version) source reads `com.workbench.codepad` independently
 from `com.devbox.codepad`. Both fixed roots can coexist; source identity remains part
@@ -304,7 +304,7 @@ actual-pipe tests passed; the expanded Windows cleanup fixture remains pending.
 WSL Dependencies now analyzes native lockfiles without Windows path fallback,
 using the same parser and keeping summary/cache/remote approval on Windows. Linux
 regressions and Windows compilation passed; the expanded host fixture is pending.
-WSL LSP and templates still require their native adapters.
+WSL LSP still requires its native adapter.
 
 Explicit Explorer reveal now revalidates the currently opened WSL document through
 the native helper. Only its exact acknowledged path is mapped to the retained
@@ -319,3 +319,22 @@ Windows connection gate. The corrected gate is shared with actual pipe fixtures;
 the next run (`1d75608`) passed Dependencies assertions and Registry/approval checks
 but failed a later Source execution with `source_operation_unavailable`. The shared
 fixture needs per-operation diagnostics before that failure can be located.
+
+
+WSL onboarding can instantiate a saved template against an explicitly selected
+distribution and Linux folder. The reviewed native name/path replace only the new
+profile's selected WSL target; template defaults/provenance remain preserved.
+Registration, the fresh profile and binding commit together with Registry CAS.
+Template edits/archive invalidate a pending review. Cancellation, replay and stale
+reviews never insert profiles or grant execution trust.
+
+Imported WSL profiles can separately review their saved Linux folder in the current
+matching distribution (ASCII name case is ignored, Linux path case is preserved).
+Missing distributions remain unavailable; stopped ones need the existing explicit
+start checkbox. The original profile and snapshot stay unchanged. Unlink/relink
+preserves both profile and Registry objects. Local tests and MSVC checks passed;
+the expanded actual Windows fixture is pending.
+
+The Source execution fixture now records only its synthetic operation ID/method,
+elapsed time and fixed issue code, so subsequent Windows failures identify the
+operation without publishing paths, Git output or environment values.

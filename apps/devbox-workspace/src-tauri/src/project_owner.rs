@@ -39,6 +39,16 @@ pub enum RegistrationAction {
     Rebind,
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct WslTemplateRequest {
+    template_id: String,
+    distro_id: String,
+    root: String,
+    name: String,
+    start_stopped: bool,
+}
+
 enum RegistrationLease {
     Local(Box<ProjectLease>),
     #[cfg(windows)]
@@ -391,10 +401,119 @@ impl ProjectOwner {
         let lease = probe_windows(root)?;
         self.prepare_template_binding(registry.revision, lease, template, profile)
     }
+    pub(crate) fn preview_template_profile_wsl(
+        &self,
+        resources: &Path,
+        request: WslTemplateRequest,
+    ) -> Result<RegistrationPreview> {
+        let registry = self.snapshot()?;
+        let template = registry
+            .imported_templates
+            .iter()
+            .find(|template| template.id == request.template_id && !template.archived)
+            .ok_or("unknown_imported_template")?;
+        let mut profile = workbench_lib::component::ProjectProfile::new(&request.name);
+        profile.wsl = Some(workbench_lib::component::WslProfile {
+            distro: request.distro_id.clone(),
+            path: request.root.clone(),
+        });
+        let profile = template
+            .template
+            .apply_to_profile(profile)
+            .map_err(|_| "invalid_imported_profile")?;
+        #[cfg(windows)]
+        {
+            let lease = crate::platform::wsl_project::WslProjectLease::observe(
+                resources,
+                &request.distro_id,
+                &request.root,
+                request.start_stopped,
+            )?;
+            let mut profile = profile;
+            profile.wsl = Some(workbench_lib::component::WslProfile {
+                distro: lease.distro_name()?,
+                path: lease.binding().root.clone(),
+            });
+            self.prepare_observed_template_binding(
+                registry.revision,
+                RegistrationLease::Wsl(Box::new(lease)),
+                template,
+                profile,
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (resources, profile, request.start_stopped);
+            Err("windows_required")
+        }
+    }
+    pub(crate) fn preview_imported_profile_wsl(
+        &self,
+        resources: &Path,
+        imported_id: &str,
+        distro_id: &str,
+        start_stopped: bool,
+    ) -> Result<RegistrationPreview> {
+        let registry = self.snapshot()?;
+        let imported = registry
+            .imported_profiles
+            .iter()
+            .find(|profile| profile.id == imported_id)
+            .ok_or("unknown_imported_profile")?;
+        let profile = imported
+            .profile
+            .wsl
+            .as_ref()
+            .ok_or("legacy_profile_target_missing")?;
+        #[cfg(windows)]
+        {
+            // An imported name is only a proposal. A current explicit selection
+            // must match it before any root access or permission to start.
+            if !crate::platform::wsl_distro::list()?.iter().any(|distro| {
+                distro.id == distro_id && distro.name.eq_ignore_ascii_case(&profile.distro)
+            }) {
+                return Err("legacy_profile_distro_mismatch");
+            }
+            let lease = crate::platform::wsl_project::WslProjectLease::observe(
+                resources,
+                distro_id,
+                &profile.path,
+                start_stopped,
+            )?;
+            if !lease.distro_name()?.eq_ignore_ascii_case(&profile.distro) {
+                return Err("legacy_profile_distro_mismatch");
+            }
+            self.prepare_observed(
+                registry.revision,
+                RegistrationLease::Wsl(Box::new(lease)),
+                Some(imported_id.into()),
+                None,
+            )
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = (resources, profile, distro_id, start_stopped);
+            Err("windows_required")
+        }
+    }
     fn prepare_template_binding(
         &self,
         revision: u64,
         lease: ProjectLease,
+        template: &legacy_templates::ImportedTemplate,
+        profile: workbench_lib::component::ProjectProfile,
+    ) -> Result<RegistrationPreview> {
+        self.prepare_observed_template_binding(
+            revision,
+            RegistrationLease::Local(Box::new(lease)),
+            template,
+            profile,
+        )
+    }
+    fn prepare_observed_template_binding(
+        &self,
+        revision: u64,
+        lease: RegistrationLease,
         template: &legacy_templates::ImportedTemplate,
         mut profile: workbench_lib::component::ProjectProfile,
     ) -> Result<RegistrationPreview> {
@@ -410,7 +529,7 @@ impl ProjectOwner {
             profile,
         };
         candidate.validate()?;
-        self.prepare_candidate(revision, lease, None, Some(candidate))
+        self.prepare_observed(revision, lease, None, Some(candidate))
     }
     pub(crate) fn unbind_imported_profile(
         &self,
@@ -673,6 +792,19 @@ mod tests {
         let archived = owner.archive_template(changed.revision, &entry.id).unwrap();
         assert!(matches!(
             owner.preview_template_profile_windows(&entry.id, "C:\\fixture", "archived"),
+            Err("unknown_imported_template")
+        ));
+        assert!(matches!(
+            owner.preview_template_profile_wsl(
+                Path::new("unavailable"),
+                WslTemplateRequest {
+                    template_id: entry.id.clone(),
+                    distro_id: uuid::Uuid::new_v4().to_string(),
+                    root: "/missing/project".into(),
+                    name: "archived".into(),
+                    start_stopped: true,
+                }
+            ),
             Err("unknown_imported_template")
         ));
         assert_eq!(

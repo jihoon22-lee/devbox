@@ -285,7 +285,12 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
             (route == "overview"
                 && matches!(
                     method,
-                    "save_template" | "archive_template" | "list_wsl_distros" | "preview_wsl"
+                    "save_template"
+                        | "archive_template"
+                        | "list_wsl_distros"
+                        | "preview_wsl"
+                        | "preview_template_profile_wsl"
+                        | "preview_imported_profile_wsl"
                 ))
                 || matches!(
                     method,
@@ -937,6 +942,25 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 .projects()?
                 .archive_template(value.revision, &value.id)?))
         }
+        "preview_template_profile_wsl" => Ok(json!(host
+            .projects()?
+            .preview_template_profile_wsl(host.helper_directory()?, input(args)?)?)),
+        "preview_imported_profile_wsl" => {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Profile {
+                imported_id: String,
+                distro_id: String,
+                start_stopped: bool,
+            }
+            let value: Profile = input(args)?;
+            Ok(json!(host.projects()?.preview_imported_profile_wsl(
+                host.helper_directory()?,
+                &value.imported_id,
+                &value.distro_id,
+                value.start_stopped
+            )?))
+        }
         "preview_template_profile_windows" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1122,7 +1146,9 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
 fn project_probe(method: &str) -> bool {
     matches!(
         method,
-        "preview_windows"
+        "preview_template_profile_wsl"
+            | "preview_imported_profile_wsl"
+            | "preview_windows"
             | "list_wsl_distros"
             | "preview_wsl"
             | "preview_imported_profile_windows"
@@ -1902,7 +1928,12 @@ mod tests {
     #[test]
     fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
         assert!(allowed("workspace.registry", "overview", "preview_windows"));
-        for method in ["list_wsl_distros", "preview_wsl"] {
+        for method in [
+            "list_wsl_distros",
+            "preview_wsl",
+            "preview_template_profile_wsl",
+            "preview_imported_profile_wsl",
+        ] {
             assert!(allowed("workspace.registry", "overview", method));
             assert!(!allowed("workspace.registry", "files", method));
             assert!(!allowed("workspace.registry", "source", method));

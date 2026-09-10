@@ -175,3 +175,22 @@ it("reviews a Source worktree proposal in its WSL distro without starting it", a
   expect(call.mock.calls.some(([,method])=>method==="preview_windows"||method==="apply_registration")).toBe(false);
   expect(await screen.findByDisplayValue(suggestedRoot.name)).toBeTruthy();
 });
+
+
+it("opens the imported WSL profile form and cancels its native binding review without registration",async()=>{
+  const distro={id:"selected-distro",name:"Profile Ubuntu",version:2,running:true};
+  const imported={id:"native-profile",local:true,profile:{id:"old-profile",name:"보관한 Linux 프로젝트",windowsPath:null,wsl:{distro:distro.name,path:"/home/fixture/보관한 프로젝트"},gitRoot:null,expectedPorts:[4321],runManagerServiceIds:[],environment:null}};
+  const wslPreview={...preview,binding:{root:imported.profile.wsl.path,target:{kind:"wsl",distroId:distro.id}},importedProfileId:imported.id};
+  const original=call.getMockImplementation()!;
+  call.mockImplementation(async(component,method,...args)=>method==="snapshot"?{...emptyRegistry,importedProfiles:[imported]}:method==="list_wsl_distros"?[distro]:method==="preview_imported_profile_wsl"?wslPreview:original(component,method,...args));
+  render(<RegistryGate/>);
+  fireEvent.click(await screen.findByRole("button",{name:"WSL 폴더 연결 검토"}));
+  await screen.findByRole("option",{name:"Profile Ubuntu · 실행 중"});
+  fireEvent.click(screen.getByRole("button",{name:"WSL 폴더 확인"}));
+  await screen.findByRole("heading",{name:"등록 확인"});
+  expect(call).toHaveBeenCalledWith("workspace.registry","preview_imported_profile_wsl",{importedId:imported.id,distroId:distro.id,startStopped:false});
+  expect((screen.getByLabelText("프로젝트 이름") as HTMLInputElement).value).toBe(imported.profile.name);
+  expect(call.mock.calls.some(([,method])=>/apply_registration|select_project|trust/.test(method))).toBe(false);
+  fireEvent.click(screen.getByRole("button",{name:"취소"}));
+  await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","cancel_registration",{previewId:preview.previewId}));
+});

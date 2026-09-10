@@ -510,9 +510,32 @@ correction, full MSVC strict Clippy passed (**4.691 s**, sampled RSS
 **6,445,056,000 B**). The expanded Windows fixture verifies the admitted callback target and
 closed/stale rejection; actual host and visible Explorer evidence remain pending.
 
+## WSL template and imported profile binding
+
+The WSL form reuses native folder review for new template profiles and imported
+profile bindings. New profiles use the retained distro name and canonical root;
+original templates, imported profile bytes and immutable snapshots are preserved.
+Registry CAS commits registration/profile/binding together. Archived or changed
+templates, cancelled/replayed previews and unavailable/mismatched distributions
+cannot publish a binding. Starting a stopped distro remains an explicit choice;
+registration still grants no selection or Git/LSP execution approval.
+
+Existing Registry owner tests, route/probe admission tests, frontend build and the
+original **12 UI tests** passed (**57.419 s**, sampled RSS **4,311,154,688 B**).
+Expanded **14 UI tests**, Linux and MSVC strict Clippy passed (**17.003 s**, sampled
+RSS **1,701,081,088 B**). Final Registry owner tests, **15 UI tests** (including distro-name case/missing
+distro and parent Registry cancellation), archived-template denial and full MSVC
+strict Clippy passed (**22.791 s**, sampled RSS **5,141,598,208 B**). Final all-scope
+`pnpm verify:affected` passed (**508.254 s**, sampled RSS **6,870,618,112 B**,
+enforced cgroup memory peak **6,443,757,568 B**). New actual Windows execution
+remains pending. The Windows
+fixture now exercises template cancel/stale/apply/replay and profile unlink/relink
+against the owned WSL root. Source execution records synthetic operation IDs,
+methods, duration and fixed issue codes to locate the unresolved `1d75608` failure.
+
 ## Remaining acceptance and rollback limits
 
-- WSL template instantiation, native LSP and full WSL2 Rust host/WebView
+- Native WSL LSP and full WSL2 Rust host/WebView
   acceptance remain incomplete. Windows and WSL WorkspaceEdit must retain identical
   preview/identity/conflict/rollback boundaries before WSL apply is enabled.
 - Legacy references/provider handoff, R24 Run Manager baseline/PTY/integration
