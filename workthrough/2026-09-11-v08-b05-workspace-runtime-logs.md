@@ -353,3 +353,20 @@ only successful reap joins the owner. All **7 WSL wrapper cases passed** in the
 updated harness. The existing feature graph compiled once; unrelated passing tests
 were not rerun. The correction packet took 70.305 seconds. Final CI and a focused WSL2
 listener rerun must validate the changed Windows discovery startup boundary.
+
+## Empty-command fixture diagnosis
+
+CI at 5dd830a still failed the same Windows empty-query fixture; product acceptance
+at that revision passed all jobs. The Job startup correction did not explain that
+failure. A small Windows executable using the production discovery functions
+reproduced the failing stage without another app build: `System32/cmd.exe` in the
+test executable path caused cmd to misinterpret its command line, emit diagnostics
+and exit unsuccessfully. Joining `System32` and `cmd.exe` separately produced the
+native path and the empty command succeeded. The diagnostic fixture now asserts
+exact stdout in permissive mode, so an unrelated shell error cannot satisfy it.
+
+Actual Windows execution of the focused reproduction passed empty success,
+zero-exit diagnostic rejection and exact permissive stdout. The standalone probe
+compiled in about one second per correction; no application or unrelated suite
+was rebuilt. This is test-fixture-only correction; final PR CI remains required,
+and the prior suspended-discovery change still needs its final-artifact WSL2 check.

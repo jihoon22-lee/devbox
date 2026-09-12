@@ -1215,7 +1215,8 @@ mod command_status_tests {
     #[test]
     fn successful_exit_with_source_diagnostic_is_unavailable() {
         let shell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
-            .join("System32/cmd.exe");
+            .join("System32")
+            .join("cmd.exe");
         let args = [
             "/D",
             "/C",
@@ -1228,19 +1229,18 @@ mod command_status_tests {
             true
         )
         .is_err());
-        assert!(run_fixed_command_checked(
-            shell.to_str().unwrap(),
-            &args,
-            command_deadline(),
-            false
-        )
-        .is_ok());
+        assert_eq!(
+            run_fixed_command_checked(shell.to_str().unwrap(), &args, command_deadline(), false)
+                .unwrap(),
+            b"synthetic-listener\r\n"
+        );
     }
 
     #[test]
     fn complete_empty_query_remains_successful() {
         let shell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
-            .join("System32/cmd.exe");
+            .join("System32")
+            .join("cmd.exe");
         assert_eq!(
             run_fixed_command_checked(
                 shell.to_str().unwrap(),
