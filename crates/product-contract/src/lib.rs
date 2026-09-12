@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod commands;
 pub mod context;
 pub mod operation;
 pub mod references;
