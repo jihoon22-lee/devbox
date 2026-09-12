@@ -7,6 +7,8 @@ import RegistryGate, { type Registry } from "./RegistryGate";
 import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
 import {sourceFilePath} from "./sourceNavigation";
+import type {RuntimeLogOpenRequest} from "@devbox/workspace-features/logs";
+const TerminalLogBridge=lazy(()=>import("./TerminalLogBridge"));
 
 const TerminalManager=lazy(()=>import("./Terminal"));
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
@@ -38,6 +40,9 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     }, description.handshake.installationId);
     connected = true;
   }
+  const [terminalLogOpen,setTerminalLogOpen]=useState<RuntimeLogOpenRequest|null>(null);
+  const [terminalLogConsumed,setTerminalLogConsumed]=useState<string|null>(null);
+  const acceptTerminalLog=useCallback((request:RuntimeLogOpenRequest)=>{setTerminalLogOpen(request);navigate("logs");},[navigate]);
   const [tasksDirty, setTasksDirty] = useState(false);
   const isRuntimeRoute=["tasks","runtime","logs"].includes(route);
   const [runtimeVisited,setRuntimeVisited]=useState(isRuntimeRoute);
@@ -107,11 +112,12 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         <Dependencies repo={{path:selectedTree.binding.root, canonicalKey:JSON.stringify(description.context), hasWorktrees:false}} onBusyChange={setDependenciesBusy}/>
       </Suspense>}
     </div>}
+    {ready && <Suspense fallback={null}><TerminalLogBridge description={description} consumedId={terminalLogConsumed} onOpen={acceptTerminalLog}/></Suspense>}
     {ready && route === "terminal" && <Suspense fallback={<p role="status">터미널 목록을 불러오고 있습니다…</p>}>
       <TerminalManager description={description} registry={registry}/>
     </Suspense>}
     {ready && (runtimeVisited||isRuntimeRoute) && <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
-      <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic}/>
+      <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic} externalLogOpen={terminalLogOpen} onExternalLogConsumed={setTerminalLogConsumed}/>
     </Suspense>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>

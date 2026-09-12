@@ -217,9 +217,9 @@ function highlightMessage(message: string, filter: FilterSpec): ReactNode {
 
 export interface RuntimeLogOpenRequest {
   id: string;
-  source: Extract<SourceSpec, {kind: "runtimeRun"}>;
+  source: Extract<SourceSpec, {kind: "runtimeRun" | "wslFile" | "wslJournal"}>;
 }
-function App({ active = true, openRequest, settingsRevision = 0 }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null; settingsRevision?:number }) {
+function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null; onOpenConsumed?:(id:string)=>void; settingsRevision?:number }) {
   const activeRef = useRef(active);
   activeRef.current = active;
   const consumedOpen = useRef<string | null>(null);
@@ -821,7 +821,10 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
     if (!active || !openRequest || consumedOpen.current === openRequest.id) return;
     consumedOpen.current = openRequest.id;
     const source = openRequest.source;
-    const retained = sources.filter(candidate => candidate.kind !== "runtimeRun" || candidate.runId !== source.runId || candidate.stream !== source.stream);
+    const retained = sources.filter(candidate => source.kind === "runtimeRun"
+      ? candidate.kind !== "runtimeRun" || candidate.runId !== source.runId || candidate.stream !== source.stream
+      : JSON.stringify(candidate) !== JSON.stringify(source));
+    onOpenConsumed?.(openRequest.id);
     if (retained.length >= MAX_SOURCES) {
       setError(`source는 한 번에 최대 ${MAX_SOURCES}개까지 불러올 수 있습니다.`);
       return;
@@ -838,9 +841,9 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
     setSelected(new Set());
     setSelectedGeneration(null);
     setBookmarks(new Set());
-    setNotice("선택한 Workspace 실행의 로그를 불러옵니다.");
+    setNotice(source.kind === "runtimeRun" ? "선택한 Workspace 실행의 로그를 불러옵니다." : "선택한 WSL 로그를 불러옵니다.");
     void refresh(nextSources, nextCursors);
-  }, [active, openRequest, sources, refresh]);
+  }, [active, openRequest, onOpenConsumed, sources, refresh]);
 
   const visibleRecords = useMemo(
     () => filterRecords(records, filter).slice(-MAX_RENDERED_ROWS),

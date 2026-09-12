@@ -1,3 +1,4 @@
+import { runDockerControl } from "./wslControl";
 import { componentInvoke, isProductHosted } from "../transport";
 import { followTerminalOutput, type OutputBatch } from "./lib/terminalReplay";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
@@ -123,7 +124,8 @@ export async function dockerPs(distro: string): Promise<ContainerInfo[]> {
 
 export async function dockerAction(distro: string, containerId: string, action: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("docker_action", { distro, containerId, action });
+  if (!isProductHosted()) { await invoke("docker_action", { distro, containerId, action }); return; }
+  await runDockerControl(invoke, distro, containerId, action);
 }
 
 /** Publish a validated WSL file adapter handoff. Browser preview never writes

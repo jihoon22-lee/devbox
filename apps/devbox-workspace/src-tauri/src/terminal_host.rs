@@ -4,7 +4,7 @@ use product_contract::{Handshake, ProjectContext, RouteRequest, SessionGuard};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::{
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     sync::{Arc, Mutex},
 };
 use tauri::{Manager, WebviewWindow};
@@ -43,6 +43,18 @@ struct Peer {
 #[derive(Default)]
 pub(crate) struct Terminals {
     inner: Mutex<Option<Inner>>,
+    controls: crate::wsl_controls::Controls,
+    pending_logs: Mutex<VecDeque<PendingLog>>,
+}
+
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct PendingLog {
+    id: String,
+    source: log_lens_lib::core::SourceSpec,
+    context: Option<ProjectContext>,
+    #[serde(skip)]
+    created: std::time::Instant,
 }
 
 #[derive(Clone)]
@@ -93,6 +105,18 @@ fn parse<T: serde::de::DeserializeOwned>(args: Value) -> Result<T> {
         return Err("terminal_args_invalid");
     }
     serde_json::from_value(args).map_err(|_| "terminal_args_invalid")
+}
+
+pub(crate) fn wsl_management(method: &str) -> bool {
+    matches!(
+        method,
+        "dashboard_snapshot"
+            | "docker_action"
+            | "wsl_control_status"
+            | "open_distro_terminal"
+            | "open_wsl_file_in_log_lens"
+            | "open_wsl_journal_in_log_lens"
+    )
 }
 
 impl Terminals {
@@ -158,6 +182,86 @@ impl Terminals {
         Ok(())
     }
 
+    fn queue_log(
+        &self,
+        window: &WebviewWindow,
+        context: Option<ProjectContext>,
+        method: &str,
+        args: Value,
+    ) -> Result<Value> {
+        use tauri::Emitter;
+        let source = if method == "open_wsl_file_in_log_lens" {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct File {
+                distro: String,
+                wsl_path: String,
+            }
+            let input: File = parse(args)?;
+            log_lens_lib::core::SourceSpec::WslFile {
+                distro: input.distro,
+                path: input.wsl_path,
+            }
+        } else {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Journal {
+                distro: String,
+                unit: Option<String>,
+            }
+            let input: Journal = parse(args)?;
+            log_lens_lib::core::SourceSpec::WslJournal {
+                distro: input.distro,
+                unit: input.unit,
+            }
+        };
+        source
+            .validate()
+            .map_err(|_| "terminal_log_source_invalid")?;
+        let main = window
+            .app_handle()
+            .get_webview_window("main")
+            .ok_or("terminal_main_unavailable")?;
+        if context.is_some() && product_shell_tauri::workspace_context(&main)? != context {
+            return Err("terminal_log_context_changed");
+        }
+        let id = {
+            let mut pending = self
+                .pending_logs
+                .lock()
+                .map_err(|_| "terminal_owner_busy")?;
+            pending
+                .retain(|request| request.created.elapsed() < std::time::Duration::from_secs(120));
+            if let Some(existing) = pending
+                .iter()
+                .find(|request| request.source == source && request.context == context)
+            {
+                existing.id.clone()
+            } else {
+                if pending.len() >= 8 {
+                    return Err("terminal_log_pending");
+                }
+                let id = uuid::Uuid::new_v4().simple().to_string();
+                pending.push_back(PendingLog {
+                    id: id.clone(),
+                    source,
+                    context: context.clone(),
+                    created: std::time::Instant::now(),
+                });
+                id
+            }
+        };
+        // Only a wake-up ID crosses the event; paths stay in the native
+        // one-time queue until the authenticated main consumer requests it.
+        window
+            .app_handle()
+            .emit_to("main", "workspace://terminal-log-ready", json!({"id":id}))
+            .map_err(|_| "terminal_log_delivery_pending")?;
+        main.show().map_err(|_| "terminal_main_unavailable")?;
+        main.set_focus().map_err(|_| "terminal_main_unavailable")?;
+        return Ok(Value::Null);
+    }
+
     pub(crate) fn manage(
         &self,
         window: &WebviewWindow,
@@ -166,7 +270,83 @@ impl Terminals {
         method: &str,
         args: Value,
     ) -> Result<Value> {
+        if matches!(method, "read_terminal_log" | "ack_terminal_log") {
+            let mut pending = self
+                .pending_logs
+                .lock()
+                .map_err(|_| "terminal_owner_busy")?;
+            pending
+                .retain(|request| request.created.elapsed() < std::time::Duration::from_secs(120));
+            if method == "ack_terminal_log" {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Ack {
+                    id: String,
+                }
+                let ack: Ack = parse(args)?;
+                if ack.id.len() != 32
+                    || !ack
+                        .id
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+                {
+                    return Err("terminal_args_invalid");
+                }
+                pending.retain(|request| request.id != ack.id);
+                return Ok(Value::Null);
+            }
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Empty {}
+            parse::<Empty>(args)?;
+            return Ok(json!(pending
+                .iter()
+                .find(
+                    |request| request.context.is_none() || request.context == header.context
+                )));
+        }
         self.initialize(window.app_handle(), host)?;
+        if matches!(
+            method,
+            "open_wsl_file_in_log_lens" | "open_wsl_journal_in_log_lens"
+        ) {
+            return self.queue_log(window, header.context.clone(), method, args);
+        }
+        if matches!(method, "docker_action" | "wsl_control_status") {
+            return tauri::async_runtime::block_on(self.wsl_control(
+                window.app_handle(),
+                host,
+                method,
+                args,
+                header.deadline_ms,
+            ));
+        }
+        if method == "dashboard_snapshot" {
+            return tauri::async_runtime::block_on(wsl_desktop_lib::component::dispatch(
+                window.app_handle(),
+                method,
+                args,
+            ))
+            .map_err(|_| "wsl_snapshot_unavailable");
+        }
+        if method == "open_distro_terminal" {
+            #[derive(Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Open {
+                operation_id: String,
+                distro: String,
+            }
+            let input: Open = parse(args)?;
+            if !id(&input.operation_id)
+                || devbox_wsl::distro::validate_distro_name(&input.distro).is_err()
+            {
+                return Err("terminal_args_invalid");
+            }
+            // Explicit terminal creation may start the selected distro. The actual
+            // PTY factory still checks the window's project target before launch.
+            let profile = serde_json::from_value(json!({"id":input.operation_id,"name":input.distro,"tabs":[{"id":"main","title":input.distro,"layout":"grid","paneKeys":["main"],"sizing":{"columns":[1.0],"rows":[1.0]}}],"panes":[{"key":"main","distro":input.distro,"multiplexer":"native"}],"activeTabId":"main","activePaneKey":"main"})).map_err(|_| "terminal_args_invalid")?;
+            return self.open_prepared(window, host, header, &input.operation_id, Some(profile));
+        }
         match method {
             "list_workspace_profiles" | "save_workspace_profile" | "delete_workspace_profile" => {
                 self.profiles(method, args)
@@ -319,6 +499,22 @@ impl Terminals {
             id: session_id.into(),
             keys,
         })
+    }
+
+    pub(crate) async fn wsl_control(
+        &self,
+        app: &tauri::AppHandle,
+        host: &Host,
+        method: &str,
+        args: Value,
+        deadline: u64,
+    ) -> Result<Value> {
+        self.initialize(app, host)?;
+        let root = MetadataRoot::open(&host.component("terminal")?)?;
+        if method == "wsl_control_status" {
+            return self.controls.status(&root, args);
+        }
+        self.controls.execute(&root, host, args, deadline).await
     }
 
     pub(crate) fn prepare_profile(
@@ -533,6 +729,17 @@ impl Terminals {
             if let Some(context) = &peer.record.context {
                 host.projects()?.binding(context)?;
             }
+        }
+        if matches!(
+            method,
+            "open_wsl_file_in_log_lens" | "open_wsl_journal_in_log_lens"
+        ) {
+            return self.queue_log(window, peer.record.context.clone(), method, args);
+        }
+        if matches!(method, "docker_action" | "wsl_control_status") {
+            return self
+                .wsl_control(window.app_handle(), host, method, args, header.deadline_ms)
+                .await;
         }
         if matches!(method, "terminal_layout" | "save_terminal_layout") {
             let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;

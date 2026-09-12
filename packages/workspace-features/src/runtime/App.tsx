@@ -576,7 +576,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
     const owner = runtimeOwner(row);
     if (owner) { await onOpenCorrelation(owner); return; }
     const processLabel = row.process_name ? " (" + row.process_name + ")" : "";
-    const actionLabel = row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료";
+    const actionLabel = row.source === "container" ? (isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지") : "리스너 종료";
     if (!window.confirm(row.local_addr + processLabel + " " + actionLabel + "할까요?")) return;
 
     const rowKey = portRowKey(row);
@@ -586,7 +586,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
     setHandoff(null);
     try {
       const result: ListenerActionResult =
-        row.source === "container"
+        row.source === "container" && !isProductHosted()
           ? { kind: "handoff", handoff: await handoffContainerStop(request) }
           : await killListener(request);
       if (result.kind === "ownedTask") {
@@ -745,7 +745,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
         label: isContainer
           ? isBusy
             ? "전달 준비 중…"
-            : "WSL Desktop에서 중지"
+            : isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지"
             : isBusy
             ? "종료 중…"
             : "리스너 종료",
@@ -1114,7 +1114,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
                         type="button"
                         className="btn danger"
                         aria-label={
-                          runtimeOwner(row) ? "작업에서 중지 또는 재시작" : row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료"
+                          runtimeOwner(row) ? "작업에서 중지 또는 재시작" : row.source === "container" ? (isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지") : "리스너 종료"
                         }
                         disabled={busy || !snapshotHealthy}
                         onClick={() => void onKill(row)}
@@ -1324,7 +1324,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
               disabled={busyRowKey === portRowKey(selectedRow) || !snapshotHealthy}
               onClick={() => void onKill(selectedRow)}
             >
-              WSL Desktop에서 중지
+              {isProductHosted() ? "컨테이너 중지" : "WSL Desktop에서 중지"}
             </button>
           )}
         </aside>

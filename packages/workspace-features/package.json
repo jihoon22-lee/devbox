@@ -17,7 +17,8 @@
     "./logs": "./src/logs/App.tsx",
     "./terminal": "./src/terminal/App.tsx",
     "./terminal-storage": "./src/terminal/lib/storageNamespace.ts",
-    "./terminal-layout": "./src/terminal/lib/workspace.ts"
+    "./terminal-layout": "./src/terminal/lib/workspace.ts",
+    "./terminal-dashboard": "./src/terminal/dashboard.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

@@ -107,10 +107,83 @@ pub async fn docker_action(
     Ok(())
 }
 
+/// Product container controls retain a native distro/executable lease through
+/// fresh full-ID observation and action. Friendly aliases never become a kill PID.
+pub async fn docker_action_owned(
+    distro: &str,
+    container_id: &str,
+    action: &str,
+    lease: &dyn crate::component::TerminalLaunchLease,
+) -> Result<(), String> {
+    let distro = normalize_distro(distro)?;
+    if !matches!(action, "start" | "stop" | "restart")
+        || container_id.len() != 64
+        || !container_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err(SAFE_DOCKER_ERROR.into());
+    }
+    let output = run_wsl_bound(
+        &[
+            "-d",
+            &distro,
+            "--exec",
+            "docker",
+            "ps",
+            "-a",
+            "--no-trunc",
+            "--format",
+            DOCKER_PS_FORMAT,
+        ],
+        None,
+        Some(lease),
+    )
+    .await?;
+    let containers = parse_docker_ps(&output).map_err(|_| SAFE_DOCKER_ERROR)?;
+    if containers
+        .iter()
+        .filter(|container| container.id == container_id)
+        .count()
+        != 1
+    {
+        return Err(SAFE_DOCKER_ERROR.into());
+    }
+    lease.revalidate()?;
+    run_wsl_bound(
+        &[
+            "-d",
+            &distro,
+            "--exec",
+            "docker",
+            action,
+            "--",
+            container_id,
+        ],
+        None,
+        Some(lease),
+    )
+    .await?;
+    Ok(())
+}
+
 /// `wsl.exe` 명령을 실행하고 bounded stdout만 반환한다. stderr, OS status, path와
 /// command line은 호출자에게 반향하지 않는다.
 async fn run_wsl(args: &[&str], cwd: Option<&str>) -> Result<String, String> {
-    let mut cmd = Command::new("wsl.exe");
+    run_wsl_bound(args, cwd, None).await
+}
+async fn run_wsl_bound(
+    args: &[&str],
+    cwd: Option<&str>,
+    lease: Option<&dyn crate::component::TerminalLaunchLease>,
+) -> Result<String, String> {
+    let mut argv = vec!["wsl.exe".to_owned()];
+    argv.extend(args.iter().map(|arg| (*arg).to_owned()));
+    if let Some(lease) = lease {
+        argv = lease.bind_argv(argv)?;
+    }
+    let (program, args) = argv.split_first().ok_or(SAFE_WSL_ERROR)?;
+    let mut cmd = Command::new(program);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())

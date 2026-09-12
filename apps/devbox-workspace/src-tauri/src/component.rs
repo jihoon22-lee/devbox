@@ -39,6 +39,9 @@ struct Runtime {
     terminals: Arc<crate::terminal_host::Terminals>,
     sessions: Arc<crate::development_host::Sessions>,
     terminal_requests: Pool,
+    terminal_io_requests: Pool,
+    terminal_stop_requests: Pool,
+    terminal_io_workers: Arc<tokio::sync::Semaphore>,
     terminal_workers: Arc<tokio::sync::Semaphore>,
     terminal_stop_workers: Arc<tokio::sync::Semaphore>,
     engine_requests: Pool,
@@ -76,6 +79,9 @@ impl Default for Runtime {
             terminals: Arc::default(),
             sessions: Arc::default(),
             terminal_requests: Pool::default(),
+            terminal_io_requests: Pool::default(),
+            terminal_stop_requests: Pool::default(),
+            terminal_io_workers: Arc::new(tokio::sync::Semaphore::new(4)),
             terminal_workers: Arc::new(tokio::sync::Semaphore::new(4)),
             terminal_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             engine_requests: Pool::default(),
@@ -248,11 +254,16 @@ struct Response {
 }
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     if component == "workspace.terminal" {
+        if matches!(route, "terminal" | "runtime") && crate::terminal_host::wsl_management(method) {
+            return true;
+        }
         return route == "terminal"
             && (crate::development_host::Sessions::handles(method)
                 || matches!(
                     method,
                     "terminal_sessions"
+                        | "read_terminal_log"
+                        | "ack_terminal_log"
                         | "open_terminal"
                         | "focus_terminal"
                         | "stop_terminal"
@@ -362,12 +373,32 @@ async fn terminal_worker(
     companion: bool,
     context: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
-    let permit = runtime.terminal_requests.reserve_with_limit(64)?;
-    let host = runtime.host()?;
-    let workers = if matches!(
+    let io = matches!(
+        method.as_str(),
+        "write_session"
+            | "write_initial_command"
+            | "broadcast"
+            | "resize_session"
+            | "terminal_output"
+            | "attach_session"
+            | "list_sessions"
+    );
+    let stopping = matches!(
         method.as_str(),
         "close_session" | "stop_terminal" | "stop_development_session"
-    ) {
+    );
+    let permit = if io {
+        &runtime.terminal_io_requests
+    } else if stopping {
+        &runtime.terminal_stop_requests
+    } else {
+        &runtime.terminal_requests
+    }
+    .reserve_with_limit(64)?;
+    let host = runtime.host()?;
+    let workers = if io {
+        runtime.terminal_io_workers.clone()
+    } else if stopping {
         runtime.terminal_stop_workers.clone()
     } else {
         runtime.terminal_workers.clone()
@@ -500,6 +531,7 @@ async fn execute_runtime(
         .reserve_with_limit(if stopping { 32 } else { 24 })?;
     let host = runtime.host()?;
     let owners = runtime.engines.clone();
+    let terminals = runtime.terminals.clone();
     let definitions = runtime.definitions.clone();
     let shutdown = runtime.shutdown_started.clone();
     let workers = if stopping {
@@ -540,6 +572,8 @@ async fn execute_runtime(
                     value: request.args,
                     context: request.header.context.as_ref(),
                     deadline: request.header.deadline_ms,
+                    operation_id: &request.header.request_id,
+                    terminals: &terminals,
                 },
             ))
         })
@@ -1976,6 +2010,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     while runtime.lsp_requests.0.load(Ordering::Acquire) != 0
                         || runtime.engine_requests.0.load(Ordering::Acquire) != 0
                         || runtime.terminal_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.terminal_io_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.terminal_stop_requests.0.load(Ordering::Acquire) != 0
                     {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -2012,6 +2048,12 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 })
                 .await
                 .is_ok_and(|result| result.is_ok());
+                let retired = retired
+                    || (runtime.lsp_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.engine_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.terminal_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.terminal_io_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.terminal_stop_requests.0.load(Ordering::Acquire) == 0);
                 if retired
                     && sessions_stopped
                     && terminals_stopped
@@ -2086,6 +2128,60 @@ mod tests {
         ));
         assert!(runtime.filesystem_activity.enter(true).is_ok());
     }
+    #[test]
+    fn terminal_restore_saturation_preserves_live_input_and_stop_capacity() {
+        let runtime = Runtime::default();
+        let _restores = (0..4)
+            .map(|_| {
+                runtime
+                    .terminal_workers
+                    .clone()
+                    .try_acquire_owned()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let _queued = (0..64)
+            .map(|_| runtime.terminal_requests.reserve_with_limit(64).unwrap())
+            .collect::<Vec<_>>();
+        assert!(runtime.terminal_requests.reserve_with_limit(64).is_err());
+        let _input = runtime.terminal_io_requests.reserve_with_limit(64).unwrap();
+        let _input_worker = runtime
+            .terminal_io_workers
+            .clone()
+            .try_acquire_owned()
+            .unwrap();
+        let _stop = runtime
+            .terminal_stop_requests
+            .reserve_with_limit(64)
+            .unwrap();
+        let _stop_worker = runtime
+            .terminal_stop_workers
+            .clone()
+            .try_acquire_owned()
+            .unwrap();
+    }
+
+    #[test]
+    fn runtime_wsl_controls_do_not_grant_raw_terminal_io() {
+        for method in [
+            "dashboard_snapshot",
+            "docker_action",
+            "open_wsl_file_in_log_lens",
+            "open_distro_terminal",
+        ] {
+            assert!(allowed("workspace.terminal", "runtime", method));
+            assert!(!allowed("workspace.terminal", "files", method));
+        }
+        for method in [
+            "write_session",
+            "start_session",
+            "broadcast",
+            "run_wsl_command",
+        ] {
+            assert!(!allowed("workspace.terminal", "runtime", method));
+        }
+    }
+
     #[test]
     fn template_writes_are_overview_registry_only() {
         for method in ["save_template", "archive_template"] {

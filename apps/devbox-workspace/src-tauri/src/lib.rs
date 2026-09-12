@@ -16,6 +16,7 @@ mod source_host;
 mod terminal_host;
 mod terminal_profiles;
 mod window_import;
+mod wsl_controls;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

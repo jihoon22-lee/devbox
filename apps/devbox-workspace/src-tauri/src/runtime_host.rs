@@ -300,6 +300,8 @@ pub(crate) struct EngineRequest<'a> {
     pub value: Value,
     pub context: Option<&'a ProjectContext>,
     pub deadline: u64,
+    pub operation_id: &'a str,
+    pub terminals: &'a Arc<crate::terminal_host::Terminals>,
 }
 pub(crate) async fn dispatch(
     app: &tauri::AppHandle,
@@ -314,6 +316,8 @@ pub(crate) async fn dispatch(
         value,
         context,
         deadline,
+        operation_id,
+        terminals,
     } = request;
     crate::files_host::current_deadline(deadline)?;
     owners.initialize_runtime(app, host)?;
@@ -493,7 +497,27 @@ pub(crate) async fn dispatch(
                             pid: *pid,
                             start_tick: *start_tick,
                         },
-                        _ => return Err("runtime_container_owner_unavailable"),
+                        port_manager_lib::component::ListenerIdentity::Container {
+                            engine,
+                            container_id,
+                            distro,
+                        } => {
+                            if engine != "docker" {
+                                return Err("runtime_container_engine_unsupported");
+                            }
+                            let (container_id, distro) = (container_id.clone(), distro.clone());
+                            // The observation owner revalidates the selected endpoint and
+                            // container identity. The WSL owner then refreshes its full ID.
+                            port_manager_lib::component::dispatch(
+                                app,
+                                "handoff_container_stop",
+                                json!({"request":input.request}),
+                            )
+                            .await
+                            .map_err(issue)?;
+                            terminals.wsl_control(app,host,"docker_action",json!({"operationId":operation_id,"distro":distro,"containerId":container_id,"action":"stop"}),deadline).await?;
+                            return Ok(json!({"kind":"terminated"}));
+                        }
                     };
                     let owner = run_manager_lib::component::owning_task(app, observed)
                         .await

@@ -25,6 +25,45 @@ impl TerminalLaunchFactory for Factory<'_> {
     }
 }
 
+pub(crate) fn capture_running(
+    host: &Host,
+    distro: &str,
+    deadline: u64,
+) -> Result<Arc<dyn TerminalLaunchLease>, String> {
+    #[cfg(windows)]
+    if !crate::platform::wsl_distro::list()
+        .map_err(str::to_owned)?
+        .iter()
+        .any(|entry| entry.name == distro && entry.running)
+    {
+        return Err("wsl_distro_stopped".into());
+    }
+    let inner = Factory {
+        host,
+        context: None,
+        deadline,
+    }
+    .capture(distro)?;
+    Ok(Arc::new(ManagementLease { inner, deadline }))
+}
+struct ManagementLease {
+    inner: Arc<dyn TerminalLaunchLease>,
+    deadline: u64,
+}
+impl TerminalLaunchLease for ManagementLease {
+    fn revalidate(&self) -> Result<(), String> {
+        crate::files_host::current_deadline(self.deadline).map_err(str::to_owned)?;
+        self.inner.revalidate()
+    }
+    fn bind_argv(&self, argv: Vec<String>) -> Result<Vec<String>, String> {
+        self.revalidate()?;
+        self.inner.bind_argv(argv)
+    }
+    fn retire(&self) -> Result<(), String> {
+        self.inner.retire()
+    }
+}
+
 #[cfg(windows)]
 mod native {
     use super::*;

@@ -227,3 +227,31 @@ The native/frontend syntax check passed in 16.853 seconds. Subsequent source rev
 added reconciliation of a retained Terminal lease after metadata publication failure
 and an unexecuted restore-only Terminal ownership fixture. Detailed restore, migration
 and actual Windows/WSL cases remain in the final B06 acceptance packet.
+
+## WSL/Containers and one-time Logs connection
+
+Runtime now reuses the existing WSL distro/resource/Docker panel and collector,
+without importing xterm or starting a PTY. It retains the last complete generation,
+marks stale/error state and stops automatic refresh when its route is hidden. The
+explicit distro terminal action copies a one-pane native layout before companion
+creation. Docker start/stop/restart retain a native distro/executable lease, require
+fresh full container identity, and record a bounded durable operation receipt before
+the external effect. Ambiguous renderer retries retain the same receipt. Runtime
+container stop uses this owner after endpoint revalidation; it never substitutes
+an external PID kill. Published container IDs are no longer truncated.
+
+Terminal and Runtime WSL file/journal requests enter a bounded expiring native queue.
+Only a wake-up ID is emitted; authenticated main reads the matching context's source
+and acknowledges consumption. Reload can consume the still-pending request. Paths
+are neither command-line handoffs nor persistent saved-view values. The Logs slice
+accepts the existing fixed WSL adapters and preserves source limits. Main WSL
+management grants no raw PTY IO. Live input/output/resize have a separate bounded
+request/worker pool from restoration and slow distro queries; shutdown accounts
+for both pools and rechecks retirement after owner cleanup.
+
+Minimal native syntax/type compilation passed (8.64 seconds). Frontend checking
+found one return type widened unnecessarily by the WSL adapter union; retaining the
+Runtime-specific discriminant fixed that error. The resumed frontend-only check
+passed in 9.698 seconds; Rust was not repeated. Late-context/path/extra-field and
+queue-saturation/authority fixtures were prepared for final B06 execution. Shell
+integration, migration, preflight and Unified Problems remain in progress.

@@ -1,6 +1,7 @@
 //! Native component boundary. Workspace must admit the actual caller window,
 //! context and owned session before routing an operation to these adapters.
 //! Initialization starts no terminal, global shortcut, tray or legacy writer.
+pub use crate::commands::dashboard::docker_action_owned;
 pub use crate::commands::terminal::{SessionInfo, StartedSession};
 pub use crate::core::{
     runtime_snapshot::DashboardSnapshot,
