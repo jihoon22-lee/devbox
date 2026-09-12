@@ -5,7 +5,7 @@ import { nativeMode, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
 import RegistryGate, { type Registry } from "./RegistryGate";
 import { componentCall } from "./native";
-import ProjectDefinitions from "./ProjectDefinitions";
+const ProjectDefinitions=lazy(()=>import("./ProjectDefinitions"));
 import {sourceFilePath} from "./sourceNavigation";
 import type {RuntimeLogOpenRequest} from "@devbox/workspace-features/logs";
 import type {RuntimeFocusRequest,RuntimeFocusTarget} from "./runtimeNavigation";
@@ -115,7 +115,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     {ready && selectedTree && <Suspense fallback={null}><ContextStatus description={description} name={registry?.projects.find(project=>project.id===description.context?.projectId)?.name??"프로젝트"} root={selectedTree.binding.root} navigate={navigate}/></Suspense>}
     {ready && route==="problems" && <Suspense fallback={<p role="status">문제 목록을 불러오고 있습니다…</p>}><Problems description={description} onFile={openDiagnostic} onLog={acceptProblemLog} onRuntime={acceptRuntimeFocus} navigate={navigate}/></Suspense>}
     {ready && description.context && <div hidden={route !== "overview"}>
-      <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
+      <Suspense fallback={<p role="status">프로젝트 설정을 불러오고 있습니다…</p>}><ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/></Suspense>
     </div>}
     {ready && (sourceVisited || route === "source") && <div className="workspace-feature-source" hidden={route !== "source"}>
       {sourceNavigationError && <p role="alert">{sourceNavigationError}</p>}

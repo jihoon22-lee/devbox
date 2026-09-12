@@ -126,6 +126,6 @@ pub(crate) async fn __component_delete_workspace_profile(
     }
     let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
     let _ = app;
-    let value = delete_workspace_profile(app.clone(), input.id)?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+    delete_workspace_profile(app.clone(), input.id)?;
+    Ok(serde_json::Value::Null)
 }

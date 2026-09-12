@@ -488,85 +488,6 @@ async fn update_bound(
     })
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[tokio::test]
-    async fn replaced_native_target_rejects_before_any_shell_command() {
-        struct Revoked;
-        impl crate::component::TerminalLaunchLease for Revoked {
-            fn revalidate(&self) -> Result<(), String> {
-                Err("fixture_target_replaced".into())
-            }
-            fn bind_argv(&self, _argv: Vec<String>) -> Result<Vec<String>, String> {
-                self.revalidate()?;
-                unreachable!()
-            }
-            fn retire(&self) -> Result<(), String> {
-                Ok(())
-            }
-        }
-        let result = inspect_bound(
-            &Execution {
-                lease: Some(&Revoked),
-            },
-            "SyntheticDistro".into(),
-        )
-        .await;
-        assert!(matches!(result, Err(error) if error == "fixture_target_replaced"));
-    }
-
-    #[test]
-    fn home_and_shell_output_are_bounded_and_normalized() {
-        assert_eq!(
-            normalize_home(b"/home/dev user\n").unwrap(),
-            "/home/dev user"
-        );
-        assert!(normalize_home(b"relative/home\n").is_err());
-        assert!(normalize_home(b"/home/../root\n").is_err());
-        assert!(normalize_home(b"/home/user\0secret\n").is_err());
-        assert_eq!(normalize_shell(b"/usr/bin/bash\n"), Some("bash"));
-        assert_eq!(normalize_shell(b"/bin/fish\n"), None);
-    }
-
-    #[test]
-    fn direct_argv_keeps_distro_and_rc_path_as_exact_arguments() {
-        let argv = direct_argv(
-            "Ubuntu 24.04",
-            "/bin/cat",
-            &["--", "/home/dev user/.bashrc"],
-        )
-        .unwrap();
-        assert_eq!(
-            argv,
-            vec![
-                "wsl.exe",
-                "-d",
-                "Ubuntu 24.04",
-                "--exec",
-                "/bin/cat",
-                "--",
-                "/home/dev user/.bashrc",
-            ]
-        );
-        assert!(direct_argv("--help", "/bin/cat", &[]).is_err());
-    }
-
-    #[test]
-    fn blocked_snapshots_never_expose_a_revision() {
-        let snapshot = RcSnapshot {
-            exists: true,
-            blocked: true,
-            content: String::new(),
-        };
-        let info = integration_info(ShellKind::Bash, &snapshot, Some("bash"));
-        assert_eq!(info.status, ShellIntegrationStatus::Blocked);
-        assert!(info.revision.is_empty());
-        assert!(info.default_shell);
-    }
-}
-
 /// Strict component adapter; caller/window/session admission belongs to Workspace.
 #[cfg(feature = "desktop")]
 pub(crate) async fn __component_inspect_shell_integration(
@@ -664,4 +585,83 @@ pub async fn dispatch_owned(
         return Err("terminal_method_invalid".into());
     };
     value.map_err(|_| "terminal_response_invalid".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn replaced_native_target_rejects_before_any_shell_command() {
+        struct Revoked;
+        impl crate::component::TerminalLaunchLease for Revoked {
+            fn revalidate(&self) -> Result<(), String> {
+                Err("fixture_target_replaced".into())
+            }
+            fn bind_argv(&self, _argv: Vec<String>) -> Result<Vec<String>, String> {
+                self.revalidate()?;
+                unreachable!()
+            }
+            fn retire(&self) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        let result = inspect_bound(
+            &Execution {
+                lease: Some(&Revoked),
+            },
+            "SyntheticDistro".into(),
+        )
+        .await;
+        assert!(matches!(result, Err(error) if error == "fixture_target_replaced"));
+    }
+
+    #[test]
+    fn home_and_shell_output_are_bounded_and_normalized() {
+        assert_eq!(
+            normalize_home(b"/home/dev user\n").unwrap(),
+            "/home/dev user"
+        );
+        assert!(normalize_home(b"relative/home\n").is_err());
+        assert!(normalize_home(b"/home/../root\n").is_err());
+        assert!(normalize_home(b"/home/user\0secret\n").is_err());
+        assert_eq!(normalize_shell(b"/usr/bin/bash\n"), Some("bash"));
+        assert_eq!(normalize_shell(b"/bin/fish\n"), None);
+    }
+
+    #[test]
+    fn direct_argv_keeps_distro_and_rc_path_as_exact_arguments() {
+        let argv = direct_argv(
+            "Ubuntu 24.04",
+            "/bin/cat",
+            &["--", "/home/dev user/.bashrc"],
+        )
+        .unwrap();
+        assert_eq!(
+            argv,
+            vec![
+                "wsl.exe",
+                "-d",
+                "Ubuntu 24.04",
+                "--exec",
+                "/bin/cat",
+                "--",
+                "/home/dev user/.bashrc",
+            ]
+        );
+        assert!(direct_argv("--help", "/bin/cat", &[]).is_err());
+    }
+
+    #[test]
+    fn blocked_snapshots_never_expose_a_revision() {
+        let snapshot = RcSnapshot {
+            exists: true,
+            blocked: true,
+            content: String::new(),
+        };
+        let info = integration_info(ShellKind::Bash, &snapshot, Some("bash"));
+        assert_eq!(info.status, ShellIntegrationStatus::Blocked);
+        assert!(info.revision.is_empty());
+        assert!(info.default_shell);
+    }
 }

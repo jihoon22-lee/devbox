@@ -272,7 +272,7 @@ impl Terminals {
             .map_err(|_| "terminal_log_delivery_pending")?;
         main.show().map_err(|_| "terminal_main_unavailable")?;
         main.set_focus().map_err(|_| "terminal_main_unavailable")?;
-        return Ok(Value::Null);
+        Ok(Value::Null)
     }
 
     pub(crate) fn manage(

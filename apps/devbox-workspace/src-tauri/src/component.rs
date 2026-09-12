@@ -2181,6 +2181,21 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         })
         .build()
 }
+pub(crate) fn provider_context(
+    app: &tauri::AppHandle,
+    context: &product_contract::ProjectContext,
+) -> Result<(), &'static str> {
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("session_summary_unavailable")?;
+    runtime.host()?.projects()?.binding(context)?;
+    Ok(())
+}
+
+pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'static str> {
+    app.try_state::<Runtime>().ok_or("initializing")?.host()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2607,19 +2622,4 @@ mod tests {
         assert!(pool.reserve().is_ok());
         drop(two);
     }
-}
-
-pub(crate) fn provider_context(
-    app: &tauri::AppHandle,
-    context: &product_contract::ProjectContext,
-) -> Result<(), &'static str> {
-    let runtime = app
-        .try_state::<Runtime>()
-        .ok_or("session_summary_unavailable")?;
-    runtime.host()?.projects()?.binding(context)?;
-    Ok(())
-}
-
-pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'static str> {
-    app.try_state::<Runtime>().ok_or("initializing")?.host()
 }

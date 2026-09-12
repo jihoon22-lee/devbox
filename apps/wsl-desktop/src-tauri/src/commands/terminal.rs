@@ -767,6 +767,203 @@ pub fn list_sessions(state: tauri::State<'_, Arc<SessionState>>) -> Vec<SessionI
         .collect()
 }
 
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_windows_build_number(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = windows_build_number();
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_start_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+        cwd: Option<String>,
+        pane_key: String,
+        multiplexer: MultiplexerKind,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = start_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.distro,
+        input.cwd,
+        input.pane_key,
+        input.multiplexer,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_attach_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    attach_session(
+        app.clone(),
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+    )?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_write_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+        data: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    write_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+        input.data,
+    )?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_broadcast(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_ids: Vec<String>,
+        data: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    broadcast(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_ids,
+        input.data,
+    )?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_resize_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+        rows: u16,
+        cols: u16,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    resize_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+        input.rows,
+        input.cols,
+    )?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_close_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    close_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+    )?;
+    Ok(serde_json::Value::Null)
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_sessions(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = list_sessions(app.try_state().ok_or("terminal_state_unavailable")?);
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1155,201 +1352,4 @@ mod tests {
         assert!(!handle.mark_attached(), "second attach must be a no-op");
         assert!(!handle.mark_attached(), "third attach must also be a no-op");
     }
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_windows_build_number(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = windows_build_number();
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_start_session(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-        cwd: Option<String>,
-        pane_key: String,
-        multiplexer: MultiplexerKind,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = start_session(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.distro,
-        input.cwd,
-        input.pane_key,
-        input.multiplexer,
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_attach_session(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = attach_session(
-        app.clone(),
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.session_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_write_session(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-        data: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = write_session(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.session_id,
-        input.data,
-    )?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_broadcast(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_ids: Vec<String>,
-        data: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = broadcast(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.session_ids,
-        input.data,
-    )?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_resize_session(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-        rows: u16,
-        cols: u16,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = resize_session(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.session_id,
-        input.rows,
-        input.cols,
-    )?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_close_session(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        session_id: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = close_session(
-        app.try_state().ok_or("terminal_state_unavailable")?,
-        input.session_id,
-    )?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_sessions(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = list_sessions(app.try_state().ok_or("terminal_state_unavailable")?);
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }

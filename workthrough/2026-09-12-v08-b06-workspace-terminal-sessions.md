@@ -165,11 +165,23 @@ Earlier passing checks were retained; no detailed tests, Clippy, builds or affec
 runs were done merely for commits, rebases or resumed work. New script edits passed Node syntax checks, and the two PowerShell scripts passed
 Windows Parser syntax checks; none of their acceptance cases has executed yet.
 
-Next gate: one pnpm verify:all covers all-scope affected plus the resolver-change
-audit. Do not separately pre-run its tests/typechecks/builds/Clippy. Fix failures
-and rerun only the failed/changed range while preserving the same Cargo feature
-graph. Final PR CI, packaged Windows and owned WSL2 evidence are still required;
-compiled Windows code alone is not an execution pass.
+The single all-scope verification began after implementation/fixtures/docs were
+complete. All frontend builds passed; the Workspace initial bundle exceeded its
+280,000-byte ceiling by 1,865 bytes. Deferring ProjectDefinitions until selection
+reduced it to 278,017 raw / 82,563 gzip bytes. Only Workspace was rebuilt; the other
+18 app builds were retained. All frontend tests and additional typechecks passed.
+
+Rust check passed in 50.93 seconds. Clippy exposed unit-return adapters, one
+snapshot type alias and production items appended after test modules. Targeted
+cleanup preserved behavior and the same workspace/test-fixtures feature graph.
+Clippy and formatting now pass; Rust tests are running. No frontend build/test or
+completed full audit was repeated for these lint fixes. Native acceptance workflow
+paths now include the extracted shared feature and actual Workspace native consumers.
+
+Final Rust tests, PR CI, Windows product artifact execution and owned WSL2 evidence
+are still required. The exported foundation artifact has a debug build profile;
+it is not release packaged-runtime acceptance. A Windows compile is not execution
+evidence.
 
 B07 remains responsible for authenticated cross-product handoff/global shortcut
 and summary delivery. B08 owns suite activation/quiesce/import report integration;

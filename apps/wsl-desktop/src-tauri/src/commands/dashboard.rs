@@ -293,26 +293,6 @@ async fn terminate_child(child: &mut Child) {
     let _ = child.wait().await;
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn dashboard_distro_and_container_inputs_are_bounded_and_argv_safe() {
-        assert_eq!(normalize_distro(" Ubuntu 24.04 ").unwrap(), "Ubuntu 24.04");
-        assert!(normalize_distro("Ubuntu;rm").is_err());
-        assert!(normalize_distro(&"x".repeat(MAX_DISTRO_BYTES + 1)).is_err());
-
-        assert_eq!(
-            normalize_container_id("container_name-1").unwrap(),
-            "container_name-1"
-        );
-        assert!(normalize_container_id("-rf").is_err());
-        assert!(normalize_container_id("name/with-slash").is_err());
-        assert!(normalize_container_id(&"x".repeat(MAX_CONTAINER_ID_BYTES + 1)).is_err());
-    }
-}
-
 /// Strict component adapter; caller/window/session admission belongs to Workspace.
 #[cfg(feature = "desktop")]
 pub(crate) async fn __component_list_distros(
@@ -394,6 +374,26 @@ pub(crate) async fn __component_docker_action(
     }
     let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
     let _ = app;
-    let value = docker_action(input.distro, input.container_id, input.action).await?;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+    docker_action(input.distro, input.container_id, input.action).await?;
+    Ok(serde_json::Value::Null)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn dashboard_distro_and_container_inputs_are_bounded_and_argv_safe() {
+        assert_eq!(normalize_distro(" Ubuntu 24.04 ").unwrap(), "Ubuntu 24.04");
+        assert!(normalize_distro("Ubuntu;rm").is_err());
+        assert!(normalize_distro(&"x".repeat(MAX_DISTRO_BYTES + 1)).is_err());
+
+        assert_eq!(
+            normalize_container_id("container_name-1").unwrap(),
+            "container_name-1"
+        );
+        assert!(normalize_container_id("-rf").is_err());
+        assert!(normalize_container_id("name/with-slash").is_err());
+        assert!(normalize_container_id(&"x".repeat(MAX_CONTAINER_ID_BYTES + 1)).is_err());
+    }
 }

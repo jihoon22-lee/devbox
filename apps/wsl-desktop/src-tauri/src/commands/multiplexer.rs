@@ -343,6 +343,26 @@ pub(crate) async fn session_is_running(
     }
 }
 
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_detect_multiplexers(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = detect_multiplexers(input.distro).await;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,24 +490,4 @@ mod tests {
         assert_eq!(public.source, None);
         assert!(resolved.is_none());
     }
-}
-
-/// Strict component adapter; caller/window/session admission belongs to Workspace.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_detect_multiplexers(
-    app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        distro: String,
-    }
-    if !args.is_object() {
-        return Err("terminal_args_invalid".into());
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
-    let _ = app;
-    let value = detect_multiplexers(input.distro).await;
-    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }

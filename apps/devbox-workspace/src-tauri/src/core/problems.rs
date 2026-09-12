@@ -4,6 +4,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 type Result<T> = std::result::Result<T, &'static str>;
+/// Session ID, observation revision, current rows and source availability.
+pub(crate) type SessionSnapshot = (String, String, Vec<Item>, bool);
+
 const MAX_BATCHES: usize = 256;
 const MAX_PROBLEMS: usize = 2048;
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]

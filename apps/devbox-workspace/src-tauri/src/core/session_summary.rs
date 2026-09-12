@@ -1,8 +1,7 @@
 //! Pure bounded summary metadata and immutable operation receipts.
-use crate::core::{
-    development_sessions::{Phase, Session},
-    problems::Item,
-};
+use crate::core::development_sessions::{Phase, Session};
+#[cfg(test)]
+use crate::core::problems::Item;
 use product_contract::{
     session_summary::{
         self as contract, Binding, Draft, Metadata, ProblemCategory, SelectedProblem,
@@ -63,7 +62,7 @@ pub(crate) fn prepare(
     session: &Session,
     input: &Input,
     receipts: &BTreeMap<String, Receipt>,
-    observation: Option<&(String, String, Vec<Item>, bool)>,
+    observation: Option<&crate::core::problems::SessionSnapshot>,
     now: u64,
 ) -> Result<Receipt> {
     if !valid_operation(&input.operation_id)

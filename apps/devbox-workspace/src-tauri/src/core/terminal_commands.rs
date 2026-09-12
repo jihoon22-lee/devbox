@@ -59,6 +59,28 @@ impl Summons {
         Ok(receipt)
     }
 }
+/// Durable restore CAS: retries observe the first attempt, including its failure.
+pub fn restore_generation(
+    current: u64,
+    last: Option<&str>,
+    state: &str,
+    expected: u64,
+    operation: &str,
+) -> Result<Option<u64>> {
+    if !uuid::Uuid::parse_str(operation).is_ok_and(|id| id.to_string() == operation)
+        || expected >= 9_007_199_254_740_991
+    {
+        return Err("terminal_restore_invalid");
+    }
+    if current == expected + 1 && last == Some(operation) {
+        return Ok(None);
+    }
+    if current != expected || last == Some(operation) || !matches!(state, "stopped" | "interrupted")
+    {
+        return Err("terminal_restore_conflict");
+    }
+    Ok(Some(current + 1))
+}
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -98,28 +120,6 @@ mod tests {
     }
 }
 
-/// Durable restore CAS: retries observe the first attempt, including its failure.
-pub fn restore_generation(
-    current: u64,
-    last: Option<&str>,
-    state: &str,
-    expected: u64,
-    operation: &str,
-) -> Result<Option<u64>> {
-    if !uuid::Uuid::parse_str(operation).is_ok_and(|id| id.to_string() == operation)
-        || expected >= 9_007_199_254_740_991
-    {
-        return Err("terminal_restore_invalid");
-    }
-    if current == expected + 1 && last == Some(operation) {
-        return Ok(None);
-    }
-    if current != expected || last == Some(operation) || !matches!(state, "stopped" | "interrupted")
-    {
-        return Err("terminal_restore_conflict");
-    }
-    Ok(Some(current + 1))
-}
 #[cfg(test)]
 mod restore_tests {
     use super::restore_generation as reserve;

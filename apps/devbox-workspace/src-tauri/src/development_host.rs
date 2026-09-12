@@ -152,7 +152,7 @@ impl Sessions {
     pub(crate) fn problem_snapshots(
         &self,
         context: &ProjectContext,
-    ) -> Result<Vec<(String, String, Vec<crate::core::problems::Item>, bool)>> {
+    ) -> Result<Vec<crate::core::problems::SessionSnapshot>> {
         use crate::core::problems::{Item, Severity, Target};
         let snapshots = {
             let guard = self.inner.lock().map_err(|_| "session_owner_busy")?;
@@ -423,6 +423,8 @@ impl Sessions {
                 | "stop_development_session"
         )
     }
+    // Keep native authority owners explicit at this dispatch boundary.
+    #[allow(clippy::too_many_arguments)]
     pub(crate) fn manage(
         self: &Arc<Self>,
         window: &WebviewWindow,
