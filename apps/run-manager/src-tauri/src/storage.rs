@@ -265,12 +265,22 @@ CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
 /// A process-wide SQLite connection. Every connection is configured with the
 /// same foreign-key and busy-timeout policy before migrations run.
 mod controls;
+mod imports;
+pub use imports::{ImportReceipt, ImportedJobReview};
+pub(crate) fn import_schema() -> Result<Connection, String> {
+    let connection = Connection::open_in_memory().map_err(|_| "runtime_import_invalid")?;
+    connection
+        .execute_batch(MIGRATION_SQL)
+        .map_err(|_| "runtime_import_invalid")?;
+    Ok(connection)
+}
 pub(crate) use controls::ControlReservation;
 pub use controls::RuntimeControlReceipt;
 
 pub struct DatabaseState {
     connection: Mutex<Connection>,
     legacy_publication: bool,
+    log_maintenance: Mutex<()>,
 }
 
 /// Minimal definition projection for integration consumers. Keeping this DTO
@@ -352,8 +362,10 @@ impl DatabaseState {
         controls::validate_schema(&connection)?;
         migrate_connection(&mut connection)?;
         controls::initialize(&mut connection)?;
+        imports::initialize(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            log_maintenance: Mutex::new(()),
             legacy_publication: false,
         })
     }
@@ -367,6 +379,7 @@ impl DatabaseState {
         migrate_connection(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            log_maintenance: Mutex::new(()),
             legacy_publication: true,
         })
     }
@@ -377,8 +390,15 @@ impl DatabaseState {
         migrate_connection(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            log_maintenance: Mutex::new(()),
             legacy_publication: true,
         })
+    }
+
+    pub(crate) fn log_maintenance(&self) -> Result<MutexGuard<'_, ()>, StorageError> {
+        self.log_maintenance
+            .lock()
+            .map_err(|_| StorageError::ConnectionPoisoned)
     }
 
     pub fn migrate(&self) -> Result<(), StorageError> {
@@ -2143,6 +2163,9 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_service(&transaction, id)?;
+        if !self.legacy_publication && !matches!(environment, EnvironmentCiphertextUpdate::Keep) {
+            imports::resolve_secret_review(&transaction, id)?;
+        }
         let (environment_action, environment_ciphertext) = match environment {
             EnvironmentCiphertextUpdate::Keep => ("keep", None),
             EnvironmentCiphertextUpdate::Replace(ciphertext) => ("replace", Some(ciphertext)),
@@ -2490,6 +2513,9 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = ensure_job(&transaction, id)?;
+        if !self.legacy_publication && !matches!(environment, EnvironmentCiphertextUpdate::Keep) {
+            imports::resolve_secret_review(&transaction, id)?;
+        }
         ensure_workspace_task_managed_fields_unchanged(&transaction, id, &current, &input)?;
         if input.enabled {
             ensure_workspace_task_can_enable_connection(&transaction, id)?;

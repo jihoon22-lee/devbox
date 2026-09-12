@@ -90,6 +90,7 @@ impl RetentionCleaner {
     }
 
     pub fn run(&self, database: &DatabaseState, now: i64) -> Result<CleanupReport, CleanupError> {
+        let _maintenance = database.log_maintenance()?;
         let app_data_root = fs::canonicalize(&self.app_data_root)
             .map_err(|error| CleanupError::io("resolving app data root", error))?;
         let runs = database.list_runs_for_retention()?;

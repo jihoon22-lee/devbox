@@ -112,3 +112,35 @@ Workspace TypeScript checking passed. Rust compilation found and corrected two f
 argument omissions and a SQLite row-iterator lifetime; the affected Workspace/Run
 Manager `cargo check --all-targets` then passed. No tests, Clippy, full build or affected
 run was added. Windows-only membership code still awaits the PR completion gate.
+
+## Inactive Runtime import and diagnostic navigation
+
+Tasks diagnostics now use the Runtime-owned run/log lease and verified task source.
+The host checks the selected native project and sends only a relative file/range;
+Files retains its normal grants and dirty-buffer handling. Late context/route events
+and malformed ranges have fixtures queued for the PR completion gate.
+
+The native import worker preserves a WAL-consistent schema-4 snapshot with the WP01
+harness, plus bounded unchanged log files and original rotation manifests. Source
+SQL is read-only; original commands, ciphertext and metadata stay in the private
+snapshot. Exact IDs are retained in the separate product namespace and recorded
+in owner-local mappings. Existing ID/source-identity collisions reject the entire
+transaction. A completed same-snapshot import replays without overwriting subsequent
+edits; changed snapshots require conflict review. Jobs/services are disabled, task
+trust is cleared, active historical records become interrupted terminal history,
+and no process identity is adopted. Old enable/auto-start intent is retained.
+Ciphertext is not unsealed or installed; database launch/enable gates require an
+explicit encrypted environment replacement or clear before those jobs can execute.
+
+Retention and import publication share a database-owned mutex through final file
+publication and SQL commit. Cancellation/failure preserves legacy data and private
+snapshots; native workers remain owned after renderer loss and are joined at exit.
+The Tasks panel offers preserve, review, inactive apply, cancellation and explicit
+revalidation of retained snapshots. Missing/orphan logs are reported, with no silent
+archive claim. Port preferences/Logs saved-view conversion still remains in B05.
+
+Minimal Workspace TypeScript checking passed. Rust all-target compilation found two
+new type errors (digest formatting and a fixture Debug bound), corrected both, then
+passed in 15.516 seconds. This compiled fixtures without running them. No tests,
+Clippy, application build or affected verification ran for this commit. Actual
+Windows/WSL acceptance and the complete PR verification remain pending.

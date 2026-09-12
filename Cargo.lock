@@ -5190,6 +5190,7 @@ dependencies = [
  "chrono",
  "chrono-tz",
  "croner",
+ "data-migration",
  "dirs",
  "filesystem",
  "integration",

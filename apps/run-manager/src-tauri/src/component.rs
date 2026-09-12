@@ -1,6 +1,7 @@
 //! Native component entry points; the product host admits caller and operation.
 //! Calling these does not start the standalone application or select its stores.
 
+mod imports;
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -31,6 +32,48 @@ pub async fn owning_task(
         .map_err(|_| "process_owner_unsettled")?;
     data_root(app)?;
     Ok(result)
+}
+
+pub struct DiagnosticTarget {
+    pub path: PathBuf,
+    pub line: u32,
+    pub column: Option<u32>,
+    pub run_id: String,
+    pub revision: String,
+}
+pub async fn diagnostic_target(
+    app: &tauri::AppHandle,
+    run_id: &str,
+    index: u32,
+) -> Result<DiagnosticTarget, String> {
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?
+        .inner()
+        .clone();
+    let lease = log_descriptor(app, run_id)?;
+    let (execution, diagnostics) =
+        crate::commands::workspace_task_diagnostics_for_run(app, &database, run_id).await?;
+    let diagnostic = diagnostics
+        .items
+        .iter()
+        .find(|item| item.index == index)
+        .ok_or("runtime_diagnostic_invalid")?;
+    let path = crate::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
+        &execution.source_root,
+        &diagnostic.file,
+    )
+    .map_err(str::to_owned)?;
+    crate::core::workspace_tasks::verify_workspace_task_execution(&execution)
+        .map_err(|_| "workspace-task-source-changed")?;
+    lease.revalidate()?;
+    Ok(DiagnosticTarget {
+        path,
+        line: diagnostic.line,
+        column: diagnostic.column,
+        run_id: run_id.into(),
+        revision: lease.revision().into(),
+    })
 }
 
 pub fn port_bindings(
@@ -155,7 +198,12 @@ pub fn common_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 /// Called once by the product's serialized native initialization, before any
 /// command is admitted. Importing definitions never calls this initializer.
 /// No standalone migration, tray, integration writer or legacy path is used.
-pub fn initialize(app: &tauri::AppHandle, data: &Path, common: &Path) -> Result<(), String> {
+pub fn initialize(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    legacy_base: &Path,
+) -> Result<(), String> {
     use crate::{
         core::imports::ImportOperationRegistry, lifecycle::RuntimeState, storage::DatabaseState,
     };
@@ -240,6 +288,8 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path, common: &Path) -> Result<
         .ok_or("component_window_unavailable")?;
     crate::platform::install_session_end_hook(&window, app, runtime.clone())
         .map_err(|_| "component_shutdown_hook_unavailable")?;
+    let import_owner = Arc::new(imports::ImportOwner::new(data, legacy_base)?);
+    app.manage(import_owner);
     app.manage(paths);
     app.manage(database.clone());
     app.manage(Arc::new(ImportOperationRegistry::default()));
@@ -259,6 +309,9 @@ pub fn is_initialized(app: &tauri::AppHandle) -> bool {
 /// Resolves only after owned process trees and scheduler writes are retired.
 /// The Workspace exit owner must also finish its other components before exit.
 pub fn request_shutdown(app: &tauri::AppHandle) {
+    if let Some(owner) = app.try_state::<Arc<imports::ImportOwner>>() {
+        owner.request_shutdown();
+    }
     if let Some(runtime) = app.try_state::<Arc<crate::lifecycle::RuntimeState>>() {
         runtime.request_shutdown();
     }
@@ -270,6 +323,12 @@ pub async fn shutdown(app: &tauri::AppHandle) -> Result<(), String> {
         .ok_or("component_state_unavailable")?
         .inner()
         .clone();
+    if let Some(owner) = app.try_state::<Arc<imports::ImportOwner>>() {
+        let owner = owner.inner().clone();
+        tauri::async_runtime::spawn_blocking(move || owner.join())
+            .await
+            .map_err(|_| "runtime_import_failed")?;
+    }
     crate::lifecycle::shutdown_owner(&runtime).await;
     Ok(())
 }
@@ -290,6 +349,13 @@ pub fn offer_product_open(
 }
 
 pub const COMMANDS: &[&str] = &[
+    "runtime_import_prepare",
+    "runtime_import_resume",
+    "runtime_import_apply",
+    "runtime_import_cancel",
+    "runtime_import_status",
+    "runtime_import_catalog",
+    "runtime_import_reviews",
     "runtime_control",
     "runtime_control_status",
     "list_runtime_controls",
@@ -362,6 +428,13 @@ pub async fn dispatch(
     data_root(app)?;
     common_root(app)?;
     let result = match method {
+        "runtime_import_prepare"
+        | "runtime_import_resume"
+        | "runtime_import_apply"
+        | "runtime_import_cancel"
+        | "runtime_import_status"
+        | "runtime_import_catalog"
+        | "runtime_import_reviews" => imports::dispatch(app, method, args),
         "runtime_control" => control::execute(app, args).await,
         "runtime_control_status" | "list_runtime_controls" | "review_runtime_control" => {
             control::metadata(app, method, args)

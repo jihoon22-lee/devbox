@@ -216,7 +216,7 @@ export interface NavEntry {
   cursor: number;
 }
 
-export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null}
+export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null; column?: number | null}
 function isWslContext(context: string): boolean {
   try { return JSON.parse(context)?.target?.kind === "wsl"; }
   catch { return false; }
@@ -1483,7 +1483,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (!openRequest || !active || !hydrated || !hydratedRef.current || busyRef.current || renameApplyBusyRef.current
       || openRequest.contextKey !== contextKey || handledOpenRequest.current === openRequest.id) return;
     handledOpenRequest.current = openRequest.id;
-    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, null));
+    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null));
     // The operation reads current document refs and retains an existing dirty buffer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest, active, hydrated, busy, renameApplyBusy, contextKey]);

@@ -22,8 +22,15 @@ impl Owners {
         let data = host.component("runtime")?;
         let common = host.component("common")?;
         *self.runtime.get_or_init(|| {
-            run_manager_lib::component::initialize(app, &data, &common)
-                .map_err(|_| "runtime_owner_unavailable")
+            run_manager_lib::component::initialize(
+                app,
+                &data,
+                &common,
+                host.storage_root()
+                    .parent()
+                    .ok_or("runtime_owner_unavailable")?,
+            )
+            .map_err(|_| "runtime_owner_unavailable")
         })
     }
     fn initialize_processes(&self, app: &tauri::AppHandle, host: &Host) -> Result<()> {
@@ -140,7 +147,8 @@ pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
 pub(crate) fn stops(method: &str) -> bool {
     matches!(
         method,
-        "stop_service"
+        "runtime_import_cancel"
+            | "stop_service"
             | "stop_active_run"
             | "stop_workspace_task_operation"
             | "cancel_read"
@@ -170,6 +178,9 @@ fn issue(error: String) -> &'static str {
         "runtime_control_failed" => "runtime_control_failed",
         "runtime_control_unavailable" => "runtime_control_unavailable",
         "runtime_control_owner_unsettled" => "runtime_control_owner_unsettled",
+        "runtime_import_busy" => "runtime_import_busy",
+        "runtime_import_destination_conflict" => "runtime_import_destination_conflict",
+        "runtime_import_stale" => "runtime_import_stale",
         "component_args_invalid" => "invalid_request",
         "component_storage_changed" => "runtime_store_changed",
         "runtime_log_changed" => "runtime_log_changed",
@@ -321,7 +332,46 @@ pub(crate) async fn dispatch(
                 | "reject_workspace_task_control"
                 | "accept_workspace_task_control" => Err("runtime_handoff_review_required"),
                 "open_workspace_task_diagnostic" => {
-                    Err("runtime_diagnostic_navigation_unavailable")
+                    #[derive(Deserialize)]
+                    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                    struct Input {
+                        run_id: String,
+                        diagnostic_index: u32,
+                    }
+                    let input: Input = args(value)?;
+                    let target = run_manager_lib::component::diagnostic_target(
+                        app,
+                        &input.run_id,
+                        input.diagnostic_index,
+                    )
+                    .await
+                    .map_err(issue)?;
+                    let context = context.ok_or("project_selection_required")?;
+                    let lease = host.projects()?.admit(context)?;
+                    let root = std::fs::canonicalize(&lease.binding().root)
+                        .map_err(|_| "runtime_diagnostic_target_mismatch")?;
+                    let path = std::fs::canonicalize(&target.path)
+                        .map_err(|_| "runtime_diagnostic_target_mismatch")?;
+                    let relative = path
+                        .strip_prefix(&root)
+                        .map_err(|_| "runtime_diagnostic_target_mismatch")?
+                        .to_str()
+                        .ok_or("runtime_diagnostic_target_mismatch")?
+                        .replace('\\', "/");
+                    if relative.is_empty()
+                        || relative
+                            .split('/')
+                            .any(|part| part.is_empty() || matches!(part, "." | ".."))
+                    {
+                        return Err("runtime_diagnostic_target_mismatch");
+                    }
+                    lease.revalidate()?;
+                    crate::files_host::current_deadline(deadline)?;
+                    app.emit_to("main", "workspace://runtime-diagnostic", json!({
+                        "id":uuid::Uuid::new_v4().simple().to_string(),"relativePath":relative,"line":target.line,
+                        "column":target.column,"runId":target.run_id,"revision":target.revision,"context":context,"fromRoute":"tasks"
+                    })).map_err(|_| "runtime_navigation_unavailable")?;
+                    Ok(Value::Bool(true))
                 }
                 _ => run_manager_lib::component::dispatch(app, method, value)
                     .await

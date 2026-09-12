@@ -34,3 +34,16 @@ export function runtimeLogRequest(value: unknown, context: ProjectContext | null
     || typeof source.revision !== "string" || !/^[a-f0-9]{64}$/.test(source.revision)) return null;
   return { id: value.id, source: { kind: "runtimeRun", runId: source.runId, stream: source.stream, revision: source.revision } };
 }
+
+export function runtimeDiagnostic(value: unknown, context: ProjectContext | null, route: string): {id: string; relativePath: string; line: number; column: number | null} | null {
+  if (!object(value) || !keys(value,["id","relativePath","line","column","runId","revision","context","fromRoute"])
+    || route !== "tasks" || value.fromRoute !== "tasks" || !context || !sameRuntimeContext(value.context,context)
+    || typeof value.id !== "string" || !/^[a-f0-9]{32}$/.test(value.id)
+    || typeof value.runId !== "string" || !/^[A-Za-z0-9_-]{1,128}$/.test(value.runId)
+    || typeof value.revision !== "string" || !/^[a-f0-9]{64}$/.test(value.revision)
+    || typeof value.relativePath !== "string" || value.relativePath.length > 32768 || /[\\:\x00-\x1f\x7f]/.test(value.relativePath)
+    || value.relativePath.split("/").some(part => !part || part === "." || part === "..")
+    || !Number.isSafeInteger(value.line) || (value.line as number) < 1
+    || (value.column !== null && (!Number.isSafeInteger(value.column) || (value.column as number) < 1))) return null;
+  return {id:value.id,relativePath:value.relativePath,line:value.line as number,column:value.column as number | null};
+}

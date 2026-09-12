@@ -1037,7 +1037,7 @@ pub async fn stop_workspace_task_operation(
     .await
 }
 
-async fn workspace_task_diagnostics_for_run(
+pub(crate) async fn workspace_task_diagnostics_for_run(
     app: &AppHandle,
     database: &DatabaseState,
     run_id: &str,

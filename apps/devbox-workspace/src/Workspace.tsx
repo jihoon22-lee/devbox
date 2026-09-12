@@ -8,7 +8,7 @@ import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
 import { listen } from "@tauri-apps/api/event";
 import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
-import { runtimeDestination, runtimeLogRequest } from "./runtimeNavigation";
+import { runtimeDestination, runtimeLogRequest, runtimeDiagnostic } from "./runtimeNavigation";
 import {sourceFilePath} from "./sourceNavigation";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
@@ -16,6 +16,7 @@ const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
+const RuntimeImport = lazy(() => import("./RuntimeImport"));
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
 const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
 const Logs = lazy(() => import("@devbox/workspace-features/logs"));
@@ -43,6 +44,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [engineVisited, setEngineVisited] = useState(() => new Set([route]));
   const [runtimeLogOpen, setRuntimeLogOpen] = useState<RuntimeLogOpenRequest | null>(null);
   const [runtimeNotice, setRuntimeNotice] = useState("");
+  const diagnosticOpen = useRef<(value: unknown) => void>(() => {});
   const current = useRef({route, context:description.context, navigate, tasksDirty});
   current.current = {route, context:description.context, navigate, tasksDirty};
   useEffect(() => { setEngineVisited(previous => previous.has(route) ? previous : new Set([...previous, route])); }, [route]);
@@ -67,6 +69,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       setRuntimeLogOpen(request);
       state.navigate("logs");
     }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("실행 로그 연결을 시작하지 못했습니다."); });
+    void listen<unknown>("workspace://runtime-diagnostic", event => { if (!disposed) diagnosticOpen.current(event.payload); }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("진단 위치 연결을 시작하지 못했습니다."); });
     return () => { disposed = true; stops.forEach(stop => stop()); };
   }, []);
   const [ready, setReady] = useState(false);
@@ -87,7 +90,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
   const refreshRegistry = useCallback(() => setRegistrySignal(value => value + 1), []);
-  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null}|null>(null);
+  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null;column?:number|null}|null>(null);
   const reloadImportedSession=useCallback(()=>{setFileRequest(null);setSessionRevision(value=>value+1);},[]);
   const [sourceNavigationError, setSourceNavigationError] = useState("");
   const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string;target:NonNullable<Description["context"]>["target"]}|null>(null);
@@ -107,6 +110,14 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     setFilesVisited(true); navigate("files");
   };
   const [filesVisited, setFilesVisited] = useState(route === "files");
+  diagnosticOpen.current = value => {
+    const request = runtimeDiagnostic(value, description.context, route);
+    if (!request || !selectedTree) return;
+    const path = sourceFilePath(selectedTree.binding.root, request.relativePath);
+    if (!path) return;
+    setFileRequest({id:request.id,contextKey:JSON.stringify(description.context),path,line:request.line,column:request.column});
+    setFilesVisited(true); navigate("files");
+  };
   const markReady = useCallback(() => setReady(true), []);
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
@@ -129,7 +140,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       </Suspense>}
     </div>}
     {ready && (engineVisited.has("tasks") || route === "tasks") && <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
-      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><Tasks active={route === "tasks"} onDirtyChange={setTasksDirty}/></Suspense>
+      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><RuntimeImport description={description} active={route === "tasks"} blocked={tasksDirty}/><Tasks active={route === "tasks"} onDirtyChange={setTasksDirty}/></Suspense>
     </div>}
     {ready && (engineVisited.has("runtime") || route === "runtime") && <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
       <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><Runtime active={route === "runtime"}/></Suspense>
