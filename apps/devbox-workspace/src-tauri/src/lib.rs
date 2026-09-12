@@ -16,6 +16,8 @@ mod runtime_host;
 mod session_preflight;
 pub mod session_summary;
 mod source_host;
+#[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
+mod suite;
 pub mod terminal_commands;
 mod terminal_export;
 mod terminal_host;
@@ -40,6 +42,7 @@ pub fn run() {
     }
     product_shell_tauri::run_with("workspace", tauri::generate_context!(), |builder| {
         builder
+            .plugin(suite::plugin("workspace"))
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_opener::init())

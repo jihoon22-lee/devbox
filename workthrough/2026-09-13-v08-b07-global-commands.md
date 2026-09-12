@@ -26,13 +26,40 @@ existing shell navigation. Unconnected external providers remain unavailable;
 this slice has not implemented cold/hot cross-product dispatch or global shortcuts.
 Browser data stays explicitly labelled by the existing product-shell fixture mode.
 
+## Native connection slice
+
+All four products now consume the same application-platform pipe/installation
+adapters and a lazy shared connection review surface. B07 defines a bounded
+installation declaration with fixed suite/portable paths, exact version/digests
+and no argv/environment/data-root fields. Native capture pins root ancestors,
+manifest and executable objects against reparse/replacement; a declaration alone
+starts no listener. Each running product requires an explicit, expiring review
+of its own package before it accepts this generation's connections. Disconnect
+revokes the capture and retires its listener/client tasks.
+
+The Windows pipe owner rejects remote clients and duplicate registration, caps
+connections/frames/deadlines and binds requests to a fresh native session. Both
+ends identify the actual OS pipe process/image in the pinned installation;
+blocking identity tasks own duplicated pipe handles so timeout cannot redirect a
+reused handle. Foreign namespace/generation, unsupported protocol, stale session
+and replay are rejected before owner dispatch. Only Control Center can currently
+query/preview; other roles can describe their installed peer. The server exposes
+its own catalog metadata and preview, with no cold launch or claimed navigation.
+
+Catalog index logic moved into product-contract when the four product owners
+became real consumers. Windows adapters remain in the app platform layer through
+explicit source includes; affected CI records all four consumers. No new external
+package version is introduced. The initial approval is process-local; B08 package
+activation and durable reviewed installation selection remain separate work.
+
 ## Verification and remaining work
 
 Regression fixtures are authored for stale/disabled/forged references, required
 review/context/selection, inherited ranking, duplicate commands and late UI queries.
 Rust syntax parsing/formatting and the Control Center TypeScript check passed in
 1.813 seconds under the shared resource wrapper after the first slice was wired.
-No B07 Cargo compilation, tests, build, Clippy or affected run has occurred. Detailed
+The connection slice also passed Rust syntax parsing and the Control Center/shared-shell
+TypeScript check in 2.878 seconds. No B07 Cargo compilation, tests, build, Clippy or affected run has occurred. Detailed
 verification waits until the whole B07 bundle is implemented. Node dependencies
 were installed from the existing offline lock/store; no package versions changed.
 

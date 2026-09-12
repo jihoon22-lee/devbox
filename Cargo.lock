@@ -1294,6 +1294,7 @@ version = "0.8.0"
 dependencies = [
  "api-playground",
  "applink",
+ "catalog",
  "data-migration",
  "developer-toolbox",
  "dirs",
@@ -1335,13 +1336,16 @@ dependencies = [
  "sha2 0.11.0",
  "tauri",
  "tauri-build",
+ "tokio",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
 name = "devbox-knowledge"
 version = "0.8.0"
 dependencies = [
+ "catalog",
  "data-migration",
  "everything-plus",
  "filesystem",
@@ -1359,6 +1363,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
  "tempfile",
+ "tokio",
  "uuid",
  "windows 0.61.3",
  "wsl",
@@ -1421,6 +1426,7 @@ name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
  "applink",
+ "catalog",
  "chrono",
  "code-pad",
  "data-migration",
@@ -4727,9 +4733,11 @@ name = "product-contract"
 version = "0.1.0"
 dependencies = [
  "applink",
+ "catalog",
  "secrets",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
 ]
 

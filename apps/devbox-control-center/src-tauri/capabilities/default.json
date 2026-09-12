@@ -9,6 +9,7 @@
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
     "commands:allow-command-search",
-    "commands:allow-command-preview"
+    "commands:allow-command-preview",
+    "suite:allow-connection"
   ]
 }

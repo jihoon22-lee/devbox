@@ -5,9 +5,11 @@ use std::collections::HashMap;
 
 pub mod commands;
 pub mod context;
+pub mod installation;
 pub mod operation;
 pub mod references;
 pub mod session_summary;
+pub mod transport;
 pub use context::{ExecutionTarget, ProjectContext};
 pub use operation::{Operation, OperationState, Problem, ProblemCode};
 
@@ -335,3 +337,5 @@ mod tests {
         assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
     }
 }
+
+pub mod command_index;

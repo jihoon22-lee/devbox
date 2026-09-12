@@ -13,6 +13,10 @@ fn main() {
         tauri_build::Attributes::new()
             .windows_attributes(windows)
             .plugin(
+                "suite",
+                tauri_build::InlinedPlugin::new().commands(&["connection"]),
+            )
+            .plugin(
                 "product-shell",
                 tauri_build::InlinedPlugin::new().commands(&["describe", "route_status"]),
             )

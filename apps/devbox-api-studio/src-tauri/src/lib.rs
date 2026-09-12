@@ -10,6 +10,8 @@ mod migration_export;
 mod mock_draft;
 mod platform;
 mod service_worker;
+#[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
+mod suite;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -29,6 +31,7 @@ pub fn run() {
     }
     product_shell_tauri::run_with("api-studio", tauri::generate_context!(), |builder| {
         builder
+            .plugin(suite::plugin("api-studio"))
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
