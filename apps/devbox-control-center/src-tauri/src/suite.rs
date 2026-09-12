@@ -27,6 +27,7 @@ struct Link {
     )>,
     approved: Option<Arc<platform::component_scope::CapturedScope>>,
     bus: Option<platform::component_bus::Bus>,
+    navigation: Arc<Mutex<product_contract::navigation::Queue>>,
 }
 #[cfg(windows)]
 impl Drop for Link {
@@ -47,9 +48,22 @@ struct Input {
 enum Method {
     Status,
     Preview,
-    Approve { token: String },
+    Approve {
+        token: String,
+    },
     Disconnect,
-    Probe { product: String },
+    Probe {
+        product: String,
+    },
+    Pending,
+    Decide {
+        id: String,
+        revision: String,
+        accept: bool,
+    },
+    Acknowledge {
+        id: String,
+    },
 }
 #[derive(Serialize)]
 struct Response {
@@ -71,9 +85,11 @@ async fn connection(
     #[cfg(windows)]
     let result = execute(
         suite.product,
+        window.app_handle().clone(),
         suite.state.clone(),
         request.method,
         request.header.deadline_ms,
+        request.header.route,
     )
     .await;
     #[cfg(not(windows))]
@@ -84,6 +100,16 @@ async fn connection(
             }
             Method::Probe { product } => {
                 let _ = product;
+            }
+            Method::Decide {
+                id,
+                revision,
+                accept,
+            } => {
+                let _ = (id, revision, accept);
+            }
+            Method::Acknowledge { id } => {
+                let _ = id;
             }
             _ => {}
         }
@@ -105,13 +131,42 @@ async fn connection(
 #[cfg(windows)]
 async fn execute(
     product: &'static str,
+    app: tauri::AppHandle,
     state: Arc<Mutex<Link>>,
     method: Method,
     deadline: u64,
+    route: String,
 ) -> Result<serde_json::Value, &'static str> {
     use platform::{component_bus, component_scope::CapturedScope};
     use serde_json::json;
     match method {
+        Method::Pending => {
+            let queue = state.lock().map_err(|_| "suite_busy")?.navigation.clone();
+            let value = queue.lock().map_err(|_| "suite_busy")?.pending(now());
+            Ok(json!(value))
+        }
+        Method::Decide {
+            id,
+            revision,
+            accept,
+        } => {
+            let queue = state.lock().map_err(|_| "suite_busy")?.navigation.clone();
+            let route =
+                queue
+                    .lock()
+                    .map_err(|_| "suite_busy")?
+                    .decide(&id, &revision, accept, now())?;
+            Ok(json!({"operationId":id,"route":route}))
+        }
+        Method::Acknowledge { id } => {
+            let queue = state.lock().map_err(|_| "suite_busy")?.navigation.clone();
+            let receipt =
+                queue
+                    .lock()
+                    .map_err(|_| "suite_busy")?
+                    .acknowledge(&id, &route, now())?;
+            Ok(json!(receipt))
+        }
         Method::Status => {
             let state = state.lock().map_err(|_| "suite_busy")?;
             Ok(
@@ -153,7 +208,11 @@ async fn execute(
                 return Err("suite_review_expired");
             }
             scope.revalidate()?;
-            let bus = component_bus::Bus::start(scope.clone(), product, handler(product)?)?;
+            let bus = component_bus::Bus::start(
+                scope.clone(),
+                product,
+                handler(product, app, state.navigation.clone())?,
+            )?;
             let generation = scope.id.clone();
             state.bus = Some(bus);
             state.approved = Some(scope);
@@ -166,6 +225,7 @@ async fn execute(
                     scope.retire();
                 }
                 state.pending.take();
+                state.navigation.lock().map_err(|_| "suite_busy")?.revoke();
                 state.bus.take()
             };
             if let Some(mut bus) = bus {
@@ -193,7 +253,11 @@ async fn execute(
     }
 }
 #[cfg(windows)]
-fn handler(product: &'static str) -> Result<platform::component_bus::Handler, &'static str> {
+fn handler(
+    product: &'static str,
+    app: tauri::AppHandle,
+    navigation: Arc<Mutex<product_contract::navigation::Queue>>,
+) -> Result<platform::component_bus::Handler, &'static str> {
     use product_contract::{
         command_index::Index,
         transport::{Call, Source},
@@ -208,6 +272,8 @@ fn handler(product: &'static str) -> Result<platform::component_bus::Handler, &'
     let index = Arc::new(index);
     Ok(Arc::new(move |_peer, call, _deadline| {
         let index = index.clone();
+        let app = app.clone();
+        let navigation = navigation.clone();
         Box::pin(async move {
             match call {
                 Call::Describe {} => Ok(
@@ -226,12 +292,71 @@ fn handler(product: &'static str) -> Result<platform::component_bus::Handler, &'
                 }
                 Call::PreviewCommand { request } => serde_json::to_value(index.resolve(&request)?)
                     .map_err(|_| "suite_command_invalid"),
-                // Opening a route/entity requires a separate destination UI
-                // delivery receipt. Metadata support never implies it happened.
+                Call::OpenCommand { request } => {
+                    use tauri::Emitter;
+                    let descriptor = index.resolve(&request)?;
+                    let receipt = navigation.lock().map_err(|_| "suite_busy")?.enqueue(
+                        descriptor,
+                        &request,
+                        now(),
+                    )?;
+                    if receipt.phase == product_contract::navigation::Phase::AwaitingReview {
+                        let window = app
+                            .get_webview_window("main")
+                            .ok_or("suite_window_unavailable")?;
+                        window.show().map_err(|_| "suite_window_unavailable")?;
+                        window.set_focus().map_err(|_| "suite_window_unavailable")?;
+                        window
+                            .emit("suite-navigation", ())
+                            .map_err(|_| "suite_window_unavailable")?;
+                    }
+                    Ok(serde_json::json!(receipt))
+                }
+                Call::CommandStatus { operation_id } => {
+                    let receipt = navigation
+                        .lock()
+                        .map_err(|_| "suite_busy")?
+                        .status(&operation_id, now())?;
+                    Ok(serde_json::json!(receipt))
+                }
                 _ => Err("suite_method_unavailable"),
             }
         })
     }))
+}
+
+#[cfg(windows)]
+fn now() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis()
+        .min(u128::from(u64::MAX)) as u64
+}
+/// Native command host calls this only after its own renderer authorization.
+pub(crate) async fn remote(
+    app: &tauri::AppHandle,
+    product: &str,
+    call: product_contract::transport::Call,
+    deadline: u64,
+) -> Result<serde_json::Value, &'static str> {
+    #[cfg(windows)]
+    {
+        let suite = app.state::<Suite>();
+        let scope = suite
+            .state
+            .lock()
+            .map_err(|_| "suite_busy")?
+            .approved
+            .clone()
+            .ok_or("suite_review_required")?;
+        platform::component_bus::call(scope, product, call, deadline).await
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, product, call, deadline);
+        Err("suite_windows_required")
+    }
 }
 
 pub(crate) fn plugin(product: &'static str) -> tauri::plugin::TauriPlugin<tauri::Wry> {

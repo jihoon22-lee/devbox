@@ -3,6 +3,7 @@ import { isImeComposing } from "@devbox/a11y";
 import { describe, nativeMode, type Description, type ProductId } from "./api";
 import { navigate, traverse, type Navigation } from "./navigation";
 
+const IncomingCommands = lazy(() => import("./IncomingCommands"));
 const SuiteConnection = lazy(() => import("./SuiteConnection"));
 const RouteView = lazy(() => import("./RouteView"));
 class RouteBoundary extends Component<{ children: ReactNode }, { error: boolean }> {
@@ -42,6 +43,7 @@ function ReadyShell({ description, renderContent, refreshContext }: { descriptio
     <aside><nav aria-label="제품 화면">{description.features.map((feature) => <button key={feature.id} aria-current={current === feature.route ? "page" : undefined} onClick={() => open(feature.route)}>{feature.label}</button>)}</nav></aside>
     <main id="product-content" ref={content} tabIndex={-1}>
       <div className="shell-toolbar"><button aria-label="뒤로" disabled={history.cursor === 0} onClick={() => setHistory((h) => traverse(h, -1))}>←</button><button aria-label="앞으로" disabled={history.cursor === history.entries.length - 1} onClick={() => setHistory((h) => traverse(h, 1))}>→</button><span>{description.context ? "프로젝트 연결됨" : "프로젝트 선택 없이 사용"}</span><button aria-expanded={connectionOpen} onClick={() => setConnectionOpen(value => !value)}>제품 연결</button></div>
+      {nativeMode && <Suspense fallback={null}><IncomingCommands description={description} route={current} navigate={open}/></Suspense>}
       {connectionOpen && <Suspense fallback={<p role="status">연결 설정을 불러오고 있습니다…</p>}><SuiteConnection description={description} route={current}/></Suspense>}
       {!online && <p role="status">오프라인입니다. 로컬 화면은 계속 사용할 수 있습니다.</p>}
       {queryRoute && !description.features.some((f) => f.route === queryRoute) && <p role="status">요청한 화면이 없어 기본 화면을 열었습니다.</p>}
