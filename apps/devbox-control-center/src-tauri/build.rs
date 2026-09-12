@@ -17,6 +17,8 @@ fn main() {
                     "command_source",
                     "command_open",
                     "command_status",
+                    "command_preferences",
+                    "command_shortcut",
                 ]),
             ),
     )

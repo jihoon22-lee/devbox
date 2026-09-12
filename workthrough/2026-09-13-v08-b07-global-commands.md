@@ -70,6 +70,34 @@ requires its actual domain adapter and is explicitly unavailable in this slice.
 Pure queue fixtures cover duplicate/conflict/reject/expiry/revocation and incorrect
 acknowledgement; a UI fixture covers a slow source and stale-generation response.
 
+## Reused Launcher and shortcut owner
+
+The actual legacy Launcher UI now lives under product-shell/launcher with an
+injected adapter. The legacy entry supplies its unchanged native API/clipboard
+behavior and retains its existing UI tests. Scoped CSS prevents palette styles
+from changing other product screens. Control Center consumes the same keyboard,
+IME, selection, stale-review and favorite controls in a lazy modal while retaining
+its current route. Product queries stream independently through the adapter;
+unsupported owners remain visible and cannot be opened accidentally.
+
+The existing ID-only Preferences implementation and its tests moved to
+product-contract for the second native consumer. Control Center stores favorites
+and local route recents in its own installation namespace, requires current
+remote metadata before adding a favorite, and permits removing an unavailable
+favorite without reopening its provider. Corrupt settings are not overwritten.
+
+The existing Windows hotkey worker now accepts a bounded binding list and callback
+while its legacy entry preserves the same three allowed Launcher accelerators.
+Control Center uses one worker and an OS existence lease so another v0.8 install
+cannot simultaneously own global shortcuts. Configuration requires an approved
+package connection, attempts previous-key restoration after registration failure,
+reports restoration/foreign-owner failures, and retires on disconnect/exit. It
+adds no startup entry. The initial product binding opens the actual Launcher;
+Terminal/Capture/current-project bindings remain rejected until their domain
+handlers are connected. No Ctrl+C binding is registered. The palette checks active
+modal/IME/editing state and distinguishes an already-focused host from an external
+activation before changing focus.
+
 ## Verification and remaining work
 
 Regression fixtures are authored for stale/disabled/forged references, required
@@ -79,11 +107,15 @@ Rust syntax parsing/formatting and the Control Center TypeScript check passed in
 The connection slice also passed Rust syntax parsing and the Control Center/shared-shell
 TypeScript check in 2.878 seconds. The next navigation/federation slice passed the
 same minimum TypeScript check after correcting an unused test import; Rust files
-were syntax-parsed/formatted. Its regression fixtures have not run yet. No B07 Cargo compilation, tests, build, Clippy or affected run has occurred. Detailed
+were syntax-parsed/formatted. Its regression fixtures have not run yet. The shared Launcher/host passed the two
+consumer TypeScript check in 4.484 seconds; Rust changes were syntax-parsed. A
+missing direct Tauri dependency was resolved through the existing shared adapter
+boundary, without adding a package version. Subsequent presentation changes were
+checked with the same minimum typecheck, not tests/builds. No B07 Cargo compilation, tests, build, Clippy or affected run has occurred. Detailed
 verification waits until the whole B07 bundle is implemented. Node dependencies
 were installed from the existing offline lock/store; no package versions changed.
 
-Next: cold launch and durable approved installation selection; reuse the actual Launcher host/UI; one shortcut owner and diagnostic settings;
+Next: cold launch and durable approved installation selection; one shortcut owner and diagnostic settings;
 federated metadata/content providers; source-owned artifact claim/restore/ack and
 Knowledge summary/capture; shared operation/review projections; legacy preference
 mapping; native end-to-end fixtures. B08 owns final installer/activation topology.
