@@ -224,3 +224,24 @@ strip in new importer/observation code; these were corrected and Clippy/formatti
 passed. The first full Rust test execution and uncovered fixture/metadata checks are
 still running. Failed phases are resumed without rerunning passed frontend tests or
 unrelated builds. Actual Windows/WSL execution and final PR CI remain outstanding.
+
+Local completion: frontend **1,833 tests / 249 files**, full Rust check/Clippy/fmt,
+all portable Rust unit/integration targets and documentation targets are complete.
+The Workspace library's 141 passing cases were preserved; its one obsolete Registry
+route expectation was corrected and passed separately. The remaining Rust targets
+all passed. Windows-only/explicitly ignored host cases are still pending actual CI.
+The generated Windows probe regression passed **10 tests**, product/workflow metadata
+checks passed, and parity references now follow the moved UI while preserving the
+original path as provenance. Inventories retain pending Windows verification status.
+
+A narrowed Cargo package selection changed feature unification and unnecessarily
+rebuilt dependencies. That attempt was cancelled before its remaining tests ran.
+The resume kept the original complete feature graph, used Cargo's compiler-artifact
+manifest, and executed only uncompleted targets with package working directories,
+Cargo runtime metadata, library paths and the normal resource limit. Passed tests
+were not rerun. The temporary runner's initial Path property typo was fixed without
+rebuilding its already prepared artifacts; execution then passed in 88.568 seconds.
+This lesson is recorded in verification operations. The affected/all requirement is
+satisfied by the recorded successful phases; the initially failed monolithic commands
+are not relabelled as successful runs. Final GitHub Actions remains the canonical
+complete command run on the final PR revision.

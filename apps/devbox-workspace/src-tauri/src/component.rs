@@ -2210,7 +2210,11 @@ mod tests {
             "overview",
             "apply_registration"
         ));
-        assert!(!allowed("workspace.registry", "runtime", "snapshot"));
+        for route in ["tasks", "runtime", "logs"] {
+            assert!(allowed("workspace.registry", route, "snapshot"));
+            assert!(!allowed("workspace.registry", route, "run_job_now"));
+        }
+        assert!(!allowed("workspace.registry", "unknown", "snapshot"));
         assert!(!allowed("workspace.shell", "overview", "start_empty"));
         let pool = Pool::default();
         let one = pool.reserve().unwrap();

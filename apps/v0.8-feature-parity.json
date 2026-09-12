@@ -868,7 +868,7 @@
     },
     {
       "legacyFeatureId": "port-manager:surface:App.tsx",
-      "sourcePath": "apps/port-manager/src/App.tsx",
+      "sourcePath": "packages/workspace-features/src/runtime/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -887,7 +887,8 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/port-manager/src/App.tsx"
     },
     {
       "legacyFeatureId": "developer-toolbox:command:take_pending_open",
@@ -9848,7 +9849,7 @@
     },
     {
       "legacyFeatureId": "run-manager:surface:App.tsx",
-      "sourcePath": "apps/run-manager/src/App.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9867,11 +9868,12 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/App.tsx"
     },
     {
       "legacyFeatureId": "run-manager:surface:components/CronBuilder.tsx",
-      "sourcePath": "apps/run-manager/src/components/CronBuilder.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/components/CronBuilder.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9890,11 +9892,12 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/components/CronBuilder.tsx"
     },
     {
       "legacyFeatureId": "run-manager:surface:components/ImportDialog.tsx",
-      "sourcePath": "apps/run-manager/src/components/ImportDialog.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/components/ImportDialog.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9913,11 +9916,12 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/components/ImportDialog.tsx"
     },
     {
       "legacyFeatureId": "run-manager:surface:components/JobEditor.tsx",
-      "sourcePath": "apps/run-manager/src/components/JobEditor.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/components/JobEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9936,11 +9940,12 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/components/JobEditor.tsx"
     },
     {
       "legacyFeatureId": "run-manager:surface:components/NextRunsPreview.tsx",
-      "sourcePath": "apps/run-manager/src/components/NextRunsPreview.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/components/NextRunsPreview.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9959,11 +9964,12 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/components/NextRunsPreview.tsx"
     },
     {
       "legacyFeatureId": "run-manager:surface:components/RunHistory.tsx",
-      "sourcePath": "apps/run-manager/src/components/RunHistory.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/components/RunHistory.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -9982,11 +9988,12 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/components/RunHistory.tsx"
     },
     {
       "legacyFeatureId": "run-manager:surface:components/ServiceEditor.tsx",
-      "sourcePath": "apps/run-manager/src/components/ServiceEditor.tsx",
+      "sourcePath": "packages/workspace-features/src/tasks/components/ServiceEditor.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -10005,7 +10012,8 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/run-manager/src/components/ServiceEditor.tsx"
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/cleanup.rs",
@@ -12564,7 +12572,7 @@
     },
     {
       "legacyFeatureId": "log-lens:surface:App.tsx",
-      "sourcePath": "apps/log-lens/src/App.tsx",
+      "sourcePath": "packages/workspace-features/src/logs/App.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -12583,7 +12591,8 @@
       "evidence": [
         "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       ],
-      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate.",
+      "legacySourcePath": "apps/log-lens/src/App.tsx"
     },
     {
       "legacyFeatureId": "log-lens:store:src-tauri/src/core/saved_views.rs",
