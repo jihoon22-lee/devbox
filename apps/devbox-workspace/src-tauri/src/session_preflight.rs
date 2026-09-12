@@ -74,13 +74,21 @@ pub(crate) async fn capture(
                                 _ => "세션 시작 조건을 확인하지 못했습니다.",
                             }
                         ),
-                        target: crate::core::problems::Target::Route {
-                            route: match entry.kind {
-                                "port" => "runtime",
-                                "task" | "taskTrust" | "taskContext" => "tasks",
-                                _ => "overview",
+                        target: if entry.kind == "port"
+                            && entry.key.parse::<u16>().is_ok_and(|port| port > 0)
+                        {
+                            crate::core::problems::Target::Port {
+                                port: entry.key.parse().expect("validated port"),
                             }
-                            .into(),
+                        } else {
+                            crate::core::problems::Target::Route {
+                                route: match entry.kind {
+                                    "port" => "runtime",
+                                    "task" | "taskTrust" | "taskContext" => "tasks",
+                                    _ => "overview",
+                                }
+                                .into(),
+                            }
                         },
                         log: None,
                     })

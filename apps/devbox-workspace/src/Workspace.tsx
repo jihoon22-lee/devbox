@@ -8,6 +8,7 @@ import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
 import {sourceFilePath} from "./sourceNavigation";
 import type {RuntimeLogOpenRequest} from "@devbox/workspace-features/logs";
+import type {RuntimeFocusRequest,RuntimeFocusTarget} from "./runtimeNavigation";
 const TerminalLogBridge=lazy(()=>import("./TerminalLogBridge"));
 
 const Problems=lazy(()=>import("./Problems"));
@@ -50,6 +51,12 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const consumeExternalLog=useCallback((id:string)=>{
     if(terminalReceipt.current===id){setTerminalLogConsumed(id);terminalReceipt.current=null;}
   },[]);
+  const [runtimeFocus,setRuntimeFocus]=useState<RuntimeFocusRequest|null>(null);
+  const acceptRuntimeFocus=(target:RuntimeFocusTarget)=>{
+    setRuntimeFocus({id:crypto.randomUUID(),context:description.context,target});
+    navigate(target.kind==="task"?"tasks":"runtime");
+  };
+  const consumeRuntimeFocus=useCallback((id:string)=>setRuntimeFocus(current=>current?.id===id?null:current),[]);
   const [tasksDirty, setTasksDirty] = useState(false);
   const isRuntimeRoute=["tasks","runtime","logs"].includes(route);
   const [runtimeVisited,setRuntimeVisited]=useState(isRuntimeRoute);
@@ -106,7 +113,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={tasksDirty || editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
     </div>
     {ready && selectedTree && <Suspense fallback={null}><ContextStatus description={description} name={registry?.projects.find(project=>project.id===description.context?.projectId)?.name??"프로젝트"} root={selectedTree.binding.root} navigate={navigate}/></Suspense>}
-    {ready && route==="problems" && <Suspense fallback={<p role="status">문제 목록을 불러오고 있습니다…</p>}><Problems description={description} onFile={openDiagnostic} onLog={acceptProblemLog} navigate={navigate}/></Suspense>}
+    {ready && route==="problems" && <Suspense fallback={<p role="status">문제 목록을 불러오고 있습니다…</p>}><Problems description={description} onFile={openDiagnostic} onLog={acceptProblemLog} onRuntime={acceptRuntimeFocus} navigate={navigate}/></Suspense>}
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
     </div>}
@@ -126,7 +133,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       <TerminalManager description={description} registry={registry}/>
     </Suspense>}
     {ready && (runtimeVisited||isRuntimeRoute) && <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
-      <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic} externalLogOpen={terminalLogOpen} onExternalLogConsumed={consumeExternalLog}/>
+      <NativeRuntimeRoutes focusRequest={runtimeFocus} onFocusConsumed={consumeRuntimeFocus} route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic} externalLogOpen={terminalLogOpen} onExternalLogConsumed={consumeExternalLog}/>
     </Suspense>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>

@@ -255,7 +255,9 @@ impl RuntimeLease {
                 if instance.generation != *generation {
                     return Err("session_runtime_changed".into());
                 }
-                Ok(json!({"state":instance.state,"runId":instance.active_run_id}))
+                Ok(
+                    json!({"state":instance.state,"runId":instance.active_run_id,"failures":instance.consecutive_failures}),
+                )
             }
             Identity::Run(id) => {
                 let run = database

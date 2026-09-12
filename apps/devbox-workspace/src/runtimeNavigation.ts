@@ -61,3 +61,7 @@ export function terminalLogRequest(value: unknown, context: ProjectContext | nul
     return {id:value.id,source:{kind:"wslJournal",distro:source.distro,...(typeof source.unit === "string" ? {unit:source.unit} : {})}};
   return null;
 }
+
+/** A native-resolved selection; it contains no start/stop or process authority. */
+export type RuntimeFocusTarget = {kind:"task";jobId:string}|{kind:"port";port:number};
+export type RuntimeFocusRequest = {id:string;context:ProjectContext|null;target:RuntimeFocusTarget};

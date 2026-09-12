@@ -280,14 +280,24 @@ function runtimeOwner(row: PortRow): PortCorrelation | undefined {
   return isProductHosted() ? row.correlations?.find(owner => owner.source_app === "run-manager" && owner.confidence === "verified") : undefined;
 }
 
-export default function App({ active = true, settingsRevision = 0 }: { active?: boolean; settingsRevision?:number }) {
+export default function App({ active = true, settingsRevision = 0, openPort, onPortConsumed }: { active?: boolean; settingsRevision?:number; openPort?:{id:string;port:number}|null;onPortConsumed?:(id:string)=>void }) {
   const activeRef = useRef(active);
   const previousActive = useRef(active);
   activeRef.current = active;
   const [ports, setPorts] = useState<PortRow[]>([]);
   const [query, setQuery] = useState("");
+  const [focusedPort,setFocusedPort]=useState<number|null>(null);
   const [protoFilter, setProtoFilter] = useState<ProtoFilter>("all");
   const [stateFilter, setStateFilter] = useState<StateFilter>("all");
+  const consumedPort = useRef<string|null>(null);
+  useEffect(()=>{
+    if(!active||!openPort||consumedPort.current===openPort.id)return;
+    consumedPort.current=openPort.id;
+    if(Number.isInteger(openPort.port)&&openPort.port>0&&openPort.port<=65535){
+      setQuery(String(openPort.port));setFocusedPort(openPort.port);setProtoFilter("all");setStateFilter("all");
+    }
+    onPortConsumed?.(openPort.id);
+  },[active,openPort,onPortConsumed]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [busyRowKey, setBusyRowKey] = useState<string | null>(null);
@@ -535,12 +545,12 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
   const visible = useMemo(() => {
     return ports.filter(
       (row) =>
-        matches(row, query) &&
+        (focusedPort === null ? matches(row, query) : row.port === focusedPort) &&
         (protoFilter === "all" || row.proto.toLowerCase().startsWith(protoFilter)) &&
         matchesStateFilter(row, stateFilter) &&
-        (!preferences.pinned_only || isPinnedRow(row, preferences)),
+        (focusedPort !== null || !preferences.pinned_only || isPinnedRow(row, preferences)),
     );
-  }, [ports, preferences, query, protoFilter, stateFilter]);
+  }, [ports, preferences, query, focusedPort, protoFilter, stateFilter]);
 
   const counts = useMemo(() => {
     const listening = ports.filter((p) => isListener(p)).length;
@@ -816,7 +826,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
           aria-label="리스너 검색"
           placeholder="검색 (포트 / 프로토콜 / PID / 프로세스)..."
           value={query}
-          onChange={(event) => setQuery(event.currentTarget.value)}
+          onChange={(event) => {setFocusedPort(null);setQuery(event.currentTarget.value);}}
           onCompositionStart={() => setIsComposing(true)}
           onCompositionEnd={() => setIsComposing(false)}
           onKeyDown={(event) => {

@@ -131,6 +131,157 @@ fn resource_key(identity: &ResourceIdentity) -> String {
 }
 
 impl Sessions {
+    /// Read cached owner state only. Native resource leases are cloned before DB access.
+    pub(crate) fn problem_snapshots(
+        &self,
+        context: &ProjectContext,
+    ) -> Result<Vec<(String, String, Vec<crate::core::problems::Item>, bool)>> {
+        use crate::core::problems::{Item, Severity, Target};
+        let snapshots = {
+            let guard = self.inner.lock().map_err(|_| "session_owner_busy")?;
+            let Some(inner) = guard.as_ref() else {
+                return Ok(vec![]);
+            };
+            inner
+                .document
+                .store
+                .sessions
+                .values()
+                .filter(|session| session.context == *context)
+                .map(|session| {
+                    let leases = session
+                        .resources
+                        .iter()
+                        .filter_map(|key| match inner.leases.get(key) {
+                            Some(Lease::Runtime(lease)) => Some((key.clone(), lease.clone())),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>();
+                    (session.clone(), leases)
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut snapshots_out = Vec::new();
+        for (session, leases) in snapshots {
+            let mut items = Vec::new();
+            let mut observations = Vec::new();
+            let mut unavailable = false;
+            if session.phase == Phase::Degraded {
+                items.push(Item {
+                    severity: Severity::Error,
+                    message: match session.issue.as_deref() {
+                        Some("session_readiness_expired" | "session_readiness_failed") => {
+                            "개발 세션의 준비 상태를 확인하지 못했습니다."
+                        }
+                        _ => "개발 세션에 확인하거나 복구할 작업이 있습니다.",
+                    }
+                    .into(),
+                    target: Target::Route {
+                        route: "terminal".into(),
+                    },
+                    log: None,
+                });
+            }
+            for (key, lease) in leases {
+                let status = match lease.status() {
+                    Ok(status) => status,
+                    Err(_) => {
+                        unavailable = true;
+                        continue;
+                    }
+                };
+                let failed = matches!(
+                    status.get("state").and_then(Value::as_str),
+                    Some("failed" | "retry_waiting")
+                );
+                let unhealthy = lease.descriptor().kind == "service"
+                    && status.get("state").and_then(Value::as_str) == Some("running")
+                    && status
+                        .get("failures")
+                        .and_then(Value::as_i64)
+                        .is_some_and(|count| count > 0);
+                if failed || unhealthy {
+                    items.push(Item {
+                        severity: Severity::Error,
+                        message: if unhealthy {
+                            "서비스의 최근 건강 상태 확인이 실패했습니다."
+                        } else if lease.descriptor().kind == "service" {
+                            "서비스가 실패하여 재시작을 기다리고 있습니다."
+                        } else {
+                            "세션 작업 실행이 실패했습니다."
+                        }
+                        .into(),
+                        target: Target::SessionResource {
+                            session_id: session.id.clone(),
+                            resource_key: key.clone(),
+                        },
+                        log: status
+                            .get("runId")
+                            .and_then(Value::as_str)
+                            .map(|run| Target::Run {
+                                run_id: run.into(),
+                                stream: "stderr".into(),
+                                offset: None,
+                            }),
+                    });
+                }
+                observations.push(json!({"key":key,"status":status}));
+            }
+            let revision = crate::definitions::digest(
+                &serde_json::to_vec(&(session.revision, observations))
+                    .map_err(|_| "problem_invalid")?,
+            );
+            snapshots_out.push((session.id, revision, items, unavailable));
+        }
+        Ok(snapshots_out)
+    }
+    pub(crate) fn problem_resource(
+        &self,
+        context: &ProjectContext,
+        session_id: &str,
+        key: &str,
+    ) -> Result<String> {
+        let lease = self.access(|inner| {
+            let session = inner
+                .document
+                .store
+                .sessions
+                .get(session_id)
+                .ok_or("problem_stale")?;
+            if session.context != *context || !session.resources.contains(key) {
+                return Err("problem_stale");
+            }
+            match inner.leases.get(key) {
+                Some(Lease::Runtime(lease)) => Ok(lease.clone()),
+                _ => Err("problem_stale"),
+            }
+        })?;
+        lease.status().map_err(|_| "problem_stale")?;
+        Ok(lease.descriptor().owner_id.clone())
+    }
+    pub(crate) fn problem_run(&self, context: &ProjectContext, run: &str) -> bool {
+        let leases = self.access(|inner| {
+            Ok(inner
+                .document
+                .store
+                .sessions
+                .values()
+                .filter(|session| session.context == *context)
+                .flat_map(|session| session.resources.iter())
+                .filter_map(|key| match inner.leases.get(key) {
+                    Some(Lease::Runtime(lease)) => Some(lease.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>())
+        });
+        leases.is_ok_and(|leases| {
+            leases.iter().any(|lease| {
+                lease
+                    .status()
+                    .is_ok_and(|status| status.get("runId").and_then(Value::as_str) == Some(run))
+            })
+        })
+    }
     pub(crate) fn running_runs(&self, context: &ProjectContext) -> Result<Vec<String>> {
         let leases = {
             let guard = self.inner.lock().map_err(|_| "session_owner_busy")?;

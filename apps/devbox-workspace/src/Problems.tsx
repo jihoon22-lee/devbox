@@ -2,17 +2,17 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Description } from "@devbox/product-shell/api";
 import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
 import { componentCall } from "./native";
-import { sameRuntimeContext } from "./runtimeNavigation";
+import { sameRuntimeContext, type RuntimeFocusTarget } from "./runtimeNavigation";
 import "./Problems.css";
 
 type FileTarget={kind:"file";relativePath:string;line:number;column:number|null;documentVersion:number|null};
-type Target=FileTarget|{kind:"route";route:string}|{kind:"matcher";runId:string;index:number}|{kind:"run";runId:string;stream:string};
+type Target=FileTarget|RuntimeFocusTarget|{kind:"sessionResource";sessionId:string;resourceKey:string}|{kind:"route";route:string}|{kind:"matcher";runId:string;index:number}|{kind:"run";runId:string;stream:string};
 interface Item{id:string;source:string;revision:string;severity:"error"|"warning"|"information";message:string;target:Target;log:Target|null;stale:boolean}
 export interface ProblemsSnapshot{context:Description["context"];initialized:boolean;truncated?:boolean;runningTasks:number|null;summary?:{toolchains:string[];secretReferences:number;environmentReference:boolean}|null;problems:Item[];sources:Array<{source:string;identity:string;state:string;revision:string;truncated:boolean}>}
 const labels:Record<string,string>={definitions:"프로젝트 정의",lsp:"LSP",git:"Git",dependencies:"의존성",matcher:"작업 진단",preflight:"시작 조건",session:"개발 세션"};
 const severity:Record<string,string>={error:"오류",warning:"경고",information:"정보"};
 
-export default function Problems({description,onFile,onLog,navigate}:{description:Description;onFile:(request:{id:string;relativePath:string;line:number;column:number|null})=>void;onLog:(request:RuntimeLogOpenRequest)=>void;navigate:(route:string)=>void}) {
+export default function Problems({description,onFile,onLog,onRuntime,navigate}:{description:Description;onFile:(request:{id:string;relativePath:string;line:number;column:number|null})=>void;onLog:(request:RuntimeLogOpenRequest)=>void;onRuntime?:(target:RuntimeFocusTarget)=>void;navigate:(route:string)=>void}) {
   const [snapshot,setSnapshot]=useState<ProblemsSnapshot|null>(null);
   const [issue,setIssue]=useState("");
   const [busy,setBusy]=useState(false);
@@ -40,6 +40,7 @@ export default function Problems({description,onFile,onLog,navigate}:{descriptio
       if(result.target.kind==="file")onFile({id:crypto.randomUUID(),relativePath:result.target.relativePath,line:result.target.line,column:result.target.column});
       else if(result.target.kind==="route")navigate(result.target.route);
       else if(result.target.kind==="log")onLog(result.target.request);
+      else if(result.target.kind==="task"||result.target.kind==="port")onRuntime?.(result.target);
     }catch{if(mounted.current&&sameRuntimeContext(context,latest.current))setIssue("원본 버전이 바뀌었거나 파일·로그를 더 이상 사용할 수 없습니다. 원본에서 진단을 다시 확인해 주세요.");}
     finally{if(mounted.current)setBusy(false);}
   };

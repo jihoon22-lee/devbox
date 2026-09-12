@@ -52,3 +52,14 @@ it("discards a late snapshot and late navigation after switching worktrees", asy
   expect(screen.queryByText("Synthetic diagnostic")).toBeNull();
   expect(onFile).not.toHaveBeenCalled();
 });
+
+it("opens a revalidated port selection without requesting a process action", async () => {
+  call.mockImplementation(async (_description, _component, method) =>
+    method === "snapshot" ? {...snapshot, problems: [{...problem, target: {kind:"port",port:8080}}]}
+      : {context, target: {kind:"port",port:8080}});
+  const onRuntime = vi.fn();
+  render(<Problems description={description} onFile={vi.fn()} onLog={vi.fn()} onRuntime={onRuntime} navigate={vi.fn()}/>);
+  fireEvent.click(await screen.findByRole("button", {name:"위치 열기"}));
+  await waitFor(()=>expect(onRuntime).toHaveBeenCalledWith({kind:"port",port:8080}));
+  expect(call.mock.calls.every(([,component,method])=>component==="workspace.problems"&&["snapshot","resolve"].includes(method))).toBe(true);
+});

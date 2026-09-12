@@ -380,6 +380,24 @@ pub(crate) fn manage(
     let context = context.ok_or("problem_context_required")?;
     host.projects()?.binding(context)?;
     let owner = owner(app)?;
+    if let Some(sessions) = app.try_state::<Arc<crate::development_host::Sessions>>() {
+        if let Ok(ticket) = owner.begin(context, "session", "current") {
+            match sessions.problem_snapshots(context) {
+                Ok(snapshots) if !snapshots.iter().any(|row| row.3) => {
+                    let revisions = snapshots
+                        .iter()
+                        .map(|row| (&row.0, &row.1))
+                        .collect::<Vec<_>>();
+                    let revision = crate::definitions::digest(
+                        &serde_json::to_vec(&revisions).map_err(|_| "problem_invalid")?,
+                    );
+                    let items = snapshots.into_iter().flat_map(|row| row.2).collect();
+                    let _ = owner.finish(&ticket, &revision, items, false);
+                }
+                _ => owner.unavailable(&ticket),
+            }
+        }
+    }
     if method == "snapshot" {
         if args.as_object().is_none_or(|args| !args.is_empty()) {
             return Err("problem_invalid");
@@ -477,10 +495,12 @@ pub(crate) fn manage(
             offset,
         } => {
             let root = host.projects()?.binding(context)?.root;
-            if run_manager_lib::component::diagnostic_source(app, &run_id)
-                .map_err(|_| "problem_stale")?
-                != root
-            {
+            let from_project = run_manager_lib::component::diagnostic_source(app, &run_id)
+                .is_ok_and(|source| source == root);
+            let from_session = app
+                .try_state::<Arc<crate::development_host::Sessions>>()
+                .is_some_and(|sessions| sessions.problem_run(context, &run_id));
+            if !from_project && !from_session {
                 return Err("problem_stale");
             }
             if offset.is_some() {
@@ -504,6 +524,16 @@ pub(crate) fn manage(
             return Ok(
                 json!({"context":context,"target":{"kind":"log","request":{"id":uuid::Uuid::new_v4().simple().to_string(),"source":{"kind":"runtimeRun","runId":run_id,"stream":stream,"revision":lease.revision()},"offset":offset}}}),
             );
+        }
+        Target::SessionResource {
+            session_id,
+            resource_key,
+        } => {
+            let sessions = app
+                .try_state::<Arc<crate::development_host::Sessions>>()
+                .ok_or("problem_stale")?;
+            let job = sessions.problem_resource(context, &session_id, &resource_key)?;
+            return Ok(json!({"context":context,"target":{"kind":"task","jobId":job}}));
         }
         target => target,
     };

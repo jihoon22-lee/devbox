@@ -233,7 +233,7 @@ async function loadServiceSnapshot(): Promise<ServiceSnapshot> {
   };
 }
 
-export default function App({ active: visible = true, onDirtyChange }: { active?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
+export default function App({ active: visible = true, onDirtyChange, openTask, onTaskConsumed }: { active?: boolean; onDirtyChange?: (dirty: boolean) => void; openTask?: {id:string;jobId:string}|null; onTaskConsumed?:(id:string)=>void }) {
   const viewGenerationRef = useRef(0);
   const loadedGenerationRef = useRef(-1);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
@@ -681,6 +681,16 @@ export default function App({ active: visible = true, onDirtyChange }: { active?
     else setSelectedServiceId(task.id);
     if (!openOnly) setLauncherTask({ id: task.id, kind: task.kind });
   }, [jobs, services]);
+
+  const consumedProductTask = useRef<string|null>(null);
+  useEffect(()=>{
+    if(!visible||!openTask||consumedProductTask.current===openTask.id||loading||busy||importOpen||screen==="editor"||screen==="service-editor")return;
+    consumedProductTask.current=openTask.id;
+    if(jobs.some(job=>job.id===openTask.jobId)||services.some(service=>service.id===openTask.jobId)){
+      handleLauncherTask(openTask.jobId,true);
+    }else setError("선택한 작업 또는 서비스가 더 이상 없습니다.");
+    onTaskConsumed?.(openTask.id);
+  },[visible,openTask,loading,busy,importOpen,screen,jobs,services,handleLauncherTask,onTaskConsumed]);
 
   const confirmLauncherTask = async () => {
     if (!launcherTask || busy) return;

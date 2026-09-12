@@ -39,6 +39,13 @@ pub enum Target {
     Route {
         route: String,
     },
+    SessionResource {
+        session_id: String,
+        resource_key: String,
+    },
+    Port {
+        port: u16,
+    },
 }
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -137,6 +144,11 @@ impl Item {
                 offset,
             } => valid_run(run_id, stream, offset.as_deref()),
             Target::Matcher { run_id, index } => opaque(run_id) && *index < 500,
+            Target::SessionResource {
+                session_id,
+                resource_key,
+            } => opaque(session_id) && opaque(resource_key),
+            Target::Port { port } => *port > 0,
             Target::Route { route } => matches!(
                 route.as_str(),
                 "source"

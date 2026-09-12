@@ -417,3 +417,21 @@ Still required: Session run/health and precise service/port navigation, Knowledg
 summary provider/transport, WSL task source/execution, Quick Summon adapter, and the
 complete B06 acceptance packet. This cache is not evidence that all Problems sources
 or WP06 acceptance are complete.
+
+## Session Problems and precise Runtime selection
+
+Problems now reads retained Session Runtime leases for failed runs/operations,
+service retry and the scheduler's existing health-failure counter. It does not
+perform another health probe. Readiness/recovery issues use fixed summaries.
+Native batch tickets are reserved before reading, preventing concurrent older
+snapshots from replacing newer results. Missing generations make the prior batch
+unavailable; recovered/archived Sessions disappear from the next complete batch.
+
+Selection rechecks the Session/resource generation, then opens the exact task or
+service. Dirty task editors/imports defer selection until their existing flow ends.
+Port preflight problems select the exact numeric port, independently of text matches
+or a saved pinned-only filter. Both are read/navigation actions only. Session run
+logs require a current native Session lease or matching task-source binding.
+Fixtures cover port navigation without process actions; execution remains deferred.
+The combined native/frontend minimum check passed in 16.817 seconds. No detailed
+verification was run. WSL tasks, summary provider and command adapter remain next.
