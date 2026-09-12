@@ -468,3 +468,23 @@ and frontend checks passed in 24.178 seconds. The final native Registry guard re
 syntax/diff review. No detailed tests, build, Clippy, affected or Windows execution
 was repeated. Chrono was already in the lockfile; Workspace adds only its direct
 dependency edge, with no package-version changes.
+
+## Terminal command adapter
+
+The native catalog exposes profile IDs/names/selected-profile revisions and live
+companion IDs/contexts; it excludes command definitions and registers no shortcut.
+B07's single shortcut owner can consume the catalog and native summon entrypoint.
+The main Terminal surface exercises the same adapter and can explicitly open a
+profile through the existing creation/layout/initial-command approval path.
+
+Summon keeps the existing visible+focused+not-minimized hide rule; otherwise it
+shows, restores and focuses the same companion. It never starts/stops a PTY. A
+bounded receipt resolves visibility before the effect, so ambiguous retries repeat
+that action instead of toggling again. Expired or superseded requests cannot undo a
+newer selection. Native window/context identity is checked at invocation. The
+profile command rechecks its revision before publishing the existing window receipt.
+
+Prepared native/UI fixtures cover ambiguous retry, supersession, expiry and bounded
+profile arguments. Minimal native/frontend checks passed in 18.213 seconds. Detailed
+tests and actual Windows/WSL window behavior remain in the completed B06 packet.
+No global default shortcut was registered; final shortcut ownership is B07.

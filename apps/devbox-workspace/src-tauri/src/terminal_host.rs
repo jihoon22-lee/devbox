@@ -46,6 +46,7 @@ pub(crate) struct Terminals {
     controls: crate::wsl_controls::Controls,
     imports: Arc<crate::terminal_import::Imports>,
     pending_logs: Mutex<VecDeque<PendingLog>>,
+    summons: Mutex<crate::core::terminal_commands::Summons>,
 }
 
 #[derive(Clone, Serialize)]
@@ -410,6 +411,46 @@ impl Terminals {
             return self.open_prepared(window, host, header, &input.operation_id, Some(profile));
         }
         match method {
+            "terminal_commands" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Empty {}
+                parse::<Empty>(args)?;
+                self.command_catalog(window.app_handle(), host)
+            }
+            "summon_terminal" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    operation_id: String,
+                    terminal_id: String,
+                    deadline_ms: u64,
+                }
+                let input: Input = parse(args)?;
+                self.summon(
+                    window.app_handle(),
+                    &input.terminal_id,
+                    header.context.as_ref(),
+                    &input.operation_id,
+                    input.deadline_ms,
+                )
+            }
+            "open_terminal_profile" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    operation_id: String,
+                    profile_id: String,
+                    revision: String,
+                }
+                let input: Input = parse(args)?;
+                let (profile, revision) =
+                    self.prepare_profile(window.app_handle(), host, &input.profile_id)?;
+                if revision != input.revision {
+                    return Err("terminal_profile_changed");
+                }
+                self.open_prepared(window, host, header, &input.operation_id, Some(profile))
+            }
             "list_workspace_profiles" | "save_workspace_profile" | "delete_workspace_profile" => {
                 self.profiles(method, args)
             }
@@ -537,6 +578,80 @@ impl Terminals {
             let _ = target.destroy();
         }
         Ok(())
+    }
+    pub(crate) fn command_catalog(&self, app: &tauri::AppHandle, host: &Host) -> Result<Value> {
+        self.initialize(app, host)?;
+        let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+        let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
+        let profiles =
+            crate::terminal_profiles::dispatch(&inner.root, "list_workspace_profiles", json!({}))?;
+        let profiles: Vec<wsl_desktop_lib::component::WorkspaceProfile> =
+            serde_json::from_value(profiles["profiles"].clone())
+                .map_err(|_| "terminal_profiles_invalid")?;
+        let profiles = profiles
+            .iter()
+            .map(|profile| {
+                let revision = crate::definitions::digest(
+                    &serde_json::to_vec(profile).map_err(|_| "terminal_profile_invalid")?,
+                );
+                Ok(json!({"id":profile.id,"name":profile.name,"revision":revision}))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let windows = inner
+            .records
+            .iter()
+            .filter(|record| {
+                record.state == "active"
+                    && inner.peers.contains_key(&format!("terminal-{}", record.id))
+            })
+            .map(|record| json!({"id":record.id,"context":record.context}))
+            .collect::<Vec<_>>();
+        Ok(json!({"profiles":profiles,"windows":windows,"defaultShortcut":null}))
+    }
+    pub(crate) fn summon(
+        &self,
+        app: &tauri::AppHandle,
+        terminal_id: &str,
+        context: Option<&ProjectContext>,
+        operation: &str,
+        deadline: u64,
+    ) -> Result<Value> {
+        let label = format!("terminal-{terminal_id}");
+        let peer = self.peer(&label)?;
+        if peer.record.context.as_ref() != context {
+            return Err("terminal_context_changed");
+        }
+        let target = app
+            .get_webview_window(&label)
+            .ok_or("terminal_window_unavailable")?;
+        let hide = target
+            .is_visible()
+            .map_err(|_| "terminal_window_unavailable")?
+            && target
+                .is_focused()
+                .map_err(|_| "terminal_window_unavailable")?
+            && !target
+                .is_minimized()
+                .map_err(|_| "terminal_window_unavailable")?;
+        // Separate from PTY locks. Serialize receipt reservation and idempotent window effects.
+        let mut summons = self.summons.lock().map_err(|_| "terminal_owner_busy")?;
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "terminal_command_expired")?
+            .as_millis() as u64;
+        let receipt = summons.reserve(operation, terminal_id, context, deadline, now, hide)?;
+        if receipt.hide {
+            target.hide().map_err(|_| "terminal_window_unavailable")?;
+        } else {
+            target.show().map_err(|_| "terminal_window_unavailable")?;
+            target
+                .unminimize()
+                .map_err(|_| "terminal_window_unavailable")?;
+            target
+                .set_focus()
+                .map_err(|_| "terminal_window_unavailable")?;
+        }
+        Ok(json!({"id":terminal_id,"visible":!receipt.hide}))
     }
     pub(crate) fn profile_choices(&self, app: &tauri::AppHandle, host: &Host) -> Result<Value> {
         self.initialize(app, host)?;

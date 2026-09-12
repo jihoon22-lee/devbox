@@ -276,6 +276,9 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 || matches!(
                     method,
                     "terminal_sessions"
+                        | "terminal_commands"
+                        | "summon_terminal"
+                        | "open_terminal_profile"
                         | "start_terminal_import"
                         | "cancel_terminal_import"
                         | "cleanup_terminal_import"
@@ -1969,6 +1972,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             app.manage(runtime.clone());
             app.manage(Arc::new(crate::problems_host::Problems::default()));
             app.manage(runtime.sessions.clone());
+            app.manage(runtime.terminals.clone());
             setup_runtime_tray(app)?;
             #[cfg(windows)]
             runtime.start_wsl_poll(app.clone());
@@ -2613,4 +2617,8 @@ pub(crate) fn provider_context(
         .ok_or("session_summary_unavailable")?;
     runtime.host()?.projects()?.binding(context)?;
     Ok(())
+}
+
+pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'static str> {
+    app.try_state::<Runtime>().ok_or("initializing")?.host()
 }

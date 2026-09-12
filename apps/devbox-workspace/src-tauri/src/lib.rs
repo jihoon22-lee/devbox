@@ -16,6 +16,7 @@ mod runtime_host;
 mod session_preflight;
 pub mod session_summary;
 mod source_host;
+pub mod terminal_commands;
 mod terminal_export;
 mod terminal_host;
 mod terminal_import;
