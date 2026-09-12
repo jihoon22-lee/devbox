@@ -435,3 +435,12 @@ logs require a current native Session lease or matching task-source binding.
 Fixtures cover port navigation without process actions; execution remains deferred.
 The combined native/frontend minimum check passed in 16.817 seconds. No detailed
 verification was run. WSL tasks, summary provider and command adapter remain next.
+
+## Shared Knowledge summary contract
+
+Workspace is now the second actual consumer of Knowledge's strict Session summary
+contract. The unchanged renderer/validator and synthetic fixture moved to
+product-contract; the legacy Knowledge module reexports it and retains its fixture
+adapter. Existing draft parsing and note publication still use that same contract.
+The shared date validation is reused by the legacy handoff validator.
+This extraction is committed separately from the provider behavior.

@@ -486,33 +486,7 @@ fn bounded_text(value: &str, max_bytes: usize, allow_newlines: bool) -> bool {
 }
 
 pub(super) fn valid_date_key(value: &str) -> bool {
-    let bytes = value.as_bytes();
-    if bytes.len() != 10
-        || bytes[4] != b'-'
-        || bytes[7] != b'-'
-        || bytes
-            .iter()
-            .enumerate()
-            .any(|(index, byte)| !matches!(index, 4 | 7) && !byte.is_ascii_digit())
-    {
-        return false;
-    }
-    let year = value[0..4].parse::<i32>().ok();
-    let month = value[5..7].parse::<u32>().ok();
-    let day = value[8..10].parse::<u32>().ok();
-    let (Some(year), Some(month), Some(day)) = (year, month, day) else {
-        return false;
-    };
-    year > 0 && (1..=12).contains(&month) && (1..=days_in_month(year, month)).contains(&day)
-}
-
-fn days_in_month(year: i32, month: u32) -> u32 {
-    match month {
-        2 if year % 4 == 0 && (year % 100 != 0 || year % 400 == 0) => 29,
-        2 => 28,
-        4 | 6 | 9 | 11 => 30,
-        _ => 31,
-    }
+    product_contract::session_summary::valid_date_key(value)
 }
 
 fn is_monday(value: &str) -> bool {
