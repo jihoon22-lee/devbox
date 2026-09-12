@@ -824,6 +824,24 @@ describe("identity-safe listener UI boundaries", () => {
     expect(killListenerMock).not.toHaveBeenCalled();
   });
 
+  it("reports unavailable WSL observation without inventing closed or reopened listeners", async () => {
+    const wsl = { ...LISTENING_ROW, source: "wsl" as const, wsl_distro: "Ubuntu", process_name: "owned-wsl" };
+    listPortObservationsMock.mockReset()
+      .mockResolvedValueOnce(observation([LISTENING_ROW, wsl]))
+      .mockResolvedValueOnce({ ...observation([LISTENING_ROW]), unavailable_wsl: ["Ubuntu"] })
+      .mockResolvedValueOnce(observation([LISTENING_ROW, wsl]));
+    render(<App />);
+    await screen.findByText("owned-wsl");
+    fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
+    await screen.findByText(/WSL 포트 조회 불가: Ubuntu/);
+    expect(screen.getByText("node.exe")).toBeTruthy();
+    expect(screen.queryByText("closed")).toBeNull();
+    fireEvent.click(screen.getByRole("button", { name: "새로 고침" }));
+    await screen.findByText("owned-wsl");
+    expect(screen.queryByText(/WSL 포트 조회 불가/)).toBeNull();
+    expect(screen.queryByText("opened")).toBeNull();
+  });
+
   it("keeps the successful timeline unchanged when a later poll fails", async () => {
     const changed = { ...LISTENING_ROW, state: "BOUND" };
     listPortObservationsMock

@@ -5,7 +5,7 @@
 //! issues only bounded opaque action keys. Every action re-collects listeners
 //! and re-reads the source snapshots before launching another app.
 
-use super::ports::{collect_ports, PortRow};
+use super::ports::{collect_ports, collect_ports_with_status, PortRow};
 use crate::core::listeners::{ListenerIdentity, ListenerSource};
 use devbox_applink::{
     CreateHandoff, HandoffDescriptor, HandoffError, HandoffPublication, HandoffStore,
@@ -78,6 +78,7 @@ pub struct PortObservationSnapshot {
     pub rows: Vec<ObservedPortRow>,
     pub sources: Vec<SnapshotSourceStatus>,
     pub correlations_truncated: bool,
+    pub unavailable_wsl: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -107,12 +108,14 @@ struct CorrelationResult {
 #[tauri::command]
 pub async fn list_port_observations() -> Result<PortObservationSnapshot, String> {
     tauri::async_runtime::spawn_blocking(|| {
-        let rows = collect_ports().map_err(|error| error.to_string())?;
-        Ok(observe_rows_in(
+        let collection = collect_ports_with_status().map_err(|error| error.to_string())?;
+        let mut snapshot = observe_rows_in(
             &devbox_integration::integration_root(),
-            rows,
+            collection.rows,
             now_ms(),
-        ))
+        );
+        snapshot.unavailable_wsl = collection.unavailable_wsl;
+        Ok(snapshot)
     })
     .await
     .map_err(|_| "listener 정보를 가져오지 못했습니다.".to_string())?
@@ -269,6 +272,7 @@ fn observe_rows_in(root: &Path, rows: Vec<PortRow>, now: u64) -> PortObservation
             .collect(),
         sources: correlated.sources,
         correlations_truncated: correlated.truncated,
+        unavailable_wsl: Vec::new(),
     }
 }
 
@@ -394,8 +398,8 @@ fn correlate_product_rows(
 /// Call on the host's bounded blocking observation worker. No view timer or
 /// legacy executable is started here.
 pub fn observe_product(bindings: ProductBindings) -> Result<PortObservationSnapshot, String> {
-    let rows = collect_ports().map_err(|_| "process_observation_unavailable")?;
-    let result = correlate_product_rows(rows, bindings, now_ms());
+    let collection = collect_ports_with_status().map_err(|_| "process_observation_unavailable")?;
+    let result = correlate_product_rows(collection.rows, bindings, now_ms());
     Ok(PortObservationSnapshot {
         rows: result
             .rows
@@ -410,6 +414,7 @@ pub fn observe_product(bindings: ProductBindings) -> Result<PortObservationSnaps
             .collect(),
         sources: result.sources,
         correlations_truncated: result.truncated,
+        unavailable_wsl: collection.unavailable_wsl,
     })
 }
 /// Recollect exact native endpoint/process identity immediately before an

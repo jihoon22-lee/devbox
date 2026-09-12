@@ -45,6 +45,7 @@ export interface PortObservationSnapshot {
   rows: PortRow[];
   sources: SnapshotSourceStatus[];
   correlations_truncated: boolean;
+  unavailable_wsl?: string[];
 }
 
 export type LogStream = "stdout" | "stderr";

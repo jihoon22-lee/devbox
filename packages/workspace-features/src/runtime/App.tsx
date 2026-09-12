@@ -302,6 +302,7 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
   const [settingsWarning, setSettingsWarning] = useState<string | null>(null);
   const [autoRefreshPaused, setAutoRefreshPaused] = useState(false);
   const [snapshotHealthy, setSnapshotHealthy] = useState(false);
+  const [unavailableWsl, setUnavailableWsl] = useState<string[]>([]);
   const [sources, setSources] = useState<SnapshotSourceStatus[]>([]);
   const [correlationsTruncated, setCorrelationsTruncated] = useState(false);
   const [timeline, setTimeline] = useState<RefreshTimelineEvent[]>([]);
@@ -339,10 +340,14 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
         const next = observation.rows;
         if (mounted.current && activeRef.current && refreshRequest.current === request) {
           const prior = previousSnapshot.current;
-          previousSnapshot.current = next;
+          const unavailable = observation.unavailable_wsl ?? [];
+          setUnavailableWsl(unavailable);
+          // Preserve the last complete baseline; an unavailable source is not
+          // evidence that its listeners closed.
+          if (unavailable.length === 0) previousSnapshot.current = next;
           setPorts(next);
           const changes = diffPortRows(prior, next);
-          if (prior !== null) {
+          if (prior !== null && unavailable.length === 0) {
             const nextTimeline = appendRefreshTimeline(timelineRef.current, changes);
             timelineRef.current = nextTimeline;
             setTimeline(nextTimeline);
@@ -920,6 +925,13 @@ export default function App({ active = true, settingsRevision = 0 }: { active?: 
       {handoff && (
         <div className="handoff" role="status" aria-live="polite">
           {handoff}
+        </div>
+      )}
+
+      {unavailableWsl.length > 0 && (
+        <div className="warn" role="status">
+          WSL 포트 조회 불가: {unavailableWsl.join(", ")}. 배포판의 포트 조회 지원과 권한을 확인하세요.
+          다른 출처의 결과는 계속 표시하며, 마지막 정상 비교 기준은 보존합니다.
         </div>
       )}
 

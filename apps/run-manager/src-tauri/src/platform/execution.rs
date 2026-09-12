@@ -734,19 +734,28 @@ async fn finish_wsl_wait_owner(wait_task: &mut JoinHandle<()>) {
 /// `kill_on_drop`, so dropping its child cannot leave a wrapper orphaned.
 async fn reap_wsl_wrapper(
     reap_tx: &mpsc::UnboundedSender<ReapRequest>,
+    natural_wait: &mut oneshot::Receiver<ChildWaitResult>,
     wait_task: &mut JoinHandle<()>,
     timeout: Duration,
 ) -> Result<ExecutionExit, AdapterError> {
-    let (response, wait_rx) = oneshot::channel();
-    if reap_tx.send(ReapRequest { response }).is_err() {
-        return Err(failure(FailureCode::Wait));
-    }
-    match tokio::time::timeout(timeout, wait_rx).await {
-        Ok(Ok(result)) => {
+    let (response, response_rx) = oneshot::channel();
+    let requested = reap_tx.send(ReapRequest { response }).is_ok();
+    let acknowledgement = async {
+        if requested {
+            if let Ok(result) = response_rx.await {
+                return result;
+            }
+        }
+        // Group termination may let the wrapper exit naturally before the
+        // owner receives the reap request. A closed request/response channel
+        // alone is not cleanup evidence: require the owner's native wait.
+        natural_wait.await.map_err(|_| failure(FailureCode::Wait))?
+    };
+    match tokio::time::timeout(timeout, acknowledgement).await {
+        Ok(result) => {
             finish_wsl_wait_owner(wait_task).await;
             result
         }
-        Ok(Err(_)) => Err(failure(FailureCode::Wait)),
         Err(_) => Err(failure(FailureCode::Termination)),
     }
 }
@@ -1290,7 +1299,7 @@ impl WslExecutionHandle {
                             .await
                             .is_ok()
                         {
-                            reap_wsl_wrapper(&reap_tx, &mut wait_task, grace).await
+                            reap_wsl_wrapper(&reap_tx, &mut wait_rx, &mut wait_task, grace).await
                         } else {
                             Err(failure(FailureCode::Termination))
                         };
@@ -1317,7 +1326,7 @@ impl WslExecutionHandle {
                             .await
                             .is_ok()
                         {
-                            reap_wsl_wrapper(&reap_tx, &mut wait_task, grace)
+                            reap_wsl_wrapper(&reap_tx, &mut wait_rx, &mut wait_task, grace)
                                 .await
                                 .is_ok()
                         } else {
@@ -1731,19 +1740,84 @@ mod tests {
             .stderr(Stdio::null())
             .kill_on_drop(true);
         let child = command.spawn().unwrap();
-        let (wait_tx, _wait_rx) = oneshot::channel();
+        let (wait_tx, mut wait_rx) = oneshot::channel();
         let (reap_tx, reap_rx) = mpsc::unbounded_channel();
         let mut wait_task = spawn_wsl_wait_owner(child, reap_rx, wait_tx);
 
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            reap_wsl_wrapper(&reap_tx, &mut wait_task, Duration::from_millis(250)),
+            reap_wsl_wrapper(
+                &reap_tx,
+                &mut wait_rx,
+                &mut wait_task,
+                Duration::from_millis(250),
+            ),
         )
         .await
         .expect("wrapper reap must be bounded")
         .expect("wrapper reap must succeed");
         assert_eq!(result.exit_code, None);
         assert!(wait_task.is_finished());
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_reap_accepts_completed_natural_wait() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel();
+        let mut wait_task = tokio::spawn(async move {
+            drop(reap_rx);
+            let _ = wait_tx.send(Ok(ExecutionExit { exit_code: Some(7) }));
+        });
+        while !wait_task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        let result = reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.exit_code, Some(7));
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_reap_accepts_natural_wait_winning_queued_request() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, mut reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let mut wait_task = tokio::spawn(async move {
+            let request = reap_rx.recv().await.unwrap();
+            let _ = wait_tx.send(Ok(ExecutionExit { exit_code: Some(3) }));
+            drop(request);
+        });
+        let result = reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.exit_code, Some(3));
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_reap_requires_native_wait_evidence() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let mut wait_task = tokio::spawn(async move {
+            drop(reap_rx);
+            drop(wait_tx);
+        });
+        assert!(reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250),
+        )
+        .await
+        .is_err());
     }
 
     #[cfg(unix)]

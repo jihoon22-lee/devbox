@@ -279,3 +279,49 @@ before cleanup. Source formatting and fixture syntax pass; prior unrelated local
 checks remain valid. Exact final-revision CI/packaged runtime acceptance is pending.
 The Windows probe used `/init` for this session's absent binfmt registration; no
 host interop setting was changed and no GitHub environment flag was fabricated.
+
+## WSL acceptance correction
+
+At 2883585, [CI](https://github.com/jihoon22-lee/devbox/actions/runs/34691788422)
+passed every job, including Windows Rust. [Product acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34691788442)
+passed all stages except packaged shell. Its Windows Runtime scenario now passes
+receipt/reload, owned descendants, creation mismatch, routing/log navigation,
+stale action and complete stop. The remaining assertion was WSL listener correlation.
+
+A hash-verified copy of that exact CI binary was run on actual Windows with a fresh,
+marked WSL1 distribution and product installation namespace. The synthetic child
+had matching start tick, group/session and run marker, but both ss and /proc/net
+returned no listener. ss exited zero while reporting unsupported netlink sockets.
+The diagnostic and its second /proc comparison used no legacy/user data; final
+owned distro, temporary directory and product data cleanup succeeded. The first
+runner incorrectly used exitCode alone for a signal-killed child; its outer cleanup
+still succeeded, and the runner now also recognizes signalCode.
+
+Port collection now treats a bounded stderr diagnostic from ss as source-unavailable
+and reports the affected distro. Other sources remain visible; partial collection
+does not replace the last complete refresh baseline or invent closed/opened events.
+A Windows command fixture covers zero-exit diagnostic handling, and a UI fixture
+covers partial collection/recovery. Hosted WSL1 acceptance explicitly reports listener
+correlation as unsupported while requiring lifecycle/log/backoff acceptance. The
+same Runtime scenario is exported for the owned local WSL2 fixture; actual WSL2
+correlation remains required before this PR can be considered complete.
+
+Group TERM can also finish the native wsl.exe wait before its monitor sends a reap
+request. A closed reap channel previously returned failure despite the completed
+native wait. Reaping now consumes the natural-wait result within the same deadline
+when natural exit wins either before enqueue or after enqueue. Missing native wait
+evidence still fails. Three regression cases cover those outcomes.
+
+Validation of this correction is limited to the changed Runtime/port/UI/fixture
+paths; earlier unrelated evidence remains valid. An initial local compiler command
+was launched from the host checkout by mistake and interrupted immediately; it is
+not correction evidence. The resumed runner fixes its working directory explicitly.
+Final-head CI and actual WSL2 acceptance remain pending.
+
+The correction packet passed: shared Runtime UI **47 tests**, shared typecheck,
+generated probe **10 tests**, WSL wait-owner **5 tests**, portable port/correlation
+**35 tests**. The full feature graph compiled once without running unrelated suites.
+The temporary artifact selector initially omitted staticlib/rlib harness kinds;
+those two missing harnesses were then executed from the same compiled artifacts in
+0.271 seconds, with no rebuild or frontend repetition. Windows-only stderr fixtures
+and the changed packaged lifecycle await final-revision CI.

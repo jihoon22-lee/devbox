@@ -10,8 +10,17 @@ export async function exerciseWorkspaceRuntimeWsl({call,success}) {
   const owner=JSON.parse(readFileSync(path.join(process.env.RUNNER_TEMP,"devbox-knowledge-wsl-owner.json"),"utf8").replace(/^\uFEFF/,""));
   const distro=process.env.DEVBOX_KNOWLEDGE_WSL_DISTRO;
   assert.equal(owner.runId,process.env.GITHUB_RUN_ID);assert.equal(owner.name,distro);assert.match(distro,/^DevboxKnowledgeFixture-[0-9]+-[a-f0-9]{12}$/);
-  const root=`/tmp/devbox-runtime-${randomUUID()}`;
   const wsl=(args,input)=>{const result=spawnSync("wsl.exe",["--distribution",distro,"--exec",...args],{encoding:"utf8",input,timeout:15000,windowsHide:true});assert.equal(result.status,0,result.stderr);return result.stdout.trim();};
+  // Hosted Windows uses an explicitly provisioned WSL1 fixture. Its kernel
+  // does not expose listener rows; lifecycle remains required here and actual
+  // listener correlation is exercised with the same body on owned WSL2.
+  return exerciseRuntimeWslFixture({call,success,distro,wsl,wslVersion:1});
+}
+
+export async function exerciseRuntimeWslFixture({call,success,distro,wsl,wslVersion}) {
+  assert.equal(process.platform,"win32");
+  assert.ok(wslVersion===1||wslVersion===2);
+  const root=`/tmp/devbox-runtime-${randomUUID()}`;
   const script=`import os,socket,sys,time
 if os.fork()==0:
  s=socket.socket();s.bind(('127.0.0.1',0));s.listen(1)
@@ -33,6 +42,12 @@ else:
     assert.deepEqual(success(await control("start_service",{id:service.id},operationId)),start);
     const [pid,port]=await until(async()=>{const value=wsl(["/usr/bin/python3","-c",`import os; p='${root}/ready'; print(open(p).read() if os.path.exists(p) else '')`]);return value&&value.split(' ').map(Number);},"WSL child did not listen");
     const run=success(await runtime("get_active_run",{id:service.id}));assert.ok(run);
+    let listenerCorrelation;
+    if(wslVersion===1) {
+      const snapshot=success(await call("workspace.processes","list_port_observations",{},29000));
+      assert.ok(snapshot.unavailable_wsl.includes(distro),"Unsupported WSL1 query must be visible");
+      listenerCorrelation={state:"unsupported",reason:"wsl1-listener-observation-unavailable"};
+    } else {
     const selection=await until(async()=>{
       const rows=success(await call("workspace.processes","list_port_observations",{},29000)).rows;
       const row=rows.find(row=>row.source==="wsl"&&row.wsl_distro===distro&&row.pid===pid&&row.port===port);
@@ -44,6 +59,8 @@ else:
     assert.deepEqual(success(await call("workspace.process-actions","kill_listener",{request:{endpoint,identity:selection.row.identity}},29000)),{kind:"ownedTask",taskId:service.id});
     const stale={...selection.row.identity,start_tick:selection.row.identity.start_tick+1};
     assert.equal((await call("workspace.process-actions","kill_listener",{request:{endpoint,identity:stale}},29000)).operation.outcome.state,"failed");
+      listenerCorrelation={state:"passed",groupDescendantOwnership:true,startTickMismatch:true,declaredConfidencePreserved:true};
+    }
     const resolved=success(await call("workspace.logs","reconnect_runtime_sources",{sources:[{kind:"runtimeRun",runId:run.id,stream:"stdout",revision:"1".repeat(64)}],filter:{text:"",regex:false}},29000));
     const logs=success(await call("workspace.logs","read_sources",{sources:resolved.sources,cursors:[null],sequenceStarts:[0],generation:1,operationId:randomUUID()},29000));
     const serialized=JSON.stringify(logs);assert.ok(serialized.includes("synthetic-wsl-listener"));assert.ok(!serialized.includes("synthetic-wsl-private"),"Runtime leaked the execution secret into logs");
@@ -59,7 +76,7 @@ else:
       const generation=success(await runtime("get_service_instance",{id:failing.id})).generation;
       await delay(1200);const stopped=success(await runtime("get_service_instance",{id:failing.id}));assert.equal(stopped.state,"stopped");assert.equal(stopped.generation,generation);assert.equal(stopped.nextRetryAt,null);
     } finally {await control("stop_service",{id:failing.id}).catch(()=>{});await runtime("delete_service",{id:failing.id}).catch(()=>{});}
-    return {ownedDistroOnly:true,duplicateGenerationReceipt:true,groupDescendantOwnership:true,startTickMismatch:true,declaredConfidencePreserved:true,platformSecretRedaction:true,groupStop:true,backoffStop:true};
+    return {wslVersion,ownedDistroOnly:true,duplicateGenerationReceipt:true,listenerCorrelation,platformSecretRedaction:true,groupStop:true,backoffStop:true};
   } finally {
     if(!stopped)await control("stop_service",{id:service.id}).catch(()=>{});
     await runtime("delete_service",{id:service.id}).catch(()=>{});
