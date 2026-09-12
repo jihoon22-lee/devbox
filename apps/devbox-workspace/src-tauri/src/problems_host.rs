@@ -142,7 +142,11 @@ impl Problems {
                 .and_then(Value::as_array)
                 .ok_or("problem_invalid")?;
             let root = host.projects()?.binding(&context)?.root;
-            let path = relative_uri(uri, &root);
+            let path = relative_uri(
+                uri,
+                &root,
+                matches!(context.target, product_contract::ExecutionTarget::Windows),
+            );
             let mut items = Vec::new();
             for diagnostic in diagnostics.iter().take(512) {
                 let Some(message) =
@@ -329,7 +333,7 @@ impl Problems {
         }
     }
 }
-fn relative_uri(uri: &str, root: &str) -> Option<String> {
+fn relative_uri(uri: &str, root: &str, windows: bool) -> Option<String> {
     let url = tauri::Url::parse(uri).ok()?;
     if url.scheme() != "file" {
         return None;
@@ -342,17 +346,17 @@ fn relative_uri(uri: &str, root: &str) -> Option<String> {
     let root = root.replace('\\', "/").trim_end_matches('/').to_string();
     let path = path.trim_start_matches("//?/");
     let root = root.trim_start_matches("//?/").to_string() + "/";
-    #[cfg(windows)]
-    let relative = if path
-        .to_ascii_lowercase()
-        .starts_with(&root.to_ascii_lowercase())
-    {
+    let relative = if windows {
+        if !path
+            .to_ascii_lowercase()
+            .starts_with(&root.to_ascii_lowercase())
+        {
+            return None;
+        }
         path.get(root.len()..)?
     } else {
-        return None;
+        path.strip_prefix(&root)?
     };
-    #[cfg(not(windows))]
-    let relative = path.strip_prefix(&root)?;
     if relative.is_empty()
         || relative.len() > 4096
         || relative.chars().any(char::is_control)
@@ -406,10 +410,24 @@ pub(crate) fn manage(
             serde_json::to_value(owner.snapshot(context)?).map_err(|_| "problem_invalid")?;
         let root = host.projects()?.binding(context)?.root;
         let running = (|| -> Result<usize> {
-            let mut ids = run_manager_lib::component::sessions::running_project_runs(app, &root)
-                .map_err(|_| "session_runtime_unavailable")?
-                .into_iter()
-                .collect::<std::collections::BTreeSet<_>>();
+            let identity = if matches!(
+                context.target,
+                product_contract::ExecutionTarget::Wsl { .. }
+            ) {
+                Some(crate::platform::task_sources::context_identity(
+                    host, context,
+                )?)
+            } else {
+                None
+            };
+            let mut ids = run_manager_lib::component::sessions::running_project_runs(
+                app,
+                &root,
+                identity.as_deref(),
+            )
+            .map_err(|_| "session_runtime_unavailable")?
+            .into_iter()
+            .collect::<std::collections::BTreeSet<_>>();
             if let Some(sessions) = app.try_state::<Arc<crate::development_host::Sessions>>() {
                 ids.extend(sessions.running_runs(context)?);
             }
@@ -443,10 +461,7 @@ pub(crate) fn manage(
             let binding = host
                 .projects()?
                 .admit_selection(host.helper_directory()?, context)?;
-            if run_manager_lib::component::diagnostic_source(app, &run_id)
-                .map_err(|_| "problem_stale")?
-                != binding.root
-            {
+            if !crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id) {
                 return Err("problem_stale");
             }
             let value = tauri::async_runtime::block_on(run_manager_lib::component::dispatch(
@@ -470,11 +485,19 @@ pub(crate) fn manage(
                 .get("file")
                 .and_then(Value::as_str)
                 .ok_or("problem_target_missing")?;
-            run_manager_lib::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
-                &binding.root,
-                relative,
-            )
-            .map_err(|_| "problem_target_missing")?;
+            if matches!(
+                context.target,
+                product_contract::ExecutionTarget::Wsl { .. }
+            ) {
+                run_manager_lib::core::workspace_diagnostics::relative_diagnostic_file(relative)
+                    .map_err(|_| "problem_target_missing")?;
+            } else {
+                run_manager_lib::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
+                    &binding.root,
+                    relative,
+                )
+                .map_err(|_| "problem_target_missing")?;
+            }
             Target::File {
                 relative_path: relative.into(),
                 line: row
@@ -482,10 +505,7 @@ pub(crate) fn manage(
                     .and_then(Value::as_u64)
                     .and_then(|line| u32::try_from(line).ok())
                     .ok_or("problem_target_missing")?,
-                column: row
-                    .get("column")
-                    .and_then(Value::as_u64)
-                    .and_then(|column| u32::try_from(column).ok()),
+                column: None,
                 document_version: None,
             }
         }
@@ -494,9 +514,8 @@ pub(crate) fn manage(
             stream,
             offset,
         } => {
-            let root = host.projects()?.binding(context)?.root;
-            let from_project = run_manager_lib::component::diagnostic_source(app, &run_id)
-                .is_ok_and(|source| source == root);
+            let from_project =
+                crate::platform::task_sources::diagnostic_matches(app, host, context, &run_id);
             let from_session = app
                 .try_state::<Arc<crate::development_host::Sessions>>()
                 .is_some_and(|sessions| sessions.problem_run(context, &run_id));
@@ -572,7 +591,8 @@ pub(crate) fn begin_observation(
     let ticket = if let Some(run) = &run_id {
         let (source_root, job, generation) =
             run_manager_lib::component::diagnostic_identity(app, run).ok()?;
-        if host?.projects().ok()?.binding(context).ok()?.root != source_root {
+        let _ = source_root;
+        if !crate::platform::task_sources::diagnostic_matches(app, host?, context, run) {
             return None;
         }
         owner.begin_run(context, &job, generation).ok()?
@@ -612,12 +632,12 @@ pub(crate) fn finish_observation(
         let Some(run_id) = observation.run_id else {
             return;
         };
-        let root = host
-            .projects()
-            .and_then(|projects| projects.binding(&observation.context))
-            .map(|binding| binding.root);
-        if !matches!((root,run_manager_lib::component::diagnostic_source(app,&run_id)),(Ok(root),Ok(source)) if root==source)
-        {
+        if !crate::platform::task_sources::diagnostic_matches(
+            app,
+            host,
+            &observation.context,
+            &run_id,
+        ) {
             owner.unavailable(&observation.ticket);
             return;
         }
@@ -769,6 +789,21 @@ pub(crate) fn finish_observation(
                 .get("truncated")
                 .and_then(Value::as_bool)
                 .unwrap_or(false),
+        );
+    }
+}
+
+#[cfg(test)]
+mod native_uri_tests {
+    #[test]
+    fn linux_problem_paths_preserve_case_even_on_a_windows_host() {
+        assert_eq!(
+            super::relative_uri("file:///home/Fixture/a.rs", "/home/fixture", false),
+            None
+        );
+        assert_eq!(
+            super::relative_uri("file:///home/fixture/a.rs", "/home/fixture", false),
+            Some("a.rs".into())
         );
     }
 }

@@ -133,6 +133,10 @@ pub fn match_workspace_diagnostics_at(
     }
 }
 
+pub fn relative_diagnostic_file(file: &str) -> Result<String, &'static str> {
+    normalize_relative_file(file).ok_or("workspace-task-diagnostic-path-invalid")
+}
+
 pub fn resolve_workspace_diagnostic_path(root: &str, file: &str) -> Result<PathBuf, &'static str> {
     let relative = normalize_relative_file(file).ok_or("workspace-task-diagnostic-path-invalid")?;
     let root = Path::new(root)

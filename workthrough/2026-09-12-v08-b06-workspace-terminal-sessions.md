@@ -497,3 +497,44 @@ its original source acquisition and final filesystem revalidation around that pu
 projection. Persisted executions share one complete field comparison against a
 current plan. This enables the Linux source owner without copying the parser or
 manufacturing a Windows FilesystemIdentity for a Linux object.
+
+## WSL-native task source and retained execution target
+
+Runtime now has an immutable source provider installed by Workspace before its
+scheduler starts. Preview/apply/trust/enable/DAG planning/pre-spawn/diagnostics all
+use that owner outside SQLite locks. Windows and standalone sources keep their
+existing reader. Registered POSIX sources use the existing Linux definition helper,
+then the same pure JSONC/Linux-override parser. Native context and root/distro
+identity participate in the source fingerprint; no UNC reader or synthetic Windows
+filesystem identity is used. Tasks import is prefilled from the native selected
+context, while preview, selection, application and trust remain explicit.
+
+Native WSL tasks retain the selected distro registration and exact wsl.exe through
+handshake, membership queries, TERM/KILL and final group-retirement checks. Runtime's
+existing marker/start-tick/group, drains/redactors and stop state machine are reused.
+Generic jobs and Windows-hosted WSL task sources retain their existing execution
+policy. Native task recovery revalidates its source/Registry fingerprint before
+reconstructing that target; changed/unavailable evidence blocks cleanup instead of
+falling back to a friendly distribution name.
+
+The packaged helper's private --task-exec entry verifies native root evidence and
+the source digest, opens the actual Linux cwd, uses fchdir, and execs the existing
+Runtime supervisor argv. A substituted root or cwd cannot redirect that directory
+selection. Source opens are nonblocking/no-follow and require a regular file.
+The Windows parent pins the helper artifact/ancestors. A launch binding failure
+zeroizes the prepared environment before returning.
+
+Problems, Session preflight and running counts now distinguish equal POSIX roots
+in different distro/project contexts. WSL diagnostic navigation goes through Files'
+native owner instead of Windows canonicalization. LSP paths preserve Linux case;
+matchers without a declared column encoding open the line with an unknown column.
+
+Prepared fixtures cover native projection/trust/source change, no host-path fallback,
+retained-target checks on all cleanup/observation paths, source/root substitution in
+the Linux launch helper, URI case, and explicit prefilled import. The first minimum
+Rust check exposed two handshake calls still using the previous helper functions
+and one Arc reference coercion. After those fixes, native/frontend minimum checks
+passed in 28.422 seconds. A final bounded root-stamp guard received syntax review.
+The helper executable's helper-feature code and Windows-only adapters have not yet
+been compiled/executed in this packet. No detailed tests/Clippy/build/affected were
+run; those and the final native Windows/WSL fixture remain B06 completion work.

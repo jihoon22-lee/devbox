@@ -58,6 +58,7 @@ import ServiceEditor from "./components/ServiceEditor";
 import type {
   Job,
   JobInput,
+  TargetKind,
   Run,
   RuntimeStatus,
   ServiceInput,
@@ -233,7 +234,7 @@ async function loadServiceSnapshot(): Promise<ServiceSnapshot> {
   };
 }
 
-export default function App({ active: visible = true, onDirtyChange, openTask, onTaskConsumed }: { active?: boolean; onDirtyChange?: (dirty: boolean) => void; openTask?: {id:string;jobId:string}|null; onTaskConsumed?:(id:string)=>void }) {
+export default function App({ active: visible = true, onDirtyChange, openTask, onTaskConsumed, importSource }: { active?: boolean; onDirtyChange?: (dirty: boolean) => void; importSource?:{path:string;targetKind:TargetKind;targetDistro:string|null}|null;openTask?: {id:string;jobId:string}|null; onTaskConsumed?:(id:string)=>void }) {
   const viewGenerationRef = useRef(0);
   const loadedGenerationRef = useRef(-1);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
@@ -1889,7 +1890,7 @@ export default function App({ active: visible = true, onDirtyChange, openTask, o
         )}
       </section>
       {importOpen && (
-        <ImportDialog active={visible}
+        <ImportDialog initialSource={importSource} active={visible}
           onDone={(_created, result: WorkspaceTaskApplyResult | undefined) => {
             if (result) {
               setWorkspaceNotice(

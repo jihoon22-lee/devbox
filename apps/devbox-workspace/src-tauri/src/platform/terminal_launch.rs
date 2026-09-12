@@ -25,6 +25,25 @@ impl TerminalLaunchFactory for Factory<'_> {
     }
 }
 
+/// A Runtime process keeps the distro/executable binding beyond the request deadline.
+/// Cleanup does not depend on a mutable project selection and never starts a stopped distro.
+#[cfg(windows)]
+pub(crate) fn capture_runtime(
+    host: &Host,
+    distro: &str,
+    deadline: u64,
+) -> Result<Arc<dyn run_manager_lib::platform::wsl::CommandBinding>, String> {
+    native::capture_runtime(
+        &Factory {
+            host,
+            context: None,
+            deadline,
+        },
+        distro,
+    )
+    .map_err(str::to_owned)
+}
+
 pub(crate) fn capture_running(
     host: &Host,
     distro: &str,
@@ -145,6 +164,37 @@ mod native {
         admission.check()?;
         crate::files_host::current_deadline(factory.deadline)?;
         Ok(admission)
+    }
+    struct RuntimeAdmission(Admission);
+    impl run_manager_lib::platform::wsl::CommandBinding for RuntimeAdmission {
+        fn bind(
+            &self,
+            argv: Vec<String>,
+        ) -> std::result::Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError>
+        {
+            self.0
+                .distro
+                .require_running()
+                .map_err(|_| std::io::Error::other("runtime-target-unavailable"))?;
+            self.0
+                .bind_argv(argv)
+                .map_err(|_| std::io::Error::other("runtime-target-changed").into())
+        }
+        fn bind_launch(
+            &self,
+            argv: Vec<String>,
+        ) -> std::result::Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError>
+        {
+            self.0
+                .bind_argv(argv)
+                .map_err(|_| std::io::Error::other("runtime-target-changed").into())
+        }
+    }
+    pub(super) fn capture_runtime(
+        factory: &Factory<'_>,
+        distro: &str,
+    ) -> Result<Arc<dyn run_manager_lib::platform::wsl::CommandBinding>> {
+        Ok(Arc::new(RuntimeAdmission(capture(factory, distro, true)?)))
     }
     impl Admission {
         fn check(&self) -> Result<()> {

@@ -8,9 +8,6 @@ use crate::core::workspace_orchestration::{
     build_workspace_task_operation_plan, WorkspaceTaskOperationPlan,
     WorkspaceTaskOperationRunStatus, WorkspaceTaskOperationStatus, WorkspaceTaskOperationView,
 };
-use crate::core::workspace_tasks::{
-    revalidate_workspace_task_execution, verify_workspace_task_executions,
-};
 use crate::scheduler::{SchedulerCoordinator, WorkspaceOperationLease};
 use crate::storage::{current_epoch_millis, DatabaseState};
 use std::collections::BTreeMap;
@@ -74,7 +71,7 @@ pub(crate) fn start_workspace_task_operation_observed(
     let executions = database
         .list_workspace_task_executions_for_source(&root.source_id)
         .map_err(|_| "workspace-task-operation-storage".to_owned())?;
-    if verify_workspace_task_executions(&executions).is_err() {
+    if crate::workspace_sources::verify(&database, &executions, false).is_err() {
         let _ =
             database.invalidate_workspace_task_source_at(&root.source_id, current_epoch_millis());
         return Err("workspace-task-source-changed".to_owned());
@@ -227,7 +224,12 @@ async fn execute_workspace_task_operation(
             };
             if execution.source_id != plan.source_id
                 || execution.revision != plan.revision
-                || revalidate_workspace_task_execution(&execution).is_err()
+                || crate::workspace_sources::verify(
+                    &database,
+                    std::slice::from_ref(&execution),
+                    true,
+                )
+                .is_err()
             {
                 let _ = database.invalidate_workspace_task_source_at(
                     &execution.source_id,

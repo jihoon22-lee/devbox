@@ -30,3 +30,5 @@ pub(crate) mod owned_copy;
 #[cfg(windows)]
 #[path = "../../../../api-playground/src-tauri/src/commands/process_tree.rs"]
 pub(crate) mod owned_process;
+
+pub(crate) mod task_sources;

@@ -165,3 +165,11 @@ describe("ImportDialog workspace task mode", () => {
     expect(screen.getByText(/비활성·미신뢰 상태/)).toBeTruthy();
   });
 });
+
+it("prefills a registered WSL source without previewing or importing automatically",()=>{
+  render(<ImportDialog initialSource={{path:"/home/fixture/project",targetKind:"wsl",targetDistro:"Fixture"}} onDone={vi.fn()} onClose={vi.fn()}/>);
+  expect(screen.getByDisplayValue("/home/fixture/project")).toBeTruthy();
+  expect(screen.getByDisplayValue("Fixture")).toBeTruthy();
+  expect(previewWorkspaceTaskImportMock).not.toHaveBeenCalled();
+  expect(applyWorkspaceTaskImportMock).not.toHaveBeenCalled();
+});

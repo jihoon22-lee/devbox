@@ -35,8 +35,12 @@ impl PreparedJob {
             return Err("session_runtime_definition_changed".into());
         }
         if let Some(task) = &self.task {
-            crate::core::workspace_tasks::revalidate_workspace_task_execution(task)
-                .map_err(|_| "session_runtime_source_changed")?;
+            crate::workspace_sources::verify(
+                database(app)?.as_ref(),
+                std::slice::from_ref(task),
+                true,
+            )
+            .map_err(|_| "session_runtime_source_changed")?;
         }
         Ok(())
     }
@@ -79,7 +83,11 @@ pub fn candidates(app: &tauri::AppHandle) -> Result<Value, String> {
         json!({"jobs":jobs.into_iter().take(256).map(|job| json!({"id":job.id,"name":job.name,"kind":job.kind,"targetKind":job.target_kind,"targetDistro":job.target_distro})).collect::<Vec<_>>(),"truncated":truncated}),
     )
 }
-pub fn running_project_runs(app: &tauri::AppHandle, root: &str) -> Result<Vec<String>, String> {
+pub fn running_project_runs(
+    app: &tauri::AppHandle,
+    root: &str,
+    identity: Option<&str>,
+) -> Result<Vec<String>, String> {
     let database = database(app)?;
     let active = database
         .list_active_process_runs()
@@ -95,7 +103,10 @@ pub fn running_project_runs(app: &tauri::AppHandle, root: &str) -> Result<Vec<St
         let task = database
             .get_workspace_task_execution_for_operation_run(&run.id)
             .map_err(|_| "session_runtime_unavailable")?;
-        if task.is_some_and(|task| task.source_root == root) {
+        if task.is_some_and(|task| {
+            task.source_root == root
+                && identity.is_none_or(|identity| task.project_identity == identity)
+        }) {
             result.push(run.id);
         }
     }

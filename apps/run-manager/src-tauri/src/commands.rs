@@ -17,9 +17,8 @@ use crate::core::workspace_diagnostics::{
 };
 use crate::core::workspace_orchestration::WorkspaceTaskOperationView;
 use crate::core::workspace_tasks::{
-    preview_workspace_tasks, revalidate_workspace_task_execution, verify_workspace_task_execution,
-    verify_workspace_task_plan, WorkspaceTaskApplyResult, WorkspaceTaskExecution,
-    WorkspaceTaskKind, WorkspaceTaskPlan, WorkspaceTaskState, MAX_TASKS,
+    WorkspaceTaskApplyResult, WorkspaceTaskExecution, WorkspaceTaskKind, WorkspaceTaskPlan,
+    WorkspaceTaskState, MAX_TASKS,
 };
 use crate::lifecycle::{self, RuntimeState, RuntimeStatus};
 use crate::logs::{LogStream, LogStreams, TailRequest, TailResponse, MAX_TAIL_BYTES};
@@ -354,7 +353,7 @@ fn revalidate_workspace_task_action(
     else {
         return Ok(None);
     };
-    if revalidate_workspace_task_execution(&execution).is_err() {
+    if crate::workspace_sources::verify(state, std::slice::from_ref(&execution), true).is_err() {
         invalidate_workspace_task(state, &execution)?;
         return Err("workspace-task-source-changed".to_owned());
     }
@@ -846,8 +845,13 @@ pub fn preview_workspace_task_import(
         .control()
         .check()
         .map_err(workspace_task_operation_error)?;
-    let plan = preview_workspace_tasks(Path::new(&path), target_kind, target_distro.as_deref())
-        .map_err(|error| error.to_string())?;
+    let plan = crate::workspace_sources::preview(
+        state.inner().as_ref(),
+        Path::new(&path),
+        target_kind,
+        target_distro.as_deref(),
+    )
+    .map_err(|error| error.to_string())?;
     workspace_plan_with_conflicts(plan, state.inner().as_ref(), operation.control())
 }
 
@@ -888,7 +892,8 @@ pub fn apply_workspace_task_import(
         .control()
         .check()
         .map_err(workspace_task_operation_error)?;
-    let plan = verify_workspace_task_plan(
+    let plan = crate::workspace_sources::verify_plan(
+        state.inner().as_ref(),
         Path::new(&path),
         target_kind,
         target_distro.as_deref(),
@@ -941,7 +946,13 @@ pub fn trust_workspace_task_source(
         .get_workspace_task_execution(&candidate.job_id)
         .map_err(workspace_task_storage_error)?
         .ok_or_else(|| "workspace-task-not-found".to_owned())?;
-    if verify_workspace_task_execution(&execution).is_err() {
+    if crate::workspace_sources::verify(
+        state.inner().as_ref(),
+        std::slice::from_ref(&execution),
+        false,
+    )
+    .is_err()
+    {
         invalidate_workspace_task(state.inner().as_ref(), &execution)?;
         return Err("workspace-task-source-changed".to_owned());
     }
@@ -952,7 +963,14 @@ pub fn trust_workspace_task_source(
         .get_workspace_task_execution(&candidate.job_id)
         .map_err(workspace_task_storage_error)?
         .ok_or_else(|| "workspace-task-not-found".to_owned())?;
-    if !refreshed.trusted || verify_workspace_task_execution(&refreshed).is_err() {
+    if !refreshed.trusted
+        || crate::workspace_sources::verify(
+            state.inner().as_ref(),
+            std::slice::from_ref(&refreshed),
+            false,
+        )
+        .is_err()
+    {
         invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
         return Err("workspace-task-source-changed".to_owned());
     }
@@ -987,7 +1005,13 @@ pub fn trust_workspace_task_shell_source(
         .get_workspace_task_execution(&candidate.job_id)
         .map_err(workspace_task_storage_error)?
         .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
-    if verify_workspace_task_execution(&execution).is_err() {
+    if crate::workspace_sources::verify(
+        state.inner().as_ref(),
+        std::slice::from_ref(&execution),
+        false,
+    )
+    .is_err()
+    {
         invalidate_workspace_task(state.inner().as_ref(), &execution)?;
         return Err("workspace-task-source-changed".to_owned());
     }
@@ -998,7 +1022,13 @@ pub fn trust_workspace_task_shell_source(
         .get_workspace_task_execution(&candidate.job_id)
         .map_err(workspace_task_storage_error)?
         .ok_or_else(|| "workspace-task-shell-not-found".to_owned())?;
-    if revalidate_workspace_task_execution(&refreshed).is_err() {
+    if crate::workspace_sources::verify(
+        state.inner().as_ref(),
+        std::slice::from_ref(&refreshed),
+        true,
+    )
+    .is_err()
+    {
         invalidate_workspace_task(state.inner().as_ref(), &refreshed)?;
         return Err("workspace-task-source-changed".to_owned());
     }
@@ -1078,7 +1108,7 @@ pub(crate) async fn workspace_task_diagnostics_for_run(
             _ => "workspace-task-diagnostic-storage".to_owned(),
         })?
         .ok_or_else(|| "workspace-task-diagnostic-unavailable".to_owned())?;
-    verify_workspace_task_execution(&execution)
+    crate::workspace_sources::verify(database, std::slice::from_ref(&execution), false)
         .map_err(|_| "workspace-task-source-changed".to_owned())?;
     let matcher = execution
         .problem_matcher

@@ -281,6 +281,7 @@ pub struct DatabaseState {
     connection: Mutex<Connection>,
     legacy_publication: bool,
     log_maintenance: Mutex<()>,
+    pub(crate) task_sources: std::sync::OnceLock<crate::workspace_sources::Provider>,
 }
 
 /// Minimal definition projection for integration consumers. Keeping this DTO
@@ -366,6 +367,7 @@ impl DatabaseState {
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
+            task_sources: std::sync::OnceLock::new(),
             legacy_publication: false,
         })
     }
@@ -380,6 +382,7 @@ impl DatabaseState {
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
+            task_sources: std::sync::OnceLock::new(),
             legacy_publication: true,
         })
     }
@@ -391,6 +394,7 @@ impl DatabaseState {
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
+            task_sources: std::sync::OnceLock::new(),
             legacy_publication: true,
         })
     }

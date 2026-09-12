@@ -3,7 +3,6 @@
 use crate::core::workspace_task_control::{
     WorkspaceTaskControlPreview, WorkspaceTaskControlReceipt, WorkspaceTaskControlReceiptStatus,
 };
-use crate::core::workspace_tasks::verify_workspace_task_execution;
 use crate::lifecycle::RuntimeState;
 use crate::storage::{current_epoch_millis, DatabaseState};
 use devbox_applink::{
@@ -190,7 +189,12 @@ pub fn preview_workspace_task_control(
     };
     let source_changed = execution.revision != request.expected_revision
         || (request.action == TaskControlAction::Start
-            && verify_workspace_task_execution(&execution).is_err());
+            && crate::workspace_sources::verify(
+                database.inner().as_ref(),
+                std::slice::from_ref(&execution),
+                false,
+            )
+            .is_err());
     if source_changed {
         finalize_rejected_claim(
             &claim,
@@ -328,7 +332,7 @@ async fn perform_action(
     }
     match request.action {
         TaskControlAction::Start => {
-            verify_workspace_task_execution(&execution)
+            crate::workspace_sources::verify(database, std::slice::from_ref(&execution), false)
                 .map_err(|_| "task-control-source-changed".to_owned())?;
             let operation = crate::workspace_orchestration::start_workspace_task_operation(
                 Arc::clone(database),

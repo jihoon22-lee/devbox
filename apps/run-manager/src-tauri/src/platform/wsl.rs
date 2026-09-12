@@ -81,7 +81,7 @@ impl From<std::io::Error> for WslExecutionError {
 /// validated and terminated.  stdout/stderr are exposed for the future log
 /// adapter, but no log policy is implemented here.
 pub struct WslChild {
-    distro: String,
+    distro: Target,
     child: Child,
     stdout: Option<BufReader<ChildStdout>>,
     stderr: Option<ChildStderr>,
@@ -130,10 +130,10 @@ impl WslChild {
             }
             match parse_wsl_handshake(&bytes, expected_run_id) {
                 Ok(handshake) => {
-                    let environ = read_process_environ(&self.distro, handshake.pid).await?;
+                    let environ = self.distro.read_process_environ(handshake.pid).await?;
                     let identity =
                         validate_wsl_handshake_identity(handshake, expected_run_id, &environ)?;
-                    let observed = read_process_identity(&self.distro, &identity).await?;
+                    let observed = self.distro.read_process_identity(&identity).await?;
                     validate_wsl_identity(&identity, &observed)?;
                     // Keep the buffered reader, not only its underlying pipe.
                     // `read_until` may have prefetched command output after
@@ -163,6 +163,17 @@ impl WslChild {
         Option<BufReader<ChildStdout>>,
         Option<ChildStderr>,
     ) {
+        (self.distro.distro, self.child, self.stdout, self.stderr)
+    }
+
+    pub fn into_bound_parts(
+        self,
+    ) -> (
+        Target,
+        Child,
+        Option<BufReader<ChildStdout>>,
+        Option<ChildStderr>,
+    ) {
         (self.distro, self.child, self.stdout, self.stderr)
     }
 
@@ -186,7 +197,7 @@ impl WslChild {
         identity: &WslProcessIdentity,
         grace: Duration,
     ) -> Result<std::process::ExitStatus, WslExecutionError> {
-        terminate_group(&self.distro, identity, grace).await?;
+        self.distro.terminate_group(identity, grace).await?;
         self.child.wait().await.map_err(Into::into)
     }
 }
@@ -199,23 +210,9 @@ pub async fn terminate_group(
     identity: &WslProcessIdentity,
     grace: Duration,
 ) -> Result<(), WslExecutionError> {
-    let term_deadline = Instant::now() + grace;
-    let observed = validate_identity_until(distro, identity, term_deadline).await?;
-    validate_wsl_identity(identity, &observed)?;
-    let plan = build_wsl_termination_plan(distro, identity)?;
-    run_helper_status_until(&plan.term, term_deadline).await?;
-
-    if !wait_for_group_gone(distro, &plan, term_deadline).await? {
-        // TERM may leave a process alive long enough for its session or group
-        // identity to change. Re-read all identity fields before KILL.
-        let kill_deadline = Instant::now() + grace;
-        validate_identity_until(distro, identity, kill_deadline).await?;
-        run_helper_status_until(&plan.kill, kill_deadline).await?;
-        if !wait_for_group_gone(distro, &plan, kill_deadline).await? {
-            return Err(WslExecutionError::ProcessGroupStillAlive);
-        }
-    }
-    Ok(())
+    Target::direct(distro)
+        .terminate_group(identity, grace)
+        .await
 }
 
 /// Startup recovery boundary. A missing leader is safe only when its process
@@ -227,17 +224,9 @@ pub async fn recover_stale_group(
     identity: &WslProcessIdentity,
     grace: Duration,
 ) -> Result<(), WslExecutionError> {
-    let leader_probe = build_wsl_proc_dir_probe_argv(distro, identity.pid)?;
-    let leader = run_helper_output(&leader_probe).await?;
-    if !leader.status.success() {
-        let plan = build_wsl_termination_plan(distro, identity)?;
-        let group = run_helper_output(&plan.probe).await?;
-        if group.status.success() {
-            return Err(WslExecutionError::ProcessGroupStillAlive);
-        }
-        return Ok(());
-    }
-    terminate_group(distro, identity, grace).await
+    Target::direct(distro)
+        .recover_stale_group(identity, grace)
+        .await
 }
 
 /// Confirm the post-exit supervisor invariant without issuing a signal.  A
@@ -249,18 +238,9 @@ pub async fn confirm_group_gone(
     identity: &WslProcessIdentity,
     timeout: Duration,
 ) -> Result<(), WslExecutionError> {
-    let plan = build_wsl_termination_plan(distro, identity)?;
-    let deadline = Instant::now() + timeout;
-    let probe = run_helper_output_until(&plan.probe, deadline).await?;
-    if probe.status.success() {
-        return Err(WslExecutionError::ProcessGroupStillAlive);
-    }
-    let leader = build_wsl_proc_dir_probe_argv(distro, identity.pid)?;
-    let leader = run_helper_output_until(&leader, deadline).await?;
-    if leader.status.success() {
-        return Err(WslExecutionError::ProcessGroupStillAlive);
-    }
-    Ok(())
+    Target::direct(distro)
+        .confirm_group_gone(identity, timeout)
+        .await
 }
 
 /// Construct and spawn the WSL command.  `Command::arg` is used for every
@@ -273,16 +253,7 @@ pub fn spawn(
     run_id: &str,
     environment: &BTreeMap<String, String>,
 ) -> Result<WslChild, WslExecutionError> {
-    let inherited_wslenv = std::env::var("WSLENV").ok();
-    let spec = build_wsl_command(
-        distro,
-        cwd,
-        command,
-        run_id,
-        environment,
-        inherited_wslenv.as_deref(),
-    )?;
-    spawn_spec_for_distro(distro, spec)
+    Target::direct(distro).spawn(cwd, command, run_id, environment)
 }
 
 pub fn spawn_process(
@@ -293,24 +264,30 @@ pub fn spawn_process(
     run_id: &str,
     environment: &BTreeMap<String, String>,
 ) -> Result<WslChild, WslExecutionError> {
-    let inherited_wslenv = std::env::var("WSLENV").ok();
-    let spec = build_wsl_process_command(
-        distro,
-        cwd,
-        program,
-        arguments,
-        run_id,
-        environment,
-        inherited_wslenv.as_deref(),
-    )?;
-    spawn_spec_for_distro(distro, spec)
+    Target::direct(distro).spawn_process(cwd, program, arguments, run_id, environment)
 }
 
 pub fn spawn_spec(spec: WslCommandSpec) -> Result<WslChild, WslExecutionError> {
     let distro = spec.argv.get(2).cloned().ok_or(ShellError::InvalidDistro)?;
+    spawn_spec_bound(spec, Target::direct(&distro))
+}
+pub fn spawn_spec_bound(
+    spec: WslCommandSpec,
+    target: Target,
+) -> Result<WslChild, WslExecutionError> {
     let mut environment = spec.environment;
-    let mut argv = spec.argv.into_iter();
-    let program = argv.next().ok_or(ShellError::EmptyField("WSL program"))?;
+    let bound = match target.bind(spec.argv, true) {
+        Ok(argv) => argv,
+        Err(error) => {
+            zeroize_environment(&mut environment);
+            return Err(error);
+        }
+    };
+    let mut argv = bound.into_iter();
+    let Some(program) = argv.next() else {
+        zeroize_environment(&mut environment);
+        return Err(ShellError::EmptyField("WSL program").into());
+    };
     let mut command = Command::new(program);
     command
         .args(argv)
@@ -328,7 +305,7 @@ pub fn spawn_spec(spec: WslCommandSpec) -> Result<WslChild, WslExecutionError> {
     let stdout = child.stdout.take().map(BufReader::new);
     let stderr = child.stderr.take();
     Ok(WslChild {
-        distro,
+        distro: target,
         child,
         stdout,
         stderr,
@@ -352,7 +329,7 @@ pub fn spawn_spec_for_distro(
         return Err(WslExecutionError::Shell(ShellError::InvalidDistro));
     }
     let mut child = spawn_spec(spec)?;
-    child.distro = distro.to_owned();
+    child.distro = Target::direct(distro);
     Ok(child)
 }
 
@@ -362,27 +339,9 @@ pub async fn convert_windows_path(
     distro: &str,
     windows_path: &str,
 ) -> Result<String, WslExecutionError> {
-    let argv = devbox_wsl::argv::build_wslpath_argv(distro, windows_path)
-        .map_err(|e| WslExecutionError::Shell(e.into()))?;
-    let output = run_helper_output(&argv).await?;
-    if !output.status.success() {
-        return Err(WslExecutionError::CommandFailed {
-            argv,
-            code: output.status.code(),
-        });
-    }
-    let path = String::from_utf8_lossy(&output.stdout)
-        .lines()
-        .next()
-        .unwrap_or_default()
-        .trim()
-        .to_owned();
-    if path.is_empty() || path.contains('\0') {
-        return Err(WslExecutionError::Shell(ShellError::EmptyField(
-            "converted WSL path",
-        )));
-    }
-    Ok(path)
+    Target::direct(distro)
+        .convert_windows_path(windows_path)
+        .await
 }
 
 /// Verify a persisted WSL identity immediately before cleanup.  The caller
@@ -392,13 +351,7 @@ pub async fn validate_identity(
     distro: &str,
     expected: &WslProcessIdentity,
 ) -> Result<WslProcessIdentity, WslExecutionError> {
-    let environ = read_process_environ(distro, expected.pid).await?;
-    if !crate::core::shell::environ_contains_exact_marker(&environ, &expected.marker)? {
-        return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
-    }
-    let observed = read_process_identity(distro, expected).await?;
-    validate_wsl_identity(expected, &observed)?;
-    Ok(observed)
+    Target::direct(distro).validate_identity(expected).await
 }
 
 /// Read-only membership check for a broker-selected process. The current
@@ -409,103 +362,9 @@ pub async fn contains_process(
     pid: u32,
     start_tick: u64,
 ) -> Result<bool, WslExecutionError> {
-    validate_identity(distro, owner).await?;
-    let argv = build_wsl_proc_stat_argv(distro, pid)?;
-    let output = run_helper_output(&argv).await?;
-    if !output.status.success() {
-        return Err(WslExecutionError::CommandFailed {
-            argv,
-            code: output.status.code(),
-        });
-    }
-    let observed = parse_proc_stat_identity(pid, &output.stdout, &owner.marker)?;
-    let text = std::str::from_utf8(&output.stdout)
-        .map_err(|_| WslExecutionError::Shell(ShellError::InvalidNumericField("start tick")))?;
-    let tick = text
-        .rsplit_once(") ")
-        .and_then(|(_, fields)| fields.split_whitespace().nth(19))
-        .and_then(|value| value.parse::<u64>().ok())
-        .filter(|tick| *tick > 0);
-    if tick != Some(start_tick) {
-        return Err(WslExecutionError::Shell(ShellError::InvalidNumericField(
-            "start tick",
-        )));
-    }
-    validate_identity(distro, owner).await?;
-    Ok(observed.pgid == owner.pgid && observed.sid == owner.sid)
-}
-
-async fn read_process_environ(distro: &str, pid: u32) -> Result<Vec<u8>, WslExecutionError> {
-    let argv = build_wsl_proc_environ_argv(distro, pid)?;
-    let output = run_helper_output(&argv).await?;
-    if !output.status.success() {
-        return Err(WslExecutionError::CommandFailed {
-            argv,
-            code: output.status.code(),
-        });
-    }
-    Ok(output.stdout)
-}
-
-async fn read_process_environ_until(
-    distro: &str,
-    pid: u32,
-    deadline: Instant,
-) -> Result<Vec<u8>, WslExecutionError> {
-    let argv = build_wsl_proc_environ_argv(distro, pid)?;
-    let output = run_helper_output_until(&argv, deadline).await?;
-    if !output.status.success() {
-        return Err(WslExecutionError::CommandFailed {
-            argv,
-            code: output.status.code(),
-        });
-    }
-    Ok(output.stdout)
-}
-
-async fn read_process_identity(
-    distro: &str,
-    expected: &WslProcessIdentity,
-) -> Result<WslProcessIdentity, WslExecutionError> {
-    let argv = build_wsl_proc_stat_argv(distro, expected.pid)?;
-    let output = run_helper_output(&argv).await?;
-    if !output.status.success() {
-        return Err(WslExecutionError::CommandFailed {
-            argv,
-            code: output.status.code(),
-        });
-    }
-    parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
-}
-
-async fn read_process_identity_until(
-    distro: &str,
-    expected: &WslProcessIdentity,
-    deadline: Instant,
-) -> Result<WslProcessIdentity, WslExecutionError> {
-    let argv = build_wsl_proc_stat_argv(distro, expected.pid)?;
-    let output = run_helper_output_until(&argv, deadline).await?;
-    if !output.status.success() {
-        return Err(WslExecutionError::CommandFailed {
-            argv,
-            code: output.status.code(),
-        });
-    }
-    parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
-}
-
-async fn validate_identity_until(
-    distro: &str,
-    expected: &WslProcessIdentity,
-    deadline: Instant,
-) -> Result<WslProcessIdentity, WslExecutionError> {
-    let environ = read_process_environ_until(distro, expected.pid, deadline).await?;
-    if !crate::core::shell::environ_contains_exact_marker(&environ, &expected.marker)? {
-        return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
-    }
-    let observed = read_process_identity_until(distro, expected, deadline).await?;
-    validate_wsl_identity(expected, &observed)?;
-    Ok(observed)
+    Target::direct(distro)
+        .contains_process(owner, pid, start_tick)
+        .await
 }
 
 async fn run_helper_status_until(
@@ -603,36 +462,334 @@ async fn run_helper_output_with_timeout(
     }
 }
 
-async fn wait_for_group_gone(
-    distro: &str,
-    plan: &WslTerminationPlan,
-    deadline: Instant,
-) -> Result<bool, WslExecutionError> {
-    loop {
-        if Instant::now() >= deadline {
-            return Ok(false);
+/// Native product binding is retained for launch, observation and cleanup.
+pub trait CommandBinding: Send + Sync {
+    fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError>;
+    fn bind_launch(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+        self.bind(argv)
+    }
+}
+#[derive(Clone)]
+pub struct Target {
+    distro: String,
+    binding: Option<std::sync::Arc<dyn CommandBinding>>,
+}
+impl Target {
+    pub async fn convert_windows_path(
+        &self,
+        windows_path: &str,
+    ) -> Result<String, WslExecutionError> {
+        let argv = devbox_wsl::argv::build_wslpath_argv(self.name(), windows_path)
+            .map_err(|e| WslExecutionError::Shell(e.into()))?;
+        let argv = self.bind(argv, true)?;
+        let output = run_helper_output(&argv).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
         }
-        let probe = run_helper_output_until(&plan.probe, deadline).await?;
-        if !probe.status.success() {
-            // A failed kill -0 is followed by a numeric /proc check.  If the
-            // marker-bearing PID still exists, it must not be treated as a
-            // vanished group (it may have escaped the group).
-            let proc_probe = build_wsl_proc_dir_probe_argv(distro, plan.pid)?;
-            let proc = run_helper_output_until(&proc_probe, deadline).await?;
-            if !proc.status.success() {
-                return Ok(true);
+        let path = String::from_utf8_lossy(&output.stdout)
+            .lines()
+            .next()
+            .unwrap_or_default()
+            .trim()
+            .to_owned();
+        if path.is_empty() || path.contains('\0') {
+            return Err(WslExecutionError::Shell(ShellError::EmptyField(
+                "converted WSL path",
+            )));
+        }
+        Ok(path)
+    }
+    pub fn spawn(
+        &self,
+        cwd: Option<&str>,
+        command: &str,
+        run_id: &str,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<WslChild, WslExecutionError> {
+        let inherited_wslenv = std::env::var("WSLENV").ok();
+        let spec = build_wsl_command(
+            self.distro.as_str(),
+            cwd,
+            command,
+            run_id,
+            environment,
+            inherited_wslenv.as_deref(),
+        )?;
+        spawn_spec_bound(spec, self.clone())
+    }
+    pub fn spawn_process(
+        &self,
+        cwd: Option<&str>,
+        program: &str,
+        arguments: &[String],
+        run_id: &str,
+        environment: &BTreeMap<String, String>,
+    ) -> Result<WslChild, WslExecutionError> {
+        let inherited_wslenv = std::env::var("WSLENV").ok();
+        let spec = build_wsl_process_command(
+            self.distro.as_str(),
+            cwd,
+            program,
+            arguments,
+            run_id,
+            environment,
+            inherited_wslenv.as_deref(),
+        )?;
+        spawn_spec_bound(spec, self.clone())
+    }
+    pub fn direct(distro: &str) -> Self {
+        Self {
+            distro: distro.into(),
+            binding: None,
+        }
+    }
+    pub fn bound(distro: &str, binding: std::sync::Arc<dyn CommandBinding>) -> Self {
+        Self {
+            distro: distro.into(),
+            binding: Some(binding),
+        }
+    }
+    pub fn name(&self) -> &str {
+        &self.distro
+    }
+    fn bind(&self, argv: Vec<String>, launch: bool) -> Result<Vec<String>, WslExecutionError> {
+        let Some(binding) = &self.binding else {
+            return Ok(argv);
+        };
+        if argv.len() < 3 || argv[0] != "wsl.exe" || argv[1] != "-d" || argv[2] != self.distro {
+            return Err(WslExecutionError::Shell(ShellError::InvalidDistro));
+        }
+        if launch {
+            binding.bind_launch(argv)
+        } else {
+            binding.bind(argv)
+        }
+    }
+    async fn output(&self, argv: &[String]) -> Result<Output, WslExecutionError> {
+        run_helper_output(&self.bind(argv.to_vec(), false)?).await
+    }
+    async fn output_until(
+        &self,
+        argv: &[String],
+        deadline: Instant,
+    ) -> Result<Output, WslExecutionError> {
+        run_helper_output_until(&self.bind(argv.to_vec(), false)?, deadline).await
+    }
+    async fn status_until(
+        &self,
+        argv: &[String],
+        deadline: Instant,
+    ) -> Result<(), WslExecutionError> {
+        run_helper_status_until(&self.bind(argv.to_vec(), false)?, deadline).await
+    }
+    pub async fn terminate_group(
+        &self,
+        identity: &WslProcessIdentity,
+        grace: Duration,
+    ) -> Result<(), WslExecutionError> {
+        let term_deadline = Instant::now() + grace;
+        let observed = self
+            .validate_identity_until(identity, term_deadline)
+            .await?;
+        validate_wsl_identity(identity, &observed)?;
+        let plan = build_wsl_termination_plan(self.distro.as_str(), identity)?;
+        self.status_until(&plan.term, term_deadline).await?;
+
+        if !self.wait_for_group_gone(&plan, term_deadline).await? {
+            // TERM may leave a process alive long enough for its session or group
+            // identity to change. Re-read all identity fields before KILL.
+            let kill_deadline = Instant::now() + grace;
+            self.validate_identity_until(identity, kill_deadline)
+                .await?;
+            self.status_until(&plan.kill, kill_deadline).await?;
+            if !self.wait_for_group_gone(&plan, kill_deadline).await? {
+                return Err(WslExecutionError::ProcessGroupStillAlive);
             }
-            let environ = read_process_environ_until(distro, plan.pid, deadline).await?;
-            if !crate::core::shell::environ_contains_exact_marker(&environ, &plan.marker)? {
-                return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
+        }
+        Ok(())
+    }
+    pub async fn recover_stale_group(
+        &self,
+        identity: &WslProcessIdentity,
+        grace: Duration,
+    ) -> Result<(), WslExecutionError> {
+        let leader_probe = build_wsl_proc_dir_probe_argv(self.distro.as_str(), identity.pid)?;
+        let leader = self.output(&leader_probe).await?;
+        if !leader.status.success() {
+            let plan = build_wsl_termination_plan(self.distro.as_str(), identity)?;
+            let group = self.output(&plan.probe).await?;
+            if group.status.success() {
+                return Err(WslExecutionError::ProcessGroupStillAlive);
             }
-            return Ok(false);
+            return Ok(());
         }
-        if Instant::now() >= deadline {
-            return Ok(false);
+        self.terminate_group(identity, grace).await
+    }
+    pub async fn confirm_group_gone(
+        &self,
+        identity: &WslProcessIdentity,
+        timeout: Duration,
+    ) -> Result<(), WslExecutionError> {
+        let plan = build_wsl_termination_plan(self.distro.as_str(), identity)?;
+        let deadline = Instant::now() + timeout;
+        let probe = self.output_until(&plan.probe, deadline).await?;
+        if probe.status.success() {
+            return Err(WslExecutionError::ProcessGroupStillAlive);
         }
-        let remaining = deadline.saturating_duration_since(Instant::now());
-        sleep(TERMINATION_POLL_INTERVAL.min(remaining)).await;
+        let leader = build_wsl_proc_dir_probe_argv(self.distro.as_str(), identity.pid)?;
+        let leader = self.output_until(&leader, deadline).await?;
+        if leader.status.success() {
+            return Err(WslExecutionError::ProcessGroupStillAlive);
+        }
+        Ok(())
+    }
+    pub async fn validate_identity(
+        &self,
+        expected: &WslProcessIdentity,
+    ) -> Result<WslProcessIdentity, WslExecutionError> {
+        let environ = self.read_process_environ(expected.pid).await?;
+        if !crate::core::shell::environ_contains_exact_marker(&environ, &expected.marker)? {
+            return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
+        }
+        let observed = self.read_process_identity(expected).await?;
+        validate_wsl_identity(expected, &observed)?;
+        Ok(observed)
+    }
+    pub async fn contains_process(
+        &self,
+        owner: &WslProcessIdentity,
+        pid: u32,
+        start_tick: u64,
+    ) -> Result<bool, WslExecutionError> {
+        self.validate_identity(owner).await?;
+        let argv = build_wsl_proc_stat_argv(self.distro.as_str(), pid)?;
+        let output = self.output(&argv).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
+        }
+        let observed = parse_proc_stat_identity(pid, &output.stdout, &owner.marker)?;
+        let text = std::str::from_utf8(&output.stdout)
+            .map_err(|_| WslExecutionError::Shell(ShellError::InvalidNumericField("start tick")))?;
+        let tick = text
+            .rsplit_once(") ")
+            .and_then(|(_, fields)| fields.split_whitespace().nth(19))
+            .and_then(|value| value.parse::<u64>().ok())
+            .filter(|tick| *tick > 0);
+        if tick != Some(start_tick) {
+            return Err(WslExecutionError::Shell(ShellError::InvalidNumericField(
+                "start tick",
+            )));
+        }
+        self.validate_identity(owner).await?;
+        Ok(observed.pgid == owner.pgid && observed.sid == owner.sid)
+    }
+    async fn read_process_environ(&self, pid: u32) -> Result<Vec<u8>, WslExecutionError> {
+        let argv = build_wsl_proc_environ_argv(self.distro.as_str(), pid)?;
+        let output = self.output(&argv).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
+        }
+        Ok(output.stdout)
+    }
+    async fn read_process_environ_until(
+        &self,
+        pid: u32,
+        deadline: Instant,
+    ) -> Result<Vec<u8>, WslExecutionError> {
+        let argv = build_wsl_proc_environ_argv(self.distro.as_str(), pid)?;
+        let output = self.output_until(&argv, deadline).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
+        }
+        Ok(output.stdout)
+    }
+    async fn read_process_identity(
+        &self,
+        expected: &WslProcessIdentity,
+    ) -> Result<WslProcessIdentity, WslExecutionError> {
+        let argv = build_wsl_proc_stat_argv(self.distro.as_str(), expected.pid)?;
+        let output = self.output(&argv).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
+        }
+        parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
+    }
+    async fn read_process_identity_until(
+        &self,
+        expected: &WslProcessIdentity,
+        deadline: Instant,
+    ) -> Result<WslProcessIdentity, WslExecutionError> {
+        let argv = build_wsl_proc_stat_argv(self.distro.as_str(), expected.pid)?;
+        let output = self.output_until(&argv, deadline).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
+        }
+        parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
+    }
+    async fn validate_identity_until(
+        &self,
+        expected: &WslProcessIdentity,
+        deadline: Instant,
+    ) -> Result<WslProcessIdentity, WslExecutionError> {
+        let environ = self
+            .read_process_environ_until(expected.pid, deadline)
+            .await?;
+        if !crate::core::shell::environ_contains_exact_marker(&environ, &expected.marker)? {
+            return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
+        }
+        let observed = self.read_process_identity_until(expected, deadline).await?;
+        validate_wsl_identity(expected, &observed)?;
+        Ok(observed)
+    }
+    async fn wait_for_group_gone(
+        &self,
+        plan: &WslTerminationPlan,
+        deadline: Instant,
+    ) -> Result<bool, WslExecutionError> {
+        loop {
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            let probe = self.output_until(&plan.probe, deadline).await?;
+            if !probe.status.success() {
+                // A failed kill -0 is followed by a numeric /proc check.  If the
+                // marker-bearing PID still exists, it must not be treated as a
+                // vanished group (it may have escaped the group).
+                let proc_probe = build_wsl_proc_dir_probe_argv(self.distro.as_str(), plan.pid)?;
+                let proc = self.output_until(&proc_probe, deadline).await?;
+                if !proc.status.success() {
+                    return Ok(true);
+                }
+                let environ = self.read_process_environ_until(plan.pid, deadline).await?;
+                if !crate::core::shell::environ_contains_exact_marker(&environ, &plan.marker)? {
+                    return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
+                }
+                return Ok(false);
+            }
+            if Instant::now() >= deadline {
+                return Ok(false);
+            }
+            let remaining = deadline.saturating_duration_since(Instant::now());
+            sleep(TERMINATION_POLL_INTERVAL.min(remaining)).await;
+        }
     }
 }
 
@@ -640,6 +797,43 @@ async fn wait_for_group_gone(
 mod tests {
     use super::*;
 
+    #[tokio::test]
+    async fn every_native_cleanup_and_observation_rechecks_the_retained_target() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        struct Closed(Arc<AtomicUsize>);
+        impl CommandBinding for Closed {
+            fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+                assert_eq!(argv[2], "Fixture");
+                self.0.fetch_add(1, Ordering::SeqCst);
+                Err(std::io::Error::other("synthetic-retired-binding").into())
+            }
+        }
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let target = Target::bound("Fixture", Arc::new(Closed(attempts.clone())));
+        let identity = WslProcessIdentity {
+            pid: 100,
+            pgid: 100,
+            sid: 100,
+            marker: "10000000-0000-4000-8000-000000000001".into(),
+        };
+        assert!(target
+            .confirm_group_gone(&identity, Duration::from_secs(1))
+            .await
+            .is_err());
+        assert!(target
+            .recover_stale_group(&identity, Duration::from_secs(1))
+            .await
+            .is_err());
+        assert!(target
+            .terminate_group(&identity, Duration::from_secs(1))
+            .await
+            .is_err());
+        assert!(target.contains_process(&identity, 101, 123).await.is_err());
+        assert_eq!(attempts.load(Ordering::SeqCst), 4);
+    }
     #[test]
     fn spec_uses_wsl_exe_and_piped_streams_without_script_environment_prefix() {
         let environment = BTreeMap::from([(String::from("TOKEN"), String::from("secret"))]);

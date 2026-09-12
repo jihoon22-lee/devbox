@@ -703,3 +703,57 @@ fn lsp_review_uses_closed_context_messages_and_never_executes_scripts_or_servers
     helper.input.take();
     helper.exited(0);
 }
+
+#[test]
+fn task_launch_rechecks_source_and_actual_root_before_executing_in_the_pinned_cwd() {
+    use sha2::{Digest, Sha256};
+    let directory = tempfile::Builder::new()
+        .prefix(".wsl-task-fixture-")
+        .tempdir_in(env!("CARGO_MANIFEST_DIR"))
+        .unwrap();
+    let root = directory.path().join("root");
+    std::fs::create_dir_all(root.join(".vscode")).unwrap();
+    std::fs::create_dir(root.join("work")).unwrap();
+    let source=br#"{"version":"2.0.0","tasks":[{"label":"cwd","type":"process","command":"/bin/pwd","options":{"cwd":"work"}}]}"#;
+    std::fs::write(root.join(".vscode/tasks.json"), source).unwrap();
+    let mut helper = Helper::start();
+    helper.call("hello", None, json!({})).result.unwrap();
+    let report = helper
+        .call("observe", None, json!({"path":root}))
+        .result
+        .unwrap();
+    let launch = workspace_wsl::task_contract::TaskLaunch {
+        schema_version: 1,
+        root: root.to_str().unwrap().into(),
+        cwd: root.join("work").to_str().unwrap().into(),
+        root_object: serde_json::from_value(report["rootObject"].clone()).unwrap(),
+        source_digest: Sha256::digest(source)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    };
+    drop(helper);
+    let run = |launch: &workspace_wsl::task_contract::TaskLaunch| {
+        Command::new(env!("CARGO_BIN_EXE_devbox-workspace-wsl"))
+            .args([
+                "--task-exec",
+                &serde_json::to_string(launch).unwrap(),
+                "--",
+                "/bin/pwd",
+            ])
+            .env_clear()
+            .output()
+            .unwrap()
+    };
+    let output = run(&launch);
+    assert!(output.status.success());
+    assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), launch.cwd);
+    std::fs::write(root.join(".vscode/tasks.json"), b"changed synthetic source").unwrap();
+    assert_eq!(run(&launch).status.code(), Some(73));
+    std::fs::write(root.join(".vscode/tasks.json"), source).unwrap();
+    std::fs::rename(&root, directory.path().join("original")).unwrap();
+    std::fs::create_dir_all(root.join(".vscode")).unwrap();
+    std::fs::create_dir(root.join("work")).unwrap();
+    std::fs::write(root.join(".vscode/tasks.json"), source).unwrap();
+    assert_eq!(run(&launch).status.code(), Some(73));
+}

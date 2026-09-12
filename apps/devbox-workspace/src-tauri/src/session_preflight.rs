@@ -193,7 +193,12 @@ async fn capture_inner(
             !current,
         );
         if let Some(task) = prepared.task() {
-            let same = task.source_root == metadata.root;
+            let same = crate::platform::task_sources::matches_context(
+                host,
+                context,
+                &task.source_root,
+                &task.project_identity,
+            );
             report.add(
                 "taskContext",
                 job.id.clone(),
