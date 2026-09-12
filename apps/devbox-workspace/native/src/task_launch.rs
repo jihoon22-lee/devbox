@@ -19,7 +19,7 @@ use std::{
 
 pub fn run(args: &[OsString]) -> i32 {
     // JSON metadata, "--", then the already constructed Runtime supervisor argv.
-    if args.len() < 4
+    if args.len() < 3
         || args.len() > 264
         || args[1] != "--"
         || args.iter().map(|arg| arg.len()).sum::<usize>() > 256 * 1024

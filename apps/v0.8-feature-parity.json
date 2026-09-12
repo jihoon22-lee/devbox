@@ -2397,7 +2397,7 @@
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/ActionPalette.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/ActionPalette.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/ActionPalette.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2415,11 +2415,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/ActionPalette.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/AppDialog.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/AppDialog.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/AppDialog.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2437,11 +2438,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/AppDialog.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/DistroPanel.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/DistroPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/DistroPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2460,11 +2462,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/DistroPanel.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/PaneCanvas.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/PaneCanvas.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/PaneCanvas.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2482,11 +2485,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/PaneCanvas.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/SettingsPanel.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/SettingsPanel.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/SettingsPanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2504,11 +2508,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/SettingsPanel.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/ShellIntegrationSettings.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/ShellIntegrationSettings.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/ShellIntegrationSettings.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2526,11 +2531,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/ShellIntegrationSettings.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/ShortcutReference.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/ShortcutReference.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/ShortcutReference.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2548,11 +2554,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/ShortcutReference.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/TabBar.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/TabBar.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/TabBar.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2570,11 +2577,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/TabBar.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/TermPane.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/TermPane.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/TermPane.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2592,11 +2600,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/TermPane.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/WorkspacePanel.tsx",
-      "sourcePath": "apps/wsl-desktop/src/components/WorkspacePanel.tsx",
+      "sourcePath": "packages/workspace-features/src/terminal/components/WorkspacePanel.tsx",
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
@@ -2614,11 +2623,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/components/WorkspacePanel.tsx"
     },
     {
       "legacyFeatureId": "wsl-desktop:store:src/lib/settings.ts",
-      "sourcePath": "apps/wsl-desktop/src/lib/settings.ts",
+      "sourcePath": "packages/workspace-features/src/terminal/lib/settings.ts",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "workspace",
@@ -2636,11 +2646,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/lib/settings.ts"
     },
     {
       "legacyFeatureId": "wsl-desktop:store:src/lib/storage.ts",
-      "sourcePath": "apps/wsl-desktop/src/lib/storage.ts",
+      "sourcePath": "packages/workspace-features/src/terminal/lib/storage.ts",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "workspace",
@@ -2658,11 +2669,12 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/lib/storage.ts"
     },
     {
       "legacyFeatureId": "wsl-desktop:store:src/lib/workspace.ts",
-      "sourcePath": "apps/wsl-desktop/src/lib/workspace.ts",
+      "sourcePath": "packages/workspace-features/src/terminal/lib/workspace.ts",
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "workspace",
@@ -2680,7 +2692,8 @@
       "evidence": [
         "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       ],
-      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration.",
+      "baselineSourcePath": "apps/wsl-desktop/src/lib/workspace.ts"
     },
     {
       "legacyFeatureId": "api-playground:command:take_pending_open",

@@ -3,7 +3,7 @@
 Refs #548, #541, #542; dependent consumers of #547 and #545. One B06 PR owns
 Terminal extraction, native ownership, worktree Sessions, Problems, importers and
 acceptance. Base is merged B05 main 41bb98b. No umbrella issue closes here.
-Implementation and fixtures are prepared; final detailed/native acceptance is pending.
+Implementation, fixtures and all-scope local checks are complete; final CI and native Windows/WSL acceptance are pending.
 
 ## Scope and final behavior
 
@@ -174,11 +174,31 @@ reduced it to 278,017 raw / 82,563 gzip bytes. Only Workspace was rebuilt; the o
 Rust check passed in 50.93 seconds. Clippy exposed unit-return adapters, one
 snapshot type alias and production items appended after test modules. Targeted
 cleanup preserved behavior and the same workspace/test-fixtures feature graph.
-Clippy and formatting now pass; Rust tests are running. No frontend build/test or
+Clippy and formatting pass. No frontend build/test or
 completed full audit was repeated for these lint fixes. Native acceptance workflow
 paths now include the extracted shared feature and actual Workspace native consumers.
 
-Final Rust tests, PR CI, Windows product artifact execution and owned WSL2 evidence
+All 71 Rust test executables completed with 2,594 passing tests and three ignored
+environment/internal-fixture entries; no ignored entry is claimed as Windows
+execution. The 1,853 frontend tests, additional typechecks and Rust doc tests pass.
+The failed new task helper case used the wrong observe method; it now uses
+observe_root, and the private launch entry accepts a valid executable with no
+extra arguments. That case rechecked actual cwd, changed source and replaced root.
+
+A filtered Cargo command unexpectedly changed its feature graph and was cancelled.
+The original complete graph updated affected artifacts in 75.781 seconds. Only the
+failed case and seven unrun executables then ran, in their original package working
+directories with Cargo runtime paths and the shared resource wrapper (42.01s).
+Their preceding passing cases were retained, including the other nine helper cases.
+This is completion of the original full audit, not another full test run.
+
+Additional native-fixture contracts pass: decoded browser expressions (including
+all new B06 scripts), explicit long-request budgets, updated moved-source inventory,
+and strict separate Terminal/exporter capabilities. Mutation fixtures reject wildcard
+main access, root execute permission and remote exporter origins. These fixes did
+not rerun compiler/tests outside their affected scope.
+
+Final PR CI, Windows product artifact execution and owned WSL2 evidence
 are still required. The exported foundation artifact has a debug build profile;
 it is not release packaged-runtime acceptance. A Windows compile is not execution
 evidence.

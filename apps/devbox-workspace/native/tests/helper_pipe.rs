@@ -719,7 +719,7 @@ fn task_launch_rechecks_source_and_actual_root_before_executing_in_the_pinned_cw
     let mut helper = Helper::start();
     helper.call("hello", None, json!({})).result.unwrap();
     let report = helper
-        .call("observe", None, json!({"path":root}))
+        .call("observe_root", None, json!({"path":root}))
         .result
         .unwrap();
     let launch = workspace_wsl::task_contract::TaskLaunch {
@@ -746,7 +746,11 @@ fn task_launch_rechecks_source_and_actual_root_before_executing_in_the_pinned_cw
             .unwrap()
     };
     let output = run(&launch);
-    assert!(output.status.success());
+    assert!(
+        output.status.success(),
+        "task helper exited {:?}",
+        output.status.code()
+    );
     assert_eq!(String::from_utf8(output.stdout).unwrap().trim(), launch.cwd);
     std::fs::write(root.join(".vscode/tasks.json"), b"changed synthetic source").unwrap();
     assert_eq!(run(&launch).status.code(), Some(73));
