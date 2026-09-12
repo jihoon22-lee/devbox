@@ -4734,6 +4734,7 @@ version = "0.1.0"
 dependencies = [
  "applink",
  "catalog",
+ "filesystem",
  "secrets",
  "serde",
  "serde_json",

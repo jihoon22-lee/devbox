@@ -1,0 +1,53 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
+.launcher-shell, .launcher-shell * { box-sizing: border-box; }
+.launcher-shell button, .launcher-shell input, .launcher-shell select { font: inherit; }
+.launcher-shell { padding: 18px; min-height: 100vh; background: rgba(15, 23, 42, .96); }
+.launcher-shell .launcher-panel { max-width: 684px; margin: auto; }
+.launcher-shell .launcher-header, .launcher-shell .launcher-footer, .launcher-shell .modal-actions { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+.launcher-shell h1 { margin: 0; font-size: 22px; }
+.launcher-shell h2 { margin-top: 0; }
+.launcher-shell p { margin: 5px 0 14px; color: #9fb0c2; }
+.launcher-shell .icon-button { border: 0; background: transparent; color: #9fb0c2; font-size: 24px; cursor: pointer; }
+.launcher-shell .search-label { display: block; font-size: 12px; color: #9fb0c2; margin-bottom: 6px; }
+.launcher-shell .search-input { width: 100%; border: 1px solid #39516f; border-radius: 8px; background: #101c2e; color: white; padding: 12px 14px; outline: none; }
+.launcher-shell .search-input:focus { border-color: #62a0ea; box-shadow: 0 0 0 2px rgba(98,160,234,.3); }
+.launcher-shell .status { min-height: 24px; padding: 7px 2px; color: #a9b9cc; font-size: 12px; }
+.launcher-shell .result-list { padding: 0; margin: 0; list-style: none; max-height: 310px; overflow: auto; }
+.launcher-shell .result { display: flex; width: 100%; min-width: 0; flex-direction: column; align-items: flex-start; border: 1px solid transparent; border-radius: 7px; padding: 10px 12px; color: #e6edf3; background: transparent; cursor: pointer; text-align: left; }
+.launcher-shell .result:hover, .launcher-shell .result.selected { background: #1b3454; border-color: #3f6592; }
+.launcher-shell .result:focus-visible, .launcher-shell .favorite-action:focus-visible, .launcher-shell .icon-button:focus-visible, .launcher-shell .clear-recents:focus-visible, .launcher-shell .modal-actions button:focus-visible, .launcher-shell select:focus-visible { outline: 2px solid #9ecbff; outline-offset: 2px; }
+.launcher-shell .result-heading { display: flex; min-width: 0; max-width: 100%; align-items: center; gap: 8px; }
+.launcher-shell .result-label { overflow: hidden; font-weight: 600; text-overflow: ellipsis; white-space: nowrap; }
+.launcher-shell .result-badges { display: inline-flex; flex: none; gap: 4px; }
+.launcher-shell .result-badge { border-radius: 999px; padding: 2px 6px; font-size: 10px; font-weight: 600; line-height: 1.2; }
+.launcher-shell .favorite-badge { color: #ffe29a; background: #5a4520; }
+.launcher-shell .recent-badge { color: #b9dcff; background: #234d70; }
+.launcher-shell .result-detail { color: #9fb0c2; font-size: 12px; margin-top: 3px; }
+.launcher-shell .empty { padding: 22px; text-align: center; color: #9fb0c2; }
+.launcher-shell .launcher-footer { border-top: 1px solid #2c4058; margin-top: 12px; padding-top: 12px; color: #9fb0c2; font-size: 12px; }
+.launcher-shell .footer-actions { display: flex; align-items: center; gap: 10px; }
+.launcher-shell .favorite-action, .launcher-shell .clear-recents { border: 1px solid #39516f; border-radius: 5px; padding: 4px 7px; color: #b9c8d8; background: #101c2e; cursor: pointer; font-size: 11px; }
+.launcher-shell .favorite-action { color: #f5d58a; }
+.launcher-shell .favorite-action:hover:not(:disabled), .launcher-shell .clear-recents:hover:not(:disabled) { border-color: #62a0ea; color: #e6edf3; }
+.launcher-shell .favorite-action:disabled, .launcher-shell .clear-recents:disabled { cursor: wait; opacity: .55; }
+.launcher-shell .shortcut-status { margin: 8px 0 0; padding: 8px 10px; border: 1px solid #8b6d34; border-radius: 6px; color: #f5d58a; font-size: 12px; }
+.launcher-shell select { margin-left: 5px; color: #e6edf3; background: #101c2e; border: 1px solid #39516f; border-radius: 4px; padding: 3px; }
+.launcher-shell .sources { color: #71869e; font-size: 11px; margin-top: 12px; }
+.launcher-shell .source-list { display: grid; gap: 5px; padding: 6px 0 0 16px; margin: 0; }
+.launcher-shell .source-list li { display: grid; grid-template-columns: minmax(135px, auto) auto 1fr; align-items: baseline; gap: 8px; }
+.launcher-shell .source-name { color: #9fb0c2; }
+.launcher-shell .source-status { font-weight: 600; }
+.launcher-shell .source-fresh { color: #94d6a2; }
+.launcher-shell .source-stale { color: #f5d58a; }
+.launcher-shell .source-missing { color: #9fb0c2; }
+.launcher-shell .source-corrupt, .launcher-shell .source-permission, .launcher-shell .source-linked { color: #f29c9c; }
+.launcher-shell .source-list small { color: #71869e; }
+.launcher-shell .modal-backdrop { position: fixed; inset: 0; display: grid; place-items: center; background: rgba(0,0,0,.62); }
+.launcher-shell .preview-modal { width: min(600px, calc(100vw - 32px)); border-radius: 10px; background: #17263b; border: 1px solid #466487; padding: 18px; box-shadow: 0 20px 60px #0008; }
+.launcher-shell .confirmation-modal { width: min(520px, calc(100vw - 32px)); }
+.launcher-shell .preview-modal pre { max-height: 240px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px; background: #0b1422; border-radius: 6px; }
+.launcher-shell .modal-actions { justify-content: flex-end; }
+.launcher-shell .modal-actions button { border: 1px solid #577a9f; background: #233e61; color: white; border-radius: 6px; padding: 7px 15px; cursor: pointer; }
+.launcher-shell .modal-actions button:first-child { background: transparent; }

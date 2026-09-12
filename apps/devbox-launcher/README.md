@@ -51,3 +51,13 @@ Developer Toolbox로 `toolbox-text/v1` one-time masked handoff로 전달한다. 
 `RegisterHotKey`, focus-loss hide, cold/hot AppLink와 packaged installer의 초기 계약은 v0.5.0
 W3/W4에서 검증했다. v0.6.0 W06/W07과 #493 hosted packaged matrix도 통과했으며, 이 문서의
 source 결과만으로 임의 사용자 PC의 모든 shortcut 충돌·focus 환경을 검증했다고 보지는 않는다.
+
+## v0.8 internal host reuse
+
+The renderer is shared from `packages/product-shell/src/launcher`; this legacy
+entry still supplies its original API and clipboard behavior. Its UI tests remain
+here and exercise that shared component. The ID-only preference model/tests live
+in `crates/product-contract/src/launcher_preferences.rs`. Control Center consumes
+both with separate native product adapters and an installation-scoped store. This
+source extraction does not change the public v0.7 Launcher installer identity or
+claim completed B07 Windows acceptance.
