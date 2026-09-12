@@ -76,9 +76,9 @@ mod tests {
     }
 }
 
+pub use super::browser_profile::verify_profile;
 /// Returns the new owned WebView2 data directory plus a consistent-copy receipt.
-pub use data_migration::browser_snapshot::snapshot;
-pub use product_shell_tauri::browser_profile::verify_profile;
+pub use super::browser_snapshot::snapshot;
 
 /// A separate owned process fixes WEBVIEW2_USER_DATA_FOLDER to the copy without
 /// mutating this running product's environment. That override takes precedence

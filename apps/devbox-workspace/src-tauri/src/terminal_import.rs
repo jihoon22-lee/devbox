@@ -262,7 +262,7 @@ fn cleanup_copy(stage: &MetadataRoot) -> Result<()> {
             .ok_or("terminal_import_copy_identity_missing")?,
     )
     .map_err(|_| "terminal_import_invalid")?;
-    data_migration::core::owned_copy::remove_owned_directory_matching(&copy, expected)
+    crate::platform::owned_copy::remove_owned_directory_matching(&copy, expected)
         .map_err(|_| "terminal_import_copy_cleanup_pending")
 }
 #[derive(Default)]
@@ -479,7 +479,7 @@ fn prepare(
     if cancelled.load(Ordering::Acquire) {
         return Err("terminal_import_cancelled");
     }
-    let (exported, state) = match data_migration::browser_snapshot::snapshot_owned(
+    let (exported, state) = match crate::platform::browser_snapshot::snapshot_owned(
         source,
         stage.path(),
         cancelled,

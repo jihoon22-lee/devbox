@@ -1,4 +1,6 @@
 //! Remove only a retired exporter’s owned scratch copy, rechecking identity on retry.
+// Each application compiles the same adapter but uses a different entry point.
+#![allow(dead_code)]
 use std::{fs, path::Path};
 pub fn remove_owned_directory(directory: &Path) -> Result<(), String> {
     remove_owned_directory_with(directory, |path| fs::remove_dir_all(path))

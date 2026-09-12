@@ -18,3 +18,15 @@ pub mod wsl_project;
 
 pub(crate) mod source_git;
 pub(crate) mod terminal_launch;
+
+// Windows adapters remain app-platform code under CONVENTIONS §4.
+#[path = "../../../../devbox-api-studio/src-tauri/src/platform/browser_profile.rs"]
+pub(crate) mod browser_profile;
+#[cfg(windows)]
+#[path = "../../../../devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs"]
+pub(crate) mod browser_snapshot;
+#[path = "../../../../devbox-api-studio/src-tauri/src/platform/owned_copy.rs"]
+pub(crate) mod owned_copy;
+#[cfg(windows)]
+#[path = "../../../../api-playground/src-tauri/src/commands/process_tree.rs"]
+pub(crate) mod owned_process;

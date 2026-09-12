@@ -1,4 +1,4 @@
-use crate::core::source_snapshot::ClosedStoreSnapshot;
+use data_migration::core::source_snapshot::ClosedStoreSnapshot;
 use std::{
     path::{Path, PathBuf},
     sync::atomic::AtomicBool,
@@ -55,7 +55,7 @@ pub fn snapshot_owned(
     let target = data.join(existing[0]);
     std::fs::create_dir_all(target.parent().ok_or("legacy_snapshot_target_invalid")?)
         .map_err(|_| "legacy_snapshot_write_failed")?;
-    let receipt = crate::core::source_snapshot::copy_closed_store(
+    let receipt = data_migration::core::source_snapshot::copy_closed_store(
         &source_data.join(existing[0]),
         &target,
         cancelled,

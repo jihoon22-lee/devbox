@@ -202,7 +202,7 @@ pub(crate) fn run_worker(
                 .data_directory(copy.clone()).visible(false).skip_taskbar(true).focused(false)
                 .initialization_script(script).on_navigation(local).build()?;
             let handle = app.handle().clone();
-            product_shell_tauri::browser_profile::verify_profile(&window, copy, move |result| {
+            crate::platform::browser_profile::verify_profile(&window, copy, move |result| {
                 if result.is_err() { handle.exit(2); return; }
                 if let Some(worker) = handle.try_state::<Worker>() { if let Ok(mut state) = worker.state.lock() { state.0 = true; } }
             })?;
@@ -245,7 +245,7 @@ pub(crate) async fn export(
         .kill_on_drop(true)
         .creation_flags(0x0000_0004 | 0x0800_0000);
     let mut child = command.spawn().map_err(|_| "terminal_export_unavailable")?;
-    let mut tree = match devbox_process::owned::ProcessTree::assign(&child) {
+    let mut tree = match crate::platform::owned_process::ProcessTree::assign(&child) {
         Ok(tree) => tree,
         Err(_) => {
             let _ = child.kill().await;

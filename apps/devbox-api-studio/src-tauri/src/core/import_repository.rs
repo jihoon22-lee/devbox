@@ -152,7 +152,7 @@ fn validate_browser(raw: &BrowserState) -> Result<(), String> {
 fn destination_key(receipt: &Receipt) -> String {
     import_model::fingerprint(&json!([receipt.source_store, receipt.destination_id]))
 }
-use data_migration::core::owned_copy::remove_owned_directory;
+use crate::platform::owned_copy::remove_owned_directory;
 
 fn preserve_serialization(before: Option<&String>, after: &Value) -> Result<String, String> {
     if let Some(before) = before {

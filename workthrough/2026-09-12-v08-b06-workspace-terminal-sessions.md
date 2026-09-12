@@ -340,3 +340,22 @@ owned-local WSL2 pass. This branch rebased its thirteen commits onto that exact 
 without conflicts. Passing B06 syntax evidence remains retained; the next check is
 for the next implementation chunk, not for the rebase. B05's final merge/cleanup
 record is appended to its existing workthrough with this dependent bundle.
+
+## Native platform placement correction
+
+A final layer-policy review found that moving Windows adapters into shared crates
+conflicted with CONVENTIONS §4. The final implementation keeps the pure closed-store
+copy in data-migration. Browser acquisition/profile verification, retired-copy cleanup
+and child-tree ownership stay in application platform/command modules. Workspace
+compiles those same bounded native modules by explicit source path, avoiding a
+dependency on another product's full application engine. Existing API call paths
+retain their implementation. No new Windows dependency remains in shared crates.
+
+The affected resolver records all four cross-application source edges. Its prepared
+regression compares those edges to the actual include declarations and checks both
+consumers; no consumer is silently omitted by Cargo's package graph. This validator
+change requires one full verification packet at B06 completion, not an early run.
+The Python scripts parse successfully. The native check first exposed an unnecessary
+Unix compilation of the Windows-only export child adapter; gating that consumer to
+Windows fixed it. Both native consumers then checked successfully in 19.739 seconds.
+Frontend checks and detailed tests were not repeated.

@@ -97,7 +97,6 @@ dependencies = [
  "integration",
  "launch",
  "libc",
- "process",
  "prost",
  "prost-reflect",
  "prost-types",
@@ -1426,7 +1425,6 @@ dependencies = [
  "integration",
  "log-lens",
  "port-manager",
- "process",
  "product-contract",
  "product-shell-tauri",
  "repo-manager",
@@ -1443,6 +1441,7 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "webview2-com",
  "window-state",
  "window-state-tauri",
  "windows 0.61.3",
@@ -4705,12 +4704,9 @@ dependencies = [
 name = "process"
 version = "0.1.0"
 dependencies = [
- "libc",
  "serde",
  "serde_json",
  "sysinfo",
- "tokio",
- "windows 0.61.3",
 ]
 
 [[package]]
@@ -4738,16 +4734,13 @@ name = "product-shell-tauri"
 version = "0.1.0"
 dependencies = [
  "catalog",
- "filesystem",
  "product-contract",
  "serde",
  "sha2 0.11.0",
  "tauri",
  "tauri-plugin-single-instance",
  "uuid",
- "webview2-com",
  "window-state-tauri",
- "windows 0.61.3",
 ]
 
 [[package]]

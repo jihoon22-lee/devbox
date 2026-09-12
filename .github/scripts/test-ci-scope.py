@@ -207,7 +207,6 @@ for path in (".github/scripts/verify-resources.py", ".github/scripts/check-agent
     driver = resolve(path)
     assert driver.frontend_scope == driver.rust_scope == "all"
 
-print("CI scope regression tests passed")
 
 for path in ("apps/products.json", "packages/product-shell/fixtures/route-request.json"):
     products = resolve(path)
@@ -216,3 +215,16 @@ for path in ("apps/products.json", "packages/product-shell/fixtures/route-reques
     assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
 parity = resolve("apps/v0.8-feature-parity.json")
 assert parity.frontend_scope == parity.rust_scope == "all"
+
+# Every cross-app platform include must retain its second consumer in affected CI.
+native_module = ROOT / "apps/devbox-workspace/src-tauri/src/platform/mod.rs"
+included_sources = {
+    (native_module.parent / relative).resolve().relative_to(ROOT).as_posix()
+    for relative in re.findall(r'#\[path = "([^"]+)"\]', native_module.read_text())
+}
+assert included_sources == set(module.RUST_SHARED_PLATFORM_CONSUMERS)
+for path in included_sources:
+    shared = resolve(path)
+    assert "devbox-workspace" in shared.rust_packages
+    assert shared.frontend_scope == "none"
+print("CI scope regression tests passed")
