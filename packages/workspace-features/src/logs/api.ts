@@ -650,3 +650,8 @@ export async function exportRecords(records: LogRecord[]): Promise<ExportedText>
   }
   return invoke<ExportedText>("export_log_records", { records });
 }
+
+export async function reconnectRuntimeSources(sources:SourceSpec[],filter:FilterSpec):Promise<{sources:SourceSpec[];filter:FilterSpec;unavailableSources:number}> {
+  if (!isProductHosted()) return {sources,filter,unavailableSources:0};
+  return invoke("reconnect_runtime_sources",{sources,filter});
+}

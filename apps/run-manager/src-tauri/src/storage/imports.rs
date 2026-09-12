@@ -60,6 +60,12 @@ pub struct ImportReceipt {
     pub already_imported: bool,
 }
 impl DatabaseState {
+    pub fn imported_run(&self, id: &str) -> Result<bool, StorageError> {
+        if self.legacy_publication {
+            return Ok(false);
+        }
+        Ok(self.lock()?.query_row("SELECT EXISTS(SELECT 1 FROM workspace_runtime_import_ids WHERE origin='legacy-run-manager-v1' AND entity='runs' AND destination_id=?)",[id],|row|row.get(0))?)
+    }
     pub fn imported_job_reviews(&self) -> Result<Vec<ImportedJobReview>, StorageError> {
         if self.legacy_publication {
             return Err(StorageError::Validation(

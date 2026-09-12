@@ -11,6 +11,7 @@ pub mod handoff;
 mod lifecycle;
 mod model;
 mod parser;
+pub mod product_saved_views;
 pub mod saved_views;
 mod sources;
 
@@ -29,3 +30,5 @@ pub use parser::{
 pub use sources::{
     adapter_argv, load_source, AdapterPlan, LoadContext, RuntimeLogLease, RuntimeLogProvider,
 };
+
+pub mod runtime_views;

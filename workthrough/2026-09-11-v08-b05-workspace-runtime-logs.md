@@ -144,3 +144,28 @@ new type errors (digest formatting and a fixture Debug bound), corrected both, t
 passed in 15.516 seconds. This compiled fixtures without running them. No tests,
 Clippy, application build or affected verification ran for this commit. Actual
 Windows/WSL acceptance and the complete PR verification remain pending.
+
+## Runtime preferences and saved-view import
+
+The fixed legacy JSON inventory now includes Port Manager preferences and Log Lens
+saved views/window state. Runtime and Logs provide preserve/revalidate/review/apply
+panels. A short-lived native review pins the source bytes, destination revision and
+owner. Existing settings require explicit replacement; the prior settings and import
+receipt are committed with the new settings in one owner-local atomic record.
+Normal saves keep receipts, and repeated imports preserve later edits. Corrupt/future
+product records never fall back to defaults and overwrite the saved file.
+
+Legacy Run sources become Runtime references only through the Runtime importer ID
+map. Missing runs/logs retain disconnected source definitions with an unavailable
+revision; explicit reconnect can resolve them after Runtime import. Filter source
+IDs are rebased along with descriptors, while unmatched filters stay unmatched.
+Saved-view loading starts no I/O. Source generation is checked across explicit
+reconnect before changing the mounted view; standalone adapters remain in place.
+
+Queued fixtures cover receipt preservation, revision conflicts, malformed records,
+nonpersistable sources, capacity and filter rebasing. Workspace TypeScript checking
+passed. Rust all-target compilation exposed an intended Port component export
+missing from the public boundary; after that export was fixed, the affected four
+crates compiled in 12.805 seconds. No detailed test/build/Clippy/affected run was
+performed. Internal cross-product Artifact delivery remains WP07 integration;
+container action ownership and Development Session consumers belong to WP06.

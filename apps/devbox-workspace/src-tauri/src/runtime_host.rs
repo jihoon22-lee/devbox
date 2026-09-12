@@ -1,6 +1,7 @@
 //! Native composition of the execution owner, read-only process observations,
 //! the external process-action broker and bounded log readers. No legacy
 //! executable, database discovery or generic spawn/unseal command is exposed.
+mod settings;
 use crate::{definitions::Definitions, host::Host};
 use log_lens_lib::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
 use port_manager_lib::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
@@ -13,6 +14,7 @@ use tauri::Emitter;
 type Result<T> = std::result::Result<T, &'static str>;
 #[derive(Default)]
 pub(crate) struct Owners {
+    settings: Mutex<Option<settings::Review>>,
     runtime: OnceLock<Result<()>>,
     processes: OnceLock<Result<()>>,
     logs: OnceLock<Result<()>>,
@@ -178,6 +180,9 @@ fn issue(error: String) -> &'static str {
         "runtime_control_failed" => "runtime_control_failed",
         "runtime_control_unavailable" => "runtime_control_unavailable",
         "runtime_control_owner_unsettled" => "runtime_control_owner_unsettled",
+        "runtime_settings_unavailable" => "runtime_settings_unavailable",
+        "runtime_settings_invalid" => "runtime_settings_invalid",
+        "runtime_settings_conflict" => "runtime_settings_conflict",
         "runtime_import_busy" => "runtime_import_busy",
         "runtime_import_destination_conflict" => "runtime_import_destination_conflict",
         "runtime_import_stale" => "runtime_import_stale",
@@ -311,6 +316,14 @@ pub(crate) async fn dispatch(
     } = request;
     crate::files_host::current_deadline(deadline)?;
     owners.initialize_runtime(app, host)?;
+    if matches!(
+        method,
+        "preview_legacy_runtime_settings"
+            | "apply_legacy_runtime_settings"
+            | "reconnect_runtime_sources"
+    ) {
+        return settings::execute(app, host, owners, component, method, value, deadline);
+    }
     let result = match component {
         "workspace.runtime" => {
             host.component("runtime")?;

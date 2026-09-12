@@ -94,6 +94,22 @@ pub fn port_bindings(
     Ok(entries)
 }
 
+pub fn imported_log_descriptor(
+    app: &tauri::AppHandle,
+    run_id: &str,
+) -> Result<OwnedRunLog, String> {
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    if !database
+        .imported_run(run_id)
+        .map_err(|_| "runtime_log_unavailable")?
+    {
+        return Err("runtime_log_unavailable".into());
+    }
+    log_descriptor(app, run_id)
+}
+
 pub fn log_descriptor(app: &tauri::AppHandle, run_id: &str) -> Result<OwnedRunLog, String> {
     if !is_initialized(app) {
         return Err("component_state_unavailable".into());

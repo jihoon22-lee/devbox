@@ -16,6 +16,7 @@ const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
+const RuntimeSettingsImport = lazy(() => import("./RuntimeSettingsImport"));
 const RuntimeImport = lazy(() => import("./RuntimeImport"));
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
 const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
@@ -44,6 +45,8 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [engineVisited, setEngineVisited] = useState(() => new Set([route]));
   const [runtimeLogOpen, setRuntimeLogOpen] = useState<RuntimeLogOpenRequest | null>(null);
   const [runtimeNotice, setRuntimeNotice] = useState("");
+  const [runtimeSettingsRevision,setRuntimeSettingsRevision]=useState(0);
+  const [logSettingsRevision,setLogSettingsRevision]=useState(0);
   const diagnosticOpen = useRef<(value: unknown) => void>(() => {});
   const current = useRef({route, context:description.context, navigate, tasksDirty});
   current.current = {route, context:description.context, navigate, tasksDirty};
@@ -143,10 +146,10 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><RuntimeImport description={description} active={route === "tasks"} blocked={tasksDirty}/><Tasks active={route === "tasks"} onDirtyChange={setTasksDirty}/></Suspense>
     </div>}
     {ready && (engineVisited.has("runtime") || route === "runtime") && <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
-      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><Runtime active={route === "runtime"}/></Suspense>
+      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "runtime"} kind="runtime" onImported={()=>setRuntimeSettingsRevision(value=>value+1)}/><Runtime active={route === "runtime"} settingsRevision={runtimeSettingsRevision}/></Suspense>
     </div>}
     {ready && (engineVisited.has("logs") || route === "logs") && <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
-      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><Logs active={route === "logs"} openRequest={runtimeLogOpen}/></Suspense>
+      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "logs"} kind="logs" onImported={()=>setLogSettingsRevision(value=>value+1)}/><Logs settingsRevision={logSettingsRevision} active={route === "logs"} openRequest={runtimeLogOpen}/></Suspense>
     </div>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>

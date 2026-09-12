@@ -280,7 +280,7 @@ function runtimeOwner(row: PortRow): PortCorrelation | undefined {
   return isProductHosted() ? row.correlations?.find(owner => owner.source_app === "run-manager" && owner.confidence === "verified") : undefined;
 }
 
-export default function App({ active = true }: { active?: boolean }) {
+export default function App({ active = true, settingsRevision = 0 }: { active?: boolean; settingsRevision?:number }) {
   const activeRef = useRef(active);
   const previousActive = useRef(active);
   activeRef.current = active;
@@ -511,6 +511,13 @@ export default function App({ active = true }: { active?: boolean }) {
       snapshotHealthyRef.current = false;
     };
   }, [initialize, markSnapshotHealthy]);
+
+  const loadedSettingsRevision=useRef(settingsRevision);
+  useEffect(()=>{
+    if(!active || loadedSettingsRevision.current===settingsRevision)return;
+    loadedSettingsRevision.current=settingsRevision;
+    void initialize();
+  },[active,settingsRevision,initialize]);
 
   useEffect(() => {
     if (!active || !preferencesReady || autoRefreshPaused) return;

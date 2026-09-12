@@ -2,6 +2,7 @@
 //! Calling these does not start the standalone application or select its stores.
 
 pub use crate::core::listeners::{KillListenerRequest, ListenerIdentity};
+pub use crate::core::{preferences::PortManagerPreferences, product_preferences};
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -60,10 +61,7 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path) -> Result<(), String> {
         return Err("component_state_conflict".into());
     }
     let data = ProductData::open(data)?;
-    crate::core::preferences::load_from_path(crate::core::preferences::preferences_path(
-        &data.path,
-    ))
-    .map_err(|_| "component_storage_unavailable")?;
+    crate::core::product_preferences::load(&data.path).map_err(str::to_owned)?;
     data.checked()?;
     app.manage(data);
     Ok(())
@@ -78,6 +76,8 @@ pub async fn kill_external_listener(
 }
 
 pub const COMMANDS: &[&str] = &[
+    "preview_legacy_runtime_settings",
+    "apply_legacy_runtime_settings",
     "list_port_observations",
     "open_port_owner",
     "open_port_log",
@@ -115,10 +115,28 @@ pub async fn dispatch(
         "reveal_process" => crate::commands::ports::__component_reveal_process(app, args).await,
         "open_browser" => crate::commands::ports::__component_open_browser(app, args).await,
         "load_port_manager_preferences" => {
-            crate::commands::preferences::__component_load_port_manager_preferences(app, args).await
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {}
+            let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            serde_json::to_value(
+                crate::core::product_preferences::load(&data_root(app)?)
+                    .map_err(str::to_owned)?
+                    .preferences,
+            )
+            .map_err(|_| "component_response_invalid".into())
         }
         "save_port_manager_preferences" => {
-            crate::commands::preferences::__component_save_port_manager_preferences(app, args).await
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {
+                preferences: crate::core::preferences::PortManagerPreferences,
+            }
+            let input: Input =
+                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            crate::core::product_preferences::save(&data_root(app)?, input.preferences)
+                .map_err(str::to_owned)?;
+            Ok(serde_json::Value::Null)
         }
         _ => Err("component_method_invalid".into()),
     };

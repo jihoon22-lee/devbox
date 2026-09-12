@@ -64,7 +64,7 @@ pub fn initialize(
         return Err("component_state_conflict".into());
     }
     let data = ProductData::open(data)?;
-    crate::core::saved_views::list_from_dir(&data.path)
+    crate::core::product_saved_views::load(&data.path)
         .map_err(|_| "component_storage_unavailable")?;
     data.checked()?;
     app.manage(data);
@@ -123,6 +123,9 @@ pub fn offer_product_open(
 }
 
 pub const COMMANDS: &[&str] = &[
+    "preview_legacy_runtime_settings",
+    "apply_legacy_runtime_settings",
+    "reconnect_runtime_sources",
     "take_pending_open",
     "send_selection_to_toolbox",
     "summarize_source",
@@ -155,9 +158,56 @@ pub async fn dispatch(
             crate::commands::__component_send_selection_to_toolbox(app, args).await
         }
         "summarize_source" => crate::commands::__component_summarize_source(app, args).await,
-        "list_saved_views" => crate::commands::__component_list_saved_views(app, args).await,
-        "save_saved_view" => crate::commands::__component_save_saved_view(app, args).await,
-        "delete_saved_view" => crate::commands::__component_delete_saved_view(app, args).await,
+        "list_saved_views" => {
+            #[derive(serde::Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {}
+            let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            serde_json::to_value(
+                crate::core::product_saved_views::load(&data_root(app)?)
+                    .map_err(str::to_owned)?
+                    .views,
+            )
+            .map_err(|_| "component_response_invalid".into())
+        }
+        "save_saved_view" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Input {
+                expected_revision: u64,
+                view: crate::core::SavedView,
+            }
+            let input: Input =
+                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            serde_json::to_value(
+                crate::core::product_saved_views::save(
+                    &data_root(app)?,
+                    input.expected_revision,
+                    input.view,
+                )
+                .map_err(str::to_owned)?,
+            )
+            .map_err(|_| "component_response_invalid".into())
+        }
+        "delete_saved_view" => {
+            #[derive(serde::Deserialize)]
+            #[serde(rename_all = "camelCase", deny_unknown_fields)]
+            struct Input {
+                expected_revision: u64,
+                name: String,
+            }
+            let input: Input =
+                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            serde_json::to_value(
+                crate::core::product_saved_views::delete(
+                    &data_root(app)?,
+                    input.expected_revision,
+                    &input.name,
+                )
+                .map_err(str::to_owned)?,
+            )
+            .map_err(|_| "component_response_invalid".into())
+        }
         "receive_log_source" => crate::commands::__component_receive_log_source(app, args).await,
         "fixed_adapter" => crate::commands::__component_fixed_adapter(app, args).await,
         "read_source" => crate::commands::__component_read_source(app, args).await,

@@ -1,3 +1,4 @@
+import { reconnectRuntimeSources } from "./api";
 import {
   ContextMenu,
   useContextMenu,
@@ -218,7 +219,7 @@ export interface RuntimeLogOpenRequest {
   id: string;
   source: Extract<SourceSpec, {kind: "runtimeRun"}>;
 }
-function App({ active = true, openRequest }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null }) {
+function App({ active = true, openRequest, settingsRevision = 0 }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null; settingsRevision?:number }) {
   const activeRef = useRef(active);
   activeRef.current = active;
   const consumedOpen = useRef<string | null>(null);
@@ -686,7 +687,7 @@ function App({ active = true, openRequest }: { active?: boolean; openRequest?: R
     return () => {
       disposed = true;
     };
-  }, []);
+  }, [settingsRevision]);
 
   // Cold-start pull and single-instance forwarding converge on the same
   // preview path. Merely receiving argv never reads a source or auto-adds it.
@@ -1082,15 +1083,18 @@ function App({ active = true, openRequest }: { active?: boolean; openRequest?: R
 
   const reconnectSources = async () => {
     if (!sources.length || busy) return;
-    const nextCursors = sources.map(() => null);
-    connectedRef.current = true;
-    setConnected(true);
-    setCursors(nextCursors);
-    setRecords([]);
-    setSnapshot(null);
-    setError(null);
-    setNotice("source에 다시 연결하는 중입니다.");
-    await refresh(sources, nextCursors);
+    const requestedGeneration=generation.current;
+    setError(null);setBusy(true);
+    try {
+      const resolved=await reconnectRuntimeSources(sources,filter);
+      if (!mounted.current || !activeRef.current || generation.current!==requestedGeneration) return;
+      const nextCursors=resolved.sources.map(()=>null);
+      setSources(resolved.sources);setFilter(resolved.filter);
+      connectedRef.current=true;setConnected(true);setCursors(nextCursors);setRecords([]);setSnapshot(null);
+      setNotice(resolved.unavailableSources ? `연결할 수 없는 Runtime source ${resolved.unavailableSources}개가 있습니다. 나머지 source를 연결합니다.` : "source에 다시 연결하는 중입니다.");
+      await refresh(resolved.sources,nextCursors);
+    } catch { if (mounted.current && generation.current===requestedGeneration) setError("source 재연결을 완료하지 못했습니다."); }
+    finally {if(mounted.current)setBusy(false);}
   };
 
   const toggleSelection = useCallback((record: LogRecord) => {
