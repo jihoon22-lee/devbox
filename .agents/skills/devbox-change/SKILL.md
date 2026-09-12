@@ -24,10 +24,22 @@ Read the repository [AGENTS.md](../../../AGENTS.md) and relevant sections of
 
 - Read only the affected app/module guidance and contracts. Keep mechanical moves
   separate from semantic changes in commits, with a single owner for shared edits.
-- Select focused checks for the changed behavior. Use WSL for frontend and portable
-  Rust validation; distinguish Windows compile checks from actual Windows execution.
-- Run `pnpm verify:affected` from the root after the final local changes. Honor `all`
-  if the resolver selects it. Use `verify:all` for the cases in CONVENTIONS §5.
+- Before each commit, inspect the diff against the plan and use only the minimum
+  syntax/type checks needed for that change. Documentation needs content/link/diff
+  review, not compiler or test runs. Do not routinely chain tests, Clippy, builds
+  and affected verification after small edits or before every commit.
+- Prepare regression fixtures during implementation. Run detailed verification
+  when all planned implementation, importers and fixtures for the PR bundle are
+  complete. An earlier focused run needs a concrete defect or design uncertainty
+  that cannot be resolved without reproducing it.
+- At PR completion, map acceptance requirements to checks and run
+  `pnpm verify:affected` from the root. Do not separately pre-run tests, typechecks,
+  builds or lint already included in it. Add only acceptance checks it does not
+  cover, including required Windows/WSL execution. Honor `all` if selected; use
+  `verify:all` for CONVENTIONS §5 cases. A Windows compile is not execution evidence.
+- After a failure or subsequent code change, rerun the failed/affected checks.
+  Preserve passing evidence where no related change or new risk invalidates it.
+  Creating a commit, updating docs or resuming work is not a reason to rerun checks.
 - Keep local verification within the shared resource budget and worktree lock in
   [verification operations](../../../docs/verification.md). One full run satisfies
   both all-scope affected verification and the explicit full audit; do not duplicate it.

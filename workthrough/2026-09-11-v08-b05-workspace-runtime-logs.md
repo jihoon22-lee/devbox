@@ -39,6 +39,22 @@ must remain inactive until reviewed activation; live processes are not adopted f
 persisted PIDs. WAL-consistent imports preserve original schemas, references and
 source-owned log boundaries.
 
-These semantic changes and actual Windows/WSL acceptance are not implemented by
-the UI extraction. B04 final CI is still pending during preparation; B05 will not
-merge ahead of its prerequisite.
+B04 merged as #557 (`e09e5f4`) after final CI and Windows acceptance. B05 native
+integration is in progress: generation extension preserves B04 stores; dedicated
+Runtime/Processes/Logs initialization and retirement, Runtime-owned log leases,
+process observation providers and closed role admission are being connected.
+UI activity controls preserve views while stopping hidden polling. Importers,
+complete internal navigation and final Windows/WSL acceptance remain outstanding.
+The PR is not ready for detailed completion verification.
+
+## Verification cadence correction (2026-09-12)
+
+Repeated per-edit Clippy/test runs and the extraction-only full affected run
+spent verification time before B05 implementation was complete. At the user's
+request, AGENTS, CONVENTIONS, verification operations and repository skills now
+require only minimal syntax/type/scope checks before commits. Detailed regression,
+affected and Windows/WSL acceptance runs are grouped after the complete PR scope
+is implemented. Existing passing evidence is repeated only after a related change,
+failure or new risk; checks already included in affected are not pre-run separately.
+Final CI and release gates remain required. These policy edits were reviewed as
+text and diff changes; no compiler or test run is needed for them.

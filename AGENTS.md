@@ -22,11 +22,14 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 - 순수 Rust 로직은 앱 `src-tauri/src/core/`, Windows 전용 처리는 command/platform 계층에 둔다.
   두 번째 실제 소비자가 생길 때만 `crates/`·`packages/`로 추출한다. 앱/crate 추가 시 Cargo
   workspace members와 필요한 카탈로그·검증 등록을 함께 갱신한다.
-- WSL에서 Rust 사용 전 `source ~/.cargo/env`. 집중 검증은 대상의 `pnpm build/test` 또는
-  `cargo test/check -p <package>`. 실제 앱 실행·배포 빌드는 Windows에서만 한다.
-- 기본 완료 검증은 루트 `pnpm verify:affected`다. commit·staged·unstaged·untracked와
-  역의존 소비자를 포함한다. resolver가 all을 선택하면 전체 검증한다.
-  `pnpm verify:all`은 release 준비·CI 검증기 변경·명시적 전체 감사에 사용한다.
+- WSL에서 Rust 사용 전 `source ~/.cargo/env`. 실제 앱 실행·배포 빌드는 Windows에서만 한다.
+- 커밋 전에는 해당 변경의 문법·타입 오류와 계획 범위 이탈을 최소한으로 확인한다.
+  작은 수정마다 test·Clippy·build·affected 검증을 묶어 반복하지 않는다.
+- 상세 검증은 **PR에 계획한 구현·importer·fixture가 모두 끝난 시점**에 모아 수행한다.
+  기본 완료 검증은 루트 `pnpm verify:affected`이며 commit·staged·unstaged·untracked와
+  역의존 소비자를 포함한다. 포함된 검사와 별도 집중 검증을 중복 실행하지 않는다.
+  resolver가 all을 선택하면 전체 검증한다. `pnpm verify:all`은 release 준비·CI 검증기 변경·
+  명시적 전체 감사에 사용한다. 재검증은 실패·관련 변경·새 위험이 생긴 범위에 한정한다.
 - 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
   제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
 - 사용자 데이터·secret을 fixture로 쓰지 않는다. v0.8 migration은 원본 보존·WAL consistent
@@ -36,8 +39,8 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 
 - 작업 시작 시 git status/worktree와 원격 작업에 필요한 인증 상태를 확인한다.
   브랜치는 CONVENTIONS §8, 커밋은 영어 Conventional Commits를 따른다.
-- 커밋 전 집중 검증 + affected 검증, **main 머지 전 PR 최종 변경의 GitHub Actions CI 통과**가 필수다.
-  미실행 Windows 검증은 PASS로 보고하지 않는다.
+- 커밋 완료와 PR 수용 완료를 구분한다. **main 머지 전에는 PR 최종 변경의 상세 검증과
+  GitHub Actions CI 통과**가 필수다. 미실행 Windows 검증은 PASS로 보고하지 않는다.
 - 릴리스 작업은 [release policy](./docs/release-policy.md)를 읽는다. exact-main 후보의
   assembly·packaged runtime·installer 검증 후 같은 commit의 stable만 승격한다.
   후보가 없거나 만료됐을 때 새 build로 대체하지 않는다. 명시 요청 없는 public RC는 만들지 않는다.

@@ -37,7 +37,11 @@ boundaries; don't turn every review into a suite-wide audit.
 
 ## Report evidence
 
-Use synthetic fixtures and existing tests. Do not run production migration,
+Prepare synthetic fixtures during implementation and run detailed migration/authority
+acceptance when the complete PR bundle is implemented, following CONVENTIONS §5.
+Before then, run only a minimal reproduction needed to resolve a concrete defect
+or design uncertainty. Do not repeat passing checks without a related change or
+new risk. Use synthetic fixtures and existing tests. Do not run production migration,
 installation changes, or destructive experiments merely to complete a review.
 For each finding, provide severity, file/location, concrete failure scenario,
 violated contract, and the missing or failing check. Record uncertain assumptions
