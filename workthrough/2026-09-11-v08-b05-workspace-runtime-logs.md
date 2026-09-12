@@ -245,3 +245,17 @@ This lesson is recorded in verification operations. The affected/all requirement
 satisfied by the recorded successful phases; the initially failed monolithic commands
 are not relabelled as successful runs. Final GitHub Actions remains the canonical
 complete command run on the final PR revision.
+
+## PR 558 CI corrections
+
+PR 558 at 1893f81 passed Frontend, Rust workspace, the pinned Windows baseline
+and static WSL helper jobs. Windows compilation/native acceptance are still in
+progress. Catalog consistency found that the accessibility checker searched only
+legacy app directories after Run/Logs UI extraction. It now follows the app's
+actual default import/reexport through a declared workspace dependency and exact
+package export, using that feature's CSS/smoke tests without borrowing sibling
+coverage or commented/type-only imports. Focused positive/rejection fixtures pass.
+Dependency policy found stale lockfile hashes in generated notices; regeneration
+changes only those hashes, with no new dependency versions. CI pnpm audit passed.
+The two corrected gates passed locally in 8.871 seconds; passed application tests
+and builds were preserved. Final pushed-revision CI remains required before merge.

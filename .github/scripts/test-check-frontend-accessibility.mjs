@@ -89,6 +89,26 @@ try {
   });
   expectFailure(background, "must not set a page background");
 
+
+  const forwarded = path.join(temp, "forwarded");
+  fixture(forwarded, {
+    package: { dependencies: { "@devbox/a11y": "workspace:*", "@devbox/tokens": "workspace:*", "@devbox/workspace-features": "workspace:*" } },
+    test: "// actual smoke moved with the component",
+  });
+  const forwardedApp = path.join(forwarded, "apps/sample-app/src/App.tsx");
+  write(forwardedApp, 'export { default } from "@devbox/workspace-features/sample";\n');
+  write(path.join(forwarded, "packages/workspace-features/package.json"), JSON.stringify({ exports: { "./sample": "./src/sample/App.tsx", "./other": "./src/other/App.tsx" } }));
+  write(path.join(forwarded, "packages/workspace-features/src/sample/App.tsx"), "export default function App() { return null; }");
+  write(path.join(forwarded, "packages/workspace-features/src/other/App.tsx"), "export default function App() { return null; }");
+  write(path.join(forwarded, "packages/workspace-features/src/sample/App.test.tsx"), 'import { assertNoA11yViolations } from "@devbox/a11y/testing"; assertNoA11yViolations(container);');
+  const forwardedResult=run(forwarded);
+  assert.equal(forwardedResult.status, 0, forwardedResult.stderr);
+  write(forwardedApp, 'export { default } from "@devbox/workspace-features/other";\n');
+  expectFailure(forwarded, "axe accessibility smoke test");
+  write(forwardedApp, '// export { default } from "@devbox/workspace-features/sample";\n');
+  expectFailure(forwarded, "axe accessibility smoke test");
+  write(forwardedApp, 'import type App from "@devbox/workspace-features/sample";\n');
+  expectFailure(forwarded, "axe accessibility smoke test");
   console.log("Frontend accessibility contract checker tests passed.");
 } finally {
   rmSync(temp, { recursive: true, force: true });
