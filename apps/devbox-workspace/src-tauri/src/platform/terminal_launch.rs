@@ -6,7 +6,7 @@ use wsl_desktop_lib::component::{TerminalLaunchFactory, TerminalLaunchLease};
 
 pub(crate) struct Factory<'a> {
     pub host: &'a Host,
-    pub context: &'a ProjectContext,
+    pub context: Option<&'a ProjectContext>,
     pub deadline: u64,
 }
 impl TerminalLaunchFactory for Factory<'_> {
@@ -43,9 +43,9 @@ mod native {
     }
     pub(super) struct Admission {
         projects: Arc<ProjectOwner>,
-        context: ProjectContext,
-        binding: Binding,
-        project: Project,
+        context: Option<ProjectContext>,
+        binding: Option<Binding>,
+        project: Option<Project>,
         distro: wsl_distro::Lease,
         executable: PathBuf,
         executable_identity: FilesystemIdentity,
@@ -61,24 +61,30 @@ mod native {
         // opens registration/backing handles and performs no start itself.
         let distro = wsl_distro::Lease::capture(&distro.id, true)?;
         let projects = factory.host.projects()?;
-        let binding = projects.binding(factory.context)?;
-        let project = match &factory.context.target {
-            ExecutionTarget::Windows => Project::Windows(projects.admit(factory.context)?),
-            ExecutionTarget::Wsl { distro_id } => {
+        let binding = factory
+            .context
+            .map(|context| projects.binding(context))
+            .transpose()?;
+        let project = match factory.context.map(|context| &context.target) {
+            None => None,
+            Some(ExecutionTarget::Windows) => Some(Project::Windows(
+                projects.admit(factory.context.ok_or("invalid_context")?)?,
+            )),
+            Some(ExecutionTarget::Wsl { distro_id }) => {
                 if distro.id() != distro_id {
                     return Err("terminal_distro_mismatch");
                 }
                 let lease = WslProjectLease::observe(
                     factory.host.helper_directory()?,
                     distro_id,
-                    &binding.root,
+                    &binding.as_ref().ok_or("invalid_context")?.root,
                     true,
                 )?;
-                if lease.binding() != &binding {
+                if Some(lease.binding()) != binding.as_ref() {
                     let _ = lease.shutdown();
                     return Err("project_binding_changed");
                 }
-                Project::Wsl(lease)
+                Some(Project::Wsl(lease))
             }
         };
         let executable = wsl_distro::executable()?;
@@ -86,7 +92,7 @@ mod native {
             open_filesystem_object(&executable, false).map_err(|_| "wsl_executable_unavailable")?;
         let admission = Admission {
             projects,
-            context: factory.context.clone(),
+            context: factory.context.cloned(),
             binding,
             project,
             distro,
@@ -100,8 +106,10 @@ mod native {
     }
     impl Admission {
         fn check(&self) -> Result<()> {
-            if self.projects.binding(&self.context)? != self.binding {
-                return Err("project_binding_changed");
+            if let Some(context) = &self.context {
+                if Some(self.projects.binding(context)?) != self.binding {
+                    return Err("project_binding_changed");
+                }
             }
             self.distro.revalidate()?;
             if filesystem_identity(&self.executable, false)
@@ -111,8 +119,9 @@ mod native {
                 return Err("wsl_executable_changed");
             }
             match &self.project {
-                Project::Windows(lease) => lease.revalidate(),
-                Project::Wsl(lease) => lease.revalidate(),
+                Some(Project::Windows(lease)) => lease.revalidate(),
+                Some(Project::Wsl(lease)) => lease.revalidate(),
+                None => Ok(()),
             }
         }
     }
@@ -139,7 +148,7 @@ mod native {
             Ok(argv)
         }
         fn retire(&self) -> std::result::Result<(), String> {
-            if let Project::Wsl(lease) = &self.project {
+            if let Some(Project::Wsl(lease)) = &self.project {
                 if lease.is_open() {
                     return lease.shutdown().map_err(str::to_owned);
                 }

@@ -17,5 +17,6 @@ pub mod legacy_lsp;
 pub mod legacy_templates;
 pub mod legacy_workspace;
 
+pub mod development_sessions;
 pub mod template_editor;
 pub mod wsl_files;

@@ -110,3 +110,24 @@ Shared TypeScript and portable Workspace all-target compilation passed in 17.905
 seconds. Its unused-field warning exposed a missing final lease-retirement call;
 the call was added and source/format checked. Windows-only launch admission awaits
 B06 final Windows compilation/real execution. No detailed verification was added.
+
+## Development Session transition/reference model
+
+The pure session store separates preflight/review/restore/prepare/start/readiness,
+active/stop/degraded states, reviewed plan revisions and phase deadlines. Native
+resource acquisition has durable operation identity before effects, exact generation
+references, and explicit created/borrowed/shared ownership. A creator's stop is
+deferred while other sessions hold a service; external resources are never stop
+candidates. Stop submission IDs are reserved separately, late starts remain owned
+through compensation, and crash history cannot authorize reexecution. Five concrete
+scenario fixtures cover two worktrees, external/stale resources, late cancellation,
+crash/replay and restore-only/expired plans. Native Runtime lease/controller and UI
+consumers are still pending; these pure records alone grant no process authority.
+
+Terminal also preserves nonproject usage: companions may have no ProjectContext,
+while retaining their exact native window/distro/PTY ownership. Project-bound
+companions continue to use their immutable Registry context. The manager displays
+project names and working folders, and its refresh no longer duplicates a list call.
+Workspace TypeScript and portable all-target compilation passed (43.669 seconds).
+The final small manager-label/refresh edits were source reviewed. Detailed scenario
+tests and Windows-only nullable-context admission remain in the final B06 packet.

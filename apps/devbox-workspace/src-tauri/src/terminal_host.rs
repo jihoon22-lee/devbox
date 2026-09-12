@@ -19,7 +19,7 @@ const MAX_WINDOWS: usize = 8;
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Record {
     id: String,
-    context: ProjectContext,
+    context: Option<ProjectContext>,
     state: String,
 }
 #[derive(Deserialize, Serialize)]
@@ -91,7 +91,10 @@ impl Terminals {
                     || store.records.iter().any(|record| {
                         !id(&record.id)
                             || !ids.insert(&record.id)
-                            || record.context.validate().is_err()
+                            || record
+                                .context
+                                .as_ref()
+                                .is_some_and(|context| context.validate().is_err())
                             || !matches!(
                                 record.state.as_str(),
                                 "preparing" | "active" | "stopping" | "stopped" | "interrupted"
@@ -155,9 +158,11 @@ impl Terminals {
                 if !id(&input.operation_id) {
                     return Err("terminal_operation_invalid");
                 }
-                let context = header.context.as_ref().ok_or("project_required")?;
-                host.projects()?
-                    .admit_selection(host.helper_directory()?, context)?;
+                let context = header.context.clone();
+                if let Some(context) = &context {
+                    host.projects()?
+                        .admit_selection(host.helper_directory()?, context)?;
+                }
                 crate::files_host::current_deadline(header.deadline_ms)?;
                 let label = format!("terminal-{}", input.operation_id);
                 {
@@ -168,7 +173,7 @@ impl Terminals {
                         .iter()
                         .find(|record| record.id == input.operation_id)
                     {
-                        if record.context != *context {
+                        if record.context != context {
                             return Err("terminal_operation_conflict");
                         }
                         return Ok(json!(record));
@@ -190,7 +195,7 @@ impl Terminals {
                         },
                         &label,
                     )?;
-                    guard.bind_context(Some(context.clone()))?;
+                    guard.bind_context(context.clone())?;
                     let peer = Arc::new(Peer {
                         record: record.clone(),
                         guard: Mutex::new(guard),
@@ -365,7 +370,9 @@ impl Terminals {
         let peer = self.peer(window.label())?;
         crate::files_host::current_deadline(header.deadline_ms)?;
         if method != "close_session" {
-            host.projects()?.binding(&peer.record.context)?;
+            if let Some(context) = &peer.record.context {
+                host.projects()?.binding(context)?;
+            }
         }
         if matches!(method, "terminal_layout" | "save_terminal_layout") {
             let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
@@ -409,7 +416,7 @@ impl Terminals {
         }
         let factory = crate::platform::terminal_launch::Factory {
             host,
-            context: &peer.record.context,
+            context: peer.record.context.as_ref(),
             deadline: header.deadline_ms,
         };
         let value = peer

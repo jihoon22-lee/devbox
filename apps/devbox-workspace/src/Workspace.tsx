@@ -108,7 +108,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       </Suspense>}
     </div>}
     {ready && route === "terminal" && <Suspense fallback={<p role="status">터미널 목록을 불러오고 있습니다…</p>}>
-      <TerminalManager description={description}/>
+      <TerminalManager description={description} registry={registry}/>
     </Suspense>}
     {ready && (runtimeVisited||isRuntimeRoute) && <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
       <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic}/>

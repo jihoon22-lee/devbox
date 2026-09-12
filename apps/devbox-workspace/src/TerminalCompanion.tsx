@@ -6,11 +6,11 @@ import { initializeProductLayout } from "@devbox/workspace-features/terminal-lay
 import { configureTerminalStorage } from "@devbox/workspace-features/terminal-storage";
 
 const Terminal=lazy(()=>import("@devbox/workspace-features/terminal"));
-interface Peer {handshake:Handshake;context:ProjectContext;id:string}
+interface Peer {handshake:Handshake;context:ProjectContext|null;id:string}
 let initialization:Promise<Peer>|undefined;
 function connect():Promise<Peer> {
   initialization??=invoke<Peer>("plugin:workspace|terminal_describe").then(async peer=>{
-    if(peer.handshake.product!=="workspace"||peer.handshake.protocolVersion!==1||!isProjectContext(peer.context)
+    if(peer.handshake.product!=="workspace"||peer.handshake.protocolVersion!==1||(peer.context!==null&&!isProjectContext(peer.context))
       ||!peer.id||!/^[a-f0-9-]{36}$/.test(peer.id))throw new Error("invalid companion");
     configureTerminalStorage(peer.handshake.installationId,peer.id);
     configureProductTransport(<T,>(component:string,method:string,args:Record<string,unknown>)=>{
