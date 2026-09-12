@@ -131,3 +131,34 @@ project names and working folders, and its refresh no longer duplicates a list c
 Workspace TypeScript and portable all-target compilation passed (43.669 seconds).
 The final small manager-label/refresh edits were source reviewed. Detailed scenario
 tests and Windows-only nullable-context admission remain in the final B06 packet.
+
+## Native Runtime leases and cancellation admission
+
+Development Sessions now have a native-only Runtime facade for reviewed definitions,
+exact job/DAG run references and atomic service create-or-borrow. Review digests omit
+scheduler bookkeeping while retaining execution configuration/source revision. The
+claim transaction rejects changed definitions and existing execution conflicts;
+Session starts cannot inherit a global job's kill-previous/queue behavior. Once
+reviewed, a second database read cannot substitute a changed command before spawn.
+
+The actor creates a native start witness before submitting work. That witness retains
+the allocated run/service generation even if later storage/receipt publication fails.
+Renderer JSON and durable receipts cannot reconstruct the lease, and borrowed service
+leases cannot stop the creator's resource. Private Session receipt method names are
+stored by the owner without expanding the generic renderer Runtime control allowlist.
+
+A start waiting for global capacity now publishes a cancellable native reservation.
+Stop still serializes through the job mutex but observes start publication and wakes
+only the matching run/generation; unrelated capacity holders are untouched. Starts
+already crossing the adapter boundary remain owned until the ordinary exact stop
+can confirm cleanup. DAG children attach their durable run before waiting for capacity,
+so operation cancellation can find that exact pending child. Failed stops require a
+new receipt only after the retained prior worker has settled; old receipt IDs and late
+results cannot retire a replacement attempt.
+
+Regression scenarios were authored for shared-service acquisition, exact generation
+and queued-run cancellation, foreign-capacity waits, global kill-previous refusal and
+failed-stop retry. They are reserved for the completed B06 PR packet. The minimum
+Workspace all-target syntax/type check passed in 27.764 seconds; no B06 tests, Clippy,
+application build, affected run or actual Windows acceptance was executed. The facade
+still needs its Development Session controller/UI consumer; this is not WP06 completion.

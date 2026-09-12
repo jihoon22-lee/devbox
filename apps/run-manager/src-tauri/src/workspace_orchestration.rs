@@ -33,6 +33,16 @@ pub fn start_workspace_task_operation(
     root_job_id: &str,
     fail_fast: bool,
 ) -> Result<WorkspaceTaskOperationView, String> {
+    start_workspace_task_operation_reviewed(database, coordinator, root_job_id, fail_fast, None)
+}
+
+pub(crate) fn start_workspace_task_operation_reviewed(
+    database: Arc<DatabaseState>,
+    coordinator: SchedulerCoordinator,
+    root_job_id: &str,
+    fail_fast: bool,
+    expected_revision: Option<&str>,
+) -> Result<WorkspaceTaskOperationView, String> {
     let lease = coordinator
         .retain_workspace_operation()
         .map_err(str::to_owned)?;
@@ -50,6 +60,9 @@ pub fn start_workspace_task_operation(
     }
     let plan = build_workspace_task_operation_plan(root_job_id, &executions)
         .map_err(|error| error.to_string())?;
+    if expected_revision.is_some_and(|expected| expected != plan.revision) {
+        return Err("workspace-task-source-changed".into());
+    }
     let operation = database
         .create_workspace_task_operation_at(&plan, fail_fast, current_epoch_millis())
         .map_err(|error| match error {
@@ -199,27 +212,25 @@ async fn execute_workspace_task_operation(
                 continue;
             }
 
+            let observe_claim = |run: &crate::core::models::Run| {
+                if database.attach_workspace_task_operation_run(operation_id, job_id, &run.id)? {
+                    Ok(())
+                } else {
+                    Err(crate::storage::StorageError::ConcurrentChange(
+                        "workspace-task-operation-state".into(),
+                    ))
+                }
+            };
             match coordinator
-                .trigger_manual_at(job_id, current_epoch_millis())
+                .trigger_manual_observed_at(
+                    job_id,
+                    None,
+                    Some(&observe_claim),
+                    current_epoch_millis(),
+                )
                 .await
             {
                 Ok(run) => {
-                    if !database
-                        .attach_workspace_task_operation_run(operation_id, job_id, &run.id)
-                        .map_err(|_| "workspace-task-operation-storage")?
-                    {
-                        // This exact run was spawned after the durable launch
-                        // reservation but could not be attached. Stop it before
-                        // allowing the operation to settle.
-                        let stopped =
-                            stop_exact_run(&database, &coordinator, job_id, &run.id).await;
-                        let (status, code) = stopped.unwrap_or((
-                            WorkspaceTaskOperationRunStatus::Failed,
-                            Some("workspace-task-operation-stop-failed".to_owned()),
-                        ));
-                        complete_child(&database, operation_id, job_id, status, code.as_deref())?;
-                        return Err("workspace-task-operation-state-changed");
-                    }
                     if let Some((status, code)) = terminal_operation_status(&run) {
                         complete_child(&database, operation_id, job_id, status, code.as_deref())?;
                         layer_failed |= status != WorkspaceTaskOperationRunStatus::Succeeded;
@@ -423,7 +434,7 @@ async fn stop_exact_run(
     run_id: &str,
 ) -> Result<(WorkspaceTaskOperationRunStatus, Option<String>), &'static str> {
     if let Some(stopped) = coordinator
-        .stop_exact_active_at(job_id, run_id, current_epoch_millis())
+        .stop_session_run_at(job_id, run_id, current_epoch_millis())
         .await
         .map_err(|_| "workspace-task-operation-stop-failed")?
     {

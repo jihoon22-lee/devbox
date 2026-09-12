@@ -59,6 +59,8 @@ pub struct Resource {
     pub holders: BTreeSet<String>,
     pub stop_requested: bool,
     pub stop_operation: Option<String>,
+    #[serde(default)]
+    pub failed_stop_operations: BTreeSet<String>,
     pub stopped: bool,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
@@ -126,6 +128,12 @@ impl Store {
             || self.sessions.len() > MAX_SESSIONS
             || self.resources.len() > MAX_RESOURCES
             || self.operations.len() > MAX_OPERATIONS
+            || self
+                .resources
+                .values()
+                .map(|resource| resource.failed_stop_operations.len())
+                .sum::<usize>()
+                > MAX_OPERATIONS
         {
             return Err("session_store_invalid");
         }
@@ -168,6 +176,10 @@ impl Store {
                     .created_by
                     .as_ref()
                     .is_some_and(|owner| !self.sessions.contains_key(owner))
+                || resource
+                    .failed_stop_operations
+                    .iter()
+                    .any(|id| !operation_id(id))
                 || resource.stopped && !resource.holders.is_empty()
                 || resource.shared && resource.identity.kind != ResourceKind::Service
                 || resource
@@ -330,6 +342,12 @@ impl Store {
         if !operation_id(&operation) || !opaque(&owner) {
             return Err("session_operation_invalid");
         }
+        if self.resources.values().any(|resource| {
+            resource.stop_operation.as_deref() == Some(&operation)
+                || resource.failed_stop_operations.contains(&operation)
+        }) {
+            return Err("session_operation_conflict");
+        }
         if let Some(existing) = self.operations.get(&operation) {
             return if existing.session_id == session_id
                 && existing.owner_id == owner
@@ -440,6 +458,7 @@ impl Store {
                     holders: BTreeSet::new(),
                     stop_requested: false,
                     stop_operation: None,
+                    failed_stop_operations: BTreeSet::new(),
                     stopped: false,
                 },
             );
@@ -533,6 +552,10 @@ impl Store {
     pub fn reserve_stop(&mut self, key: &str, operation: String) -> Result<String> {
         if !operation_id(&operation)
             || self.operations.contains_key(&operation)
+            || self
+                .resources
+                .values()
+                .any(|resource| resource.failed_stop_operations.contains(&operation))
             || self.resources.iter().any(|(other, resource)| {
                 other != key && resource.stop_operation.as_deref() == Some(&operation)
             })
@@ -551,12 +574,49 @@ impl Store {
             return Err("session_resource_changed");
         }
         if let Some(existing) = &resource.stop_operation {
-            return Ok(existing.clone());
+            if !resource.failed_stop_operations.contains(existing) {
+                return Ok(existing.clone());
+            }
         }
         resource.stop_operation = Some(operation.clone());
         Ok(operation)
     }
-    pub fn retired(&mut self, key: &str, identity: &ResourceIdentity) -> Result<()> {
+    /// Call only after the exact retained native stop worker settled in failure.
+    /// A timeout while that worker still owns cleanup is not retry admission.
+    pub fn stop_failed(
+        &mut self,
+        key: &str,
+        identity: &ResourceIdentity,
+        operation: &str,
+    ) -> Result<()> {
+        if self
+            .resources
+            .values()
+            .map(|resource| resource.failed_stop_operations.len())
+            .sum::<usize>()
+            >= MAX_OPERATIONS
+        {
+            return Err("session_resource_limit");
+        }
+        let resource = self
+            .resources
+            .get_mut(key)
+            .ok_or("session_resource_missing")?;
+        if &resource.identity != identity
+            || resource.stopped
+            || resource.stop_operation.as_deref() != Some(operation)
+        {
+            return Err("session_resource_changed");
+        }
+        resource.failed_stop_operations.insert(operation.into());
+        Ok(())
+    }
+    pub fn retired(
+        &mut self,
+        key: &str,
+        identity: &ResourceIdentity,
+        operation: &str,
+    ) -> Result<()> {
         let resource = self
             .resources
             .get_mut(key)
@@ -565,7 +625,8 @@ impl Store {
             || !resource.holders.is_empty()
             || !resource.stop_requested
             || resource.created_by.is_none()
-            || resource.stop_operation.is_none()
+            || resource.stop_operation.as_deref() != Some(operation)
+            || resource.failed_stop_operations.contains(operation)
         {
             return Err("session_resource_changed");
         }
@@ -688,8 +749,33 @@ mod tests {
                 .unwrap(),
             stop
         );
-        store.retired("resource", &identity()).unwrap();
+        store.retired("resource", &identity(), &stop).unwrap();
         store.finish_stop(&second).unwrap();
+        store.validate().unwrap();
+    }
+    #[test]
+    fn failed_stop_requires_a_new_receipt_and_rejects_late_results() {
+        let mut store = Store::default();
+        let session = ready(&mut store, "one");
+        let start = reserve(&mut store, &session);
+        store
+            .acquired(&start, "resource".into(), identity(), true, false)
+            .unwrap();
+        store.begin_stop(&session).unwrap();
+        store.release(&session).unwrap();
+        let first = store
+            .reserve_stop("resource", uuid::Uuid::new_v4().to_string())
+            .unwrap();
+        store.stop_failed("resource", &identity(), &first).unwrap();
+        assert!(store.reserve_stop("resource", first.clone()).is_err());
+        let second = store
+            .reserve_stop("resource", uuid::Uuid::new_v4().to_string())
+            .unwrap();
+        assert_ne!(first, second);
+        assert!(store.retired("resource", &identity(), &first).is_err());
+        assert!(store.stop_failed("resource", &identity(), &first).is_err());
+        store.retired("resource", &identity(), &second).unwrap();
+        store.finish_stop(&session).unwrap();
         store.validate().unwrap();
     }
     #[test]
@@ -705,7 +791,9 @@ mod tests {
         assert!(store
             .reserve_stop("external", uuid::Uuid::new_v4().to_string())
             .is_err());
-        assert!(store.retired("external", &identity()).is_err());
+        assert!(store
+            .retired("external", &identity(), &uuid::Uuid::new_v4().to_string())
+            .is_err());
         store.finish_stop(&first).unwrap();
         let second = ready(&mut store, "two");
         let operation = reserve(&mut store, &second);
@@ -733,7 +821,8 @@ mod tests {
         store
             .reserve_stop("late", uuid::Uuid::new_v4().to_string())
             .unwrap();
-        store.retired("late", &identity()).unwrap();
+        let stop = store.resources["late"].stop_operation.clone().unwrap();
+        store.retired("late", &identity(), &stop).unwrap();
         store.finish_stop(&session).unwrap();
         store.validate().unwrap();
     }

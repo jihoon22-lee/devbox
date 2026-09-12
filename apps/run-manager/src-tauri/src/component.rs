@@ -11,6 +11,8 @@ use tauri::{Emitter, Manager};
 
 #[cfg(feature = "desktop")]
 mod control;
+#[cfg(feature = "desktop")]
+pub mod sessions;
 pub use crate::core::runtime_controls::legacy_control_method;
 mod logs;
 pub use logs::OwnedRunLog;
