@@ -1,11 +1,11 @@
 # port-manager — Port & Process Manager
 
-v0.8 B05 준비에서 UI·API adapter·테스트는
+v0.8 B05 통합에서 UI·API adapter·테스트는
 `packages/workspace-features/src/runtime`로 이전했다. 독립 앱도 같은 UI를 사용한다.
 Workspace는 Runtime 관찰과 외부 Process Action 권한을 분리해 같은 native adapter를 사용한다.
 Runtime이 실제로 소유한 자식 listener는 작업·실행 로그로 연결하며, Windows FILETIME/Job
 또는 WSL start tick/group 근거를 재확인한다. 설정 가져오기는 원본·이전 설정을 보존하고
-revision과 명시적 교체 검토를 사용한다. B05 전체 PR/Windows·WSL 수용 검증은 아직 진행 전이다.
+revision과 명시적 교체 검토를 사용한다. B05의 검증 결과와 최종 CI 진행 상태는 [workthrough](../../workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md)에 기록한다.
 
 현재 PC에서 사용 중인 listener와 연결된 프로세스를 한 화면에서 확인하고,
 같은 endpoint와 같은 프로세스 실행인지 다시 확인한 뒤 안전하게 종료하는 앱이다.
@@ -18,7 +18,9 @@ revision과 명시적 교체 검토를 사용한다. B05 전체 PR/Windows·WSL 
 - **Windows 상세** — process name, bounded full command line, executable path, PID,
   process creation FILETIME을 표시한다. 권한 때문에 읽지 못한 값은 비워 둔다.
 - **WSL 상세** — distro, protocol, address/port, PID, command, Linux
-  proc pid stat의 start tick을 표시한다.
+  proc pid stat의 start tick을 표시한다. WSL1처럼 listener 조회를 지원하지 않거나 조회가
+  실패한 배포판은 사용 불가로 표시한다. 다른 출처의 행을 계속 보여 주며 마지막 정상
+  비교 기준을 보존한다. 조회 helper는 suspended 상태에서 Job에 등록한 뒤 실행한다.
 - **컨테이너 상세** — Docker engine, distro, container ID/name과 published port를
   표시한다. 컨테이너는 OS PID로 종료하지 않고 WSL Desktop의 명시적 stop action
   handoff 대상으로만 취급한다.

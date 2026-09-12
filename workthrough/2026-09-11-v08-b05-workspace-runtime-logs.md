@@ -325,3 +325,31 @@ The temporary artifact selector initially omitted staticlib/rlib harness kinds;
 those two missing harnesses were then executed from the same compiled artifacts in
 0.271 seconds, with no rebuild or frontend repetition. Windows-only stderr fixtures
 and the changed packaged lifecycle await final-revision CI.
+
+## Final Windows discovery and wait-error corrections
+
+[Product acceptance at 11f11b5](https://github.com/jihoon22-lee/devbox/actions/runs/34696033170)
+passed every job. Both installation namespaces passed packaged Windows task/listener/
+log navigation, receipt/reload, crash recovery and WAL/settings import. WSL1 passed
+secret redaction, group stop and backoff cancellation; its listener correlation is
+explicitly unsupported. The exact debug artifact at PR merge db0fb787 was then run
+on actual Windows with a newly owned WSL2 distro: declared correlation, exact start-tick
+rejection, owned descendant navigation, secret redaction, group stop and backoff all
+passed. The app exited, its isolated data and the owned distro/directory were removed.
+The local WSL2 exercise itself took 25.134 seconds; archive import/cleanup is separate.
+
+The [Windows Rust job](https://github.com/jihoon22-lee/devbox/actions/runs/34696033142)
+failed the new successful-empty-command fixture with SourceUnavailable. Discovery
+previously spawned a running command before assigning its Job, leaving a fast-exit
+and pre-assignment descendant race. It now creates the child suspended, assigns the
+Job, verifies its active root and sole primary thread, and resumes once. Failure
+terminates the owned suspended process. The existing empty/diagnostic tests exercise
+that complete Windows path; their final-head execution remains required.
+
+Review of the WSL error path also found that failed natural-wait consumption could
+leave the monitor polling a consumed oneshot, and a failed reap could retire the
+owner needed for retry. Failed natural results now remain observable by the monitor;
+only successful reap joins the owner. All **7 WSL wrapper cases passed** in the
+updated harness. The existing feature graph compiled once; unrelated passing tests
+were not rerun. The correction packet took 70.305 seconds. Final CI and a focused WSL2
+listener rerun must validate the changed Windows discovery startup boundary.

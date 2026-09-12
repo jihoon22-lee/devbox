@@ -749,11 +749,23 @@ async fn reap_wsl_wrapper(
         // Group termination may let the wrapper exit naturally before the
         // owner receives the reap request. A closed request/response channel
         // alone is not cleanup evidence: require the owner's native wait.
-        natural_wait.await.map_err(|_| failure(FailureCode::Wait))?
+        let result = (&mut *natural_wait)
+            .await
+            .unwrap_or_else(|_| Err(failure(FailureCode::Wait)));
+        if result.is_err() {
+            // The monitor still owns error recovery. Keep this completed wait
+            // observable there instead of letting it poll a consumed oneshot.
+            let (sender, receiver) = oneshot::channel();
+            let _ = sender.send(result.clone());
+            *natural_wait = receiver;
+        }
+        result
     };
     match tokio::time::timeout(timeout, acknowledgement).await {
         Ok(result) => {
-            finish_wsl_wait_owner(wait_task).await;
+            if result.is_ok() {
+                finish_wsl_wait_owner(wait_task).await;
+            }
             result
         }
         Err(_) => Err(failure(FailureCode::Termination)),
@@ -1818,6 +1830,58 @@ mod tests {
         )
         .await
         .is_err());
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_failed_natural_wait_remains_observable_to_the_monitor() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let mut wait_task = tokio::spawn(async move {
+            drop(reap_rx);
+            let _ = wait_tx.send(Err(failure(FailureCode::Wait)));
+        });
+        assert!(reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250)
+        )
+        .await
+        .is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut wait_rx)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+        finish_wsl_wait_owner(&mut wait_task).await;
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_failed_reap_retains_the_owner_for_retry() {
+        let (_wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, mut reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let release_owner = release.clone();
+        let mut wait_task = tokio::spawn(async move {
+            let request = reap_rx.recv().await.unwrap();
+            let _ = request
+                .response
+                .send(Err(failure(FailureCode::Termination)));
+            release_owner.notified().await;
+        });
+        assert!(reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250)
+        )
+        .await
+        .is_err());
+        assert!(!wait_task.is_finished());
+        release.notify_one();
+        finish_wsl_wait_owner(&mut wait_task).await;
     }
 
     #[cfg(unix)]

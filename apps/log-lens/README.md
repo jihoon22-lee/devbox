@@ -5,7 +5,8 @@ The v0.8 B05 extraction moves UI, API adapters and tests into
 feature. Workspace composes the native engine with Runtime-issued log leases
 and a separate product saved-view store. Legacy saved views import disconnected;
 explicit reconnect renews mapped Runtime references while retaining filters.
-The complete B05 PR and Windows/WSL acceptance runs remain pending.
+Validation results and final CI status are recorded in the
+[B05 workthrough](../../workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md).
 
 Log Lens 0.2.1 is a bounded, offline log viewer for explicitly selected local
 files/directories and fixed WSL, local-container, Run Manager, or one-time

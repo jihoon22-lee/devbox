@@ -766,6 +766,77 @@ impl FixedCommandJob {
         Ok(Self { handle })
     }
 
+    fn resume(&self, child: &std::process::Child) -> Result<(), ListenerError> {
+        use std::mem::size_of;
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+        };
+        use windows::Win32::System::JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        };
+        use windows::Win32::System::Threading::{
+            GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
+            THREAD_SUSPEND_RESUME,
+        };
+        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.handle),
+                JobObjectBasicAccountingInformation,
+                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .map_err(|_| ListenerError::SourceUnavailable)?;
+        if accounting.ActiveProcesses != 1 {
+            return Err(ListenerError::SourceUnavailable);
+        }
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
+            .map_err(|_| ListenerError::SourceUnavailable)?;
+        let mut entry = THREADENTRY32 {
+            dwSize: size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        let mut threads = Vec::new();
+        if unsafe { Thread32First(snapshot, &mut entry) }.is_ok() {
+            loop {
+                if entry.th32OwnerProcessID == child.id() {
+                    threads.push(entry.th32ThreadID);
+                }
+                if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
+                    break;
+                }
+            }
+        }
+        unsafe {
+            let _ = CloseHandle(snapshot);
+        }
+        if threads.len() != 1 {
+            return Err(ListenerError::SourceUnavailable);
+        }
+        let thread = unsafe {
+            OpenThread(
+                THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                false,
+                threads[0],
+            )
+        }
+        .map_err(|_| ListenerError::SourceUnavailable)?;
+        let valid = unsafe { GetProcessIdOfThread(thread) } == child.id();
+        let resumed = valid && unsafe { ResumeThread(thread) } == 1;
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+        if resumed {
+            Ok(())
+        } else {
+            Err(ListenerError::SourceUnavailable)
+        }
+    }
+
     fn terminate(&self, child: &mut std::process::Child) {
         use windows::Win32::System::JobObjects::TerminateJobObject;
         let _ = unsafe { TerminateJobObject(self.handle, 1) };
@@ -821,7 +892,9 @@ fn run_fixed_command_checked(
         } else {
             Stdio::null()
         })
-        .creation_flags(0x0800_0000);
+        // Assign the discovery Job before user code can exit or spawn a
+        // descendant. An already-exited fast command cannot be assigned.
+        .creation_flags(0x0800_0000 | 0x0000_0004);
     let mut child = command
         .spawn()
         .map_err(|_| ListenerError::SourceUnavailable)?;
@@ -833,6 +906,10 @@ fn run_fixed_command_checked(
             return Err(error);
         }
     };
+    if let Err(error) = job.resume(&child) {
+        job.terminate(&mut child);
+        return Err(error);
+    }
     let Some(mut stdout) = child.stdout.take() else {
         job.terminate(&mut child);
         return Err(ListenerError::SourceUnavailable);
