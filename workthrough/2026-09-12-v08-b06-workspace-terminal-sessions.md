@@ -223,6 +223,43 @@ ran an isolated local Windows two-service diagnostic: the failed service stopped
 the steady service remained running and explicit cleanup completed. This did not
 reproduce the CI stall, so it is diagnostic evidence, not a replacement for the
 failed CI case. Owned app/data/temp cleanup was confirmed; no user distro was used.
+The second completion runs (head 3b52d11; CI 34720915215 / native 34720915212)
+passed Windows compilation/Clippy and the owned WSL helper/source/execution cases.
+Native library tests now run: 172 Workspace cases passed, with one real URI-path
+failure and three explicitly ignored cases. Windows was interpreting Linux LSP
+file URIs through host-specific Url::to_file_path. URI decoding now follows the
+bound target rules, including case-sensitive POSIX paths, Windows drive/UNC roots,
+percent-encoded UTF-8 and rejection of malformed/foreign/query/fragment locations.
+
+The packaged Runtime stop case exposed an additional ordering boundary: Job
+accounting can reach zero before the root process handle signals. A zero-time root
+wait falsely rejected an already terminating tree. The root signal now uses the
+remainder of the same bounded stop deadline. An owned root/two-descendant native
+regression fixture covers this boundary. The exact second artifact
+3aca46830b90830d672027167a4ded87acea2e5b reproduced the failed stop locally on its
+first disposable descendant run; explicit retry retired it. The failure was reported
+as storage-failed by the scheduler's recovery fallback, not evidence of SQLite
+corruption. This observation is not a pass for the corrected code.
+
+The scheduler now preserves the durable stopping intent when a late cleanup
+witness arrives after a failed stop, rather than fabricating a storage error when
+there is no secondary terminal error. Existing recorded errors retain precedence.
+The same full Cargo feature graph rebuilt test artifacts in 357.111 seconds
+(previous notice-header changes also invalidated Tauri resource consumers). Only
+the two URI cases and five affected stop/wait regressions then ran: all seven
+passed in 0.782 seconds under the shared resource wrapper. Other passing tests
+were retained. Windows-specific root/descendant execution remains a CI requirement.
+The disposable local app, data and final temp directory were all removed.
+
+Both Windows jobs reported No cache found and their failed runs skipped cache
+saving. They now preserve compiled dependency caches on failure, retaining the
+compiler/manifest/environment key and default exclusion of workspace crates.
+This changes cache retention only; test results and final-head gates are unchanged.
+The behavior is documented in verification operations; changed workflow YAML and
+cache inputs parsed successfully with the other cache defaults retained. No passed full audit is
+repeated solely for this cache setting; URI tests and changed Windows retirement
+cases are the required rechecks.
+
 Final PR CI, remaining Windows cases and owned WSL2 evidence are still required. The exported foundation artifact has a debug build profile;
 it is not release packaged-runtime acceptance. A Windows compile is not execution
 evidence.

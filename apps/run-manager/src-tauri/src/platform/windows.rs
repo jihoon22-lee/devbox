@@ -639,10 +639,14 @@ impl WindowsChild {
     /// The Job Object signal is not an empty-tree witness: Windows guarantees
     /// it for the end-of-job time limit, not ordinary process termination.
     pub fn terminate_and_wait(&self, timeout: Duration) -> Result<u32, WindowsExecutionError> {
+        let started = Instant::now();
         unsafe { TerminateJobObject(self.job.raw(), 1) }
             .map_err(|error| win32_error("TerminateJobObject", error))?;
         self.wait_for_tree_empty(timeout)?;
-        let Some(exit_code) = self.wait(Some(Duration::ZERO))? else {
+        // Job accounting can reach zero just before the root process handle
+        // becomes signalled. Spend only the remainder of the same deadline on
+        // that final signal instead of reporting a spurious termination failure.
+        let Some(exit_code) = self.wait(Some(timeout.saturating_sub(started.elapsed())))? else {
             return Err(WindowsExecutionError::ProcessStillAlive);
         };
         Ok(exit_code)
@@ -1175,6 +1179,26 @@ mod execution_tests {
         child.ensure_tree_gone(Duration::from_secs(5)).unwrap();
         assert_eq!(child.active_processes().unwrap(), 0);
         assert_eq!(child.wait(Some(Duration::ZERO)).unwrap(), Some(7));
+    }
+
+    #[test]
+    fn explicit_tree_stop_waits_for_the_root_signal_after_accounting_reaches_zero() {
+        let shell = system_shell().unwrap();
+        let ping = shell.parent().unwrap().join("ping.exe");
+        let command = format!(
+            r#"start "" /b "{}" -n 60 127.0.0.1 >nul & "{}" -n 60 127.0.0.1 >nul"#,
+            ping.display(),
+            ping.display()
+        );
+        let child = spawn(&command, None, &BTreeMap::new()).unwrap();
+        let started = Instant::now();
+        while child.active_processes().unwrap() < 3 && started.elapsed() < Duration::from_secs(10) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert!(child.active_processes().unwrap() >= 3);
+        child.terminate_and_wait(Duration::from_secs(5)).unwrap();
+        assert_eq!(child.active_processes().unwrap(), 0);
+        assert!(child.wait(Some(Duration::ZERO)).unwrap().is_some());
     }
 
     #[test]

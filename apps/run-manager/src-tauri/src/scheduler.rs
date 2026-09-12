@@ -2350,15 +2350,34 @@ impl SchedulerCoordinator {
                     .await
                     .get(&run_id)
                     .cloned()
-                    .unwrap_or(PendingTerminal {
-                        status: RunStatus::Failed,
-                        exit_code: None,
-                        error_message: Some(
-                            TerminalFailureCode::StorageFailed
-                                .as_db_message()
-                                .to_string(),
-                        ),
-                        failure_code: Some(TerminalFailureCode::StorageFailed),
+                    .unwrap_or_else(|| {
+                        // The durable stopping row already records a user/owner
+                        // stop intent. A late cleanup witness must preserve it,
+                        // not invent a storage failure because no secondary
+                        // terminal error was recorded by the failed stop attempt.
+                        let stopping = self
+                            .inner
+                            .database
+                            .get_run(&run_id)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|run| run.status == RunStatus::Stopping);
+                        PendingTerminal {
+                            status: if stopping {
+                                RunStatus::Cancelled
+                            } else {
+                                RunStatus::Failed
+                            },
+                            exit_code: None,
+                            error_message: Some(if stopping {
+                                "manual-stop".to_owned()
+                            } else {
+                                TerminalFailureCode::StorageFailed
+                                    .as_db_message()
+                                    .to_owned()
+                            }),
+                            failure_code: (!stopping).then_some(TerminalFailureCode::StorageFailed),
+                        }
                     });
                 let terminal = self.finish_run_and_notify(
                     &run_id,
@@ -3366,6 +3385,28 @@ mod tests {
         }
     }
 
+    #[derive(Clone)]
+    struct LateCleanupAfterFailedStop {
+        completed: Arc<tokio::sync::Notify>,
+    }
+    impl ExecutionHandle for LateCleanupAfterFailedStop {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { Err(AdapterError::new("terminate-failed")) })
+        }
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async move {
+                self.completed.notified().await;
+                Ok(ExecutionExit { exit_code: Some(1) })
+            })
+        }
+    }
+    impl ExecutionAdapter for LateCleanupAfterFailedStop {
+        fn spawn(&self, _: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            let handle = self.clone();
+            Box::pin(async move { Ok(Arc::new(handle) as Arc<dyn ExecutionHandle>) })
+        }
+    }
+
     struct MetadataErrorHangingAdapter;
 
     struct MetadataErrorHangingHandle;
@@ -3740,6 +3781,43 @@ mod tests {
         assert_eq!(events[0].run_id, run.id);
         assert_eq!(events[0].status, RunStatus::Cancelled);
         assert_eq!(events[0].failure_code, None);
+    }
+
+    #[tokio::test]
+    async fn late_cleanup_after_failed_stop_preserves_cancel_intent_without_fake_storage_error() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("late-stop", false, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let completed = Arc::new(tokio::sync::Notify::new());
+        let scheduler = SchedulerCoordinator::new(
+            database.clone(),
+            Arc::new(LateCleanupAfterFailedStop {
+                completed: completed.clone(),
+            }),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        assert!(scheduler.stop_active_at(&job.id, 1_002).await.is_err());
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Stopping
+        );
+        assert!(!scheduler.cleanup_confirmed().await);
+        completed.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database.get_run(&run.id).unwrap().unwrap().status == RunStatus::Cancelled
+                    && scheduler.cleanup_confirmed().await
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let finished = database.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(finished.error_message.as_deref(), Some("manual-stop"));
     }
 
     #[tokio::test]

@@ -139,6 +139,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-product-foundation
+          # Preserve compiled dependencies after a fixture fails; results are never cached.
+          cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Check generated Workspace fixture requests
         run: node --test .github/scripts/windows-workspace-registration.test.mjs
@@ -363,6 +365,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-product-foundation
+          # Preserve compiled dependencies after a fixture fails; results are never cached.
+          cache-on-failure: true
       - name: Compile only explicit native WSL fixtures
         shell: pwsh
         run: .github/scripts/export-knowledge-wsl-fixtures.ps1

@@ -336,6 +336,8 @@ jobs:
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         with:
           shared-key: devbox-windows
+          # Preserve compiled dependencies after a fixture fails; results are never cached.
+          cache-on-failure: true
 
       - name: Check
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}

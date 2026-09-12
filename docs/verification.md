@@ -69,6 +69,12 @@ memory max 초과 시 OOM으로 검증이 실패할 수 있다. 실패를 성공
 `CI=true`이면 `ci` profile로 기존 CI 실행을 유지한다. `DEVBOX_VERIFY_PROFILE=local`은
 명시적으로 로컬 제한을 선택한다. 로컬에서 `ci` profile로 제한을 우회하지 않는다.
 
+Windows compiler/native acceptance CI는 실패한 실행에서도 Rust 의존성 빌드 캐시를
+보존한다(`cache-on-failure: true`). 첫 테스트 실패 때문에 완료된 의존성을 다음
+실행에서 다시 컴파일하지 않도록 하기 위한 설정이다. compiler·Cargo manifest/lockfile·
+환경 해시 키와 기본 workspace crate 제외 정책은 유지하며, 캐시를 테스트 PASS 근거나
+이전 제품 실행 파일의 재사용 허가로 취급하지 않는다.
+
 Windows Rust CI의 Cargo build job은 1개다. 여러 Tauri build script가 같은
 target staging의 고지 파일을 동시에 복사하면 Windows sharing violation 32가
 발생하므로 직렬화한다. 전체/scoped check·Clippy·test 범위와 test harness 동시성은

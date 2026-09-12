@@ -334,18 +334,59 @@ impl Problems {
     }
 }
 fn relative_uri(uri: &str, root: &str, windows: bool) -> Option<String> {
-    let url = tauri::Url::parse(uri).ok()?;
-    if url.scheme() != "file" {
+    if uri.len() > 32768 {
         return None;
     }
-    let path = url
-        .to_file_path()
-        .ok()?
-        .to_string_lossy()
-        .replace('\\', "/");
-    let root = root.replace('\\', "/").trim_end_matches('/').to_string();
+    let url = tauri::Url::parse(uri).ok()?;
+    if url.scheme() != "file" || url.query().is_some() || url.fragment().is_some() {
+        return None;
+    }
+    // Url::to_file_path uses the build host's path rules: on Windows it
+    // rejects /home/... even when the diagnostic belongs to a Linux target.
+    // Decode the URI under the explicitly bound target's rules instead.
+    let encoded = url.path().as_bytes();
+    let mut bytes = Vec::with_capacity(encoded.len());
+    let mut index = 0;
+    while index < encoded.len() {
+        if encoded[index] == b'%' {
+            let digit = |byte: u8| (byte as char).to_digit(16).map(|value| value as u8);
+            bytes.push(digit(*encoded.get(index + 1)?)? * 16 + digit(*encoded.get(index + 2)?)?);
+            index += 3;
+        } else {
+            bytes.push(encoded[index]);
+            index += 1;
+        }
+    }
+    let decoded = String::from_utf8(bytes).ok()?;
+    let (path, root) = if windows {
+        let path = match url.host_str() {
+            Some(host) => format!("//{host}{decoded}"),
+            None => {
+                let path = decoded.strip_prefix('/')?;
+                if path.as_bytes().get(1) != Some(&b':')
+                    || !path.as_bytes().first()?.is_ascii_alphabetic()
+                {
+                    return None;
+                }
+                path.into()
+            }
+        };
+        (path.replace('\\', "/"), root.replace('\\', "/"))
+    } else {
+        if url.host_str().is_some() || decoded.contains('\\') || root.contains('\\') {
+            return None;
+        }
+        (decoded, root.to_owned())
+    };
     let path = path.trim_start_matches("//?/");
-    let root = root.trim_start_matches("//?/").to_string() + "/";
+    let root = if windows {
+        root.strip_prefix("//?/UNC/")
+            .map(|unc| format!("//{unc}"))
+            .unwrap_or_else(|| root.trim_start_matches("//?/").to_owned())
+    } else {
+        root
+    };
+    let root = root.trim_end_matches('/').to_string() + "/";
     let relative = if windows {
         if !path
             .to_ascii_lowercase()
@@ -805,5 +846,44 @@ mod native_uri_tests {
             super::relative_uri("file:///home/fixture/a.rs", "/home/fixture", false),
             Some("a.rs".into())
         );
+    }
+    #[test]
+    fn target_rules_decode_names_and_reject_foreign_or_ambiguous_locations() {
+        assert_eq!(
+            super::relative_uri(
+                "file:///home/fixture/%ED%95%9C%EA%B8%80%20a.rs",
+                "/home/fixture",
+                false
+            ),
+            Some("한글 a.rs".into())
+        );
+        assert_eq!(
+            super::relative_uri("file:///C:/Fixture/a.rs", "c:\\fixture", true),
+            Some("a.rs".into())
+        );
+        assert_eq!(
+            super::relative_uri(
+                "file://server/share/Fixture/a.rs",
+                "\\\\server\\share\\fixture",
+                true
+            ),
+            Some("a.rs".into())
+        );
+        for uri in [
+            "file://other/home/fixture/a.rs",
+            "file:///home/fixture2/a.rs",
+            "file:///home/fixture/%ZZ.rs",
+            "file:///home/fixture/%FF.rs",
+            "file:///home/fixture/a%5Cb.rs",
+            "file:///home/fixture/a.rs?query=x",
+            "file:///home/fixture/a.rs#fragment",
+            "file:///home/fixture/../other.rs",
+        ] {
+            assert_eq!(
+                super::relative_uri(uri, "/home/fixture", false),
+                None,
+                "{uri}"
+            );
+        }
     }
 }
