@@ -79,6 +79,29 @@ pub fn candidates(app: &tauri::AppHandle) -> Result<Value, String> {
         json!({"jobs":jobs.into_iter().take(256).map(|job| json!({"id":job.id,"name":job.name,"kind":job.kind,"targetKind":job.target_kind,"targetDistro":job.target_distro})).collect::<Vec<_>>(),"truncated":truncated}),
     )
 }
+pub fn running_project_runs(app: &tauri::AppHandle, root: &str) -> Result<Vec<String>, String> {
+    let database = database(app)?;
+    let active = database
+        .list_active_process_runs()
+        .map_err(|_| "session_runtime_unavailable")?;
+    if active.len() > 256 {
+        return Err("session_runtime_limit".into());
+    }
+    let mut result = Vec::new();
+    for run in active
+        .into_iter()
+        .filter(|run| run.status == crate::core::models::RunStatus::Running)
+    {
+        let task = database
+            .get_workspace_task_execution_for_operation_run(&run.id)
+            .map_err(|_| "session_runtime_unavailable")?;
+        if task.is_some_and(|task| task.source_root == root) {
+            result.push(run.id);
+        }
+    }
+    Ok(result)
+}
+
 pub fn prepare_job(app: &tauri::AppHandle, id: &str) -> Result<PreparedJob, String> {
     let database = database(app)?;
     let job = database
@@ -257,6 +280,34 @@ impl RuntimeLease {
                 )
             }
         }
+    }
+    pub fn running_runs(&self) -> Result<Vec<String>, String> {
+        let database = database(&self.app)?;
+        let status = self.status()?;
+        let mut ids = Vec::new();
+        if let Some(id) = status.get("runId").and_then(Value::as_str) {
+            ids.push(id.to_owned());
+        }
+        if let Identity::TaskOperation(id) = &self.identity {
+            ids.extend(
+                database
+                    .workspace_task_operation_active_runs(id)
+                    .map_err(|_| "session_runtime_unavailable")?
+                    .into_iter()
+                    .map(|(_, id)| id),
+            );
+        }
+        let mut running = Vec::new();
+        for id in ids {
+            if database
+                .get_run(&id)
+                .map_err(|_| "session_runtime_unavailable")?
+                .is_some_and(|run| run.status == crate::core::models::RunStatus::Running)
+            {
+                running.push(id);
+            }
+        }
+        Ok(running)
     }
     pub async fn ready(&self) -> Result<bool, String> {
         if let Identity::Service(generation) = &self.identity {

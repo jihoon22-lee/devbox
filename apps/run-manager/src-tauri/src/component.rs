@@ -99,6 +99,38 @@ pub async fn process_owner(
     }))
 }
 
+/// Native metadata for binding an already-owned operation's diagnostics.
+pub fn diagnostic_source(app: &tauri::AppHandle, run_id: &str) -> Result<String, String> {
+    data_root(app)?;
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    let source = database
+        .get_workspace_task_execution_for_operation_run(run_id)
+        .map_err(|_| "runtime_diagnostic_invalid")?
+        .ok_or("runtime_diagnostic_invalid")?;
+    Ok(source.source_root)
+}
+
+pub fn diagnostic_identity(
+    app: &tauri::AppHandle,
+    run_id: &str,
+) -> Result<(String, String, i64), String> {
+    data_root(app)?;
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    let run = database
+        .get_run(run_id)
+        .map_err(|_| "runtime_diagnostic_invalid")?
+        .ok_or("runtime_diagnostic_invalid")?;
+    let source = database
+        .get_workspace_task_execution_for_operation_run(run_id)
+        .map_err(|_| "runtime_diagnostic_invalid")?
+        .ok_or("runtime_diagnostic_invalid")?;
+    Ok((source.source_root, run.job_id, run.queue_sequence))
+}
+
 pub struct DiagnosticTarget {
     pub path: PathBuf,
     pub line: u32,

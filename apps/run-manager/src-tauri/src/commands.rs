@@ -13,7 +13,7 @@ use crate::core::models::{
     RunStatus, RunView, ServiceInput, ServiceInstanceView,
 };
 use crate::core::workspace_diagnostics::{
-    match_workspace_diagnostics, resolve_workspace_diagnostic_path, WorkspaceTaskDiagnostics,
+    match_workspace_diagnostics_at, resolve_workspace_diagnostic_path, WorkspaceTaskDiagnostics,
 };
 use crate::core::workspace_orchestration::WorkspaceTaskOperationView;
 use crate::core::workspace_tasks::{
@@ -63,6 +63,16 @@ async fn read_search_snapshot(
     streams: &LogStreams,
     stream: LogStream,
 ) -> Result<(Vec<u8>, bool), String> {
+    read_search_snapshot_at(streams, stream)
+        .await
+        .map(|(bytes, truncated, _)| (bytes, truncated))
+}
+
+async fn read_search_snapshot_at(
+    streams: &LogStreams,
+    stream: LogStream,
+) -> Result<(Vec<u8>, bool, u64), String> {
+    let mut base = 0u64;
     let mut bytes = Vec::with_capacity(MAX_SCAN_BYTES_PER_STREAM);
     let mut cursor: Option<String> = None;
     let mut restarted = false;
@@ -86,6 +96,15 @@ async fn read_search_snapshot(
             return Err("log-search-read-failed".to_string());
         }
 
+        if request_cursor.is_none() {
+            base = response
+                .next_cursor
+                .parse::<u64>()
+                .ok()
+                .and_then(|end| end.checked_sub(response.data.len() as u64))
+                .ok_or_else(|| "log-search-read-failed".to_owned())?;
+        }
+        truncated |= response.truncated;
         let remaining = MAX_SCAN_BYTES_PER_STREAM.saturating_sub(bytes.len());
         if response.data.len() > remaining {
             bytes.extend_from_slice(&response.data[..remaining]);
@@ -111,7 +130,7 @@ async fn read_search_snapshot(
         }
         tokio::task::yield_now().await;
     }
-    Ok((bytes, truncated))
+    Ok((bytes, truncated, base))
 }
 
 /// Resolve and reconstruct retained segment metadata away from Tauri's async
@@ -1072,19 +1091,19 @@ pub(crate) async fn workspace_task_diagnostics_for_run(
         .map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
     let streams = open_search_streams(data_root, log_dir, run_id.to_owned()).await?;
     let (stdout, stderr) = tokio::join!(
-        read_search_snapshot(&streams, LogStream::Stdout),
-        read_search_snapshot(&streams, LogStream::Stderr)
+        read_search_snapshot_at(&streams, LogStream::Stdout),
+        read_search_snapshot_at(&streams, LogStream::Stderr)
     );
-    let (stdout, stdout_truncated) =
+    let (stdout, stdout_truncated, stdout_base) =
         stdout.map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
-    let (stderr, stderr_truncated) =
+    let (stderr, stderr_truncated, stderr_base) =
         stderr.map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
-    let diagnostics = match_workspace_diagnostics(
+    let diagnostics = match_workspace_diagnostics_at(
         run_id,
         matcher,
         &[
-            ("stdout", stdout.as_slice(), stdout_truncated),
-            ("stderr", stderr.as_slice(), stderr_truncated),
+            ("stdout", stdout.as_slice(), stdout_truncated, stdout_base),
+            ("stderr", stderr.as_slice(), stderr_truncated, stderr_base),
         ],
     );
     Ok((execution, diagnostics))

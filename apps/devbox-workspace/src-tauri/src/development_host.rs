@@ -131,6 +131,37 @@ fn resource_key(identity: &ResourceIdentity) -> String {
 }
 
 impl Sessions {
+    pub(crate) fn running_runs(&self, context: &ProjectContext) -> Result<Vec<String>> {
+        let leases = {
+            let guard = self.inner.lock().map_err(|_| "session_owner_busy")?;
+            let Some(inner) = guard.as_ref() else {
+                return Ok(vec![]);
+            };
+            let keys = inner
+                .document
+                .store
+                .sessions
+                .values()
+                .filter(|session| session.context == *context)
+                .flat_map(|session| session.resources.iter().cloned())
+                .collect::<BTreeSet<_>>();
+            keys.iter()
+                .filter_map(|key| match inner.leases.get(key) {
+                    Some(Lease::Runtime(lease)) => Some(lease.clone()),
+                    _ => None,
+                })
+                .collect::<Vec<_>>()
+        };
+        let mut runs = BTreeSet::new();
+        for lease in leases {
+            runs.extend(
+                lease
+                    .running_runs()
+                    .map_err(|_| "session_runtime_unavailable")?,
+            );
+        }
+        Ok(runs.into_iter().collect())
+    }
     fn access<T>(&self, f: impl FnOnce(&mut Inner) -> Result<T>) -> Result<T> {
         let mut inner = self.inner.lock().map_err(|_| "session_owner_busy")?;
         f(inner.as_mut().ok_or("session_owner_unavailable")?)

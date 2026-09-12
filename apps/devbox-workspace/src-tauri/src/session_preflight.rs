@@ -48,6 +48,62 @@ pub(crate) async fn capture(
     jobs: &[PreparedJob],
     deadline: u64,
 ) -> Result<Report, &'static str> {
+    let owner = crate::problems_host::owner(app).ok();
+    let ticket = owner
+        .as_ref()
+        .and_then(|owner| owner.begin(context, "preflight", "current").ok());
+    let result = capture_inner(app, host, definitions, context, jobs, deadline).await;
+    if let (Some(owner), Some(ticket)) = (owner, ticket) {
+        match &result {
+            Ok(report) => {
+                let items = report
+                    .entries
+                    .iter()
+                    .filter(|entry| entry.blocking)
+                    .map(|entry| crate::core::problems::Item {
+                        severity: crate::core::problems::Severity::Error,
+                        message: format!(
+                            "{}: {}",
+                            entry.key,
+                            match entry.state {
+                                "occupied" => "다른 실행이 포트를 사용 중입니다.",
+                                "stopped" => "WSL 배포판이 중지되어 있습니다.",
+                                "different-worktree" => "다른 worktree의 작업입니다.",
+                                "review-required" => "작업 실행 승인이 필요합니다.",
+                                "observation-unavailable" => "포트 상태를 확인할 수 없습니다.",
+                                _ => "세션 시작 조건을 확인하지 못했습니다.",
+                            }
+                        ),
+                        target: crate::core::problems::Target::Route {
+                            route: match entry.kind {
+                                "port" => "runtime",
+                                "task" | "taskTrust" | "taskContext" => "tasks",
+                                _ => "overview",
+                            }
+                            .into(),
+                        },
+                        log: None,
+                    })
+                    .collect();
+                let revision = crate::definitions::digest(
+                    &serde_json::to_vec(report).map_err(|_| "problem_invalid")?,
+                );
+                let _ = owner.finish(&ticket, &revision, items, false);
+            }
+            Err(_) => owner.unavailable(&ticket),
+        }
+    }
+    result
+}
+
+async fn capture_inner(
+    app: &tauri::AppHandle,
+    host: &Host,
+    definitions: &Mutex<Definitions>,
+    context: &ProjectContext,
+    jobs: &[PreparedJob],
+    deadline: u64,
+) -> Result<Report, &'static str> {
     let mut report = Report {
         definitions_revision: None,
         restore_blocked: false,

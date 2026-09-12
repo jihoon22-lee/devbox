@@ -218,6 +218,7 @@ function highlightMessage(message: string, filter: FilterSpec): ReactNode {
 export interface RuntimeLogOpenRequest {
   id: string;
   source: Extract<SourceSpec, {kind: "runtimeRun" | "wslFile" | "wslJournal"}>;
+  offset?: string | null;
 }
 function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null; onOpenConsumed?:(id:string)=>void; settingsRevision?:number }) {
   const activeRef = useRef(active);
@@ -831,7 +832,15 @@ function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 
     }
     generation.current += 1;
     const nextSources = [...retained, source];
-    const nextCursors = nextSources.map(() => null);
+    const nextCursors: Array<FileCursor | null> = nextSources.map(() => null);
+    if (openRequest.offset != null) {
+      if (source.kind !== "runtimeRun" || !/^(0|[1-9][0-9]{0,19})$/.test(openRequest.offset)
+        || BigInt(openRequest.offset) > 18446744073709551615n) {
+        setError("진단 로그 위치가 올바르지 않습니다.");
+        return;
+      }
+      nextCursors[nextCursors.length - 1] = { identity: null, offset: openRequest.offset, anchorHash: null };
+    }
     connectedRef.current = true;
     setConnected(true);
     setSources(nextSources);

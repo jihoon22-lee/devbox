@@ -384,3 +384,36 @@ component facade now exports that DTO. The resumed native/frontend check passed 
 19.394 seconds with the same Cargo graph. Tests and detailed verification remain
 deferred. Unified Problems/context status, the Knowledge provider, WSL task-source
 adapter and Quick Summon integration are still pending.
+
+## Native Problems cache and context status
+
+The main window now reads a bounded native Problems cache. LSP diagnostics,
+project definitions, Git preflight, dependency inventory, task matchers and Session
+preflight publish through their existing owners. Source/identity/revision batches
+replace prior results; pending/unavailable results remain visible but cannot navigate.
+LSP actor epochs and document versions reject old events. A stopped/degraded server
+revokes navigation until fresh ready diagnostics arrive. Unsupported column encoding
+retains a line-only target. Context changes discard late UI results and actions.
+
+Matcher navigation rechecks the current project source and the complete diagnostics
+revision before resolving a file or issuing an owned Runtime log descriptor. Diagnostics
+now preserve the retained stream's logical byte offset, including UTF-8/CRLF bytes.
+Logs opens that cursor through its existing rotation/truncation checks. Terminal
+delivery acknowledgements remain tied to Terminal receipts. Opening Problems starts
+no source scan, collector, LSP or Runtime. The context bar uses cached definition
+metadata and already initialized Runtime/Session run identities; unknown state is
+shown as unavailable, without environment or secret values.
+
+Prepared fixtures cover replacement/deduplication, stale/cross-worktree navigation,
+stopped LSP, unknown columns, and retained log offsets. The minimum Rust check first
+found a Path/str mismatch, then passed in 14.30 seconds. The frontend check found
+an unsupported Array.at call; after replacement, only that failed frontend check was
+repeated and passed in 7.381 seconds. Subsequent small stale-source/limit guards and
+fixture literal corrections received syntax/diff review; their detailed regression
+execution remains in the final B06 packet. No tests/Clippy/build/affected or Windows
+execution was run for this commit.
+
+Still required: Session run/health and precise service/port navigation, Knowledge
+summary provider/transport, WSL task source/execution, Quick Summon adapter, and the
+complete B06 acceptance packet. This cache is not evidence that all Problems sources
+or WP06 acceptance are complete.

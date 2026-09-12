@@ -20,3 +20,5 @@ pub mod legacy_workspace;
 pub mod development_sessions;
 pub mod template_editor;
 pub mod wsl_files;
+
+pub mod problems;

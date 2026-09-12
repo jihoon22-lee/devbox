@@ -253,6 +253,20 @@ struct Response {
     value: Value,
 }
 fn allowed(component: &str, route: &str, method: &str) -> bool {
+    if component == "workspace.problems" {
+        return matches!(
+            route,
+            "overview"
+                | "source"
+                | "files"
+                | "dependencies"
+                | "tasks"
+                | "runtime"
+                | "logs"
+                | "terminal"
+                | "problems"
+        ) && matches!(method, "snapshot" | "resolve");
+    }
     if component == "workspace.terminal" {
         if matches!(route, "terminal" | "runtime") && crate::terminal_host::wsl_management(method) {
             return true;
@@ -1511,6 +1525,7 @@ async fn execute(
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
+    let problems = request.component == "workspace.problems";
     let terminal = request.component == "workspace.terminal";
     let engine = crate::runtime_host::component(&request.component);
     let files = request.component == "workspace.files";
@@ -1526,7 +1541,8 @@ async fn execute(
         code,
         provenance: provenance.clone(),
     };
-    let context_permit = if terminal
+    let context_permit = if problems
+        || terminal
         || engine
         || files
         || definitions
@@ -1587,6 +1603,37 @@ async fn execute(
             return Err(problem(ProblemCode::Unavailable));
         }
     }
+    let document_observation = if lsp
+        && matches!(
+            request.method.as_str(),
+            "open_lsp_document"
+                | "change_lsp_document"
+                | "reload_lsp_document"
+                | "close_lsp_document"
+        ) {
+        request.header.context.clone().map(|context| {
+            (
+                context,
+                request.method.clone(),
+                request
+                    .args
+                    .get("uri")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            )
+        })
+    } else {
+        None
+    };
+    let observation = crate::problems_host::begin_observation(
+        window.app_handle(),
+        runtime.host().ok().as_deref(),
+        request.header.context.as_ref(),
+        &request.component,
+        &request.method,
+        &request.args,
+    );
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
@@ -1600,6 +1647,28 @@ async fn execute(
     };
     let mut result = if let Err(issue) = retired {
         Err(issue)
+    } else if problems {
+        let host = runtime.host();
+        match (host, runtime.metadata.reserve()) {
+            (Ok(host), Ok(permit)) => {
+                let app = window.app_handle().clone();
+                let retained_context = context_permit.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _retained = (permit, retained_context);
+                    crate::files_host::current_deadline(request.header.deadline_ms)?;
+                    crate::problems_host::manage(
+                        &app,
+                        &host,
+                        request.header.context.as_ref(),
+                        &request.method,
+                        request.args,
+                    )
+                })
+                .await
+                .unwrap_or(Err("problems_unavailable"))
+            }
+            (Err(issue), _) | (_, Err(issue)) => Err(issue),
+        }
     } else if terminal {
         execute_terminal_main(&window, &runtime, request, context_permit.clone()).await
     } else if engine {
@@ -1825,6 +1894,22 @@ async fn execute(
             Ok(value)
         });
     }
+    if let (Some((context, method, uri)), Ok(value)) = (document_observation, &result) {
+        if let Ok(owner) = crate::problems_host::owner(window.app_handle()) {
+            let uri = value.get("uri").and_then(Value::as_str).unwrap_or(&uri);
+            let version = value
+                .get("version")
+                .and_then(Value::as_i64)
+                .and_then(|value| i32::try_from(value).ok());
+            owner.document_changed(&context, uri, version, method == "close_lsp_document");
+        }
+    }
+    crate::problems_host::finish_observation(
+        window.app_handle(),
+        runtime.host().ok().as_deref(),
+        observation,
+        &result,
+    );
     let (outcome, value) = match result {
         Ok(value) => (OperationState::Succeeded {}, value),
         Err(issue) => (
@@ -1882,6 +1967,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .setup(|app, _| {
             let runtime = Runtime::default();
             app.manage(runtime.clone());
+            app.manage(Arc::new(crate::problems_host::Problems::default()));
+            app.manage(runtime.sessions.clone());
             setup_runtime_tray(app)?;
             #[cfg(windows)]
             runtime.start_wsl_poll(app.clone());

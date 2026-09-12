@@ -20,6 +20,8 @@ pub struct WorkspaceTaskDiagnostic {
     pub message: String,
     pub severity: Option<String>,
     pub stream: String,
+    /// Logical byte position in the retained Runtime stream, never a filesystem path.
+    pub offset: String,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
@@ -35,6 +37,21 @@ pub fn match_workspace_diagnostics(
     matcher: &WorkspaceProblemMatcher,
     streams: &[(&str, &[u8], bool)],
 ) -> WorkspaceTaskDiagnostics {
+    match_workspace_diagnostics_at(
+        run_id,
+        matcher,
+        &streams
+            .iter()
+            .map(|(name, bytes, truncated)| (*name, *bytes, *truncated, 0))
+            .collect::<Vec<_>>(),
+    )
+}
+
+pub fn match_workspace_diagnostics_at(
+    run_id: &str,
+    matcher: &WorkspaceProblemMatcher,
+    streams: &[(&str, &[u8], bool, u64)],
+) -> WorkspaceTaskDiagnostics {
     let Ok(regexp) = regex::Regex::new(&matcher.regexp) else {
         return WorkspaceTaskDiagnostics {
             run_id: run_id.to_owned(),
@@ -44,10 +61,15 @@ pub fn match_workspace_diagnostics(
     };
     let mut items = Vec::new();
     let mut truncated = false;
-    for (stream, bytes, stream_truncated) in streams {
+    for (stream, bytes, stream_truncated, base) in streams {
         truncated |= *stream_truncated;
         let mut line_count = 0usize;
+        let mut consumed = 0u64;
         for raw_line in bytes.split(|byte| *byte == b'\n') {
+            let offset = base.saturating_add(consumed).to_string();
+            consumed = consumed
+                .saturating_add(raw_line.len() as u64)
+                .saturating_add(1);
             line_count = line_count.saturating_add(1);
             if line_count > MAX_DIAGNOSTIC_LINES_PER_STREAM {
                 truncated = true;
@@ -93,6 +115,7 @@ pub fn match_workspace_diagnostics(
                 message,
                 severity,
                 stream: (*stream).to_owned(),
+                offset,
             });
             if items.len() >= MAX_DIAGNOSTICS {
                 truncated = true;
@@ -203,6 +226,25 @@ mod tests {
         assert_eq!(result.items[0].line, 12);
         assert_eq!(result.items[0].column, Some(3));
         assert_eq!(result.items[0].severity.as_deref(), Some("warning"));
+    }
+
+    #[test]
+    fn byte_offsets_include_retained_base_multibyte_text_and_crlf() {
+        let prefix = "한글\r\n";
+        let line = "src/a.rs:3:2: warning: synthetic\r\n";
+        let input = format!("{prefix}{line}{line}");
+        let result = match_workspace_diagnostics_at(
+            "run",
+            &matcher(),
+            &[("stderr", input.as_bytes(), true, 9000)],
+        );
+        assert_eq!(result.items.len(), 2);
+        assert_eq!(result.items[0].offset, (9000 + prefix.len()).to_string());
+        assert_eq!(
+            result.items[1].offset,
+            (9000 + prefix.len() + line.len()).to_string()
+        );
+        assert!(result.truncated);
     }
 
     #[test]

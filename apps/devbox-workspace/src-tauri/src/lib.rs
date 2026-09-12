@@ -10,6 +10,7 @@ mod legacy_imports;
 mod lsp_host;
 pub mod platform;
 mod private_metadata;
+mod problems_host;
 pub mod project_owner;
 mod runtime_host;
 mod session_preflight;
