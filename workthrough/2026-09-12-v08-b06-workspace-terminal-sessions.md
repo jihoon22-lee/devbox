@@ -163,7 +163,7 @@ Per-commit checks used diff/plan review and minimum syntax/type checks. The late
 Rust/Workspace TypeScript graph passed in 17.909 seconds at 298f2e2 (Rust 9.53s).
 Earlier passing checks were retained; no detailed tests, Clippy, builds or affected
 runs were done merely for commits, rebases or resumed work. New script edits passed Node syntax checks, and the two PowerShell scripts passed
-Windows Parser syntax checks; none of their acceptance cases has executed yet.
+Windows Parser syntax checks before their first acceptance run.
 
 The single all-scope verification began after implementation/fixtures/docs were
 complete. All frontend builds passed; the Workspace initial bundle exceeded its
@@ -198,8 +198,32 @@ and strict separate Terminal/exporter capabilities. Mutation fixtures reject wil
 main access, root execute permission and remote exporter origins. These fixes did
 not rerun compiler/tests outside their affected scope.
 
-Final PR CI, Windows product artifact execution and owned WSL2 evidence
-are still required. The exported foundation artifact has a debug build profile;
+PR #559 first completion runs [CI 34717484766](https://github.com/jihoon22-lee/devbox/actions/runs/34717484766)
+and [native acceptance 34717484729](https://github.com/jihoon22-lee/devbox/actions/runs/34717484729)
+passed frontend/Linux checks and all four debug installer builds. They exposed
+three Windows/metadata defects, fixed together before another CI run:
+
+- Regenerated notices update only the two lockfile hash headers. Dependency audit
+  reported no vulnerabilities. Workspace's two explicit shared platform imports now
+  document their intentionally unused subset, and both native Project variants are
+  boxed to satisfy Windows Clippy without enlarging the enum.
+- Workspace library tests failed before test main with STATUS_ENTRYPOINT_NOT_FOUND.
+  The product imports TaskDialogIndirect, absent from default ComCtl32 v5. Tauri's
+  binary-only manifest missed library tests. The [upstream Tauri approach](https://github.com/tauri-apps/tauri/blob/dev/examples/api/src-tauri/build.rs)
+  now links one Common Controls v6 manifest to application and test targets on MSVC.
+- Native Session acceptance reached shared/borrowed/two-worktree/cancellation cases,
+  then stalled on a naturally failing service. Runtime incorrectly treated the Job
+  Object signal as an empty-tree witness; [Microsoft documents](https://devblogs.microsoft.com/oldnewthing/20130405-00/?p=4743)
+  that ordinary process exit does not guarantee that signal. The exact owned Job
+  now uses bounded active-process accounting, preserving fail-closed query errors
+  and the original root exit code. A nonzero native regression case is included.
+
+The exact downloaded debug artifact (source 567ffeb40cf62951239071a50eff7c0dc7a30413)
+ran an isolated local Windows two-service diagnostic: the failed service stopped,
+the steady service remained running and explicit cleanup completed. This did not
+reproduce the CI stall, so it is diagnostic evidence, not a replacement for the
+failed CI case. Owned app/data/temp cleanup was confirmed; no user distro was used.
+Final PR CI, remaining Windows cases and owned WSL2 evidence are still required. The exported foundation artifact has a debug build profile;
 it is not release packaged-runtime acceptance. A Windows compile is not execution
 evidence.
 

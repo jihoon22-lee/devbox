@@ -93,8 +93,8 @@ mod native {
     use std::{fs::File, path::PathBuf};
     type Result<T> = std::result::Result<T, &'static str>;
     enum Project {
-        Windows(ProjectLease),
-        Wsl(WslProjectLease),
+        Windows(Box<ProjectLease>),
+        Wsl(Box<WslProjectLease>),
     }
     pub(super) struct Admission {
         projects: Arc<ProjectOwner>,
@@ -127,9 +127,9 @@ mod native {
             .transpose()?;
         let project = match factory.context.map(|context| &context.target) {
             None => None,
-            Some(ExecutionTarget::Windows) => Some(Project::Windows(
+            Some(ExecutionTarget::Windows) => Some(Project::Windows(Box::new(
                 projects.admit(factory.context.ok_or("invalid_context")?)?,
-            )),
+            ))),
             Some(ExecutionTarget::Wsl { distro_id }) => {
                 if distro.id() != distro_id {
                     return Err("terminal_distro_mismatch");
@@ -144,7 +144,7 @@ mod native {
                     let _ = lease.shutdown();
                     return Err("project_binding_changed");
                 }
-                Some(Project::Wsl(lease))
+                Some(Project::Wsl(Box::new(lease)))
             }
         };
         let executable = wsl_distro::executable()?;

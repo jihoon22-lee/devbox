@@ -22,12 +22,16 @@ pub(crate) mod terminal_launch;
 // Windows adapters remain app-platform code under CONVENTIONS §4.
 #[path = "../../../../devbox-api-studio/src-tauri/src/platform/browser_profile.rs"]
 pub(crate) mod browser_profile;
+// The shared adapter also exposes API Studio's no-callback wrapper.
 #[cfg(windows)]
+#[allow(dead_code)]
 #[path = "../../../../devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs"]
 pub(crate) mod browser_snapshot;
 #[path = "../../../../devbox-api-studio/src-tauri/src/platform/owned_copy.rs"]
 pub(crate) mod owned_copy;
+// API-owned request cleanup uses additional methods from this same implementation.
 #[cfg(windows)]
+#[allow(dead_code)]
 #[path = "../../../../api-playground/src-tauri/src/commands/process_tree.rs"]
 pub(crate) mod owned_process;
 

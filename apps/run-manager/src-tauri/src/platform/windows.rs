@@ -10,7 +10,7 @@ use std::os::windows::io::FromRawHandle;
 use std::path::{Path, PathBuf};
 use std::ptr::null_mut;
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 use tauri::AppHandle;
 use windows::core::{Interface, HRESULT, PCWSTR, PWSTR};
 use windows::Win32::Foundation::{
@@ -25,8 +25,10 @@ use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, STGM_READ,
 };
 use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob,
+    JobObjectBasicAccountingInformation, JobObjectExtendedLimitInformation,
+    QueryInformationJobObject, SetInformationJobObject, TerminateJobObject,
+    JOBOBJECT_BASIC_ACCOUNTING_INFORMATION, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
 use windows::Win32::System::Pipes::CreatePipe;
@@ -633,34 +635,55 @@ impl WindowsChild {
         Ok(Some(exit_code))
     }
 
-    /// Terminate the complete process tree and wait for the Job Object.  A
-    /// root process that exits before one of its descendants cannot make
-    /// cleanup appear complete.  The kill-on-close limit is retained as the
-    /// final crash/drop safety net.
+    /// Terminate the complete owned tree and confirm its active count is zero.
+    /// The Job Object signal is not an empty-tree witness: Windows guarantees
+    /// it for the end-of-job time limit, not ordinary process termination.
     pub fn terminate_and_wait(&self, timeout: Duration) -> Result<u32, WindowsExecutionError> {
         unsafe { TerminateJobObject(self.job.raw(), 1) }
             .map_err(|error| win32_error("TerminateJobObject", error))?;
-        let Some(()) = wait_for_handle(self.job.raw(), timeout)? else {
-            return Err(WindowsExecutionError::ProcessStillAlive);
-        };
-        // A signalled job has no active processes.  Read the root exit code
-        // without spending another part of the caller's deadline.
+        self.wait_for_tree_empty(timeout)?;
         let Some(exit_code) = self.wait(Some(Duration::ZERO))? else {
             return Err(WindowsExecutionError::ProcessStillAlive);
         };
         Ok(exit_code)
     }
 
-    /// Confirm that a naturally exited root left no descendant in the job.
-    /// If the job is still signalled false, terminate the remaining members
-    /// through the same owned Job Object and wait for its zero-process signal
-    /// before the scheduler can publish success.
+    /// A root that exits naturally may leave descendants. Keep the exact Job
+    /// Object until its accounting proves they exited or owned termination does.
     pub fn ensure_tree_gone(&self, timeout: Duration) -> Result<(), WindowsExecutionError> {
-        if wait_for_handle(self.job.raw(), Duration::ZERO)?.is_some() {
+        if self.active_processes()? == 0 {
             return Ok(());
         }
         let _ = self.terminate_and_wait(timeout)?;
         Ok(())
+    }
+
+    fn active_processes(&self) -> Result<u32, WindowsExecutionError> {
+        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.job.raw()),
+                JobObjectBasicAccountingInformation,
+                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .map_err(|error| win32_error("QueryInformationJobObject(accounting)", error))?;
+        Ok(accounting.ActiveProcesses)
+    }
+
+    fn wait_for_tree_empty(&self, timeout: Duration) -> Result<(), WindowsExecutionError> {
+        let started = Instant::now();
+        loop {
+            if self.active_processes()? == 0 {
+                return Ok(());
+            }
+            let Some(remaining) = timeout.checked_sub(started.elapsed()) else {
+                return Err(WindowsExecutionError::ProcessStillAlive);
+            };
+            std::thread::sleep(remaining.min(Duration::from_millis(20)));
+        }
     }
 }
 
@@ -1143,6 +1166,15 @@ mod execution_tests {
         output.clear();
         stderr.read_to_string(&mut output).unwrap();
         assert!(output.is_empty());
+    }
+
+    #[test]
+    fn naturally_failed_root_is_retired_by_job_accounting() {
+        let child = spawn("exit /b 7", None, &BTreeMap::new()).unwrap();
+        assert_eq!(child.wait(Some(Duration::from_secs(10))).unwrap(), Some(7));
+        child.ensure_tree_gone(Duration::from_secs(5)).unwrap();
+        assert_eq!(child.active_processes().unwrap(), 0);
+        assert_eq!(child.wait(Some(Duration::ZERO)).unwrap(), Some(7));
     }
 
     #[test]
