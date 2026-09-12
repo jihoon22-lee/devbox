@@ -12,6 +12,7 @@ use tokio::time::{timeout, Duration};
 const MAX_WSL_STDOUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_WSL_STDERR_BYTES: usize = 64 * 1024;
 const WSL_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(feature = "standalone")]
 const MAX_WSL_COMMAND_BYTES: usize = 4 * 1024;
 const MAX_DISTRO_BYTES: usize = 128;
 const MAX_CONTAINER_ID_BYTES: usize = 128;
@@ -42,6 +43,7 @@ pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<Dis
 
 /// 임의의 WSL 명령을 지정한 배포판에서 실행하고 출력을 반환한다.
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub async fn run_wsl_command(distro: String, command: String) -> Result<String, String> {
     if command.is_empty() || command.len() > MAX_WSL_COMMAND_BYTES {
         return Err(SAFE_WSL_ERROR.into());
@@ -236,4 +238,89 @@ mod tests {
         assert!(normalize_container_id("name/with-slash").is_err());
         assert!(normalize_container_id(&"x".repeat(MAX_CONTAINER_ID_BYTES + 1)).is_err());
     }
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_distros(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = list_distros(app.try_state().ok_or("terminal_state_unavailable")?).await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_dashboard_snapshot(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = dashboard_snapshot(app.try_state().ok_or("terminal_state_unavailable")?).await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_docker_ps(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = docker_ps(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.distro,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_docker_action(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+        container_id: String,
+        action: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = docker_action(input.distro, input.container_id, input.action).await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }

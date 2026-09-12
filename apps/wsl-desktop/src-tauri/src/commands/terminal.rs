@@ -2,7 +2,7 @@ use portable_pty::{native_pty_system, CommandBuilder, PtySize};
 use serde::Serialize;
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::io::{ErrorKind, Read, Write};
-use std::sync::atomic::{AtomicU64, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 use tauri::Emitter;
 
@@ -12,6 +12,7 @@ use crate::runtime_snapshot::{request_snapshot_write, SnapshotCoordinator};
 
 /// 실행 중인 터미널 세션 저장소
 pub struct SessionState {
+    pub(crate) legacy_publication: bool,
     pub sessions: Mutex<HashMap<String, Arc<Mutex<SessionHandle>>>>,
     pub snapshot_coordinator: Arc<SnapshotCoordinator>,
 }
@@ -19,8 +20,16 @@ pub struct SessionState {
 impl SessionState {
     pub fn new() -> Self {
         Self {
+            legacy_publication: true,
             sessions: Mutex::new(HashMap::new()),
             snapshot_coordinator: Arc::new(SnapshotCoordinator::new()),
+        }
+    }
+
+    pub(crate) fn new_product() -> Self {
+        Self {
+            legacy_publication: false,
+            ..Self::new()
         }
     }
 
@@ -53,7 +62,21 @@ impl SessionState {
 }
 
 /// PTY 세션 하나
+pub(crate) struct OwnedOutput {
+    pub buffer: Mutex<crate::core::terminal_output::OutputBuffer>,
+    pub reader_done: AtomicBool,
+}
+impl Default for OwnedOutput {
+    fn default() -> Self {
+        Self {
+            buffer: Mutex::default(),
+            reader_done: AtomicBool::new(false),
+        }
+    }
+}
+
 pub struct SessionHandle {
+    pub(crate) output: Option<Arc<OwnedOutput>>,
     pub distro: String,
     pub writer: Box<dyn Write + Send>,
     pub child: Option<Box<dyn portable_pty::Child + Send + Sync>>,
@@ -282,6 +305,20 @@ pub async fn start_session(
     pane_key: String,
     multiplexer: MultiplexerKind,
 ) -> Result<StartedSession, String> {
+    if !state.legacy_publication {
+        return Err("terminal_owner_required".into());
+    }
+    start_owned_or_legacy(state.inner(), distro, cwd, pane_key, multiplexer, None).await
+}
+
+pub(crate) async fn start_owned_or_legacy(
+    state: &Arc<SessionState>,
+    distro: String,
+    cwd: Option<String>,
+    pane_key: String,
+    multiplexer: MultiplexerKind,
+    output: Option<Arc<OwnedOutput>>,
+) -> Result<StartedSession, String> {
     let resolved_multiplexer = if multiplexer == MultiplexerKind::Native {
         None
     } else {
@@ -319,9 +356,7 @@ pub async fn start_session(
     // (이전에는 `bash -lc "cd '{dir}' && exec bash"`를 문자열로 조립했다 —
     // 경로에 작은따옴표가 있으면 깨지고 셸 주입 표면이 열려 있었다. `--cd`는
     // wsl.exe가 셸 없이 직접 처리하므로 인용이 필요 없다.)
-    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
-    drop(pair.slave);
-
+    // Acquire fallible pipe handles before spawning a child that needs an owner.
     let reader = pair.master.try_clone_reader().map_err(|e| e.to_string())?;
     // Windows에서만 ConPTY DSR 응답을 쓰므로 그 외 OS에서는 mut 불필요
     #[allow(unused_mut)]
@@ -329,6 +364,8 @@ pub async fn start_session(
     // ConPTY(HPCON)를 보유한 master를 세션 핸들에 보관한다.
     // (reader/writer는 파이프 fd 클론이라 ConPTY 수명을 유지하지 못한다.
     //  master를 drop 하면 ConPTY가 닫히고, 시작 중인 자식이 0xc0000142로 실패한다)
+    let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
+    drop(pair.slave);
     let master = pair.master;
 
     #[cfg(target_os = "windows")]
@@ -343,6 +380,7 @@ pub async fn start_session(
     let session_id = next_session_id();
 
     let handle = Arc::new(Mutex::new(SessionHandle {
+        output,
         distro: distro.clone(),
         writer,
         child: Some(child),
@@ -355,7 +393,7 @@ pub async fn start_session(
         .lock()
         .unwrap()
         .insert(session_id.clone(), handle);
-    request_snapshot_write(Arc::clone(state.inner()));
+    request_snapshot_write(Arc::clone(state));
 
     Ok(StartedSession {
         session_id,
@@ -376,6 +414,14 @@ pub async fn start_session(
 pub fn attach_session(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<SessionState>>,
+    session_id: String,
+) -> Result<(), String> {
+    attach_native(app, state.inner(), session_id)
+}
+
+pub(crate) fn attach_native(
+    app: tauri::AppHandle,
+    state: &Arc<SessionState>,
     session_id: String,
 ) -> Result<(), String> {
     let handle = {
@@ -400,7 +446,8 @@ pub fn attach_session(
 
     let app_out = app.clone();
     let sid = session_id.clone();
-    let state_for_reader = Arc::clone(state.inner());
+    let state_for_reader = Arc::clone(state);
+    let owned_output = handle.lock().unwrap().output.clone();
     std::thread::spawn(move || {
         let mut carry: Vec<u8> = Vec::new();
         let mut buf = [0u8; 4096];
@@ -409,13 +456,17 @@ pub fn attach_session(
                 Ok(0) => break,
                 Ok(n) => {
                     let data = decode_chunk(&mut carry, &buf[..n]);
-                    let _ = app_out.emit(
-                        "terminal-output",
-                        TerminalOutput {
-                            session_id: sid.clone(),
-                            data,
-                        },
-                    );
+                    if let Some(output) = &owned_output {
+                        output.buffer.lock().unwrap().append(&data);
+                    } else if state_for_reader.legacy_publication {
+                        let _ = app_out.emit(
+                            "terminal-output",
+                            TerminalOutput {
+                                session_id: sid.clone(),
+                                data,
+                            },
+                        );
+                    }
                 }
                 // 일시 오류 — EOF가 아니다. 계속 읽는다.
                 Err(e)
@@ -427,6 +478,13 @@ pub fn attach_session(
             }
         }
         drop(reader);
+        if let Some(output) = &owned_output {
+            output.buffer.lock().unwrap().close();
+            output.reader_done.store(true, Ordering::Release);
+            // EOF need not imply child retirement. Keep the native owner if waiting fails.
+            let _ = retire_owned(&state_for_reader, &sid, false);
+            return;
+        }
         let cleanup_won = remove_session_if_handle(&state_for_reader, &sid, &handle);
         if cleanup_won {
             request_snapshot_write(Arc::clone(&state_for_reader));
@@ -444,6 +502,72 @@ pub fn attach_session(
     });
 
     Ok(())
+}
+
+/// Retire only a product PTY. Dropping a view never calls this operation.
+/// A failed kill/wait retains the exact handle; a subsequent explicit stop can retry.
+pub(crate) fn retire_owned(
+    state: &SessionState,
+    session_id: &str,
+    kill: bool,
+) -> Result<(), String> {
+    let handle = state
+        .sessions
+        .lock()
+        .map_err(|_| "terminal_state_unavailable")?
+        .get(session_id)
+        .cloned();
+    let Some(handle) = handle else {
+        return Ok(());
+    };
+    let output = handle
+        .lock()
+        .map_err(|_| "terminal_state_unavailable")?
+        .output
+        .clone()
+        .ok_or("terminal_owner_required")?;
+    if kill {
+        let (writer, master) = {
+            let mut session = handle.lock().map_err(|_| "terminal_state_unavailable")?;
+            if let Some(child) = session.child.as_mut() {
+                if child
+                    .try_wait()
+                    .map_err(|_| "terminal_wait_failed")?
+                    .is_none()
+                {
+                    child.kill().map_err(|_| "terminal_stop_failed")?;
+                }
+            }
+            (
+                std::mem::replace(&mut session.writer, Box::new(std::io::sink())),
+                session.master.take(),
+            )
+        };
+        // The reader remains active while ConPTY closes and drains its final bytes.
+        drop(writer);
+        drop(master);
+    }
+    let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    loop {
+        let exited = {
+            let mut session = handle.lock().map_err(|_| "terminal_state_unavailable")?;
+            match session.child.as_mut() {
+                Some(child) => child
+                    .try_wait()
+                    .map_err(|_| "terminal_wait_failed")?
+                    .is_some(),
+                None => true,
+            }
+        };
+        if exited && output.reader_done.load(Ordering::Acquire) {
+            remove_session_if_handle(state, session_id, &handle);
+            return Ok(());
+        }
+        if std::time::Instant::now() >= deadline {
+            return Err("terminal_retirement_pending".into());
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }
 
 /// 세션에 키 입력을 전달한다.
@@ -792,6 +916,7 @@ mod tests {
 
     fn test_session_handle() -> Arc<Mutex<SessionHandle>> {
         Arc::new(Mutex::new(SessionHandle {
+            output: None,
             distro: "Ubuntu".to_string(),
             writer: Box::new(Vec::new()),
             child: None,
@@ -857,6 +982,7 @@ mod tests {
     fn matching_reader_cleanup_drops_resources_with_an_extra_handle_reference() {
         let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let handle = Arc::new(Mutex::new(SessionHandle {
+            output: None,
             distro: "Ubuntu".to_string(),
             writer: Box::new(DropProbe(drops.clone())),
             child: None,
@@ -960,6 +1086,7 @@ mod tests {
     #[test]
     fn attach_marks_session_attached_only_once() {
         let mut handle = SessionHandle {
+            output: None,
             distro: "Ubuntu".to_string(),
             writer: Box::new(Vec::new()),
             child: None,
@@ -971,4 +1098,201 @@ mod tests {
         assert!(!handle.mark_attached(), "second attach must be a no-op");
         assert!(!handle.mark_attached(), "third attach must also be a no-op");
     }
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_windows_build_number(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = windows_build_number();
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_start_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+        cwd: Option<String>,
+        pane_key: String,
+        multiplexer: MultiplexerKind,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = start_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.distro,
+        input.cwd,
+        input.pane_key,
+        input.multiplexer,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_attach_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = attach_session(
+        app.clone(),
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_write_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+        data: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = write_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+        input.data,
+    )?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_broadcast(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_ids: Vec<String>,
+        data: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = broadcast(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_ids,
+        input.data,
+    )?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_resize_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+        rows: u16,
+        cols: u16,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = resize_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+        input.rows,
+        input.cols,
+    )?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_close_session(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        session_id: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = close_session(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.session_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_sessions(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = list_sessions(app.try_state().ok_or("terminal_state_unavailable")?);
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }

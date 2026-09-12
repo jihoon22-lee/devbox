@@ -2,15 +2,12 @@
 
 use crate::core::workspace::{ProfileStore, WorkspaceProfile};
 use std::path::PathBuf;
-use tauri::{AppHandle, Manager};
+use tauri::AppHandle;
 
 const PROFILE_FILE: &str = "terminal-profiles.json";
 
 fn profile_path(app: &AppHandle) -> Result<PathBuf, String> {
-    let directory = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|_| "터미널 프로필 저장 위치를 확인할 수 없습니다".to_string())?;
+    let directory = crate::component::data_root(app)?;
     std::fs::create_dir_all(&directory)
         .map_err(|_| "터미널 프로필 저장 위치를 만들 수 없습니다".to_string())?;
     Ok(directory.join(PROFILE_FILE))
@@ -39,7 +36,9 @@ pub fn list_workspace_profiles(app: AppHandle) -> Vec<WorkspaceProfile> {
         return Vec::new();
     };
     let profiles = store.profiles.clone();
-    let _ = crate::integration::publish_profile_snapshot(&store);
+    if !crate::component::is_product(&app) {
+        let _ = crate::integration::publish_profile_snapshot(&store);
+    }
     profiles
 }
 
@@ -54,7 +53,9 @@ pub fn save_workspace_profile(
     let mut store = load_store(&app)?;
     store.upsert(profile.clone())?;
     save_store(&app, &store)?;
-    let _ = crate::integration::publish_profile_snapshot(&store);
+    if !crate::component::is_product(&app) {
+        let _ = crate::integration::publish_profile_snapshot(&store);
+    }
     Ok(profile)
 }
 
@@ -65,6 +66,66 @@ pub fn delete_workspace_profile(app: AppHandle, id: String) -> Result<(), String
         return Err("터미널 프로필을 찾을 수 없습니다".into());
     }
     save_store(&app, &store)?;
-    let _ = crate::integration::publish_profile_snapshot(&store);
+    if !crate::component::is_product(&app) {
+        let _ = crate::integration::publish_profile_snapshot(&store);
+    }
     Ok(())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_workspace_profiles(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = list_workspace_profiles(app.clone());
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_save_workspace_profile(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        profile: WorkspaceProfile,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = save_workspace_profile(app.clone(), input.profile)?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_delete_workspace_profile(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = delete_workspace_profile(app.clone(), input.id)?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }
