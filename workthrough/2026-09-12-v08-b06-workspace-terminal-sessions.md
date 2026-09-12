@@ -332,3 +332,11 @@ B06 tests or Windows build was run. Window-state migration is now connected thro
 the existing Overview snapshot/review importer, explicitly mapping the legacy WSL
 Desktop main window to the Workspace main window. B05's separate final-artifact
 WSL2 fixture runs only after this local packet has retired.
+
+## B05 integration checkpoint
+
+B05 merged as 41bb98b after final CI, packaged product acceptance and a focused
+owned-local WSL2 pass. This branch rebased its thirteen commits onto that exact main
+without conflicts. Passing B06 syntax evidence remains retained; the next check is
+for the next implementation chunk, not for the rebase. B05's final merge/cleanup
+record is appended to its existing workthrough with this dependent bundle.

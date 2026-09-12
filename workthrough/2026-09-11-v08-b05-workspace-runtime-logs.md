@@ -370,3 +370,23 @@ zero-exit diagnostic rejection and exact permissive stdout. The standalone probe
 compiled in about one second per correction; no application or unrelated suite
 was rebuilt. This is test-fixture-only correction; final PR CI remains required,
 and the prior suspended-discovery change still needs its final-artifact WSL2 check.
+
+## B05 merge evidence
+
+Final revision 1fe9e305 passed [all CI jobs](https://github.com/jihoon22-lee/devbox/actions/runs/34702656787)
+and [product acceptance](https://github.com/jihoon22-lee/devbox/actions/runs/34702656794).
+The unrelated private Knowledge helper was skipped, not claimed as execution evidence.
+The artifact from PR merge source fd942e67ea21a76a8d6985e2d104c6acfc341ead had its manifest
+and four file hashes verified, then passed actual Windows with a freshly owned WSL2
+distro. Declared descendant correlation, start-tick mismatch rejection, redaction,
+owned group stop and backoff cancellation passed in 25.645 seconds. App exit, product
+data removal, distro unregistration and temporary directory cleanup all succeeded.
+
+PR #558 merged as 41bb98b7ff90e1f27fa32312178a8e300ae89fe7. B06's thirteen commits were
+rebased onto that main without conflicts; rebasing did not trigger another validation
+run. The clean B05 worktree's tree matched the squash merge exactly. Its dedicated
+worktree was removed, worktrees pruned, and local then remote branch deleted. The
+host-owned main checkout remains. WP05's dependent WP06/WP07 consumers are still
+tracked separately, so #547 and the umbrella issues were not automatically closed.
+This final evidence is recorded with the dependent B06 bundle; it does not create
+an extra B05 documentation-only CI cycle or PR.
