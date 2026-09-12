@@ -12,13 +12,21 @@ use std::{
 };
 use tauri::{Manager, State, WebviewWindow};
 
+pub(crate) type DomainHandler = fn(
+    tauri::AppHandle,
+    product_contract::transport::Call,
+    u64,
+) -> std::pin::Pin<
+    Box<dyn std::future::Future<Output = Result<serde_json::Value, &'static str>> + Send>,
+>;
 struct Suite {
     product: &'static str,
+    domain: Option<DomainHandler>,
+    sources: &'static [product_contract::transport::Source],
     #[cfg(windows)]
     state: Arc<Mutex<Link>>,
 }
 #[cfg(windows)]
-#[derive(Default)]
 struct Link {
     pending: Option<(
         String,
@@ -28,6 +36,19 @@ struct Link {
     approved: Option<Arc<platform::component_scope::CapturedScope>>,
     bus: Option<platform::component_bus::Bus>,
     navigation: Arc<Mutex<product_contract::navigation::Queue>>,
+    review_slots: Arc<tokio::sync::Semaphore>,
+}
+#[cfg(windows)]
+impl Default for Link {
+    fn default() -> Self {
+        Self {
+            pending: None,
+            approved: None,
+            bus: None,
+            navigation: Arc::default(),
+            review_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+        }
+    }
 }
 #[cfg(windows)]
 impl Drop for Link {
@@ -86,6 +107,8 @@ async fn connection(
     let result = execute(
         suite.product,
         window.app_handle().clone(),
+        suite.domain,
+        suite.sources,
         suite.state.clone(),
         request.method,
         request.header.deadline_ms,
@@ -94,6 +117,7 @@ async fn connection(
     .await;
     #[cfg(not(windows))]
     let result: Result<serde_json::Value, &'static str> = {
+        let _ = (suite.domain, suite.sources);
         match request.method {
             Method::Approve { token } => {
                 let _ = token;
@@ -132,6 +156,8 @@ async fn connection(
 async fn execute(
     product: &'static str,
     app: tauri::AppHandle,
+    domain: Option<DomainHandler>,
+    sources: &'static [product_contract::transport::Source],
     state: Arc<Mutex<Link>>,
     method: Method,
     deadline: u64,
@@ -176,7 +202,10 @@ async fn execute(
         Method::Preview => {
             // Capture only a recognized ancestor of our own executable. No
             // renderer/registry executable path is accepted by this boundary.
+            let slots = state.lock().map_err(|_| "suite_busy")?.review_slots.clone();
+            let permit = slots.try_acquire_owned().map_err(|_| "suite_review_busy")?;
             let scope = tokio::task::spawn_blocking(move || {
+                let _permit = permit;
                 let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
                 let root = image
                     .parent()
@@ -211,7 +240,7 @@ async fn execute(
             let bus = component_bus::Bus::start(
                 scope.clone(),
                 product,
-                handler(product, app, state.navigation.clone())?,
+                handler(product, app, state.navigation.clone(), domain, sources)?,
             )?;
             let generation = scope.id.clone();
             state.bus = Some(bus);
@@ -259,6 +288,8 @@ fn handler(
     product: &'static str,
     app: tauri::AppHandle,
     navigation: Arc<Mutex<product_contract::navigation::Queue>>,
+    domain: Option<DomainHandler>,
+    sources: &'static [product_contract::transport::Source],
 ) -> Result<platform::component_bus::Handler, &'static str> {
     use product_contract::{
         command_index::Index,
@@ -272,14 +303,23 @@ fn handler(
     )?;
     index.retain_owner(product);
     let index = Arc::new(index);
-    Ok(Arc::new(move |_peer, call, _deadline| {
+    let routes = Arc::new(
+        catalog
+            .features
+            .iter()
+            .filter(|feature| feature.owner == product)
+            .map(|feature| feature.route.clone())
+            .collect::<std::collections::BTreeSet<_>>(),
+    );
+    Ok(Arc::new(move |_peer, call, deadline| {
         let index = index.clone();
+        let routes = routes.clone();
         let app = app.clone();
         let navigation = navigation.clone();
         Box::pin(async move {
             match call {
                 Call::Describe {} => Ok(
-                    serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":["commands"]}),
+                    serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
                 ),
                 Call::Query {
                     source: Source::Commands,
@@ -292,13 +332,20 @@ fn handler(
                         serde_json::json!({"generation":generation,"source":"commands","owner":product,"result":result}),
                     )
                 }
-                Call::PreviewCommand { request } => serde_json::to_value(index.resolve(&request)?)
-                    .map_err(|_| "suite_command_invalid"),
+                Call::PreviewCommand { request } => {
+                    let descriptor =
+                        resolve(&app, &index, domain, request.clone(), deadline).await?;
+                    descriptor.validate_request(&request)?;
+                    validate_route_owner(&descriptor, product, &routes)?;
+                    serde_json::to_value(descriptor).map_err(|_| "suite_command_invalid")
+                }
                 Call::OpenCommand { request } => {
                     use tauri::Emitter;
-                    let descriptor = index.resolve(&request)?;
+                    let descriptor =
+                        resolve(&app, &index, domain, request.clone(), deadline).await?;
+                    validate_route_owner(&descriptor, product, &routes)?;
                     let receipt = navigation.lock().map_err(|_| "suite_busy")?.enqueue(
-                        descriptor,
+                        &descriptor,
                         &request,
                         now(),
                     )?;
@@ -321,10 +368,56 @@ fn handler(
                         .status(&operation_id, now())?;
                     Ok(serde_json::json!(receipt))
                 }
-                _ => Err("suite_method_unavailable"),
+                call => match domain {
+                    Some(domain) => domain(app, call, deadline).await,
+                    None => Err("suite_method_unavailable"),
+                },
             }
         })
     }))
+}
+
+#[cfg(windows)]
+fn validate_route_owner(
+    descriptor: &product_contract::commands::Descriptor,
+    product: &str,
+    routes: &std::collections::BTreeSet<String>,
+) -> Result<(), &'static str> {
+    let route = match &descriptor.target {
+        product_contract::commands::Target::Route { route } => Some(route),
+        _ => descriptor.review_route.as_ref(),
+    };
+    if descriptor.owner != product || route.is_none_or(|route| !routes.contains(route)) {
+        return Err("suite_route_owner_mismatch");
+    }
+    Ok(())
+}
+
+#[cfg(windows)]
+async fn resolve(
+    app: &tauri::AppHandle,
+    index: &product_contract::command_index::Index,
+    domain: Option<DomainHandler>,
+    request: product_contract::commands::Request,
+    deadline: u64,
+) -> Result<product_contract::commands::Descriptor, &'static str> {
+    match index.resolve(&request) {
+        Ok(descriptor) => Ok(descriptor.clone()),
+        Err(_) => {
+            let value = domain.ok_or("suite_command_unavailable")?(
+                app.clone(),
+                product_contract::transport::Call::PreviewCommand {
+                    request: request.clone(),
+                },
+                deadline,
+            )
+            .await?;
+            let descriptor: product_contract::commands::Descriptor =
+                serde_json::from_value(value).map_err(|_| "suite_command_invalid")?;
+            descriptor.validate_request(&request)?;
+            Ok(descriptor)
+        }
+    }
 }
 
 #[cfg(windows)]
@@ -379,12 +472,18 @@ pub(crate) async fn remote(
     }
 }
 
-pub(crate) fn plugin(product: &'static str) -> tauri::plugin::TauriPlugin<tauri::Wry> {
+pub(crate) fn plugin(
+    product: &'static str,
+    domain: Option<DomainHandler>,
+    sources: &'static [product_contract::transport::Source],
+) -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("suite")
         .invoke_handler(tauri::generate_handler![connection])
         .setup(move |app, _| {
             app.manage(Suite {
                 product,
+                domain,
+                sources,
                 #[cfg(windows)]
                 state: Arc::new(Mutex::new(Link::default())),
             });

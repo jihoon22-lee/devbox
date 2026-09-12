@@ -1,6 +1,7 @@
 import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { isImeComposing } from "@devbox/a11y";
 import { describe, nativeMode, type Description, type ProductId } from "./api";
+import {IncomingReviewContext,type IncomingReview} from "./incoming";
 import { navigate, traverse, type Navigation } from "./navigation";
 
 const IncomingCommands = lazy(() => import("./IncomingCommands"));
@@ -19,6 +20,8 @@ function ReadyShell({ description, renderContent, refreshContext }: { descriptio
   const initial = description.features.some((f) => f.route === queryRoute) ? queryRoute! : description.product.defaultRoute;
   const [history, setHistory] = useState<Navigation>({ entries: [initial], cursor: 0 });
   const [visited, setVisited] = useState<Set<string>>(new Set([initial]));
+  const [incomingReview,setIncomingReview]=useState<IncomingReview|null>(null);
+  const clearIncomingReview=useCallback(()=>setIncomingReview(null),[]);
   const [connectionOpen, setConnectionOpen] = useState(false);
   const [online, setOnline] = useState(navigator.onLine);
   const content = useRef<HTMLElement>(null);
@@ -32,7 +35,7 @@ function ReadyShell({ description, renderContent, refreshContext }: { descriptio
     if (!description.features.some((feature) => feature.route === route)) return;
     setVisited((v) => new Set([...v, route])); setHistory((h) => navigate(h, route));
   }, [description]);
-  return <div className="product-shell" onKeyDown={(event) => {
+  return <IncomingReviewContext.Provider value={{review:incomingReview,clear:clearIncomingReview}}><div className="product-shell" onKeyDown={(event) => {
     if (isImeComposing(event)) return;
     if (event.altKey && (event.key === "ArrowLeft" || event.key === "ArrowRight")) {
       event.preventDefault(); setHistory((h) => traverse(h, event.key === "ArrowLeft" ? -1 : 1));
@@ -43,13 +46,13 @@ function ReadyShell({ description, renderContent, refreshContext }: { descriptio
     <aside><nav aria-label="제품 화면">{description.features.map((feature) => <button key={feature.id} aria-current={current === feature.route ? "page" : undefined} onClick={() => open(feature.route)}>{feature.label}</button>)}</nav></aside>
     <main id="product-content" ref={content} tabIndex={-1}>
       <div className="shell-toolbar"><button aria-label="뒤로" disabled={history.cursor === 0} onClick={() => setHistory((h) => traverse(h, -1))}>←</button><button aria-label="앞으로" disabled={history.cursor === history.entries.length - 1} onClick={() => setHistory((h) => traverse(h, 1))}>→</button><span>{description.context ? "프로젝트 연결됨" : "프로젝트 선택 없이 사용"}</span><button aria-expanded={connectionOpen} onClick={() => setConnectionOpen(value => !value)}>제품 연결</button></div>
-      {nativeMode && <Suspense fallback={null}><IncomingCommands description={description} route={current} navigate={open}/></Suspense>}
+      {nativeMode && <Suspense fallback={null}><IncomingCommands description={description} route={current} navigate={open} onReview={setIncomingReview}/></Suspense>}
       {connectionOpen && <Suspense fallback={<p role="status">연결 설정을 불러오고 있습니다…</p>}><SuiteConnection description={description} route={current}/></Suspense>}
       {!online && <p role="status">오프라인입니다. 로컬 화면은 계속 사용할 수 있습니다.</p>}
       {queryRoute && !description.features.some((f) => f.route === queryRoute) && <p role="status">요청한 화면이 없어 기본 화면을 열었습니다.</p>}
       {renderContent ? renderContent({ description, route: current, navigate: open, refreshContext }) : description.features.filter((f) => visited.has(f.route)).map((feature) => <div key={feature.id} hidden={feature.route !== current}><RouteBoundary><Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}><RouteView description={description} feature={feature}/></Suspense></RouteBoundary></div>)}
     </main>
-  </div>;
+  </div></IncomingReviewContext.Provider>;
 }
 
 export function ProductShell({ product, renderContent }: { product: ProductId; renderContent?: ShellContent }) {

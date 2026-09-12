@@ -29,6 +29,7 @@ struct SourceRequest {
     product: String,
     query: String,
     generation: u64,
+    source: Option<product_contract::transport::Source>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -165,7 +166,9 @@ async fn command_source(
         window.app_handle(),
         &request.product,
         product_contract::transport::Call::Query {
-            source: product_contract::transport::Source::Commands,
+            source: request
+                .source
+                .unwrap_or(product_contract::transport::Source::Commands),
             query: request.query,
             generation: request.generation,
             context: None,

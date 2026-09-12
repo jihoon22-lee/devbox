@@ -3,6 +3,7 @@ pub mod core;
 pub mod definitions;
 mod dependencies_host;
 mod development_host;
+mod federation;
 pub mod file_owner;
 mod files_host;
 pub mod host;
@@ -42,7 +43,14 @@ pub fn run() {
     }
     product_shell_tauri::run_with("workspace", tauri::generate_context!(), |builder| {
         builder
-            .plugin(suite::plugin("workspace"))
+            .plugin(suite::plugin(
+                "workspace",
+                Some(federation::handle),
+                &[
+                    product_contract::transport::Source::Projects,
+                    product_contract::transport::Source::Repositories,
+                ],
+            ))
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_opener::init())

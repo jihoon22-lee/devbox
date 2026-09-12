@@ -14,7 +14,8 @@
     "./route-view": "./src/RouteView.tsx",
     "./launcher": "./src/launcher/App.tsx",
     "./launcher-types": "./src/launcher/types.ts",
-    "./launcher-adapter": "./src/launcher/adapter.ts"
+    "./launcher-adapter": "./src/launcher/adapter.ts",
+    "./incoming": "./src/incoming.tsx"
   },
   "scripts": {
     "build": "tsc --noEmit",

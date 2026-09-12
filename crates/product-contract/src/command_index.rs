@@ -37,6 +37,7 @@ impl Index {
                 target: Target::Route {
                     route: feature.route.clone(),
                 },
+                review_route: None,
                 required_context: ContextRequirement::None,
                 context: None,
                 destructive: false,
@@ -46,6 +47,10 @@ impl Index {
             })?;
         }
         Ok(index)
+    }
+    pub fn retain_context(&mut self, context: &crate::ProjectContext) {
+        self.commands
+            .retain(|_, command| command.context.as_ref() == Some(context));
     }
     pub fn retain_owner(&mut self, owner: &str) {
         self.commands.retain(|_, command| command.owner == owner);

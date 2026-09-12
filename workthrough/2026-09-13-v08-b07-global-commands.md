@@ -98,6 +98,25 @@ handlers are connected. No Ctrl+C binding is registered. The palette checks acti
 modal/IME/editing state and distinguishes an already-focused host from an external
 activation before changing focus.
 
+## Workspace project/repository provider
+
+The shared suite adapter now accepts an actual product-domain handler and declares
+its supported sources. Workspace Projects and Repositories/Worktrees query its
+activated native Registry, with two retained reader permits. They read metadata
+without starting Runtime, probing project folders or waking a distro. Same-name
+registrations retain separate command IDs and native contexts; revisions bind the
+current Registry/worktree/name, and exported rows contain no root paths.
+
+Dynamic preview re-resolves the current Registry. A typed entity descriptor must
+name an existing owner review route before it enters the common navigation queue.
+The shell carries its target/context as an in-memory review hint. Workspace refreshes
+and highlights that exact Registry entry; the existing project-select button and
+native binding/trust checks still own the actual context change. Missing/stale
+entries remain an explicit review failure. A route switch grants no project/file
+access. Fixtures cover same-name distinct targets, path omission, stale rename
+and entity review requirements. Workspace/Control Center minimum TypeScript checks
+passed in 11.666 seconds; no detailed tests were run for this slice.
+
 ## Verification and remaining work
 
 Regression fixtures are authored for stale/disabled/forged references, required
