@@ -76,6 +76,7 @@ impl Default for OwnedOutput {
 }
 
 pub struct SessionHandle {
+    launch_lease: Option<Arc<dyn crate::component::TerminalLaunchLease>>,
     pub(crate) output: Option<Arc<OwnedOutput>>,
     pub distro: String,
     pub writer: Box<dyn Write + Send>,
@@ -308,7 +309,16 @@ pub async fn start_session(
     if !state.legacy_publication {
         return Err("terminal_owner_required".into());
     }
-    start_owned_or_legacy(state.inner(), distro, cwd, pane_key, multiplexer, None).await
+    start_owned_or_legacy(
+        state.inner(),
+        distro,
+        cwd,
+        pane_key,
+        multiplexer,
+        None,
+        None,
+    )
+    .await
 }
 
 pub(crate) async fn start_owned_or_legacy(
@@ -318,22 +328,37 @@ pub(crate) async fn start_owned_or_legacy(
     pane_key: String,
     multiplexer: MultiplexerKind,
     output: Option<Arc<OwnedOutput>>,
+    launch_lease: Option<Arc<dyn crate::component::TerminalLaunchLease>>,
 ) -> Result<StartedSession, String> {
+    if let Some(lease) = &launch_lease {
+        lease.revalidate()?;
+    }
     let resolved_multiplexer = if multiplexer == MultiplexerKind::Native {
         None
     } else {
-        crate::commands::multiplexer::resolve_for_launch(&distro, multiplexer).await
+        crate::commands::multiplexer::resolve_for_launch(
+            &distro,
+            multiplexer,
+            launch_lease.as_deref(),
+        )
+        .await
     };
     let actual_multiplexer = resolved_multiplexer
         .as_ref()
         .map_or(MultiplexerKind::Native, |resolved| resolved.kind());
     let resumed = match resolved_multiplexer.as_ref() {
         Some(resolved) => {
-            crate::commands::multiplexer::session_is_running(&distro, &pane_key, resolved).await
+            crate::commands::multiplexer::session_is_running(
+                &distro,
+                &pane_key,
+                resolved,
+                launch_lease.as_deref(),
+            )
+            .await
         }
         None => false,
     };
-    let cmd = build_workspace_session_command(
+    let mut cmd = build_workspace_session_command(
         &distro,
         cwd.as_deref(),
         &pane_key,
@@ -342,6 +367,17 @@ pub(crate) async fn start_owned_or_legacy(
             .as_ref()
             .map(|resolved| resolved.executable()),
     )?;
+    if let Some(lease) = &launch_lease {
+        let argv = lease.bind_argv(
+            cmd.get_argv()
+                .iter()
+                .map(|arg| arg.to_string_lossy().into_owned())
+                .collect(),
+        )?;
+        let (program, args) = argv.split_first().ok_or("terminal_launch_invalid")?;
+        cmd = CommandBuilder::new(program);
+        cmd.args(args);
+    }
     let pty_system = native_pty_system();
     let pair = pty_system
         .openpty(PtySize {
@@ -364,6 +400,9 @@ pub(crate) async fn start_owned_or_legacy(
     // ConPTY(HPCON)를 보유한 master를 세션 핸들에 보관한다.
     // (reader/writer는 파이프 fd 클론이라 ConPTY 수명을 유지하지 못한다.
     //  master를 drop 하면 ConPTY가 닫히고, 시작 중인 자식이 0xc0000142로 실패한다)
+    if let Some(lease) = &launch_lease {
+        lease.revalidate()?;
+    }
     let child = pair.slave.spawn_command(cmd).map_err(|e| e.to_string())?;
     drop(pair.slave);
     let master = pair.master;
@@ -380,6 +419,7 @@ pub(crate) async fn start_owned_or_legacy(
     let session_id = next_session_id();
 
     let handle = Arc::new(Mutex::new(SessionHandle {
+        launch_lease,
         output,
         distro: distro.clone(),
         writer,
@@ -559,6 +599,14 @@ pub(crate) fn retire_owned(
             }
         };
         if exited && output.reader_done.load(Ordering::Acquire) {
+            let lease = handle
+                .lock()
+                .map_err(|_| "terminal_state_unavailable")?
+                .launch_lease
+                .clone();
+            if let Some(lease) = lease {
+                lease.retire()?;
+            }
             remove_session_if_handle(state, session_id, &handle);
             output
                 .buffer
@@ -922,6 +970,7 @@ mod tests {
 
     fn test_session_handle() -> Arc<Mutex<SessionHandle>> {
         Arc::new(Mutex::new(SessionHandle {
+            launch_lease: None,
             output: None,
             distro: "Ubuntu".to_string(),
             writer: Box::new(Vec::new()),
@@ -988,6 +1037,7 @@ mod tests {
     fn matching_reader_cleanup_drops_resources_with_an_extra_handle_reference() {
         let drops = Arc::new(std::sync::atomic::AtomicUsize::new(0));
         let handle = Arc::new(Mutex::new(SessionHandle {
+            launch_lease: None,
             output: None,
             distro: "Ubuntu".to_string(),
             writer: Box::new(DropProbe(drops.clone())),
@@ -1092,6 +1142,7 @@ mod tests {
     #[test]
     fn attach_marks_session_attached_only_once() {
         let mut handle = SessionHandle {
+            launch_lease: None,
             output: None,
             distro: "Ubuntu".to_string(),
             writer: Box::new(Vec::new()),

@@ -80,6 +80,22 @@ impl ProbeRunner for SystemProbeRunner {
     }
 }
 
+struct OwnedProbeRunner<'a>(&'a dyn crate::component::TerminalLaunchLease);
+impl ProbeRunner for OwnedProbeRunner<'_> {
+    fn run(&self, argv: Vec<String>) -> Pin<Box<dyn Future<Output = RunOutcome> + Send + '_>> {
+        Box::pin(async move {
+            let Ok(argv) = self.0.bind_argv(argv) else {
+                return RunOutcome::Failed;
+            };
+            let result = run_argv(argv).await;
+            if self.0.revalidate().is_err() {
+                return RunOutcome::Failed;
+            }
+            result
+        })
+    }
+}
+
 async fn run_argv(argv: Vec<String>) -> RunOutcome {
     let Some((program, args)) = argv.split_first() else {
         return RunOutcome::Failed;
@@ -265,10 +281,17 @@ async fn detect_one(distro: &str, kind: MultiplexerKind) -> MultiplexerAvailabil
 pub(crate) async fn resolve_for_launch(
     distro: &str,
     kind: MultiplexerKind,
+    lease: Option<&dyn crate::component::TerminalLaunchLease>,
 ) -> Option<ResolvedMultiplexer> {
-    resolve_with_runner(distro, kind, &SystemProbeRunner)
-        .await
-        .1
+    if let Some(lease) = lease {
+        resolve_with_runner(distro, kind, &OwnedProbeRunner(lease))
+            .await
+            .1
+    } else {
+        resolve_with_runner(distro, kind, &SystemProbeRunner)
+            .await
+            .1
+    }
 }
 
 #[tauri::command]
@@ -289,13 +312,19 @@ pub(crate) async fn session_is_running(
     distro: &str,
     pane_key: &str,
     resolved: &ResolvedMultiplexer,
+    lease: Option<&dyn crate::component::TerminalLaunchLease>,
 ) -> bool {
     let argv =
         match build_session_probe_argv(distro, pane_key, resolved.kind(), resolved.executable()) {
             Ok(argv) => argv,
             Err(_) => return false,
         };
-    let RunOutcome::Completed { exit_code, stdout } = run_argv(argv).await else {
+    let outcome = if let Some(lease) = lease {
+        OwnedProbeRunner(lease).run(argv).await
+    } else {
+        run_argv(argv).await
+    };
+    let RunOutcome::Completed { exit_code, stdout } = outcome else {
         return false;
     };
     match resolved.kind() {

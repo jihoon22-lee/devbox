@@ -163,6 +163,11 @@ export async function startSession(
   });
 }
 
+export async function retrySession(distro:string,cwd:string|undefined,paneKey:string,multiplexer:MultiplexerKind):Promise<StartedSession> {
+  if(isProductHosted())await invoke("reset_failed_pane",{paneKey});
+  return startSession(distro,cwd,paneKey,multiplexer);
+}
+
 export async function detectMultiplexers(distro: string): Promise<MultiplexerAvailability[]> {
   if (!isTauri()) return [
     { kind: "native", status: "available", version: null, source: null },

@@ -61,6 +61,10 @@ impl OutputBuffer {
         }
     }
 
+    pub fn is_closed(&self) -> bool {
+        self.closed
+    }
+
     pub fn close(&mut self) {
         self.closed = true;
     }

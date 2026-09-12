@@ -21,6 +21,7 @@ import {
   openWslFileInLogLens,
   openWslJournalInLogLens,
   startSession,
+  retrySession,
   saveWorkspaceProfile,
   takePendingOpen,
   type QuickSummonStatus,
@@ -1154,7 +1155,7 @@ export default function App() {
     setContextBusy(true);
     setError(null);
     try {
-      const started = await startSession(
+      const started = await (isProductHosted()?retrySession:startSession)(
         placeholder.distro,
         placeholder.cwd,
         placeholder.key,

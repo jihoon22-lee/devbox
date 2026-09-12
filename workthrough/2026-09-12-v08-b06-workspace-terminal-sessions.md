@@ -93,3 +93,20 @@ Still pending: retained project/distro identity through PTY launch, explicit fai
 pane retry/crash restore UX, Docker mutation identity/Logs consumers, shell updates,
 single-owner summon integration, JSON/WebView migration, full Development Session
 resource leases/phase coordinator, Problems and real Windows/WSL acceptance.
+
+## Retained native launch admission
+
+Terminal now reserves a pane before acquiring its native project/distro launch
+lease. The lease retains Registry/root/backing/executable handles; all multiplexer
+environment/version/session probes and PTY launch use the same GUID selector and
+system WSL executable, with identity rechecks before/after probes and spawn. The
+WSL project helper remains owned through PTY lifetime and explicit retirement.
+A failed/cancelled start retains its lease in the failed pane until explicit
+cleanup/retry. Confirmed PTY retirement also retires the helper before publishing
+closed output. The Retry action clears only a retired failed pane; ordinary reload
+never clears an interrupted reservation.
+
+Shared TypeScript and portable Workspace all-target compilation passed in 17.905
+seconds. Its unused-field warning exposed a missing final lease-retirement call;
+the call was added and source/format checked. Windows-only launch admission awaits
+B06 final Windows compilation/real execution. No detailed verification was added.

@@ -20,8 +20,12 @@ struct Start {
 }
 
 enum Pane {
-    Starting,
-    Failed,
+    Starting {
+        lease: Option<Arc<dyn crate::component::TerminalLaunchLease>>,
+    },
+    Failed {
+        lease: Option<Arc<dyn crate::component::TerminalLaunchLease>>,
+    },
     Active {
         config: Start,
         started: StartedSession,
@@ -45,8 +49,12 @@ struct Starting<'a> {
 impl Drop for Starting<'_> {
     fn drop(&mut self) {
         if let Ok(mut panes) = self.panes.lock() {
-            if matches!(panes.get(&self.key), Some(Pane::Starting)) {
-                panes.insert(self.key.clone(), Pane::Failed);
+            if matches!(panes.get(&self.key), Some(Pane::Starting { .. })) {
+                let lease = match panes.remove(&self.key) {
+                    Some(Pane::Starting { lease }) => lease,
+                    _ => None,
+                };
+                panes.insert(self.key.clone(), Pane::Failed { lease });
             }
         }
     }
@@ -80,6 +88,7 @@ impl TerminalOwner {
         actual_window: &str,
         method: &str,
         args: Value,
+        launch_factory: Option<&dyn crate::component::TerminalLaunchFactory>,
     ) -> Result<Value, String> {
         if actual_window != self.window || !crate::component::is_product(app) {
             return Err("terminal_peer_denied".into());
@@ -89,7 +98,51 @@ impl TerminalOwner {
             .try_state::<Arc<SessionState>>()
             .ok_or("terminal_state_unavailable")?;
         match method {
-            "start_session" => self.start(app, state.inner(), args).await,
+            "start_session" => {
+                self.start(
+                    app,
+                    state.inner(),
+                    args,
+                    launch_factory.ok_or("terminal_launch_unavailable")?,
+                )
+                .await
+            }
+            "reset_failed_pane" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Reset {
+                    pane_key: String,
+                }
+                let input: Reset = parse(args)?;
+                let mut panes = self
+                    .panes
+                    .lock()
+                    .map_err(|_| "terminal_state_unavailable")?;
+                match panes.get(&input.pane_key) {
+                    Some(Pane::Failed { lease }) => {
+                        if let Some(lease) = lease {
+                            lease.retire()?;
+                        }
+                    }
+                    Some(Pane::Active {
+                        started, output, ..
+                    }) if output
+                        .buffer
+                        .lock()
+                        .map_err(|_| "terminal_state_unavailable")?
+                        .is_closed() =>
+                    {
+                        self.initial_commands
+                            .lock()
+                            .map_err(|_| "terminal_state_unavailable")?
+                            .remove(&started.session_id);
+                    }
+                    None => return Ok(Value::Null),
+                    _ => return Err("terminal_pane_active".into()),
+                }
+                panes.remove(&input.pane_key);
+                Ok(Value::Null)
+            }
             "list_sessions" => {
                 empty(args)?;
                 let panes = self
@@ -245,6 +298,7 @@ impl TerminalOwner {
         app: &tauri::AppHandle,
         state: &Arc<SessionState>,
         args: Value,
+        launch_factory: &dyn crate::component::TerminalLaunchFactory,
     ) -> Result<Value, String> {
         let config: Start = parse(args)?;
         if config.pane_key.is_empty()
@@ -279,20 +333,29 @@ impl TerminalOwner {
                             "sessionId": started.session_id, "resumed": true, "multiplexer": started.multiplexer,
                         }))
                     }
-                    Pane::Starting => Err("terminal_start_pending".into()),
-                    Pane::Failed => Err("terminal_start_interrupted".into()),
+                    Pane::Starting { .. } => Err("terminal_start_pending".into()),
+                    Pane::Failed { .. } => Err("terminal_start_interrupted".into()),
                     _ => Err("terminal_pane_conflict".into()),
                 };
             }
             if panes.len() >= MAX_PANES {
                 return Err("terminal_pane_limit".into());
             }
-            panes.insert(config.pane_key.clone(), Pane::Starting);
+            panes.insert(config.pane_key.clone(), Pane::Starting { lease: None });
         }
         let _starting = Starting {
             panes: &self.panes,
             key: config.pane_key.clone(),
         };
+        let launch_lease = launch_factory.capture(&config.distro)?;
+        if let Some(Pane::Starting { lease }) = self
+            .panes
+            .lock()
+            .map_err(|_| "terminal_state_unavailable")?
+            .get_mut(&config.pane_key)
+        {
+            *lease = Some(launch_lease.clone());
+        }
         let output = Arc::new(OwnedOutput::default());
         // Scope stable multiplexer keys to the native companion identity too. Two
         // worktrees restoring the same profile must not silently share a tmux session.
@@ -304,6 +367,7 @@ impl TerminalOwner {
             native_key,
             config.multiplexer,
             Some(output.clone()),
+            Some(launch_lease.clone()),
         )
         .await?;
         let result = serde_json::to_value(&started).map_err(|_| "terminal_response_invalid")?;
@@ -320,7 +384,11 @@ impl TerminalOwner {
                     output,
                 },
             );
-        terminal::attach_native(app.clone(), state, id)?;
+        terminal::attach_native(app.clone(), state, id.clone())?;
+        if let Err(error) = launch_lease.revalidate() {
+            terminal::retire_owned(state, &id, true)?;
+            return Err(error);
+        }
         Ok(result)
     }
 
@@ -348,6 +416,19 @@ impl TerminalOwner {
         for id in ids {
             if let Err(error) = terminal::retire_owned(&state, &id, true) {
                 failure = Some(error);
+            }
+        }
+        {
+            let panes = self
+                .panes
+                .lock()
+                .map_err(|_| "terminal_state_unavailable")?;
+            for pane in panes.values() {
+                if let Pane::Failed { lease: Some(lease) } = pane {
+                    if let Err(error) = lease.retire() {
+                        failure = Some(error);
+                    }
+                }
             }
         }
         if let Some(error) = failure {

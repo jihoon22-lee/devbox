@@ -387,9 +387,6 @@ impl Terminals {
                     return Err("terminal_layout_changed");
                 }
             }
-            host.projects()?
-                .admit_selection(host.helper_directory()?, &peer.record.context)?;
-            crate::files_host::current_deadline(header.deadline_ms)?;
         }
         if matches!(
             method,
@@ -410,9 +407,20 @@ impl Terminals {
                 .await
                 .map_err(|_| "terminal_operation_failed");
         }
+        let factory = crate::platform::terminal_launch::Factory {
+            host,
+            context: &peer.record.context,
+            deadline: header.deadline_ms,
+        };
         let value = peer
             .terminal
-            .dispatch(window.app_handle(), window.label(), method, args)
+            .dispatch(
+                window.app_handle(),
+                window.label(),
+                method,
+                args,
+                Some(&factory),
+            )
             .await
             .map_err(|error| match error.as_str() {
                 "terminal_start_pending" => "terminal_start_pending",

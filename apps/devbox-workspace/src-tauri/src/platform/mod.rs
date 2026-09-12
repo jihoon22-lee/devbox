@@ -17,3 +17,4 @@ pub mod wsl_files;
 pub mod wsl_project;
 
 pub(crate) mod source_git;
+pub(crate) mod terminal_launch;

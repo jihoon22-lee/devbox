@@ -14,6 +14,18 @@ use std::{
     sync::Arc,
 };
 use tauri::Manager;
+
+/// Native Workspace supplies an identity-pinned project/distro lease. Every
+/// multiplexer probe and actual PTY launch uses its same exact WSL target.
+pub trait TerminalLaunchLease: Send + Sync {
+    fn revalidate(&self) -> Result<(), String>;
+    fn bind_argv(&self, argv: Vec<String>) -> Result<Vec<String>, String>;
+    /// Called after PTY child/reader retirement; failure retains this owner.
+    fn retire(&self) -> Result<(), String>;
+}
+pub trait TerminalLaunchFactory: Send + Sync {
+    fn capture(&self, distro: &str) -> Result<Arc<dyn TerminalLaunchLease>, String>;
+}
 struct ProductData {
     path: PathBuf,
     identity: devbox_filesystem::FilesystemIdentity,
