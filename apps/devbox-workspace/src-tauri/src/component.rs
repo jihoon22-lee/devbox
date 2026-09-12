@@ -262,6 +262,11 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 || matches!(
                     method,
                     "terminal_sessions"
+                        | "start_terminal_import"
+                        | "cancel_terminal_import"
+                        | "terminal_imports"
+                        | "preview_terminal_import"
+                        | "apply_terminal_import"
                         | "read_terminal_log"
                         | "ack_terminal_log"
                         | "open_terminal"
@@ -385,7 +390,7 @@ async fn terminal_worker(
     );
     let stopping = matches!(
         method.as_str(),
-        "close_session" | "stop_terminal" | "stop_development_session"
+        "close_session" | "stop_terminal" | "stop_development_session" | "cancel_terminal_import"
     );
     let permit = if io {
         &runtime.terminal_io_requests

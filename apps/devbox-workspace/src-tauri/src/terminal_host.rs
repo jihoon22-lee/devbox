@@ -44,6 +44,7 @@ struct Peer {
 pub(crate) struct Terminals {
     inner: Mutex<Option<Inner>>,
     controls: crate::wsl_controls::Controls,
+    imports: Arc<crate::terminal_import::Imports>,
     pending_logs: Mutex<VecDeque<PendingLog>>,
 }
 
@@ -306,6 +307,45 @@ impl Terminals {
                 )));
         }
         self.initialize(window.app_handle(), host)?;
+        if matches!(
+            method,
+            "start_terminal_import"
+                | "cancel_terminal_import"
+                | "terminal_imports"
+                | "preview_terminal_import"
+                | "apply_terminal_import"
+        ) {
+            if method == "terminal_imports" {
+                if args.as_object().is_none_or(|args| !args.is_empty()) {
+                    return Err("terminal_args_invalid");
+                }
+                return self.imports.list(host.storage_root());
+            }
+            if matches!(method, "start_terminal_import" | "cancel_terminal_import") {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Input {
+                    id: String,
+                }
+                let input: Input = parse(args)?;
+                return if method == "start_terminal_import" {
+                    self.imports.start(host.storage_root(), &input.id)
+                } else {
+                    self.imports.cancel(&input.id)
+                };
+            }
+            let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
+            if method == "apply_terminal_import" && !inner.peers.is_empty() {
+                return Err("terminal_import_close_windows");
+            }
+            return crate::terminal_profiles::import(
+                &inner.root,
+                host.storage_root(),
+                method,
+                args,
+            );
+        }
         if matches!(
             method,
             "open_wsl_file_in_log_lens" | "open_wsl_journal_in_log_lens"
@@ -763,6 +803,14 @@ impl Terminals {
                 .wsl_control(window.app_handle(), host, method, args, header.deadline_ms)
                 .await;
         }
+        if matches!(method, "terminal_preferences" | "set_terminal_preference") {
+            let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            return crate::terminal_profiles::preferences(
+                &selected.as_ref().ok_or("terminal_owner_unavailable")?.root,
+                method,
+                args,
+            );
+        }
         if matches!(method, "terminal_layout" | "save_terminal_layout") {
             let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
             let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
@@ -831,6 +879,10 @@ impl Terminals {
         self.peer(label).is_ok()
     }
     pub(crate) fn shutdown(&self, app: &tauri::AppHandle) -> Result<()> {
+        if !self.imports.stop()? {
+            return Err("terminal_import_retirement_pending");
+        }
+
         let peers: Vec<_> = self
             .inner
             .lock()

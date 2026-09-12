@@ -3,7 +3,7 @@ import { invoke } from "@tauri-apps/api/core";
 import { isProjectContext, makeRequest, type Handshake, type ProjectContext } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
 import { initializeProductLayout } from "@devbox/workspace-features/terminal-layout";
-import { configureTerminalStorage } from "@devbox/workspace-features/terminal-storage";
+import { configureTerminalStorage, initializeTerminalPreferences } from "@devbox/workspace-features/terminal-storage";
 
 const Terminal=lazy(()=>import("@devbox/workspace-features/terminal"));
 interface Peer {handshake:Handshake;context:ProjectContext|null;id:string}
@@ -20,6 +20,7 @@ function connect():Promise<Peer> {
       header.deadlineMs=Date.now()+(method==="terminal_output"?1000:30_000);
       return invoke<T>("plugin:workspace|terminal_execute",{request:{header,method,args}});
     },peer.handshake.installationId);
+    await initializeTerminalPreferences();
     const header=makeRequest(peer.handshake,"terminal",Date.now(),peer.context);
     const layout=await invoke<{revision:string;layout:unknown}>("plugin:workspace|terminal_execute",{request:{header,method:"terminal_layout",args:{}}});
     initializeProductLayout(peer.id,layout);

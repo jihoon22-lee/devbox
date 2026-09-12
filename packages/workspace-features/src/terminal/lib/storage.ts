@@ -1,4 +1,4 @@
-import { terminalStorageKey } from "./storageNamespace";
+import { readTerminalPreference, writeTerminalPreference } from "./storageNamespace";
 import { DEFAULT_TERMINAL_FONT_SIZE, clampTerminalFontSize } from "./terminalUx";
 
 // wsl-dashboard의 localStorage 프로젝트 경로 저장 선례(apps/wsl-dashboard/src/App.tsx)를
@@ -11,24 +11,24 @@ const FONT_SIZE_KEY = "wsl-desktop:font-size";
 const MAX_RECENT = 12;
 
 export function loadPinned(): boolean {
-  return localStorage.getItem(terminalStorageKey(PINNED_KEY)) === "1";
+  return readTerminalPreference(PINNED_KEY) === "1";
 }
 
 export function savePinned(pinned: boolean): void {
-  localStorage.setItem(terminalStorageKey(PINNED_KEY), pinned ? "1" : "0");
+  writeTerminalPreference(PINNED_KEY, pinned ? "1" : "0");
 }
 
 export function loadPinnedCwd(): string {
-  return localStorage.getItem(terminalStorageKey(CWD_KEY)) ?? "";
+  return readTerminalPreference(CWD_KEY) ?? "";
 }
 
 export function savePinnedCwd(cwd: string): void {
-  localStorage.setItem(terminalStorageKey(CWD_KEY), cwd);
+  writeTerminalPreference(CWD_KEY, cwd);
 }
 
 export function loadRecentPaths(): string[] {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(terminalStorageKey(RECENT_KEY)) ?? "[]");
+    const raw: unknown = JSON.parse(readTerminalPreference(RECENT_KEY) ?? "[]");
     return Array.isArray(raw) ? raw.filter((p): p is string => typeof p === "string") : [];
   } catch {
     return [];
@@ -40,25 +40,25 @@ export function pushRecentPath(path: string): string[] {
   const trimmed = path.trim();
   if (!trimmed) return loadRecentPaths();
   const next = [trimmed, ...loadRecentPaths().filter((p) => p !== trimmed)].slice(0, MAX_RECENT);
-  localStorage.setItem(terminalStorageKey(RECENT_KEY), JSON.stringify(next));
+  writeTerminalPreference(RECENT_KEY, JSON.stringify(next));
   return next;
 }
 
 /** 설정이 없을 때는 Windows Terminal과 유사하게 selection 자동 복사를 켠다. */
 export function loadCopyOnSelect(): boolean {
-  return localStorage.getItem(terminalStorageKey(COPY_ON_SELECT_KEY)) !== "0";
+  return readTerminalPreference(COPY_ON_SELECT_KEY) !== "0";
 }
 
 export function saveCopyOnSelect(enabled: boolean): void {
-  localStorage.setItem(terminalStorageKey(COPY_ON_SELECT_KEY), enabled ? "1" : "0");
+  writeTerminalPreference(COPY_ON_SELECT_KEY, enabled ? "1" : "0");
 }
 
 export function loadTerminalFontSize(): number {
-  const raw = localStorage.getItem(terminalStorageKey(FONT_SIZE_KEY));
+  const raw = readTerminalPreference(FONT_SIZE_KEY);
   if (raw === null || raw.trim() === "") return DEFAULT_TERMINAL_FONT_SIZE;
   return clampTerminalFontSize(Number(raw));
 }
 
 export function saveTerminalFontSize(fontSize: number): void {
-  localStorage.setItem(terminalStorageKey(FONT_SIZE_KEY), String(clampTerminalFontSize(fontSize)));
+  writeTerminalPreference(FONT_SIZE_KEY, String(clampTerminalFontSize(fontSize)));
 }

@@ -482,3 +482,37 @@ does not close its PTYs. Native layouts precede process creation, output uses a
 bounded replay cursor, and concurrent profile edits require the latest revision.
 This wiring still awaits the complete B06 Windows/WSL acceptance packet, settings
 migration, Development Sessions and Problems integration.
+
+### Terminal settings ownership and import
+
+Workspace Terminal now keeps normal preferences with its native profile document.
+Companions preload that document before rendering and save one key with its previous
+value; a stale window cannot replace another window's settings. Existing development
+product preference keys are adopted only when the native key is absent. Companion
+layout remains native and session-specific. Legacy WSL Desktop keeps its own stores.
+
+| Legacy persistence | Workspace destination / behavior |
+|---|---|
+| `terminal-profiles.json` | Separate named profiles with original/destination ID mapping; existing profiles remain |
+| `wsl-desktop:last-layout` in localStorage | A named profile for explicit restoration, including stable pane keys and ratios |
+| `wsl-desktop:cwd-pinned`, `cwd-value`, `recent-paths` | Native Terminal preferences; malformed or oversized values are reported |
+| `wsl-desktop:copy-on-select`, `font-size` | Native Terminal preferences |
+| `wsl-desktop:settings` v1/v2 | Native Terminal preferences, with unsupported versions/fields reported |
+| `window-state-v1.json` | Separate reviewed window-state import (surface mapping must be selected explicitly) |
+| Active PTYs, output buffers, broadcast arming, transient zoom | Excluded; importing starts no terminal and sends no command |
+| Bash/Zsh rc integration blocks and backups | Stay in the distro; existing marker/revision/backup checks govern explicit changes |
+
+Import preparation uses the fixed legacy identifier, holds the JSON source read
+handle, copies a closed LevelDB store with its LOCK and log files, then runs only an
+owned copied-profile exporter. The actual WebView2 data directory must match before
+seven fixed storage keys are read. No normal Workspace startup or single-instance
+routing runs in that worker. Missing/ambiguous browser stores and unsupported values
+have individual report entries; JSON-only success does not imply browser settings
+were migrated. Preparing/cancelling/restarting leaves an explicit job record. Applying
+a reviewed revision commits profiles, selected preferences and the repeat receipt
+in one native document. The previous bytes and ID map remain in Terminal import history.
+Repeat import preserves later edits/deletions. Close companion windows before applying.
+
+The source-copy, child ownership and profile identity helpers are shared with API
+Studio's existing exporter. Detailed migration and actual Windows execution of this
+B06 path remain pending until the whole PR bundle is implemented.

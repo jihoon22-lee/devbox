@@ -13,13 +13,27 @@ mod private_metadata;
 pub mod project_owner;
 mod runtime_host;
 mod source_host;
+mod terminal_export;
 mod terminal_host;
+mod terminal_import;
 mod terminal_profiles;
 mod window_import;
 mod wsl_controls;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let args = std::env::args().skip(1).collect::<Vec<_>>();
+    match terminal_export::argument(&args) {
+        Ok(Some(id)) => {
+            terminal_export::run_worker(id, tauri::generate_context!())
+                .expect("terminal export worker failed");
+            return;
+        }
+        Err(_) => {
+            std::process::exit(2);
+        }
+        Ok(None) => {}
+    }
     product_shell_tauri::run_with("workspace", tauri::generate_context!(), |builder| {
         builder
             .plugin(tauri_plugin_dialog::init())

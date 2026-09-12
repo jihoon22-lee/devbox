@@ -117,6 +117,7 @@ export default function App() {
   const [selected, setSelected] = useState("");
   const [containers, setContainers] = useState<ContainerInfo[]>([]);
   const [dockerMissing, setDockerMissing] = useState(false);
+  useEffect(()=>{const failed=()=>setError("터미널 설정을 저장하지 못했습니다. 다른 창의 변경을 확인한 뒤 설정을 다시 열어 주세요.");window.addEventListener("terminal-preference-save-failed",failed);return()=>window.removeEventListener("terminal-preference-save-failed",failed);},[]);
   const [dashboardSnapshot, setDashboardSnapshot] = useState<DashboardSnapshot | null>(null);
   const [dashboardState, setDashboardState] = useState<DashboardFreshness>("loading");
   // Recomputed by the freshness tick below so an in-flight refresh that outlives the TTL

@@ -1,0 +1,1 @@
+{"identifier":"terminal-export","description":"Disposable copied-profile reader, with native nonce and profile identity verification.","windows":["legacy-terminal-export"],"permissions":["workspace:allow-terminal-export-message"]}

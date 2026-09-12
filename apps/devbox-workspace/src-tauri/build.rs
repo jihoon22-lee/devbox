@@ -11,6 +11,7 @@ fn main() {
                 tauri_build::InlinedPlugin::new().commands(&[
                     "execute",
                     "terminal_describe",
+                    "terminal_export_message",
                     "terminal_execute",
                 ]),
             ),

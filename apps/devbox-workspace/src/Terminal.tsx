@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { componentCall } from "./native";
+import TerminalImport from "./TerminalImport";
 import DevelopmentSessions from "./DevelopmentSessions";
 
 interface Session {id:string;context:ProjectContext|null;state:string}
@@ -30,6 +31,7 @@ export default function Terminal({description,registry}:{description:Description
   };
   return <section className="workspace-terminal-manager">
     <h1>터미널</h1>
+    <TerminalImport description={description} active={true}/>
     <DevelopmentSessions description={description} registry={registry}/>
     <p>프로젝트별 터미널을 보조 창에서 엽니다. 창을 숨기거나 새로 고쳐도 실행 중인 터미널은 유지됩니다.</p>
     <button disabled={busy} onClick={()=>void open()}>{description.context?"현재 프로젝트의 터미널 열기":"터미널 열기"}</button>{" "}
