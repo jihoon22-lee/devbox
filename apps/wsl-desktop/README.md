@@ -3,6 +3,10 @@
 앱 안에 내장된 임베디드 WSL 터미널. Windows Terminal처럼 탭·분할로 여러 WSL 세션을 관리한다.
 산출물: `WSLDesktop.exe` (`apps/wsl-desktop`).
 
+v0.8 B06에서는 기존 터미널 UI·API·테스트를 `packages/workspace-features/src/terminal`로
+옮기고 독립 앱도 같은 진입점을 사용한다. Workspace 보조 창·native PTY owner와
+세션·설정 가져오기는 이 묶음의 후속 구현이며, 추출만으로 이전 완료를 주장하지 않는다.
+
 ## 주요 기능
 
 - **임베디드 터미널** — xterm.js + PTY(ConPTY), WSL 배포판 선택·지정 경로로 열기
