@@ -6,7 +6,7 @@ import catalog from "../../../apps/products.json";
 
 export interface Command {
   id:string;owner:string;component:string;label:string;revision:string;
-  target:{kind:"route";route:string}|{kind:"entity";entity:string;id:string};
+  target:{kind:"route";route:string}|{kind:"entity";entity:string;id:string};reviewRoute?:string;
   requiredContext:"none"|"project"|"selection";context:ProjectContext|null;
   destructive:boolean;requiresReview:boolean;disabledReason:string|null;
 }
@@ -22,6 +22,7 @@ function command(value:unknown):value is Command {
     ||!["none","project","selection"].includes(String(row.requiredContext))
     ||(row.context!==null&&!isProjectContext(row.context))
     ||typeof row.destructive!=="boolean"||typeof row.requiresReview!=="boolean"
+    ||(row.reviewRoute!==undefined&&(typeof row.reviewRoute!=="string"||!/^[a-z0-9-]{1,96}$/.test(row.reviewRoute)))
     ||(row.destructive&&!row.requiresReview)
     ||(row.disabledReason!==null&&typeof row.disabledReason!=="string")
     ||!row.target||typeof row.target!=="object"||Array.isArray(row.target))return false;
@@ -68,11 +69,11 @@ function receipt(value:unknown,id:string):CommandReceipt{
     ||!["awaitingReview","opening","opened","rejected","expired"].includes(String(value.phase)))throw new Error("명령 전달 결과를 확인하지 못했습니다.");
   return value as CommandReceipt;
 }
-export async function searchCommandSource(description:Description,route:string,product:string,query:string,generation:number):Promise<CommandSearch>{
+export async function searchCommandSource(description:Description,route:string,product:string,query:string,generation:number,source="commands"):Promise<CommandSearch>{
   if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
-  const value=await call(description,route,"command_source",{product,query,generation});
+  const value=await call(description,route,"command_source",{product,query,generation,source});
   if(!value||typeof value!=="object"||!("generation" in value)||value.generation!==generation
-    ||!("source" in value)||value.source!=="commands"||!("owner" in value)||value.owner!==product
+    ||!("source" in value)||value.source!==source||!("owner" in value)||value.owner!==product
     ||!("result" in value)||!value.result||typeof value.result!=="object")throw new Error("검색 출처가 일치하지 않습니다.");
   const result=value.result;
   if(!("results" in result)||!Array.isArray(result.results)||result.results.length>256

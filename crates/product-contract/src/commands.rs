@@ -62,6 +62,8 @@ pub struct Descriptor {
     pub label: String,
     pub revision: String,
     pub target: Target,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review_route: Option<String>,
     pub required_context: ContextRequirement,
     pub context: Option<ProjectContext>,
     pub destructive: bool,
@@ -120,6 +122,7 @@ impl Descriptor {
                 .context
                 .as_ref()
                 .is_some_and(|context| context.validate().is_err())
+            || self.review_route.as_ref().is_some_and(|route| !slug(route))
             || (self.destructive && !self.requires_review)
         {
             return Err("command_metadata_invalid");
@@ -212,6 +215,7 @@ mod tests {
             target: Target::Route {
                 route: "files".into(),
             },
+            review_route: None,
             required_context: ContextRequirement::None,
             context: None,
             destructive: false,

@@ -5,6 +5,7 @@ import {searchCommands,searchCommandSource,previewCommand,openCommand,commandSta
 const providers=["workspace","api-studio","knowledge"] as const;
 const reasons:Record<string,string>={notInstalled:"제품 설치 필요",versionMismatch:"제품 버전 확인 필요",providerUnavailable:"제품 연결 확인 필요",contextRequired:"프로젝트 선택 필요",selectionRequired:"선택한 내용 필요",stale:"원본 새로 고침 필요",permissionDenied:"접근 권한 확인 필요"};
 export default function Commands({description,route,navigate}:ShellContentProps){
+  const [source,setSource]=useState("commands");
   const [query,setQuery]=useState(""),[result,setResult]=useState<CommandSearch|null>(null);
   const [loading,setLoading]=useState(false),[busy,setBusy]=useState(false),[issue,setIssue]=useState("");
   const [sources,setSources]=useState<Record<string,{result?:CommandSearch;issue?:boolean}>>({});
@@ -14,18 +15,18 @@ export default function Commands({description,route,navigate}:ShellContentProps)
     const ticket=++generation.current;setLoading(true);
     setSources({});
     const timer=setTimeout(()=>{
-      void searchCommands(description,route,query).then(value=>{
+      void (source==="commands"?searchCommands(description,route,query):Promise.resolve({results:[],truncated:false})).then(value=>{
         if(ticket===generation.current){setResult(value);setIssue("");}
       }).catch(()=>{if(ticket===generation.current){setResult(null);setIssue("명령 목록을 읽지 못했습니다.");}})
         .finally(()=>{if(ticket===generation.current)setLoading(false);});
-      for(const product of providers){
-        void searchCommandSource(description,route,product,query,ticket).then(result=>{
+      for(const product of (source==="commands"?providers:["workspace"])){
+        void searchCommandSource(description,route,product,query,ticket,source).then(result=>{
           if(ticket===generation.current)setSources(values=>({...values,[product]:{result}}));
         }).catch(()=>{if(ticket===generation.current)setSources(values=>({...values,[product]:{issue:true}}));});
       }
     },150);
     return()=>{clearTimeout(timer);generation.current++;};
-  },[description,route,query]);
+  },[description,route,query,source]);
   const open=async(item:Command)=>{
     if(busy||item.disabledReason)return;
     const ticket=generation.current;setBusy(true);setIssue("");
@@ -47,6 +48,7 @@ export default function Commands({description,route,navigate}:ShellContentProps)
   const deliveryText=delivery?{unknown:"요청이 전달되었는지 아직 확인하지 못했습니다.",awaitingReview:"요청한 제품에서 화면 열기를 확인해 주세요.",opening:"요청한 제품에서 화면을 열고 있습니다.",opened:"요청한 제품에서 화면을 열었습니다.",rejected:"요청한 제품에서 열기를 거절했습니다.",expired:"화면 열기 요청이 만료되었습니다."}[delivery.receipt.phase]:"";
   return <section className="command-browser">
     <h1>제품 명령</h1>
+    <label>검색 대상 <select value={source} onChange={event=>setSource(event.target.value)}><option value="commands">명령</option><option value="projects">프로젝트</option><option value="repositories">저장소·작업 폴더</option></select></label>
     <label>명령 검색 <input type="search" value={query} maxLength={512} onChange={event=>setQuery(event.target.value)}/></label>
     {loading&&<p role="status">명령을 찾고 있습니다…</p>}
     {issue&&<p role="alert">{issue}</p>}

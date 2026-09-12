@@ -29,6 +29,8 @@ pub struct Review {
     pub revision: String,
     pub label: String,
     pub route: String,
+    pub target: Target,
+    pub context: Option<crate::ProjectContext>,
 }
 struct Entry {
     receipt: Receipt,
@@ -36,6 +38,8 @@ struct Entry {
     label: String,
     route: String,
     expires: u64,
+    target: Target,
+    context: Option<crate::ProjectContext>,
 }
 #[derive(Default)]
 pub struct Queue {
@@ -58,13 +62,20 @@ impl Queue {
         now: u64,
     ) -> Result<Receipt> {
         descriptor.validate_request(request)?;
-        let Target::Route { route } = &descriptor.target else {
-            return Err("navigation_requires_entity_owner");
+        let route = match &descriptor.target {
+            Target::Route { route } => route,
+            Target::Entity { .. } if descriptor.requires_review => descriptor
+                .review_route
+                .as_ref()
+                .ok_or("navigation_requires_entity_owner")?,
+            _ => return Err("navigation_requires_entity_owner"),
         };
-        // A route switch grants no project selection. Contextful/entity commands
-        // must use their actual owner's reviewed navigation adapter separately.
-        if request.context.is_some() || request.selection_id.is_some() || descriptor.destructive {
-            return Err("navigation_requires_owner_review");
+        // Context is an owner-review hint, never a selection grant. The
+        // destination opens its existing review UI; execution stays separate.
+        if request.selection_id.is_some()
+            || (matches!(descriptor.target, Target::Route { .. }) && request.context.is_some())
+        {
+            return Err("navigation_requires_selection_owner");
         }
         let revision = Sha256::digest(
             serde_json::to_vec(&(descriptor, request)).map_err(|_| "navigation_invalid")?,
@@ -106,6 +117,8 @@ impl Queue {
                 label: descriptor.label.clone(),
                 route: route.clone(),
                 expires: now.saturating_add(REVIEW_MS),
+                target: descriptor.target.clone(),
+                context: descriptor.context.clone(),
             },
         );
         Ok(receipt)
@@ -120,6 +133,8 @@ impl Queue {
                 revision: entry.revision.clone(),
                 label: entry.label.clone(),
                 route: entry.route.clone(),
+                target: entry.target.clone(),
+                context: entry.context.clone(),
             })
             .collect()
     }
@@ -180,6 +195,7 @@ mod tests {
             target: Target::Route {
                 route: "notes".into(),
             },
+            review_route: None,
             required_context: ContextRequirement::None,
             context: None,
             destructive: false,
@@ -264,6 +280,43 @@ mod tests {
         assert_eq!(
             queue.status("revoked", REVIEW_MS).unwrap().phase,
             Phase::Rejected
+        );
+    }
+    #[test]
+    fn entity_context_only_reaches_a_declared_owner_review() {
+        let (mut descriptor, mut request) = command();
+        descriptor.target = Target::Entity {
+            entity: crate::commands::EntityKind::Project,
+            id: "project".into(),
+        };
+        descriptor.context = Some(crate::ProjectContext {
+            project_id: "project".into(),
+            worktree_id: "tree".into(),
+            target: crate::ExecutionTarget::Windows,
+            revision: 1,
+        });
+        descriptor.required_context = ContextRequirement::Project;
+        request.context = descriptor.context.clone();
+        let mut queue = Queue::default();
+        assert!(queue.enqueue(&descriptor, &request, 0).is_err());
+        descriptor.requires_review = true;
+        assert!(queue.enqueue(&descriptor, &request, 0).is_err());
+        descriptor.review_route = Some("notes".into());
+        queue.enqueue(&descriptor, &request, 0).unwrap();
+        let review = queue.pending(1).pop().unwrap();
+        assert_eq!(review.context, descriptor.context);
+        assert_eq!(review.target, descriptor.target);
+        assert_eq!(
+            queue
+                .decide(&review.operation_id, &review.revision, true, 1)
+                .unwrap()
+                .as_deref(),
+            Some("notes")
+        );
+        // Opening a review is separate from selecting a context or granting IO.
+        assert_eq!(
+            queue.status(&request.operation_id, 2).unwrap().phase,
+            Phase::Opening
         );
     }
 }

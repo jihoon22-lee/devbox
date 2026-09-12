@@ -1,11 +1,11 @@
 import {useCallback,useEffect,useState} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {listen} from "@tauri-apps/api/event";
-import {makeRequest,nativeMode,type Description} from "./api";
+import {makeRequest,nativeMode,isProjectContext,type Description} from "./api";
 import {isOperation} from "./operation";
 import catalog from "../../../apps/products.json";
-interface Review {operationId:string;revision:string;label:string;route:string}
-export default function IncomingCommands({description,route,navigate}:{description:Description;route:string;navigate:(route:string)=>void}){
+import type {IncomingReview as Review} from "./incoming";
+export default function IncomingCommands({description,route,navigate,onReview}:{description:Description;route:string;navigate:(route:string)=>void;onReview:(review:Review)=>void}){
   const [reviews,setReviews]=useState<Review[]>([]),[opening,setOpening]=useState<{id:string;route:string}|null>(null);
   const [busy,setBusy]=useState(false),[issue,setIssue]=useState("");
   const call=useCallback(async<T,>(method:object):Promise<T>=>{
@@ -19,7 +19,7 @@ export default function IncomingCommands({description,route,navigate}:{descripti
     if(!nativeMode)return;
     let active=true,remove:(()=>void)|undefined;
     const refresh=()=>{void call<Review[]>({kind:"pending"}).then(value=>{
-      if(!Array.isArray(value)||value.length>32||value.some(row=>!description.features.some(feature=>feature.route===row.route)))throw new Error("invalid navigation");
+      if(!Array.isArray(value)||value.length>32||value.some(row=>!description.features.some(feature=>feature.route===row.route)||!row.target||!["route","entity"].includes(row.target.kind)||(row.context!==null&&!isProjectContext(row.context))))throw new Error("invalid navigation");
       if(active)setReviews(value);
     }).catch(()=>{if(active)setIssue("다른 제품의 열기 요청을 확인하지 못했습니다.");});};
     void listen("suite-navigation",refresh).then(unlisten=>{if(!active)unlisten();else{remove=unlisten;refresh();}}).catch(()=>{if(active)setIssue("제품 요청 알림을 연결하지 못했습니다.");});
@@ -36,7 +36,7 @@ export default function IncomingCommands({description,route,navigate}:{descripti
       const result=await call<{operationId:string;route:string|null}>({kind:"decide",id:review.operationId,revision:review.revision,accept});
       if(result.operationId!==review.operationId||result.route!==(accept?review.route:null))throw new Error("invalid navigation");
       setReviews(values=>values.filter(value=>value.operationId!==review.operationId));
-      if(result.route){setOpening({id:review.operationId,route:result.route});navigate(result.route);}
+      if(result.route){onReview(review);setOpening({id:review.operationId,route:result.route});navigate(result.route);}
     }catch{setIssue("요청이 변경되었거나 만료되었습니다. 요청 제품에서 다시 확인해 주세요.");}
     finally{setBusy(false);}
   };

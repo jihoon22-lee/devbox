@@ -31,7 +31,7 @@ pub fn run() {
     }
     product_shell_tauri::run_with("api-studio", tauri::generate_context!(), |builder| {
         builder
-            .plugin(suite::plugin("api-studio"))
+            .plugin(suite::plugin("api-studio", None, &[]))
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
