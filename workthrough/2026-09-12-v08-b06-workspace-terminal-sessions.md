@@ -488,3 +488,12 @@ Prepared native/UI fixtures cover ambiguous retry, supersession, expiry and boun
 profile arguments. Minimal native/frontend checks passed in 18.213 seconds. Detailed
 tests and actual Windows/WSL window behavior remain in the completed B06 packet.
 No global default shortcut was registered; final shortcut ownership is B07.
+
+## Task projection extraction
+
+The existing tasks.json parser now accepts an OS-owned byte snapshot and explicit
+root/identity/revision/target inputs without reading a path. Windows preview retains
+its original source acquisition and final filesystem revalidation around that pure
+projection. Persisted executions share one complete field comparison against a
+current plan. This enables the Linux source owner without copying the parser or
+manufacturing a Windows FilesystemIdentity for a Linux object.
