@@ -30,6 +30,7 @@ required-features = ["standalone"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+devbox-process = { package = "process", path = "../../../crates/process", features = ["owned"] }
 api-protocols = { path = "../../../crates/api-protocols" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"

@@ -14,3 +14,15 @@ window-state-tauri = { path = "../window-state-tauri" }
 serde = { version = "1", features = ["derive"] }
 sha2 = "0.11.0"
 uuid = { version = "1", features = ["v4"] }
+
+[features]
+browser-migration = ["dep:devbox-filesystem", "dep:windows", "dep:webview2-com"]
+
+[dependencies.devbox-filesystem]
+package = "filesystem"
+path = "../filesystem"
+optional = true
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", features = ["Win32_System_Com"], optional = true }
+webview2-com = { version = "0.38.2", optional = true }

@@ -10,3 +10,17 @@ sysinfo = "0.39.6"
 
 [dev-dependencies]
 serde_json = "1"
+
+[features]
+owned = ["dep:tokio", "dep:libc", "dep:windows"]
+
+[dependencies.tokio]
+version = "1"
+features = ["process", "time", "rt", "macros"]
+optional = true
+
+[target.'cfg(unix)'.dependencies]
+libc = { version = "0.2", optional = true }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.61", optional = true, features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Threading"] }

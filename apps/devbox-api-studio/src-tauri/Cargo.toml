@@ -24,7 +24,7 @@ data-migration = { path = "../../../crates/data-migration" }
 webhook-core = { path = "../../../crates/webhook-core" }
 transforms-core = { path = "../../../crates/transforms-core" }
 tauri = { version = "2", features = [] }
-product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
+product-shell-tauri = { path = "../../../crates/product-shell-tauri", features = ["browser-migration"] }
 product-contract = { path = "../../../crates/product-contract" }
 api-playground = { path = "../../api-playground/src-tauri", default-features = false }
 webhook-lab = { path = "../../webhook-lab/src-tauri", default-features = false }

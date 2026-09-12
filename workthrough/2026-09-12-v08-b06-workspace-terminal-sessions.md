@@ -271,3 +271,41 @@ The minimal native check first found a Tauri State/reference conversion error;
 a direct inner reference fixed it. The resumed native check passed in 8.401 seconds.
 No frontend or detailed test suite was repeated. Actual Windows shell mutation and
 backup/marker acceptance remain part of the completed B06 packet.
+
+## Terminal migration and shared exporter preparation (in progress)
+
+The actual second copied-profile consumer moves API Studio's closed LevelDB copier
+and scratch cleanup, with their fixtures, into data-migration; the WebView2 actual
+profile check moves into an optional product-shell-tauri feature. MCP stdio/native
+export child ownership moves into the process crate's optional owned feature.
+Existing API Studio and API Playground call paths reuse those implementations.
+There are no new external package versions; Cargo lock changes are dependency edges.
+
+Workspace's disposable exporter reads only seven inventoried localStorage keys after
+actual copied-profile identity verification. A fixed legacy JSON read and browser
+snapshot prepare a Terminal-owned review. Last layout becomes an explicit profile;
+unsupported/missing keys remain individual notices. Native preferences now share the
+profile envelope, allowing definitions/preferences/import receipt to commit together.
+Companions preload these values and use per-key compare-and-set writes. The earlier
+product-local preference namespace is adopted only for absent native keys.
+Original profile IDs map to deterministic new IDs. Repeated apply cannot resurrect
+later-deleted profiles or overwrite later preference edits. Exact preimages are
+preserved before replacement. Import jobs retain cancellation/interruption states;
+worker children retire before their owned browser copy can be cleaned.
+
+The first minimal check across both real consumers took 54.083 seconds and found
+calls to an assumed MetadataRoot::create_new method. The existing preserve method
+was idempotent, so a strict create-new variant was added using the same atomic
+hard-link write; exporter replay claims require strict creation. The resumed check
+keeps the same Cargo feature graph. No detailed tests were run. Import cleanup
+recovery, explicit history restoration, window migration integration and final
+migration acceptance still need completion before this section is final evidence.
+
+The extraction/native/frontend minimal packet now passes (20.525 seconds on the
+final resume). Intermediate resumes corrected an orphaned attribute left by the
+module move and the existing snapshot fixture's new WSL Desktop enum branch; one
+attempt edited the wrong file and repeated that same 11-second compiler failure.
+Those attempts are failures, not additional coverage. The Cargo graph was retained
+through all resumes. Existing API Studio checked artifacts were reused. No tests,
+Clippy, bundle build, affected run or Windows execution were added here. The shared
+moves and dependency edges are committed separately from the Terminal consumer.

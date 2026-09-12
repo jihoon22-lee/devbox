@@ -1,5 +1,7 @@
 //! Product session and navigation boundary. Domain plugins separately declare
 //! their command allowlists and reuse this native session authorization.
+#[cfg(feature = "browser-migration")]
+pub mod browser_profile;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
