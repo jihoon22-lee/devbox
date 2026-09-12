@@ -39,6 +39,7 @@ struct Plan {
     jobs: Vec<PreparedJob>,
     profile: Option<(wsl_desktop_lib::component::WorkspaceProfile, String)>,
     revision: String,
+    preflight: crate::session_preflight::Report,
 }
 #[derive(Clone)]
 enum Lease {
@@ -200,6 +201,7 @@ impl Sessions {
         window: &WebviewWindow,
         host: &Arc<Host>,
         terminals: &Arc<crate::terminal_host::Terminals>,
+        definitions: &Mutex<crate::definitions::Definitions>,
         header: &RouteRequest,
         method: &str,
         args: Value,
@@ -238,8 +240,6 @@ impl Sessions {
                     return Err("session_plan_invalid");
                 }
                 let context = header.context.as_ref().ok_or("session_context_required")?;
-                host.projects()?
-                    .admit_selection(host.helper_directory()?, context)?;
                 let jobs = input
                     .jobs
                     .iter()
@@ -248,18 +248,28 @@ impl Sessions {
                             .map_err(|_| "session_runtime_unavailable")
                     })
                     .collect::<Result<Vec<_>>>()?;
-                for job in &jobs {
-                    job.revalidate(window.app_handle())
-                        .map_err(|_| "session_plan_changed")?;
-                }
                 let profile = input
                     .terminal_profile
                     .as_deref()
                     .map(|id| terminals.prepare_profile(window.app_handle(), host, id))
                     .transpose()?;
+                let preflight = tauri::async_runtime::block_on(crate::session_preflight::capture(
+                    window.app_handle(),
+                    host,
+                    definitions,
+                    context,
+                    &jobs,
+                    header.deadline_ms,
+                ))?;
+                if preflight.restore_blocked {
+                    return Ok(
+                        json!({"session":null,"jobs":jobs.iter().map(|job|job.job()).collect::<Vec<_>>(),"profile":profile.as_ref().map(|(profile,_)|profile),"preflight":preflight}),
+                    );
+                }
                 let revision: String = Sha256::digest(
                     serde_json::to_vec(&(
                         context,
+                        &preflight.definitions_revision,
                         jobs.iter()
                             .map(|job| (job.job().id.as_str(), job.revision()))
                             .collect::<Vec<_>>(),
@@ -277,11 +287,12 @@ impl Sessions {
                     jobs,
                     profile,
                     revision: revision.clone(),
+                    preflight,
                 };
                 self.access(|inner| {
                     if let Some(existing) = inner.document.store.sessions.get(&input.operation_id) {
                         if existing.context != *context || existing.plan_revision != revision { return Err("session_identity_conflict"); }
-                        return Ok(json!({"session":existing,"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>(),"profile":plan.profile.as_ref().map(|(profile,_)|profile)}));
+                        return Ok(json!({"session":existing,"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>(),"profile":plan.profile.as_ref().map(|(profile,_)|profile),"preflight":plan.preflight}));
                     }
                     write(inner, |document| {
                         let session = document.store.create(input.operation_id.clone(),context.clone(),revision.clone(),now())?;
@@ -289,7 +300,7 @@ impl Sessions {
                         document.intents.insert(session.id,Intent { jobs: input.jobs, terminal_profile: input.terminal_profile });
                         Ok(())
                     })?;
-                    let response = json!({"session":inner.document.store.sessions[&input.operation_id],"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>(),"profile":plan.profile.as_ref().map(|(profile,_)|profile)});
+                    let response = json!({"session":inner.document.store.sessions[&input.operation_id],"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>(),"profile":plan.profile.as_ref().map(|(profile,_)|profile),"preflight":plan.preflight});
                     inner.plans.insert(input.operation_id,plan);
                     Ok(response)
                 })
@@ -325,9 +336,22 @@ impl Sessions {
                 })?;
                 host.projects()?
                     .admit_selection(host.helper_directory()?, &context)?;
-                for job in &plan.jobs {
-                    job.revalidate(window.app_handle())
-                        .map_err(|_| "session_plan_changed")?;
+                if input.mode == Mode::StartReviewed {
+                    let latest =
+                        tauri::async_runtime::block_on(crate::session_preflight::capture(
+                            window.app_handle(),
+                            host,
+                            definitions,
+                            &context,
+                            &plan.jobs,
+                            header.deadline_ms,
+                        ))?;
+                    if latest.execution_blocked || latest.restore_blocked {
+                        return Err("session_preflight_blocked");
+                    }
+                    if latest.definitions_revision != plan.preflight.definitions_revision {
+                        return Err("session_plan_changed");
+                    }
                 }
                 if let Some((profile, revision)) = &plan.profile {
                     let current =

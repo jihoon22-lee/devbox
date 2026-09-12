@@ -313,13 +313,16 @@ pub(crate) fn history(root: &MetadataRoot, method: &str, args: Value) -> Result<
 }
 
 pub(crate) fn snapshot(root: &MetadataRoot, id: &str) -> Result<(WorkspaceProfile, String)> {
-    let (envelope, _, revision) = load(root)?;
+    let (envelope, _, _) = load(root)?;
     let profile = envelope
         .content
         .profiles
         .into_iter()
         .find(|profile| profile.id == id)
         .ok_or("terminal_profile_missing")?;
+    let revision = crate::definitions::digest(
+        &serde_json::to_vec(&profile).map_err(|_| "terminal_profile_invalid")?,
+    );
     Ok((profile, revision))
 }
 

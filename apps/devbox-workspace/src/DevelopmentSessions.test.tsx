@@ -10,12 +10,13 @@ const context = { projectId: "project", worktreeId: "first", target: { kind: "wi
 const description = { ...fixtureDescription("workspace"), context };
 const session = { id: "10000000-0000-4000-8000-000000000001", context, revision: 2, planRevision: "a".repeat(64), phase: "review", issue: null };
 const job = { id: "20000000-0000-4000-8000-000000000001", name: "개발 서버", kind: "service", targetKind: "windows", targetDistro: null, command: "synthetic-server", cwd: null, envConfigured: true };
+const preflight={definitionsRevision:"d".repeat(64),restoreBlocked:false,executionBlocked:false,entries:[]};
 beforeEach(() => {
   sessionStorage.clear();
   call.mockReset().mockImplementation(async (_description, _component, method) => {
     if (method === "development_candidates") return { jobs: [job], truncated: false };
     if (method === "development_sessions") return { sessions: [], intents: {} };
-    if (method === "prepare_development_session") return { session, jobs: [job] };
+    if (method === "prepare_development_session") return { session, jobs: [job], preflight };
     return {};
   });
 });
@@ -44,7 +45,39 @@ it("does not display a late plan from the previous worktree", async () => {
   fireEvent.click(screen.getByRole("button", { name: "환경 확인·실행 검토" }));
   await waitFor(() => expect(finish).toBeDefined());
   view.rerender(<DevelopmentSessions description={{ ...description, context: { ...context, worktreeId: "second" } }} registry={null} />);
-  finish?.({ session, jobs: [job] });
+  finish?.({ session, jobs: [job], preflight });
   await waitFor(() => expect((screen.getByRole("button", { name: "환경 확인·실행 검토" }) as HTMLButtonElement).disabled).toBe(false));
   expect(screen.queryByText("synthetic-server")).toBeNull();
+});
+
+it("keeps state restoration available while a foreign listener blocks execution",async()=>{
+  call.mockImplementation(async(_description,_component,method)=>{
+    if(method==="development_candidates")return{jobs:[job],truncated:false};
+    if(method==="development_sessions")return{sessions:[],intents:{}};
+    if(method==="prepare_development_session")return{session,jobs:[job],preflight:{...preflight,executionBlocked:true,entries:[{kind:"port",key:"8080",state:"occupied",blocking:true}]}};
+    return{};
+  });
+  render(<DevelopmentSessions description={description} registry={null}/>);
+  await screen.findByRole("checkbox");
+  fireEvent.click(screen.getByRole("button",{name:"환경 확인·실행 검토"}));
+  await screen.findByText(/다른 실행이 사용 중/);
+  expect((screen.getByRole("button",{name:"검토한 작업 실행"}) as HTMLButtonElement).disabled).toBe(true);
+  expect((screen.getByRole("button",{name:"상태만 이어가기"}) as HTMLButtonElement).disabled).toBe(false);
+  expect(call.mock.calls.some(([, , method])=>method==="start_development_session")).toBe(false);
+});
+
+it("shows a stopped-target report without creating or approving a session",async()=>{
+  call.mockImplementation(async(_description,_component,method)=>{
+    if(method==="development_candidates")return{jobs:[job],truncated:false};
+    if(method==="development_sessions")return{sessions:[],intents:{}};
+    if(method==="prepare_development_session")return{session:null,jobs:[job],preflight:{...preflight,restoreBlocked:true,executionBlocked:true,entries:[{kind:"distro",key:"synthetic",state:"stopped",blocking:true}]}};
+    return{};
+  });
+  render(<DevelopmentSessions description={description} registry={null}/>);
+  await screen.findByRole("checkbox");
+  fireEvent.click(screen.getByRole("button",{name:"환경 확인·실행 검토"}));
+  await screen.findByText(/중지된 WSL 배포판/);
+  expect((screen.getByRole("button",{name:"상태만 이어가기"}) as HTMLButtonElement).disabled).toBe(true);
+  fireEvent.click(screen.getByRole("button",{name:"취소"}));
+  expect(call.mock.calls.some(([, , method])=>["start_development_session","stop_development_session"].includes(method))).toBe(false);
 });

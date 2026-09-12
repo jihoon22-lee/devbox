@@ -359,3 +359,28 @@ The Python scripts parse successfully. The native check first exposed an unneces
 Unix compilation of the Windows-only export child adapter; gating that consumer to
 Windows fixed it. Both native consumers then checked successfully in 19.739 seconds.
 Frontend checks and detailed tests were not repeated.
+
+## Session preflight and separate restoration
+
+Session review now reports native project/distro admission, definition source
+availability, task/worktree identity and trust, environment presence and owner-local
+reference names, declared toolchain requirements, and live expected/health TCP ports.
+It uses the existing port collector/correlation producer. Unknown process identity
+still counts as occupied; a selected native service can be shown as an existing
+reference, while a foreign listener blocks execution. Unavailable WSL observation
+is not reported as a free port. No environment value is decrypted by preflight.
+Declared toolchain versions remain explicitly unverified, not claimed as installed.
+
+An unavailable project/stopped target returns a report without creating an execution
+session. Execution blockers leave restore-only available when project admission is
+valid. Start rechecks live blockers and the reviewed definition revision; restore-only
+does not unnecessarily validate or execute task definitions. The selected Terminal
+profile revision now hashes its own definition, so unrelated preference changes do
+not invalidate a reviewed profile. Late-context and blocked-execution/restore-only
+UI fixtures are prepared for the final B06 packet.
+
+The minimal native check found a private listener-source type; the existing typed
+component facade now exports that DTO. The resumed native/frontend check passed in
+19.394 seconds with the same Cargo graph. Tests and detailed verification remain
+deferred. Unified Problems/context status, the Knowledge provider, WSL task-source
+adapter and Quick Summon integration are still pending.

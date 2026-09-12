@@ -12,6 +12,7 @@ pub mod platform;
 mod private_metadata;
 pub mod project_owner;
 mod runtime_host;
+mod session_preflight;
 mod source_host;
 mod terminal_export;
 mod terminal_host;

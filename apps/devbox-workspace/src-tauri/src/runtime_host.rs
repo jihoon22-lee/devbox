@@ -256,6 +256,18 @@ fn bindings(
             .unwrap_or(0),
     }
 }
+pub(crate) async fn session_ports(
+    app: &tauri::AppHandle,
+    host: &Host,
+    definitions: &Mutex<Definitions>,
+    context: &ProjectContext,
+    deadline: u64,
+) -> Result<port_manager_lib::component::PortObservationSnapshot> {
+    observations::observe(app, host, definitions, Some(context), deadline)
+        .await
+        .map(|(snapshot, _)| snapshot)
+}
+
 fn navigate(app: &tauri::AppHandle, route: &str, context: Option<&ProjectContext>) -> Result<()> {
     app.emit_to(
         "main",

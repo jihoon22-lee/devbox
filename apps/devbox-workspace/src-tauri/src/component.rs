@@ -441,9 +441,15 @@ async fn terminal_worker(
                 runtime
                     .engines
                     .initialize_runtime(window.app_handle(), &host)?;
-                runtime
-                    .sessions
-                    .manage(&window, &host, &runtime.terminals, &header, &method, args)
+                runtime.sessions.manage(
+                    &window,
+                    &host,
+                    &runtime.terminals,
+                    &runtime.definitions,
+                    &header,
+                    &method,
+                    args,
+                )
             } else {
                 runtime
                     .terminals
