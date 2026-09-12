@@ -231,6 +231,8 @@ async fn execute(
             if let Some(mut bus) = bus {
                 bus.shutdown().await;
             }
+            use tauri::Emitter;
+            let _ = app.emit("suite-disconnected", ());
             Ok(json!({"connected":false,"generation":null}))
         }
         Method::Probe {
@@ -332,6 +334,24 @@ fn now() -> u64 {
         .unwrap_or_default()
         .as_millis()
         .min(u128::from(u64::MAX)) as u64
+}
+pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
+    #[cfg(windows)]
+    {
+        app.try_state::<Suite>().is_some_and(|suite| {
+            suite.state.lock().is_ok_and(|state| {
+                state
+                    .approved
+                    .as_ref()
+                    .is_some_and(|scope| scope.revalidate().is_ok())
+            })
+        })
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = app;
+        false
+    }
 }
 /// Native command host calls this only after its own renderer authorization.
 pub(crate) async fn remote(

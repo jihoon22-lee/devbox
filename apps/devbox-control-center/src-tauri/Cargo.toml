@@ -30,4 +30,4 @@ tokio = { version = "1", features = ["net", "sync", "rt", "time", "io-util", "ma
 
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Pipes", "Win32_Security"] }
+windows = { version = "0.61", features = ["Win32_Foundation", "Win32_System_Threading", "Win32_System_Pipes", "Win32_Security", "Win32_UI_Input_KeyboardAndMouse", "Win32_UI_WindowsAndMessaging"] }

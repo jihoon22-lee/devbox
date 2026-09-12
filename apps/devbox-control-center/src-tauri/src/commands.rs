@@ -1,11 +1,13 @@
 //! Local command catalog boundary. Cross-product resolution remains a native owner task.
 use crate::core::commands::{Index, Search};
+use product_contract::launcher_preferences::{Preferences, PREFERENCES_FILE};
 use product_contract::{
     commands::{Descriptor, Request},
     Operation, OperationState, Problem, ProblemCode, RouteRequest,
 };
 use serde::{Deserialize, Serialize};
 use std::collections::BTreeSet;
+use std::sync::Mutex;
 use tauri::{Manager, State, WebviewWindow};
 
 #[derive(Deserialize)]
@@ -34,6 +36,43 @@ struct StatusRequest {
     header: RouteRequest,
     product: String,
     operation_id: String,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct PreferenceRequest {
+    header: RouteRequest,
+    action: PreferenceAction,
+}
+#[derive(Deserialize)]
+#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+enum PreferenceAction {
+    Read,
+    ClearRecents,
+    Favorite { command: Request, favorite: bool },
+    Visit { command: Request },
+}
+#[derive(Default)]
+struct PreferenceOwner(Mutex<()>);
+fn preferences_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, &'static str> {
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "preferences_unavailable")?;
+    let parent = root.parent().ok_or("preferences_unavailable")?;
+    devbox_filesystem::ensure_no_links(parent).map_err(|_| "preferences_unavailable")?;
+    match std::fs::create_dir(&root) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return Err("preferences_unavailable"),
+    }
+    devbox_filesystem::ensure_no_links(&root).map_err(|_| "preferences_unavailable")?;
+    Ok(root.join(PREFERENCES_FILE))
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct ShortcutRequest {
+    header: RouteRequest,
+    config: Option<crate::shortcuts::Config>,
 }
 #[derive(Serialize)]
 struct Response<T> {
@@ -233,6 +272,121 @@ async fn command_status(
     })
 }
 
+#[tauri::command]
+async fn command_preferences(
+    window: WebviewWindow,
+    index: State<'_, Index>,
+    owner: State<'_, PreferenceOwner>,
+    request: PreferenceRequest,
+) -> Result<Response<Preferences>, Problem> {
+    let provenance =
+        product_shell_tauri::authorize(&window, &request.header, "control-center.commands")?;
+    let failure = || Problem {
+        code: ProblemCode::Unavailable,
+        provenance: provenance.clone(),
+    };
+    let change = match request.action {
+        PreferenceAction::Favorite {
+            command,
+            favorite: false,
+        } => {
+            product_contract::launcher_preferences::validate_result_id(&command.command_id)
+                .map_err(|_| failure())?;
+            Some((command.command_id, Some(false)))
+        }
+        PreferenceAction::Favorite { command, favorite } => {
+            let destination = command
+                .command_id
+                .split('.')
+                .next()
+                .unwrap_or("")
+                .to_owned();
+            let descriptor = if destination == "control-center" {
+                index.resolve(&command).cloned().map_err(|_| failure())?
+            } else {
+                let value = crate::suite::remote(
+                    window.app_handle(),
+                    &destination,
+                    product_contract::transport::Call::PreviewCommand {
+                        request: command.clone(),
+                    },
+                    request.header.deadline_ms,
+                )
+                .await
+                .map_err(|_| failure())?;
+                serde_json::from_value::<Descriptor>(value).map_err(|_| failure())?
+            };
+            descriptor
+                .validate_request(&command)
+                .map_err(|_| failure())?;
+            Some((command.command_id, Some(favorite)))
+        }
+        PreferenceAction::Visit { command } => {
+            let descriptor = index.resolve(&command).map_err(|_| failure())?;
+            if !matches!(&descriptor.target,product_contract::commands::Target::Route{route} if route==&request.header.route)
+                || descriptor.owner != "control-center"
+            {
+                return Err(failure());
+            }
+            Some((command.command_id, None))
+        }
+        PreferenceAction::ClearRecents => Some((String::new(), None)),
+        PreferenceAction::Read => None,
+    };
+    let _guard = owner.0.lock().map_err(|_| failure())?;
+    let path = preferences_path(window.app_handle()).map_err(|_| failure())?;
+    let mut preferences = Preferences::load(&path).map_err(|_| failure())?;
+    if let Some((id, favorite)) = change {
+        match favorite {
+            Some(favorite) => preferences.set_favorite(&id, favorite),
+            None if id.is_empty() => {
+                preferences.clear_recents();
+                Ok(())
+            }
+            None => preferences.record_recent(&id),
+        }
+        .map_err(|_| failure())?;
+        preferences.save(&path).map_err(|_| failure())?;
+    }
+    Ok(Response {
+        operation: Operation {
+            provenance,
+            outcome: OperationState::Succeeded {},
+        },
+        value: preferences,
+    })
+}
+
+#[tauri::command]
+async fn command_shortcut(
+    window: WebviewWindow,
+    owner: State<'_, crate::shortcuts::Owner>,
+    request: ShortcutRequest,
+) -> Result<Response<crate::shortcuts::View>, Problem> {
+    let provenance =
+        product_shell_tauri::authorize(&window, &request.header, "control-center.commands")?;
+    let result = if let Some(config) = request.config {
+        if config.enabled && !crate::suite::connection_ready(window.app_handle()) {
+            Err("suite_review_required".into())
+        } else {
+            owner.configure(window.app_handle(), config)
+        }
+    } else {
+        owner.load(window.app_handle())
+    };
+    let value = result.map_err(|_| Problem {
+        code: ProblemCode::Unavailable,
+        provenance: provenance.clone(),
+    })?;
+    Ok(Response {
+        operation: Operation {
+            provenance,
+            outcome: OperationState::Succeeded {},
+        },
+        value,
+    })
+}
+
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("commands")
         .invoke_handler(tauri::generate_handler![
@@ -240,7 +394,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             command_preview,
             command_source,
             command_open,
-            command_status
+            command_status,
+            command_preferences,
+            command_shortcut
         ])
         .setup(|app, _| {
             let catalog =
@@ -249,7 +405,19 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let index = Index::catalog(&catalog, &BTreeSet::from(["control-center".into()]))
                 .map_err(std::io::Error::other)?;
             app.manage(index);
+            app.manage(PreferenceOwner::default());
+            app.manage(crate::shortcuts::Owner::default());
+            use tauri::Listener;
+            let handle = app.clone();
+            app.listen("suite-disconnected", move |_| {
+                handle.state::<crate::shortcuts::Owner>().stop();
+            });
             Ok(())
+        })
+        .on_event(|app, event| {
+            if matches!(event, tauri::RunEvent::Exit) {
+                app.state::<crate::shortcuts::Owner>().stop();
+            }
         })
         .build()
 }

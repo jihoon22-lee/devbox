@@ -13,6 +13,8 @@
     "suite:allow-connection",
     "commands:allow-command-source",
     "commands:allow-command-open",
-    "commands:allow-command-status"
+    "commands:allow-command-status",
+    "commands:allow-command-preferences",
+    "commands:allow-command-shortcut"
   ]
 }

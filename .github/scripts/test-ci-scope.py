@@ -234,3 +234,6 @@ for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
         shared = resolve(path)
         assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(shared.rust_packages)
         assert shared.frontend_scope == "none"
+
+hotkey = resolve("apps/devbox-launcher/src-tauri/src/hotkey.rs")
+assert {"devbox-launcher", "devbox-control-center"} <= set(hotkey.rust_packages)

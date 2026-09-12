@@ -1,4 +1,5 @@
 import {invoke} from "@tauri-apps/api/core";
+import {listen} from "@tauri-apps/api/event";
 import {makeRequest,nativeMode,isProjectContext,type Description,type ProjectContext} from "./api";
 import {isOperation,problemMessage} from "./operation";
 import catalog from "../../../apps/products.json";
@@ -86,4 +87,29 @@ export async function openCommand(description:Description,route:string,item:Comm
 export async function commandStatus(description:Description,route:string,product:string,operationId:string):Promise<CommandReceipt>{
   if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
   return receipt(await call(description,route,"command_status",{product,operationId}),operationId);
+}
+export interface LauncherPreferences {version:number;favorites:string[];recents:string[]}
+export async function launcherPreferences(description:Description,route:string,action:object={kind:"read"}):Promise<LauncherPreferences>{
+  if(!nativeMode)return {version:1,favorites:[],recents:[]};
+  const value=await call(description,route,"command_preferences",{action});
+  if(!value||typeof value!=="object"||!("version" in value)||value.version!==1||!("favorites" in value)||!("recents" in value)
+    ||![value.favorites,value.recents].every(ids=>Array.isArray(ids)&&ids.length<=64&&ids.every(id=>typeof id==="string"&&/^[A-Za-z0-9_./:-]{1,256}$/.test(id))))throw new Error("Launcher 설정을 확인하지 못했습니다.");
+  return value as LauncherPreferences;
+}
+export async function launcherShortcut(description:Description,route:string,config:object|null=null):Promise<import("./launcher/types").ShortcutStatus>{
+  if(!nativeMode)return {accelerator:"Ctrl+Alt+Space",enabled:false,registration:"unsupported",alternatives:["Ctrl+Alt+L","Ctrl+Alt+J"]};
+  const value=await call(description,route,"command_shortcut",{config});
+  if(!value||typeof value!=="object"||!("accelerator" in value)||!["Ctrl+Alt+Space","Ctrl+Alt+L","Ctrl+Alt+J"].includes(String(value.accelerator))
+    ||!("enabled" in value)||typeof value.enabled!=="boolean"||!("registration" in value)||!["registered","unavailable","unsupported","disabled","pending"].includes(String(value.registration))
+    ||!("alternatives" in value)||!Array.isArray(value.alternatives)||value.alternatives.some(key=>!["Ctrl+Alt+Space","Ctrl+Alt+L","Ctrl+Alt+J"].includes(key)))throw new Error("단축키 상태를 확인하지 못했습니다.");
+  return value as import("./launcher/types").ShortcutStatus;
+}
+
+export async function onShortcut(callback:(event:{command:string;wasFocused:boolean})=>void):Promise<()=>void>{
+  if(!nativeMode)return ()=>{};
+  return listen<unknown>("suite-shortcut",event=>{
+    const value=event.payload;
+    if(value&&typeof value==="object"&&"command" in value&&typeof value.command==="string"&&"wasFocused" in value&&typeof value.wasFocused==="boolean"
+      &&["control-center.launcher","workspace.summon-terminal","knowledge.quick-capture","workspace.open-current-project"].includes(value.command))callback({command:value.command,wasFocused:value.wasFocused});
+  });
 }
