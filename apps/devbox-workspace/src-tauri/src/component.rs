@@ -403,7 +403,7 @@ async fn terminal_worker(
                     .initialize_runtime(window.app_handle(), &host)?;
                 runtime
                     .sessions
-                    .manage(&window, &host, &header, &method, args)
+                    .manage(&window, &host, &runtime.terminals, &header, &method, args)
             } else {
                 runtime
                     .terminals
@@ -1963,6 +1963,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let app = app.clone();
             let exit_code = code.unwrap_or(0);
             tauri::async_runtime::spawn(async move {
+                let _ = runtime.sessions.request_shutdown();
                 if run_manager_lib::component::is_initialized(&app) {
                     run_manager_lib::component::request_shutdown(&app);
                 }

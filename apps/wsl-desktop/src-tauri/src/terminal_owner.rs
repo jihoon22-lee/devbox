@@ -82,6 +82,36 @@ impl TerminalOwner {
         &self.window
     }
 
+    /// A native Development Session observes the exact saved pane keys. A
+    /// companion window existing is not proof that its PTYs restored.
+    pub fn restored(&self, keys: &[String]) -> Result<bool, String> {
+        if keys.is_empty() || keys.len() > 32 {
+            return Err("terminal_layout_invalid".into());
+        }
+        let panes = self
+            .panes
+            .lock()
+            .map_err(|_| "terminal_state_unavailable")?;
+        let mut ready = true;
+        for key in keys {
+            match panes.get(key) {
+                Some(Pane::Failed { .. }) => return Err("terminal_restore_failed".into()),
+                Some(Pane::Active { output, .. }) => {
+                    if output
+                        .buffer
+                        .lock()
+                        .map_err(|_| "terminal_state_unavailable")?
+                        .is_closed()
+                    {
+                        return Err("terminal_restore_closed".into());
+                    }
+                }
+                _ => ready = false,
+            }
+        }
+        Ok(ready)
+    }
+
     pub async fn dispatch(
         &self,
         app: &tauri::AppHandle,

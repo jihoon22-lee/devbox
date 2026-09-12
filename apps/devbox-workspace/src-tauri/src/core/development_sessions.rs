@@ -95,6 +95,8 @@ pub struct Store {
     pub sessions: BTreeMap<String, Session>,
     pub resources: BTreeMap<String, Resource>,
     pub operations: BTreeMap<String, Reservation>,
+    #[serde(default)]
+    pub archived: BTreeSet<String>,
 }
 impl Default for Store {
     fn default() -> Self {
@@ -103,6 +105,7 @@ impl Default for Store {
             sessions: BTreeMap::new(),
             resources: BTreeMap::new(),
             operations: BTreeMap::new(),
+            archived: BTreeSet::new(),
         }
     }
 }
@@ -125,6 +128,11 @@ fn operation_id(value: &str) -> bool {
 impl Store {
     pub fn validate(&self) -> Result<()> {
         if self.schema_version != 1
+            || self.archived.len() > 4096
+            || self
+                .archived
+                .iter()
+                .any(|id| !operation_id(id) || self.sessions.contains_key(id))
             || self.sessions.len() > MAX_SESSIONS
             || self.resources.len() > MAX_RESOURCES
             || self.operations.len() > MAX_OPERATIONS
@@ -223,6 +231,9 @@ impl Store {
     ) -> Result<Session> {
         if !operation_id(&id) || context.validate().is_err() || !revision(&plan_revision) {
             return Err("session_plan_invalid");
+        }
+        if self.archived.contains(&id) {
+            return Err("session_archived");
         }
         if let Some(existing) = self.sessions.get(&id) {
             return if existing.context == context && existing.plan_revision == plan_revision {
@@ -360,8 +371,11 @@ impl Store {
             };
         }
         let session = self.sessions.get_mut(session_id).ok_or("session_missing")?;
-        if session.phase != Phase::Starting
-            || session.mode != Some(Mode::StartReviewed)
+        let restoring_terminal = kind == ResourceKind::Terminal
+            && session.phase == Phase::Restoring
+            && session.mode.is_some();
+        if (!restoring_terminal
+            && (session.phase != Phase::Starting || session.mode != Some(Mode::StartReviewed)))
             || session.cancel_requested
             || session.plan_revision != plan
             || session.deadline_ms.is_some_and(|deadline| now >= deadline)
@@ -650,6 +664,49 @@ impl Store {
         session.revision += 1;
         Ok(())
     }
+    pub fn can_archive(&self, id: &str) -> bool {
+        self.sessions.get(id).is_some_and(|session| {
+            session.phase == Phase::Stopped
+                && session.pending.is_empty()
+                && session.resources.is_empty()
+                && !self.resources.values().any(|resource| {
+                    resource.created_by.as_deref() == Some(id)
+                        && (!resource.stopped || !resource.holders.is_empty())
+                })
+        })
+    }
+    /// Forget completed detail while keeping a bounded UUID tombstone. The
+    /// archived prepare identity cannot become a fresh execution plan later.
+    pub fn archive(&mut self, id: &str) -> Result<()> {
+        if self.archived.contains(id) {
+            return Ok(());
+        }
+        if !self.can_archive(id) {
+            return Err("session_archive_unavailable");
+        }
+        if self.archived.len() >= 4096 {
+            return Err("session_archive_limit");
+        }
+        self.sessions.remove(id);
+        self.operations
+            .retain(|_, operation| operation.session_id != id);
+        for resource in self.resources.values_mut() {
+            if resource.created_by.as_deref() == Some(id) {
+                resource.created_by = None;
+            }
+        }
+        self.resources.retain(|key, resource| {
+            !resource.holders.is_empty()
+                || (resource.created_by.is_some() && !resource.stopped)
+                || self
+                    .operations
+                    .values()
+                    .any(|operation| operation.resource_key.as_ref() == Some(key))
+        });
+        self.archived.insert(id.into());
+        Ok(())
+    }
+
     pub fn recover(&mut self) -> Result<()> {
         self.validate()?;
         for operation in self.operations.values_mut() {
@@ -779,6 +836,40 @@ mod tests {
         store.validate().unwrap();
     }
     #[test]
+    fn archive_keeps_a_live_shared_creator_and_rejects_old_prepare_replay() {
+        let mut store = Store::default();
+        let first = ready(&mut store, "one");
+        let second = ready(&mut store, "two");
+        let start = reserve(&mut store, &first);
+        store
+            .acquired(&start, "shared".into(), identity(), true, true)
+            .unwrap();
+        let borrow = reserve(&mut store, &second);
+        store
+            .acquired(&borrow, "shared".into(), identity(), false, true)
+            .unwrap();
+        store.begin_stop(&first).unwrap();
+        store.release(&first).unwrap();
+        store.finish_stop(&first).unwrap();
+        assert!(store.archive(&first).is_err());
+        store.begin_stop(&second).unwrap();
+        store.release(&second).unwrap();
+        let stop = store
+            .reserve_stop("shared", uuid::Uuid::new_v4().to_string())
+            .unwrap();
+        store.retired("shared", &identity(), &stop).unwrap();
+        store.finish_stop(&second).unwrap();
+        store.archive(&first).unwrap();
+        store.archive(&second).unwrap();
+        assert!(store.resources.is_empty());
+        assert!(store.operations.is_empty());
+        assert!(store
+            .create(first, context("one"), "a".repeat(64), 1_000)
+            .is_err());
+        store.validate().unwrap();
+    }
+
+    #[test]
     fn borrowed_external_service_and_stale_generation_never_become_stop_authority() {
         let mut store = Store::default();
         let first = ready(&mut store, "one");
@@ -852,6 +943,64 @@ mod tests {
         store.finish_stop(&session).unwrap();
         store.validate().unwrap();
     }
+    #[test]
+    fn restore_only_can_own_a_terminal_without_granting_task_execution() {
+        let mut store = Store::default();
+        let id = uuid::Uuid::new_v4().to_string();
+        let plan = "a".repeat(64);
+        store
+            .create(id.clone(), context("one"), plan.clone(), 100)
+            .unwrap();
+        store.reviewed(&id, 1, &plan, false, 101).unwrap();
+        store
+            .approve(&id, 2, &plan, Mode::RestoreOnly, 102)
+            .unwrap();
+        assert!(store
+            .reserve(
+                &id,
+                uuid::Uuid::new_v4().to_string(),
+                "job".into(),
+                ResourceKind::Job,
+                &plan,
+                103
+            )
+            .is_err());
+        let operation = uuid::Uuid::new_v4().to_string();
+        store
+            .reserve(
+                &id,
+                operation.clone(),
+                "terminal".into(),
+                ResourceKind::Terminal,
+                &plan,
+                103,
+            )
+            .unwrap();
+        let terminal = ResourceIdentity {
+            kind: ResourceKind::Terminal,
+            owner_id: "terminal".into(),
+            generation: operation.clone(),
+        };
+        store
+            .acquired(
+                &operation,
+                "terminal-resource".into(),
+                terminal.clone(),
+                true,
+                false,
+            )
+            .unwrap();
+        let revision = store.sessions[&id].revision;
+        store.advance(&id, revision, Phase::Restoring, 104).unwrap();
+        assert_eq!(store.sessions[&id].phase, Phase::Active);
+        store.begin_stop(&id).unwrap();
+        assert_eq!(
+            store.release(&id).unwrap(),
+            vec![("terminal-resource".into(), terminal)]
+        );
+        store.validate().unwrap();
+    }
+
     #[test]
     fn restore_only_and_expired_plans_cannot_start_resources() {
         let mut store = Store::default();

@@ -25,6 +25,8 @@ const FILE: &str = "development-sessions.json";
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Intent {
     jobs: Vec<String>,
+    #[serde(default)]
+    terminal_profile: Option<String>,
 }
 #[derive(Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -35,13 +37,46 @@ struct Document {
 #[derive(Clone)]
 struct Plan {
     jobs: Vec<PreparedJob>,
+    profile: Option<(wsl_desktop_lib::component::WorkspaceProfile, String)>,
     revision: String,
 }
+#[derive(Clone)]
+enum Lease {
+    Runtime(RuntimeLease),
+    Terminal(crate::terminal_host::TerminalLease, tauri::AppHandle),
+}
+impl Lease {
+    async fn ready(&self) -> std::result::Result<bool, String> {
+        match self {
+            Self::Runtime(lease) => lease.ready().await,
+            Self::Terminal(lease, _) => lease.ready().map_err(str::to_owned),
+        }
+    }
+    async fn stop(&self, operation: &str) -> std::result::Result<(), String> {
+        match self {
+            Self::Runtime(lease) => lease.stop(operation).await,
+            Self::Terminal(lease, app) => {
+                let (lease, app) = (lease.clone(), app.clone());
+                tauri::async_runtime::spawn_blocking(move || lease.stop(&app))
+                    .await
+                    .map_err(|_| "terminal_worker_unavailable")?
+                    .map_err(str::to_owned)
+            }
+        }
+    }
+}
+struct StartScope {
+    window: WebviewWindow,
+    host: Arc<Host>,
+    terminals: Arc<crate::terminal_host::Terminals>,
+    header: RouteRequest,
+}
+
 struct Inner {
     root: MetadataRoot,
     document: Document,
     plans: HashMap<String, Plan>,
-    leases: HashMap<String, RuntimeLease>,
+    leases: HashMap<String, Lease>,
     witnesses: HashMap<String, Arc<RuntimeStartWitness>>,
     starting: HashSet<String>,
     stopping: HashSet<String>,
@@ -120,6 +155,10 @@ impl Sessions {
         if document.intents.len() != document.store.sessions.len()
             || document.intents.iter().any(|(id, intent)| {
                 !document.store.sessions.contains_key(id)
+                    || intent
+                        .terminal_profile
+                        .as_ref()
+                        .is_some_and(|id| id.len() > 128 || id.chars().any(char::is_control))
                     || intent.jobs.len() > 16
                     || intent
                         .jobs
@@ -150,6 +189,7 @@ impl Sessions {
             method,
             "development_candidates"
                 | "development_sessions"
+                | "archive_development_session"
                 | "prepare_development_session"
                 | "start_development_session"
                 | "stop_development_session"
@@ -159,6 +199,7 @@ impl Sessions {
         self: &Arc<Self>,
         window: &WebviewWindow,
         host: &Arc<Host>,
+        terminals: &Arc<crate::terminal_host::Terminals>,
         header: &RouteRequest,
         method: &str,
         args: Value,
@@ -170,14 +211,17 @@ impl Sessions {
                 #[serde(deny_unknown_fields)]
                 struct Empty {}
                 parse::<Empty>(args)?;
-                runtime::candidates(window.app_handle()).map_err(|_| "session_runtime_unavailable")
+                let mut candidates = runtime::candidates(window.app_handle())
+                    .map_err(|_| "session_runtime_unavailable")?;
+                candidates["profiles"] = terminals.profile_choices(window.app_handle(), host)?;
+                Ok(candidates)
             }
             "development_sessions" => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]
                 struct Empty {}
                 parse::<Empty>(args)?;
-                self.access(|inner| Ok(json!({"sessions":inner.document.store.sessions.values().collect::<Vec<_>>(), "resources":inner.document.store.resources, "intents":inner.document.intents})))
+                self.access(|inner| Ok(json!({"sessions":inner.document.store.sessions.values().map(|session| {let mut value=json!(session);value["canArchive"]=json!(inner.document.store.can_archive(&session.id) && !inner.starting.contains(&session.id) && !inner.stopping.contains(&session.id));value}).collect::<Vec<_>>(), "resources":inner.document.store.resources, "intents":inner.document.intents})))
             }
             "prepare_development_session" => {
                 #[derive(Deserialize)]
@@ -185,6 +229,7 @@ impl Sessions {
                 struct Input {
                     operation_id: String,
                     jobs: Vec<String>,
+                    terminal_profile: Option<String>,
                 }
                 let input: Input = parse(args)?;
                 if input.jobs.len() > 16
@@ -207,12 +252,20 @@ impl Sessions {
                     job.revalidate(window.app_handle())
                         .map_err(|_| "session_plan_changed")?;
                 }
+                let profile = input
+                    .terminal_profile
+                    .as_deref()
+                    .map(|id| terminals.prepare_profile(window.app_handle(), host, id))
+                    .transpose()?;
                 let revision: String = Sha256::digest(
                     serde_json::to_vec(&(
                         context,
                         jobs.iter()
                             .map(|job| (job.job().id.as_str(), job.revision()))
                             .collect::<Vec<_>>(),
+                        profile
+                            .as_ref()
+                            .map(|(profile, revision)| (&profile.id, revision)),
                     ))
                     .map_err(|_| "session_plan_invalid")?,
                 )
@@ -222,20 +275,21 @@ impl Sessions {
                 crate::files_host::current_deadline(header.deadline_ms)?;
                 let plan = Plan {
                     jobs,
+                    profile,
                     revision: revision.clone(),
                 };
                 self.access(|inner| {
                     if let Some(existing) = inner.document.store.sessions.get(&input.operation_id) {
                         if existing.context != *context || existing.plan_revision != revision { return Err("session_identity_conflict"); }
-                        return Ok(json!({"session":existing,"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>()}));
+                        return Ok(json!({"session":existing,"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>(),"profile":plan.profile.as_ref().map(|(profile,_)|profile)}));
                     }
                     write(inner, |document| {
                         let session = document.store.create(input.operation_id.clone(),context.clone(),revision.clone(),now())?;
                         document.store.reviewed(&session.id,session.revision,&revision,false,now())?;
-                        document.intents.insert(session.id,Intent { jobs: input.jobs });
+                        document.intents.insert(session.id,Intent { jobs: input.jobs, terminal_profile: input.terminal_profile });
                         Ok(())
                     })?;
-                    let response = json!({"session":inner.document.store.sessions[&input.operation_id],"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>()});
+                    let response = json!({"session":inner.document.store.sessions[&input.operation_id],"jobs":plan.jobs.iter().map(|job| job.job()).collect::<Vec<_>>(),"profile":plan.profile.as_ref().map(|(profile,_)|profile)});
                     inner.plans.insert(input.operation_id,plan);
                     Ok(response)
                 })
@@ -275,6 +329,13 @@ impl Sessions {
                     job.revalidate(window.app_handle())
                         .map_err(|_| "session_plan_changed")?;
                 }
+                if let Some((profile, revision)) = &plan.profile {
+                    let current =
+                        terminals.prepare_profile(window.app_handle(), host, &profile.id)?;
+                    if current.0 != *profile || current.1 != *revision {
+                        return Err("session_plan_changed");
+                    }
+                }
                 let response = self.access(|inner| {
                     if inner.starting.contains(&input.id) {
                         return Err("session_start_pending");
@@ -292,10 +353,14 @@ impl Sessions {
                     Ok(json!(inner.document.store.sessions[&input.id]))
                 })?;
                 let owner = self.clone();
-                let app = window.app_handle().clone();
-                let host = host.clone();
+                let scope = StartScope {
+                    window: window.clone(),
+                    host: host.clone(),
+                    terminals: terminals.clone(),
+                    header: header.clone(),
+                };
                 tauri::async_runtime::spawn(async move {
-                    let result = owner.start(&app, &host, &input.id, &context, plan).await;
+                    let result = owner.start(scope, &input.id, &context, plan).await;
                     let _ = owner.access(|inner| {
                         inner.starting.remove(&input.id);
                         if let Err(issue) = result {
@@ -319,6 +384,32 @@ impl Sessions {
                     });
                 });
                 Ok(response)
+            }
+            "archive_development_session" => {
+                #[derive(Deserialize)]
+                #[serde(deny_unknown_fields)]
+                struct Input {
+                    id: String,
+                }
+                let input: Input = parse(args)?;
+                self.access(|inner| {
+                    if inner.starting.contains(&input.id) || inner.stopping.contains(&input.id) {
+                        return Err("session_cleanup_pending");
+                    }
+                    write(inner, |document| {
+                        document.store.archive(&input.id)?;
+                        document.intents.remove(&input.id);
+                        Ok(())
+                    })?;
+                    inner.plans.remove(&input.id);
+                    inner.witnesses.retain(|operation, _| {
+                        inner.document.store.operations.contains_key(operation)
+                    });
+                    inner
+                        .leases
+                        .retain(|key, _| inner.document.store.resources.contains_key(key));
+                    Ok(Value::Null)
+                })
             }
             "stop_development_session" => {
                 #[derive(Deserialize)]
@@ -359,7 +450,9 @@ impl Sessions {
             // Retain creator authority even if metadata publication fails. A
             // borrowed reference must never replace the retained creator lease.
             if lease.descriptor().created || !inner.leases.contains_key(&key) {
-                inner.leases.insert(key.clone(), lease.clone());
+                inner
+                    .leases
+                    .insert(key.clone(), Lease::Runtime(lease.clone()));
             }
             write(inner, |document| {
                 document.store.acquired(
@@ -372,6 +465,30 @@ impl Sessions {
             })
         })
     }
+    fn publish_terminal(
+        &self,
+        operation: &str,
+        lease: crate::terminal_host::TerminalLease,
+        app: tauri::AppHandle,
+    ) -> Result<()> {
+        let identity = ResourceIdentity {
+            kind: ResourceKind::Terminal,
+            owner_id: "terminal".into(),
+            generation: lease.id().into(),
+        };
+        let key = resource_key(&identity);
+        self.access(|inner| {
+            inner
+                .leases
+                .insert(key.clone(), Lease::Terminal(lease, app));
+            write(inner, |document| {
+                document
+                    .store
+                    .acquired(operation, key, identity, true, false)
+            })
+        })
+    }
+
     fn advance(&self, id: &str, from: Phase) -> Result<()> {
         self.access(|inner| {
             write(inner, |document| {
@@ -398,15 +515,99 @@ impl Sessions {
     }
     async fn start(
         self: &Arc<Self>,
-        app: &tauri::AppHandle,
-        host: &Host,
+        scope: StartScope,
         id: &str,
         context: &ProjectContext,
         plan: Plan,
     ) -> Result<()> {
+        let app = scope.window.app_handle();
+        let host = &scope.host;
         // Files already persist per-worktree state. RestoreOnly restores that
         // context without submitting any saved task or service command.
         host.projects()?.binding(context)?;
+        if self.cancelled(id) {
+            return Ok(());
+        }
+        if let Some((profile, _)) = &plan.profile {
+            let operation = uuid::Uuid::new_v4().to_string();
+            let restore_only = self.access(|inner| {
+                Ok(inner.document.store.sessions[id].mode == Some(Mode::RestoreOnly))
+            })?;
+            self.access(|inner| {
+                write(inner, |document| {
+                    document
+                        .store
+                        .reserve(
+                            id,
+                            operation.clone(),
+                            "terminal".into(),
+                            ResourceKind::Terminal,
+                            &plan.revision,
+                            now(),
+                        )
+                        .map(|_| ())
+                })
+            })?;
+            let mut layout = profile.clone();
+            if restore_only {
+                for pane in &mut layout.panes {
+                    pane.start_command = None;
+                }
+            }
+            let keys = layout.panes.iter().map(|pane| pane.key.clone()).collect();
+            let (window, host, terminals, header, open_id) = (
+                scope.window.clone(),
+                scope.host.clone(),
+                scope.terminals.clone(),
+                scope.header.clone(),
+                operation.clone(),
+            );
+            let opened = tauri::async_runtime::spawn_blocking(move || {
+                terminals.open_prepared(&window, &host, &header, &open_id, Some(layout))
+            })
+            .await
+            .map_err(|_| "terminal_worker_unavailable")?;
+            // A metadata error after window creation still leaves an exact
+            // retained peer. Preserve that lease before reporting failure.
+            match scope.terminals.owned_lease(&operation, keys) {
+                Ok(lease) => self.publish_terminal(&operation, lease, app.clone())?,
+                Err(_) => {
+                    self.access(|inner| {
+                        write(inner, |document| {
+                            document.store.settle_without_resource(&operation)
+                        })
+                    })?;
+                    return Err("terminal_restore_failed");
+                }
+            }
+            opened?;
+            loop {
+                if self.cancelled(id) {
+                    return Ok(());
+                }
+                let ready = self.access(|inner| {
+                    let session = &inner.document.store.sessions[id];
+                    if session
+                        .deadline_ms
+                        .is_some_and(|deadline| now() >= deadline)
+                    {
+                        return Err("terminal_restore_expired");
+                    }
+                    let key = inner.document.store.operations[&operation]
+                        .resource_key
+                        .as_ref()
+                        .ok_or("session_resource_missing")?;
+                    match inner.leases.get(key) {
+                        Some(Lease::Terminal(lease, _)) => lease.ready(),
+                        _ => Err("session_native_owner_lost"),
+                    }
+                })?;
+                if ready {
+                    break;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+        }
         self.advance(id, Phase::Restoring)?;
         if self
             .access(|inner| Ok(inner.document.store.sessions[id].mode == Some(Mode::RestoreOnly)))?
@@ -610,11 +811,20 @@ impl Sessions {
                             .witnesses
                             .get(operation)
                             .and_then(|witness| witness.lease())
+                            .map(Lease::Runtime)
+                            .or_else(||inner.leases.values().find(|lease|matches!(lease,Lease::Terminal(terminal,_) if terminal.id()==operation)).cloned())
                             .map(|lease| (operation.clone(), lease))
                     })
                     .collect::<Vec<_>>())
             })?;
             for (operation, lease) in pending {
+                let lease = match lease {
+                    Lease::Terminal(lease, app) => {
+                        self.publish_terminal(&operation, lease, app)?;
+                        continue;
+                    }
+                    Lease::Runtime(lease) => lease,
+                };
                 let created = lease.descriptor().created;
                 if let Err(issue) = self.publish(&operation, lease) {
                     if created {
@@ -698,11 +908,11 @@ impl Sessions {
             tokio::time::sleep(std::time::Duration::from_millis(100)).await;
         }
     }
-    pub(crate) async fn shutdown(self: &Arc<Self>) -> Result<()> {
+    pub(crate) fn request_shutdown(self: &Arc<Self>) -> Result<Vec<String>> {
         let ids = {
             let inner = self.inner.lock().map_err(|_| "session_owner_busy")?;
             let Some(inner) = inner.as_ref() else {
-                return Ok(());
+                return Ok(Vec::new());
             };
             inner
                 .document
@@ -719,6 +929,13 @@ impl Sessions {
         for id in &ids {
             self.access(|inner| write(inner, |document| document.store.begin_stop(id)))?;
             self.spawn_stop(id.clone());
+        }
+        Ok(ids)
+    }
+    pub(crate) async fn shutdown(self: &Arc<Self>) -> Result<()> {
+        let ids = self.request_shutdown()?;
+        if ids.is_empty() {
+            return Ok(());
         }
         let deadline = tokio::time::Instant::now() + std::time::Duration::from_secs(5);
         loop {

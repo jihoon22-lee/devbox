@@ -12,7 +12,7 @@ use wsl_desktop_lib::component::TerminalOwner;
 
 type Result<T> = std::result::Result<T, &'static str>;
 const RECORDS: &str = "terminal-sessions.json";
-const MAX_SESSIONS: usize = 64;
+const MAX_SESSIONS: usize = 4096;
 const MAX_WINDOWS: usize = 8;
 
 #[derive(Clone, Deserialize, Serialize)]
@@ -21,6 +21,8 @@ struct Record {
     id: String,
     context: Option<ProjectContext>,
     state: String,
+    #[serde(default)]
+    initial_layout_revision: Option<String>,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -41,6 +43,28 @@ struct Peer {
 #[derive(Default)]
 pub(crate) struct Terminals {
     inner: Mutex<Option<Inner>>,
+}
+
+#[derive(Clone)]
+pub(crate) struct TerminalLease {
+    owner: Arc<Terminals>,
+    peer: Arc<Peer>,
+    id: String,
+    keys: Vec<String>,
+}
+impl TerminalLease {
+    pub(crate) fn id(&self) -> &str {
+        &self.id
+    }
+    pub(crate) fn stop(&self, app: &tauri::AppHandle) -> Result<()> {
+        self.owner.stop_owned(app, &self.id, Some(&self.peer))
+    }
+    pub(crate) fn ready(&self) -> Result<bool> {
+        self.peer
+            .terminal
+            .restored(&self.keys)
+            .map_err(|_| "terminal_restore_failed")
+    }
 }
 
 fn id(value: &str) -> bool {
@@ -90,6 +114,15 @@ impl Terminals {
                     || store.records.len() > MAX_SESSIONS
                     || store.records.iter().any(|record| {
                         !id(&record.id)
+                            || record
+                                .initial_layout_revision
+                                .as_ref()
+                                .is_some_and(|revision| {
+                                    revision.len() != 64
+                                        || !revision.bytes().all(|byte| {
+                                            byte.is_ascii_digit() || matches!(byte, b'a'..=b'f')
+                                        })
+                                })
                             || !ids.insert(&record.id)
                             || record
                                 .context
@@ -144,9 +177,29 @@ impl Terminals {
                 struct Empty {}
                 parse::<Empty>(args)?;
                 let inner = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
-                Ok(json!(
-                    inner.as_ref().ok_or("terminal_owner_unavailable")?.records
-                ))
+                Ok(json!(inner
+                    .as_ref()
+                    .ok_or("terminal_owner_unavailable")?
+                    .records
+                    .iter()
+                    .filter(|record| matches!(
+                        record.state.as_str(),
+                        "preparing" | "active" | "stopping"
+                    ))
+                    .chain(
+                        inner
+                            .as_ref()
+                            .ok_or("terminal_owner_unavailable")?
+                            .records
+                            .iter()
+                            .rev()
+                            .filter(|record| !matches!(
+                                record.state.as_str(),
+                                "preparing" | "active" | "stopping"
+                            ))
+                    )
+                    .take(64)
+                    .collect::<Vec<_>>()))
             }
             "open_terminal" => {
                 #[derive(Deserialize)]
@@ -158,102 +211,7 @@ impl Terminals {
                 if !id(&input.operation_id) {
                     return Err("terminal_operation_invalid");
                 }
-                let context = header.context.clone();
-                if let Some(context) = &context {
-                    host.projects()?
-                        .admit_selection(host.helper_directory()?, context)?;
-                }
-                crate::files_host::current_deadline(header.deadline_ms)?;
-                let label = format!("terminal-{}", input.operation_id);
-                {
-                    let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
-                    let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
-                    if let Some(record) = inner
-                        .records
-                        .iter()
-                        .find(|record| record.id == input.operation_id)
-                    {
-                        if record.context != context {
-                            return Err("terminal_operation_conflict");
-                        }
-                        return Ok(json!(record));
-                    }
-                    if inner.records.len() >= MAX_SESSIONS || inner.peers.len() >= MAX_WINDOWS {
-                        return Err("terminal_session_limit");
-                    }
-                    let record = Record {
-                        id: input.operation_id.clone(),
-                        context: context.clone(),
-                        state: "preparing".into(),
-                    };
-                    let mut guard = SessionGuard::for_window(
-                        Handshake {
-                            protocol_version: 1,
-                            product: "workspace".into(),
-                            installation_id: header.installation_id.clone(),
-                            session_id: uuid::Uuid::new_v4().to_string(),
-                        },
-                        &label,
-                    )?;
-                    guard.bind_context(context.clone())?;
-                    let peer = Arc::new(Peer {
-                        record: record.clone(),
-                        guard: Mutex::new(guard),
-                        terminal: TerminalOwner::new(label.clone())
-                            .map_err(|_| "terminal_window_invalid")?,
-                    });
-                    inner.records.push(record);
-                    // Persist operation identity before creating any window or process owner.
-                    if let Err(error) = save(inner) {
-                        inner.records.pop();
-                        return Err(error);
-                    }
-                    inner.peers.insert(label.clone(), peer);
-                }
-                let app = window.app_handle().clone();
-                let ui_app = app.clone();
-                let ui_label = label.clone();
-                let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-                app.run_on_main_thread(move || {
-                    let result = tauri::WebviewWindowBuilder::new(
-                        &ui_app,
-                        &ui_label,
-                        tauri::WebviewUrl::App("index.html?surface=terminal".into()),
-                    )
-                    .title("Devbox Workspace · 터미널")
-                    .inner_size(1100.0, 760.0)
-                    .min_inner_size(640.0, 420.0)
-                    .build()
-                    .map(|_| ())
-                    .map_err(|_| "terminal_window_unavailable");
-                    let _ = sender.send(result);
-                })
-                .map_err(|_| "terminal_window_unavailable")?;
-                // This is a retained blocking worker. Never time out and abandon a queued UI
-                // creation that could later produce a window without its native owner.
-                let result = receiver
-                    .recv()
-                    .unwrap_or(Err("terminal_window_unavailable"));
-                let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
-                let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
-                let record = inner
-                    .records
-                    .iter_mut()
-                    .find(|record| record.id == input.operation_id)
-                    .ok_or("terminal_session_missing")?;
-                record.state = if result.is_ok() {
-                    "active"
-                } else {
-                    "interrupted"
-                }
-                .into();
-                let response = json!(record);
-                if result.is_err() {
-                    inner.peers.remove(&label);
-                }
-                save(inner)?;
-                result?;
-                Ok(response)
+                self.open_prepared(window, host, header, &input.operation_id, None)
             }
             "focus_terminal" | "stop_terminal" => {
                 #[derive(Deserialize)]
@@ -278,39 +236,241 @@ impl Terminals {
                         .set_focus()
                         .map_err(|_| "terminal_window_unavailable")?;
                 } else {
-                    {
-                        let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
-                        let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
-                        inner
-                            .records
-                            .iter_mut()
-                            .find(|record| record.id == input.id)
-                            .ok_or("terminal_session_missing")?
-                            .state = "stopping".into();
-                        save(inner)?;
-                    }
-                    peer.terminal
-                        .stop(window.app_handle())
-                        .map_err(|_| "terminal_retirement_pending")?;
-                    let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
-                    let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
-                    inner
-                        .records
-                        .iter_mut()
-                        .find(|record| record.id == input.id)
-                        .ok_or("terminal_session_missing")?
-                        .state = "stopped".into();
-                    save(inner)?;
-                    inner.peers.remove(&label);
-                    drop(selected);
-                    if let Some(target) = window.app_handle().get_webview_window(&label) {
-                        let _ = target.destroy();
-                    }
+                    self.stop_owned(window.app_handle(), &input.id, Some(&peer))?;
                 }
                 Ok(Value::Null)
             }
             _ => Err("terminal_method_invalid"),
         }
+    }
+
+    fn stop_owned(
+        &self,
+        app: &tauri::AppHandle,
+        session_id: &str,
+        expected: Option<&Arc<Peer>>,
+    ) -> Result<()> {
+        let label = format!("terminal-{session_id}");
+        {
+            let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
+            if inner
+                .records
+                .iter()
+                .any(|record| record.id == session_id && record.state == "stopped")
+            {
+                return Ok(());
+            }
+        }
+        let peer = self.peer(&label)?;
+        if expected.is_some_and(|expected| !Arc::ptr_eq(expected, &peer)) {
+            return Err("terminal_owner_changed");
+        }
+        {
+            let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
+            inner
+                .records
+                .iter_mut()
+                .find(|record| record.id == session_id)
+                .ok_or("terminal_session_missing")?
+                .state = "stopping".into();
+            save(inner)?;
+        }
+        peer.terminal
+            .stop(app)
+            .map_err(|_| "terminal_retirement_pending")?;
+        let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+        let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
+        inner
+            .records
+            .iter_mut()
+            .find(|record| record.id == session_id)
+            .ok_or("terminal_session_missing")?
+            .state = "stopped".into();
+        save(inner)?;
+        inner.peers.remove(&label);
+        drop(selected);
+        if let Some(target) = app.get_webview_window(&label) {
+            let _ = target.destroy();
+        }
+        Ok(())
+    }
+    pub(crate) fn profile_choices(&self, app: &tauri::AppHandle, host: &Host) -> Result<Value> {
+        self.initialize(app, host)?;
+        let profiles = self.profiles("list_workspace_profiles", json!({}))?;
+        let profiles = profiles["profiles"]
+            .as_array()
+            .ok_or("terminal_profiles_invalid")?;
+        Ok(json!(profiles
+            .iter()
+            .map(|profile| json!({"id":profile["id"],"name":profile["name"]}))
+            .collect::<Vec<_>>()))
+    }
+    pub(crate) fn owned_lease(
+        self: &Arc<Self>,
+        session_id: &str,
+        keys: Vec<String>,
+    ) -> Result<TerminalLease> {
+        let peer = self.peer(&format!("terminal-{session_id}"))?;
+        Ok(TerminalLease {
+            owner: self.clone(),
+            peer,
+            id: session_id.into(),
+            keys,
+        })
+    }
+
+    pub(crate) fn prepare_profile(
+        &self,
+        app: &tauri::AppHandle,
+        host: &Host,
+        id: &str,
+    ) -> Result<(wsl_desktop_lib::component::WorkspaceProfile, String)> {
+        self.initialize(app, host)?;
+        let inner = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+        crate::terminal_profiles::snapshot(
+            &inner.as_ref().ok_or("terminal_owner_unavailable")?.root,
+            id,
+        )
+    }
+
+    pub(crate) fn open_prepared(
+        &self,
+        window: &WebviewWindow,
+        host: &Host,
+        header: &RouteRequest,
+        operation_id: &str,
+        mut layout: Option<wsl_desktop_lib::component::WorkspaceProfile>,
+    ) -> Result<Value> {
+        self.initialize(window.app_handle(), host)?;
+        if !id(operation_id) {
+            return Err("terminal_operation_invalid");
+        }
+        if let Some(layout) = &mut layout {
+            layout.id = operation_id.into();
+            layout.validate().map_err(|_| "terminal_profile_invalid")?;
+        }
+        let initial_revision = layout
+            .as_ref()
+            .map(|layout| {
+                serde_json::to_vec(layout)
+                    .map(|bytes| crate::definitions::digest(&bytes))
+                    .map_err(|_| "terminal_profile_invalid")
+            })
+            .transpose()?;
+        let context = header.context.clone();
+        if let Some(context) = &context {
+            // Window creation is metadata-only. The launch factory retains
+            // and revalidates the full project/distro lease at actual PTY start,
+            // including an explicitly selected stopped WSL target.
+            host.projects()?.binding(context)?;
+        }
+        crate::files_host::current_deadline(header.deadline_ms)?;
+        let label = format!("terminal-{}", operation_id);
+        {
+            let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
+            if let Some(record) = inner
+                .records
+                .iter()
+                .find(|record| record.id == operation_id)
+            {
+                if record.context != context || record.initial_layout_revision != initial_revision {
+                    return Err("terminal_operation_conflict");
+                }
+                return Ok(json!(record));
+            }
+            if inner.records.len() >= MAX_SESSIONS || inner.peers.len() >= MAX_WINDOWS {
+                return Err("terminal_session_limit");
+            }
+            let record = Record {
+                id: operation_id.to_owned(),
+                context: context.clone(),
+                state: "preparing".into(),
+                initial_layout_revision: initial_revision.clone(),
+            };
+            let mut guard = SessionGuard::for_window(
+                Handshake {
+                    protocol_version: 1,
+                    product: "workspace".into(),
+                    installation_id: header.installation_id.clone(),
+                    session_id: uuid::Uuid::new_v4().to_string(),
+                },
+                &label,
+            )?;
+            guard.bind_context(context.clone())?;
+            let peer = Arc::new(Peer {
+                record: record.clone(),
+                guard: Mutex::new(guard),
+                terminal: TerminalOwner::new(label.clone())
+                    .map_err(|_| "terminal_window_invalid")?,
+            });
+            if let Some(layout) = &layout {
+                let (current, revision) =
+                    crate::terminal_profiles::read_layout(&inner.root, operation_id)?;
+                if current.is_some() {
+                    return Err("terminal_layout_changed");
+                }
+                crate::terminal_profiles::layout(
+                    &inner.root,
+                    operation_id,
+                    "save_terminal_layout",
+                    json!({"expectedRevision":revision,"layout":layout}),
+                )?;
+            }
+            inner.records.push(record);
+            // Persist operation identity before creating any window or process owner.
+            if let Err(error) = save(inner) {
+                inner.records.pop();
+                return Err(error);
+            }
+            inner.peers.insert(label.clone(), peer);
+        }
+        let app = window.app_handle().clone();
+        let ui_app = app.clone();
+        let ui_label = label.clone();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let result = tauri::WebviewWindowBuilder::new(
+                &ui_app,
+                &ui_label,
+                tauri::WebviewUrl::App("index.html?surface=terminal".into()),
+            )
+            .title("Devbox Workspace · 터미널")
+            .inner_size(1100.0, 760.0)
+            .min_inner_size(640.0, 420.0)
+            .build()
+            .map(|_| ())
+            .map_err(|_| "terminal_window_unavailable");
+            let _ = sender.send(result);
+        })
+        .map_err(|_| "terminal_window_unavailable")?;
+        // This is a retained blocking worker. Never time out and abandon a queued UI
+        // creation that could later produce a window without its native owner.
+        let result = receiver
+            .recv()
+            .unwrap_or(Err("terminal_window_unavailable"));
+        let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+        let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
+        let record = inner
+            .records
+            .iter_mut()
+            .find(|record| record.id == operation_id)
+            .ok_or("terminal_session_missing")?;
+        record.state = if result.is_ok() {
+            "active"
+        } else {
+            "interrupted"
+        }
+        .into();
+        let response = json!(record);
+        if result.is_err() {
+            inner.peers.remove(&label);
+        }
+        save(inner)?;
+        result?;
+        Ok(response)
     }
 
     fn profiles(&self, method: &str, args: Value) -> Result<Value> {

@@ -46,6 +46,17 @@ fn load(root: &MetadataRoot) -> Result<(Envelope, Option<Vec<u8>>, String)> {
     Ok((envelope, bytes, revision))
 }
 
+pub(crate) fn snapshot(root: &MetadataRoot, id: &str) -> Result<(WorkspaceProfile, String)> {
+    let (envelope, _, revision) = load(root)?;
+    let profile = envelope
+        .content
+        .profiles
+        .into_iter()
+        .find(|profile| profile.id == id)
+        .ok_or("terminal_profile_missing")?;
+    Ok((profile, revision))
+}
+
 /// The enclosing Terminals mutex owns this read/modify/write transaction.
 pub(crate) fn dispatch(root: &MetadataRoot, method: &str, args: Value) -> Result<Value> {
     if !args.is_object() {

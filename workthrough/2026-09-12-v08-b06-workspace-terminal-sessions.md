@@ -200,3 +200,30 @@ DAG root's actual run rather than its pre-spawn attachment record. Borrow public
 rejected during shared-resource release settles without taking ownership. The added
 cancellation fixture remains deferred. A callback alias lifetime typo was corrected;
 the final native/frontend syntax pass took 19.506 seconds without test execution.
+
+## Session Terminal restoration and completed history
+
+A Development Session can select a product Terminal profile. The native plan binds
+its validated profile/store revision, writes the complete copied layout before
+window creation, and retains an exact companion lease through late publication
+failure. Readiness checks the saved pane keys' native PTYs, including failed/closed
+slots, instead of treating a visible window as restored. Restore-only strips start
+commands from the copied layout while preserving the original profile. Reviewed
+execution retains the legacy companion's explicit start-command confirmation; the
+review surface explains that separate confirmation. Stop retires only the exact
+retained peer and its PTYs, including restoration completing after cancellation.
+Application exit requests Session cancellation before waiting on other workers.
+
+Completed Session details can be archived only after owned resources fully retire;
+a creator with an outstanding shared service stays retained. UUID tombstones reject
+old prepare replay, and unreferenced operation/resource detail is released. Terminal
+window receipts retain up to 4,096 identities, with all live windows and recent
+history bounded to 64 displayed records; the live companion limit remains eight.
+Opening a window validates its Registry binding; the actual launch factory performs
+and retains filesystem/distro admission, so an explicit Terminal start can reach a
+stopped WSL target without using a read-only project probe as a hidden launch gate.
+
+The native/frontend syntax check passed in 16.853 seconds. Subsequent source review
+added reconciliation of a retained Terminal lease after metadata publication failure
+and an unexecuted restore-only Terminal ownership fixture. Detailed restore, migration
+and actual Windows/WSL cases remain in the final B06 acceptance packet.
