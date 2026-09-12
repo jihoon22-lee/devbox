@@ -568,22 +568,29 @@ impl Target {
             binding.bind(argv)
         }
     }
+    async fn bind_query(&self, argv: &[String]) -> Result<Vec<String>, WslExecutionError> {
+        let target = self.clone();
+        let argv = argv.to_vec();
+        tokio::task::spawn_blocking(move || target.bind(argv, false))
+            .await
+            .map_err(|_| std::io::Error::other("runtime-target-unavailable"))?
+    }
     async fn output(&self, argv: &[String]) -> Result<Output, WslExecutionError> {
-        run_helper_output(&self.bind(argv.to_vec(), false)?).await
+        run_helper_output(&self.bind_query(argv).await?).await
     }
     async fn output_until(
         &self,
         argv: &[String],
         deadline: Instant,
     ) -> Result<Output, WslExecutionError> {
-        run_helper_output_until(&self.bind(argv.to_vec(), false)?, deadline).await
+        run_helper_output_until(&self.bind_query(argv).await?, deadline).await
     }
     async fn status_until(
         &self,
         argv: &[String],
         deadline: Instant,
     ) -> Result<(), WslExecutionError> {
-        run_helper_status_until(&self.bind(argv.to_vec(), false)?, deadline).await
+        run_helper_status_until(&self.bind_query(argv).await?, deadline).await
     }
     pub async fn terminate_group(
         &self,

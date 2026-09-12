@@ -251,15 +251,18 @@ export function loadLastWorkspace(): WorkspaceDefinition | null {
   }
 }
 
+let restoreOnly = false;
+export function isRestoreOnly():boolean { return isProductHosted() && restoreOnly; }
 let layoutRevision:string|undefined;
 let layoutOwner:string|undefined;
 let pendingLayout:Promise<void>=Promise.resolve();
 
 /** Native metadata is authoritative before any saved pane can start/reconnect. */
-export function initializeProductLayout(owner:string,value:{revision:string;layout:unknown}):void {
+export function initializeProductLayout(owner:string,value:{revision:string;layout:unknown;restoreOnly?:boolean}):void {
   if(!/^[a-f0-9]{64}$/.test(value.revision)||!/^[a-f0-9-]{36}$/.test(owner))throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
   const workspace=value.layout===null?null:normalizeWorkspace(value.layout);
   if(value.layout!==null&&!workspace)throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
+  restoreOnly=value.restoreOnly===true;
   layoutOwner=owner;layoutRevision=value.revision;
   writeLocalLayout(workspace);
 }

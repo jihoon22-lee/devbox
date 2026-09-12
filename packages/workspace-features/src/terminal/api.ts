@@ -221,6 +221,7 @@ export async function updateShellIntegration(
 /** Apply the renderer-persisted summon preferences to native process state.
  * Browser preview mirrors the successful state without reserving a system key. */
 export async function configureQuickSummon(config: QuickSummonConfig): Promise<QuickSummonStatus> {
+  if(isProductHosted())return invoke<QuickSummonStatus>("terminal_window_policy",{});
   if (!isTauri()) return {
     shortcutRegistered: config.shortcutEnabled,
     activeShortcut: config.shortcutEnabled ? config.shortcut : null,

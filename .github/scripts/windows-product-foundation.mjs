@@ -1,3 +1,4 @@
+import {seedTerminalImport,copyClosedTerminalImport,verifyTerminalImport} from "./windows-workspace-terminal-import.mjs";
 import {prepareRuntimeCrash,verifyRuntimeCrash} from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
@@ -34,14 +35,14 @@ async function freePort() {
   const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port;
 }
 
-async function connect(port, child, deadline = performance.now() + 30_000) {
+async function connect(port, child, deadline = performance.now() + 30_000, terminalId = null) {
   while (performance.now() < deadline) {
     if (child.exitCode !== null) throw new Error("product exited before renderer opened");
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) });
       const pages = await response.json(); const page = pages.find((p) => {
         if (p.type !== "page" || !p.webSocketDebuggerUrl) return false;
-        try { const url = new URL(p.url); return (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) && ["/", "/index.html"].includes(url.pathname); } catch { return false; }
+        try { const url = new URL(p.url); return (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) && ["/", "/index.html"].includes(url.pathname) && (terminalId ? url.searchParams.get("surface")==="terminal"&&url.searchParams.get("id")===terminalId : !url.searchParams.has("surface")); } catch { return false; }
       });
       if (page) {
         const socket = new WebSocket(page.webSocketDebuggerUrl); await once(socket, "open");
@@ -183,15 +184,19 @@ async function start(product, suffix) {
     let componentProbe;
     if (product.id === "workspace") {
       progress(product, suffix, "workspace-registration");
-      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network});
+      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
       progress(product,suffix,"workspace-runtime-crash");
       const runtimeCrash=await prepareRuntimeCrash(cdp,directory);
+      const terminalImport=await seedTerminalImport(cdp);
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
+      copyClosedTerminalImport(terminalImport);
       child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:"ignore"});
       cdp=await connect(port,child,performance.now()+45000);
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
       componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);
+      componentProbe.terminalImport=await verifyTerminalImport(cdp,terminalImport,id=>connect(port,child,performance.now()+45000,id));
+      writeFileSync("product-foundation-evidence/workspace-terminal-import-"+suffix+".json",JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.terminalImport},null,2));
       writeFileSync(`product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.runtimeCrash},null,2));
     }
     if (product.id === "api-studio") {

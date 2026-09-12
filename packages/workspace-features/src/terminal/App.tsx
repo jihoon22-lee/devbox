@@ -60,6 +60,7 @@ import {
 import { nextTabTitle } from "./lib/tabTitle";
 import {
   isSafeWorkspacePath,
+  isRestoreOnly,
   loadLastWorkspace,
   normalizeProfile,
   saveLastWorkspace,
@@ -1014,7 +1015,7 @@ export default function App() {
     const commands = workspace.panes.flatMap((pane) => pane.startCommand
       ? [`[${pane.distro} · ${pane.key}] ${pane.startCommand}`]
       : []);
-    const runStartCommands = commands.length === 0 || (await ask({
+    const runStartCommands = !isRestoreOnly() && (commands.length === 0 || (await ask({
       kind: "confirm",
       title: `시작 명령 ${commands.length}개를 실행할까요?`,
       lines: ["취소하면 레이아웃만 엽니다."],
@@ -1022,7 +1023,7 @@ export default function App() {
       confirmLabel: "실행",
       cancelLabel: "레이아웃만 열기",
       danger: true,
-    })).confirmed;
+    })).confirmed);
 
     if(isProductHosted()) {
       workspaceLoadingRef.current=true;setWorkspaceLoading(true);
@@ -1983,7 +1984,8 @@ export default function App() {
         />
         <input
           className="start-command"
-          placeholder="시작 명령 (선택, 프로필에 저장)"
+          placeholder={isRestoreOnly() ? "상태 복원 창에서는 시작 명령을 보내지 않습니다" : "시작 명령 (선택, 프로필에 저장)"}
+          disabled={isRestoreOnly()}
           value={startCommand}
           maxLength={4096}
           onChange={(event) => setStartCommand(event.currentTarget.value)}

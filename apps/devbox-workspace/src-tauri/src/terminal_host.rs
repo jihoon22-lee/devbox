@@ -23,6 +23,12 @@ struct Record {
     state: String,
     #[serde(default)]
     initial_layout_revision: Option<String>,
+    #[serde(default)]
+    restore_generation: u64,
+    #[serde(default)]
+    last_restore_operation: Option<String>,
+    #[serde(default)]
+    restore_only: bool,
 }
 #[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -140,6 +146,11 @@ impl Terminals {
                     || store.records.len() > MAX_SESSIONS
                     || store.records.iter().any(|record| {
                         !id(&record.id)
+                            || record.restore_generation > 9_007_199_254_740_991
+                            || record
+                                .last_restore_operation
+                                .as_ref()
+                                .is_some_and(|value| !id(value))
                             || record
                                 .initial_layout_revision
                                 .as_ref()
@@ -435,6 +446,50 @@ impl Terminals {
                     input.deadline_ms,
                 )
             }
+            "restore_terminal" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Input {
+                    id: String,
+                    operation_id: String,
+                    expected_generation: u64,
+                }
+                let input: Input = parse(args)?;
+                let (record, layout) = {
+                    let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+                    let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
+                    let record = inner
+                        .records
+                        .iter()
+                        .find(|record| record.id == input.id)
+                        .ok_or("terminal_session_missing")?
+                        .clone();
+                    if crate::core::terminal_commands::restore_generation(
+                        record.restore_generation,
+                        record.last_restore_operation.as_deref(),
+                        &record.state,
+                        input.expected_generation,
+                        &input.operation_id,
+                    )?
+                    .is_none()
+                    {
+                        return Ok(json!(record));
+                    }
+                    let (layout, _) =
+                        crate::terminal_profiles::read_layout(&inner.root, &input.id)?;
+                    (record, layout)
+                };
+                let mut header = header.clone();
+                header.context = record.context;
+                self.open_window(
+                    window,
+                    host,
+                    &header,
+                    &input.id,
+                    layout,
+                    Some((&input.operation_id, input.expected_generation)),
+                )
+            }
             "open_terminal_profile" => {
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -507,7 +562,6 @@ impl Terminals {
                     return Err("terminal_session_missing");
                 }
                 let label = format!("terminal-{}", input.id);
-                let peer = self.peer(&label)?;
                 // Main selection can change; the explicit target still names its own retained context.
                 if method == "focus_terminal" {
                     let target = window
@@ -519,7 +573,7 @@ impl Terminals {
                         .set_focus()
                         .map_err(|_| "terminal_window_unavailable")?;
                 } else {
-                    self.stop_owned(window.app_handle(), &input.id, Some(&peer))?;
+                    self.stop_owned(window.app_handle(), &input.id, None)?;
                 }
                 Ok(Value::Null)
             }
@@ -563,6 +617,20 @@ impl Terminals {
         peer.terminal
             .stop(app)
             .map_err(|_| "terminal_retirement_pending")?;
+        let ui_app = app.clone();
+        let ui_label = label.clone();
+        let (sender, receiver) = std::sync::mpsc::sync_channel(1);
+        app.run_on_main_thread(move || {
+            let result = ui_app
+                .get_webview_window(&ui_label)
+                .map(|target| target.destroy().map_err(|_| "terminal_window_unavailable"))
+                .unwrap_or(Ok(()));
+            let _ = sender.send(result);
+        })
+        .map_err(|_| "terminal_window_unavailable")?;
+        receiver
+            .recv()
+            .map_err(|_| "terminal_window_unavailable")??;
         let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
         let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
         inner
@@ -573,10 +641,6 @@ impl Terminals {
             .state = "stopped".into();
         save(inner)?;
         inner.peers.remove(&label);
-        drop(selected);
-        if let Some(target) = app.get_webview_window(&label) {
-            let _ = target.destroy();
-        }
         Ok(())
     }
     pub(crate) fn command_catalog(&self, app: &tauri::AppHandle, host: &Host) -> Result<Value> {
@@ -714,7 +778,19 @@ impl Terminals {
         host: &Host,
         header: &RouteRequest,
         operation_id: &str,
+        layout: Option<wsl_desktop_lib::component::WorkspaceProfile>,
+    ) -> Result<Value> {
+        self.open_window(window, host, header, operation_id, layout, None)
+    }
+
+    fn open_window(
+        &self,
+        window: &WebviewWindow,
+        host: &Host,
+        header: &RouteRequest,
+        operation_id: &str,
         mut layout: Option<wsl_desktop_lib::component::WorkspaceProfile>,
+        restoration: Option<(&str, u64)>,
     ) -> Result<Value> {
         self.initialize(window.app_handle(), host)?;
         if !id(operation_id) {
@@ -744,25 +820,64 @@ impl Terminals {
         {
             let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
             let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
-            if let Some(record) = inner
+            let previous = inner
                 .records
                 .iter()
-                .find(|record| record.id == operation_id)
-            {
-                if record.context != context || record.initial_layout_revision != initial_revision {
-                    return Err("terminal_operation_conflict");
+                .position(|record| record.id == operation_id);
+            let prior = previous.map(|index| inner.records[index].clone());
+            let record = if let Some((restore_operation, expected)) = restoration {
+                let prior = prior.as_ref().ok_or("terminal_session_missing")?;
+                let Some(generation) = crate::core::terminal_commands::restore_generation(
+                    prior.restore_generation,
+                    prior.last_restore_operation.as_deref(),
+                    &prior.state,
+                    expected,
+                    restore_operation,
+                )?
+                else {
+                    return Ok(json!(prior));
+                };
+                if prior.context != context || inner.peers.contains_key(&label) {
+                    return Err("terminal_restore_conflict");
                 }
-                return Ok(json!(record));
-            }
-            if inner.records.len() >= MAX_SESSIONS || inner.peers.len() >= MAX_WINDOWS {
+                let (current, _) =
+                    crate::terminal_profiles::read_layout(&inner.root, operation_id)?;
+                if serde_json::to_value(current).map_err(|_| "terminal_profile_invalid")?
+                    != serde_json::to_value(&layout).map_err(|_| "terminal_profile_invalid")?
+                {
+                    return Err("terminal_layout_changed");
+                }
+                Record {
+                    state: "preparing".into(),
+                    restore_generation: generation,
+                    last_restore_operation: Some(restore_operation.into()),
+                    restore_only: true,
+                    ..prior.clone()
+                }
+            } else {
+                if let Some(prior) = &prior {
+                    if prior.context != context || prior.initial_layout_revision != initial_revision
+                    {
+                        return Err("terminal_operation_conflict");
+                    }
+                    return Ok(json!(prior));
+                }
+                if inner.records.len() >= MAX_SESSIONS {
+                    return Err("terminal_session_limit");
+                }
+                Record {
+                    id: operation_id.to_owned(),
+                    context: context.clone(),
+                    state: "preparing".into(),
+                    initial_layout_revision: initial_revision.clone(),
+                    restore_generation: 0,
+                    last_restore_operation: None,
+                    restore_only: false,
+                }
+            };
+            if inner.peers.len() >= MAX_WINDOWS {
                 return Err("terminal_session_limit");
             }
-            let record = Record {
-                id: operation_id.to_owned(),
-                context: context.clone(),
-                state: "preparing".into(),
-                initial_layout_revision: initial_revision.clone(),
-            };
             let mut guard = SessionGuard::for_window(
                 Handshake {
                     protocol_version: 1,
@@ -776,10 +891,10 @@ impl Terminals {
             let peer = Arc::new(Peer {
                 record: record.clone(),
                 guard: Mutex::new(guard),
-                terminal: TerminalOwner::new(label.clone())
+                terminal: TerminalOwner::with_restore_only(label.clone(), record.restore_only)
                     .map_err(|_| "terminal_window_invalid")?,
             });
-            if let Some(layout) = &layout {
+            if let Some(layout) = layout.as_ref().filter(|_| restoration.is_none()) {
                 let (current, revision) =
                     crate::terminal_profiles::read_layout(&inner.root, operation_id)?;
                 if current.is_some() {
@@ -792,10 +907,18 @@ impl Terminals {
                     json!({"expectedRevision":revision,"layout":layout}),
                 )?;
             }
-            inner.records.push(record);
+            if let Some(index) = previous {
+                inner.records[index] = record;
+            } else {
+                inner.records.push(record);
+            }
             // Persist operation identity before creating any window or process owner.
             if let Err(error) = save(inner) {
-                inner.records.pop();
+                if let (Some(index), Some(prior)) = (previous, prior) {
+                    inner.records[index] = prior;
+                } else {
+                    inner.records.pop();
+                }
                 return Err(error);
             }
             inner.peers.insert(label.clone(), peer);
@@ -804,11 +927,17 @@ impl Terminals {
         let ui_app = app.clone();
         let ui_label = label.clone();
         let (sender, receiver) = std::sync::mpsc::sync_channel(1);
-        app.run_on_main_thread(move || {
+        let queued = app.run_on_main_thread(move || {
             let result = tauri::WebviewWindowBuilder::new(
                 &ui_app,
                 &ui_label,
-                tauri::WebviewUrl::App("index.html?surface=terminal".into()),
+                tauri::WebviewUrl::App(
+                    format!(
+                        "index.html?surface=terminal&id={}",
+                        ui_label.trim_start_matches("terminal-")
+                    )
+                    .into(),
+                ),
             )
             .title("Devbox Workspace · 터미널")
             .inner_size(1100.0, 760.0)
@@ -817,13 +946,16 @@ impl Terminals {
             .map(|_| ())
             .map_err(|_| "terminal_window_unavailable");
             let _ = sender.send(result);
-        })
-        .map_err(|_| "terminal_window_unavailable")?;
+        });
         // This is a retained blocking worker. Never time out and abandon a queued UI
         // creation that could later produce a window without its native owner.
-        let result = receiver
-            .recv()
-            .unwrap_or(Err("terminal_window_unavailable"));
+        let result = if queued.is_ok() {
+            receiver
+                .recv()
+                .unwrap_or(Err("terminal_window_unavailable"))
+        } else {
+            Err("terminal_window_unavailable")
+        };
         let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
         let inner = selected.as_mut().ok_or("terminal_owner_unavailable")?;
         let record = inner
@@ -869,7 +1001,7 @@ impl Terminals {
         let peer = self.peer(window.label())?;
         let guard = peer.guard.lock().map_err(|_| "terminal_owner_busy")?;
         Ok(
-            json!({"handshake": guard.handshake(), "context": peer.record.context, "id": peer.record.id}),
+            json!({"handshake": guard.handshake(), "context": peer.record.context, "id": peer.record.id, "restoreOnly": peer.record.restore_only}),
         )
     }
 
@@ -906,6 +1038,16 @@ impl Terminals {
             if let Some(context) = &peer.record.context {
                 host.projects()?.binding(context)?;
             }
+        }
+        if method == "terminal_window_policy" {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Empty {}
+            parse::<Empty>(args)?;
+            return Ok(json!({"shortcutRegistered":false,"activeShortcut":null,
+                "trayEnabled":true,"closeBehavior":"hideToTray","issues":[],
+                "visible":window.is_visible().map_err(|_|"terminal_window_unavailable")?,
+                "focused":window.is_focused().map_err(|_|"terminal_window_unavailable")?}));
         }
         if matches!(
             method,

@@ -110,6 +110,12 @@ struct Snapshot {
 #[cfg(windows)]
 impl Sources {
     fn capture(&self, root: &str, distro: &str) -> Result<Snapshot, Error> {
+        // Some synchronous callers are inside Handle::block_on. The private helper
+        // owns its own runtime, so create and retire it outside that entered context.
+        std::thread::scope(|scope| scope.spawn(|| self.capture_native(root, distro)).join())
+            .map_err(|_| Error::SourceUnavailable)?
+    }
+    fn capture_native(&self, root: &str, distro: &str) -> Result<Snapshot, Error> {
         let projects = self.host.projects().map_err(|_| Error::SourceUnavailable)?;
         let registry = projects.snapshot().map_err(|_| Error::SourceUnavailable)?;
         let distros = super::wsl_distro::list().map_err(|_| Error::SourceUnavailable)?;

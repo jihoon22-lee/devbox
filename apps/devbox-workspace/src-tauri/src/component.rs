@@ -279,6 +279,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                         | "terminal_commands"
                         | "summon_terminal"
                         | "open_terminal_profile"
+                        | "restore_terminal"
                         | "start_terminal_import"
                         | "cancel_terminal_import"
                         | "cleanup_terminal_import"

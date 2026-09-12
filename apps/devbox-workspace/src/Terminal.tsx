@@ -6,7 +6,7 @@ import TerminalImport from "./TerminalImport";
 import DevelopmentSessions from "./DevelopmentSessions";
 
 interface Commands {profiles:Array<{id:string;name:string;revision:string}>}
-interface Session {id:string;context:ProjectContext|null;state:string}
+interface Session {id:string;context:ProjectContext|null;state:string;restoreGeneration:number}
 const labels:Record<string,string>={preparing:"준비 중",active:"실행 중",stopping:"종료 중",stopped:"종료됨",interrupted:"복구 검토 필요"};
 export default function Terminal({description,registry}:{description:Description;registry:Registry|null}) {
   const [commands,setCommands]=useState<Commands>({profiles:[]});
@@ -61,6 +61,17 @@ export default function Terminal({description,registry}:{description:Description
     }catch{setIssue("창 전환을 확인하지 못했습니다. 같은 요청으로 다시 확인할 수 있습니다.");}
     finally{setBusy(false);}
   };
+  const restore=async(session:Session)=>{
+    const key="workspace-terminal-restore:"+description.handshake.installationId+":"+session.id+":"+session.restoreGeneration;
+    setBusy(true);setIssue("");
+    try {
+      const operationId=sessionStorage.getItem(key)??crypto.randomUUID();
+      sessionStorage.setItem(key,operationId);
+      await call("restore_terminal",{id:session.id,operationId,expectedGeneration:session.restoreGeneration});
+      sessionStorage.removeItem(key);await refresh();
+    }catch{setIssue("재연결을 확인하지 못했습니다. 같은 요청으로 다시 확인하거나 목록을 새로 고쳐 주세요.");}
+    finally{setBusy(false);}
+  };
   return <section className="workspace-terminal-manager">
     <h1>터미널</h1>
     <TerminalImport description={description} active={true}/>
@@ -78,7 +89,8 @@ export default function Terminal({description,registry}:{description:Description
       {session.state==="active"&&<button disabled={busy} onClick={()=>void action("focus_terminal",{id:session.id})}>창 표시</button>}{" "}
       {session.state==="active"&&JSON.stringify(session.context)===JSON.stringify(description.context)&&<button disabled={busy} onClick={()=>void summon(session)}>창 표시·숨김</button>}{" "}
       {["active","stopping"].includes(session.state)&&<button disabled={busy} onClick={()=>void action("stop_terminal",{id:session.id})}>이 터미널 종료</button>}
-      {session.state==="interrupted"&&<p>이전 프로세스의 실행 상태를 이어받지 않았습니다. 작업과 시작 명령을 확인한 뒤 새 터미널을 열어 주세요.</p>}
+      {["stopped","interrupted"].includes(session.state)&&<button disabled={busy} onClick={()=>void restore(session)}>상태만 다시 연결</button>}
+      {session.state==="interrupted"&&<p>저장한 레이아웃으로 다시 연결할 수 있습니다. 시작 명령은 보내지 않으며 기존 tmux·zellij 세션은 유지합니다.</p>}
     </li>)}</ul>
   </section>;
 }

@@ -222,14 +222,21 @@ async fn execute_workspace_task_operation(
                     continue;
                 }
             };
-            if execution.source_id != plan.source_id
-                || execution.revision != plan.revision
-                || crate::workspace_sources::verify(
-                    &database,
-                    std::slice::from_ref(&execution),
+            let source_database = database.clone();
+            let source_execution = execution.clone();
+            let verified = tauri::async_runtime::spawn_blocking(move || {
+                crate::workspace_sources::verify(
+                    &source_database,
+                    std::slice::from_ref(&source_execution),
                     true,
                 )
-                .is_err()
+                .map(|_| ())
+            })
+            .await
+            .is_ok_and(|result| result.is_ok());
+            if execution.source_id != plan.source_id
+                || execution.revision != plan.revision
+                || !verified
             {
                 let _ = database.invalidate_workspace_task_source_at(
                     &execution.source_id,

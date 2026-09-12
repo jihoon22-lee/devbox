@@ -538,3 +538,33 @@ passed in 28.422 seconds. A final bounded root-stamp guard received syntax revie
 The helper executable's helper-feature code and Windows-only adapters have not yet
 been compiled/executed in this packet. No detailed tests/Clippy/build/affected were
 run; those and the final native Windows/WSL fixture remain B06 completion work.
+
+### Durable Terminal reconnect and native acceptance fixtures
+
+Stopped/interrupted companion records now offer an explicit state-only reconnect.
+A durable generation/operation CAS keeps the same native window ID (and scoped
+tmux/zellij session name), while creating a new SessionGuard and PTY owner. Lost
+replies never create another owner. Window destruction completes before that ID
+becomes reusable. Native and renderer guards prevent start-command replay while
+preserving saved definitions. New profile windows keep their normal review flow.
+Product settings now describe the actual close-to-tray policy and defer shortcut
+registration to B07.
+
+Prepared Windows fixtures cover shared Session ownership, summary receipts, two
+panes, hidden output, renderer reload, forced WebGL fallback, SIGINT and explicit
+reconnect. The native WSL task fixture covers real POSIX source/trust/cwd,
+diagnostic/log offset resolution and stopping a retained target after source
+changes. The migration fixture exports all seven legacy browser keys from a
+closed, exclusively copied real WebView profile and checks JSON/layout import,
+source preservation, repeat imports and reviewed preimage restore. Fixture cleanup
+attempts independent retirements and retains roots when task retirement is unknown.
+
+WSL task capture now isolates the existing private helper runtime from entered
+Tokio contexts; source verification and native target construction run on blocking
+workers. These are fixes to the committed adapter, not a second execution engine.
+
+Minimum syntax/type checks passed in 17.909 seconds (Rust 9.53 seconds), including
+the existing Workspace/API Studio Cargo graph and Workspace tsc. Node fixture
+syntax passed. Windows-only code and PowerShell have not executed. Detailed tests,
+Clippy, builds, full verification, CI and actual native acceptance remain pending
+until the complete B06 fixture/documentation packet is ready.

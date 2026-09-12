@@ -40,6 +40,7 @@ pub struct TerminalOwner {
     panes: Mutex<HashMap<String, Pane>>,
     starts: Arc<tokio::sync::Semaphore>,
     initial_commands: Mutex<HashMap<String, (String, bool)>>,
+    restore_only: bool,
 }
 
 struct Starting<'a> {
@@ -62,6 +63,10 @@ impl Drop for Starting<'_> {
 
 impl TerminalOwner {
     pub fn new(window: String) -> Result<Self, String> {
+        Self::with_restore_only(window, false)
+    }
+
+    pub fn with_restore_only(window: String, restore_only: bool) -> Result<Self, String> {
         if !window.starts_with("terminal-")
             || window.len() > 96
             || !window
@@ -75,6 +80,7 @@ impl TerminalOwner {
             panes: Mutex::default(),
             starts: Arc::new(tokio::sync::Semaphore::new(2)),
             initial_commands: Mutex::default(),
+            restore_only,
         })
     }
 
@@ -186,7 +192,7 @@ impl TerminalOwner {
                             Pane::Active {
                                 config, started, ..
                             } => Some(json!({
-                                "id": started.session_id, "distro": config.distro, "paneKey": key,
+                                "id": started.session_id, "distro": config.distro, "paneKey": key, "multiplexer": started.multiplexer, "resumed": started.resumed,
                             })),
                             _ => None,
                         })
@@ -239,6 +245,9 @@ impl TerminalOwner {
                 Ok(Value::Null)
             }
             "write_initial_command" => {
+                if self.restore_only {
+                    return Err("terminal_restore_only".into());
+                }
                 #[derive(Deserialize)]
                 #[serde(rename_all = "camelCase", deny_unknown_fields)]
                 struct Initial {

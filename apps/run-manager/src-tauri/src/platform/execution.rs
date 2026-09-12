@@ -416,8 +416,15 @@ impl PlatformExecutionAdapter {
             .target_distro
             .as_deref()
             .ok_or_else(|| failure(FailureCode::Spawn))?;
-        let target = crate::workspace_sources::wsl_target(&self.database, distro, workspace_task)
-            .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?;
+        let database = self.database.clone();
+        let native_distro = distro.to_owned();
+        let native_task = workspace_task.cloned();
+        let target = tokio::task::spawn_blocking(move || {
+            crate::workspace_sources::wsl_target(&database, &native_distro, native_task.as_ref())
+        })
+        .await
+        .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?
+        .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?;
         let cwd = match workspace_task {
             Some(task) => Some(task.cwd.clone()),
             None => match request.job.cwd.as_deref() {
@@ -569,11 +576,13 @@ impl ExecutionAdapter for PlatformExecutionAdapter {
                         .database
                         .get_workspace_task_execution(&request.job.id)
                         .map_err(|_| failure(FailureCode::Storage))?;
-                    let target = crate::workspace_sources::wsl_target(
-                        &adapter.database,
-                        distro,
-                        execution.as_ref(),
-                    )
+                    let database = adapter.database.clone();
+                    let distro = distro.to_owned();
+                    let target = tokio::task::spawn_blocking(move || {
+                        crate::workspace_sources::wsl_target(&database, &distro, execution.as_ref())
+                    })
+                    .await
+                    .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?
                     .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?;
                     target
                         .recover_stale_group(&identity, adapter.termination_grace)

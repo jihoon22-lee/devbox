@@ -97,3 +97,43 @@ mod tests {
         );
     }
 }
+
+/// Durable restore CAS: retries observe the first attempt, including its failure.
+pub fn restore_generation(
+    current: u64,
+    last: Option<&str>,
+    state: &str,
+    expected: u64,
+    operation: &str,
+) -> Result<Option<u64>> {
+    if !uuid::Uuid::parse_str(operation).is_ok_and(|id| id.to_string() == operation)
+        || expected >= 9_007_199_254_740_991
+    {
+        return Err("terminal_restore_invalid");
+    }
+    if current == expected + 1 && last == Some(operation) {
+        return Ok(None);
+    }
+    if current != expected || last == Some(operation) || !matches!(state, "stopped" | "interrupted")
+    {
+        return Err("terminal_restore_conflict");
+    }
+    Ok(Some(current + 1))
+}
+#[cfg(test)]
+mod restore_tests {
+    use super::restore_generation as reserve;
+    const ONE: &str = "10000000-0000-4000-8000-000000000001";
+    const TWO: &str = "20000000-0000-4000-8000-000000000001";
+    #[test]
+    fn retry_does_not_recreate_failed_or_stopped_windows() {
+        assert_eq!(reserve(0, None, "stopped", 0, ONE), Ok(Some(1)));
+        for state in ["preparing", "active", "interrupted", "stopped"] {
+            assert_eq!(reserve(1, Some(ONE), state, 0, ONE), Ok(None));
+        }
+        assert!(reserve(1, Some(ONE), "active", 1, TWO).is_err());
+        assert!(reserve(1, Some(ONE), "stopped", 0, TWO).is_err());
+        assert_eq!(reserve(1, Some(ONE), "interrupted", 1, TWO), Ok(Some(2)));
+        assert!(reserve(2, Some(TWO), "stopped", 0, ONE).is_err());
+    }
+}

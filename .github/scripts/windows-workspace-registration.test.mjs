@@ -59,7 +59,7 @@ test("Workspace renderer probes contain valid decoded JavaScript expressions",()
 });
 
 test("long feature fixture requests select their own route inside the native deadline ceiling", async()=>{
-  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"],["workspace.lsp","files"]]) {
+  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"],["workspace.lsp","files"],["workspace.terminal","terminal"],["workspace.problems","problems"]]) {
   let sent;
   await runInNewContext(workspaceRequestExpression(component,"fixture_method",{request:{path:"C:\\fixture"}}),{
     window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>command==="plugin:product-shell|describe"?{handshake:{installationId:"installation",sessionId:"session"},context:null}:(sent=input.request)}},

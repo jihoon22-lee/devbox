@@ -43,3 +43,19 @@ it("reuses the visibility operation after an ambiguous native reply",async()=>{
   expect(requests[0]).toEqual(requests[1]);
   expect(call.mock.calls.some(([, ,method])=>["open_terminal","stop_terminal"].includes(method))).toBe(false);
 });
+
+it("reuses the restore generation and operation after an ambiguous reply",async()=>{
+  const requests:Array<Record<string,unknown>>=[];
+  call.mockImplementation(async(_description,_component,method,args)=>{
+    if(method==="terminal_sessions")return[{id:"10000000-0000-4000-8000-000000000001",context,state:"interrupted",restoreGeneration:3}];
+    if(method==="terminal_commands")return{profiles:[]};
+    if(method==="restore_terminal"){requests.push(args);throw new Error("synthetic lost reply");}
+    return{};
+  });
+  render(<Terminal description={description} registry={null}/>);
+  const button=await screen.findByRole("button",{name:"상태만 다시 연결"});
+  fireEvent.click(button);await screen.findByRole("alert");fireEvent.click(button);
+  await waitFor(()=>expect(requests).toHaveLength(2));
+  expect(requests[0]).toEqual(requests[1]);
+  expect(requests[0]).toMatchObject({expectedGeneration:3,operationId:expect.any(String)});
+});

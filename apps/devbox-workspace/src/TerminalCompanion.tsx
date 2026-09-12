@@ -6,7 +6,7 @@ import { initializeProductLayout } from "@devbox/workspace-features/terminal-lay
 import { configureTerminalStorage, initializeTerminalPreferences } from "@devbox/workspace-features/terminal-storage";
 
 const Terminal=lazy(()=>import("@devbox/workspace-features/terminal"));
-interface Peer {handshake:Handshake;context:ProjectContext|null;id:string}
+interface Peer {handshake:Handshake;context:ProjectContext|null;id:string;restoreOnly:boolean}
 let initialization:Promise<Peer>|undefined;
 function connect():Promise<Peer> {
   initialization??=invoke<Peer>("plugin:workspace|terminal_describe").then(async peer=>{
@@ -23,7 +23,7 @@ function connect():Promise<Peer> {
     await initializeTerminalPreferences();
     const header=makeRequest(peer.handshake,"terminal",Date.now(),peer.context);
     const layout=await invoke<{revision:string;layout:unknown}>("plugin:workspace|terminal_execute",{request:{header,method:"terminal_layout",args:{}}});
-    initializeProductLayout(peer.id,layout);
+    initializeProductLayout(peer.id,{...layout,restoreOnly:peer.restoreOnly});
     return peer;
   });
   return initialization;
