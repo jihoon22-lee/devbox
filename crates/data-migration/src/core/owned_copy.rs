@@ -9,10 +9,29 @@ fn remove_owned_directory_with(
 ) -> Result<(), String> {
     remove_owned_directory_checked(directory, remove, |path| fs::symlink_metadata(path))
 }
+pub fn remove_owned_directory_matching(
+    directory: &Path,
+    expected: (u64, u64),
+) -> Result<(), String> {
+    remove_owned_directory_against(
+        directory,
+        |path| fs::remove_dir_all(path),
+        |path| fs::symlink_metadata(path),
+        Some(expected),
+    )
+}
 fn remove_owned_directory_checked(
+    directory: &Path,
+    remove: impl FnMut(&Path) -> std::io::Result<()>,
+    read_metadata: impl FnMut(&Path) -> std::io::Result<fs::Metadata>,
+) -> Result<(), String> {
+    remove_owned_directory_against(directory, remove, read_metadata, None)
+}
+fn remove_owned_directory_against(
     directory: &Path,
     mut remove: impl FnMut(&Path) -> std::io::Result<()>,
     mut read_metadata: impl FnMut(&Path) -> std::io::Result<fs::Metadata>,
+    expected: Option<(u64, u64)>,
 ) -> Result<(), String> {
     fn inspect(
         path: &Path,
@@ -73,6 +92,9 @@ fn remove_owned_directory_checked(
     }
     let identity = devbox_filesystem::filesystem_identity(directory, true)
         .map_err(|_| "migration_cleanup_root_identity")?;
+    if expected.is_some_and(|expected| identity.components() != expected) {
+        return Err("migration_cleanup_changed".into());
+    }
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
         // Root/ancestor links remain forbidden, including between retries.

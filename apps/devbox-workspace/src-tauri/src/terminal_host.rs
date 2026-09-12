@@ -309,6 +309,28 @@ impl Terminals {
         self.initialize(window.app_handle(), host)?;
         if matches!(
             method,
+            "terminal_import_history"
+                | "preview_terminal_import_restore"
+                | "restore_terminal_import"
+        ) {
+            let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
+            if method == "restore_terminal_import" && !inner.peers.is_empty() {
+                return Err("terminal_import_close_windows");
+            }
+            return crate::terminal_profiles::history(&inner.root, method, args);
+        }
+        if method == "cleanup_terminal_import" {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {
+                id: String,
+            }
+            let input: Input = parse(args)?;
+            return self.imports.cleanup(host.storage_root(), &input.id);
+        }
+        if matches!(
+            method,
             "start_terminal_import"
                 | "cancel_terminal_import"
                 | "terminal_imports"

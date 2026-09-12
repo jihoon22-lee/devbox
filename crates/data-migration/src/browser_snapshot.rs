@@ -19,6 +19,15 @@ pub fn snapshot(
     owned_stage: &Path,
     cancelled: &AtomicBool,
 ) -> Result<(PathBuf, ClosedStoreSnapshot), String> {
+    snapshot_owned(source_data, owned_stage, cancelled, |_| Ok(()))
+}
+#[cfg(windows)]
+pub fn snapshot_owned(
+    source_data: &Path,
+    owned_stage: &Path,
+    cancelled: &AtomicBool,
+    created: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(PathBuf, ClosedStoreSnapshot), String> {
     use std::os::windows::fs::OpenOptionsExt;
     // Prevent replacement of the source directory while its individual files
     // and LevelDB LOCK are held. No write/create access is requested.
@@ -42,6 +51,7 @@ pub fn snapshot(
     }
     let data = owned_stage.join("webview-copy");
     std::fs::create_dir(&data).map_err(|_| "legacy_snapshot_target_must_be_new")?;
+    created(&data)?;
     let target = data.join(existing[0]);
     std::fs::create_dir_all(target.parent().ok_or("legacy_snapshot_target_invalid")?)
         .map_err(|_| "legacy_snapshot_write_failed")?;

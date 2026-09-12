@@ -111,17 +111,33 @@ fn valid_preference(key: &str, raw: &str) -> bool {
                     .get("scrollbackLines")
                     .is_none_or(|v| v.as_u64().is_some_and(|v| (1000..=100000).contains(&v)))
                 && [
-                    "multiplexer",
-                    "fontId",
-                    "cursorStyle",
-                    "theme",
-                    "quickSummonShortcut",
+                    ("multiplexer", &["native", "tmux", "zellij"][..]),
+                    (
+                        "fontId",
+                        &[
+                            "cascadia-code",
+                            "cascadia-mono",
+                            "consolas",
+                            "courier-new",
+                            "system-mono",
+                        ][..],
+                    ),
+                    ("cursorStyle", &["block", "underline", "bar"][..]),
+                    ("theme", &["dark", "light", "highContrast"][..]),
+                    (
+                        "quickSummonShortcut",
+                        &[
+                            "Ctrl+Alt+Space",
+                            "Ctrl+Shift+Space",
+                            "Alt+Shift+Space",
+                            "Ctrl+Alt+F12",
+                        ][..],
+                    ),
                 ]
                 .iter()
-                .all(|key| {
-                    value.get(key).is_none_or(|v| {
-                        v.as_str()
-                            .is_some_and(|v| v.len() <= 128 && !v.chars().any(char::is_control))
+                .all(|(key, allowed)| {
+                    value.get(key).is_none_or(|value| {
+                        value.as_str().is_some_and(|value| allowed.contains(&value))
                     })
                 })
         }),
@@ -230,6 +246,25 @@ fn write_job(stage: &MetadataRoot, job: &Job) -> Result<()> {
         &serde_json::to_vec(job).map_err(|_| "terminal_import_invalid")?,
     )
 }
+fn cleanup_copy(stage: &MetadataRoot) -> Result<()> {
+    let copy = stage.path().join("webview-copy");
+    match std::fs::symlink_metadata(&copy) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(()),
+        Err(_) => return Err("terminal_import_copy_cleanup_pending"),
+        Ok(_) => {}
+    }
+    if stage.read("worker-ticket.json")?.is_some() && stage.read("worker-retired")?.is_none() {
+        return Err("terminal_export_retirement_unconfirmed");
+    }
+    let expected: (u64, u64) = serde_json::from_slice(
+        &stage
+            .read("browser-copy-identity.json")?
+            .ok_or("terminal_import_copy_identity_missing")?,
+    )
+    .map_err(|_| "terminal_import_invalid")?;
+    data_migration::core::owned_copy::remove_owned_directory_matching(&copy, expected)
+        .map_err(|_| "terminal_import_copy_cleanup_pending")
+}
 #[derive(Default)]
 pub(crate) struct Imports {
     active: Mutex<HashMap<String, Arc<AtomicBool>>>,
@@ -295,21 +330,8 @@ impl Imports {
                     job.issue = Some(issue.into());
                 }
             }
-            if stage.path().join("webview-copy").exists()
-                && (stage
-                    .read("worker-ticket.json")
-                    .is_ok_and(|ticket| ticket.is_none())
-                    || stage
-                        .read("worker-retired")
-                        .is_ok_and(|value| value.is_some()))
-            {
-                if data_migration::core::owned_copy::remove_owned_directory(
-                    &stage.path().join("webview-copy"),
-                )
-                .is_err()
-                {
-                    job.issue = Some("terminal_import_copy_cleanup_pending".into());
-                }
+            if cleanup_copy(&stage).is_err() {
+                job.issue = Some("terminal_import_copy_cleanup_pending".into());
             }
             let _ = write_job(&stage, &job);
             if let Ok(mut active) = owner.active.lock() {
@@ -347,6 +369,28 @@ impl Imports {
         }
         jobs.sort_by(|a, b| a.id.cmp(&b.id));
         Ok(json!(jobs))
+    }
+    pub(crate) fn cleanup(&self, root: &Path, id: &str) -> Result<Value> {
+        if !valid_id(id) {
+            return Err("terminal_import_invalid");
+        }
+        let active = self.active.lock().map_err(|_| "terminal_import_busy")?;
+        if active.contains_key(id) {
+            return Err("terminal_import_busy");
+        }
+        let stage = MetadataRoot::open(&stages(root)?.path().join(id))?;
+        cleanup_copy(&stage)?;
+        let mut job: Job =
+            serde_json::from_slice(&stage.read("job.json")?.ok_or("terminal_import_invalid")?)
+                .map_err(|_| "terminal_import_invalid")?;
+        if job.schema_version != 1 || job.id != id {
+            return Err("terminal_import_invalid");
+        }
+        if job.issue.as_deref() == Some("terminal_import_copy_cleanup_pending") {
+            job.issue = None;
+            write_job(&stage, &job)?;
+        }
+        Ok(Value::Null)
     }
     pub(crate) fn cancel(&self, id: &str) -> Result<Value> {
         if !valid_id(id) {
@@ -397,6 +441,12 @@ fn prepare(
     cancelled: &AtomicBool,
 ) -> Result<Prepared> {
     use std::{io::Read, os::windows::fs::OpenOptionsExt};
+    if !source
+        .try_exists()
+        .map_err(|_| "terminal_import_source_unavailable")?
+    {
+        return Err("terminal_legacy_missing");
+    }
     let _source = MetadataRoot::open(source)?;
     let profile_path = source.join("terminal-profiles.json");
     if profile_path.exists() {
@@ -429,25 +479,39 @@ fn prepare(
     if cancelled.load(Ordering::Acquire) {
         return Err("terminal_import_cancelled");
     }
-    let (exported, state) =
-        match data_migration::browser_snapshot::snapshot(source, stage.path(), cancelled) {
-            Ok((_copy, receipt)) => {
-                stage.create_new(
-                    "browser-snapshot.json",
-                    &serde_json::to_vec(&receipt).map_err(|_| "terminal_import_invalid")?,
-                )?;
-                let nonce = uuid::Uuid::new_v4().simple().to_string();
-                crate::terminal_export::ticket(stage, &nonce)?;
-                let data = tauri::async_runtime::block_on(crate::terminal_export::export(
-                    stage, id, &nonce, cancelled,
-                ))?;
-                (Some(data), "ready")
-            }
-            Err(error) if error == "legacy_browser_store_missing_or_ambiguous" => {
-                (None, "missing-or-ambiguous-browser-store")
-            }
-            Err(_) => return Err("terminal_legacy_must_be_closed"),
-        };
+    let (exported, state) = match data_migration::browser_snapshot::snapshot_owned(
+        source,
+        stage.path(),
+        cancelled,
+        |copy| {
+            let identity = devbox_filesystem::filesystem_identity(copy, true)
+                .map_err(|_| "terminal_import_copy_identity_missing")?
+                .components();
+            stage
+                .create_new(
+                    "browser-copy-identity.json",
+                    &serde_json::to_vec(&identity).map_err(|_| "terminal_import_invalid")?,
+                )
+                .map_err(str::to_owned)
+        },
+    ) {
+        Ok((_copy, receipt)) => {
+            stage.create_new(
+                "browser-snapshot.json",
+                &serde_json::to_vec(&receipt).map_err(|_| "terminal_import_invalid")?,
+            )?;
+            let nonce = uuid::Uuid::new_v4().simple().to_string();
+            crate::terminal_export::ticket(stage, &nonce)?;
+            let data = tauri::async_runtime::block_on(crate::terminal_export::export(
+                stage, id, &nonce, cancelled,
+            ))?;
+            (Some(data), "ready")
+        }
+        Err(error) if error == "legacy_browser_store_missing_or_ambiguous" => {
+            (None, "missing-or-ambiguous-browser-store")
+        }
+        Err(_) => return Err("terminal_legacy_must_be_closed"),
+    };
     if cancelled.load(Ordering::Acquire) {
         return Err("terminal_import_cancelled");
     }
@@ -461,6 +525,45 @@ fn prepare(_: &Path, _: &MetadataRoot, _: &str, _: &AtomicBool) -> Result<Prepar
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn cleanup_requires_recorded_copy_identity_and_retired_worker() {
+        let directory = tempfile::tempdir().unwrap();
+        let stage = MetadataRoot::open(directory.path()).unwrap();
+        let copy = stage.child("webview-copy").unwrap();
+        let identity = devbox_filesystem::filesystem_identity(copy.path(), true)
+            .unwrap()
+            .components();
+        stage
+            .write(
+                "browser-copy-identity.json",
+                &serde_json::to_vec(&identity).unwrap(),
+            )
+            .unwrap();
+        drop(copy);
+        stage.write("worker-ticket.json", b"ticket").unwrap();
+        assert_eq!(
+            cleanup_copy(&stage),
+            Err("terminal_export_retirement_unconfirmed")
+        );
+        assert!(stage.path().join("webview-copy").is_dir());
+        stage.write("worker-retired", b"retired").unwrap();
+        stage
+            .write(
+                "browser-copy-identity.json",
+                &serde_json::to_vec(&(identity.0, identity.1.wrapping_add(1))).unwrap(),
+            )
+            .unwrap();
+        assert!(cleanup_copy(&stage).is_err());
+        assert!(stage.path().join("webview-copy").is_dir());
+        stage
+            .write(
+                "browser-copy-identity.json",
+                &serde_json::to_vec(&identity).unwrap(),
+            )
+            .unwrap();
+        cleanup_copy(&stage).unwrap();
+        assert!(!stage.path().join("webview-copy").exists());
+    }
     #[test]
     fn reports_each_missing_browser_key_without_claiming_it_was_imported() {
         let prepared = normalize(

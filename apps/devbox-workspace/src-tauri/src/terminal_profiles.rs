@@ -18,9 +18,8 @@ struct Envelope {
     #[serde(default)]
     preferences: BTreeMap<String, String>,
 }
-fn load(root: &MetadataRoot) -> Result<(Envelope, Option<Vec<u8>>, String)> {
-    let bytes = root.read(FILE)?;
-    let envelope = match bytes.as_ref() {
+fn decode(bytes: Option<&[u8]>) -> Result<Envelope> {
+    let envelope = match bytes {
         Some(bytes) => {
             serde_json::from_slice::<Envelope>(bytes).map_err(|_| "terminal_profiles_invalid")?
         }
@@ -51,6 +50,11 @@ fn load(root: &MetadataRoot) -> Result<(Envelope, Option<Vec<u8>>, String)> {
         .content
         .validate()
         .map_err(|_| "terminal_profiles_invalid")?;
+    Ok(envelope)
+}
+fn load(root: &MetadataRoot) -> Result<(Envelope, Option<Vec<u8>>, String)> {
+    let bytes = root.read(FILE)?;
+    let envelope = decode(bytes.as_deref())?;
     let revision =
         crate::definitions::digest(bytes.as_deref().unwrap_or(b"missing-terminal-profiles"));
     Ok((envelope, bytes, revision))
@@ -191,6 +195,121 @@ pub(crate) fn import(
     }
     root.write(FILE, &bytes)?;
     Ok(json!({"applied":true,"repeated":false}))
+}
+
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct HistoryRecord {
+    schema_version: u32,
+    source_revision: String,
+    mapping: Vec<Value>,
+    before_present: bool,
+    before_revision: String,
+    preserved_preference_conflicts: Vec<String>,
+}
+fn fingerprint(value: &str) -> bool {
+    value.len() == 64
+        && value
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+}
+fn previous(history: &MetadataRoot, key: &str) -> Result<(Envelope, String)> {
+    if !fingerprint(key) {
+        return Err("terminal_import_invalid");
+    }
+    let record_bytes = history
+        .read(&format!("{key}.json"))?
+        .ok_or("terminal_import_history_missing")?;
+    let record: HistoryRecord =
+        serde_json::from_slice(&record_bytes).map_err(|_| "terminal_import_history_invalid")?;
+    if record.schema_version != 1
+        || record.source_revision != key
+        || record.mapping.len() > 100
+        || record.preserved_preference_conflicts.len() > 6
+    {
+        return Err("terminal_import_history_invalid");
+    }
+    let bytes = history.read(&format!("{key}.before.json"))?;
+    if bytes.is_some() != record.before_present
+        || crate::definitions::digest(bytes.as_deref().unwrap_or(b"missing-terminal-profiles"))
+            != record.before_revision
+    {
+        return Err("terminal_import_history_changed");
+    }
+    let envelope = decode(bytes.as_deref())?;
+    // The checked record binds exact preimage bytes as well as the source.
+    Ok((envelope, crate::definitions::digest(&record_bytes)))
+}
+pub(crate) fn history(root: &MetadataRoot, method: &str, args: Value) -> Result<Value> {
+    let (current, before, current_revision) = load(root)?;
+    let history = root.child("import-history")?;
+    if method == "terminal_import_history" {
+        if args.as_object().is_none_or(|args| !args.is_empty()) {
+            return Err("terminal_args_invalid");
+        }
+        let mut entries = Vec::new();
+        for entry in std::fs::read_dir(history.path())
+            .map_err(|_| "terminal_import_history_invalid")?
+            .take(257)
+        {
+            let entry = entry.map_err(|_| "terminal_import_history_invalid")?;
+            let name = entry.file_name().to_string_lossy().to_string();
+            let Some(key) = name.strip_suffix(".json").filter(|key| fingerprint(key)) else {
+                continue;
+            };
+            entries.push(match previous(&history,key){Ok((value,_))=>json!({"sourceRevision":key,"profiles":value.content.profiles.len(),"preferences":value.preferences.len(),"issue":null}),Err(issue)=>json!({"sourceRevision":key,"issue":issue})});
+        }
+        return Ok(json!({"entries":entries}));
+    }
+    #[derive(Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        source_revision: String,
+        expected_revision: Option<String>,
+        restore_revision: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let (mut restored, restore_revision) = previous(&history, &input.source_revision)?;
+    if method == "preview_terminal_import_restore" {
+        return Ok(
+            json!({"sourceRevision":input.source_revision,"revision":current_revision,"restoreRevision":restore_revision,"profiles":restored.content.profiles.len(),"preferences":restored.preferences.len()}),
+        );
+    }
+    if method != "restore_terminal_import" {
+        return Err("terminal_method_invalid");
+    }
+    if input.expected_revision.as_ref() != Some(&current_revision)
+        || input.restore_revision.as_ref() != Some(&restore_revision)
+    {
+        return Err("terminal_import_changed");
+    }
+    // Restoring a preimage does not erase the record that this source was imported.
+    restored.receipts.extend(current.receipts);
+    if restored.receipts.len() > 64 {
+        return Err("terminal_import_limit");
+    }
+    if std::fs::read_dir(history.path())
+        .map_err(|_| "terminal_import_history_invalid")?
+        .take(257)
+        .count()
+        >= 256
+    {
+        return Err("terminal_import_limit");
+    }
+    if let Some(bytes) = &before {
+        history.create_new(
+            &format!("restore-before-{}.json", uuid::Uuid::new_v4()),
+            bytes,
+        )?;
+    }
+    if root.read(FILE)? != before {
+        return Err("terminal_profiles_changed");
+    }
+    root.write(
+        FILE,
+        &serde_json::to_vec(&restored).map_err(|_| "terminal_profiles_invalid")?,
+    )?;
+    Ok(json!({"restored":true}))
 }
 
 pub(crate) fn snapshot(root: &MetadataRoot, id: &str) -> Result<(WorkspaceProfile, String)> {
@@ -418,6 +537,28 @@ mod tests {
             load(&root).unwrap().0.preferences["wsl-desktop:copy-on-select"],
             "1"
         );
+        let restore = history(
+            &root,
+            "preview_terminal_import_restore",
+            json!({"sourceRevision":review["sourceRevision"]}),
+        )
+        .unwrap();
+        history(&root,"restore_terminal_import",json!({"sourceRevision":review["sourceRevision"],"expectedRevision":restore["revision"],"restoreRevision":restore["restoreRevision"]})).unwrap();
+        assert!(load(&root).unwrap().0.preferences.is_empty());
+        assert!(load(&root)
+            .unwrap()
+            .0
+            .receipts
+            .contains_key(review["sourceRevision"].as_str().unwrap()));
+        let after_restore = root.read(FILE).unwrap();
+        import(
+            &root,
+            directory.path(),
+            "apply_terminal_import",
+            json!({"id":id}),
+        )
+        .unwrap();
+        assert_eq!(root.read(FILE).unwrap(), after_restore);
     }
     #[test]
     fn a_stale_companion_cannot_replace_imported_preferences() {

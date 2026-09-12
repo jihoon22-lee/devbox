@@ -309,3 +309,26 @@ Those attempts are failures, not additional coverage. The Cargo graph was retain
 through all resumes. Existing API Studio checked artifacts were reused. No tests,
 Clippy, bundle build, affected run or Windows execution were added here. The shared
 moves and dependency edges are committed separately from the Terminal consumer.
+
+## Reviewed import recovery
+
+Terminal import history now exposes the verified preimage's profile/preference
+counts, binds both the current owner revision and exact saved preimage, and restores
+only after a separate user action with companion windows closed. The current bytes
+are preserved first. Import receipts survive restoration, so replay of an old source
+still cannot recreate deleted profiles. Corrupt or changed preimages remain unavailable.
+
+Copy cleanup has an explicit retry. The acquisition callback records the new scratch
+root's native identity before copying; cleanup compares that identity and requires
+worker retirement when a worker ticket exists. Replaced roots and unconfirmed worker
+retirement preserve the copy. This extends the shared cleanup primitive without
+changing API Studio's existing call behavior. A cleanup authority fixture and an
+import/restore/repeat fixture are prepared for final B06 execution. Settings now
+accept only the existing finite enum choices instead of silently normalizing unknown
+values. A missing legacy data root has its own report code.
+
+The changed native/frontend syntax packet passed in 20.106 seconds. No detailed
+B06 tests or Windows build was run. Window-state migration is now connected through
+the existing Overview snapshot/review importer, explicitly mapping the legacy WSL
+Desktop main window to the Workspace main window. B05's separate final-artifact
+WSL2 fixture runs only after this local packet has retired.
