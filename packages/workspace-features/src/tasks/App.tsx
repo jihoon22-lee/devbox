@@ -53,6 +53,7 @@ import {
 import JobEditor from "./components/JobEditor";
 import ImportDialog from "./components/ImportDialog";
 import RunHistory from "./components/RunHistory";
+import RuntimeRecovery from "./components/RuntimeRecovery";
 import ServiceEditor from "./components/ServiceEditor";
 import type {
   Job,
@@ -1518,6 +1519,7 @@ export default function App({ active: visible = true, onDirtyChange }: { active?
           </section>
         ) : null}
 
+        <RuntimeRecovery active={visible} busy={busy} onReviewed={() => { void refreshActiveRuns(); }}/>
         {screen === "editor" ? (
           <JobEditor active={visible} job={editingJob} workspaceTask={editingWorkspaceTask} onSave={handleSave} onCancel={closeEditor} />
         ) : screen === "service-editor" ? (

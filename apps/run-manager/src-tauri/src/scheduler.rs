@@ -20,7 +20,7 @@ use std::collections::HashMap;
 use std::fmt;
 use std::future::Future;
 use std::pin::Pin;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex as StdMutex};
 use std::time::Duration;
 use tokio::sync::{watch, Mutex, Notify, OwnedSemaphorePermit, Semaphore};
@@ -112,6 +112,19 @@ pub struct ExecutionExit {
     pub exit_code: Option<i32>,
 }
 
+#[derive(Clone, Debug)]
+pub enum ObservedProcess {
+    Windows {
+        pid: u32,
+        creation_filetime: u64,
+    },
+    Wsl {
+        distro: String,
+        pid: u32,
+        start_tick: u64,
+    },
+}
+
 /// A platform process/tree handle.  `terminate` is a confirmation boundary:
 /// successful completion means the adapter has verified the process and all
 /// descendants are gone.  Both methods must be safe for an adapter to observe
@@ -120,6 +133,9 @@ pub struct ExecutionExit {
 pub trait ExecutionHandle: Send + Sync {
     fn terminate(&self) -> AdapterFuture<'_, ExecutionExit>;
     fn wait(&self) -> AdapterFuture<'_, ExecutionExit>;
+    fn owns_process(&self, _process: ObservedProcess) -> AdapterFuture<'_, bool> {
+        Box::pin(async { Ok(false) })
+    }
 
     /// Metadata is captured before the adapter returns. The default keeps
     /// existing pure scheduler fixtures source-compatible; production
@@ -493,6 +509,8 @@ struct SchedulerInner {
     cleanup_pending: Mutex<std::collections::HashSet<String>>,
     shutdown_orphans: Arc<StdMutex<HashMap<String, ActiveExecution>>>,
     shutdown_requested: AtomicBool,
+    operation_owners: AtomicUsize,
+    process_starts: AtomicUsize,
     shutdown_notify: Notify,
 }
 
@@ -502,6 +520,22 @@ struct SchedulerInner {
 #[derive(Clone)]
 pub struct SchedulerCoordinator {
     inner: Arc<SchedulerInner>,
+}
+
+/// Retains a complete DAG writer through durable terminalization, separately
+/// from the process handles owned by its individual child runs.
+pub(crate) struct WorkspaceOperationLease(Arc<SchedulerInner>);
+impl Drop for WorkspaceOperationLease {
+    fn drop(&mut self) {
+        self.0.operation_owners.fetch_sub(1, Ordering::AcqRel);
+    }
+}
+
+struct ProcessStartLease<'a>(&'a AtomicUsize);
+impl Drop for ProcessStartLease<'_> {
+    fn drop(&mut self) {
+        self.0.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 pub struct SchedulerTask {
@@ -519,6 +553,70 @@ impl SchedulerTask {
 }
 
 impl SchedulerCoordinator {
+    /// A broker may query ownership but receives only a task ID. Runtime
+    /// process handles and execution-time secrets never leave this owner.
+    pub async fn owning_task(
+        &self,
+        process: ObservedProcess,
+    ) -> Result<Option<String>, SchedulerError> {
+        if self.is_shutdown_requested() || self.inner.process_starts.load(Ordering::Acquire) != 0 {
+            return Err(service_adapter_error("runtime", "process-owner-unsettled"));
+        }
+        let active = self.inner.active.lock().await;
+        let handles = active
+            .values()
+            .map(|entry| (entry.job_id.clone(), entry.handle.clone()))
+            .collect::<Vec<_>>();
+        let known = active
+            .keys()
+            .cloned()
+            .collect::<std::collections::HashSet<_>>();
+        drop(active);
+        // Unknown prior-process rows must be recovered, never treated as
+        // unowned merely because their current handle is unavailable.
+        if self
+            .inner
+            .database
+            .list_active_process_runs()?
+            .iter()
+            .any(|run| !known.contains(&run.id))
+        {
+            return Err(service_adapter_error("runtime", "process-owner-unsettled"));
+        }
+        for (job_id, handle) in handles {
+            let owned = handle
+                .owns_process(process.clone())
+                .await
+                .map_err(|source| SchedulerError::Adapter {
+                    run_id: job_id.clone(),
+                    source,
+                })?;
+            if owned {
+                return Ok(Some(job_id));
+            }
+        }
+        if self.inner.process_starts.load(Ordering::Acquire) != 0 {
+            return Err(service_adapter_error("runtime", "process-owner-unsettled"));
+        }
+        Ok(None)
+    }
+
+    pub(crate) fn retain_workspace_operation(
+        &self,
+    ) -> Result<WorkspaceOperationLease, &'static str> {
+        self.inner
+            .operation_owners
+            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |count| {
+                (count < 32).then_some(count + 1)
+            })
+            .map_err(|_| "workspace-task-operation-limit")?;
+        let lease = WorkspaceOperationLease(self.inner.clone());
+        if self.is_shutdown_requested() {
+            return Err("workspace-task-operation-shutdown");
+        }
+        Ok(lease)
+    }
+
     pub fn new(database: Arc<DatabaseState>, adapter: Arc<dyn ExecutionAdapter>) -> Self {
         Self::with_config(database, adapter, SchedulerConfig::default())
     }
@@ -566,6 +664,8 @@ impl SchedulerCoordinator {
                 cleanup_pending: Mutex::new(std::collections::HashSet::new()),
                 shutdown_orphans: Arc::new(StdMutex::new(HashMap::new())),
                 shutdown_requested: AtomicBool::new(false),
+                operation_owners: AtomicUsize::new(0),
+                process_starts: AtomicUsize::new(0),
                 shutdown_notify: Notify::new(),
             }),
         }
@@ -957,11 +1057,19 @@ impl SchedulerCoordinator {
             return Ok(None);
         };
         let generation = instance.generation;
-        let _ = self.stop_active_at(service_id, now).await;
-        let _ = self
+        if let Some(run_id) = instance.active_run_id.as_deref() {
+            self.stop_exact_active_at(service_id, run_id, now).await?;
+        }
+        if !self
             .inner
             .database
-            .mark_service_stopped(service_id, generation, now);
+            .mark_service_stopped(service_id, generation, now)?
+        {
+            return Err(service_adapter_error(
+                service_id,
+                "service-stop-unconfirmed",
+            ));
+        }
         Ok(self.inner.database.get_service_instance(service_id)?)
     }
 
@@ -1011,6 +1119,13 @@ impl SchedulerCoordinator {
             return;
         };
         if instance.active_run_id.as_deref() != Some(run_id) {
+            return;
+        }
+        if instance.state == ServiceInstanceState::Stopping {
+            let _ = self
+                .inner
+                .database
+                .mark_service_stopped(job_id, instance.generation, now);
             return;
         }
         let restart_policy = service.restart_policy.unwrap_or(RestartPolicy::Never);
@@ -1675,6 +1790,8 @@ impl SchedulerCoordinator {
         run: &Run,
         attempt_token: &str,
     ) -> Result<Option<Arc<dyn ExecutionHandle>>, SchedulerError> {
+        self.inner.process_starts.fetch_add(1, Ordering::AcqRel);
+        let _starting = ProcessStartLease(&self.inner.process_starts);
         let job = self
             .inner
             .database
@@ -2448,7 +2565,8 @@ impl SchedulerCoordinator {
     /// has confirmed cleanup. Failed termination deliberately leaves the
     /// handle owned by the coordinator and keeps this predicate false.
     pub async fn cleanup_confirmed(&self) -> bool {
-        self.inner.active.lock().await.is_empty()
+        self.inner.operation_owners.load(Ordering::Acquire) == 0
+            && self.inner.active.lock().await.is_empty()
             && self.inner.cleanup_pending.lock().await.is_empty()
             && self.inner.pending_terminal.lock().await.is_empty()
             && self
@@ -2466,6 +2584,9 @@ impl SchedulerCoordinator {
     }
 
     pub fn cleanup_confirmed_sync(&self) -> bool {
+        if self.inner.operation_owners.load(Ordering::Acquire) != 0 {
+            return false;
+        }
         let Ok(active) = self.inner.active.try_lock() else {
             return false;
         };
@@ -3772,6 +3893,127 @@ mod tests {
         );
         assert_eq!(database.active_process_run(&service.id).unwrap(), None);
         scheduler.shutdown().await.unwrap();
+    }
+
+    struct IdentityOwningAdapter(Arc<MockAdapter>);
+    struct IdentityOwningHandle(Arc<dyn ExecutionHandle>);
+    impl ExecutionHandle for IdentityOwningHandle {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            self.0.terminate()
+        }
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            self.0.wait()
+        }
+        fn owns_process(&self, process: ObservedProcess) -> AdapterFuture<'_, bool> {
+            Box::pin(async move {
+                Ok(matches!(
+                    process,
+                    ObservedProcess::Windows {
+                        pid: 77,
+                        creation_filetime: 1234
+                    }
+                ))
+            })
+        }
+    }
+    impl ExecutionAdapter for IdentityOwningAdapter {
+        fn spawn(&self, request: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            Box::pin(async move {
+                Ok(Arc::new(IdentityOwningHandle(self.0.spawn(request).await?))
+                    as Arc<dyn ExecutionHandle>)
+            })
+        }
+    }
+    #[tokio::test]
+    async fn process_broker_resolves_owned_descendants_through_the_handle_and_blocks_unsettled_rows(
+    ) {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("owned fixture", false), 1000)
+            .unwrap();
+        let scheduler = SchedulerCoordinator::new(
+            database.clone(),
+            Arc::new(IdentityOwningAdapter(MockAdapter::new())),
+        );
+        scheduler.start_service_at(&service.id, 1001).await.unwrap();
+        assert_eq!(
+            scheduler
+                .owning_task(ObservedProcess::Windows {
+                    pid: 77,
+                    creation_filetime: 1234
+                })
+                .await
+                .unwrap(),
+            Some(service.id.clone())
+        );
+        assert_eq!(
+            scheduler
+                .owning_task(ObservedProcess::Windows {
+                    pid: 88,
+                    creation_filetime: 5678
+                })
+                .await
+                .unwrap(),
+            None
+        );
+        let other = database
+            .create_job_at(
+                input("unsettled fixture", false, OverlapPolicy::Queue),
+                1002,
+            )
+            .unwrap();
+        let run = database.create_manual_run_at(&other.id, 1003).unwrap();
+        database
+            .claim_run_starting(&run.id, "prior-owner", "prior-attempt")
+            .unwrap();
+        assert!(scheduler
+            .owning_task(ObservedProcess::Windows {
+                pid: 88,
+                creation_filetime: 5678
+            })
+            .await
+            .is_err());
+        database
+            .finish_run(
+                &run.id,
+                "prior-owner",
+                "prior-attempt",
+                RunStatus::Cancelled,
+                None,
+                None,
+                1004,
+            )
+            .unwrap();
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn failed_service_stop_retains_generation_and_run_until_cleanup_is_confirmed() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("cleanup fixture", false), 1_000)
+            .unwrap();
+        let attempts = Arc::new(AtomicUsize::new(0));
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            Arc::new(RetryTerminateAdapter { attempts }),
+            SchedulerConfig::default().with_shutdown_timeout(Duration::from_millis(15)),
+        );
+        let started = scheduler
+            .start_service_at(&service.id, 1_001)
+            .await
+            .unwrap();
+        assert!(scheduler.stop_service_at(&service.id, 1_002).await.is_err());
+        let held = database.get_service_instance(&service.id).unwrap().unwrap();
+        assert_eq!(held.generation, started.generation);
+        assert_eq!(held.state, ServiceInstanceState::Stopping);
+        assert_eq!(held.active_run_id, started.active_run_id);
+        assert!(!database
+            .mark_service_stopped(&service.id, held.generation, 1_003)
+            .unwrap());
+        assert!(!scheduler.cleanup_confirmed().await);
+        scheduler.shutdown().await.unwrap();
+        assert!(scheduler.cleanup_confirmed().await);
     }
 
     #[tokio::test]

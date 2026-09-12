@@ -105,7 +105,37 @@ pub async fn kill_listener(request: KillListenerRequest) -> Result<ListenerActio
         .map_err(|error| error.to_string())
 }
 
+pub(crate) async fn kill_product_listener(
+    request: KillListenerRequest,
+    deadline_ms: u64,
+) -> Result<ListenerActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        kill_listener_sync_until(request, Some(deadline_ms))
+    })
+    .await
+    .map_err(|_| ListenerError::SourceUnavailable.to_string())?
+    .map_err(|error| error.to_string())
+}
 fn kill_listener_sync(request: KillListenerRequest) -> Result<ListenerActionResult, ListenerError> {
+    kill_listener_sync_until(request, None)
+}
+fn kill_listener_sync_until(
+    request: KillListenerRequest,
+    deadline_ms: Option<u64>,
+) -> Result<ListenerActionResult, ListenerError> {
+    let check_deadline = || {
+        if let Some(deadline) = deadline_ms {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| ListenerError::CommandTimedOut)?
+                .as_millis();
+            if now >= u128::from(deadline) {
+                return Err(ListenerError::CommandTimedOut);
+            }
+        }
+        Ok(())
+    };
+    check_deadline()?;
     request.endpoint.validate_listener()?;
     request.identity.validate()?;
 
@@ -118,6 +148,7 @@ fn kill_listener_sync(request: KillListenerRequest) -> Result<ListenerActionResu
         })
         .ok_or(ListenerError::StaleTarget)?;
     let action = validate_kill_target(&request, &observed)?;
+    check_deadline()?;
 
     match action {
         KillAction::WindowsProcess => terminate_windows_process(&request.identity)?,

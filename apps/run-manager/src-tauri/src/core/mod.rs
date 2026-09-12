@@ -15,3 +15,5 @@ pub mod workspace_diagnostics;
 pub mod workspace_orchestration;
 pub mod workspace_task_control;
 pub mod workspace_tasks;
+
+pub mod runtime_controls;

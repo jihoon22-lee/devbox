@@ -123,7 +123,9 @@ pub(crate) fn component(name: &str) -> bool {
 pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
     match component {
         "workspace.runtime" => {
-            route == "tasks" && run_manager_lib::component::COMMANDS.contains(&method)
+            route == "tasks"
+                && run_manager_lib::component::COMMANDS.contains(&method)
+                && !run_manager_lib::component::legacy_control_method(method)
         }
         "workspace.processes" => {
             route == "runtime"
@@ -163,11 +165,17 @@ fn issue(error: String) -> &'static str {
     // Existing engines also return OS/SQLite diagnostics. Only fixed public
     // codes can cross this product boundary; no path/SQL/environment is echoed.
     match error.as_str() {
+        "runtime_control_in_progress" => "runtime_control_in_progress",
+        "runtime_control_recovery_required" => "runtime_control_recovery_required",
+        "runtime_control_failed" => "runtime_control_failed",
+        "runtime_control_unavailable" => "runtime_control_unavailable",
+        "runtime_control_owner_unsettled" => "runtime_control_owner_unsettled",
         "component_args_invalid" => "invalid_request",
         "component_storage_changed" => "runtime_store_changed",
         "runtime_log_changed" => "runtime_log_changed",
         "runtime_log_unavailable" | "runtime_log_identity_invalid" => "runtime_log_unavailable",
         "process_action_stale" => "process_action_stale",
+        "process_owner_unsettled" => "process_owner_unsettled",
         "process_action_invalid" => "invalid_request",
         "process_observation_unavailable" => "process_observation_unavailable",
         "workspace-task-source-changed" => "runtime_task_source_changed",
@@ -389,6 +397,63 @@ pub(crate) async fn dispatch(
                         Ok(Value::Null)
                     }
                 }
+                "kill_listener" => {
+                    #[derive(Deserialize)]
+                    #[serde(deny_unknown_fields)]
+                    struct Input {
+                        request: port_manager_lib::component::KillListenerRequest,
+                    }
+                    let input: Input = args(value)?;
+                    input
+                        .request
+                        .endpoint
+                        .validate_listener()
+                        .map_err(|_| "invalid_request")?;
+                    input
+                        .request
+                        .identity
+                        .validate()
+                        .map_err(|_| "invalid_request")?;
+                    let observed = match &input.request.identity {
+                        port_manager_lib::component::ListenerIdentity::Windows {
+                            pid,
+                            start_time,
+                        } => run_manager_lib::scheduler::ObservedProcess::Windows {
+                            pid: *pid,
+                            creation_filetime: start_time.parse().map_err(|_| "invalid_request")?,
+                        },
+                        port_manager_lib::component::ListenerIdentity::Wsl {
+                            distro,
+                            pid,
+                            start_tick,
+                        } => run_manager_lib::scheduler::ObservedProcess::Wsl {
+                            distro: distro.clone(),
+                            pid: *pid,
+                            start_tick: *start_tick,
+                        },
+                        _ => return Err("runtime_container_owner_unavailable"),
+                    };
+                    let owner = run_manager_lib::component::owning_task(app, observed)
+                        .await
+                        .map_err(issue)?;
+                    crate::files_host::current_deadline(deadline)?;
+                    if let Some(id) = owner {
+                        run_manager_lib::component::offer_product_open(
+                            app,
+                            devbox_applink::OpenRequest {
+                                target: devbox_applink::OpenTarget::Task { id: id.clone() },
+                                from: Some("workspace".into()),
+                            },
+                        )
+                        .map_err(issue)?;
+                        navigate(app, "tasks", context)?;
+                        Ok(json!({"kind":"ownedTask","taskId":id}))
+                    } else {
+                        port_manager_lib::component::kill_external_listener(input.request, deadline)
+                            .await
+                            .map_err(issue)
+                    }
+                }
                 "handoff_container_stop" => Err("runtime_container_owner_unavailable"),
                 _ => port_manager_lib::component::dispatch(app, method, value)
                     .await
@@ -425,7 +490,10 @@ mod tests {
         ));
         assert!(!allowed("workspace.processes", "runtime", "kill_listener"));
         for method in run_manager_lib::component::COMMANDS {
-            assert!(allowed("workspace.runtime", "tasks", method));
+            assert_eq!(
+                allowed("workspace.runtime", "tasks", method),
+                !run_manager_lib::component::legacy_control_method(method)
+            );
             assert!(!allowed("workspace.runtime", "runtime", method));
             assert!(!allowed("workspace.process-actions", "runtime", method));
             assert!(!allowed("workspace.logs", "tasks", method));

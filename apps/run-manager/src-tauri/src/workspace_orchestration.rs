@@ -11,7 +11,7 @@ use crate::core::workspace_orchestration::{
 use crate::core::workspace_tasks::{
     revalidate_workspace_task_execution, verify_workspace_task_executions,
 };
-use crate::scheduler::SchedulerCoordinator;
+use crate::scheduler::{SchedulerCoordinator, WorkspaceOperationLease};
 use crate::storage::{current_epoch_millis, DatabaseState};
 use std::collections::BTreeMap;
 use std::sync::Arc;
@@ -33,6 +33,9 @@ pub fn start_workspace_task_operation(
     root_job_id: &str,
     fail_fast: bool,
 ) -> Result<WorkspaceTaskOperationView, String> {
+    let lease = coordinator
+        .retain_workspace_operation()
+        .map_err(str::to_owned)?;
     let root = database
         .get_workspace_task_execution(root_job_id)
         .map_err(|_| "workspace-task-operation-storage".to_owned())?
@@ -61,17 +64,19 @@ pub fn start_workspace_task_operation(
             _ => "workspace-task-operation-storage".to_owned(),
         })?;
     let _ = crate::integration::write_workspace_tasks(database.as_ref());
-    spawn_workspace_task_operation(database, coordinator, operation.id.clone(), plan);
+    spawn_workspace_task_operation(database, coordinator, operation.id.clone(), plan, lease);
     Ok(operation)
 }
 
-pub fn spawn_workspace_task_operation(
+fn spawn_workspace_task_operation(
     database: Arc<DatabaseState>,
     coordinator: SchedulerCoordinator,
     operation_id: String,
     plan: WorkspaceTaskOperationPlan,
+    lease: WorkspaceOperationLease,
 ) {
     tauri::async_runtime::spawn(async move {
+        let _lease = lease;
         if let Err(code) = execute_workspace_task_operation(
             Arc::clone(&database),
             coordinator.clone(),
@@ -83,14 +88,22 @@ pub fn spawn_workspace_task_operation(
             // Never terminalize the parent ahead of an owned process. First
             // close the launch gate, then prove each exact child is terminal.
             let _ = database.request_workspace_task_operation_stop(&operation_id);
-            let _ = settle_owned_operation(
-                &database,
-                &coordinator,
-                &operation_id,
-                WorkspaceTaskOperationStatus::Failed,
-                code,
-            )
-            .await;
+            loop {
+                let settled = settle_owned_operation(
+                    &database,
+                    &coordinator,
+                    &operation_id,
+                    WorkspaceTaskOperationStatus::Failed,
+                    code,
+                )
+                .await;
+                if settled.is_ok() || !coordinator.is_shutdown_requested() {
+                    break;
+                }
+                // Exit retains this writer until the owned-run terminal rows
+                // and parent receipt are durable. Never abort a DAG owner.
+                tokio::time::sleep(POLL_INTERVAL).await;
+            }
         }
         let _ = crate::integration::write_workspace_tasks(database.as_ref());
     });
@@ -121,6 +134,11 @@ async fn execute_workspace_task_operation(
         .fail_fast;
 
     for layer in &plan.layers {
+        if coordinator.is_shutdown_requested() {
+            database
+                .request_workspace_task_operation_stop(operation_id)
+                .map_err(|_| "workspace-task-operation-storage")?;
+        }
         if operation_status(&database, operation_id)? == WorkspaceTaskOperationStatus::Stopping {
             settle_cancelled(&database, &coordinator, operation_id).await?;
             return Ok(());
@@ -129,6 +147,11 @@ async fn execute_workspace_task_operation(
         let mut owned = BTreeMap::<String, String>::new();
         let mut layer_failed = false;
         for job_id in layer {
+            if coordinator.is_shutdown_requested() {
+                database
+                    .request_workspace_task_operation_stop(operation_id)
+                    .map_err(|_| "workspace-task-operation-storage")?;
+            }
             if operation_status(&database, operation_id)? != WorkspaceTaskOperationStatus::Running {
                 settle_cancelled(&database, &coordinator, operation_id).await?;
                 return Ok(());
@@ -263,6 +286,11 @@ async fn wait_for_owned_layer(
     fail_fast: bool,
 ) -> Result<LayerOutcome, &'static str> {
     while !owned.is_empty() {
+        if coordinator.is_shutdown_requested() {
+            database
+                .request_workspace_task_operation_stop(operation_id)
+                .map_err(|_| "workspace-task-operation-storage")?;
+        }
         if operation_status(database, operation_id)? == WorkspaceTaskOperationStatus::Stopping {
             settle_cancelled(database, coordinator, operation_id).await?;
             return Ok(LayerOutcome::Cancelled);

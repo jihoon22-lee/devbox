@@ -36,7 +36,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         : component === "workspace.runtime" ? "tasks" : component === "workspace.logs" ? "logs"
         : component === "workspace.processes" || component === "workspace.process-actions" ? "runtime" : "overview";
       return componentCall<T>(snapshot, component, method, args, ownerRoute);
-    });
+    }, description.handshake.installationId);
     connected = true;
   }
   const [tasksDirty, setTasksDirty] = useState(false);

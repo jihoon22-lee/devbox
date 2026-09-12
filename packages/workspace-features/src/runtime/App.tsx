@@ -1,3 +1,4 @@
+import { isProductHosted, WorkspaceOperationError } from "../transport";
 import {
   ContextMenu,
   useContextMenu,
@@ -183,7 +184,8 @@ export function provenanceLabel(row: PortRow): string {
   return source;
 }
 
-export function safeActionError(_error: unknown): string {
+export function safeActionError(error: unknown): string {
+  if (error instanceof WorkspaceOperationError) return error.message;
   return "작업을 완료하지 못했습니다. 목록을 새로 고친 후 다시 시도하세요.";
 }
 
@@ -273,6 +275,10 @@ type ProcessPathState = {
   rowKey: string;
   path: string | null;
 };
+
+function runtimeOwner(row: PortRow): PortCorrelation | undefined {
+  return isProductHosted() ? row.correlations?.find(owner => owner.source_app === "run-manager" && owner.confidence === "verified") : undefined;
+}
 
 export default function App({ active = true }: { active?: boolean }) {
   const activeRef = useRef(active);
@@ -555,6 +561,8 @@ export default function App({ active = true }: { active?: boolean }) {
       setError("식별 정보를 사용할 수 없습니다. 목록을 새로 고친 후 시도하세요.");
       return;
     }
+    const owner = runtimeOwner(row);
+    if (owner) { await onOpenCorrelation(owner); return; }
     const processLabel = row.process_name ? " (" + row.process_name + ")" : "";
     const actionLabel = row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료";
     if (!window.confirm(row.local_addr + processLabel + " " + actionLabel + "할까요?")) return;
@@ -569,7 +577,9 @@ export default function App({ active = true }: { active?: boolean }) {
         row.source === "container"
           ? { kind: "handoff", handoff: await handoffContainerStop(request) }
           : await killListener(request);
-      if (result.kind === "handoff" && mounted.current) {
+      if (result.kind === "ownedTask") {
+        if (mounted.current) setHandoff("Workspace가 소유한 실행입니다. 해당 작업에서 중지하거나 재시작해 주세요.");
+      } else if (result.kind === "handoff" && mounted.current) {
         setHandoff(
           "WSL Desktop에서 " + result.handoff.container_id + " 컨테이너를 중지하세요.",
         );
@@ -1085,7 +1095,7 @@ export default function App({ active = true }: { active?: boolean }) {
                         type="button"
                         className="btn danger"
                         aria-label={
-                          row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료"
+                          runtimeOwner(row) ? "작업에서 중지 또는 재시작" : row.source === "container" ? "WSL Desktop에서 중지" : "리스너 종료"
                         }
                         disabled={busy || !snapshotHealthy}
                         onClick={() => void onKill(row)}
@@ -1096,7 +1106,7 @@ export default function App({ active = true }: { active?: boolean }) {
                             : "종료 중..."
                           : row.source === "container"
                             ? "중지"
-                            : "종료"}
+                            : runtimeOwner(row) ? "작업 열기" : "종료"}
                       </button>
                     )}
                     {row.port > 0 && isListening(row) && (

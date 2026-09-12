@@ -16,7 +16,8 @@ use crate::core::workspace_tasks::{
 };
 use crate::logs::{LogStream, LogStreamHandle, LogStreams, LOG_RELATIVE_ROOT};
 use crate::scheduler::{
-    AdapterError, AdapterFuture, ExecutionAdapter, ExecutionExit, ExecutionHandle, ExecutionRequest,
+    AdapterError, AdapterFuture, ExecutionAdapter, ExecutionExit, ExecutionHandle,
+    ExecutionRequest, ObservedProcess,
 };
 use crate::storage::DatabaseState;
 #[cfg(windows)]
@@ -898,6 +899,7 @@ fn spawn_windows_drain(
 
 #[cfg(windows)]
 struct WindowsExecutionHandle {
+    child: Arc<windows::WindowsChild>,
     shared: Arc<SharedTerminal>,
     metadata: RunExecutionMetadata,
 }
@@ -916,6 +918,7 @@ impl WindowsExecutionHandle {
         grace: Duration,
     ) -> Self {
         let child = Arc::new(child);
+        let owned_child = child.clone();
         let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let (failure_tx, mut failure_rx) = spawn_drain_error_channel();
         let mut drains = vec![
@@ -1128,6 +1131,7 @@ impl WindowsExecutionHandle {
             let _ = result_tx.send(Some(final_result));
         });
         Self {
+            child: owned_child,
             shared: Arc::new(shared),
             metadata,
         }
@@ -1145,12 +1149,32 @@ impl ExecutionHandle for WindowsExecutionHandle {
         Box::pin(async move { SharedTerminal::wait(receiver).await })
     }
 
+    fn owns_process(&self, process: ObservedProcess) -> AdapterFuture<'_, bool> {
+        let child = self.child.clone();
+        Box::pin(async move {
+            match process {
+                ObservedProcess::Windows {
+                    pid,
+                    creation_filetime,
+                } => tokio::task::spawn_blocking(move || {
+                    child.contains_process(pid, creation_filetime)
+                })
+                .await
+                .map_err(|_| AdapterError::new("process-owner-unavailable"))?
+                .map_err(|_| AdapterError::new("process-owner-unavailable")),
+                _ => Ok(false),
+            }
+        })
+    }
+
     fn metadata(&self) -> RunExecutionMetadata {
         self.metadata.clone()
     }
 }
 
 struct WslExecutionHandle {
+    distro: String,
+    identity: crate::core::shell::WslProcessIdentity,
     shared: Arc<SharedTerminal>,
     metadata: RunExecutionMetadata,
 }
@@ -1169,6 +1193,8 @@ impl WslExecutionHandle {
         metadata: RunExecutionMetadata,
         grace: Duration,
     ) -> Self {
+        let owned_distro = distro.clone();
+        let owned_identity = identity.clone();
         let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let (failure_tx, mut failure_rx) = spawn_drain_error_channel();
         let mut drains = vec![
@@ -1351,6 +1377,8 @@ impl WslExecutionHandle {
             let _ = result_tx.send(Some(final_result));
         });
         Self {
+            distro: owned_distro,
+            identity: owned_identity,
             shared: Arc::new(shared),
             metadata,
         }
@@ -1365,6 +1393,23 @@ impl ExecutionHandle for WslExecutionHandle {
     fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
         let receiver = self.shared.result.subscribe();
         Box::pin(async move { SharedTerminal::wait(receiver).await })
+    }
+
+    fn owns_process(&self, process: ObservedProcess) -> AdapterFuture<'_, bool> {
+        Box::pin(async move {
+            match process {
+                ObservedProcess::Wsl {
+                    distro,
+                    pid,
+                    start_tick,
+                } if distro == self.distro => {
+                    wsl::contains_process(&self.distro, &self.identity, pid, start_tick)
+                        .await
+                        .map_err(|_| AdapterError::new("process-owner-unavailable"))
+                }
+                _ => Ok(false),
+            }
+        })
     }
 
     fn metadata(&self) -> RunExecutionMetadata {

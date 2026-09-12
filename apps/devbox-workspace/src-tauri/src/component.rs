@@ -335,12 +335,24 @@ async fn execute_runtime(
     request: Request,
     context_permit: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
-    let permit = runtime.engine_requests.reserve_with_limit(24)?;
+    let control_method = if request.method == "runtime_control" {
+        request
+            .args
+            .get("method")
+            .and_then(Value::as_str)
+            .unwrap_or("")
+    } else {
+        &request.method
+    };
+    let stopping = crate::runtime_host::stops(control_method);
+    let permit = runtime
+        .engine_requests
+        .reserve_with_limit(if stopping { 32 } else { 24 })?;
     let host = runtime.host()?;
     let owners = runtime.engines.clone();
     let definitions = runtime.definitions.clone();
     let shutdown = runtime.shutdown_started.clone();
-    let workers = if crate::runtime_host::stops(&request.method) {
+    let workers = if stopping {
         runtime.engine_stop_workers.clone()
     } else {
         runtime.engine_workers.clone()

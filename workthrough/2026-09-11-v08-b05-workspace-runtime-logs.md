@@ -83,8 +83,32 @@ form switch; it was corrected. The follow-up typecheck and Rust check passed. No
 Clippy, build or affected run was added after the verification-cadence correction.
 New navigation and owner fixtures remain queued for PR completion validation.
 
-Still required within B05: durable retry/operation receipts, complete DAG retirement,
-owned-service versus external-process actions, diagnostics/internal artifact delivery,
-inactive WAL-consistent import with history/log/secret mappings, and final Windows/WSL
-acceptance. Temporary unavailable responses in the development host are not acceptance
+Still required within B05: diagnostics/internal artifact delivery, inactive
+WAL-consistent import with history/log/secret mappings, and final Windows/WSL
+acceptance of the integrated execution and recovery paths. Temporary unavailable responses in the development host are not acceptance
 completion. This work has not been merged or released.
+
+## Durable controls and process ownership
+
+Product-only SQLite receipt tables reserve each closed start/stop/restart request
+before execution. The frontend persists only its opaque request ID and bounded
+ID/boolean arguments before IPC, retains them after transport loss, and clears them
+after confirmed completion. Replays return the existing result; native restart marks
+unfinished submissions interrupted. The recovery view requires explicit state review
+and unsettled owned runs block review. Standalone source schema 4 is unchanged.
+
+DAG writers now retain a scheduler lease through terminal recording. Service stop
+retains its generation and run reference after failed termination, stops the exact
+linked run, and does not schedule backoff after intentional stop. The process broker
+queries retained execution handles: Windows Job Object membership uses exact creation
+FILETIME; WSL membership rechecks the owner marker, process start tick, PGID and SID.
+Owned descendants route to Tasks; only unowned processes reach the external kill
+boundary, which rechecks its deadline immediately before mutation.
+
+Queued regressions cover concurrent reservations, replay after reopen, interrupted
+requests, future-schema byte preservation, storage failure before IPC, unresolved
+service cleanup and descendant ownership. They have not been executed at this stage.
+Workspace TypeScript checking passed. Rust compilation found and corrected two fixture
+argument omissions and a SQLite row-iterator lifetime; the affected Workspace/Run
+Manager `cargo check --all-targets` then passed. No tests, Clippy, full build or affected
+run was added. Windows-only membership code still awaits the PR completion gate.

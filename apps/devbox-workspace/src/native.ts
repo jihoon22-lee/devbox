@@ -5,12 +5,18 @@ import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
+  runtime_control_in_progress: "같은 실행 요청이 처리 중입니다. 작업 상태를 확인한 뒤 다시 시도해 주세요.",
+  runtime_control_recovery_required: "중단된 요청을 자동으로 다시 실행하지 않았습니다. 실행 요청 복구에서 현재 상태를 확인해 주세요.",
+  runtime_control_failed: "실행 요청이 실패했습니다. 이력과 실행 상태를 확인한 뒤 새로 시도할 수 있습니다.",
+  runtime_control_unavailable: "실행 요청을 저장하거나 확인하지 못했습니다. 같은 요청으로 다시 시도해 주세요.",
+  runtime_control_owner_unsettled: "이전 실행의 종료가 아직 확인되지 않았습니다. 작업 상태를 확인해 주세요.",
   runtime_owner_unavailable: "실행 저장소를 열지 못했습니다. 기존 데이터는 보존되어 있습니다.",
   process_owner_unavailable: "Runtime 보기 설정을 열지 못했습니다. 기존 설정은 보존되어 있습니다.",
   logs_owner_unavailable: "로그 보기 설정을 열지 못했습니다. 기존 설정은 보존되어 있습니다.",
   runtime_store_changed: "실행 저장소가 변경되었습니다. 앱을 다시 시작해 주세요.",
   runtime_log_changed: "로그 소유권이 바뀌었습니다. 해당 실행에서 로그를 다시 열어 주세요.",
   runtime_log_unavailable: "이 실행의 로그가 삭제되었거나 읽을 수 없습니다.",
+  process_owner_unsettled: "실행 중인 작업의 프로세스 소유권을 확인 중입니다. 작업 상태가 확인된 뒤 다시 시도해 주세요.",
   process_action_stale: "선택한 프로세스 또는 실행이 바뀌었습니다. 새로 고친 뒤 다시 선택해 주세요.",
   process_observation_unavailable: "프로세스와 포트 정보를 읽지 못했습니다. 이전 목록은 유지됩니다.",
   runtime_task_source_changed: "작업 정의가 변경되었습니다. 가져오기와 실행 승인을 다시 확인해 주세요.",
@@ -229,7 +235,7 @@ export async function componentCall<T>(description: Description, component: stri
   if (response.operation.outcome.state !== "succeeded") {
     const issue=response.value?.issue??"operation_failed";
     const message=issue.startsWith("wsl_")?await import("./wslIssues").then(module=>module.wslIssueMessage(issue)).catch(()=>undefined):undefined;
-    throw new WorkspaceOperationError(message??issueMessage(issue));
+    throw new WorkspaceOperationError(message??issueMessage(issue), issue);
   }
   return response.value;
 }

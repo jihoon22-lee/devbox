@@ -1,6 +1,7 @@
 //! Native component entry points; the product host admits caller and operation.
 //! Calling these does not start the standalone application or select its stores.
 
+pub use crate::core::listeners::{KillListenerRequest, ListenerIdentity};
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -66,6 +67,14 @@ pub fn initialize(app: &tauri::AppHandle, data: &Path) -> Result<(), String> {
     data.checked()?;
     app.manage(data);
     Ok(())
+}
+
+pub async fn kill_external_listener(
+    request: KillListenerRequest,
+    deadline_ms: u64,
+) -> Result<serde_json::Value, String> {
+    let result = crate::commands::ports::kill_product_listener(request, deadline_ms).await?;
+    serde_json::to_value(result).map_err(|_| "component_response_invalid".into())
 }
 
 pub const COMMANDS: &[&str] = &[

@@ -25,7 +25,7 @@ use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, STGM_READ,
 };
 use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JobObjectExtendedLimitInformation,
     SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
@@ -554,6 +554,43 @@ unsafe impl Send for WindowsChild {}
 unsafe impl Sync for WindowsChild {}
 
 impl WindowsChild {
+    pub fn contains_process(
+        &self,
+        pid: u32,
+        expected_filetime: u64,
+    ) -> Result<bool, WindowsExecutionError> {
+        let process = OwnedWindowsHandle::new(
+            unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
+                .map_err(|error| win32_error("OpenProcess", error))?,
+            "observed process",
+        )?;
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        unsafe {
+            GetProcessTimes(
+                process.raw(),
+                &mut creation,
+                &mut exit,
+                &mut kernel,
+                &mut user,
+            )
+        }
+        .map_err(|error| win32_error("GetProcessTimes", error))?;
+        let observed =
+            (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+        if observed != expected_filetime {
+            return Err(WindowsExecutionError::Win32(
+                "process identity changed".into(),
+            ));
+        }
+        let mut owned = windows::core::BOOL::default();
+        unsafe { IsProcessInJob(process.raw(), Some(self.job.raw()), &mut owned) }
+            .map_err(|error| win32_error("IsProcessInJob", error))?;
+        Ok(owned.as_bool())
+    }
+
     pub fn identity(&self) -> WindowsProcessIdentity {
         self.identity
     }

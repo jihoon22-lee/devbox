@@ -8,8 +8,30 @@ use std::{
 };
 use tauri::{Emitter, Manager};
 
+#[cfg(feature = "desktop")]
+mod control;
+pub use crate::core::runtime_controls::legacy_control_method;
 mod logs;
 pub use logs::OwnedRunLog;
+
+pub async fn owning_task(
+    app: &tauri::AppHandle,
+    process: crate::scheduler::ObservedProcess,
+) -> Result<Option<String>, String> {
+    data_root(app)?;
+    let runtime = app
+        .try_state::<Arc<crate::lifecycle::RuntimeState>>()
+        .ok_or("component_state_unavailable")?
+        .inner()
+        .clone();
+    let result = runtime
+        .coordinator()
+        .owning_task(process)
+        .await
+        .map_err(|_| "process_owner_unsettled")?;
+    data_root(app)?;
+    Ok(result)
+}
 
 pub fn port_bindings(
     app: &tauri::AppHandle,
@@ -268,6 +290,10 @@ pub fn offer_product_open(
 }
 
 pub const COMMANDS: &[&str] = &[
+    "runtime_control",
+    "runtime_control_status",
+    "list_runtime_controls",
+    "review_runtime_control",
     "take_pending_open",
     "runtime_status",
     "show_main_window",
@@ -336,6 +362,10 @@ pub async fn dispatch(
     data_root(app)?;
     common_root(app)?;
     let result = match method {
+        "runtime_control" => control::execute(app, args).await,
+        "runtime_control_status" | "list_runtime_controls" | "review_runtime_control" => {
+            control::metadata(app, method, args)
+        }
         "take_pending_open" => crate::applink::__component_take_pending_open(app, args).await,
         "runtime_status" => crate::commands::__component_runtime_status(app, args).await,
         "show_main_window" => crate::commands::__component_show_main_window(app, args).await,

@@ -96,6 +96,7 @@ export interface ContainerStopHandoff {
 }
 
 export type ListenerActionResult =
+  | { kind: "ownedTask"; taskId: string }
   | { kind: "terminated" }
   | { kind: "handoff"; handoff: ContainerStopHandoff };
 

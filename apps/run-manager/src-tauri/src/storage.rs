@@ -264,6 +264,10 @@ CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
 
 /// A process-wide SQLite connection. Every connection is configured with the
 /// same foreign-key and busy-timeout policy before migrations run.
+mod controls;
+pub(crate) use controls::ControlReservation;
+pub use controls::RuntimeControlReceipt;
+
 pub struct DatabaseState {
     connection: Mutex<Connection>,
     legacy_publication: bool,
@@ -343,9 +347,15 @@ impl DatabaseState {
     /// Product-owned state cannot publish snapshots into a legacy owner's
     /// namespace. Workspace consumes native read-only projections instead.
     pub(crate) fn open_product(path: &Path) -> rusqlite::Result<Self> {
-        let mut database = Self::open(path)?;
-        database.legacy_publication = false;
-        Ok(database)
+        let mut connection = Connection::open(path)?;
+        configure(&connection)?;
+        controls::validate_schema(&connection)?;
+        migrate_connection(&mut connection)?;
+        controls::initialize(&mut connection)?;
+        Ok(Self {
+            connection: Mutex::new(connection),
+            legacy_publication: false,
+        })
     }
     pub(crate) fn allows_legacy_publication(&self) -> bool {
         self.legacy_publication
@@ -2275,7 +2285,7 @@ impl DatabaseState {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
             "UPDATE service_instances SET state = 'stopping', updated_at = ?
-             WHERE job_id = ? AND state IN ('running', 'starting', 'retry_waiting')",
+             WHERE job_id = ? AND state IN ('running', 'starting', 'retry_waiting', 'stopping')",
             params![now, service_id],
         )?;
         let instance = if changed == 1 {
@@ -2302,7 +2312,11 @@ impl DatabaseState {
              SET state = 'stopped', active_run_id = NULL,
                  owner_instance_id = NULL, attempt_token = NULL,
                  next_retry_at = NULL, updated_at = ?
-             WHERE job_id = ? AND generation = ?",
+             WHERE job_id = ? AND generation = ?
+               AND (active_run_id IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM runs WHERE id = service_instances.active_run_id
+                     AND status IN ('queued', 'starting', 'running', 'stopping')
+               ))",
             params![now, service_id, generation],
         )?;
         Ok(changed == 1)
