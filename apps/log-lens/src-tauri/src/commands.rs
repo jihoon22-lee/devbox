@@ -4,12 +4,12 @@ use crate::core::{
     SourceSnapshot, SourceSpec, SourceSummary,
 };
 use serde::Serialize;
-#[cfg(feature="standalone")]
+#[cfg(feature = "standalone")]
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::State;
-#[cfg(feature="standalone")]
+#[cfg(feature = "standalone")]
 use tauri::AppHandle;
+use tauri::State;
 use zeroize::Zeroizing;
 
 #[derive(Default)]

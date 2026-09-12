@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
+import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
 import { nativeMode, type Description } from "@devbox/product-shell/api";
@@ -6,9 +6,6 @@ import { configureProductTransport } from "@devbox/workspace-features/transport"
 import RegistryGate, { type Registry } from "./RegistryGate";
 import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
-import { listen } from "@tauri-apps/api/event";
-import type { RuntimeLogOpenRequest } from "@devbox/workspace-features/logs";
-import { runtimeDestination, runtimeLogRequest, runtimeDiagnostic } from "./runtimeNavigation";
 import {sourceFilePath} from "./sourceNavigation";
 
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
@@ -16,8 +13,7 @@ const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
-const RuntimeSettingsImport = lazy(() => import("./RuntimeSettingsImport"));
-const RuntimeImport = lazy(() => import("./RuntimeImport"));
+const NativeRuntimeRoutes = lazy(() => import("./NativeRuntimeRoutes"));
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
 const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
 const Logs = lazy(() => import("@devbox/workspace-features/logs"));
@@ -42,39 +38,9 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     connected = true;
   }
   const [tasksDirty, setTasksDirty] = useState(false);
-  const [engineVisited, setEngineVisited] = useState(() => new Set([route]));
-  const [runtimeLogOpen, setRuntimeLogOpen] = useState<RuntimeLogOpenRequest | null>(null);
-  const [runtimeNotice, setRuntimeNotice] = useState("");
-  const [runtimeSettingsRevision,setRuntimeSettingsRevision]=useState(0);
-  const [logSettingsRevision,setLogSettingsRevision]=useState(0);
-  const diagnosticOpen = useRef<(value: unknown) => void>(() => {});
-  const current = useRef({route, context:description.context, navigate, tasksDirty});
-  current.current = {route, context:description.context, navigate, tasksDirty};
-  useEffect(() => { setEngineVisited(previous => previous.has(route) ? previous : new Set([...previous, route])); }, [route]);
-  useEffect(() => {
-    let disposed = false;
-    const stops: Array<() => void> = [];
-    const keep = (stop: () => void) => { if (disposed) stop(); else stops.push(stop); };
-    void listen<unknown>("workspace://runtime-navigate", event => {
-      if (disposed) return;
-      const state = current.current;
-      const destination = runtimeDestination(event.payload, state.context, state.route);
-      if (!destination) return;
-      setRuntimeNotice(destination === "tasks" && state.tasksDirty ? "작성 중인 내용을 저장하거나 취소하면 요청한 작업으로 이동합니다." : "");
-      state.navigate(destination);
-    }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("작업 이동 연결을 시작하지 못했습니다."); });
-    void listen<unknown>("workspace://runtime-log", event => {
-      if (disposed) return;
-      const state = current.current;
-      const request = runtimeLogRequest(event.payload, state.context, state.route);
-      if (!request) return;
-      setRuntimeNotice("");
-      setRuntimeLogOpen(request);
-      state.navigate("logs");
-    }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("실행 로그 연결을 시작하지 못했습니다."); });
-    void listen<unknown>("workspace://runtime-diagnostic", event => { if (!disposed) diagnosticOpen.current(event.payload); }).then(keep).catch(() => { if (!disposed) setRuntimeNotice("진단 위치 연결을 시작하지 못했습니다."); });
-    return () => { disposed = true; stops.forEach(stop => stop()); };
-  }, []);
+  const isRuntimeRoute=["tasks","runtime","logs"].includes(route);
+  const [runtimeVisited,setRuntimeVisited]=useState(isRuntimeRoute);
+  useEffect(()=>{if(isRuntimeRoute)setRuntimeVisited(true);},[isRuntimeRoute]);
   const [ready, setReady] = useState(false);
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [dependenciesBusy, setDependenciesBusy] = useState(false);
@@ -113,13 +79,12 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     setFilesVisited(true); navigate("files");
   };
   const [filesVisited, setFilesVisited] = useState(route === "files");
-  diagnosticOpen.current = value => {
-    const request = runtimeDiagnostic(value, description.context, route);
-    if (!request || !selectedTree) return;
-    const path = sourceFilePath(selectedTree.binding.root, request.relativePath);
-    if (!path) return;
+  const openDiagnostic = (request:{id:string;relativePath:string;line:number;column:number|null}) => {
+    if (!selectedTree) return;
+    const path=sourceFilePath(selectedTree.binding.root,request.relativePath);
+    if(!path)return;
     setFileRequest({id:request.id,contextKey:JSON.stringify(description.context),path,line:request.line,column:request.column});
-    setFilesVisited(true); navigate("files");
+    setFilesVisited(true);navigate("files");
   };
   const markReady = useCallback(() => setReady(true), []);
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
@@ -127,7 +92,6 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     <div hidden={ready && route === "files"}>
       <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={tasksDirty || editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
     </div>
-    {runtimeNotice && <p role="status">{runtimeNotice}</p>}
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
     </div>}
@@ -142,15 +106,9 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         <Dependencies repo={{path:selectedTree.binding.root, canonicalKey:JSON.stringify(description.context), hasWorktrees:false}} onBusyChange={setDependenciesBusy}/>
       </Suspense>}
     </div>}
-    {ready && (engineVisited.has("tasks") || route === "tasks") && <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
-      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><RuntimeImport description={description} active={route === "tasks"} blocked={tasksDirty}/><Tasks active={route === "tasks"} onDirtyChange={setTasksDirty}/></Suspense>
-    </div>}
-    {ready && (engineVisited.has("runtime") || route === "runtime") && <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
-      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "runtime"} kind="runtime" onImported={()=>setRuntimeSettingsRevision(value=>value+1)}/><Runtime active={route === "runtime"} settingsRevision={runtimeSettingsRevision}/></Suspense>
-    </div>}
-    {ready && (engineVisited.has("logs") || route === "logs") && <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
-      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "logs"} kind="logs" onImported={()=>setLogSettingsRevision(value=>value+1)}/><Logs settingsRevision={logSettingsRevision} active={route === "logs"} openRequest={runtimeLogOpen}/></Suspense>
-    </div>}
+    {ready && (runtimeVisited||isRuntimeRoute) && <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
+      <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic}/>
+    </Suspense>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
         <LegacySessionImport key={JSON.stringify(description.context)} description={description} disabled={editing||recoveryImportBusy||lspImportBusy} onBusyChange={setSessionImportBusy} onApplied={reloadImportedSession}/>

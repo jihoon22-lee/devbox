@@ -33,7 +33,7 @@ assert frontend_only.dependency_scope == "none"
 rust_only = resolve("apps/run-manager/src-tauri/src/lib.rs")
 assert rust_only.frontend_scope == "none"
 assert rust_only.rust_scope == "packages"
-assert rust_only.rust_packages == ["run-manager"]
+assert rust_only.rust_packages == ["devbox-workspace", "run-manager"]
 
 frontend_manifest_lock = resolve("apps/wsl-desktop/package.json", "pnpm-lock.yaml")
 assert frontend_manifest_lock.frontend_scope == "apps"
@@ -82,7 +82,10 @@ for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "deve
     shared_domain = resolve(f"crates/{crate}/src/lib.rs")
     assert shared_domain.rust_packages == sorted([crate, legacy, "devbox-api-studio"])
 migration = resolve("crates/data-migration/src/lib.rs")
-assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge"]
+assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "run-manager"]
+for app in ["run-manager", "port-manager", "log-lens"]:
+    native_runtime = resolve(f"apps/{app}/src-tauri/src/component.rs")
+    assert native_runtime.rust_packages == sorted([app, "devbox-workspace"])
 api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
 assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
 
@@ -91,7 +94,7 @@ assert len(a11y.frontend_apps) == 19
 assert "packages/a11y" in a11y.frontend_packages
 
 process = resolve("crates/process/src/lib.rs")
-assert process.rust_packages == ["port-manager", "process"]
+assert process.rust_packages == ["devbox-workspace", "port-manager", "process"]
 
 search = resolve("crates/search/src/lib.rs")
 assert search.rust_packages == ["devbox-knowledge", "everything-plus", "knowledge-base", "search"]

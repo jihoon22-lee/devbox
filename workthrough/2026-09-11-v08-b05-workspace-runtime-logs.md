@@ -206,3 +206,21 @@ No tests/Clippy/application build/affected run has been added at this implementa
 stage. Parity/data inventories point to the new implementations and retain pending
 verification status. Container/session/Problem consumers and cross-product Artifact
 transport remain explicitly assigned to WP06/WP07, without a false completion claim.
+
+## PR completion validation in progress
+
+The affected resolver selects all. Its first preflight found outdated reverse-
+dependency expectations; fixtures now include Workspace as a native consumer of
+Run/Port/Logs and the Runtime importer as a data-migration consumer. The full
+frontend build passed, then the budget gate found Workspace initial JS 287,020 bytes
+above the existing 280,000-byte cap. Runtime route coordination and error messages
+are now loaded only when needed; event listeners are ready before interactive views
+mount. The final Workspace rebuild is 278,870 raw / 82,277 gzip bytes, within the
+unchanged 280,000 / 90,000 budgets. Other app builds/budgets were preserved rather
+than repeated. All frontend tests and remaining package type checks passed.
+
+Full Rust checking passed. Clippy found five needless borrows and one manual prefix
+strip in new importer/observation code; these were corrected and Clippy/formatting
+passed. The first full Rust test execution and uncovered fixture/metadata checks are
+still running. Failed phases are resumed without rerunning passed frontend tests or
+unrelated builds. Actual Windows/WSL execution and final PR CI remain outstanding.

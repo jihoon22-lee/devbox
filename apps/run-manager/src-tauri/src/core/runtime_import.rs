@@ -266,7 +266,7 @@ impl PreparedImport {
         let (_source_root, root_identity) = devbox_filesystem::open_filesystem_object(source, true)
             .map_err(|_| "runtime_import_source_changed")?;
         let (_source_database, database_identity) =
-            devbox_filesystem::open_filesystem_object(&source.join("data.db"), false)
+            devbox_filesystem::open_filesystem_object(source.join("data.db"), false)
                 .map_err(|_| "runtime_import_source_changed")?;
         for name in ["data.db", "data.db-wal", "data.db-shm"] {
             let path = source.join(name);
@@ -400,7 +400,7 @@ impl PreparedImport {
             }
         }
         if source.join("logs/runs").exists() {
-            devbox_filesystem::ensure_no_links(&source.join("logs/runs"))
+            devbox_filesystem::ensure_no_links(source.join("logs/runs"))
                 .map_err(|_| "runtime_import_source_changed")?;
             for entry in fs::read_dir(source.join("logs/runs"))
                 .map_err(|_| "runtime_import_source_changed")?
@@ -415,7 +415,7 @@ impl PreparedImport {
         if devbox_filesystem::filesystem_identity(source, true)
             .map_err(|_| "runtime_import_source_changed")?
             != root_identity
-            || devbox_filesystem::filesystem_identity(&source.join("data.db"), false)
+            || devbox_filesystem::filesystem_identity(source.join("data.db"), false)
                 .map_err(|_| "runtime_import_source_changed")?
                 != database_identity
         {

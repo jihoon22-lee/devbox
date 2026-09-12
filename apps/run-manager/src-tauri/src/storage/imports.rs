@@ -105,7 +105,7 @@ impl DatabaseState {
             devbox_filesystem::open_filesystem_object(destination, true)
                 .map_err(|_| "runtime_import_destination_conflict")?;
         let (_database_handle, database_identity) =
-            devbox_filesystem::open_filesystem_object(&destination.join("data.db"), false)
+            devbox_filesystem::open_filesystem_object(destination.join("data.db"), false)
                 .map_err(|_| "runtime_import_destination_conflict")?;
         let _maintenance = self.log_maintenance().map_err(|_| "runtime_import_busy")?;
         prepared.verify_logs(flag)?;
@@ -280,7 +280,7 @@ impl DatabaseState {
         if devbox_filesystem::filesystem_identity(destination, true)
             .map_err(|_| "runtime_import_destination_conflict")?
             != root_identity
-            || devbox_filesystem::filesystem_identity(&destination.join("data.db"), false)
+            || devbox_filesystem::filesystem_identity(destination.join("data.db"), false)
                 .map_err(|_| "runtime_import_destination_conflict")?
                 != database_identity
         {

@@ -125,9 +125,9 @@ pub(super) async fn resolve(
     deadline: u64,
     key: &str,
 ) -> Result<ProductPortAction> {
-    if key.starts_with("runtime-port-") {
-        if key.len() != 77
-            || !key[13..]
+    if let Some(identity) = key.strip_prefix("runtime-port-") {
+        if identity.len() != 64
+            || !identity
                 .bytes()
                 .all(|byte| byte.is_ascii_hexdigit() && !byte.is_ascii_uppercase())
         {
