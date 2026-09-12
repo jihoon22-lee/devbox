@@ -1,4 +1,4 @@
-import {seedTerminalImport,copyClosedTerminalImport,verifyTerminalImport} from "./windows-workspace-terminal-import.mjs";
+import {seedTerminalImport,copyClosedTerminalImport,verifyTerminalImport,cleanupTerminalImport} from "./windows-workspace-terminal-import.mjs";
 import {prepareRuntimeCrash,verifyRuntimeCrash} from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
@@ -117,7 +117,7 @@ async function start(product, suffix) {
   const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
   if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
   const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
-  let cdp, child;
+  let cdp, child, terminalImport;
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
@@ -187,7 +187,7 @@ async function start(product, suffix) {
       componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
       progress(product,suffix,"workspace-runtime-crash");
       const runtimeCrash=await prepareRuntimeCrash(cdp,directory);
-      const terminalImport=await seedTerminalImport(cdp);
+      terminalImport=await seedTerminalImport(cdp);
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
       copyClosedTerminalImport(terminalImport);
@@ -196,6 +196,7 @@ async function start(product, suffix) {
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
       componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);
       componentProbe.terminalImport=await verifyTerminalImport(cdp,terminalImport,id=>connect(port,child,performance.now()+45000,id));
+      cleanupTerminalImport(terminalImport);
       writeFileSync("product-foundation-evidence/workspace-terminal-import-"+suffix+".json",JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.terminalImport},null,2));
       writeFileSync(`product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.runtimeCrash},null,2));
     }
@@ -430,7 +431,11 @@ async function start(product, suffix) {
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
     return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
-  } catch (error) { stop({ child, cdp, policy, network }); throw error; }
+  } catch (error) {
+    stop({ child, cdp, policy, network });
+    try{cleanupTerminalImport(terminalImport);}catch(cleanup){throw new AggregateError([error,cleanup],"Native fixture cleanup incomplete");}
+    throw error;
+  }
 }
 
 function stop(instance) {

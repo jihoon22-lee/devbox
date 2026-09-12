@@ -28,23 +28,40 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
   const runtime=(method,args={})=>call("workspace.runtime",method,args,29000);
   const terminal=(method,args={})=>call("workspace.terminal",method,args,29000);
   const registry=(method,args={})=>call("workspace.registry",method,args,29000);
+  const control=(method,args)=>runtime("runtime_control",{operationId:randomUUID(),method,args});
   const sessions=async()=>success(await terminal("development_sessions"));
-  const sessionIds=[];let service,windowId,profileId,companion,context,primary;
+  const sessionIds=[],extraServices=[];let service,windowId,profileId,companion,context,linkedContext,primary;
   wsl(["/usr/bin/python3","-c","import os,sys; os.mkdir(sys.argv[1]); os.mkdir(sys.argv[1]+'/work'); open(sys.argv[1]+'/.fixture-owner','w').write(sys.argv[2])",linux,nonce]);
   try {
+    const git=(args)=>{const result=spawnSync("git",["-c","core.hooksPath="+path.join(root,"no-hooks"),"-C",root,...args],{encoding:"utf8",timeout:15000,windowsHide:true});assert.equal(result.status,0,result.stderr);};
+    git(["init","--initial-branch=fixture"]);
+    git(["-c","user.name=Synthetic Fixture","-c","user.email=fixture@example.invalid","commit","--allow-empty","-m","synthetic"]);
+    const linked=path.join(root,"linked");git(["worktree","add","-b","fixture-linked",linked]);
     const reviewed=success(await registry("preview_windows",{root}));
     context=success(await registry("apply_registration",{previewId:reviewed.previewId,name:"B06 owned Session fixture",action:"register"})).context;
     success(await registry("select_project",{context}));
     const script=path.join(root,"service.cjs");writeFileSync(script,"console.log('synthetic-session-ready');setInterval(()=>{},1000);\n",{flag:"wx"});
     service=success(await runtime("create_service",{input:{name:"B06 shared service",command:'"'+process.execPath+'" "'+script+'"',cwd:root,targetKind:"windows",targetDistro:null,environment:{action:"clear"},restartPolicy:"never",autoStart:false,healthTcpAddress:null,healthTcpPort:null}}));
-    const start=async()=>{
-      const prepared=success(await terminal("prepare_development_session",{operationId:randomUUID(),jobs:[service.id],terminalProfile:null}));
+    const prepare=async(jobs=[service.id])=>{
+      const request={operationId:randomUUID(),jobs,terminalProfile:null};
+      const prepared=success(await terminal("prepare_development_session",request));
       assert.equal(prepared.preflight.executionBlocked,false,JSON.stringify(prepared.preflight));
       sessionIds.push(prepared.session.id);
-      const args={id:prepared.session.id,revision:prepared.session.revision,planRevision:prepared.session.planRevision,mode:"startReviewed"};
-      success(await terminal("start_development_session",args));
-      await until(async()=>(await sessions()).sessions.find(value=>value.id===prepared.session.id&&value.phase==="active"),"Session did not become active");
-      return prepared.session.id;
+      assert.deepEqual(success(await terminal("prepare_development_session",request)).session,prepared.session);
+      return prepared.session;
+    };
+    const launch=async(prepared)=>{
+      const args={id:prepared.id,revision:prepared.revision,planRevision:prepared.planRevision,mode:"startReviewed"};
+      success(await terminal("start_development_session",args));return args;
+    };
+    const start=async(jobs=[service.id])=>{
+      const prepared=await prepare(jobs);await launch(prepared);
+      await until(async()=>(await sessions()).sessions.find(value=>value.id===prepared.id&&value.phase==="active"),"Session did not become active");
+      return prepared.id;
+    };
+    const stop=async(id)=>{
+      success(await terminal("stop_development_session",{id}));
+      await until(async()=>(await sessions()).sessions.find(value=>value.id===id&&value.phase==="stopped"),"Session did not stop");
     };
     const first=await start();const generation=success(await runtime("get_service_instance",{id:service.id})).generation;
     const second=await start();
@@ -60,6 +77,44 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     assert.equal(summary.draft.metadata.failedRuns,null);assert.equal(summary.draft.metadata.gitCommits,null);
     assert.deepEqual(success(await terminal("prepare_session_summary",summaryArgs)),summary);
     assert.ok(!JSON.stringify(summary).includes(script));
+
+    // A Session borrows an already running Runtime service without claiming it.
+    success(await control("start_service",{id:service.id}));
+    await until(async()=>success(await runtime("get_service_instance",{id:service.id})).state==="running","Borrowed service did not start");
+    const borrowedGeneration=success(await runtime("get_service_instance",{id:service.id})).generation;
+    const borrowed=await start();await stop(borrowed);
+    assert.equal(success(await runtime("get_service_instance",{id:service.id})).generation,borrowedGeneration);
+    assert.equal(success(await runtime("get_service_instance",{id:service.id})).state,"running");
+    success(await control("stop_service",{id:service.id}));
+    await until(async()=>success(await runtime("get_service_instance",{id:service.id})).state==="stopped","Borrowed fixture owner did not stop");
+
+    // Two actual Git worktrees can retain independent native owners concurrently.
+    const linkedPreview=success(await registry("preview_windows",{root:linked}));
+    assert.equal(linkedPreview.discovery.kind,"linkedWorktree");
+    linkedContext=success(await registry("apply_registration",{previewId:linkedPreview.previewId,name:"B06 linked worktree",action:"register"})).context;
+    assert.equal(linkedContext.projectId,context.projectId);assert.notEqual(linkedContext.worktreeId,context.worktreeId);
+    const mainSession=await start();
+    success(await registry("select_project",{context:linkedContext}));
+    const linkedService=success(await runtime("create_service",{input:{name:"B06 linked service",command:'"'+process.execPath+'" "'+script+'"',cwd:linked,targetKind:"windows",targetDistro:null,environment:{action:"clear"},restartPolicy:"never",autoStart:false,healthTcpAddress:null,healthTcpPort:null}}));extraServices.push(linkedService);
+    const linkedSession=await start([linkedService.id]);
+    assert.equal((await sessions()).sessions.find(value=>value.id===mainSession).phase,"active");
+    await stop(linkedSession);assert.equal(success(await runtime("get_service_instance",{id:service.id})).state,"running");
+    await stop(mainSession);success(await registry("select_project",{context}));
+
+    // Cancel immediately after approval; partial starts remain owned until retired.
+    const cancelled=await prepare();await launch(cancelled);await stop(cancelled.id);
+    const stoppedService=success(await runtime("get_service_instance",{id:service.id}));
+    assert.ok(!stoppedService||stoppedService.state==="stopped");
+
+    // One prepared service succeeds before a second service exits unsuccessfully.
+    const failureScript=path.join(root,"failure.cjs");writeFileSync(failureScript,"process.exit(7);\n",{flag:"wx"});
+    const failing=success(await runtime("create_service",{input:{name:"B06 partial failure",command:'"'+process.execPath+'" "'+failureScript+'"',cwd:root,targetKind:"windows",targetDistro:null,environment:{action:"clear"},restartPolicy:"never",autoStart:false,healthTcpAddress:null,healthTcpPort:null}}));extraServices.push(failing);
+    const partial=await prepare([service.id,failing.id]);await launch(partial);
+    await until(async()=>["degraded","active"].includes((await sessions()).sessions.find(value=>value.id===partial.id).phase),"Partial Session did not settle");
+    await until(async()=>["failed","stopped"].includes(success(await runtime("get_service_instance",{id:failing.id})).state),"Synthetic failure did not exit");
+    assert.equal(success(await runtime("get_service_instance",{id:service.id})).state,"running");
+    await stop(partial.id);
+    assert.equal(success(await runtime("get_service_instance",{id:service.id})).state,"stopped");
 
     const store=success(await terminal("list_workspace_profiles"));
     profileId=randomUUID();
@@ -108,7 +163,7 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     if(multiplexer!=="native")assert.ok(reconnected.every(value=>value.resumed));
     await assert.rejects(()=>invoke("write_initial_command",{sessionId:reconnected[0].id,data:"printf 'must-not-run'\r"}));
     const nativeTasks=await exerciseNativeWslTasks({cdp,call,success,distro,wsl,root:linux+"/project"});
-    return {nativeTasks,multiplexer,stateOnlyReconnect:true,sharedServiceLastHolderStop:true,summaryReceiptAndUnknownCounts:true,profileRevision:true,twoPanes:true,hiddenOutput:true,reloadKeepsPty:true,forcedWebglFallback:true,sigintPreservesPty:true};
+    return {nativeTasks,multiplexer,stateOnlyReconnect:true,borrowedServicePreserved:true,twoGitWorktrees:true,cancelRetiresOwnedResources:true,partialFailureCleanup:true,sharedServiceLastHolderStop:true,summaryReceiptAndUnknownCounts:true,profileRevision:true,twoPanes:true,hiddenOutput:true,reloadKeepsPty:true,forcedWebglFallback:true,sigintPreservesPty:true};
   } catch(error) { primary=error;throw error; }
   finally {
     const errors=[];
@@ -124,11 +179,17 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
       });
       retired=stopped&&retired;
     }
-    if(service)retired=(await attempt(async()=>success(await runtime("delete_service",{id:service.id}))))&&retired;
+    for(const item of [service,...extraServices].filter(Boolean)){
+      retired=(await attempt(async()=>{
+        success(await control("stop_service",{id:item.id}));
+        await until(async()=>["stopped","failed"].includes(success(await runtime("get_service_instance",{id:item.id})).state),"Fixture service did not retire");
+        success(await runtime("delete_service",{id:item.id}));
+      }))&&retired;
+    }
     if(profileId)await attempt(async()=>{const store=success(await terminal("list_workspace_profiles"));success(await terminal("delete_workspace_profile",{id:profileId,expectedRevision:store.revision}));});
     await attempt(async()=>{if(original)success(await registry("select_project",{context:original}));else success(await registry("clear_project"));});
     if(retired){
-      if(context)await attempt(async()=>{const state=success(await registry("snapshot"));success(await registry("remove",{revision:state.revision,context}));});
+      for(const target of [linkedContext,context].filter(Boolean))await attempt(async()=>{const state=success(await registry("snapshot"));success(await registry("remove",{revision:state.revision,context:target}));});
       await attempt(async()=>{
         assert.equal(realpathSync.native(root),rootIdentity);assert.equal(readFileSync(path.join(root,".fixture-owner"),"utf8"),nonce);
         rmSync(root,{recursive:true});

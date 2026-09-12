@@ -41,6 +41,16 @@ export async function exerciseNativeWslTasks({cdp,call,success,distro,wsl,root})
     const log=success(await call("workspace.problems","resolve",{id:problem.id,revision:problem.revision,log:true},29000));
     assert.equal(log.target.request.source.runId,runId);assert.equal(log.target.request.offset,diagnostics.items[0].offset);
 
+    // Exercise the actual Problems -> Files surface after a renderer reload.
+    await cdp.command("Page.reload");
+    await until(async()=>{try{return await cdp.evaluate("!!document.querySelector('nav')");}catch{return false;}},"Workspace renderer did not reload");
+    await cdp.evaluate("(async()=>{const d=await window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe');const label=d.features.find(f=>f.route==='problems').label;Array.from(document.querySelectorAll('nav button')).find(b=>b.textContent.trim()===label).click();})()");
+    await until(async()=>cdp.evaluate("Array.from(document.querySelectorAll('.problem-list li')).some(row=>row.textContent.includes('synthetic task problem'))"),"Matcher problem did not reach the UI");
+    await cdp.evaluate("Array.from(document.querySelectorAll('.problem-list li')).find(row=>row.textContent.includes('synthetic task problem')).querySelector('button').click()");
+    await until(async()=>cdp.evaluate("Array.from(document.querySelectorAll('.cm-content')).some(editor=>editor.textContent.includes('synthetic source'))"),"Problem navigation did not open native WSL source");
+    await cdp.evaluate("Array.from(document.querySelectorAll('button[aria-label]')).find(button=>button.getAttribute('aria-label').endsWith('fixture.rs 닫기')).click()");
+    await until(async()=>cdp.evaluate("!Array.from(document.querySelectorAll('button[aria-label]')).some(button=>button.getAttribute('aria-label').endsWith('fixture.rs 닫기'))"),"Fixture editor did not close");
+
     const second=success(await control("run_workspace_task_operation",{id:jobs.find(job=>job.label==="Native stopping fixture").jobId,failFast:true}));operations.push(second.id);
     const pid=await until(async()=>{const value=wsl(["/usr/bin/python3","-c","import pathlib,sys; p=pathlib.Path(sys.argv[1])/'linger'; print(p.read_text() if p.exists() else '')",root]);return value&&Number(value);},"Native WSL task did not start");
     wsl(["/usr/bin/python3","-c","import pathlib,sys; (pathlib.Path(sys.argv[1])/'.vscode/tasks.json').write_text('changed synthetic source')",root]);
@@ -50,7 +60,7 @@ export async function exerciseNativeWslTasks({cdp,call,success,distro,wsl,root})
     assert.equal(wsl(["/usr/bin/python3","-c","import pathlib,sys; print('gone' if not pathlib.Path('/proc/'+sys.argv[1]).exists() else 'present')",String(pid)]),"gone");
     assert.equal((await control("run_workspace_task_operation",{id:jobs[0].jobId,failFast:true})).operation.outcome.state,"failed");
     assert.ok(success(await runtime("list_workspace_tasks")).filter(job=>job.sourceId===applied.sourceId).every(job=>!job.trusted));
-    return {linuxSource:true,explicitTrust:true,actualCwd:true,matcherAndLogOffset:true,sourceChangeRejectsStart:true,sourceChangeDoesNotBlockOwnedStop:true};
+    return {linuxSource:true,explicitTrust:true,actualCwd:true,matcherAndLogOffset:true,problemToNativeFileUi:true,sourceChangeRejectsStart:true,sourceChangeDoesNotBlockOwnedStop:true};
   }catch(error){primary=error;throw error;}
   finally{
     const errors=[];

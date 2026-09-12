@@ -123,6 +123,10 @@
         "tray": true,
         "autostart": "none in app",
         "globalShortcut": "Optional Quick Summon allowlist; Ctrl+Alt+Space can collide with Launcher"
+      },
+      "implementationReview": {
+        "featureMappings": 37,
+        "evidence": "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
       }
     },
     {
@@ -1864,12 +1868,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_commands.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:take_pending_open",
@@ -1878,12 +1890,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_commands.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:open_wsl_file_in_log_lens",
@@ -1892,12 +1912,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        "apps/devbox-workspace/src-tauri/src/component.rs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:open_wsl_journal_in_log_lens",
@@ -1906,12 +1935,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        "apps/devbox-workspace/src-tauri/src/component.rs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:dashboard_snapshot",
@@ -1919,13 +1957,22 @@
       "sourceLine": 24,
       "kind": "native-command",
       "product": "workspace",
-      "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "route": "runtime",
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        ".github/scripts/windows-workspace-owned-wsl2.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src/RuntimeWsl.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:list_distros",
@@ -1933,13 +1980,22 @@
       "sourceLine": 35,
       "kind": "native-command",
       "product": "workspace",
-      "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "route": "runtime",
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        ".github/scripts/windows-workspace-owned-wsl2.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src/RuntimeWsl.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:run_wsl_command",
@@ -1948,12 +2004,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration. Unused legacy arbitrary-command RPC is not exposed; user-entered WSL commands use the authenticated Terminal PTY input."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:docker_ps",
@@ -1961,13 +2025,22 @@
       "sourceLine": 58,
       "kind": "native-command",
       "product": "workspace",
-      "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "route": "runtime",
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        ".github/scripts/windows-workspace-owned-wsl2.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src/RuntimeWsl.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:docker_action",
@@ -1975,13 +2048,22 @@
       "sourceLine": 88,
       "kind": "native-command",
       "product": "workspace",
-      "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "route": "runtime",
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        ".github/scripts/windows-workspace-owned-wsl2.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src/RuntimeWsl.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:list_workspace_profiles",
@@ -1990,12 +2072,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:save_workspace_profile",
@@ -2004,12 +2094,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:delete_workspace_profile",
@@ -2018,12 +2116,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:windows_build_number",
@@ -2032,12 +2138,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:start_session",
@@ -2046,12 +2160,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:attach_session",
@@ -2060,12 +2182,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:write_session",
@@ -2074,12 +2204,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:broadcast",
@@ -2088,12 +2226,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:resize_session",
@@ -2102,12 +2248,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:close_session",
@@ -2116,12 +2270,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:list_sessions",
@@ -2130,12 +2292,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:detect_multiplexers",
@@ -2144,12 +2314,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-multiplexer.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/terminal_owner.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:inspect_shell_integration",
@@ -2158,12 +2336,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        "apps/wsl-desktop/src-tauri/src/core/shell_integration.rs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/commands/shell_integration.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:command:update_shell_integration",
@@ -2172,12 +2358,20 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        "apps/wsl-desktop/src-tauri/src/core/shell_integration.rs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/commands/shell_integration.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:App.tsx",
@@ -2186,12 +2380,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/App.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/ActionPalette.tsx",
@@ -2200,12 +2402,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/ActionPalette.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/AppDialog.tsx",
@@ -2214,12 +2424,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/AppDialog.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/DistroPanel.tsx",
@@ -2227,13 +2445,22 @@
       "sourceLine": 1,
       "kind": "frontend-surface",
       "product": "workspace",
-      "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "route": "runtime",
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-containers.mjs",
+        ".github/scripts/windows-workspace-owned-wsl2.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src/RuntimeWsl.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/PaneCanvas.tsx",
@@ -2242,12 +2469,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/PaneCanvas.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/SettingsPanel.tsx",
@@ -2256,12 +2491,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/SettingsPanel.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/ShellIntegrationSettings.tsx",
@@ -2270,12 +2513,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        "apps/wsl-desktop/src-tauri/src/core/shell_integration.rs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/wsl-desktop/src-tauri/src/commands/shell_integration.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/ShortcutReference.tsx",
@@ -2284,12 +2535,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/ShortcutReference.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/TabBar.tsx",
@@ -2298,12 +2557,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/TabBar.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/TermPane.tsx",
@@ -2312,12 +2579,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/TermPane.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:surface:components/WorkspacePanel.tsx",
@@ -2326,12 +2601,20 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-sessions.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "packages/workspace-features/src/terminal/components/WorkspacePanel.tsx",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:store:src/lib/settings.ts",
@@ -2340,12 +2623,20 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:store:src/lib/storage.ts",
@@ -2354,12 +2645,20 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "wsl-desktop:store:src/lib/workspace.ts",
@@ -2368,12 +2667,20 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "terminal",
-      "dataOwner": "terminal",
-      "authority": "terminal",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.terminal",
+      "authority": "Workspace native primary/companion session, immutable context and exact PTY/distro/executable/container leases",
+      "migration": "Closed, exclusive legacy browser snapshot plus original JSON; native destination revisions and receipts; no automatic PTY or command",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
       "ownerIssue": 548,
-      "status": "pending"
+      "status": "pending",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/terminal_host.rs",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ],
+      "verificationScope": "B06 implementation and synthetic/native fixtures prepared; final detailed verification and Windows/WSL acceptance pending. B07 owns authenticated cross-product transport and global shortcut registration."
     },
     {
       "legacyFeatureId": "api-playground:command:take_pending_open",
