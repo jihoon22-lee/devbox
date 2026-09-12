@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 8,
+  "catalogRevision": 9,
   "channel": "development",
   "products": [
     {
@@ -201,6 +201,13 @@
       "id": "workspace.logs",
       "owner": "workspace",
       "authority": "log-read",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.terminal",
+      "owner": "workspace",
+      "authority": "terminal-session",
       "lifecycle": "product",
       "protocolVersion": 1
     }

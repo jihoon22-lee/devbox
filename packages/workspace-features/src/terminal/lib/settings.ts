@@ -1,3 +1,4 @@
+import { terminalStorageKey } from "./storageNamespace";
 import type { MultiplexerKind } from "../types";
 
 export type CursorStyle = "block" | "underline" | "bar";
@@ -165,7 +166,7 @@ export function normalizeSettings(value: unknown): TerminalSettings {
 
 export function loadSettings(): TerminalSettings {
   try {
-    const raw: unknown = JSON.parse(localStorage.getItem(SETTINGS_KEY) ?? "null");
+    const raw: unknown = JSON.parse(localStorage.getItem(terminalStorageKey(SETTINGS_KEY)) ?? "null");
     if (
       !isRecord(raw)
       || (raw.version !== SETTINGS_VERSION && raw.version !== LEGACY_SETTINGS_VERSION)
@@ -178,7 +179,7 @@ export function loadSettings(): TerminalSettings {
 
 export function saveSettings(settings: TerminalSettings): void {
   try {
-    localStorage.setItem(SETTINGS_KEY, JSON.stringify({ version: SETTINGS_VERSION, ...settings }));
+    localStorage.setItem(terminalStorageKey(SETTINGS_KEY), JSON.stringify({ version: SETTINGS_VERSION, ...settings }));
   } catch {
     /* 저장 실패는 현재 창의 동작을 막지 않는다 */
   }

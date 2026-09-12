@@ -1,3 +1,5 @@
+import { componentInvoke, isProductHosted } from "../../transport";
+import { terminalStorageKey } from "./storageNamespace";
 import type {
   Layout,
   MultiplexerKind,
@@ -241,7 +243,7 @@ export function workspaceFromRuntime(
 
 export function loadLastWorkspace(): WorkspaceDefinition | null {
   try {
-    const value: unknown = JSON.parse(localStorage.getItem(LAST_LAYOUT_KEY) ?? "null");
+    const value: unknown = JSON.parse(localStorage.getItem(terminalStorageKey(LAST_LAYOUT_KEY)) ?? "null");
     if (!isRecord(value) || (value.version !== 1 && value.version !== LAYOUT_VERSION)) return null;
     return normalizeWorkspace(value);
   } catch {
@@ -249,12 +251,38 @@ export function loadLastWorkspace(): WorkspaceDefinition | null {
   }
 }
 
-export function saveLastWorkspace(workspace: WorkspaceDefinition | null): void {
+let layoutRevision:string|undefined;
+let layoutOwner:string|undefined;
+let pendingLayout:Promise<void>=Promise.resolve();
+
+/** Native metadata is authoritative before any saved pane can start/reconnect. */
+export function initializeProductLayout(owner:string,value:{revision:string;layout:unknown}):void {
+  if(!/^[a-f0-9]{64}$/.test(value.revision)||!/^[a-f0-9-]{36}$/.test(owner))throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
+  const workspace=value.layout===null?null:normalizeWorkspace(value.layout);
+  if(value.layout!==null&&!workspace)throw new Error("터미널 레이아웃을 확인하지 못했습니다.");
+  layoutOwner=owner;layoutRevision=value.revision;
+  writeLocalLayout(workspace);
+}
+function writeLocalLayout(workspace:WorkspaceDefinition|null):void {
+  if(!workspace){localStorage.removeItem(terminalStorageKey(LAST_LAYOUT_KEY));return;}
+  const persisted:PersistedLayout={version:LAYOUT_VERSION,...workspace};
+  localStorage.setItem(terminalStorageKey(LAST_LAYOUT_KEY),JSON.stringify(persisted));
+}
+export function saveLastWorkspace(workspace: WorkspaceDefinition | null): Promise<void> {
   const normalized = workspace ? normalizeWorkspace(workspace) : null;
-  if (!normalized) {
-    localStorage.removeItem(LAST_LAYOUT_KEY);
-    return;
-  }
-  const persisted: PersistedLayout = { version: LAYOUT_VERSION, ...normalized };
-  localStorage.setItem(LAST_LAYOUT_KEY, JSON.stringify(persisted));
+  if(!isProductHosted()){writeLocalLayout(normalized);return Promise.resolve();}
+  if(workspace&&!normalized)return Promise.reject(new Error("터미널 레이아웃을 확인하지 못했습니다."));
+  const save=async()=>{
+    if(!layoutRevision||!layoutOwner)throw new Error("터미널 레이아웃이 준비되지 않았습니다.");
+    const result=await componentInvoke("workspace.terminal")<{revision:string}>("save_terminal_layout",{
+      expectedRevision:layoutRevision,layout:normalized?{id:layoutOwner,name:"현재 터미널",...normalized}:null,
+    });
+    if(!/^[a-f0-9]{64}$/.test(result.revision))throw new Error("터미널 레이아웃 응답을 확인하지 못했습니다.");
+    layoutRevision=result.revision;writeLocalLayout(normalized);
+  };
+  const result=pendingLayout.then(save);
+  // An uncertain failed save retains the old revision; later writes fail closed
+  // until a reload reads the native revision, rather than overwriting new data.
+  pendingLayout=result.catch(()=>undefined);
+  return result;
 }

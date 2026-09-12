@@ -475,3 +475,10 @@ The [B05 workthrough](../../workthrough/2026-09-11-v08-b05-workspace-runtime-log
 records implementation and pending acceptance. Per-commit syntax/type checks are
 separate from the complete PR's detailed validation. New actual Windows, WSL and WAL
 import fixtures are authored but have not yet been executed.
+
+B06 in progress: the Terminal route manages Workspace-owned companion windows.
+Each native companion has its own context/session principal; hiding or reloading
+does not close its PTYs. Native layouts precede process creation, output uses a
+bounded replay cursor, and concurrent profile edits require the latest revision.
+This wiring still awaits the complete B06 Windows/WSL acceptance packet, settings
+migration, Development Sessions and Problems integration.

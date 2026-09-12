@@ -59,3 +59,37 @@ Minimal compilation (including test target syntax) passed in 5.245 seconds.
 Replay regression fixtures are authored but intentionally await completed B06
 implementation before execution. No detailed tests/build/Clippy/affected run was
 added at this intermediate commit.
+
+## Companion factory, renderer transport and private layouts
+
+Workspace now lazily loads a Terminal manager and creates native-owned companion
+windows with separate immutable SessionGuard/context bindings and capabilities.
+The existing main-window guard still rejects companions; no route/URL parameter
+grants authority. Main selection changes do not retarget an older companion.
+Requests run in retained bounded workers with separate stop capacity. Close hides
+a companion; product quit waits for its child/reader owners to retire. Durable
+operation IDs are stored before window creation, and previous-process records
+become interrupted without adopting old PTYs or replaying commands.
+
+The product UI pulls sequenced output and waits for xterm's callback before asking
+for more; missing replay bytes are shown explicitly. Detachment drops only that
+subscriber. Initial-command receipts reserve before input and suppress repeated
+mount writes. Layouts use native revisions and persist complete topology before
+PTY creation. Reload hydrates the native layout and reconnects existing pane keys;
+failed slots remain visible. Product localStorage keys are scoped to installation
+and, for layouts, companion session. Native profile envelopes retain import receipt
+space and reject stale concurrent saves/corrupt/future state; ordinary edits never
+publish legacy snapshots.
+
+Shared UI and Workspace TypeScript checks plus native all-target compilation passed.
+The first new consumer graph compiled dependencies (139.298 seconds total); later
+layout/profile integration reused it (21.211 seconds total, Rust 6.57 seconds).
+No detailed tests/Clippy/app build/affected execution was started. New replay and
+window-principal fixtures are prepared for the complete B06 verification packet.
+The final legacy-only TermPane branch was inspected to preserve its existing mock
+and direct-write behavior. Windows window/PTY behavior remains unexecuted.
+
+Still pending: retained project/distro identity through PTY launch, explicit failed
+pane retry/crash restore UX, Docker mutation identity/Logs consumers, shell updates,
+single-owner summon integration, JSON/WebView migration, full Development Session
+resource leases/phase coordinator, Problems and real Windows/WSL acceptance.

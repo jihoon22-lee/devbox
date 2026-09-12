@@ -479,7 +479,6 @@ pub(crate) fn attach_native(
         }
         drop(reader);
         if let Some(output) = &owned_output {
-            output.buffer.lock().unwrap().close();
             output.reader_done.store(true, Ordering::Release);
             // EOF need not imply child retirement. Keep the native owner if waiting fails.
             let _ = retire_owned(&state_for_reader, &sid, false);
@@ -561,6 +560,11 @@ pub(crate) fn retire_owned(
         };
         if exited && output.reader_done.load(Ordering::Acquire) {
             remove_session_if_handle(state, session_id, &handle);
+            output
+                .buffer
+                .lock()
+                .map_err(|_| "terminal_state_unavailable")?
+                .close();
             return Ok(());
         }
         if std::time::Instant::now() >= deadline {
@@ -586,6 +590,8 @@ pub fn write_session(
             .write_all(data.as_bytes())
             .map_err(|e| e.to_string())?;
         h.writer.flush().map_err(|e| e.to_string())?;
+    } else if !state.legacy_publication {
+        return Err("terminal_session_missing".into());
     }
     Ok(())
 }

@@ -33,6 +33,7 @@ code-pad = { path = "../../code-pad/src-tauri", default-features = false, featur
 repo-manager = { path = "../../repo-manager/src-tauri", default-features = false, features = ["desktop"] }
 run-manager = { path = "../../run-manager/src-tauri", default-features = false, features = ["desktop"] }
 port-manager = { path = "../../port-manager/src-tauri", default-features = false, features = ["desktop"] }
+wsl-desktop = { path = "../../wsl-desktop/src-tauri", default-features = false, features = ["desktop"] }
 log-lens = { path = "../../log-lens/src-tauri", default-features = false, features = ["desktop"] }
 devbox-integration = { package = "integration", path = "../../../crates/integration" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }

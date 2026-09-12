@@ -8,6 +8,7 @@ import { componentCall } from "./native";
 import ProjectDefinitions from "./ProjectDefinitions";
 import {sourceFilePath} from "./sourceNavigation";
 
+const TerminalManager=lazy(()=>import("./Terminal"));
 const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
@@ -31,7 +32,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       if (!snapshot) return Promise.reject(new Error("제품 연결 정보를 확인하지 못했습니다."));
       const ownerRoute = component === "workspace.files" || component === "workspace.lsp" ? "files"
         : component === "workspace.source" ? "source" : component === "workspace.dependencies" ? "dependencies"
-        : component === "workspace.runtime" ? "tasks" : component === "workspace.logs" ? "logs"
+        : component === "workspace.terminal" ? "terminal" : component === "workspace.runtime" ? "tasks" : component === "workspace.logs" ? "logs"
         : component === "workspace.processes" || component === "workspace.process-actions" ? "runtime" : "overview";
       return componentCall<T>(snapshot, component, method, args, ownerRoute);
     }, description.handshake.installationId);
@@ -106,6 +107,9 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         <Dependencies repo={{path:selectedTree.binding.root, canonicalKey:JSON.stringify(description.context), hasWorktrees:false}} onBusyChange={setDependenciesBusy}/>
       </Suspense>}
     </div>}
+    {ready && route === "terminal" && <Suspense fallback={<p role="status">터미널 목록을 불러오고 있습니다…</p>}>
+      <TerminalManager description={description}/>
+    </Suspense>}
     {ready && (runtimeVisited||isRuntimeRoute) && <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
       <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic}/>
     </Suspense>}

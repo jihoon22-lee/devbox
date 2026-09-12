@@ -35,6 +35,7 @@ pub struct TerminalOwner {
     window: String,
     panes: Mutex<HashMap<String, Pane>>,
     starts: Arc<tokio::sync::Semaphore>,
+    initial_commands: Mutex<HashMap<String, (String, bool)>>,
 }
 
 struct Starting<'a> {
@@ -65,6 +66,7 @@ impl TerminalOwner {
             window,
             panes: Mutex::default(),
             starts: Arc::new(tokio::sync::Semaphore::new(2)),
+            initial_commands: Mutex::default(),
         })
     }
 
@@ -144,10 +146,54 @@ impl TerminalOwner {
                 let input: Close = parse(args)?;
                 self.output(&input.session_id)?;
                 terminal::retire_owned(&state, &input.session_id, true)?;
+                self.initial_commands
+                    .lock()
+                    .map_err(|_| "terminal_state_unavailable")?
+                    .remove(&input.session_id);
                 self.panes.lock().map_err(|_| "terminal_state_unavailable")?.retain(|_, pane| {
                     !matches!(pane, Pane::Active { started, .. } if started.session_id == input.session_id)
                 });
                 Ok(Value::Null)
+            }
+            "write_initial_command" => {
+                #[derive(Deserialize)]
+                #[serde(rename_all = "camelCase", deny_unknown_fields)]
+                struct Initial {
+                    session_id: String,
+                    data: String,
+                }
+                let input: Initial = parse(args.clone())?;
+                self.output(&input.session_id)?;
+                if input.data.len() > 16 * 1024 {
+                    return Err("terminal_args_invalid".into());
+                }
+                {
+                    let mut commands = self
+                        .initial_commands
+                        .lock()
+                        .map_err(|_| "terminal_state_unavailable")?;
+                    if let Some((original, completed)) = commands.get(&input.session_id) {
+                        return if original != &input.data {
+                            Err("terminal_initial_command_conflict".into())
+                        } else if *completed {
+                            Ok(Value::Null)
+                        } else {
+                            Err("terminal_initial_command_interrupted".into())
+                        };
+                    }
+                    // Reserve before any write; failure or renderer loss never resends input.
+                    commands.insert(input.session_id.clone(), (input.data, false));
+                }
+                let result = terminal::__component_write_session(app, args).await?;
+                if let Some((_, completed)) = self
+                    .initial_commands
+                    .lock()
+                    .map_err(|_| "terminal_state_unavailable")?
+                    .get_mut(&input.session_id)
+                {
+                    *completed = true;
+                }
+                Ok(result)
             }
             "write_session" | "resize_session" | "broadcast" => {
                 // Recheck every exact target before the old bounded input/resize implementation.
@@ -226,9 +272,13 @@ impl TerminalOwner {
                         config: original,
                         started,
                         ..
-                    } if original == &config => Ok(json!({
-                        "sessionId": started.session_id, "resumed": true, "multiplexer": started.multiplexer,
-                    })),
+                    } if original.distro == config.distro
+                        && original.multiplexer == config.multiplexer =>
+                    {
+                        Ok(json!({
+                            "sessionId": started.session_id, "resumed": true, "multiplexer": started.multiplexer,
+                        }))
+                    }
                     Pane::Starting => Err("terminal_start_pending".into()),
                     Pane::Failed => Err("terminal_start_interrupted".into()),
                     _ => Err("terminal_pane_conflict".into()),

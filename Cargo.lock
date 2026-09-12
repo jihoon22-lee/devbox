@@ -1445,6 +1445,7 @@ dependencies = [
  "workbench",
  "workspace-wsl",
  "wsl",
+ "wsl-desktop",
 ]
 
 [[package]]

@@ -1,3 +1,4 @@
+import { isProductHosted } from "../transport";
 import {
   ContextMenu,
   useContextMenu,
@@ -852,6 +853,37 @@ export default function App() {
     }
     const key = options?.paneKey ?? makeId("p");
     const requestedMultiplexer = options?.multiplexer ?? multiplexer;
+    if(isProductHosted()) {
+      const generation=++workspaceRestoreGeneration.current;
+      workspaceLoadingRef.current=true;setWorkspaceLoading(true);
+      const activeTab=tabId??makeId("t");
+      const placeholder:Pane={key,sessionId:null,distro,cwd:usedCwd,startCommand:usedStartCommand,
+        initialCommand:usedStartCommand,multiplexer:requestedMultiplexer,requestedMultiplexer,restoreStatus:"connecting"};
+      const nextPanes=[...panesRef.current,placeholder];
+      const nextTabs:Tab[]=tabId===null?[...stateRef.current.tabs,{id:activeTab,title:nextTabTitle(tabs.map(tab=>tab.title),distro),
+        customTitle:false,layout:"grid",paneIds:[key],sizing:normalizePaneSizing(undefined,"grid",1)}]
+        :stateRef.current.tabs.map(tab=>tab.id===tabId?{...tab,paneIds:[...tab.paneIds,key],sizing:normalizePaneSizing(undefined,tab.layout,tab.paneIds.length+1)}:tab);
+      panesRef.current=nextPanes;stateRef.current={tabs:nextTabs,activeTabId:activeTab,activePaneId:key};
+      setPanes(nextPanes);setTabs(nextTabs);setActiveTabId(activeTab);setActivePaneId(key);
+      window.clearTimeout(layoutSaveTimer.current);
+      try {
+        const plan=workspaceFromRuntime(nextTabs,nextPanes,activeTab,key);
+        if(!plan)throw new Error("invalid terminal layout");
+        await saveLastWorkspace(plan);
+        const started=await startSession(distro,usedCwd,key,requestedMultiplexer);
+        if(!adoptRestoredSession(key,requestedMultiplexer,started,generation))return false;
+        if(usedCwd)setRecentPaths(pushRecentPath(usedCwd));
+        if(cwdOverride===undefined&&!pinned)setCwd("");
+        void refreshDashboard(true).catch(()=>undefined);
+        return true;
+      }catch {
+        markRestoreFailed(key,generation);
+        setError(safeFailureMessage??"터미널을 시작하지 못했습니다. 해당 자리에서 상태를 확인해 주세요.");
+        return false;
+      }finally {
+        if(workspaceRestoreGeneration.current===generation){workspaceLoadingRef.current=false;setWorkspaceLoading(false);}
+      }
+    }
     try {
       const started = await startSession(distro, usedCwd, key, requestedMultiplexer);
       const id = started.sessionId;
@@ -990,6 +1022,21 @@ export default function App() {
       danger: true,
     })).confirmed;
 
+    if(isProductHosted()) {
+      workspaceLoadingRef.current=true;setWorkspaceLoading(true);
+      window.clearTimeout(layoutSaveTimer.current);
+      try {
+        if(options.replaceExisting) {
+          // Explicit profile replacement retires these exact old PTYs before a
+          // stable pane key can refer to the new profile definition.
+          for(const sessionId of oldSessionIds)await closeSession(sessionId);
+        }
+        await saveLastWorkspace(workspace);
+      }catch {
+        workspaceLoadingRef.current=false;setWorkspaceLoading(false);
+        setError("레이아웃을 준비하거나 이전 터미널을 종료하지 못했습니다. 실행 상태를 확인해 주세요.");return false;
+      }
+    }
     const generation = ++workspaceRestoreGeneration.current;
     workspaceLoadingRef.current = true;
     setWorkspaceLoading(true);
@@ -1040,6 +1087,7 @@ export default function App() {
     let startedCount = 0;
     try {
       const startDefinition = async (definition: WorkspaceDefinition["panes"][number]): Promise<void> => {
+        if(isProductHosted()&&(!mountedRef.current||workspaceRestoreGeneration.current!==generation))return;
         try {
           const started = await startSession(
             definition.distro,
@@ -1053,7 +1101,7 @@ export default function App() {
             started,
             generation,
           )) {
-            await closeSession(started.sessionId).catch(() => undefined);
+            if (!isProductHosted()) await closeSession(started.sessionId).catch(() => undefined);
             return;
           }
           startedCount += 1;
@@ -1071,7 +1119,7 @@ export default function App() {
         startDefinition,
       );
 
-      const closeResults = await Promise.allSettled(oldSessionIds.map((id) => closeSession(id)));
+      const closeResults = await Promise.allSettled((isProductHosted()?[]:oldSessionIds).map((id) => closeSession(id)));
       const closeFailed = closeResults.filter((result) => result.status === "rejected").length;
       if (failed > 0 || closeFailed > 0) {
         const details = [
@@ -1113,7 +1161,7 @@ export default function App() {
         requestedMultiplexer,
       );
       if (!adoptRestoredSession(key, requestedMultiplexer, started, generation)) {
-        await closeSession(started.sessionId).catch(() => undefined);
+        if (!isProductHosted()) await closeSession(started.sessionId).catch(() => undefined);
         return;
       }
       void refreshDashboard(true).catch(() => undefined);
@@ -1237,7 +1285,9 @@ export default function App() {
     if (!workspaceReady || workspaceLoading) return;
     window.clearTimeout(layoutSaveTimer.current);
     layoutSaveTimer.current = window.setTimeout(() => {
-      saveLastWorkspace(workspaceFromRuntime(tabs, panes, activeTabId, activePaneId));
+      void saveLastWorkspace(workspaceFromRuntime(tabs, panes, activeTabId, activePaneId)).catch(()=>{
+        setError("터미널 레이아웃을 저장하지 못했습니다. 실행 중인 터미널은 유지됩니다.");
+      });
     }, 150);
     return () => window.clearTimeout(layoutSaveTimer.current);
   }, [activePaneId, activeTabId, panes, tabs, workspaceLoading, workspaceReady]);

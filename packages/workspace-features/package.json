@@ -15,7 +15,9 @@
     "./tasks": "./src/tasks/App.tsx",
     "./runtime": "./src/runtime/App.tsx",
     "./logs": "./src/logs/App.tsx",
-    "./terminal": "./src/terminal/App.tsx"
+    "./terminal": "./src/terminal/App.tsx",
+    "./terminal-storage": "./src/terminal/lib/storageNamespace.ts",
+    "./terminal-layout": "./src/terminal/lib/workspace.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",

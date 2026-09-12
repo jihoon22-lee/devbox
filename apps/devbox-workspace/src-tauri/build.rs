@@ -8,7 +8,11 @@ fn main() {
             )
             .plugin(
                 "workspace",
-                tauri_build::InlinedPlugin::new().commands(&["execute"]),
+                tauri_build::InlinedPlugin::new().commands(&[
+                    "execute",
+                    "terminal_describe",
+                    "terminal_execute",
+                ]),
             ),
     )
     .expect("failed to generate Workspace capabilities");

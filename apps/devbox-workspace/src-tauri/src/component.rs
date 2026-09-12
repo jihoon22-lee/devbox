@@ -36,6 +36,10 @@ struct Runtime {
     shutdown_started: Arc<AtomicBool>,
     ui_ready: Arc<AtomicBool>,
     engines: Arc<crate::runtime_host::Owners>,
+    terminals: Arc<crate::terminal_host::Terminals>,
+    terminal_requests: Pool,
+    terminal_workers: Arc<tokio::sync::Semaphore>,
+    terminal_stop_workers: Arc<tokio::sync::Semaphore>,
     engine_requests: Pool,
     engine_workers: Arc<tokio::sync::Semaphore>,
     engine_stop_workers: Arc<tokio::sync::Semaphore>,
@@ -68,6 +72,10 @@ impl Default for Runtime {
             shutdown_started: Arc::default(),
             ui_ready: Arc::default(),
             engines: Arc::default(),
+            terminals: Arc::default(),
+            terminal_requests: Pool::default(),
+            terminal_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            terminal_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             engine_requests: Pool::default(),
             engine_workers: Arc::new(tokio::sync::Semaphore::new(4)),
             engine_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -237,6 +245,19 @@ struct Response {
     value: Value,
 }
 fn allowed(component: &str, route: &str, method: &str) -> bool {
+    if component == "workspace.terminal" {
+        return route == "terminal"
+            && matches!(
+                method,
+                "terminal_sessions"
+                    | "open_terminal"
+                    | "focus_terminal"
+                    | "stop_terminal"
+                    | "list_workspace_profiles"
+                    | "save_workspace_profile"
+                    | "delete_workspace_profile"
+            );
+    }
     if crate::runtime_host::component(component) {
         return crate::runtime_host::allowed(component, route, method);
     }
@@ -327,6 +348,122 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         _ => false,
     }
+}
+
+async fn terminal_worker(
+    window: WebviewWindow,
+    runtime: Runtime,
+    header: RouteRequest,
+    method: String,
+    args: Value,
+    companion: bool,
+    context: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    let permit = runtime.terminal_requests.reserve_with_limit(64)?;
+    let host = runtime.host()?;
+    let workers = if matches!(method.as_str(), "close_session" | "stop_terminal") {
+        runtime.terminal_stop_workers.clone()
+    } else {
+        runtime.terminal_workers.clone()
+    };
+    // The native worker owns the request even if its renderer disappears.
+    tauri::async_runtime::spawn(async move {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis() as u64;
+        let worker = tokio::time::timeout(
+            Duration::from_millis(header.deadline_ms.saturating_sub(now).min(30_000)),
+            workers.acquire_owned(),
+        )
+        .await
+        .map_err(|_| "request_expired")?
+        .map_err(|_| "request_cancelled")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_permit, _worker, _context) = (permit, worker, context);
+            crate::files_host::current_deadline(header.deadline_ms)?;
+            if runtime.shutdown_started.load(Ordering::Acquire) {
+                return Err("request_cancelled");
+            }
+            if companion {
+                tauri::async_runtime::block_on(
+                    runtime
+                        .terminals
+                        .execute(&window, &host, &header, &method, args),
+                )
+            } else {
+                runtime
+                    .terminals
+                    .manage(&window, &host, &header, &method, args)
+            }
+        })
+        .await
+        .unwrap_or(Err("worker_unavailable"))
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
+}
+async fn execute_terminal_main(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    terminal_worker(
+        window.clone(),
+        runtime.clone(),
+        request.header,
+        request.method,
+        request.args,
+        false,
+        context,
+    )
+    .await
+}
+#[tauri::command]
+fn terminal_describe(window: WebviewWindow, runtime: State<'_, Runtime>) -> Result<Value, String> {
+    if runtime.shutdown_started.load(Ordering::Acquire) {
+        return Err("request_cancelled".into());
+    }
+    runtime.terminals.describe(&window).map_err(str::to_owned)
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TerminalRequest {
+    header: RouteRequest,
+    method: String,
+    args: Value,
+}
+#[tauri::command]
+async fn terminal_execute(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    request: TerminalRequest,
+) -> Result<Value, String> {
+    if runtime.shutdown_started.load(Ordering::Acquire) {
+        return Err("request_cancelled".into());
+    }
+    if request.method.len() > 96
+        || !request.args.is_object()
+        || serde_json::to_vec(&request.args).map_or(true, |bytes| bytes.len() > 2 * 1024 * 1024)
+    {
+        return Err("terminal_args_invalid".into());
+    }
+    runtime
+        .terminals
+        .authorize(&window, &request.header)
+        .map_err(str::to_owned)?;
+    terminal_worker(
+        window,
+        runtime.inner().clone(),
+        request.header,
+        request.method,
+        request.args,
+        true,
+        None,
+    )
+    .await
+    .map_err(str::to_owned)
 }
 
 async fn execute_runtime(
@@ -1312,6 +1449,7 @@ async fn execute(
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
+    let terminal = request.component == "workspace.terminal";
     let engine = crate::runtime_host::component(&request.component);
     let files = request.component == "workspace.files";
     let lsp = request.component == "workspace.lsp";
@@ -1326,7 +1464,8 @@ async fn execute(
         code,
         provenance: provenance.clone(),
     };
-    let context_permit = if engine
+    let context_permit = if terminal
+        || engine
         || files
         || definitions
         || dependencies
@@ -1399,6 +1538,8 @@ async fn execute(
     };
     let mut result = if let Err(issue) = retired {
         Err(issue)
+    } else if terminal {
+        execute_terminal_main(&window, &runtime, request, context_permit.clone()).await
     } else if engine {
         execute_runtime(&window, &runtime, request, context_permit.clone()).await
     } else if lsp {
@@ -1671,7 +1812,11 @@ fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
-        .invoke_handler(tauri::generate_handler![execute])
+        .invoke_handler(tauri::generate_handler![
+            execute,
+            terminal_describe,
+            terminal_execute
+        ])
         .setup(|app, _| {
             let runtime = Runtime::default();
             app.manage(runtime.clone());
@@ -1751,12 +1896,22 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         })
         .on_window_ready(|window| {
             if window.label() != "main" {
+                if window.state::<Runtime>().terminals.owns(window.label()) {
+                    let owner = window.clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            let _ = owner.hide();
+                        }
+                    });
+                }
                 return;
             }
             let owner = window.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if run_manager_lib::component::is_initialized(owner.app_handle())
+                    if (run_manager_lib::component::is_initialized(owner.app_handle())
+                        || wsl_desktop_lib::component::is_product(owner.app_handle()))
                         && !owner
                             .state::<Runtime>()
                             .exit_authorized
@@ -1806,6 +1961,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let retired = tokio::time::timeout(Duration::from_secs(5), async {
                     while runtime.lsp_requests.0.load(Ordering::Acquire) != 0
                         || runtime.engine_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.terminal_requests.0.load(Ordering::Acquire) != 0
                     {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -1834,7 +1990,15 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 } else {
                     true
                 };
+                let terminal_owner = runtime.terminals.clone();
+                let terminal_app = app.clone();
+                let terminals_stopped = tauri::async_runtime::spawn_blocking(move || {
+                    terminal_owner.shutdown(&terminal_app)
+                })
+                .await
+                .is_ok_and(|result| result.is_ok());
                 if retired
+                    && terminals_stopped
                     && stopped
                     && actor_stopped
                     && files_stopped
