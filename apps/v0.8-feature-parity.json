@@ -39,6 +39,10 @@
         "tray": false,
         "autostart": "none in app",
         "globalShortcut": "none in app"
+      },
+      "implementationReview": {
+        "featureMappings": 12,
+        "evidence": "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       }
     },
     {
@@ -406,6 +410,10 @@
         "tray": true,
         "autostart": "Explicit per-user Startup/Run Manager.lnk; independent of NSIS shortcut",
         "globalShortcut": "none in app"
+      },
+      "implementationReview": {
+        "featureMappings": 70,
+        "evidence": "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       }
     },
     {
@@ -597,6 +605,10 @@
         "tray": false,
         "autostart": "none in app",
         "globalShortcut": "none in app"
+      },
+      "implementationReview": {
+        "featureMappings": 20,
+        "evidence": "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
       }
     }
   ],
@@ -608,12 +620,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:open_port_owner",
@@ -622,12 +643,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:open_port_log",
@@ -636,12 +666,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:list_ports",
@@ -650,12 +689,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:kill_listener",
@@ -664,12 +712,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.process-actions",
+      "authority": "workspace.process-actions: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:handoff_container_stop",
@@ -678,12 +735,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:get_process_info",
@@ -692,12 +758,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:reveal_process",
@@ -706,12 +781,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:open_browser",
@@ -720,12 +804,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:load_port_manager_preferences",
@@ -734,12 +827,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:command:save_port_manager_preferences",
@@ -748,12 +850,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "port-manager:surface:App.tsx",
@@ -762,12 +873,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "runtime",
-      "dataOwner": "process-action",
-      "authority": "process-action",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.processes",
+      "authority": "workspace.processes: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Native review of verified fixed preferences; revision conflict/replace gate; previous settings and import receipt commit together",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "developer-toolbox:command:take_pending_open",
@@ -8445,12 +8565,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:show_main_window",
@@ -8459,12 +8588,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:hide_main_window",
@@ -8473,12 +8611,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:quit_app",
@@ -8487,12 +8634,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:startup_shortcut_status",
@@ -8501,12 +8657,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:set_startup_shortcut_enabled",
@@ -8515,12 +8680,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_jobs",
@@ -8529,12 +8703,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:get_job",
@@ -8543,12 +8726,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:create_job",
@@ -8557,12 +8749,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:update_job",
@@ -8571,12 +8772,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:set_job_enabled",
@@ -8585,12 +8795,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:delete_job",
@@ -8599,12 +8818,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_services",
@@ -8613,12 +8841,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:get_service",
@@ -8627,12 +8864,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:service_observability",
@@ -8641,12 +8887,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:import_definitions",
@@ -8655,12 +8910,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:apply_import",
@@ -8669,12 +8933,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:preview_workspace_task_import",
@@ -8683,12 +8956,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:cancel_workspace_task_import",
@@ -8697,12 +8979,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:apply_workspace_task_import",
@@ -8711,12 +9002,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_workspace_tasks",
@@ -8725,12 +9025,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:trust_workspace_task_source",
@@ -8739,12 +9048,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:trust_workspace_task_shell_source",
@@ -8753,12 +9071,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:run_workspace_task_operation",
@@ -8767,12 +9094,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:get_workspace_task_operation",
@@ -8781,12 +9117,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_workspace_task_operations",
@@ -8795,12 +9140,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:stop_workspace_task_operation",
@@ -8809,12 +9163,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_workspace_task_diagnostics",
@@ -8823,12 +9186,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:open_workspace_task_diagnostic",
@@ -8837,12 +9209,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:preview_project_import",
@@ -8851,12 +9232,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:cancel_project_import",
@@ -8865,12 +9255,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:apply_project_import",
@@ -8879,12 +9278,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:create_service",
@@ -8893,12 +9301,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:update_service",
@@ -8907,12 +9324,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:delete_service",
@@ -8921,12 +9347,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:export_definitions",
@@ -8935,12 +9370,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:get_service_instance",
@@ -8949,12 +9393,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:start_service",
@@ -8963,12 +9416,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:stop_service",
@@ -8977,12 +9439,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:restart_service",
@@ -8991,12 +9462,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:get_run",
@@ -9005,12 +9485,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_run_history",
@@ -9019,12 +9508,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:run_job_now",
@@ -9033,12 +9531,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:stop_active_run",
@@ -9047,12 +9554,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:get_active_run",
@@ -9061,12 +9577,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_active_runs",
@@ -9075,12 +9600,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:preview_cron",
@@ -9089,12 +9623,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:tail_log",
@@ -9103,12 +9646,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:search_run_logs",
@@ -9117,12 +9669,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:preview_workspace_task_control",
@@ -9131,12 +9692,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:renew_workspace_task_control",
@@ -9145,12 +9715,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:reject_workspace_task_control",
@@ -9159,12 +9738,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:accept_workspace_task_control",
@@ -9173,12 +9761,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:list_workspace_task_control_receipts",
@@ -9187,12 +9784,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:take_pending_open",
@@ -9201,12 +9807,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:command:open_run_log_in_log_lens",
@@ -9215,12 +9830,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:App.tsx",
@@ -9229,12 +9853,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:components/CronBuilder.tsx",
@@ -9243,12 +9876,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:components/ImportDialog.tsx",
@@ -9257,12 +9899,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:components/JobEditor.tsx",
@@ -9271,12 +9922,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:components/NextRunsPreview.tsx",
@@ -9285,12 +9945,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:components/RunHistory.tsx",
@@ -9299,12 +9968,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:surface:components/ServiceEditor.tsx",
@@ -9313,12 +9991,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/cleanup.rs",
@@ -9327,12 +10014,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/core/imports.rs",
@@ -9341,12 +10037,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/core/workspace_tasks.rs",
@@ -9355,12 +10060,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/lib.rs",
@@ -9369,12 +10083,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/logs.rs",
@@ -9383,12 +10106,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/platform/execution.rs",
@@ -9397,12 +10129,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "run-manager:store:src-tauri/src/storage.rs",
@@ -9411,12 +10152,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "tasks",
-      "dataOwner": "runtime",
-      "authority": "runtime",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.runtime",
+      "authority": "workspace.runtime: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Private WAL-consistent schema-4 snapshot, inactive definitions, retained ID/log mappings and explicit secret/trust review; no process adoption",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "workbench:command:take_pending_open",
@@ -11428,12 +12178,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:summarize_source",
@@ -11442,12 +12201,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:list_saved_views",
@@ -11456,12 +12224,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:save_saved_view",
@@ -11470,12 +12247,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:delete_saved_view",
@@ -11484,12 +12270,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:receive_log_source",
@@ -11498,12 +12293,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:fixed_adapter",
@@ -11512,12 +12316,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:read_source",
@@ -11526,12 +12339,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:read_sources",
@@ -11540,12 +12362,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:cancel_read",
@@ -11554,12 +12385,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:filter_log_records",
@@ -11568,12 +12408,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:export_log_records",
@@ -11582,12 +12431,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:preview_log_source",
@@ -11596,12 +12454,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:accept_log_source",
@@ -11610,12 +12477,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:discard_log_source",
@@ -11624,12 +12500,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:renew_log_source",
@@ -11638,12 +12523,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:command:take_pending_open",
@@ -11652,12 +12546,21 @@
       "kind": "native-command",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:surface:App.tsx",
@@ -11666,12 +12569,21 @@
       "kind": "frontend-surface",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:store:src-tauri/src/core/saved_views.rs",
@@ -11680,12 +12592,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     },
     {
       "legacyFeatureId": "log-lens:store:src-tauri/src/core/sources.rs",
@@ -11694,12 +12615,21 @@
       "kind": "storage-source",
       "product": "workspace",
       "route": "logs",
-      "dataOwner": "logs",
-      "authority": "logs",
-      "migration": "owner-review-required",
-      "test": null,
+      "dataOwner": "workspace.logs",
+      "authority": "workspace.logs: native installation/session/local-webview admission; Runtime-owned process controls remain separate from external process actions",
+      "migration": "Saved views only; explicit disconnected Runtime source/filter mapping and reconnect; ephemeral captures/rings never migrate",
+      "test": [
+        ".github/scripts/windows-workspace-runtime.mjs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ],
       "ownerIssue": 547,
-      "status": "pending"
+      "status": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-workspace/src-tauri/src/runtime_host.rs",
+      "evidence": [
+        "workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md"
+      ],
+      "verificationScope": "Implementation and synthetic fixtures prepared; complete B05 detailed validation and actual Windows/WSL acceptance pending. WP06 container/session consumers and WP07 cross-product handoff delivery remain separate."
     }
   ],
   "plannedExcluded": [

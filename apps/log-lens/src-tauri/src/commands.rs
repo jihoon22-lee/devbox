@@ -4,9 +4,12 @@ use crate::core::{
     SourceSnapshot, SourceSpec, SourceSummary,
 };
 use serde::Serialize;
+#[cfg(feature="standalone")]
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, State};
+use tauri::State;
+#[cfg(feature="standalone")]
+use tauri::AppHandle;
 use zeroize::Zeroizing;
 
 #[derive(Default)]
@@ -109,12 +112,14 @@ pub fn summarize_source(source: SourceSpec) -> Result<SourceSummary, String> {
     source.summary().map_err(|error| error.to_string())
 }
 
+#[cfg(feature = "standalone")]
 fn saved_views_directory(app: &AppHandle) -> Result<PathBuf, String> {
     crate::component::data_root(app)
         .map_err(|_| crate::core::saved_views::SAVED_VIEWS_READ_ERROR.to_string())
 }
 
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub fn list_saved_views(
     app: AppHandle,
 ) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
@@ -122,6 +127,7 @@ pub fn list_saved_views(
 }
 
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub fn save_saved_view(
     app: AppHandle,
     expected_revision: u64,
@@ -135,6 +141,7 @@ pub fn save_saved_view(
 }
 
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub fn delete_saved_view(
     app: AppHandle,
     expected_revision: u64,
@@ -374,54 +381,6 @@ pub(crate) async fn __component_summarize_source(
     }
     let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
     let value = summarize_source(input.source)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_list_saved_views(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = list_saved_views(_component_app.clone())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_save_saved_view(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        expected_revision: u64,
-        view: crate::core::SavedView,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = save_saved_view(_component_app.clone(), input.expected_revision, input.view)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
-}
-
-/// Typed product adapter; native admission precedes this existing command.
-#[cfg(feature = "desktop")]
-pub(crate) async fn __component_delete_saved_view(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        expected_revision: u64,
-        name: String,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    let value = delete_saved_view(_component_app.clone(), input.expected_revision, input.name)?;
     serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 

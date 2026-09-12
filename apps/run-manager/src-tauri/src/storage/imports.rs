@@ -60,6 +60,12 @@ pub struct ImportReceipt {
     pub already_imported: bool,
 }
 impl DatabaseState {
+    pub fn requires_secret_review(&self, id: &str) -> Result<bool, StorageError> {
+        if self.legacy_publication {
+            return Ok(false);
+        }
+        Ok(self.lock()?.query_row("SELECT EXISTS(SELECT 1 FROM workspace_runtime_import_jobs WHERE job_id=? AND reconnect_required=1)",[id],|row|row.get(0))?)
+    }
     pub fn imported_run(&self, id: &str) -> Result<bool, StorageError> {
         if self.legacy_publication {
             return Ok(false);

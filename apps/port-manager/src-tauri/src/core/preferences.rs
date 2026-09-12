@@ -155,6 +155,7 @@ pub fn load_from_path(path: impl AsRef<Path>) -> Result<PortManagerPreferences, 
 /// Write a complete preference document through the shared atomic writer.
 /// The parent directory belongs to this command and is created explicitly;
 /// no arbitrary frontend path is accepted.
+#[cfg(any(feature = "standalone", test))]
 pub fn save_to_path(
     path: impl AsRef<Path>,
     preferences: &PortManagerPreferences,

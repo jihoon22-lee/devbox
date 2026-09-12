@@ -1,6 +1,6 @@
 # Devbox Workspace
 
-Hidden v0.8 B04 development product. The shared Overview/Source/Files UI and native component adapters are being integrated; product authority, registry, migration and LSP acceptance remain incomplete. Hidden from the v0.7 release and Manager catalog.
+Hidden v0.8 development product. B04 integrated Overview/Source/Files; B05 now adds Tasks & Services, Runtime and Logs with embedded native owners and inactive legacy import. The complete B05 acceptance run is pending. Hidden from the v0.7 release and Manager catalog.
 
 `pnpm --filter devbox-workspace dev` opens the explicitly labelled browser fixture. On Windows, `pnpm --filter devbox-workspace tauri dev` runs the native shell. Browser `?route=overview` selects a preview route. The Windows debug executable accepts `--route=overview` and validates it against this product’s registered routes before creating its webview. Native requests are restricted to the local main webview and validated by `product-shell-tauri`; route selection does not grant domain authority.
 
@@ -427,3 +427,51 @@ The existing integration surfaces for those bundles are:
 These APIs and local lookup are implemented. Cross-product transport, global
 search routing and the B05/B06 owner imports are not represented as completed
 by this handoff.
+
+
+## B05 Tasks, Runtime and Logs
+
+Tasks retains the existing cron/service/import/trust/DAG/history UI. The native
+Runtime owns its scheduler and process trees independently of route visits. Closed
+start/stop/restart requests reserve durable operation receipts before execution;
+renderer reload and transport retry reuse the receipt. Native restart leaves
+unresolved requests for explicit state review. Exit waits for owned processes,
+DAG writers and native import/log-reader workers. Service secrets are resolved by
+the execution owner; plaintext never crosses a read DTO.
+
+Runtime keeps source-qualified listener identity and confidence. The live Runtime
+owner can prove descendant membership with Windows Job Object plus exact creation
+FILETIME, or WSL distro/start-tick/session/group checks. These add task/run/log
+navigation even without a configured service health port. Windows proof is verified;
+WSL remains declared. Actions reconstruct the endpoint/identity/run/context before
+navigation. Owned descendants route to Tasks, while the external action broker alone
+can terminate a revalidated unowned process. Container control joins WP06.
+
+Logs reads Runtime-issued run/directory leases, never a legacy DB or a renderer-supplied
+run-log path. Rotation, terminalization and deleted/replaced data keep their existing
+cursor/revocation semantics. Hidden Runtime/Logs views stop polling/read work and
+retain view state. Diagnostic navigation checks the native selected project and sends
+only a relative file/range through normal Files authorization. WSL-native task/Problem
+context providers and cross-product selected Artifact delivery join WP06/WP07.
+
+The explicit Runtime importer uses the WP01 SQLite online backup harness, validates
+legacy domain schema 4, and preserves bounded unchanged rotation files/manifests.
+Private snapshots retain original logical metadata, including encrypted environments.
+New jobs/services are inactive, task trust is cleared and old live ownership is never
+adopted. Original IDs have owner-qualified mappings in the separate product namespace.
+Conflicts stop without overwrite; same-snapshot receipts preserve subsequent edits.
+Secret reconnection is enforced by database gates and exposed in both editors.
+Original enable/auto-start intent remains private for WP08 activation review.
+
+Retention and import publication share a lock until the SQLite transaction commits.
+Interrupted copies cannot publish partial log files, and preserved snapshots remain
+available for explicit verification/retry. Missing/orphan logs are counted; the viewer
+is not an archive. Port preferences and Log Lens saved views use separate owner-local
+atomic records containing settings, prior settings and import receipts. Native review
+checks destination revision and explicit replacement. Source/filter mappings survive
+import; view loading stays disconnected and explicit reconnect renews Runtime leases.
+
+The [B05 workthrough](../../workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md)
+records implementation and pending acceptance. Per-commit syntax/type checks are
+separate from the complete PR's detailed validation. New actual Windows, WSL and WAL
+import fixtures are authored but have not yet been executed.

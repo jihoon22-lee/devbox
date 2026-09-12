@@ -34,6 +34,69 @@ pub async fn owning_task(
     Ok(result)
 }
 
+#[derive(Clone)]
+pub struct ProcessOwner {
+    pub task_id: String,
+    pub run_id: String,
+    pub label: String,
+    pub logs_available: bool,
+}
+pub async fn process_owner(
+    app: &tauri::AppHandle,
+    process: crate::scheduler::ObservedProcess,
+) -> Result<Option<ProcessOwner>, String> {
+    data_root(app)?;
+    let runtime = app
+        .try_state::<Arc<crate::lifecycle::RuntimeState>>()
+        .ok_or("component_state_unavailable")?
+        .inner()
+        .clone();
+    let Some((task_id, run_id)) = runtime
+        .coordinator()
+        .owning_run(process)
+        .await
+        .map_err(|_| "process_owner_unsettled")?
+    else {
+        return Ok(None);
+    };
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    let run = database
+        .get_run(&run_id)
+        .map_err(|_| "process_owner_unsettled")?
+        .ok_or("process_owner_unsettled")?;
+    if run.job_id != task_id
+        || !matches!(
+            run.status,
+            crate::core::models::RunStatus::Starting
+                | crate::core::models::RunStatus::Running
+                | crate::core::models::RunStatus::Stopping
+        )
+    {
+        return Err("process_owner_unsettled".into());
+    }
+    let job = database
+        .get_run_job(&task_id)
+        .map_err(|_| "process_owner_unsettled")?
+        .ok_or("process_owner_unsettled")?;
+    let label = if job.name.len() <= 256
+        && !job.name.chars().any(char::is_control)
+        && !devbox_applink::contains_sensitive_value(&job.name)
+    {
+        job.name
+    } else {
+        "Runtime task".into()
+    };
+    data_root(app)?;
+    Ok(Some(ProcessOwner {
+        task_id,
+        run_id,
+        label,
+        logs_available: run.log_dir.is_some() && run.logs_deleted_at.is_none(),
+    }))
+}
+
 pub struct DiagnosticTarget {
     pub path: PathBuf,
     pub line: u32,
@@ -566,5 +629,45 @@ pub async fn dispatch(
     };
     data_root(app)?;
     common_root(app)?;
-    result
+    let mut value = result?;
+    if matches!(
+        method,
+        "list_jobs"
+            | "list_services"
+            | "get_job"
+            | "get_service"
+            | "update_job"
+            | "update_service"
+            | "create_job"
+            | "create_service"
+            | "set_job_enabled"
+    ) {
+        let database = app
+            .try_state::<Arc<crate::storage::DatabaseState>>()
+            .ok_or("component_state_unavailable")?;
+        let annotate = |value: &mut serde_json::Value| -> Result<(), String> {
+            if let Some(object) = value.as_object_mut() {
+                let id = object
+                    .get("id")
+                    .and_then(serde_json::Value::as_str)
+                    .ok_or("component_response_invalid")?;
+                let required = database
+                    .requires_secret_review(id)
+                    .map_err(|_| "runtime_import_failed")?;
+                object.insert(
+                    "envReconnectRequired".into(),
+                    serde_json::Value::Bool(required),
+                );
+            }
+            Ok(())
+        };
+        if let Some(values) = value.as_array_mut() {
+            for value in values {
+                annotate(value)?;
+            }
+        } else {
+            annotate(&mut value)?;
+        }
+    }
+    Ok(value)
 }

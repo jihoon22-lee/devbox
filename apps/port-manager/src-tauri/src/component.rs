@@ -10,8 +10,9 @@ use std::{
 use tauri::Manager;
 
 pub use crate::commands::correlation::{
-    observe_product, resolve_product_action, CorrelationConfidence, ProductBindings,
-    ProductPortAction, ProductPortOwner, SnapshotSourceState,
+    observe_product, resolve_product_action, CorrelationConfidence, PortCorrelation,
+    PortObservationSnapshot, ProductBindings, ProductPortAction, ProductPortOwner,
+    SnapshotSourceState,
 };
 
 struct ProductData {

@@ -1,3 +1,6 @@
+import {exerciseWorkspaceRuntimeWsl} from "./windows-workspace-runtime-wsl.mjs";
+import {exerciseWorkspaceRuntimeImport} from "./windows-workspace-runtime-import.mjs";
+import {exerciseWorkspaceRuntime} from "./windows-workspace-runtime.mjs";
 // Actual hidden Workspace native admission/registration with owned fixtures.
 import assert from "node:assert/strict";
 import {mkdirSync, writeFileSync, readFileSync, realpathSync} from "node:fs";
@@ -13,7 +16,7 @@ import {exerciseWorkspaceSource} from "./windows-workspace-source.mjs";
 
 export function workspaceRequestExpression(component, method, args = {}, budgetMs = ["workspace.dependencies","workspace.source","workspace.lsp"].includes(component) ? 29000 : 5000) {
   assert.ok(Number.isInteger(budgetMs) && budgetMs >= 100 && budgetMs <= 29000, "fixture deadline outside native bounds");
-  const route = component === "workspace.files" || component === "workspace.lsp" ? "files" : component === "workspace.dependencies" ? "dependencies" : component === "workspace.source" ? "source" : "overview";
+  const route = component === "workspace.runtime" ? "tasks" : component === "workspace.processes" || component === "workspace.process-actions" ? "runtime" : component === "workspace.logs" ? "logs" : component === "workspace.files" || component === "workspace.lsp" ? "files" : component === "workspace.dependencies" ? "dependencies" : component === "workspace.source" ? "source" : "overview";
   return `(async () => {
     const invoke = window.__TAURI_INTERNALS__.invoke;
     const d = await invoke("plugin:product-shell|describe");
@@ -131,6 +134,12 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   record("files", files);
   const sessionImport=await exerciseWorkspaceSessionImport({cdp,root:canonicalRoot,call,success,waitForRenderer});
   record("session-import",sessionImport);
+  const runtime=await exerciseWorkspaceRuntime({cdp,directory,call,success,waitForRenderer});
+  record("runtime",runtime);
+  const runtimeWsl=await exerciseWorkspaceRuntimeWsl({call,success});
+  record("runtime-wsl",runtimeWsl);
+  const runtimeImport=await exerciseWorkspaceRuntimeImport({cdp,directory,call,success});
+  record("runtime-import",runtimeImport);
   const lspInstaller = await exerciseWorkspaceLspInstaller({cdp,root:canonicalRoot,directory,call,success,waitForRenderer,processId,executable,network});
   record("lsp-installer",lspInstaller);
   await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="overview").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);
@@ -150,5 +159,5 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   await waitForRenderer(cdp,'(document.querySelector(".workspace-registry")?.textContent ?? "").includes("등록한 프로젝트가 없습니다.")',"Workspace empty registry did not refresh");
   const shot=await cdp.command("Page.captureScreenshot",{format:"png"});
   writeFileSync(`product-foundation-evidence/workspace-registry-${suffix}.png`,Buffer.from(shot.data,"base64"));
-  return {authority,definitions,templateImport,windowImport,dependencies,source,files,lspInstaller,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP and importer acceptance are separate"};
+  return {authority,definitions,templateImport,windowImport,dependencies,source,files,lspInstaller,runtime,runtimeWsl,runtimeImport,explicitActivation:true,previewCancelDidNotRegister:true,explicitRegistrationUntrusted:true,selectedContextAndStaleHeaderChecked:true,cancelledPreviewRejected:true,renameRemovePreservedProjectFiles:true,boundary:"Actual Windows Registry, definition trust/write, Dependencies, Source approval/selected stage/commit and basic Files UI/native commands; native file dialog, Source worktree creation, LSP and importer acceptance are separate"};
 }

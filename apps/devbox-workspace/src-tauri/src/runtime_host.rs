@@ -1,6 +1,7 @@
 //! Native composition of the execution owner, read-only process observations,
 //! the external process-action broker and bounded log readers. No legacy
 //! executable, database discovery or generic spawn/unseal command is exposed.
+mod observations;
 mod settings;
 use crate::{definitions::Definitions, host::Host};
 use log_lens_lib::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
@@ -397,14 +398,8 @@ pub(crate) async fn dispatch(
             match method {
                 "list_port_observations" => {
                     empty(value)?;
-                    let value = port_manager_lib::component::observe_product(bindings(
-                        app,
-                        host,
-                        definitions,
-                        context,
-                        deadline,
-                    ))
-                    .map_err(issue)?;
+                    let (value, _) =
+                        observations::observe(app, host, definitions, context, deadline).await?;
                     serde_json::to_value(value).map_err(|_| "invalid_response")
                 }
                 "open_port_owner" | "open_port_log" => {
@@ -415,11 +410,15 @@ pub(crate) async fn dispatch(
                         stream: Option<String>,
                     }
                     let input: Input = args(value)?;
-                    let action = port_manager_lib::component::resolve_product_action(
-                        bindings(app, host, definitions, context, deadline),
+                    let action = observations::resolve(
+                        app,
+                        host,
+                        definitions,
+                        context,
+                        deadline,
                         &input.action_key,
                     )
-                    .map_err(issue)?;
+                    .await?;
                     crate::files_host::current_deadline(deadline)?;
                     if method == "open_port_log" {
                         if !action.logs_available {

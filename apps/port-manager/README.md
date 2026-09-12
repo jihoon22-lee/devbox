@@ -2,7 +2,10 @@
 
 v0.8 B05 준비에서 UI·API adapter·테스트는
 `packages/workspace-features/src/runtime`로 이전했다. 독립 앱도 같은 UI를 사용한다.
-Workspace의 Runtime 관찰과 별도 Process Action 권한 연결은 B05에서 이어서 구현한다.
+Workspace는 Runtime 관찰과 외부 Process Action 권한을 분리해 같은 native adapter를 사용한다.
+Runtime이 실제로 소유한 자식 listener는 작업·실행 로그로 연결하며, Windows FILETIME/Job
+또는 WSL start tick/group 근거를 재확인한다. 설정 가져오기는 원본·이전 설정을 보존하고
+revision과 명시적 교체 검토를 사용한다. B05 전체 PR/Windows·WSL 수용 검증은 아직 진행 전이다.
 
 현재 PC에서 사용 중인 listener와 연결된 프로세스를 한 화면에서 확인하고,
 같은 endpoint와 같은 프로세스 실행인지 다시 확인한 뒤 안전하게 종료하는 앱이다.

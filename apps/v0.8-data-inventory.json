@@ -11,8 +11,14 @@
       "items": [
         "port-manager-preferences-v1.json"
       ],
-      "treatment": "Preserve interval and opaque endpoint/process favorites; do not infer process ownership from favorites.",
-      "importerStatus": "pending"
+      "treatment": "Preserve interval and opaque endpoint/process favorites; do not infer process ownership from favorites. B05 implementation is prepared; complete PR validation is pending. Prior settings and importer receipt share the same atomic product record; repeated import preserves edits.",
+      "importerStatus": "pending",
+      "implementationPath": "apps/port-manager/src-tauri/src/core/product_preferences.rs",
+      "schemaMapping": "docs/architecture/v0.8-workspace.md",
+      "test": [
+        "apps/port-manager/src-tauri/src/core/product_preferences.rs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ]
     },
     {
       "legacyApp": "developer-toolbox",
@@ -484,8 +490,14 @@
         "workspace_task_operation_runs",
         "workspace_task_control_receipts"
       ],
-      "treatment": "Preserve schedules, sealed environments, occurrence/ownership history, task-source links and receipts. Imported jobs/services remain disabled; PID and old writer leases are not revived.",
-      "importerStatus": "pending"
+      "treatment": "Preserve schedules, sealed environments, occurrence/ownership history, task-source links and receipts. Imported jobs/services remain disabled; PID and old writer leases are not revived. B05 implementation is prepared; complete PR validation is pending. Original schema/logical metadata and ciphertext remain in a private WAL snapshot; destination ciphertext requires explicit reconnect/clear. Ephemeral notification delivery is not replayed.",
+      "importerStatus": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+      "schemaMapping": "docs/architecture/v0.8-workspace.md",
+      "test": [
+        "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ]
     },
     {
       "legacyApp": "run-manager",
@@ -494,8 +506,14 @@
       "items": [
         "run-owned stdout/stderr rotation segments and manifests"
       ],
-      "treatment": "Preserve retained log history with run-ID mapping; do not invent paths from renderer input.",
-      "importerStatus": "pending"
+      "treatment": "Preserve retained log history with run-ID mapping; do not invent paths from renderer input. B05 implementation is prepared; complete PR validation is pending. Original schema/logical metadata and ciphertext remain in a private WAL snapshot; destination ciphertext requires explicit reconnect/clear. Ephemeral notification delivery is not replayed.",
+      "importerStatus": "pending",
+      "implementationPath": "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+      "schemaMapping": "docs/architecture/v0.8-workspace.md",
+      "test": [
+        "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ]
     },
     {
       "legacyApp": "workbench",
@@ -638,8 +656,14 @@
       "items": [
         "saved-views.json"
       ],
-      "treatment": "Preserve validated saved source/query definitions; do not archive the transient ring or persist webhook capture sources.",
-      "importerStatus": "pending"
+      "treatment": "Preserve validated saved source/query definitions; do not archive the transient ring or persist webhook capture sources. B05 implementation is prepared; complete PR validation is pending. Runtime run IDs require owner mappings, missing sources remain disconnected, and filter identities never widen during rebasing.",
+      "importerStatus": "pending",
+      "implementationPath": "apps/log-lens/src-tauri/src/core/product_saved_views.rs",
+      "schemaMapping": "docs/architecture/v0.8-workspace.md",
+      "test": [
+        "apps/log-lens/src-tauri/src/core/product_saved_views.rs",
+        ".github/scripts/windows-workspace-runtime-import.mjs"
+      ]
     }
   ]
 }

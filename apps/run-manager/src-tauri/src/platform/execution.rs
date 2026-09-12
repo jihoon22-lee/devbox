@@ -207,7 +207,7 @@ impl PlatformExecutionAdapter {
         let workspace_task = self.resolve_workspace_task(&request.job).await?;
         let ciphertext = self
             .database
-            .get_job_environment_ciphertext(&request.job.id)
+            .get_run_environment_ciphertext(&request.job.id)
             .map_err(|_| failure(FailureCode::Storage))?;
         let plaintext = self
             .protector

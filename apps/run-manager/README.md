@@ -5,7 +5,10 @@
 
 v0.8 B05 준비에서 UI·API adapter·테스트는
 `packages/workspace-features/src/tasks`로 이전했다. 독립 앱도 같은 UI를 사용하며,
-Workspace Runtime owner와 scheduler 연결·importer는 B05의 별도 semantic 변경이다.
+Workspace는 같은 native engine을 제품 전용 Runtime 저장소·scheduler owner로 구성한다.
+실행 요청은 durable receipt로 중복을 막고 종료 시 소유 프로세스와 writer를 기다린다.
+기존 WAL DB·로그 가져오기는 비활성 상태이며, 원본과 실행 의도를 보존하고 비밀 재설정을 요구한다.
+B05의 전체 PR/Windows·WSL 수용 검증은 아직 진행 전이다.
 
 ## 주요 기능
 

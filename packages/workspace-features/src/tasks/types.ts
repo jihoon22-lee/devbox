@@ -45,6 +45,7 @@ export interface Job {
   targetKind: TargetKind;
   targetDistro: string | null;
   envConfigured: boolean;
+  envReconnectRequired?: boolean;
   cronExpr: string | null;
   enabled: boolean;
   overlapPolicy: OverlapPolicy;

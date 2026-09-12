@@ -559,13 +559,19 @@ impl SchedulerCoordinator {
         &self,
         process: ObservedProcess,
     ) -> Result<Option<String>, SchedulerError> {
+        Ok(self.owning_run(process).await?.map(|(job_id, _)| job_id))
+    }
+    pub async fn owning_run(
+        &self,
+        process: ObservedProcess,
+    ) -> Result<Option<(String, String)>, SchedulerError> {
         if self.is_shutdown_requested() || self.inner.process_starts.load(Ordering::Acquire) != 0 {
             return Err(service_adapter_error("runtime", "process-owner-unsettled"));
         }
         let active = self.inner.active.lock().await;
         let handles = active
-            .values()
-            .map(|entry| (entry.job_id.clone(), entry.handle.clone()))
+            .iter()
+            .map(|(run_id, entry)| (run_id.clone(), entry.job_id.clone(), entry.handle.clone()))
             .collect::<Vec<_>>();
         let known = active
             .keys()
@@ -583,7 +589,7 @@ impl SchedulerCoordinator {
         {
             return Err(service_adapter_error("runtime", "process-owner-unsettled"));
         }
-        for (job_id, handle) in handles {
+        for (run_id, job_id, handle) in handles {
             let owned = handle
                 .owns_process(process.clone())
                 .await
@@ -592,7 +598,15 @@ impl SchedulerCoordinator {
                     source,
                 })?;
             if owned {
-                return Ok(Some(job_id));
+                let active = self.inner.active.lock().await;
+                if !active.get(&run_id).is_some_and(|entry| {
+                    entry.job_id == job_id
+                        && Arc::ptr_eq(&entry.handle, &handle)
+                        && !entry.cleanup_confirmed
+                }) {
+                    return Err(service_adapter_error("runtime", "process-owner-unsettled"));
+                }
+                return Ok(Some((job_id, run_id)));
             }
         }
         if self.inner.process_starts.load(Ordering::Acquire) != 0 {

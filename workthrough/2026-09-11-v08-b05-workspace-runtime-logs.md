@@ -169,3 +169,40 @@ missing from the public boundary; after that export was fixed, the affected four
 crates compiled in 12.805 seconds. No detailed test/build/Clippy/affected run was
 performed. Internal cross-product Artifact delivery remains WP07 integration;
 container action ownership and Development Session consumers belong to WP06.
+
+## Native execution acceptance packet
+
+Runtime listener projections now cover actual owned descendants and process-mode
+jobs without a configured health port. The execution owner supplies the exact
+active task/run reference only after retained-handle membership and current-owner
+revalidation. Observation and action hashes bind source identity, endpoint, run
+and current context; Windows remains verified and WSL remains declared. Enrichment
+is bounded and preserves independent source observations when ownership is unsettled.
+
+Imported jobs expose secret reconnection status in both editors, with explicit
+replace/clear followed by normal save. Preparing actual service acceptance exposed
+an existing execution-layer lookup restricted to kind=job: services could not fetch
+their own environment ciphertext. The owner lookup now supports both kinds and a
+regression checks ciphertext stays out of read DTOs. Import acquisition additionally
+retains the original root/database objects across log preservation. Complete files
+publish without replacement from private scratch space, avoiding partial final logs
+that would block a cancelled import's retry.
+
+New runner-owned Windows fixtures cover real child listeners, source confidence,
+creation/start-tick mismatch, native receipt replay after renderer reload and native
+crash, Job Object/group cleanup, terminal log leases, WSL service secret redaction
+and stopping retry backoff. A Python owner holds committed WAL pages while the native
+importer preserves and converts jobs/services/history/logs; the fixture compares source
+DB/WAL bytes and checks inactive state, secret review, repeat-import edits and saved-view
+receipt behavior. Only the run-owned WSL distro receives Python for these fixtures.
+These are authored scenarios, not executed acceptance evidence yet.
+
+Workspace TypeScript checking passed. Native all-target compilation found one new
+fixture argument using Option instead of EnvironmentCiphertextUpdate; it was fixed.
+The affected native compilation then passed in 12.160 seconds, and the first three
+Windows scripts passed syntax parsing. Two standalone-only imports were subsequently
+cfg-scoped by source review. The added crash script still needs its syntax check.
+No tests/Clippy/application build/affected run has been added at this implementation
+stage. Parity/data inventories point to the new implementations and retain pending
+verification status. Container/session/Problem consumers and cross-product Artifact
+transport remain explicitly assigned to WP06/WP07, without a false completion claim.

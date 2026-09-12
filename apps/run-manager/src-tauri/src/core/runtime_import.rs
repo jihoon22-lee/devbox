@@ -262,6 +262,12 @@ impl PreparedImport {
         &self.manifest.snapshot.sha256
     }
     pub fn acquire(source: &Path, stage: &Path, flag: &AtomicBool) -> Result<Self> {
+        devbox_filesystem::ensure_no_links(source).map_err(|_| "runtime_import_source_changed")?;
+        let (_source_root, root_identity) = devbox_filesystem::open_filesystem_object(source, true)
+            .map_err(|_| "runtime_import_source_changed")?;
+        let (_source_database, database_identity) =
+            devbox_filesystem::open_filesystem_object(&source.join("data.db"), false)
+                .map_err(|_| "runtime_import_source_changed")?;
         for name in ["data.db", "data.db-wal", "data.db-shm"] {
             let path = source.join(name);
             match fs::symlink_metadata(&path) {
@@ -405,6 +411,16 @@ impl PreparedImport {
                 }
             }
         }
+        devbox_filesystem::ensure_no_links(source).map_err(|_| "runtime_import_source_changed")?;
+        if devbox_filesystem::filesystem_identity(source, true)
+            .map_err(|_| "runtime_import_source_changed")?
+            != root_identity
+            || devbox_filesystem::filesystem_identity(&source.join("data.db"), false)
+                .map_err(|_| "runtime_import_source_changed")?
+                != database_identity
+        {
+            return Err("runtime_import_source_changed".into());
+        }
         let manifest = Manifest {
             version: 1,
             snapshot,
@@ -534,7 +550,31 @@ impl PreparedImport {
                 let actual = if target.exists() {
                     file_digest(&target, None, flag)?
                 } else {
-                    file_digest(&self.stage.join(&file.relative), Some(&target), flag)?
+                    // A cancelled copy cannot leave a partial final log that
+                    // would block retry. Scratch files stay outside logs/runs.
+                    let temporary = self
+                        .stage
+                        .join(format!(".publish-{}", uuid::Uuid::new_v4()));
+                    let copied =
+                        file_digest(&self.stage.join(&file.relative), Some(&temporary), flag);
+                    let actual = match copied {
+                        Ok(actual) => actual,
+                        Err(error) => {
+                            let _ = fs::remove_file(&temporary);
+                            return Err(error);
+                        }
+                    };
+                    if actual != (file.bytes, file.sha256.clone()) {
+                        let _ = fs::remove_file(&temporary);
+                        return Err("runtime_import_invalid".into());
+                    }
+                    // A hard link publishes a complete file without replacing
+                    // an unexpected existing target; both paths are local to
+                    // the same retained Runtime store volume.
+                    let published = fs::hard_link(&temporary, &target);
+                    let _ = fs::remove_file(&temporary);
+                    published.map_err(|_| "runtime_import_destination_conflict")?;
+                    actual
                 };
                 if actual != (file.bytes, file.sha256.clone()) {
                     return Err("runtime_import_destination_conflict".into());

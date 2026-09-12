@@ -1998,14 +1998,14 @@ impl DatabaseState {
 
     /// Return ciphertext only for the execution layer. The normal read DTO
     /// deliberately exposes only `env_configured`.
-    pub fn get_job_environment_ciphertext(
+    pub fn get_run_environment_ciphertext(
         &self,
         id: &str,
     ) -> Result<Option<Vec<u8>>, StorageError> {
         let connection = self.lock()?;
         connection
             .query_row(
-                "SELECT env_ciphertext FROM jobs WHERE id = ? AND kind = 'job'",
+                "SELECT env_ciphertext FROM jobs WHERE id = ?",
                 [id],
                 |row| row.get(0),
             )
@@ -5431,6 +5431,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn execution_ciphertext_lookup_supports_services_and_jobs_without_read_dto_values() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let ciphertext = vec![11, 22, 33];
+        let service = database
+            .create_service_with_ciphertext_at(
+                service_input(),
+                EnvironmentCiphertextUpdate::Replace(ciphertext.clone()),
+                100,
+            )
+            .unwrap();
+        assert_eq!(
+            database
+                .get_run_environment_ciphertext(&service.id)
+                .unwrap(),
+            Some(ciphertext)
+        );
+        let projection = serde_json::to_value(&service).unwrap();
+        assert_eq!(projection["envConfigured"], true);
+        assert!(projection.get("envCiphertext").is_none());
+    }
+
     fn service_input() -> ServiceInput {
         ServiceInput {
             name: "web".to_string(),
@@ -5836,7 +5858,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             database
-                .get_job_environment_ciphertext(&created.id)
+                .get_run_environment_ciphertext(&created.id)
                 .unwrap(),
             Some(vec![4, 5, 6])
         );
@@ -5852,7 +5874,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             database
-                .get_job_environment_ciphertext(&created.id)
+                .get_run_environment_ciphertext(&created.id)
                 .unwrap(),
             None
         );

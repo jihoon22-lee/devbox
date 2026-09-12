@@ -10,7 +10,7 @@ if ($state.runId -ne $env:GITHUB_RUN_ID -or $state.name -notmatch '^DevboxKnowle
 # path. Package signatures and dependency resolution remain Ubuntu's apt policy.
 & wsl.exe --distribution $state.name --user root --cd / --exec /usr/bin/apt-get update
 if ($LASTEXITCODE -ne 0) { throw 'Could not refresh owned fixture package metadata' }
-& wsl.exe --distribution $state.name --user root --cd / --exec /usr/bin/env DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get install -y --no-install-recommends git
+& wsl.exe --distribution $state.name --user root --cd / --exec /usr/bin/env DEBIAN_FRONTEND=noninteractive /usr/bin/apt-get install -y --no-install-recommends git python3
 if ($LASTEXITCODE -ne 0) { throw 'Could not provision Git in the owned fixture' }
 $version = & wsl.exe --distribution $state.name --user root --cd / --exec /usr/bin/git --version
 if ($LASTEXITCODE -ne 0) { throw 'Owned fixture Git is unavailable' }
