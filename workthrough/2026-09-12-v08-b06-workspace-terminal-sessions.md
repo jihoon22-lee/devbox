@@ -255,3 +255,19 @@ Runtime-specific discriminant fixed that error. The resumed frontend-only check
 passed in 9.698 seconds; Rust was not repeated. Late-context/path/extra-field and
 queue-saturation/authority fixtures were prepared for final B06 execution. Shell
 integration, migration, preflight and Unified Problems remain in progress.
+
+## Native shell-integration admission
+
+The existing Bash/Zsh preview and update flow now accepts an explicit native
+execution binding. Workspace companion requests retain the running distro's GUID,
+registration/backing identity and native wsl.exe through every environment probe,
+read, backup and reviewed mutation. The existing marker-aware no-op behavior,
+expected content revision, second pre-replacement read and backup naming remain
+unchanged. Read-only management capture refuses a stopped target and checks its
+running state again when binding each command; explicit PTY creation still permits
+a stopped target. A rejected-binding fixture is prepared without spawning a shell.
+
+The minimal native check first found a Tauri State/reference conversion error;
+a direct inner reference fixed it. The resumed native check passed in 8.401 seconds.
+No frontend or detailed test suite was repeated. Actual Windows shell mutation and
+backup/marker acceptance remain part of the completed B06 packet.

@@ -13,7 +13,7 @@ impl TerminalLaunchFactory for Factory<'_> {
     fn capture(&self, distro: &str) -> Result<Arc<dyn TerminalLaunchLease>, String> {
         #[cfg(windows)]
         {
-            native::capture(self, distro)
+            native::capture(self, distro, true)
                 .map(|lease| Arc::new(lease) as Arc<dyn TerminalLaunchLease>)
                 .map_err(str::to_owned)
         }
@@ -30,20 +30,17 @@ pub(crate) fn capture_running(
     distro: &str,
     deadline: u64,
 ) -> Result<Arc<dyn TerminalLaunchLease>, String> {
-    #[cfg(windows)]
-    if !crate::platform::wsl_distro::list()
-        .map_err(str::to_owned)?
-        .iter()
-        .any(|entry| entry.name == distro && entry.running)
-    {
-        return Err("wsl_distro_stopped".into());
-    }
-    let inner = Factory {
+    let factory = Factory {
         host,
         context: None,
         deadline,
-    }
-    .capture(distro)?;
+    };
+    #[cfg(windows)]
+    let inner = native::capture(&factory, distro, false)
+        .map(|lease| Arc::new(lease) as Arc<dyn TerminalLaunchLease>)
+        .map_err(str::to_owned)?;
+    #[cfg(not(windows))]
+    let inner = factory.capture(distro)?;
     Ok(Arc::new(ManagementLease { inner, deadline }))
 }
 struct ManagementLease {
@@ -86,11 +83,16 @@ mod native {
         binding: Option<Binding>,
         project: Option<Project>,
         distro: wsl_distro::Lease,
+        allow_start: bool,
         executable: PathBuf,
         executable_identity: FilesystemIdentity,
         _executable: File,
     }
-    pub(super) fn capture(factory: &Factory<'_>, name: &str) -> Result<Admission> {
+    pub(super) fn capture(
+        factory: &Factory<'_>,
+        name: &str,
+        allow_start: bool,
+    ) -> Result<Admission> {
         crate::files_host::current_deadline(factory.deadline)?;
         let distro = wsl_distro::list()?
             .into_iter()
@@ -98,7 +100,7 @@ mod native {
             .ok_or("wsl_distro_missing")?;
         // Capture allows a stopped target for this explicit terminal start. It
         // opens registration/backing handles and performs no start itself.
-        let distro = wsl_distro::Lease::capture(&distro.id, true)?;
+        let distro = wsl_distro::Lease::capture(&distro.id, allow_start)?;
         let projects = factory.host.projects()?;
         let binding = factory
             .context
@@ -135,6 +137,7 @@ mod native {
             binding,
             project,
             distro,
+            allow_start,
             executable,
             executable_identity,
             _executable: file,
@@ -170,6 +173,9 @@ mod native {
         }
         fn bind_argv(&self, mut argv: Vec<String>) -> std::result::Result<Vec<String>, String> {
             self.revalidate()?;
+            if !self.allow_start {
+                self.distro.require_running().map_err(str::to_owned)?;
+            }
             if argv.len() < 3
                 || argv[0] != "wsl.exe"
                 || argv[1] != "-d"

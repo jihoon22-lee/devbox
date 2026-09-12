@@ -736,6 +736,28 @@ impl Terminals {
         ) {
             return self.queue_log(window, peer.record.context.clone(), method, args);
         }
+        if matches!(
+            method,
+            "inspect_shell_integration" | "update_shell_integration"
+        ) {
+            let distro = args
+                .get("distro")
+                .and_then(Value::as_str)
+                .ok_or("terminal_args_invalid")?;
+            let lease =
+                crate::platform::terminal_launch::capture_running(host, distro, header.deadline_ms)
+                    .map_err(|_| "wsl_target_unavailable")?;
+            let result = wsl_desktop_lib::component::shell_integration_owned(
+                window.app_handle(),
+                method,
+                args,
+                lease.as_ref(),
+            )
+            .await
+            .map_err(|_| "terminal_shell_integration_failed");
+            let retired = lease.retire().map_err(|_| "wsl_target_retirement_pending");
+            return result.and_then(|value| retired.map(|_| value));
+        }
         if matches!(method, "docker_action" | "wsl_control_status") {
             return self
                 .wsl_control(window.app_handle(), host, method, args, header.deadline_ms)
@@ -775,7 +797,6 @@ impl Terminals {
                 | "docker_ps"
                 | "detect_multiplexers"
                 | "windows_build_number"
-                | "inspect_shell_integration"
         ) {
             return wsl_desktop_lib::component::dispatch(window.app_handle(), method, args)
                 .await

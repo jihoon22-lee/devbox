@@ -2,6 +2,8 @@
 //! context and owned session before routing an operation to these adapters.
 //! Initialization starts no terminal, global shortcut, tray or legacy writer.
 pub use crate::commands::dashboard::docker_action_owned;
+#[cfg(feature = "desktop")]
+pub use crate::commands::shell_integration::dispatch_owned as shell_integration_owned;
 pub use crate::commands::terminal::{SessionInfo, StartedSession};
 pub use crate::core::{
     runtime_snapshot::DashboardSnapshot,

@@ -533,6 +533,14 @@ mod native {
         /// WSL accepts an absolute Windows --cd path. Its native launcher
         /// maps the installed resource directory; no shell or wslpath utility
         /// participates in selecting the first-party helper executable.
+        pub fn require_running(&self) -> Result<()> {
+            self.revalidate()?;
+            if running()?.contains(&self.registration.name) {
+                Ok(())
+            } else {
+                Err("wsl_distro_stopped")
+            }
+        }
         pub fn helper_args(
             &self,
             directory: &Path,
