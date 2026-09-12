@@ -341,3 +341,5 @@ mod tests {
 pub mod command_index;
 
 pub mod navigation;
+
+pub mod launcher_preferences;

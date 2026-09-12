@@ -16,7 +16,8 @@
     "@tauri-apps/api": "^2",
     "@tauri-apps/plugin-clipboard-manager": "^2",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "@devbox/product-shell": "workspace:*"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2",

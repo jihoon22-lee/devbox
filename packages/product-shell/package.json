@@ -11,7 +11,10 @@
     "./api": "./src/api.ts",
     "./operation": "./src/operation.ts",
     "./commands": "./src/commands.ts",
-    "./route-view": "./src/RouteView.tsx"
+    "./route-view": "./src/RouteView.tsx",
+    "./launcher": "./src/launcher/App.tsx",
+    "./launcher-types": "./src/launcher/types.ts",
+    "./launcher-adapter": "./src/launcher/adapter.ts"
   },
   "scripts": {
     "build": "tsc --noEmit",
