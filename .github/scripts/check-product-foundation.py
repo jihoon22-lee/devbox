@@ -76,7 +76,7 @@ def check(root=ROOT):
         capability = json.loads((root / entry["appDir"] / "src-tauri/capabilities/default.json").read_text())
         assert capability["windows"] == ["main"]
         assert "remote" not in capability
-        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status"}
+        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status", "suite:allow-connection"}
         if product["id"] == "workspace":
             expected_permissions.add("workspace:allow-execute")
         if product["id"] == "api-studio":

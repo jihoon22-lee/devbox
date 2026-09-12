@@ -219,6 +219,27 @@
       "protocolVersion": 1
     },
     {
+      "id": "workspace.commands",
+      "owner": "workspace",
+      "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.commands",
+      "owner": "api-studio",
+      "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.commands",
+      "owner": "knowledge",
+      "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
       "id": "workspace.problems",
       "owner": "workspace",
       "authority": "problem-read",

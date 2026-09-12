@@ -3,6 +3,8 @@ mod core;
 mod lifecycle;
 mod migration;
 mod search;
+#[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
+mod suite;
 pub use search::{disconnect_project_provider, install_project_snapshot};
 mod startup;
 mod storage_space;
@@ -12,6 +14,7 @@ mod vault_owner;
 pub fn run() {
     product_shell_tauri::run_with("knowledge", tauri::generate_context!(), |builder| {
         builder
+            .plugin(suite::plugin("knowledge"))
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_opener::init())
             .plugin(component::plugin())

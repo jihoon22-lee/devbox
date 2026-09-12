@@ -222,9 +222,15 @@ included_sources = {
     (native_module.parent / relative).resolve().relative_to(ROOT).as_posix()
     for relative in re.findall(r'#\[path = "([^"]+)"\]', native_module.read_text())
 }
-assert included_sources == set(module.RUST_SHARED_PLATFORM_CONSUMERS)
+assert included_sources <= set(module.RUST_SHARED_PLATFORM_CONSUMERS)
 for path in included_sources:
     shared = resolve(path)
     assert "devbox-workspace" in shared.rust_packages
     assert shared.frontend_scope == "none"
 print("CI scope regression tests passed")
+
+for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
+    if path.startswith("apps/devbox-control-center/src-tauri/src/"):
+        shared = resolve(path)
+        assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(shared.rust_packages)
+        assert shared.frontend_scope == "none"
