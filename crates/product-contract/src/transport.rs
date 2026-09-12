@@ -129,49 +129,7 @@ impl Guard {
         if self.peer.product != "control-center" && !matches!(request.call, Call::Describe {}) {
             return Err("peer_method_denied");
         }
-        match &request.call {
-            Call::Query {
-                query,
-                generation,
-                context,
-                ..
-            } => {
-                commands::validate_query(query)?;
-                if *generation == 0
-                    || *generation > 9_007_199_254_740_991
-                    || context
-                        .as_ref()
-                        .is_some_and(|context| context.validate().is_err())
-                {
-                    return Err("peer_query_invalid");
-                }
-            }
-            Call::CancelQuery { generation }
-                if *generation == 0 || *generation > 9_007_199_254_740_991 =>
-            {
-                return Err("peer_query_invalid");
-            }
-            Call::PreviewCommand { request } | Call::OpenCommand { request } => {
-                if !commands::opaque_id(&request.operation_id)
-                    || request.command_id.len() > 256
-                    || !commands::revision(&request.revision)
-                    || request
-                        .context
-                        .as_ref()
-                        .is_some_and(|context| context.validate().is_err())
-                    || request
-                        .selection_id
-                        .as_ref()
-                        .is_some_and(|id| !commands::opaque_id(id))
-                {
-                    return Err("peer_command_invalid");
-                }
-            }
-            Call::CommandStatus { operation_id } if !commands::opaque_id(operation_id) => {
-                return Err("peer_command_invalid");
-            }
-            _ => {}
-        }
+        validate_call(&request.call)?;
         self.seen.retain(|_, expires| *expires > now);
         if self.seen.contains_key(&request.request_id) {
             return Err("peer_request_replayed");
@@ -184,6 +142,53 @@ impl Guard {
         Ok(())
     }
 }
+pub fn validate_call(call: &Call) -> Result<()> {
+    match call {
+        Call::Query {
+            query,
+            generation,
+            context,
+            ..
+        } => {
+            commands::validate_query(query)?;
+            if *generation == 0
+                || *generation > 9_007_199_254_740_991
+                || context
+                    .as_ref()
+                    .is_some_and(|context| context.validate().is_err())
+            {
+                return Err("peer_query_invalid");
+            }
+        }
+        Call::CancelQuery { generation }
+            if *generation == 0 || *generation > 9_007_199_254_740_991 =>
+        {
+            return Err("peer_query_invalid");
+        }
+        Call::PreviewCommand { request } | Call::OpenCommand { request } => {
+            if !commands::opaque_id(&request.operation_id)
+                || request.command_id.len() > 256
+                || !commands::revision(&request.revision)
+                || request
+                    .context
+                    .as_ref()
+                    .is_some_and(|context| context.validate().is_err())
+                || request
+                    .selection_id
+                    .as_ref()
+                    .is_some_and(|id| !commands::opaque_id(id))
+            {
+                return Err("peer_command_invalid");
+            }
+        }
+        Call::CommandStatus { operation_id } if !commands::opaque_id(operation_id) => {
+            return Err("peer_command_invalid");
+        }
+        _ => {}
+    }
+    Ok(())
+}
+
 pub fn encode<T: Serialize>(value: &T) -> Result<Vec<u8>> {
     let body = serde_json::to_vec(value).map_err(|_| "peer_frame_invalid")?;
     if body.len() > MAX_FRAME_BYTES {

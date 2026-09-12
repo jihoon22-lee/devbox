@@ -339,3 +339,5 @@ mod tests {
 }
 
 pub mod command_index;
+
+pub mod navigation;

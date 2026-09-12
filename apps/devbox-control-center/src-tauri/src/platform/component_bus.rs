@@ -202,6 +202,7 @@ pub(crate) async fn call(
     call: Call,
     deadline_ms: u64,
 ) -> Result<Value> {
+    transport::validate_call(&call)?;
     let remaining = deadline_ms.saturating_sub(now());
     if remaining == 0 || remaining > transport::MAX_DEADLINE_MS {
         return Err("peer_deadline_expired");

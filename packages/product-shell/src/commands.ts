@@ -61,3 +61,29 @@ export async function previewCommand(description:Description,route:string,item:C
   if(!command(value)||value.id!==item.id||value.revision!==item.revision)throw new Error("명령의 현재 버전이 바뀌었습니다.");
   return value;
 }
+export interface CommandReceipt {operationId:string;phase:"awaitingReview"|"opening"|"opened"|"rejected"|"expired"}
+function receipt(value:unknown,id:string):CommandReceipt{
+  if(!value||typeof value!=="object"||!("operationId" in value)||value.operationId!==id||!("phase" in value)
+    ||!["awaitingReview","opening","opened","rejected","expired"].includes(String(value.phase)))throw new Error("명령 전달 결과를 확인하지 못했습니다.");
+  return value as CommandReceipt;
+}
+export async function searchCommandSource(description:Description,route:string,product:string,query:string,generation:number):Promise<CommandSearch>{
+  if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
+  const value=await call(description,route,"command_source",{product,query,generation});
+  if(!value||typeof value!=="object"||!("generation" in value)||value.generation!==generation
+    ||!("source" in value)||value.source!=="commands"||!("owner" in value)||value.owner!==product
+    ||!("result" in value)||!value.result||typeof value.result!=="object")throw new Error("검색 출처가 일치하지 않습니다.");
+  const result=value.result;
+  if(!("results" in result)||!Array.isArray(result.results)||result.results.length>256
+    ||!result.results.every(row=>command(row)&&row.owner===product)||!("truncated" in result)||typeof result.truncated!=="boolean")
+    throw new Error("검색 결과를 확인할 수 없습니다.");
+  return {results:result.results,truncated:result.truncated};
+}
+export async function openCommand(description:Description,route:string,item:Command,operationId:string):Promise<CommandReceipt>{
+  if(!nativeMode)throw new Error("브라우저 미리보기에서는 제품을 열 수 없습니다.");
+  return receipt(await call(description,route,"command_open",{command:{operationId,commandId:item.id,revision:item.revision,context:item.context,selectionId:null}}),operationId);
+}
+export async function commandStatus(description:Description,route:string,product:string,operationId:string):Promise<CommandReceipt>{
+  if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
+  return receipt(await call(description,route,"command_status",{product,operationId}),operationId);
+}
