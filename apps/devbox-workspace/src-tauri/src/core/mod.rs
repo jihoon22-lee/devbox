@@ -22,3 +22,5 @@ pub mod template_editor;
 pub mod wsl_files;
 
 pub mod problems;
+
+pub mod session_summary;

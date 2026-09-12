@@ -1418,6 +1418,7 @@ name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
  "applink",
+ "chrono",
  "code-pad",
  "data-migration",
  "filesystem",

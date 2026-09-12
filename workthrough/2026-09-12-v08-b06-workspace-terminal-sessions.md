@@ -444,3 +444,27 @@ product-contract; the legacy Knowledge module reexports it and retains its fixtu
 adapter. Existing draft parsing and note publication still use that same contract.
 The shared date validation is reused by the legacy handoff validator.
 This extraction is committed separately from the provider behavior.
+
+## Session summary provider and immutable preview receipts
+
+New Sessions record their native start time; the durable owner records the first
+confirmed stop transition. Old records without those timestamps remain unavailable
+for summary, including old stopped records. A preview contains the exact recorded
+interval, current Session binding, optional fixed problem categories, and unavailable
+run/commit counts where complete interval provenance is absent. It never copies
+commands, log text, paths, diagnostic messages or secret values into the summary.
+
+The owner persists at most 256 immutable metadata receipts. Repeating the same
+operation returns the original interval; changed Session revision or different
+options reject reuse. Renderer reload keeps the operation ID. The native delivery
+entrypoint rechecks the Session and Registry binding; B07 must authenticate the peer
+before consuming it. It performs no cross-product publication or launch itself.
+Knowledge's existing receiver can validate/render these metadata bytes, while actual
+product transport and sending from the preview remain B07 work.
+
+Prepared fixtures cover unknown historical intervals, recorded stop time, receipt
+reuse/conflicts, allowlisted categories, and UI preview retries. The minimum native
+and frontend checks passed in 24.178 seconds. The final native Registry guard received
+syntax/diff review. No detailed tests, build, Clippy, affected or Windows execution
+was repeated. Chrono was already in the lockfile; Workspace adds only its direct
+dependency edge, with no package-version changes.

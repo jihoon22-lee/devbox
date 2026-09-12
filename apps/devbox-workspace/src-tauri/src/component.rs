@@ -2603,3 +2603,14 @@ mod tests {
         drop(two);
     }
 }
+
+pub(crate) fn provider_context(
+    app: &tauri::AppHandle,
+    context: &product_contract::ProjectContext,
+) -> Result<(), &'static str> {
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("session_summary_unavailable")?;
+    runtime.host()?.projects()?.binding(context)?;
+    Ok(())
+}

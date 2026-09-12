@@ -77,6 +77,11 @@ pub struct Session {
     pub resources: BTreeSet<String>,
     pub pending: BTreeSet<String>,
     pub issue: Option<String>,
+    /// Older stores have no recorded interval; summaries must remain unavailable.
+    #[serde(default)]
+    pub started_at_ms: Option<u64>,
+    #[serde(default)]
+    pub stopped_at_ms: Option<u64>,
 }
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -150,6 +155,13 @@ impl Store {
                 || !operation_id(key)
                 || session.context.validate().is_err()
                 || session.revision == 0
+                || session
+                    .started_at_ms
+                    .is_some_and(|value| value > 253_402_300_799_999)
+                || session.stopped_at_ms.is_some_and(|value| {
+                    value > 253_402_300_799_999
+                        || session.started_at_ms.is_none_or(|start| value < start)
+                })
                 || !revision(&session.plan_revision)
                 || session.resources.len() > MAX_PER_SESSION
                 || session.pending.len() > MAX_PER_SESSION
@@ -257,6 +269,8 @@ impl Store {
             resources: BTreeSet::new(),
             pending: BTreeSet::new(),
             issue: None,
+            started_at_ms: Some(now),
+            stopped_at_ms: None,
         };
         self.sessions.insert(id, session.clone());
         Ok(session)

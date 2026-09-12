@@ -81,3 +81,24 @@ it("shows a stopped-target report without creating or approving a session",async
   fireEvent.click(screen.getByRole("button",{name:"취소"}));
   expect(call.mock.calls.some(([, , method])=>["start_development_session","stop_development_session"].includes(method))).toBe(false);
 });
+
+it("previews native summary metadata and reuses the operation receipt",async()=>{
+  const requests:Array<Record<string,unknown>>=[];
+  call.mockImplementation(async(_description,_component,method,args)=>{
+    if(method==="development_candidates")return{jobs:[],truncated:false};
+    if(method==="development_sessions")return{sessions:[session],intents:{}};
+    if(method==="prepare_session_summary"){
+      requests.push(args);
+      return{operationId:args.operationId,draft:{title:"개발 세션 요약",body:"실패한 실행: 확인 불가",metadata:{binding:{context,sessionId:session.id,revision:session.revision}}}};
+    }
+    return{};
+  });
+  render(<DevelopmentSessions description={description} registry={null}/>);
+  fireEvent.click(await screen.findByRole("button",{name:"요약 미리보기"}));
+  await screen.findByText("실패한 실행: 확인 불가");
+  fireEvent.click(screen.getByRole("button",{name:"미리보기 닫기"}));
+  fireEvent.click(screen.getByRole("button",{name:"요약 미리보기"}));
+  await waitFor(()=>expect(requests).toHaveLength(2));
+  expect(requests[0].operationId).toBe(requests[1].operationId);
+  expect(requests[0]).toEqual(expect.objectContaining({sessionId:session.id,revision:session.revision,includeProblems:false}));
+});

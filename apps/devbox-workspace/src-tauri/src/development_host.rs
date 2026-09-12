@@ -33,6 +33,8 @@ struct Intent {
 struct Document {
     store: Store,
     intents: BTreeMap<String, Intent>,
+    #[serde(default)]
+    summaries: BTreeMap<String, crate::core::session_summary::Receipt>,
 }
 #[derive(Clone)]
 struct Plan {
@@ -102,7 +104,22 @@ fn parse<T: serde::de::DeserializeOwned>(args: Value) -> Result<T> {
 fn write(inner: &mut Inner, change: impl FnOnce(&mut Document) -> Result<()>) -> Result<()> {
     let mut next = inner.document.clone();
     change(&mut next)?;
+    for (id, session) in &mut next.store.sessions {
+        if session.phase == Phase::Stopped
+            && session.stopped_at_ms.is_none()
+            && session.started_at_ms.is_some()
+            && inner
+                .document
+                .store
+                .sessions
+                .get(id)
+                .is_some_and(|previous| previous.phase != Phase::Stopped)
+        {
+            session.stopped_at_ms = Some(now().max(session.started_at_ms.unwrap_or(0)));
+        }
+    }
     next.store.validate()?;
+    crate::core::session_summary::validate_receipts(&next.summaries)?;
     inner.root.write(
         FILE,
         &serde_json::to_vec(&next).map_err(|_| "session_store_invalid")?,
@@ -282,6 +299,31 @@ impl Sessions {
             })
         })
     }
+    pub(crate) fn summary_delivery(
+        &self,
+        operation: &str,
+    ) -> Result<crate::core::session_summary::Receipt> {
+        self.access(|inner| {
+            let receipt = inner
+                .document
+                .summaries
+                .get(operation)
+                .ok_or("session_summary_missing")?;
+            let session = inner
+                .document
+                .store
+                .sessions
+                .get(&receipt.metadata.binding.session_id)
+                .ok_or("session_summary_stale")?;
+            if session.context != receipt.metadata.binding.context
+                || session.revision != receipt.metadata.binding.revision
+            {
+                return Err("session_summary_stale");
+            }
+            inner.root.revalidate()?;
+            Ok(receipt.clone())
+        })
+    }
     pub(crate) fn running_runs(&self, context: &ProjectContext) -> Result<Vec<String>> {
         let leases = {
             let guard = self.inner.lock().map_err(|_| "session_owner_busy")?;
@@ -332,9 +374,11 @@ impl Sessions {
             None => Document {
                 store: Store::default(),
                 intents: BTreeMap::new(),
+                summaries: BTreeMap::new(),
             },
         };
         document.store.validate()?;
+        crate::core::session_summary::validate_receipts(&document.summaries)?;
         if document.intents.len() != document.store.sessions.len()
             || document.intents.iter().any(|(id, intent)| {
                 !document.store.sessions.contains_key(id)
@@ -373,6 +417,7 @@ impl Sessions {
             "development_candidates"
                 | "development_sessions"
                 | "archive_development_session"
+                | "prepare_session_summary"
                 | "prepare_development_session"
                 | "start_development_session"
                 | "stop_development_session"
@@ -390,6 +435,49 @@ impl Sessions {
     ) -> Result<Value> {
         self.initialize(host)?;
         match method {
+            "prepare_session_summary" => {
+                let input: crate::core::session_summary::Input = parse(args)?;
+                let context = header.context.as_ref().ok_or("session_context_required")?;
+                self.access(|inner| {
+                    let session = inner
+                        .document
+                        .store
+                        .sessions
+                        .get(&input.session_id)
+                        .ok_or("session_summary_stale")?;
+                    if session.context != *context || session.revision != input.revision {
+                        return Err("session_summary_stale");
+                    }
+                    Ok(())
+                })?;
+                let observations = self.problem_snapshots(context)?;
+                self.access(|inner| {
+                    let session = inner
+                        .document
+                        .store
+                        .sessions
+                        .get(&input.session_id)
+                        .ok_or("session_summary_stale")?
+                        .clone();
+                    let receipt = crate::core::session_summary::prepare(
+                        context,
+                        &session,
+                        &input,
+                        &inner.document.summaries,
+                        observations.iter().find(|row| row.0 == session.id),
+                        now(),
+                    )?;
+                    if !inner.document.summaries.contains_key(&input.operation_id) {
+                        write(inner, |document| {
+                            document
+                                .summaries
+                                .insert(input.operation_id.clone(), receipt.clone());
+                            Ok(())
+                        })?;
+                    }
+                    Ok(json!({"operationId":input.operation_id,"draft":receipt.draft()?}))
+                })
+            }
             "development_candidates" => {
                 #[derive(Deserialize)]
                 #[serde(deny_unknown_fields)]

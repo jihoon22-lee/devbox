@@ -3,6 +3,7 @@ import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { componentCall } from "./native";
 
+interface SummaryPreview {operationId:string;draft:{title:string;body:string;metadata:{binding:{context:ProjectContext;sessionId:string;revision:number}}}}
 interface Candidate { id: string; name: string; kind: string; targetKind: string; targetDistro: string | null }
 interface Job extends Candidate { command: string; cwd: string | null; envConfigured: boolean }
 interface Session { id: string; context: ProjectContext; revision: number; planRevision: string; phase: string; issue: string | null; canArchive?: boolean }
@@ -15,6 +16,8 @@ const phaseLabels: Record<string, string> = { preflight: "환경 확인", review
 const preflightKinds:Record<string,string>={project:"프로젝트",distro:"WSL 대상",definitions:"프로젝트 정의",definitionSource:"정의 파일",toolchain:"도구 버전",task:"작업",taskContext:"작업 폴더",taskTrust:"실행 승인",environment:"작업 환경",secretReference:"비밀 참조",environmentReference:"환경 참조",port:"포트"};
 const preflightStates:Record<string,string>={"repository-verified":"저장소 확인됨","folder-verified":"폴더 확인됨","unavailable-or-changed":"접근할 수 없거나 변경됨",running:"실행 중",stopped:"중지됨",unavailable:"확인 불가",reviewed:"검토됨","not-reviewed":"실행 정의 별도 검토 필요","definition-verified":"정의 확인됨","definition-changed-or-unavailable":"정의가 변경되었거나 확인 불가","current-worktree":"현재 worktree","different-worktree":"다른 worktree","review-required":"실행 승인 필요",configured:"설정됨 (값은 실행 소유자가 확인)","not-configured":"별도 설정 없음","owner-reference-configured":"참조 지정됨 (소유자 확인 필요)","declared-version-unverified":"요구 버전 선언됨 · 실제 버전 검사 미실행",available:"현재 사용되지 않음","existing-selected-service":"선택한 서비스가 사용 중 · 참조 연결",occupied:"다른 실행이 사용 중","observation-unavailable":"포트 관측 불가"};
 export default function DevelopmentSessions({ description, registry }: { description: Description; registry: Registry | null }) {
+  const [summary,setSummary]=useState<SummaryPreview|null>(null);
+  const [summaryProblems,setSummaryProblems]=useState(false);
   const [jobs, setJobs] = useState<Candidate[]>([]);
   const [profiles, setProfiles] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
@@ -90,6 +93,19 @@ export default function DevelopmentSessions({ description, registry }: { descrip
     finally { setBusy(false); }
   };
 
+  const prepareSummary=async(session:Session)=>{
+    if(busy)return;
+    setBusy(true);setIssue("");
+    const original=contextKey;
+    try{
+      const key="workspace:session-summary:"+session.id+":"+session.revision+":"+summaryProblems;
+      let operationId=sessionStorage.getItem(key);
+      if(!operationId){operationId=crypto.randomUUID();sessionStorage.setItem(key,operationId);}
+      const preview=await call<SummaryPreview>("prepare_session_summary",{operationId,sessionId:session.id,revision:session.revision,includeProblems:summaryProblems});
+      if(current.current===original)setSummary(preview);
+    }catch{if(current.current===original)setIssue("요약 기간이나 세션 상태를 확인하지 못했습니다. 현재 세션을 다시 확인해 주세요.");}
+    finally{if(current.current===original)setBusy(false);}
+  };
   return <section aria-label="개발 세션" className="workspace-development-sessions">
     <h2>개발 세션</h2>
     <p>작업 폴더의 상태 복원과 작업 실행을 따로 선택합니다. 세션 종료는 이 세션이 시작한 자원만 정리하며, 다른 세션이 사용하는 공유 서비스는 유지합니다.</p>
@@ -113,6 +129,12 @@ export default function DevelopmentSessions({ description, registry }: { descrip
       <button disabled={busy||!plan.session||plan.preflight.executionBlocked} onClick={() => void start("startReviewed")}>검토한 작업 실행</button>{" "}
       <button disabled={busy} onClick={() => { if(plan.session)void stop(plan.session.id); setPlan(null); }}>취소</button>
     </section>}
+    <label><input type="checkbox" checked={summaryProblems} onChange={event=>setSummaryProblems(event.target.checked)}/> 요약에 현재 세션의 문제 분류 포함</label>
+    {summary&&JSON.stringify(summary.draft.metadata.binding.context)===contextKey&&<section aria-label="세션 요약 미리보기">
+      <h3>{summary.draft.title}</h3><pre>{summary.draft.body}</pre>
+      <p>전체 기간의 실행·커밋 수를 확인할 수 없으면 확인 불가로 표시합니다.</p>
+      <button onClick={()=>setSummary(null)}>미리보기 닫기</button>
+    </section>}
     {issue && <p role="alert">{issue}</p>}
     <ul>{snapshot.sessions.map(session => {
       const project = registry?.projects.find(project => project.id === session.context.projectId)?.name ?? "연결되지 않은 프로젝트";
@@ -121,6 +143,7 @@ export default function DevelopmentSessions({ description, registry }: { descrip
       return <li key={session.id}><strong>{project}</strong> · {root} · {phaseLabels[session.phase] ?? "상태 확인 필요"}{" "}
         {session.phase !== "stopped" && session.issue !== "session_native_owner_lost" && <button disabled={busy} onClick={() => void stop(session.id)}>{session.phase === "stopping" ? "정리 다시 확인" : "내가 시작한 자원 정리"}</button>}{" "}
         {["stopped", "degraded"].includes(session.phase) && sameContext && <button disabled={busy} onClick={() => void prepare(snapshot.intents[session.id]?.jobs ?? [], snapshot.intents[session.id]?.terminalProfile ?? null)}>새 계획으로 이어가기</button>}
+        {sameContext&&<button disabled={busy} onClick={()=>void prepareSummary(session)}>요약 미리보기</button>}
         {session.canArchive && <button disabled={busy} onClick={() => void archive(session.id)}>완료 기록 정리</button>}
         {session.issue && <p>{session.issue === "session_native_owner_lost" ? "이전 실행의 소유권을 이어받지 않았습니다. 새 계획을 검토한 뒤 이어가세요." : "작업 시작 또는 정리에 확인이 필요합니다. Tasks & Services의 실행 상태와 로그를 확인해 주세요."}</p>}
       </li>;

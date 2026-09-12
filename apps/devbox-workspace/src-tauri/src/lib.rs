@@ -14,6 +14,7 @@ mod problems_host;
 pub mod project_owner;
 mod runtime_host;
 mod session_preflight;
+pub mod session_summary;
 mod source_host;
 mod terminal_export;
 mod terminal_host;
