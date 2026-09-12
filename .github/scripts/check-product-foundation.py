@@ -83,6 +83,8 @@ def check(root=ROOT):
             expected_permissions.add("api-studio:allow-execute")
         if product["id"] == "knowledge":
             expected_permissions.add("knowledge:allow-execute")
+        if product["id"] == "control-center":
+            expected_permissions.update({"commands:allow-command-search", "commands:allow-command-preview"})
         assert set(capability["permissions"]) == expected_permissions
         capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
         expected_files = {"default.json"}

@@ -143,7 +143,7 @@ async function start(product, suffix) {
             ? 'Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "빈 Workspace 시작" && !button.disabled)'
             : product.id === "knowledge"
             ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
-            : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
+            : '!!document.querySelector(".command-browser")');
       } catch (error) {
         readinessError = error.message;
         // A startup document/renderer transition can invalidate this attachment.

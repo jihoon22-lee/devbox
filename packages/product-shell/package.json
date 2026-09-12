@@ -9,7 +9,9 @@
     ".": "./src/index.tsx",
     "./styles.css": "./src/styles.css",
     "./api": "./src/api.ts",
-    "./operation": "./src/operation.ts"
+    "./operation": "./src/operation.ts",
+    "./commands": "./src/commands.ts",
+    "./route-view": "./src/RouteView.tsx"
   },
   "scripts": {
     "build": "tsc --noEmit",

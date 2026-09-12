@@ -1,12 +1,14 @@
 {
   "identifier": "main",
-  "description": "Local product shell window; domain mutations are not granted.",
+  "description": "Local product shell and bounded command catalog; owner review remains required.",
   "windows": [
     "main"
   ],
   "permissions": [
     "core:default",
     "product-shell:allow-describe",
-    "product-shell:allow-route-status"
+    "product-shell:allow-route-status",
+    "commands:allow-command-search",
+    "commands:allow-command-preview"
   ]
 }

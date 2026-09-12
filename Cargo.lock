@@ -1324,8 +1324,10 @@ dependencies = [
 name = "devbox-control-center"
 version = "0.8.0"
 dependencies = [
+ "catalog",
  "data-migration",
  "filesystem",
+ "product-contract",
  "product-shell-tauri",
  "rusqlite",
  "serde",
@@ -1371,6 +1373,7 @@ dependencies = [
  "filesystem",
  "integration",
  "launch",
+ "product-contract",
  "serde",
  "serde_json",
  "sha2 0.11.0",

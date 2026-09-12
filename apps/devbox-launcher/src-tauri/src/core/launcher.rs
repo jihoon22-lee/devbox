@@ -522,35 +522,16 @@ fn preference_rank(preferences: &Preferences, id: &str) -> (u8, usize) {
 }
 
 fn match_score(result: &SearchResult, needle: &str) -> Option<u8> {
-    if needle.is_empty() {
-        return Some(20);
-    }
-    field_match_score(&result.label, needle, 0)
-        .or_else(|| {
-            result
-                .detail
-                .as_deref()
-                .and_then(|detail| field_match_score(detail, needle, 3))
-        })
-        .or_else(|| field_match_score(&result.target_app, needle, 6))
-        // Result IDs are bounded, validated non-secret identifiers. Including
-        // them preserves stable technical aliases such as `clipboard-preview`
-        // when the visible label is localized.
-        .or_else(|| field_match_score(&result.id, needle, 9))
-        .or_else(|| field_match_score(&result.source, needle, 12))
-}
-
-fn field_match_score(value: &str, needle: &str, base: u8) -> Option<u8> {
-    let value = value.to_lowercase();
-    if value == needle {
-        Some(base)
-    } else if value.starts_with(needle) {
-        Some(base + 1)
-    } else if value.contains(needle) {
-        Some(base + 2)
-    } else {
-        None
-    }
+    product_contract::commands::match_fields(
+        [
+            &*result.label,
+            result.detail.as_deref().unwrap_or(""),
+            &result.target_app,
+            &result.id,
+            &result.source,
+        ],
+        needle,
+    )
 }
 
 fn catalog_action(app: &CatalogApp, action: &CatalogAction, revision: &str) -> IndexedEntry {
