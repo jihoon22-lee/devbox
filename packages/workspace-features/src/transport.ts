@@ -1,6 +1,6 @@
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 
-export type Component = "workspace.overview" | "workspace.source" | "workspace.dependencies" | "workspace.files" | "workspace.lsp" | "workspace.migration";
+export type Component = "workspace.overview" | "workspace.source" | "workspace.dependencies" | "workspace.files" | "workspace.lsp" | "workspace.migration" | "workspace.runtime" | "workspace.processes" | "workspace.process-actions" | "workspace.logs";
 export type Transport = <T>(component: Component, method: string, args: Record<string, unknown>) => Promise<T>;
 let productTransport: Transport | undefined;
 /** Only the native product bridge constructs this from fixed, validated messages. */

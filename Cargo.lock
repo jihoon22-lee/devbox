@@ -1416,12 +1416,17 @@ dependencies = [
 name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
+ "applink",
  "code-pad",
  "filesystem",
  "git",
+ "integration",
+ "log-lens",
+ "port-manager",
  "product-contract",
  "product-shell-tauri",
  "repo-manager",
+ "run-manager",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1429,6 +1434,7 @@ dependencies = [
  "tauri-build",
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-dialog",
+ "tauri-plugin-notification",
  "tauri-plugin-opener",
  "tempfile",
  "tokio",

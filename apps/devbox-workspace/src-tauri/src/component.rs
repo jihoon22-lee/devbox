@@ -34,6 +34,11 @@ impl Drop for Permit {
 #[derive(Clone)]
 struct Runtime {
     shutdown_started: Arc<AtomicBool>,
+    ui_ready: Arc<AtomicBool>,
+    engines: Arc<crate::runtime_host::Owners>,
+    engine_requests: Pool,
+    engine_workers: Arc<tokio::sync::Semaphore>,
+    engine_stop_workers: Arc<tokio::sync::Semaphore>,
     exit_authorized: Arc<AtomicBool>,
     context_activity: crate::core::context_activity::ContextActivity,
     context_waiters: Pool,
@@ -61,6 +66,11 @@ impl Default for Runtime {
     fn default() -> Self {
         Self {
             shutdown_started: Arc::default(),
+            ui_ready: Arc::default(),
+            engines: Arc::default(),
+            engine_requests: Pool::default(),
+            engine_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            engine_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             exit_authorized: Arc::default(),
             context_activity: Default::default(),
             context_waiters: Pool::default(),
@@ -227,7 +237,13 @@ struct Response {
     value: Value,
 }
 fn allowed(component: &str, route: &str, method: &str) -> bool {
-    if !matches!(route, "overview" | "source" | "files" | "dependencies") {
+    if crate::runtime_host::component(component) {
+        return crate::runtime_host::allowed(component, route, method);
+    }
+    if !matches!(
+        route,
+        "overview" | "source" | "files" | "dependencies" | "tasks" | "runtime" | "logs"
+    ) {
         return false;
     }
     match component {
@@ -311,6 +327,65 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         _ => false,
     }
+}
+
+async fn execute_runtime(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context_permit: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    let permit = runtime.engine_requests.reserve_with_limit(24)?;
+    let host = runtime.host()?;
+    let owners = runtime.engines.clone();
+    let definitions = runtime.definitions.clone();
+    let shutdown = runtime.shutdown_started.clone();
+    let workers = if crate::runtime_host::stops(&request.method) {
+        runtime.engine_stop_workers.clone()
+    } else {
+        runtime.engine_workers.clone()
+    };
+    let app = window.app_handle().clone();
+    // The spawned owner retains permits even if the renderer abandons its IPC
+    // future. Cancellation/stop requests have independent execution capacity.
+    tauri::async_runtime::spawn(async move {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis();
+        let remaining = u128::from(request.header.deadline_ms)
+            .saturating_sub(now)
+            .min(30_000) as u64;
+        let worker =
+            tokio::time::timeout(Duration::from_millis(remaining), workers.acquire_owned())
+                .await
+                .map_err(|_| "request_expired")?
+                .map_err(|_| "request_cancelled")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_permit, _context, _worker) = (permit, context_permit, worker);
+            crate::files_host::current_deadline(request.header.deadline_ms)?;
+            if shutdown.load(Ordering::Acquire) {
+                return Err("request_cancelled");
+            }
+            tauri::async_runtime::block_on(crate::runtime_host::dispatch(
+                &app,
+                &host,
+                &owners,
+                &definitions,
+                crate::runtime_host::EngineRequest {
+                    component: &request.component,
+                    method: &request.method,
+                    value: request.args,
+                    context: request.header.context.as_ref(),
+                    deadline: request.header.deadline_ms,
+                },
+            ))
+        })
+        .await
+        .unwrap_or(Err("worker_unavailable"))
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
 }
 
 async fn execute_lsp(
@@ -1209,11 +1284,14 @@ async fn execute(
         || serde_json::to_vec(&request.args).map_or(true, |bytes| {
             bytes.len()
                 > if request.component == "workspace.files"
+                    || request.component == "workspace.logs"
                     || (request.component == "workspace.lsp"
                         && crate::lsp_host::text_request(&request.method))
                 {
                     64 * 1024 * 1024
-                } else if request.component == "workspace.definitions" {
+                } else if request.component == "workspace.definitions"
+                    || request.component == "workspace.runtime"
+                {
                     2 * 1024 * 1024
                 } else {
                     64 * 1024
@@ -1222,6 +1300,7 @@ async fn execute(
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
+    let engine = crate::runtime_host::component(&request.component);
     let files = request.component == "workspace.files";
     let lsp = request.component == "workspace.lsp";
     let definitions = request.component == "workspace.definitions";
@@ -1235,7 +1314,8 @@ async fn execute(
         code,
         provenance: provenance.clone(),
     };
-    let context_permit = if files
+    let context_permit = if engine
+        || files
         || definitions
         || dependencies
         || source
@@ -1307,6 +1387,8 @@ async fn execute(
     };
     let mut result = if let Err(issue) = retired {
         Err(issue)
+    } else if engine {
+        execute_runtime(&window, &runtime, request, context_permit.clone()).await
     } else if lsp {
         execute_lsp(&window, &runtime, request, context_permit.clone()).await
     } else if files {
@@ -1451,6 +1533,28 @@ async fn execute(
             }
             (Err(issue), _) | (_, Err(issue)) => Err(issue),
         }
+    } else if request.method == "start_empty" {
+        let host = runtime.host();
+        let owners = runtime.engines.clone();
+        let app = window.app_handle().clone();
+        let permit = runtime.engine_requests.reserve();
+        let shutdown = runtime.shutdown_started.clone();
+        match (host, permit) {
+            (Ok(host), Ok(permit)) => tauri::async_runtime::spawn_blocking(move || {
+                let _permit = permit;
+                crate::files_host::current_deadline(deadline)?;
+                if shutdown.load(Ordering::Acquire) {
+                    return Err("request_cancelled");
+                }
+                empty(&request.args)?;
+                host.start_empty()?;
+                owners.initialize_runtime(&app, &host)?;
+                host.status()
+            })
+            .await
+            .unwrap_or(Err("worker_unavailable")),
+            (Err(issue), _) | (_, Err(issue)) => Err(issue),
+        }
     } else if request.method == "clear_project" {
         empty(&request.args).and_then(|()| {
             product_shell_tauri::replace_project_context(
@@ -1523,17 +1627,50 @@ async fn execute(
         value,
     })
 }
+fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
+    use tauri::menu::{Menu, MenuItem};
+    use tauri::tray::TrayIconBuilder;
+    let show = MenuItem::with_id(app, "workspace-show", "열기", true, None::<&str>)?;
+    let quit = MenuItem::with_id(app, "workspace-quit", "종료", true, None::<&str>)?;
+    let menu = Menu::with_items(app, &[&show, &quit])?;
+    let icon = app
+        .default_window_icon()
+        .cloned()
+        .ok_or_else(|| tauri::Error::Io(std::io::Error::other("missing product icon")))?;
+    TrayIconBuilder::with_id("workspace-runtime-tray")
+        .icon(icon)
+        .tooltip("Devbox Workspace")
+        .menu(&menu)
+        .show_menu_on_left_click(false)
+        .on_menu_event(|app, event| match event.id().as_ref() {
+            "workspace-show" => {
+                if let Some(window) = app.get_webview_window("main") {
+                    let _ = window.show();
+                    let _ = window.unminimize();
+                    let _ = window.set_focus();
+                }
+            }
+            "workspace-quit" => app.exit(0),
+            _ => {}
+        })
+        .build(app)?;
+    Ok(())
+}
+
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
         .invoke_handler(tauri::generate_handler![execute])
         .setup(|app, _| {
             let runtime = Runtime::default();
             app.manage(runtime.clone());
+            setup_runtime_tray(app)?;
             #[cfg(windows)]
             runtime.start_wsl_poll(app.clone());
             let app = app.clone();
             tauri::async_runtime::spawn(async move {
+                let storage_app = app.clone();
                 let result = tauri::async_runtime::spawn_blocking(move || {
+                    let app = storage_app;
                     let root = app
                         .path()
                         .app_local_data_dir()
@@ -1545,6 +1682,32 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .await
                 .unwrap_or(Err("worker_unavailable"));
                 let _ = runtime.host.set(result);
+                while !runtime.ui_ready.load(Ordering::Acquire)
+                    && !runtime.shutdown_started.load(Ordering::Acquire)
+                {
+                    tokio::time::sleep(Duration::from_millis(10)).await;
+                }
+                if !runtime.shutdown_started.load(Ordering::Acquire) {
+                    if let (Ok(host), Ok(permit)) =
+                        (runtime.host(), runtime.engine_requests.reserve())
+                    {
+                        let owners = runtime.engines.clone();
+                        let shutdown = runtime.shutdown_started.clone();
+                        let worker_app = app.clone();
+                        let _ = tauri::async_runtime::spawn_blocking(move || {
+                            let _permit = permit;
+                            if !shutdown.load(Ordering::Acquire)
+                                && host.component("runtime").is_ok()
+                            {
+                                // Persisted product jobs keep their scheduler while
+                                // Tasks/Runtime/Logs views have never been opened.
+                                owners.initialize_runtime(&worker_app, &host)?;
+                            }
+                            Ok::<_, &'static str>(())
+                        })
+                        .await;
+                    }
+                }
                 loop {
                     tokio::time::sleep(Duration::from_secs(10)).await;
                     if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
@@ -1574,21 +1737,37 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             });
             Ok(())
         })
+        .on_window_ready(|window| {
+            if window.label() != "main" {
+                return;
+            }
+            let owner = window.clone();
+            window.on_window_event(move |event| {
+                if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                    if run_manager_lib::component::is_initialized(owner.app_handle())
+                        && !owner
+                            .state::<Runtime>()
+                            .exit_authorized
+                            .load(Ordering::Acquire)
+                    {
+                        let _ = owner.hide();
+                        api.prevent_close();
+                    }
+                }
+            });
+        })
         .on_event(|app, event| {
+            if matches!(event, tauri::RunEvent::Ready) {
+                app.state::<Runtime>()
+                    .ui_ready
+                    .store(true, Ordering::Release);
+                return;
+            }
             let tauri::RunEvent::ExitRequested { api, code, .. } = event else {
                 return;
             };
             let runtime = app.state::<Runtime>();
             if runtime.exit_authorized.load(Ordering::Acquire) {
-                return;
-            }
-            if app
-                .try_state::<Arc<code_pad_lib::lsp::LspManager>>()
-                .is_none()
-                && runtime.lsp_requests.0.load(Ordering::Acquire) == 0
-            {
-                runtime.shutdown_started.store(true, Ordering::Release);
-                runtime.lsp_shutdown.cancel();
                 return;
             }
             api.prevent_exit();
@@ -1604,10 +1783,18 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let app = app.clone();
             let exit_code = code.unwrap_or(0);
             tauri::async_runtime::spawn(async move {
+                if run_manager_lib::component::is_initialized(&app) {
+                    run_manager_lib::component::request_shutdown(&app);
+                }
+                if log_lens_lib::component::is_initialized(&app) {
+                    let _ = log_lens_lib::component::request_shutdown(&app);
+                }
                 // Cancellation interrupts downloads; the LSP worker retains its
                 // request permit until archive IO/index work actually retires.
                 let retired = tokio::time::timeout(Duration::from_secs(5), async {
-                    while runtime.lsp_requests.0.load(Ordering::Acquire) != 0 {
+                    while runtime.lsp_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.engine_requests.0.load(Ordering::Acquire) != 0
+                    {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
                 })
@@ -1625,7 +1812,23 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let files_stopped = runtime.retire_files().await.is_ok();
                 #[cfg(not(windows))]
                 let files_stopped = true;
-                if retired && stopped && actor_stopped && files_stopped {
+                let runtime_stopped = if run_manager_lib::component::is_initialized(&app) {
+                    run_manager_lib::component::shutdown(&app).await.is_ok()
+                } else {
+                    true
+                };
+                let logs_stopped = if log_lens_lib::component::is_initialized(&app) {
+                    log_lens_lib::component::shutdown(&app).await.is_ok()
+                } else {
+                    true
+                };
+                if retired
+                    && stopped
+                    && actor_stopped
+                    && files_stopped
+                    && runtime_stopped
+                    && logs_stopped
+                {
                     runtime.exit_authorized.store(true, Ordering::Release);
                     app.exit(exit_code);
                 } else {

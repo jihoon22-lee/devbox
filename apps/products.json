@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 7,
+  "catalogRevision": 8,
   "channel": "development",
   "products": [
     {
@@ -173,6 +173,34 @@
       "id": "workspace.source",
       "owner": "workspace",
       "authority": "git-execution",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.runtime",
+      "owner": "workspace",
+      "authority": "runtime-execution",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.processes",
+      "owner": "workspace",
+      "authority": "process-observation",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.process-actions",
+      "owner": "workspace",
+      "authority": "external-process-action",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.logs",
+      "owner": "workspace",
+      "authority": "log-read",
       "lifecycle": "product",
       "protocolVersion": 1
     }

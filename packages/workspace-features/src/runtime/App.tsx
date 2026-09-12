@@ -274,7 +274,10 @@ type ProcessPathState = {
   path: string | null;
 };
 
-export default function App() {
+export default function App({ active = true }: { active?: boolean }) {
+  const activeRef = useRef(active);
+  const previousActive = useRef(active);
+  activeRef.current = active;
   const [ports, setPorts] = useState<PortRow[]>([]);
   const [query, setQuery] = useState("");
   const [protoFilter, setProtoFilter] = useState<ProtoFilter>("all");
@@ -318,7 +321,7 @@ export default function App() {
   }, []);
 
   const refresh = useCallback(async () => {
-    if (!mounted.current) return;
+    if (!mounted.current || !activeRef.current) return;
     if (refreshInFlight.current) return refreshInFlight.current;
     const request = ++refreshRequest.current;
     setLoading(true);
@@ -328,7 +331,7 @@ export default function App() {
       try {
         const observation = await readObservationSnapshot();
         const next = observation.rows;
-        if (mounted.current && refreshRequest.current === request) {
+        if (mounted.current && activeRef.current && refreshRequest.current === request) {
           const prior = previousSnapshot.current;
           previousSnapshot.current = next;
           setPorts(next);
@@ -355,14 +358,14 @@ export default function App() {
           setProcessPath(null);
         }
       } catch (caught) {
-        if (mounted.current && refreshRequest.current === request) {
+        if (mounted.current && activeRef.current && refreshRequest.current === request) {
           // Keep the last stable rows and favorites, but fail closed for
           // process actions until a complete snapshot succeeds again.
           markSnapshotHealthy(false);
           setError(safeActionError(caught));
         }
       } finally {
-        if (mounted.current && refreshRequest.current === request) {
+        if (mounted.current && activeRef.current && refreshRequest.current === request) {
           setLoading(false);
         }
       }
@@ -504,12 +507,12 @@ export default function App() {
   }, [initialize, markSnapshotHealthy]);
 
   useEffect(() => {
-    if (!preferencesReady || autoRefreshPaused) return;
+    if (!active || !preferencesReady || autoRefreshPaused) return;
     const timer = window.setInterval(() => {
       void refresh();
     }, preferences.refresh_interval_ms);
     return () => window.clearInterval(timer);
-  }, [autoRefreshPaused, preferences.refresh_interval_ms, preferencesReady, refresh]);
+  }, [active, autoRefreshPaused, preferences.refresh_interval_ms, preferencesReady, refresh]);
 
   const visible = useMemo(() => {
     return ports.filter(
@@ -645,6 +648,26 @@ export default function App() {
   const contextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareContextRow(target),
   });
+
+  useEffect(() => {
+    if (previousActive.current === active) return;
+    previousActive.current = active;
+    let disposed = false;
+    if (!active) {
+      refreshRequest.current += 1;
+      processPathRequest.current += 1;
+      setLoading(false);
+      markSnapshotHealthy(false);
+      contextMenu.close();
+      setContextRow(null);
+    } else if (preferencesReady && !autoRefreshPaused) {
+      void (async () => {
+        await refreshInFlight.current;
+        if (!disposed && activeRef.current) await refresh();
+      })();
+    }
+    return () => { disposed = true; };
+  }, [active, preferencesReady, autoRefreshPaused, refresh, contextMenu.close, markSnapshotHealthy]);
 
   const contextPath =
     contextRow && processPath?.rowKey === portRowKey(contextRow) ? processPath.path : null;

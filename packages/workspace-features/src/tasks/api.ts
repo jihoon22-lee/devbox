@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted } from "../transport";
+const invoke = componentInvoke("workspace.runtime");
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
 import type {
@@ -38,7 +39,7 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
 
 export function onOpenRequest(handler: () => void): Promise<UnlistenFn> {
   if (!isTauri()) return Promise.resolve(() => undefined);
-  return listen<OpenRequest>("devbox://open", () => handler());
+  return listen<OpenRequest>(isProductHosted() ? "workspace://tasks-open" : "devbox://open", () => handler());
 }
 
 let mockJobs: Job[] = [];

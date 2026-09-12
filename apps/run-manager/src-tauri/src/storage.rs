@@ -266,6 +266,7 @@ CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
 /// same foreign-key and busy-timeout policy before migrations run.
 pub struct DatabaseState {
     connection: Mutex<Connection>,
+    legacy_publication: bool,
 }
 
 /// Minimal definition projection for integration consumers. Keeping this DTO
@@ -339,12 +340,24 @@ impl From<rusqlite::Error> for StorageError {
 }
 
 impl DatabaseState {
+    /// Product-owned state cannot publish snapshots into a legacy owner's
+    /// namespace. Workspace consumes native read-only projections instead.
+    pub(crate) fn open_product(path: &Path) -> rusqlite::Result<Self> {
+        let mut database = Self::open(path)?;
+        database.legacy_publication = false;
+        Ok(database)
+    }
+    pub(crate) fn allows_legacy_publication(&self) -> bool {
+        self.legacy_publication
+    }
+
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let mut connection = Connection::open(path)?;
         configure(&connection)?;
         migrate_connection(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            legacy_publication: true,
         })
     }
 
@@ -354,6 +367,7 @@ impl DatabaseState {
         migrate_connection(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            legacy_publication: true,
         })
     }
 

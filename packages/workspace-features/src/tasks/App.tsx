@@ -232,7 +232,9 @@ async function loadServiceSnapshot(): Promise<ServiceSnapshot> {
   };
 }
 
-export default function App() {
+export default function App({ active: visible = true, onDirtyChange }: { active?: boolean; onDirtyChange?: (dirty: boolean) => void }) {
+  const viewGenerationRef = useRef(0);
+  const loadedGenerationRef = useRef(-1);
   const [status, setStatus] = useState<RuntimeStatus | null>(null);
   const [startupStatus, setStartupStatus] = useState<StartupShortcutStatus | null>(null);
   const [jobs, setJobs] = useState<Job[]>([]);
@@ -338,6 +340,7 @@ export default function App() {
   const serviceContextTrigger = serviceContextMenu.triggerProps;
 
   const refreshActiveRuns = useCallback(async () => {
+    if (!mountedRef.current) return;
     const existing = activeRefresh.current.promise;
     if (existing) {
       activeRefresh.current.pending = true;
@@ -350,18 +353,18 @@ export default function App() {
         const generation = ++activeRefresh.current.generation;
         try {
           const runs = await listActiveRuns();
-          if (generation !== activeRefresh.current.generation) continue;
+          if (!mountedRef.current || generation !== activeRefresh.current.generation) continue;
           setActiveRuns(Object.fromEntries(runs.map((run) => [run.jobId, run])));
           setActiveSnapshotFresh(true);
           setActiveSnapshotError(null);
         } catch (cause) {
-          if (generation === activeRefresh.current.generation) {
+          if (mountedRef.current && generation === activeRefresh.current.generation) {
             setActiveRuns({});
             setActiveSnapshotFresh(false);
             setActiveSnapshotError(friendlyErrorMessage(cause));
           }
         }
-      } while (activeRefresh.current.pending);
+      } while (mountedRef.current && activeRefresh.current.pending);
     })();
     activeRefresh.current.promise = operation;
     try {
@@ -378,12 +381,15 @@ export default function App() {
   }, []);
 
   const refreshJobs = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const view = viewGenerationRef.current;
     setWorkspaceSnapshotFresh(false);
     try {
       const [nextJobs, nextWorkspaceTasks] = await Promise.all([
         listJobs(),
         listWorkspaceTasks(),
       ]);
+      if (!mountedRef.current || view !== viewGenerationRef.current) return;
       setJobs(nextJobs);
       setWorkspaceTasks(nextWorkspaceTasks);
       setWorkspaceSnapshotFresh(true);
@@ -395,7 +401,10 @@ export default function App() {
   }, [refreshActiveRuns]);
 
   const refreshServices = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const view = viewGenerationRef.current;
     const snapshot = await loadServiceSnapshot();
+    if (!mountedRef.current || view !== viewGenerationRef.current) return;
     setServices(snapshot.services);
     setServiceInstances(snapshot.instances);
   }, []);
@@ -410,11 +419,12 @@ export default function App() {
   const pollWorkspaceTaskOperation = useCallback(async (operationId: string): Promise<void> => {
     if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
     workspaceOperationTimersRef.current.delete(operationId);
+    const view = viewGenerationRef.current;
     const lastHealthyAt = workspaceOperationPollHealthyAtRef.current.get(operationId) ?? Date.now();
 
     try {
       const operation = await getWorkspaceTaskOperation(operationId);
-      if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+      if (!mountedRef.current || view !== viewGenerationRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
       if (!operation) {
         stopWorkspaceOperationPolling(operationId);
         setError(friendlyErrorMessage("workspace-task-operation-not-found"));
@@ -430,7 +440,7 @@ export default function App() {
       // for a continuously broken polling channel, not operation duration.
       workspaceOperationPollHealthyAtRef.current.set(operationId, Date.now());
     } catch (cause) {
-      if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+      if (!mountedRef.current || view !== viewGenerationRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
       if (Date.now() - lastHealthyAt >= WORKSPACE_OPERATION_POLL_MAX_MS) {
         stopWorkspaceOperationPolling(operationId);
         setError(friendlyErrorMessage(cause));
@@ -438,7 +448,7 @@ export default function App() {
       }
     }
 
-    if (!mountedRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
+    if (!mountedRef.current || view !== viewGenerationRef.current || !workspaceOperationPollHealthyAtRef.current.has(operationId)) return;
     const timer = window.setTimeout(() => {
       workspaceOperationTimersRef.current.delete(operationId);
       void pollWorkspaceTaskOperation(operationId);
@@ -496,9 +506,12 @@ export default function App() {
   }, [loadWorkspaceTaskDiagnostics]);
 
   useEffect(() => {
-    mountedRef.current = true;
+    mountedRef.current = visible;
     return () => {
       mountedRef.current = false;
+      viewGenerationRef.current += 1;
+      activeRefresh.current.generation += 1;
+      activeRefresh.current.pending = false;
       for (const timer of workspaceOperationTimersRef.current.values()) window.clearTimeout(timer);
       workspaceOperationTimersRef.current.clear();
       workspaceOperationPollHealthyAtRef.current.clear();
@@ -512,9 +525,10 @@ export default function App() {
         taskControlRenewIntervalRef.current = null;
       }
     };
-  }, []);
+  }, [visible]);
 
   useEffect(() => {
+    if (!visible) return;
     for (const operation of Object.values(workspaceOperations)) {
       for (const run of operation.runs) {
         if (!run.runId || !isWorkspaceOperationRunTerminal(run.status)) continue;
@@ -524,7 +538,7 @@ export default function App() {
         void loadWorkspaceTaskDiagnostics(run.runId);
       }
     }
-  }, [loadWorkspaceTaskDiagnostics, workspaceOperations, workspaceTaskByJobId]);
+  }, [visible, loadWorkspaceTaskDiagnostics, workspaceOperations, workspaceTaskByJobId]);
 
   const refreshTaskControlReceipts = useCallback(async () => {
     const receipts = await listWorkspaceTaskControlReceipts(20);
@@ -600,7 +614,7 @@ export default function App() {
 
   useEffect(() => {
     const preview = taskControlPreview;
-    if (!preview) return;
+    if (!visible || !preview) return;
     let renewCount = 0;
     let renewing = false;
     const renew = async () => {
@@ -650,9 +664,9 @@ export default function App() {
       }
       taskControlRenewCountRef.current = 0;
     };
-  }, [taskControlPreview]);
+  }, [visible, taskControlPreview]);
 
-  const handleLauncherTask = useCallback((id: string) => {
+  const handleLauncherTask = useCallback((id: string, openOnly = false) => {
     const job = jobs.find((candidate) => candidate.id === id);
     const service = services.find((candidate) => candidate.id === id);
     const task = job ?? service;
@@ -664,7 +678,7 @@ export default function App() {
     setScreen(task.kind === "job" ? "jobs" : "services");
     if (task.kind === "job") setSelectedJobId(task.id);
     else setSelectedServiceId(task.id);
-    setLauncherTask({ id: task.id, kind: task.kind });
+    if (!openOnly) setLauncherTask({ id: task.id, kind: task.kind });
   }, [jobs, services]);
 
   const confirmLauncherTask = async () => {
@@ -719,34 +733,37 @@ export default function App() {
 
   openRequestRef.current = (request) => {
     if (request.target.kind === "task") {
-      void handleLauncherTask(request.target.id);
+      void handleLauncherTask(request.target.id, request.from === "workspace");
     } else if (request.target.kind === "handoff" && request.target.handoffKind === TASK_CONTROL_HANDOFF_KIND) {
       void handleTaskControlHandoff(request.target.id);
     }
   };
 
   useLayoutEffect(() => {
+    if (!visible) return;
     if (launcherTask) launcherCancelRef.current?.focus();
     else document.querySelector<HTMLElement>(".job-card.selected")?.focus();
-  }, [launcherTask]);
+  }, [visible, launcherTask]);
 
   useLayoutEffect(() => {
+    if (!visible) return;
     if (shellTrustTask) {
       shellTrustCancelRef.current?.focus();
     } else {
       shellTrustRestoreRef.current?.focus();
       shellTrustRestoreRef.current = null;
     }
-  }, [shellTrustTask]);
+  }, [visible, shellTrustTask]);
 
   useLayoutEffect(() => {
+    if (!visible) return;
     if (taskControlPreview) {
       taskControlCancelRef.current?.focus();
     } else {
       taskControlRestoreRef.current?.focus();
       taskControlRestoreRef.current = null;
     }
-  }, [taskControlPreview]);
+  }, [visible, taskControlPreview]);
 
   const onLauncherDialogKeyDown = (event: ReactKeyboardEvent<HTMLElement>) => {
     if (event.key === "Escape") {
@@ -845,8 +862,12 @@ export default function App() {
   };
 
   const refreshStatus = useCallback(async () => {
+    if (!mountedRef.current) return;
+    const view = viewGenerationRef.current;
     try {
-      setStatus(await loadRuntimeStatus());
+      const status = await loadRuntimeStatus();
+      if (!mountedRef.current || view !== viewGenerationRef.current) return;
+      setStatus(status);
       setStatusError(null);
     } catch (cause) {
       setStatusError(friendlyErrorMessage(cause));
@@ -854,6 +875,8 @@ export default function App() {
   }, []);
 
   useEffect(() => {
+    if (!visible) return;
+    setWorkspaceSnapshotFresh(false);
     let active = true;
     void refreshTaskControlReceipts().catch((cause: unknown) => {
       if (active) setError(friendlyErrorMessage(cause));
@@ -873,6 +896,7 @@ export default function App() {
         setStatus(nextStatus);
         setJobs(nextJobs);
         setWorkspaceTasks(nextWorkspaceTasks);
+        loadedGenerationRef.current = viewGenerationRef.current;
         setWorkspaceSnapshotFresh(true);
         setServices(serviceSnapshot.services);
         setServiceInstances(serviceSnapshot.instances);
@@ -892,17 +916,17 @@ export default function App() {
     return () => {
       active = false;
     };
-  }, [refreshActiveRuns, refreshTaskControlReceipts, refreshWorkspaceOperations]);
+  }, [visible, refreshActiveRuns, refreshTaskControlReceipts, refreshWorkspaceOperations]);
 
   // AppLink events are only a wake-up signal. The authoritative request is
   // pulled from the native one-shot slot, then the current job/service list is
   // checked before any run, service action, or task-control handoff is used.
   useEffect(() => {
-    if (loading) return;
+    if (!visible || loading || !workspaceSnapshotFresh || screen === "editor" || screen === "service-editor" || importOpen || busy) return;
     let disposed = false;
     let unlisten: (() => void) | undefined;
     const consumePendingOpen = () => {
-      if (disposed) return;
+      if (disposed || loadedGenerationRef.current !== viewGenerationRef.current) return;
       void takePendingOpen()
         .then((request) => {
           if (!disposed && request) openRequestRef.current(request);
@@ -930,7 +954,7 @@ export default function App() {
       disposed = true;
       unlisten?.();
     };
-  }, [loading]);
+  }, [visible, loading, workspaceSnapshotFresh, screen, importOpen, busy]);
 
   useEffect(() => {
     if (screen !== "jobs") {
@@ -968,12 +992,24 @@ export default function App() {
   }, [contextService?.id, serviceContextMenu.close, services]);
 
   useEffect(() => {
+    if (!visible) return;
     const timer = window.setInterval(() => {
       void refreshStatus();
       void refreshActiveRuns();
     }, 1_000);
     return () => window.clearInterval(timer);
-  }, [refreshActiveRuns, refreshStatus]);
+  }, [visible, refreshActiveRuns, refreshStatus]);
+
+  useEffect(() => {
+    onDirtyChange?.(screen === "editor" || screen === "service-editor" || importOpen || busy);
+  }, [onDirtyChange, screen, importOpen, busy]);
+  useEffect(() => () => onDirtyChange?.(false), [onDirtyChange]);
+  useEffect(() => {
+    if (!visible) {
+      jobContextMenu.close(); serviceContextMenu.close();
+      setContextJob(null); setContextService(null);
+    }
+  }, [visible, jobContextMenu.close, serviceContextMenu.close]);
 
   const handleRunNow = async (job: Job) => {
     const workspaceTask = workspaceTaskByJobId.get(job.id);
@@ -1483,11 +1519,11 @@ export default function App() {
         ) : null}
 
         {screen === "editor" ? (
-          <JobEditor job={editingJob} workspaceTask={editingWorkspaceTask} onSave={handleSave} onCancel={closeEditor} />
+          <JobEditor active={visible} job={editingJob} workspaceTask={editingWorkspaceTask} onSave={handleSave} onCancel={closeEditor} />
         ) : screen === "service-editor" ? (
           <ServiceEditor service={editingService} onSave={handleServiceSave} onCancel={closeServiceEditor} />
         ) : screen === "history" ? (
-          <RunHistory jobs={historyDefinitions} requestedJobId={historyJobId} />
+          <RunHistory active={visible} jobs={historyDefinitions} requestedJobId={historyJobId} />
         ) : screen === "services" ? (
           <section className="jobs-section" aria-labelledby="services-title">
             <div className="section-toolbar">
@@ -1841,7 +1877,7 @@ export default function App() {
         )}
       </section>
       {importOpen && (
-        <ImportDialog
+        <ImportDialog active={visible}
           onDone={(_created, result: WorkspaceTaskApplyResult | undefined) => {
             if (result) {
               setWorkspaceNotice(

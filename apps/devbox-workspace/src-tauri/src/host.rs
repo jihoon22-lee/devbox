@@ -22,8 +22,9 @@ struct ComponentRoot {
 }
 impl Selected {
     fn open(stores: &StoreRoot, generation: crate::core::stores::Generation) -> Result<Self> {
+        stores.ensure_runtime_components(&generation)?;
         let mut components = HashMap::new();
-        for name in ["registry", "overview", "files", "common"] {
+        for &name in crate::core::stores::COMPONENTS {
             let path = stores.component(&generation, name)?;
             let (handle, identity) = devbox_filesystem::open_filesystem_object(&path, true)
                 .map_err(|_| "store_generation_changed")?;
@@ -130,6 +131,70 @@ impl Host {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn opening_b04_generation_adds_runtime_stores_and_preserves_pointer_and_user_bytes() {
+        let root = tempfile::tempdir().unwrap();
+        let stores = StoreRoot::open(root.path()).unwrap();
+        let generation = stores.prepare().unwrap();
+        for name in ["runtime", "processes", "logs"] {
+            std::fs::remove_dir(stores.component(&generation, name).unwrap()).unwrap();
+        }
+        let file = stores
+            .component(&generation, "files")
+            .unwrap()
+            .join("untouched.txt");
+        std::fs::write(&file, "unsaved fixture bytes").unwrap();
+        stores.activate_new(&generation).unwrap();
+        let pointer_path = root.path().join("active-stores.json");
+        let pointer = std::fs::read(&pointer_path).unwrap();
+        drop(stores);
+        let host = Host::open(root.path()).unwrap();
+        for name in ["runtime", "processes", "logs"] {
+            let path = host.component(name).unwrap();
+            assert!(path.is_dir());
+            std::fs::write(path.join("preserved.txt"), name).unwrap();
+        }
+        drop(host);
+        let host = Host::open(root.path()).unwrap();
+        for name in ["runtime", "processes", "logs"] {
+            assert_eq!(
+                std::fs::read_to_string(host.component(name).unwrap().join("preserved.txt"))
+                    .unwrap(),
+                name
+            );
+        }
+        assert_eq!(std::fs::read(&pointer_path).unwrap(), pointer);
+        assert_eq!(
+            std::fs::read_to_string(file).unwrap(),
+            "unsaved fixture bytes"
+        );
+    }
+    #[test]
+    fn malformed_additional_component_blocks_open_without_replacing_data() {
+        let root = tempfile::tempdir().unwrap();
+        let host = Host::open(root.path()).unwrap();
+        host.start_empty().unwrap();
+        let runtime = host.component("runtime").unwrap();
+        drop(host);
+        std::fs::remove_dir(&runtime).unwrap();
+        std::fs::write(&runtime, "do not replace").unwrap();
+        assert!(Host::open(root.path()).is_err());
+        assert_eq!(std::fs::read_to_string(runtime).unwrap(), "do not replace");
+    }
+    #[test]
+    #[cfg(unix)]
+    fn linked_additional_component_is_never_followed_or_provisioned() {
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let host = Host::open(root.path()).unwrap();
+        host.start_empty().unwrap();
+        let logs = host.component("logs").unwrap();
+        drop(host);
+        std::fs::remove_dir(&logs).unwrap();
+        std::os::unix::fs::symlink(outside.path(), &logs).unwrap();
+        assert!(Host::open(root.path()).is_err());
+        assert_eq!(std::fs::read_dir(outside.path()).unwrap().count(), 0);
+    }
     #[test]
     fn concurrent_selected_store_readers_do_not_reject_each_other() {
         let root = tempfile::tempdir().unwrap();

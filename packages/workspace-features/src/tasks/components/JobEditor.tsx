@@ -21,6 +21,7 @@ import CronBuilder from "./CronBuilder";
 import NextRunsPreview from "./NextRunsPreview";
 
 interface JobEditorProps {
+  active?: boolean;
   job: Job | null;
   workspaceTask?: WorkspaceTaskState | null;
   onSave: (input: JobInput) => Promise<void>;
@@ -47,7 +48,7 @@ function emptyEditorState(job: Job | null): JobEditorState {
   };
 }
 
-export default function JobEditor({ job, workspaceTask = null, onSave, onCancel }: JobEditorProps) {
+export default function JobEditor({ active = true, job, workspaceTask = null, onSave, onCancel }: JobEditorProps) {
   const jobKey = job?.id ?? "";
   // Editor state is derived during render rather than reset from an effect: every job-list refresh
   // hands `job` and `workspaceTask` fresh object identities, and an effect keyed on them would wipe
@@ -91,6 +92,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
 
   useEffect(() => {
     const requestId = ++previewRequest.current;
+    if (!active) return;
     const expression = draft.cronExpr.trim();
     if (!expression) {
       setPreviewItems([]);
@@ -116,7 +118,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
         });
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [draft.cronExpr]);
+  }, [active, draft.cronExpr]);
 
   const title = useMemo(() => (job ? "작업 편집" : "새 작업"), [job]);
   const update = <K extends keyof JobDraft>(field: K, value: JobDraft[K]) => {

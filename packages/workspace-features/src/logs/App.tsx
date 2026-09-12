@@ -137,6 +137,7 @@ function labelForKind(kind: SourceKind): string {
     case "wslFile": return "WSL 파일";
     case "wslJournal": return "WSL 저널";
     case "run": return "Run Manager 연결";
+    case "runtimeRun": return "Workspace 실행 로그";
     case "webhookCapture": return "Webhook 캡처";
     case "container": return "컨테이너 로그";
   }
@@ -213,7 +214,14 @@ function highlightMessage(message: string, filter: FilterSpec): ReactNode {
   return parts;
 }
 
-function App() {
+export interface RuntimeLogOpenRequest {
+  id: string;
+  source: Extract<SourceSpec, {kind: "runtimeRun"}>;
+}
+function App({ active = true, openRequest }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null }) {
+  const activeRef = useRef(active);
+  activeRef.current = active;
+  const consumedOpen = useRef<string | null>(null);
   const [sources, setSources] = useState<SourceSpec[]>(() => isTauri() ? [] : [{ kind: "localFile", path: "fixture.log" }]);
   const [cursors, setCursors] = useState<Array<FileCursor | null>>(() => isTauri() ? [] : [null]);
   const [records, setRecords] = useState<LogRecord[]>(() => isTauri() ? [] : browserSnapshot().records);
@@ -319,7 +327,7 @@ function App() {
     nextSources = sources,
     nextCursors = cursors,
   ) => {
-    if (!mounted.current || !connectedRef.current || nextSources.length === 0) {
+    if (!mounted.current || !activeRef.current || !connectedRef.current || nextSources.length === 0) {
       refreshPending.current = null;
       return;
     }
@@ -356,7 +364,7 @@ function App() {
           .reduce((maximum, record) => Math.max(maximum, record.sequence + 1), 0);
       });
       const next = await readSources(nextSources, nextCursors, sequenceStarts, currentGeneration, operationId);
-      if (!mounted.current || generation.current !== currentGeneration || pausedRef.current) return;
+      if (!mounted.current || !activeRef.current || generation.current !== currentGeneration || pausedRef.current) return;
       setSnapshot(next);
       setRecords(nextSources === sources
         ? (current) => mergeClientRecords(current, next.records, next.sources, next.cursors, next.statuses)
@@ -370,7 +378,7 @@ function App() {
       const pending = refreshPending.current;
       refreshPending.current = null;
       refreshInFlight.current = false;
-      if (mounted.current && pending) {
+      if (mounted.current && activeRef.current && pending) {
         void refreshRef.current(pending.sources, pending.cursors);
       } else if (mounted.current && generation.current === currentGeneration) {
         setBusy(false);
@@ -640,11 +648,11 @@ function App() {
   // released its slot. This avoids unbounded UI memory while preserving a
   // deterministic handoff when producers race each other.
   useEffect(() => {
-    if (handoffBusy || handoffPreview || handoffRecovery || !queuedHandoffRef.current) return;
+    if (!active || handoffBusy || handoffPreview || handoffRecovery || !queuedHandoffRef.current) return;
     const queued = queuedHandoffRef.current;
     queuedHandoffRef.current = null;
     void openLogSourcePreview(queued);
-  }, [handoffBusy, handoffPreview, handoffRecovery, openLogSourcePreview]);
+  }, [active, handoffBusy, handoffPreview, handoffRecovery, openLogSourcePreview]);
 
   useEffect(() => {
     mounted.current = true;
@@ -683,6 +691,7 @@ function App() {
   // Cold-start pull and single-instance forwarding converge on the same
   // preview path. Merely receiving argv never reads a source or auto-adds it.
   useEffect(() => {
+    if (!active) return;
     let disposed = false;
     let stop: (() => void) | undefined;
     const consumePending = () => {
@@ -723,10 +732,10 @@ function App() {
       disposed = true;
       stop?.();
     };
-  }, [openLogSourcePreview]);
+  }, [active, openLogSourcePreview]);
 
   useEffect(() => {
-    if (!handoffPreview) return undefined;
+    if (!active || !handoffPreview) return undefined;
     const id = handoffPreview.id;
     const timer = window.setInterval(() => {
       if (handoffBusyRef.current || handoffRecoveryRef.current) return;
@@ -734,7 +743,7 @@ function App() {
       if (kind) void renewPreviewLease(kind, id);
     }, 30_000);
     return () => window.clearInterval(timer);
-  }, [handoffPreview, renewPreviewLease]);
+  }, [active, handoffPreview, renewPreviewLease]);
 
   useEffect(() => {
     return () => {
@@ -751,7 +760,7 @@ function App() {
   useEffect(() => {
     const id = handoffPreview?.id ?? handoffRecovery?.id;
     const recoveryActive = handoffRecovery !== null;
-    if (!id) return undefined;
+    if (!active || !id) return undefined;
     const opener = handoffOpenerRef.current;
     const focusTimer = window.setTimeout(() => {
       if (recoveryActive) handoffRetryRef.current?.focus();
@@ -787,13 +796,50 @@ function App() {
         && handoffRecoveryRef.current?.id !== id
         && opener?.isConnected) opener.focus();
     };
-  }, [cancelLogSourcePreview, handoffPreview?.id, handoffRecovery?.id, handoffRecovery !== null]);
+  }, [active, cancelLogSourcePreview, handoffPreview?.id, handoffRecovery?.id, handoffRecovery !== null]);
 
   useEffect(() => {
-    if (!connected || !follow || paused || sources.length === 0) return undefined;
+    if (!active || !connected || !follow || paused || sources.length === 0) return undefined;
     const timer = window.setInterval(() => void refresh(), 1_500);
     return () => window.clearInterval(timer);
-  }, [connected, follow, paused, refresh, sources.length]);
+  }, [active, connected, follow, paused, refresh, sources.length]);
+
+  useEffect(() => {
+    if (active) return;
+    generation.current += 1;
+    refreshPending.current = null;
+    const reading = operation.current;
+    operation.current = null;
+    setBusy(false);
+    logContextMenu.close();
+    setContextRecord(null);
+    if (reading) void cancelRead(reading);
+  }, [active, logContextMenu.close]);
+
+  useEffect(() => {
+    if (!active || !openRequest || consumedOpen.current === openRequest.id) return;
+    consumedOpen.current = openRequest.id;
+    const source = openRequest.source;
+    const retained = sources.filter(candidate => candidate.kind !== "runtimeRun" || candidate.runId !== source.runId || candidate.stream !== source.stream);
+    if (retained.length >= MAX_SOURCES) {
+      setError(`source는 한 번에 최대 ${MAX_SOURCES}개까지 불러올 수 있습니다.`);
+      return;
+    }
+    generation.current += 1;
+    const nextSources = [...retained, source];
+    const nextCursors = nextSources.map(() => null);
+    connectedRef.current = true;
+    setConnected(true);
+    setSources(nextSources);
+    setCursors(nextCursors);
+    setRecords([]);
+    setSnapshot(null);
+    setSelected(new Set());
+    setSelectedGeneration(null);
+    setBookmarks(new Set());
+    setNotice("선택한 Workspace 실행의 로그를 불러옵니다.");
+    void refresh(nextSources, nextCursors);
+  }, [active, openRequest, sources, refresh]);
 
   const visibleRecords = useMemo(
     () => filterRecords(records, filter).slice(-MAX_RENDERED_ROWS),
@@ -892,6 +938,7 @@ function App() {
       case "wslFile": return distro && path ? { kind, distro, path } : null;
       case "wslJournal": return distro ? (unit ? { kind, distro, unit } : { kind, distro }) : null;
       case "run": return sourceId ? { kind, sourceId } : null;
+      case "runtimeRun":
       case "webhookCapture": return null;
       case "container": return containerId ? { kind, engine, containerId } : null;
     }

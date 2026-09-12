@@ -58,3 +58,33 @@ is implemented. Existing passing evidence is repeated only after a related chang
 failure or new risk; checks already included in affected are not pre-run separately.
 Final CI and release gates remain required. These policy edits were reviewed as
 text and diff changes; no compiler or test run is needed for them.
+
+## Native host and shared views in progress
+
+The Workspace host now selects dedicated runtime/processes/logs stores without
+resetting a B04 generation. Existing engines are embedded without standalone
+bootstrap; execution, external process actions, observation and log read commands
+have separate closed roles. Runtime starts with the selected product, independently
+of route visits. Normal exit retains scheduler/log-reader ownership through cleanup;
+tray hide preserves background work. Product Runtime publication is suppressed in
+legacy snapshot namespaces; native projections supply process correlations.
+
+Runtime log leases bind the database/run/directory identities and are revalidated
+before and after reads. A separate `runtimeRun` source never falls back to the legacy
+Run Manager root. Product private stores are excluded from ordinary local log sources.
+The Run/container source wire-field correction accepts previous persisted spellings
+and preserves their existing opaque source hashes. Tasks/Runtime/Logs are lazy routes;
+hidden views stop polling/read work and preserve drafts, filters and cursors. Native
+navigation checks the current project and initiating view before applying a late result.
+
+Per-commit syntax/type checking uses Workspace `tsc --noEmit` and `cargo check --lib`.
+The first typecheck found the new native-only source missing from the manual source
+form switch; it was corrected. The follow-up typecheck and Rust check passed. No test,
+Clippy, build or affected run was added after the verification-cadence correction.
+New navigation and owner fixtures remain queued for PR completion validation.
+
+Still required within B05: durable retry/operation receipts, complete DAG retirement,
+owned-service versus external-process actions, diagnostics/internal artifact delivery,
+inactive WAL-consistent import with history/log/secret mappings, and final Windows/WSL
+acceptance. Temporary unavailable responses in the development host are not acceptance
+completion. This work has not been merged or released.

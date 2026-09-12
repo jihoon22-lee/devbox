@@ -25,6 +25,7 @@ import type {
 } from "../types";
 
 interface Props {
+  active?: boolean;
   onDone: (created: number, workspaceResult?: WorkspaceTaskApplyResult) => void;
   onClose: () => void;
 }
@@ -299,7 +300,7 @@ function WorkspaceTaskPreview({
   );
 }
 
-export default function ImportDialog({ onDone, onClose }: Props) {
+export default function ImportDialog({ active = true, onDone, onClose }: Props) {
   const [mode, setMode] = useState<"definitions" | "project" | "workspace">("definitions");
   const [json, setJson] = useState("");
   const [projectPath, setProjectPath] = useState("");
@@ -324,6 +325,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
   onCloseRef.current = onClose;
 
   useEffect(() => {
+    if (!active) return;
     const dialog = dialogRef.current;
     if (!dialog) return;
     const focusableSelector =
@@ -360,7 +362,7 @@ export default function ImportDialog({ onDone, onClose }: Props) {
     };
     dialog.addEventListener("keydown", onKeyDown);
     return () => dialog.removeEventListener("keydown", onKeyDown);
-  }, []);
+  }, [active]);
 
   const previewDefinitions = async () => {
     if (!mountedRef.current) return;

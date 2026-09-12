@@ -26,4 +26,6 @@ pub use parser::{
     export_records, filter_records, merge_records, merge_records_with_stats, parse_bytes,
     parse_line, ExportedText, MergeBuffer, ParseBatch,
 };
-pub use sources::{adapter_argv, load_source, AdapterPlan, LoadContext};
+pub use sources::{
+    adapter_argv, load_source, AdapterPlan, LoadContext, RuntimeLogLease, RuntimeLogProvider,
+};

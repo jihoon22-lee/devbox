@@ -5,6 +5,18 @@ import { WorkspaceOperationError } from "@devbox/workspace-features/transport";
 import catalog from "../../products.json";
 
 const issues: Record<string, string> = {
+  runtime_owner_unavailable: "실행 저장소를 열지 못했습니다. 기존 데이터는 보존되어 있습니다.",
+  process_owner_unavailable: "Runtime 보기 설정을 열지 못했습니다. 기존 설정은 보존되어 있습니다.",
+  logs_owner_unavailable: "로그 보기 설정을 열지 못했습니다. 기존 설정은 보존되어 있습니다.",
+  runtime_store_changed: "실행 저장소가 변경되었습니다. 앱을 다시 시작해 주세요.",
+  runtime_log_changed: "로그 소유권이 바뀌었습니다. 해당 실행에서 로그를 다시 열어 주세요.",
+  runtime_log_unavailable: "이 실행의 로그가 삭제되었거나 읽을 수 없습니다.",
+  process_action_stale: "선택한 프로세스 또는 실행이 바뀌었습니다. 새로 고친 뒤 다시 선택해 주세요.",
+  process_observation_unavailable: "프로세스와 포트 정보를 읽지 못했습니다. 이전 목록은 유지됩니다.",
+  runtime_task_source_changed: "작업 정의가 변경되었습니다. 가져오기와 실행 승인을 다시 확인해 주세요.",
+  runtime_task_review_required: "작업 실행 내용을 검토하고 승인해 주세요.",
+  runtime_operation_unavailable: "실행 작업을 완료하지 못했습니다. 작업 상태와 설정을 확인해 주세요.",
+  runtime_navigation_unavailable: "선택한 작업이나 로그 화면으로 이동하지 못했습니다.",
 
   source_cleanup_scope_invalid: "저장된 정리 범위를 확인하지 못했습니다. 기존 파일을 보존했습니다.",
   source_cleanup_scope_changed: "정리 범위의 프로젝트나 Git 실행 근거가 바뀌었습니다. 범위를 다시 검토하거나 철회해 주세요.",
@@ -208,7 +220,7 @@ export async function nativeCall<T>(component: string, method: string, args: Rec
 export async function componentCall<T>(description: Description, component: string, method: string, args: Record<string, unknown>, route: string): Promise<T> {
   const header = makeRequest(description.handshake, route, Date.now(), description.context);
   // Stay inside the native 30-second ceiling across renderer/native clock precision.
-  if (component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp" || (component === "workspace.files" && ["reconnect_wsl_files", "open_file"].includes(method)) || (component === "workspace.registry" && ["list_wsl_distros","preview_wsl","apply_registration","cancel_registration","select_project","clear_project"].includes(method))) header.deadlineMs += 24_000;
+  if (["workspace.runtime", "workspace.processes", "workspace.process-actions", "workspace.logs"].includes(component) || component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp" || (component === "workspace.files" && ["reconnect_wsl_files", "open_file"].includes(method)) || (component === "workspace.registry" && ["list_wsl_distros","preview_wsl","apply_registration","cancel_registration","select_project","clear_project"].includes(method))) header.deadlineMs += 24_000;
   const provenance = { product: "workspace", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: {operation: unknown; value: T & {issue?: string}};
   try {response = await invoke("plugin:workspace|execute", {request:{header, component, method, args}});}

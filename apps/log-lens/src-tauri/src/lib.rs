@@ -1,10 +1,13 @@
 mod applink;
 mod commands;
+pub mod component;
 pub mod core;
 mod handoff;
 
+#[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()

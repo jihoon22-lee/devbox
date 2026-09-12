@@ -276,6 +276,14 @@ fn correlate_rows_in(root: &Path, rows: Vec<PortRow>, now: u64) -> CorrelationRe
     let (run, run_status) = read_source(root, RUN_MANAGER, now);
     let (workbench, workbench_status) = read_source(root, WORKBENCH, now);
     let sources = [run, workbench].into_iter().flatten().collect::<Vec<_>>();
+    correlate_rows(rows, sources, vec![run_status, workbench_status])
+}
+
+fn correlate_rows(
+    rows: Vec<PortRow>,
+    sources: Vec<BindingSource>,
+    statuses: Vec<SnapshotSourceStatus>,
+) -> CorrelationResult {
     let mut remaining = MAX_TOTAL_CORRELATIONS;
     let mut truncated = false;
     let mut correlated = Vec::with_capacity(rows.len());
@@ -296,9 +304,150 @@ fn correlate_rows_in(root: &Path, rows: Vec<PortRow>, now: u64) -> CorrelationRe
     }
     CorrelationResult {
         rows: correlated,
-        sources: vec![run_status, workbench_status],
+        sources: statuses,
         truncated,
     }
+}
+
+/// Native read-only providers replace legacy snapshot discovery inside
+/// Workspace. Each producer may fail independently of listeners and peers.
+pub struct ProductBindings {
+    pub runtime: Result<Vec<PortBindingEntry>, SnapshotSourceState>,
+    pub projects: Result<Vec<PortBindingEntry>, SnapshotSourceState>,
+    pub captured_at_ms: u64,
+}
+#[derive(Clone, Debug, Serialize)]
+#[serde(tag = "kind", rename_all = "camelCase")]
+pub enum ProductPortOwner {
+    Task { id: String },
+    Project { id: String },
+}
+pub struct ProductPortAction {
+    pub owner: ProductPortOwner,
+    pub run_id: Option<String>,
+    pub logs_available: bool,
+    pub confidence: CorrelationConfidence,
+}
+fn product_source(
+    producer: &'static str,
+    entries: Result<Vec<PortBindingEntry>, SnapshotSourceState>,
+    captured: u64,
+    now: u64,
+) -> (Option<BindingSource>, SnapshotSourceStatus) {
+    let unavailable = |state| {
+        (
+            None,
+            SnapshotSourceStatus {
+                producer: producer.into(),
+                state,
+                freshness_ms: None,
+            },
+        )
+    };
+    let entries = match entries {
+        Ok(entries) => entries,
+        Err(state) => return unavailable(state),
+    };
+    if captured == 0 || captured > now.saturating_add(MAX_CLOCK_SKEW_MS) {
+        return unavailable(SnapshotSourceState::Invalid);
+    }
+    let freshness = now.saturating_sub(captured);
+    let freshness_ms = Some(u32::try_from(freshness).unwrap_or(u32::MAX));
+    if freshness > MAX_SNAPSHOT_AGE_MS {
+        return (
+            None,
+            SnapshotSourceStatus {
+                producer: producer.into(),
+                state: SnapshotSourceState::Stale,
+                freshness_ms,
+            },
+        );
+    }
+    // Apply the same closed producer/schema/entry bounds as persisted views.
+    if devbox_integration::port_bindings_envelope(producer, "0.8.0", entries.clone()).is_err() {
+        return unavailable(SnapshotSourceState::Invalid);
+    }
+    (
+        Some(BindingSource { producer, entries }),
+        SnapshotSourceStatus {
+            producer: producer.into(),
+            state: SnapshotSourceState::Available,
+            freshness_ms,
+        },
+    )
+}
+fn correlate_product_rows(
+    rows: Vec<PortRow>,
+    bindings: ProductBindings,
+    now: u64,
+) -> CorrelationResult {
+    let (runtime, runtime_status) =
+        product_source(RUN_MANAGER, bindings.runtime, bindings.captured_at_ms, now);
+    let (projects, project_status) =
+        product_source(WORKBENCH, bindings.projects, bindings.captured_at_ms, now);
+    correlate_rows(
+        rows,
+        [runtime, projects].into_iter().flatten().collect(),
+        vec![runtime_status, project_status],
+    )
+}
+/// Call on the host's bounded blocking observation worker. No view timer or
+/// legacy executable is started here.
+pub fn observe_product(bindings: ProductBindings) -> Result<PortObservationSnapshot, String> {
+    let rows = collect_ports().map_err(|_| "process_observation_unavailable")?;
+    let result = correlate_product_rows(rows, bindings, now_ms());
+    Ok(PortObservationSnapshot {
+        rows: result
+            .rows
+            .into_iter()
+            .map(|(row, correlations)| ObservedPortRow {
+                row,
+                correlations: correlations
+                    .into_iter()
+                    .map(|correlation| correlation.public)
+                    .collect(),
+            })
+            .collect(),
+        sources: result.sources,
+        correlations_truncated: result.truncated,
+    })
+}
+/// Recollect exact native endpoint/process identity immediately before an
+/// internal navigation or owning-service action. A stored action key grants
+/// no process-control authority by itself.
+pub fn resolve_product_action(
+    bindings: ProductBindings,
+    action_key: &str,
+) -> Result<ProductPortAction, String> {
+    if !valid_action_key(action_key) {
+        return Err("process_action_invalid".into());
+    }
+    let rows = collect_ports().map_err(|_| "process_observation_unavailable")?;
+    let result = correlate_product_rows(rows, bindings, now_ms());
+    let action = result
+        .rows
+        .into_iter()
+        .flat_map(|(_, entries)| entries)
+        .find(|entry| entry.public.action_key == action_key)
+        .ok_or("process_action_stale")?;
+    let owner = match (
+        action.public.source_app.as_str(),
+        action.public.target_kind.as_str(),
+    ) {
+        (RUN_MANAGER, "task") => ProductPortOwner::Task {
+            id: action.public.target_id,
+        },
+        (WORKBENCH, "profile") => ProductPortOwner::Project {
+            id: action.public.target_id,
+        },
+        _ => return Err("process_action_invalid".into()),
+    };
+    Ok(ProductPortAction {
+        owner,
+        run_id: action.run_id,
+        logs_available: action.public.logs_available,
+        confidence: action.public.confidence,
+    })
 }
 
 fn read_source(
@@ -556,6 +705,53 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(u64::MAX as u128) as u64)
         .unwrap_or(0)
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_port_observations(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_port_observations().await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_open_port_owner(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        action_key: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    open_port_owner(input.action_key).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_open_port_log(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        action_key: String,
+        stream: LogSourceStream,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = open_port_log(input.action_key, input.stream).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

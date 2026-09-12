@@ -39,7 +39,7 @@ export function browserSnapshot(
     kind: source.kind,
     displayName: "Browser fixture",
     readOnly: true,
-    handoff: ["run", "wslFile", "wslJournal", "webhookCapture"].includes(source.kind),
+    handoff: ["run", "runtimeRun", "wslFile", "wslJournal", "webhookCapture"].includes(source.kind),
   }));
   return {
     operationId,

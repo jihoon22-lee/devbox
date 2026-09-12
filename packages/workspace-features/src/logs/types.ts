@@ -6,6 +6,7 @@ export type SourceKind =
   | "wslFile"
   | "wslJournal"
   | "run"
+  | "runtimeRun"
   | "webhookCapture"
   | "container";
 export type ContainerEngine = "docker" | "podman";
@@ -17,6 +18,7 @@ export type SourceSpec =
   | { kind: "wslFile"; distro: string; path: string }
   | { kind: "wslJournal"; distro: string; unit?: string }
   | { kind: "run"; sourceId: string }
+  | { kind: "runtimeRun"; runId: string; stream: "stdout" | "stderr"; revision: string }
   | { kind: "webhookCapture"; capture: WebhookLogPayload }
   | { kind: "container"; engine: ContainerEngine; containerId: string };
 

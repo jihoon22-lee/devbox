@@ -287,7 +287,24 @@ struct SessionEndContext {
 
 pub fn install_session_end_hook(
     window: &tauri::WebviewWindow,
-    _app: &AppHandle,
+    app: &AppHandle,
+    state: Arc<RuntimeState>,
+) -> Result<(), String> {
+    // Workspace opens its owned database off the UI thread. Windows subclass
+    // installation must still run on the thread that created this HWND.
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    let window = window.clone();
+    app.run_on_main_thread(move || {
+        let _ = send.send(install_session_end_hook_on_main(&window, state));
+    })
+    .map_err(|_| "session-end hook dispatch failed".to_string())?;
+    receive
+        .recv()
+        .map_err(|_| "session-end hook unavailable".to_string())?
+}
+
+fn install_session_end_hook_on_main(
+    window: &tauri::WebviewWindow,
     state: Arc<RuntimeState>,
 ) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
