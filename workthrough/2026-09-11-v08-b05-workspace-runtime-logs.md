@@ -259,3 +259,23 @@ Dependency policy found stale lockfile hashes in generated notices; regeneration
 changes only those hashes, with no new dependency versions. CI pnpm audit passed.
 The two corrected gates passed locally in 8.871 seconds; passed application tests
 and builds were preserved. Final pushed-revision CI remains required before merge.
+
+Windows CI at 1893f81 also passed full Windows Rust compilation/tests (52m43s).
+Product acceptance passed native WSL/authority/WAL fixtures and packaging, but its
+packaged-shell step failed in the new Runtime child-listener scenario. Independent
+later API/Knowledge/installer stages continued; their progression was initially
+misread as shell success and corrected after inspecting step conclusions.
+
+The assertion was `Owned child did not listen`. A short Windows-only synthetic
+probe reproduced the shell boundary: the original `/D /S /C` payload with a quoted
+Node executable/script exited 1 without a marker; adding the required outer quote
+pair exited 0 and wrote the marker. `cmd.exe /S` strips its payload's first/last
+quotes, so the native builder now supplies that outer pair while preserving inner
+executable/argument quotes and shell operators. A Windows native regression copies
+the system shell to an owned filename containing spaces and verifies both command
+and following operator output. The existing portable formatter expectation was
+updated. Runtime fixture failures now preserve bounded synthetic run/stderr data
+before cleanup. Source formatting and fixture syntax pass; prior unrelated local
+checks remain valid. Exact final-revision CI/packaged runtime acceptance is pending.
+The Windows probe used `/init` for this session's absent binfmt registration; no
+host interop setting was changed and no GitHub environment flag was fabricated.

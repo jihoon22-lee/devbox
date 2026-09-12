@@ -76,6 +76,17 @@ if(process.argv.includes('--child')){
     assert.equal(success(await runtime("get_active_run",{id:job.id})),null);
     const terminal=success(await read());assert.ok(JSON.stringify(terminal).includes("synthetic-child-ready"),"Terminalization changed a retained log reference");
     return {duplicateReceipt:true,rendererReload:true,ownedDescendant:true,exactCreationMismatch:true,ownerBrokerRoutesWithoutKill:true,listenerLogTaskNavigation:true,terminalLogLease:true,staleActionRejected:true,stopWaitsForDescendants:true};
+  } catch(error) {
+    // Preserve only this disposable fixture's bounded run/log evidence before
+    // cleanup, so a launch failure does not require another full CI run merely
+    // to discover the native exit status or shell diagnostic.
+    try {
+      const runs=success(await runtime("list_runs",{jobId:job.id,limit:4}));
+      const stderr=[];
+      for(const run of runs) stderr.push({runId:run.id,value:success(await runtime("tail_log",{input:{runId:run.id,stream:"stderr",cursor:null,maxBytes:8192}}))});
+      writeFileSync("product-foundation-evidence/workspace-runtime-failure.json",JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",runs,stderr},null,2));
+    }catch{/* Keep the original assertion as the primary failure. */}
+    throw error;
   } finally {
     if(!stopped)await control("stop_active_run",{id:job.id}).catch(()=>{});
     await runtime("delete_job",{id:job.id}).catch(()=>{});

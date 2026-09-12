@@ -1121,6 +1121,31 @@ mod execution_tests {
     }
 
     #[test]
+    fn owned_shell_preserves_a_quoted_executable_path_and_shell_operators() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("quoted fixture shell.exe");
+        fs::copy(system_shell().unwrap(), &executable).unwrap();
+        let command = format!(
+            "\"{}\" /D /C echo first-fixture & echo second-fixture",
+            executable.display()
+        );
+        let mut child = spawn(&command, Some(root.path()), &BTreeMap::new()).unwrap();
+        let mut stdout = child.take_stdout_file().unwrap();
+        let mut stderr = child.take_stderr_file().unwrap();
+        assert_eq!(child.wait(Some(Duration::from_secs(10))).unwrap(), Some(0));
+        child.ensure_tree_gone(Duration::from_secs(5)).unwrap();
+        let mut output = String::new();
+        stdout.read_to_string(&mut output).unwrap();
+        assert_eq!(
+            output.lines().map(str::trim).collect::<Vec<_>>(),
+            ["first-fixture", "second-fixture"]
+        );
+        output.clear();
+        stderr.read_to_string(&mut output).unwrap();
+        assert!(output.is_empty());
+    }
+
+    #[test]
     fn process_creation_contract_requires_suspended_hidden_extended_startup() {
         assert_eq!(CREATE_SUSPENDED.0, 0x0000_0004);
         assert_eq!(CREATE_NO_WINDOW.0, 0x0800_0000);

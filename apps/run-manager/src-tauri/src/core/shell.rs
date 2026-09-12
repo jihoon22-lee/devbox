@@ -225,7 +225,10 @@ pub fn build_windows_shell_command_with_application(
 
     Ok(WindowsShellCommand {
         application_name: application_name.to_owned(),
-        command_line: format!("cmd.exe /D /S /C {command}"),
+        // /S strips the first and last quotes of /C's payload. Supply that
+        // outer pair explicitly so a quoted executable/argument keeps its own
+        // quotes, while pipelines/redirections remain the user's shell source.
+        command_line: format!("cmd.exe /D /S /C \"{command}\""),
     })
 }
 
@@ -884,7 +887,7 @@ mod tests {
         assert_eq!(command.application_name, "cmd.exe");
         assert_eq!(
             command.command_line,
-            r#"cmd.exe /D /S /C echo "hello world" & echo done"#
+            r#"cmd.exe /D /S /C "echo "hello world" & echo done""#
         );
     }
 
