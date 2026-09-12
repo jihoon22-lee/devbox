@@ -37,6 +37,7 @@ struct Runtime {
     ui_ready: Arc<AtomicBool>,
     engines: Arc<crate::runtime_host::Owners>,
     terminals: Arc<crate::terminal_host::Terminals>,
+    sessions: Arc<crate::development_host::Sessions>,
     terminal_requests: Pool,
     terminal_workers: Arc<tokio::sync::Semaphore>,
     terminal_stop_workers: Arc<tokio::sync::Semaphore>,
@@ -73,6 +74,7 @@ impl Default for Runtime {
             ui_ready: Arc::default(),
             engines: Arc::default(),
             terminals: Arc::default(),
+            sessions: Arc::default(),
             terminal_requests: Pool::default(),
             terminal_workers: Arc::new(tokio::sync::Semaphore::new(4)),
             terminal_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -247,16 +249,17 @@ struct Response {
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     if component == "workspace.terminal" {
         return route == "terminal"
-            && matches!(
-                method,
-                "terminal_sessions"
-                    | "open_terminal"
-                    | "focus_terminal"
-                    | "stop_terminal"
-                    | "list_workspace_profiles"
-                    | "save_workspace_profile"
-                    | "delete_workspace_profile"
-            );
+            && (crate::development_host::Sessions::handles(method)
+                || matches!(
+                    method,
+                    "terminal_sessions"
+                        | "open_terminal"
+                        | "focus_terminal"
+                        | "stop_terminal"
+                        | "list_workspace_profiles"
+                        | "save_workspace_profile"
+                        | "delete_workspace_profile"
+                ));
     }
     if crate::runtime_host::component(component) {
         return crate::runtime_host::allowed(component, route, method);
@@ -361,7 +364,10 @@ async fn terminal_worker(
 ) -> Result<Value, &'static str> {
     let permit = runtime.terminal_requests.reserve_with_limit(64)?;
     let host = runtime.host()?;
-    let workers = if matches!(method.as_str(), "close_session" | "stop_terminal") {
+    let workers = if matches!(
+        method.as_str(),
+        "close_session" | "stop_terminal" | "stop_development_session"
+    ) {
         runtime.terminal_stop_workers.clone()
     } else {
         runtime.terminal_workers.clone()
@@ -391,6 +397,13 @@ async fn terminal_worker(
                         .terminals
                         .execute(&window, &host, &header, &method, args),
                 )
+            } else if crate::development_host::Sessions::handles(&method) {
+                runtime
+                    .engines
+                    .initialize_runtime(window.app_handle(), &host)?;
+                runtime
+                    .sessions
+                    .manage(&window, &host, &header, &method, args)
             } else {
                 runtime
                     .terminals
@@ -1980,6 +1993,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let files_stopped = runtime.retire_files().await.is_ok();
                 #[cfg(not(windows))]
                 let files_stopped = true;
+                let sessions_stopped = runtime.sessions.shutdown().await.is_ok();
                 let runtime_stopped = if run_manager_lib::component::is_initialized(&app) {
                     run_manager_lib::component::shutdown(&app).await.is_ok()
                 } else {
@@ -1998,6 +2012,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .await
                 .is_ok_and(|result| result.is_ok());
                 if retired
+                    && sessions_stopped
                     && terminals_stopped
                     && stopped
                     && actor_stopped

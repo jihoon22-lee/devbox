@@ -495,6 +495,29 @@ impl Drop for ShutdownExecutionGuard {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct StartCancellation {
+    cancelled: AtomicBool,
+    changed: Notify,
+}
+impl StartCancellation {
+    pub(crate) fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.changed.notify_waiters();
+    }
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+    async fn wait(&self) {
+        let changed = self.changed.notified();
+        tokio::pin!(changed);
+        changed.as_mut().enable();
+        if !self.is_cancelled() {
+            changed.await;
+        }
+    }
+}
+
 struct PendingStart {
     job_id: String,
     service_generation: Option<i64>,
@@ -515,7 +538,8 @@ impl Drop for PendingStartGuard {
 }
 
 pub(crate) type RunClaimObserver<'a> = dyn Fn(&Run) -> Result<(), StorageError> + Send + Sync + 'a;
-pub(crate) type ServiceClaimObserver<'a> = dyn Fn(&ServiceInstance, bool) + Send + Sync + 'a;
+pub(crate) type ServiceClaimObserver<'a> =
+    dyn Fn(&ServiceInstance, bool) -> Result<(), StorageError> + Send + Sync + 'a;
 
 struct SchedulerInner {
     database: Arc<DatabaseState>,
@@ -823,7 +847,7 @@ impl SchedulerCoordinator {
         reviewed: Option<&Job>,
         now: i64,
     ) -> Result<Run, SchedulerError> {
-        self.trigger_manual_observed_at(job_id, reviewed, None, now)
+        self.trigger_manual_observed_at(job_id, reviewed, None, None, now)
             .await
     }
     pub(crate) async fn trigger_manual_observed_at(
@@ -831,6 +855,7 @@ impl SchedulerCoordinator {
         job_id: &str,
         reviewed: Option<&Job>,
         observer: Option<&RunClaimObserver<'_>>,
+        cancellation: Option<&StartCancellation>,
         now: i64,
     ) -> Result<Run, SchedulerError> {
         let job = self
@@ -839,7 +864,7 @@ impl SchedulerCoordinator {
             .get_job(job_id)?
             .ok_or_else(|| StorageError::NotFound(format!("job {job_id}")))?;
         let lock = self.job_mutex(job_id).await;
-        let _guard = lock.lock().await;
+        let _guard = self.lock_for_start(&lock, cancellation).await?;
         if self.is_cleanup_pending(job_id).await {
             return Err(SchedulerError::Adapter {
                 run_id: job_id.to_string(),
@@ -1150,7 +1175,7 @@ impl SchedulerCoordinator {
         allow_borrow: bool,
         now: i64,
     ) -> Result<(ServiceInstance, bool), SchedulerError> {
-        self.acquire_service_observed_at(service_id, reviewed, allow_borrow, None, now)
+        self.acquire_service_observed_at(service_id, reviewed, allow_borrow, None, None, now)
             .await
     }
     pub(crate) async fn acquire_service_observed_at(
@@ -1159,10 +1184,11 @@ impl SchedulerCoordinator {
         reviewed: Option<&Job>,
         allow_borrow: bool,
         observer: Option<&ServiceClaimObserver<'_>>,
+        cancellation: Option<&StartCancellation>,
         now: i64,
     ) -> Result<(ServiceInstance, bool), SchedulerError> {
         let lock = self.job_mutex(service_id).await;
-        let _guard = lock.lock().await;
+        let _guard = self.lock_for_start(&lock, cancellation).await?;
         let service = self
             .inner
             .database
@@ -1190,7 +1216,7 @@ impl SchedulerCoordinator {
                     )
                 {
                     if let Some(observer) = observer {
-                        observer(&instance, false);
+                        observer(&instance, false)?;
                     }
                     return Ok((instance, false));
                 }
@@ -1202,7 +1228,13 @@ impl SchedulerCoordinator {
             .claim_service_start_reviewed(service_id, &owner, &attempt_token, now, reviewed)?
             .ok_or_else(|| service_adapter_error(service_id, "service-already-running"))?;
         if let Some(observer) = observer {
-            observer(&instance, true);
+            if let Err(error) = observer(&instance, true) {
+                let _ =
+                    self.inner
+                        .database
+                        .mark_service_stopped(service_id, instance.generation, now);
+                return Err(error.into());
+            }
         }
         let generation = instance.generation;
         let run = self.inner.database.create_service_run_at(service_id, now)?;
@@ -1515,6 +1547,40 @@ impl SchedulerCoordinator {
                 }
             }
         }
+    }
+
+    pub(crate) async fn service_generation_ready(
+        &self,
+        id: &str,
+        generation: i64,
+    ) -> Result<bool, SchedulerError> {
+        let service = self
+            .inner
+            .database
+            .get_service(id)?
+            .ok_or_else(|| StorageError::NotFound(id.into()))?;
+        let instance = self
+            .inner
+            .database
+            .get_service_instance(id)?
+            .ok_or_else(|| StorageError::NotFound(id.into()))?;
+        if instance.generation != generation
+            || instance.owner_instance_id.as_deref() != Some(self.native_owner_id())
+        {
+            return Err(service_adapter_error(id, "service-generation-changed"));
+        }
+        if instance.state != ServiceInstanceState::Running {
+            return Ok(false);
+        }
+        let healthy = self.service_healthy(&service, &instance).await;
+        let current = self.inner.database.get_service_instance(id)?;
+        Ok(healthy
+            && current.is_some_and(|current| {
+                current.generation == generation
+                    && current.active_run_id == instance.active_run_id
+                    && current.state == ServiceInstanceState::Running
+                    && current.owner_instance_id == instance.owner_instance_id
+            }))
     }
 
     async fn service_healthy(&self, service: &Job, instance: &ServiceInstance) -> bool {
@@ -2960,6 +3026,22 @@ impl SchedulerCoordinator {
         });
     }
 
+    async fn lock_for_start<'a>(
+        &self,
+        lock: &'a Mutex<()>,
+        cancellation: Option<&StartCancellation>,
+    ) -> Result<tokio::sync::MutexGuard<'a, ()>, SchedulerError> {
+        if let Some(cancellation) = cancellation {
+            tokio::select! {
+                biased;
+                _=cancellation.wait() => Err(SchedulerError::Join("session-start-cancelled".into())),
+                guard=lock.lock() => Ok(guard),
+            }
+        } else {
+            Ok(lock.lock().await)
+        }
+    }
+
     /// Keep the per-job start/stop ordering while waking a start blocked by
     /// unrelated global capacity. Register notification before inspecting the
     /// map so a start published during stop admission cannot be missed.
@@ -3966,6 +4048,41 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_cancel_before_job_admission_allocates_no_run_or_process() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("locked", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        let lock = scheduler.job_mutex(&job.id).await;
+        let _busy = lock.lock().await;
+        let cancellation = StartCancellation::default();
+        cancellation.cancel();
+        let observed = AtomicUsize::new(0);
+        let observer = |_run: &Run| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        assert!(tokio::time::timeout(
+            Duration::from_secs(1),
+            scheduler.trigger_manual_observed_at(
+                &job.id,
+                Some(&job),
+                Some(&observer),
+                Some(&cancellation),
+                1_001
+            )
+        )
+        .await
+        .unwrap()
+        .is_err());
+        assert_eq!(observed.load(Ordering::SeqCst), 0);
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 0);
+        assert!(database.active_process_run(&job.id).unwrap().is_none());
+    }
+
+    #[tokio::test]
     async fn exact_stop_cancels_a_start_waiting_for_foreign_capacity() {
         let database = Arc::new(DatabaseState::open_in_memory().unwrap());
         let first = database
@@ -3994,7 +4111,13 @@ mod tests {
                     Ok(())
                 };
                 scheduler
-                    .trigger_manual_observed_at(&second.id, Some(&second), Some(&observer), 1_001)
+                    .trigger_manual_observed_at(
+                        &second.id,
+                        Some(&second),
+                        Some(&observer),
+                        None,
+                        1_001,
+                    )
                     .await
             }
         });

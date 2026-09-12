@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { componentCall } from "./native";
+import DevelopmentSessions from "./DevelopmentSessions";
 
 interface Session {id:string;context:ProjectContext|null;state:string}
 const labels:Record<string,string>={preparing:"준비 중",active:"실행 중",stopping:"종료 중",stopped:"종료됨",interrupted:"복구 검토 필요"};
@@ -29,6 +30,7 @@ export default function Terminal({description,registry}:{description:Description
   };
   return <section className="workspace-terminal-manager">
     <h1>터미널</h1>
+    <DevelopmentSessions description={description} registry={registry}/>
     <p>프로젝트별 터미널을 보조 창에서 엽니다. 창을 숨기거나 새로 고쳐도 실행 중인 터미널은 유지됩니다.</p>
     <button disabled={busy} onClick={()=>void open()}>{description.context?"현재 프로젝트의 터미널 열기":"터미널 열기"}</button>{" "}
     <button disabled={busy} onClick={()=>{setIssue("");setBusy(true);void refresh().catch(()=>setIssue("터미널 세션 목록을 읽지 못했습니다.")).finally(()=>setBusy(false));}}>새로 고침</button>

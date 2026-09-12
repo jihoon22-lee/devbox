@@ -43,6 +43,27 @@ pub(crate) fn start_workspace_task_operation_reviewed(
     fail_fast: bool,
     expected_revision: Option<&str>,
 ) -> Result<WorkspaceTaskOperationView, String> {
+    start_workspace_task_operation_observed(
+        database,
+        coordinator,
+        root_job_id,
+        fail_fast,
+        expected_revision,
+        None,
+    )
+}
+
+type OperationClaimObserver<'a> =
+    dyn Fn(&WorkspaceTaskOperationView) -> Result<(), String> + Send + Sync + 'a;
+
+pub(crate) fn start_workspace_task_operation_observed(
+    database: Arc<DatabaseState>,
+    coordinator: SchedulerCoordinator,
+    root_job_id: &str,
+    fail_fast: bool,
+    expected_revision: Option<&str>,
+    observer: Option<&OperationClaimObserver<'_>>,
+) -> Result<WorkspaceTaskOperationView, String> {
     let lease = coordinator
         .retain_workspace_operation()
         .map_err(str::to_owned)?;
@@ -76,6 +97,17 @@ pub(crate) fn start_workspace_task_operation_reviewed(
             }
             _ => "workspace-task-operation-storage".to_owned(),
         })?;
+    if let Some(observer) = observer {
+        if let Err(error) = observer(&operation) {
+            let _ = database.finish_workspace_task_operation_at(
+                &operation.id,
+                WorkspaceTaskOperationStatus::Cancelled,
+                Some("workspace-task-publication-failed"),
+                current_epoch_millis(),
+            );
+            return Err(error);
+        }
+    }
     let _ = crate::integration::write_workspace_tasks(database.as_ref());
     spawn_workspace_task_operation(database, coordinator, operation.id.clone(), plan, lease);
     Ok(operation)
@@ -226,6 +258,7 @@ async fn execute_workspace_task_operation(
                     job_id,
                     None,
                     Some(&observe_claim),
+                    None,
                     current_epoch_millis(),
                 )
                 .await

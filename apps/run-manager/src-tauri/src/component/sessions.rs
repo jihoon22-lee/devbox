@@ -64,6 +64,21 @@ fn coordinator(app: &tauri::AppHandle) -> Result<SchedulerCoordinator, String> {
         .ok_or("component_state_unavailable")?
         .coordinator())
 }
+pub fn candidates(app: &tauri::AppHandle) -> Result<Value, String> {
+    let database = database(app)?;
+    let mut jobs = database
+        .list_jobs()
+        .map_err(|_| "session_runtime_unavailable")?;
+    jobs.extend(
+        database
+            .list_services()
+            .map_err(|_| "session_runtime_unavailable")?,
+    );
+    let truncated = jobs.len() > 256;
+    Ok(
+        json!({"jobs":jobs.into_iter().take(256).map(|job| json!({"id":job.id,"name":job.name,"kind":job.kind,"targetKind":job.target_kind,"targetDistro":job.target_distro})).collect::<Vec<_>>(),"truncated":truncated}),
+    )
+}
 pub fn prepare_job(app: &tauri::AppHandle, id: &str) -> Result<PreparedJob, String> {
     let database = database(app)?;
     let job = database
@@ -120,16 +135,34 @@ pub struct RuntimeLease {
 /// Retained by the Session actor before it starts an async Runtime effect.
 /// Publication/storage failure may return an error after process creation; this
 /// native witness still retains the exact creator lease for reconciliation.
+type ResourcePublisher = dyn Fn(RuntimeLease) -> Result<(), String> + Send + Sync;
 #[derive(Default)]
 pub struct RuntimeStartWitness {
     started: AtomicBool,
+    cancellation: crate::scheduler::StartCancellation,
     lease: Mutex<Option<RuntimeLease>>,
+    publisher: Option<Box<ResourcePublisher>>,
 }
 impl RuntimeStartWitness {
+    pub fn cancel(&self) {
+        self.cancellation.cancel();
+    }
+    pub fn with_publisher(
+        publisher: impl Fn(RuntimeLease) -> Result<(), String> + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            publisher: Some(Box::new(publisher)),
+            ..Self::default()
+        }
+    }
+
     pub fn lease(&self) -> Option<RuntimeLease> {
         self.lease.lock().unwrap_or_else(|p| p.into_inner()).clone()
     }
     fn begin(&self) -> Result<(), String> {
+        if self.cancellation.is_cancelled() {
+            return Err("session_runtime_cancelled".into());
+        }
         if self.started.swap(true, Ordering::AcqRel) {
             return Err("session_runtime_pending".into());
         }
@@ -142,7 +175,7 @@ impl RuntimeStartWitness {
         prepared: &PreparedJob,
         identity: Identity,
         created: bool,
-    ) {
+    ) -> Result<(), String> {
         let (kind, generation) = match &identity {
             Identity::Service(generation) => {
                 let mut hash = Sha256::new();
@@ -161,7 +194,7 @@ impl RuntimeStartWitness {
             Identity::Run(id) => ("job", id.clone()),
             Identity::TaskOperation(id) => ("taskOperation", id.clone()),
         };
-        *self.lease.lock().unwrap_or_else(|p| p.into_inner()) = Some(RuntimeLease {
+        let lease = RuntimeLease {
             app: app.clone(),
             coordinator: coordinator.clone(),
             identity,
@@ -172,7 +205,15 @@ impl RuntimeStartWitness {
                 created,
                 definition_revision: prepared.revision.clone(),
             },
-        });
+        };
+        *self.lease.lock().unwrap_or_else(|p| p.into_inner()) = Some(lease.clone());
+        if let Some(publisher) = &self.publisher {
+            publisher(lease)?;
+        }
+        if self.cancellation.is_cancelled() {
+            return Err("session_runtime_cancelled".into());
+        }
+        Ok(())
     }
 }
 
@@ -215,6 +256,47 @@ impl RuntimeLease {
                     json!({"state":operation.status,"operationId":operation.id,"runs":operation.runs}),
                 )
             }
+        }
+    }
+    pub async fn ready(&self) -> Result<bool, String> {
+        if let Identity::Service(generation) = &self.identity {
+            return self
+                .coordinator
+                .service_generation_ready(&self.descriptor.owner_id, *generation)
+                .await
+                .map_err(|_| "session_runtime_changed".into());
+        }
+        let mut status = self.status()?;
+        if matches!(self.identity, Identity::TaskOperation(_))
+            && status.get("state").and_then(Value::as_str) == Some("running")
+        {
+            let root = status
+                .get("runs")
+                .and_then(Value::as_array)
+                .and_then(|runs| {
+                    runs.iter().find(|run| {
+                        run.get("jobId").and_then(Value::as_str) == Some(&self.descriptor.owner_id)
+                    })
+                });
+            let Some(run_id) = root
+                .and_then(|run| run.get("runId"))
+                .and_then(Value::as_str)
+            else {
+                return Ok(false);
+            };
+            let run = database(&self.app)?
+                .get_run(run_id)
+                .map_err(|_| "session_runtime_unavailable")?
+                .ok_or("session_runtime_changed")?;
+            if run.job_id != self.descriptor.owner_id {
+                return Err("session_runtime_changed".into());
+            }
+            status = json!({"state":run.status});
+        }
+        match status.get("state").and_then(Value::as_str) {
+            Some("succeeded" | "running") => Ok(true),
+            Some("queued" | "starting") => Ok(false),
+            _ => Err("session_runtime_failed".into()),
         }
     }
     /// Only the retained creator lease can stop a resource. A last shared holder
@@ -330,13 +412,19 @@ pub async fn acquire_service(
         return Err("session_runtime_replay_review".into());
     }
     let observed = |instance: &crate::core::models::ServiceInstance, created| {
-        witness.retain(
-            app,
-            &coordinator,
-            prepared,
-            Identity::Service(instance.generation),
-            created,
-        );
+        witness
+            .retain(
+                app,
+                &coordinator,
+                prepared,
+                Identity::Service(instance.generation),
+                created,
+            )
+            .map_err(|_| {
+                crate::storage::StorageError::ConcurrentChange(
+                    "session-resource-publication".into(),
+                )
+            })
     };
     let result = coordinator
         .acquire_service_observed_at(
@@ -344,6 +432,7 @@ pub async fn acquire_service(
             Some(&prepared.job),
             allow_borrow,
             Some(&observed),
+            Some(&witness.cancellation),
             crate::storage::current_epoch_millis(),
         )
         .await;
@@ -385,39 +474,49 @@ pub async fn start_job(
         return Err("session_runtime_replay_review".into());
     }
     let result = if prepared.task.is_some() {
-        crate::workspace_orchestration::start_workspace_task_operation_reviewed(
+        let observed =
+            |operation: &crate::core::workspace_orchestration::WorkspaceTaskOperationView| {
+                witness.retain(
+                    app,
+                    &coordinator,
+                    prepared,
+                    Identity::TaskOperation(operation.id.clone()),
+                    true,
+                )
+            };
+        crate::workspace_orchestration::start_workspace_task_operation_observed(
             database.clone(),
             coordinator.clone(),
             &prepared.job.id,
             true,
             prepared.task.as_ref().map(|task| task.revision.as_str()),
+            Some(&observed),
         )
         .and_then(|operation| {
-            witness.retain(
-                app,
-                &coordinator,
-                prepared,
-                Identity::TaskOperation(operation.id.clone()),
-                true,
-            );
             serde_json::to_value(operation).map_err(|_| "session_runtime_response_invalid".into())
         })
     } else {
         let observed = |run: &crate::core::models::Run| {
-            witness.retain(
-                app,
-                &coordinator,
-                prepared,
-                Identity::Run(run.id.clone()),
-                true,
-            );
-            Ok(())
+            witness
+                .retain(
+                    app,
+                    &coordinator,
+                    prepared,
+                    Identity::Run(run.id.clone()),
+                    true,
+                )
+                .map_err(|_| {
+                    crate::storage::StorageError::ConcurrentChange(
+                        "session-resource-publication".into(),
+                    )
+                })
         };
         coordinator
             .trigger_manual_observed_at(
                 &prepared.job.id,
                 Some(&prepared.job),
                 Some(&observed),
+                Some(&witness.cancellation),
                 crate::storage::current_epoch_millis(),
             )
             .await

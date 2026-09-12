@@ -162,3 +162,41 @@ failed-stop retry. They are reserved for the completed B06 PR packet. The minimu
 Workspace all-target syntax/type check passed in 27.764 seconds; no B06 tests, Clippy,
 application build, affected run or actual Windows acceptance was executed. The facade
 still needs its Development Session controller/UI consumer; this is not WP06 completion.
+
+## Development Session controller and review surface
+
+The Terminal route now includes a native Development Session controller and review
+surface. It lists bounded Runtime candidates, previews selected command/target/cwd
+and environment presence, then separates restore-only from reviewed execution. Each
+session retains an immutable project/worktree context and plan revision. Requests
+persist intent/phase/operation identity before native effects; renderer loss does
+not stop the accepted worker. Stop releases borrowed/shared references and targets
+only retained creator generations, with separate retry receipts. Shutdown waits for
+session workers before completing owner retirement; restart leaves old sessions in
+review-required history without native lease adoption.
+
+Resource publication is synchronous with Runtime claim admission. A Session must
+persist its reference before a service borrow returns or a new process starts.
+This closes the race between one session releasing a shared service and another
+acquiring it. Failed publication retains the native witness for reconciliation;
+a rejected borrowed reference creates no process and can settle without resource
+ownership. DAG operation identity is published before its executor starts. Readiness
+reuses Runtime's exact-generation process/TCP health check.
+
+The first native compile found an incorrect operation-view module import; it was
+fixed and the same syntax/type check resumed. Workspace native all-target check and
+frontend typecheck passed in 26.359 seconds. UI fixtures were authored for explicit
+restore-only approval and rejecting a late previous-worktree plan; they have not
+been executed. No detailed B06 suite was run. Remaining B06 integration includes
+Terminal profile/PTY leases in the development session, fuller environment/port
+preflight and Problems/Knowledge providers, WSL/container/Logs actions and the
+JSON/WebView settings importers. These are required before the PR validation packet.
+
+Start admission now also has a sticky cancellation signal before the per-job lock.
+A session cancelled while another request holds that lock allocates no run. Phase
+timeout requests cleanup and retains an already-started native future until it
+settles; it does not drop a future across process creation. Readiness waits for the
+DAG root's actual run rather than its pre-spawn attachment record. Borrow publication
+rejected during shared-resource release settles without taking ownership. The added
+cancellation fixture remains deferred. A callback alias lifetime typo was corrected;
+the final native/frontend syntax pass took 19.506 seconds without test execution.
