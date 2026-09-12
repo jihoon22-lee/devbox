@@ -14,7 +14,17 @@ use std::{
 
 type Result<T> = std::result::Result<T, &'static str>;
 const POINTER: &str = "active-stores.json";
-const COMPONENTS: &[&str] = &["registry", "overview", "files", "common"];
+const BASE_COMPONENTS: &[&str] = &["registry", "overview", "files", "common"];
+pub(crate) const COMPONENTS: &[&str] = &[
+    "registry",
+    "overview",
+    "files",
+    "common",
+    "runtime",
+    "processes",
+    "logs",
+];
+const ADDITIONAL_COMPONENTS: &[&str] = &["runtime", "processes", "logs"];
 const MAX_GENERATIONS: usize = 32;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -138,9 +148,64 @@ impl StoreRoot {
         open_filesystem_object(&path, true).map_err(|_| "store_generation_unavailable")?;
         Ok(path)
     }
-    fn validate_generation(&self, generation: &Generation) -> Result<()> {
-        for component in COMPONENTS {
+    /// Extend an existing v1 generation without replacing its pointer or any
+    /// user metadata. Only native, closed component names can be provisioned.
+    /// Retain and recheck both parents across creation; a substituted parent
+    /// must never be accepted as the selected generation.
+    pub(crate) fn ensure_runtime_components(&self, generation: &Generation) -> Result<()> {
+        let _writer = self.writer.lock().map_err(|_| "store_owner_busy")?;
+        self.validate_generation(generation)?;
+        let stores = self.root.join("stores");
+        let directory = stores.join(&generation.id);
+        let (_stores_handle, stores_identity) =
+            open_filesystem_object(&stores, true).map_err(|_| "store_generation_changed")?;
+        let (_generation_handle, generation_identity) =
+            open_filesystem_object(&directory, true).map_err(|_| "store_generation_changed")?;
+        for component in ADDITIONAL_COMPONENTS {
+            ensure_no_links(&directory).map_err(|_| "store_generation_changed")?;
+            if filesystem_identity(&stores, true).map_err(|_| "store_generation_changed")?
+                != stores_identity
+                || filesystem_identity(&directory, true).map_err(|_| "store_generation_changed")?
+                    != generation_identity
+            {
+                return Err("store_generation_changed");
+            }
+            match fs::create_dir(directory.join(component)) {
+                Ok(()) => {}
+                Err(error) if error.kind() == ErrorKind::AlreadyExists => {}
+                Err(_) => return Err("store_prepare_failed"),
+            }
             self.component(generation, component)?;
+        }
+        self.assert_owner()?;
+        if filesystem_identity(&stores, true).map_err(|_| "store_generation_changed")?
+            != stores_identity
+            || filesystem_identity(&directory, true).map_err(|_| "store_generation_changed")?
+                != generation_identity
+        {
+            return Err("store_generation_changed");
+        }
+        self.validate_generation(generation)
+    }
+    fn validate_generation(&self, generation: &Generation) -> Result<()> {
+        for component in BASE_COMPONENTS {
+            self.component(generation, component)?;
+        }
+        // B04 generations predate these stores. Absence is compatible; an
+        // existing file/link is corruption, never a reason to reset metadata.
+        for component in ADDITIONAL_COMPONENTS {
+            let path = self
+                .root
+                .join("stores")
+                .join(&generation.id)
+                .join(component);
+            match fs::symlink_metadata(path) {
+                Ok(_) => {
+                    self.component(generation, component)?;
+                }
+                Err(error) if error.kind() == ErrorKind::NotFound => {}
+                Err(_) => return Err("store_generation_unavailable"),
+            }
         }
         // Future/corrupt Registry metadata cannot become an empty project list.
         // The activation owner validates without acquiring the live Registry

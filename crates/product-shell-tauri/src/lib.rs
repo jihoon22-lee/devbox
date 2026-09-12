@@ -193,7 +193,10 @@ pub fn replace_project_context(
 
 pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
     tauri::Builder::default()
-        .plugin(tauri_plugin_single_instance::init(|app, _, _| {
+        .plugin(tauri_plugin_single_instance::init(move |app, args, _| {
+            if product == "workspace" && args.iter().any(|arg| arg == "--background") {
+                return;
+            }
             if let Some(window) = app.get_webview_window("main") {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -265,6 +268,17 @@ pub fn run_with(
                 .find(|window| window.label == "main")
                 .ok_or_else(|| std::io::Error::other("missing main window"))?;
             window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
+        }
+    }
+    if product == "workspace" && std::env::args_os().any(|arg| arg == "--background") {
+        if let Some(window) = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|window| window.label == "main")
+        {
+            window.visible = false;
         }
     }
     isolate_installation(&mut context)?;

@@ -98,6 +98,28 @@ function withoutBlockComments(source) {
   return source.replace(/\/\*[\s\S]*?\*\//g, "");
 }
 
+// Follow only a declared package export that the real App entry imports.
+// A sibling feature's smoke test cannot satisfy this app's contract.
+function sharedFeatureEntries(root, appRoot, manifest) {
+  const entry = safeChild(appRoot, "src/App.tsx");
+  if (!lstatSync(entry, { throwIfNoEntry: false })?.isFile()) return [];
+  const source = withoutBlockComments(readText(entry, "app entry")).replace(/^[ \t]*\/\/.*$/gm, "");
+  const pattern = /(?:import\s+(?!type\b)[A-Za-z_$][\w$]*\s+from|export\s*\{\s*default\s*\}\s*from)\s*["'](@devbox\/([a-z0-9-]+)\/([^"']+))["']/g;
+  const entries = [];
+  for (const match of source.matchAll(pattern)) {
+    const [, , packageName, exportName] = match;
+    if (manifest.dependencies?.[`@devbox/${packageName}`] !== "workspace:*") continue;
+    const packageRoot = safeChild(root, "packages", packageName);
+    const definition = readJson(safeChild(packageRoot, "package.json"), "shared feature package");
+    const target = definition.exports?.[`./${exportName}`];
+    if (typeof target !== "string" || !target.startsWith("./src/") || !target.endsWith("/App.tsx")) continue;
+    const imported = safeChild(packageRoot, target);
+    if (!lstatSync(imported, { throwIfNoEntry: false })?.isFile()) fail("shared accessibility feature entry is missing");
+    entries.push(imported);
+  }
+  return [...new Set(entries)];
+}
+
 function checkApp(root, appName) {
   const appRoot = safeChild(root, "apps", appName);
   const manifest = readJson(safeChild(appRoot, "package.json"), `${appName} package.json`);
@@ -114,7 +136,11 @@ function checkApp(root, appName) {
     fail(`${appName} index.html must declare lang=ko-KR`);
   }
 
-  const css = withoutBlockComments(readText(safeChild(appRoot, "src/App.css"), `${appName} App.css`));
+  const sharedEntries = sharedFeatureEntries(root, appRoot, manifest);
+  const ownCss = safeChild(appRoot, "src/App.css");
+  const cssPath = lstatSync(ownCss, { throwIfNoEntry: false })?.isFile() ? ownCss
+    : sharedEntries.length === 1 ? safeChild(path.dirname(sharedEntries[0]), "App.css") : ownCss;
+  const css = withoutBlockComments(readText(cssPath, `${appName} App.css`));
   let previous = -1;
   for (const requiredImport of REQUIRED_CSS_IMPORTS) {
     const index = css.indexOf(requiredImport);
@@ -126,7 +152,7 @@ function checkApp(root, appName) {
     .replace(/^[ \t]*\/\/.*$/gm, "");
   if (!/^[ \t]*manifest\s*:\s*true\b/m.test(vite)) fail(`${appName} Vite build must emit a manifest`);
 
-  const tests = testSources(safeChild(appRoot, "src"));
+  const tests = [...testSources(safeChild(appRoot, "src")), ...sharedEntries.flatMap(entry => testSources(path.dirname(entry)))];
   if (!tests.some((source) => (
     /import\s*\{[^}]*\bassertNoA11yViolations\b[^}]*\}\s*from\s*["']@devbox\/a11y\/testing["']/.test(source)
     && /\bassertNoA11yViolations\s*\(/.test(source)

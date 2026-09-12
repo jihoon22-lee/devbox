@@ -122,6 +122,9 @@ pub fn spawn_snapshot_writer(database: std::sync::Arc<DatabaseState>) {
 
 /// snapshot을 즉시 쓴다 (테스트·종료 시 1회 호출 가능).
 pub fn write_snapshot(database: &DatabaseState) -> Result<(), String> {
+    if !database.allows_legacy_publication() {
+        return Ok(());
+    }
     write_snapshot_in(&devbox_integration::integration_root(), database)
 }
 
@@ -157,6 +160,9 @@ fn write_snapshot_in(root: &Path, database: &DatabaseState) -> Result<(), String
 }
 
 pub fn write_port_bindings(database: &DatabaseState) -> Result<(), String> {
+    if !database.allows_legacy_publication() {
+        return Ok(());
+    }
     write_port_bindings_in(&devbox_integration::integration_root(), database)
 }
 
@@ -178,7 +184,7 @@ fn write_port_bindings_in(root: &Path, database: &DatabaseState) -> Result<(), S
     )
 }
 
-fn build_port_binding_entries(
+pub(crate) fn build_port_binding_entries(
     database: &DatabaseState,
     services: Vec<Job>,
 ) -> Result<Vec<devbox_integration::PortBindingEntry>, String> {
@@ -338,6 +344,9 @@ fn build_daily_activity_entries(
 }
 
 pub fn write_workspace_tasks(database: &DatabaseState) -> Result<(), String> {
+    if !database.allows_legacy_publication() {
+        return Ok(());
+    }
     write_workspace_tasks_in(&devbox_integration::integration_root(), database)
 }
 
@@ -357,6 +366,9 @@ fn write_workspace_tasks_in(root: &Path, database: &DatabaseState) -> Result<(),
 }
 
 pub fn write_task_control_receipts(database: &DatabaseState) -> Result<(), String> {
+    if !database.allows_legacy_publication() {
+        return Ok(());
+    }
     write_task_control_receipts_in(&devbox_integration::integration_root(), database)
 }
 

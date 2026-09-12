@@ -15,6 +15,17 @@ edition = "2021"
 name = "run_manager_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Product consumers reuse commands without embedding the standalone frontend.
+[features]
+default = ["standalone"]
+standalone = ["desktop"]
+desktop = []
+
+[[bin]]
+name = "run-manager"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -39,6 +50,7 @@ devbox-applink = { package = "applink", path = "../../../crates/applink" }
 devbox-launch = { package = "launch", path = "../../../crates/launch" }
 devbox-secrets = { package = "secrets", path = "../../../crates/secrets" }
 dirs = "6.0.0"
+devbox-data-migration = { package = "data-migration", path = "../../../crates/data-migration" }
 devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 

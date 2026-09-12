@@ -297,6 +297,18 @@ impl Definitions {
         }
         Ok(snapshot)
     }
+    pub(crate) fn runtime_ports(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        deadline: u64,
+    ) -> Result<Vec<u16>> {
+        let snapshot = self.snapshot(host, context, deadline)?;
+        if !snapshot.unavailable_sources.is_empty() {
+            return Err("project_definition_unavailable");
+        }
+        Ok(snapshot.effective.expected_ports.unwrap_or_default())
+    }
     pub fn load(
         &mut self,
         host: &Host,

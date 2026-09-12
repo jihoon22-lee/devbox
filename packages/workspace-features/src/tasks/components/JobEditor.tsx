@@ -21,6 +21,7 @@ import CronBuilder from "./CronBuilder";
 import NextRunsPreview from "./NextRunsPreview";
 
 interface JobEditorProps {
+  active?: boolean;
   job: Job | null;
   workspaceTask?: WorkspaceTaskState | null;
   onSave: (input: JobInput) => Promise<void>;
@@ -47,7 +48,7 @@ function emptyEditorState(job: Job | null): JobEditorState {
   };
 }
 
-export default function JobEditor({ job, workspaceTask = null, onSave, onCancel }: JobEditorProps) {
+export default function JobEditor({ active = true, job, workspaceTask = null, onSave, onCancel }: JobEditorProps) {
   const jobKey = job?.id ?? "";
   // Editor state is derived during render rather than reset from an effect: every job-list refresh
   // hands `job` and `workspaceTask` fresh object identities, and an effect keyed on them would wipe
@@ -91,6 +92,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
 
   useEffect(() => {
     const requestId = ++previewRequest.current;
+    if (!active) return;
     const expression = draft.cronExpr.trim();
     if (!expression) {
       setPreviewItems([]);
@@ -116,7 +118,7 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
         });
     }, 180);
     return () => window.clearTimeout(timer);
-  }, [draft.cronExpr]);
+  }, [active, draft.cronExpr]);
 
   const title = useMemo(() => (job ? "작업 편집" : "새 작업"), [job]);
   const update = <K extends keyof JobDraft>(field: K, value: JobDraft[K]) => {
@@ -345,6 +347,11 @@ export default function JobEditor({ job, workspaceTask = null, onSave, onCancel 
             <div className="adapter-warning" role="note">
               값은 Windows 사용자 계정에 연결된 DPAPI로 보호됩니다. 기존 값은 유지하거나 전체 교체·삭제할 수 있습니다.
             </div>
+            {job?.envReconnectRequired && <div role="note">
+              <p>기존 비밀 환경 변수는 아직 연결되지 않았습니다. 변수를 다시 입력하거나, 사용하지 않기로 선택한 뒤 저장해 주세요.</p>
+              <button type="button" className="button-secondary small" onClick={replacePersistedEnvironment}>환경 변수 다시 입력</button>
+              <button type="button" className="button-secondary small" onClick={clearPersistedEnvironment}>기존 비밀 사용 안 함</button>
+            </div>}
             {draft.environment.length === 0 ? <p className="muted">설정된 환경변수가 없습니다.</p> : null}
             <div className="environment-list">
               {draft.environment.map((entry) =>

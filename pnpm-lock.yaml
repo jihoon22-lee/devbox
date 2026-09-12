@@ -710,6 +710,9 @@ importers:
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      '@devbox/workspace-features':
+        specifier: workspace:*
+        version: link:../../packages/workspace-features
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -750,6 +753,9 @@ importers:
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      '@devbox/workspace-features':
+        specifier: workspace:*
+        version: link:../../packages/workspace-features
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1
@@ -842,6 +848,9 @@ importers:
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens
+      '@devbox/workspace-features':
+        specifier: workspace:*
+        version: link:../../packages/workspace-features
       '@tauri-apps/api':
         specifier: ^2
         version: 2.11.1

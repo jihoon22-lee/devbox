@@ -80,6 +80,14 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             | ("workspace", "workspace.migration", "legacy-import")
             | ("workspace", "workspace.files", "file-edit")
             | ("workspace", "workspace.lsp", "language-service")
+            | ("workspace", "workspace.runtime", "runtime-execution")
+            | ("workspace", "workspace.processes", "process-observation")
+            | (
+                "workspace",
+                "workspace.process-actions",
+                "external-process-action"
+            )
+            | ("workspace", "workspace.logs", "log-read")
     )
 }
 

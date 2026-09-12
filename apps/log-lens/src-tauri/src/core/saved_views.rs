@@ -210,6 +210,15 @@ fn validate_saved_view(view: &SavedView) -> Result<(), &'static str> {
                 }
             }
             SourceSpec::Run { source_id } => validate_safe_text(source_id)?,
+            SourceSpec::RuntimeRun {
+                run_id,
+                stream,
+                revision,
+            } => {
+                validate_safe_text(run_id)?;
+                validate_safe_text(stream)?;
+                validate_safe_text(revision)?;
+            }
             SourceSpec::Container {
                 engine: _,
                 container_id,

@@ -25,7 +25,7 @@ use windows::Win32::System::Com::{
     COINIT_APARTMENTTHREADED, STGM_READ,
 };
 use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
+    AssignProcessToJobObject, CreateJobObjectW, IsProcessInJob, JobObjectExtendedLimitInformation,
     SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
     JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
 };
@@ -287,7 +287,24 @@ struct SessionEndContext {
 
 pub fn install_session_end_hook(
     window: &tauri::WebviewWindow,
-    _app: &AppHandle,
+    app: &AppHandle,
+    state: Arc<RuntimeState>,
+) -> Result<(), String> {
+    // Workspace opens its owned database off the UI thread. Windows subclass
+    // installation must still run on the thread that created this HWND.
+    let (send, receive) = std::sync::mpsc::sync_channel(1);
+    let window = window.clone();
+    app.run_on_main_thread(move || {
+        let _ = send.send(install_session_end_hook_on_main(&window, state));
+    })
+    .map_err(|_| "session-end hook dispatch failed".to_string())?;
+    receive
+        .recv()
+        .map_err(|_| "session-end hook unavailable".to_string())?
+}
+
+fn install_session_end_hook_on_main(
+    window: &tauri::WebviewWindow,
     state: Arc<RuntimeState>,
 ) -> Result<(), String> {
     let hwnd = window.hwnd().map_err(|error| error.to_string())?;
@@ -537,6 +554,43 @@ unsafe impl Send for WindowsChild {}
 unsafe impl Sync for WindowsChild {}
 
 impl WindowsChild {
+    pub fn contains_process(
+        &self,
+        pid: u32,
+        expected_filetime: u64,
+    ) -> Result<bool, WindowsExecutionError> {
+        let process = OwnedWindowsHandle::new(
+            unsafe { OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, false, pid) }
+                .map_err(|error| win32_error("OpenProcess", error))?,
+            "observed process",
+        )?;
+        let mut creation = FILETIME::default();
+        let mut exit = FILETIME::default();
+        let mut kernel = FILETIME::default();
+        let mut user = FILETIME::default();
+        unsafe {
+            GetProcessTimes(
+                process.raw(),
+                &mut creation,
+                &mut exit,
+                &mut kernel,
+                &mut user,
+            )
+        }
+        .map_err(|error| win32_error("GetProcessTimes", error))?;
+        let observed =
+            (u64::from(creation.dwHighDateTime) << 32) | u64::from(creation.dwLowDateTime);
+        if observed != expected_filetime {
+            return Err(WindowsExecutionError::Win32(
+                "process identity changed".into(),
+            ));
+        }
+        let mut owned = windows::core::BOOL::default();
+        unsafe { IsProcessInJob(process.raw(), Some(self.job.raw()), &mut owned) }
+            .map_err(|error| win32_error("IsProcessInJob", error))?;
+        Ok(owned.as_bool())
+    }
+
     pub fn identity(&self) -> WindowsProcessIdentity {
         self.identity
     }
@@ -1061,6 +1115,31 @@ mod execution_tests {
         let mut output = String::new();
         stdout.read_to_string(&mut output).unwrap();
         assert_eq!(output.trim(), "foundation-fixture");
+        output.clear();
+        stderr.read_to_string(&mut output).unwrap();
+        assert!(output.is_empty());
+    }
+
+    #[test]
+    fn owned_shell_preserves_a_quoted_executable_path_and_shell_operators() {
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("quoted fixture shell.exe");
+        fs::copy(system_shell().unwrap(), &executable).unwrap();
+        let command = format!(
+            "\"{}\" /D /C echo first-fixture & echo second-fixture",
+            executable.display()
+        );
+        let mut child = spawn(&command, Some(root.path()), &BTreeMap::new()).unwrap();
+        let mut stdout = child.take_stdout_file().unwrap();
+        let mut stderr = child.take_stderr_file().unwrap();
+        assert_eq!(child.wait(Some(Duration::from_secs(10))).unwrap(), Some(0));
+        child.ensure_tree_gone(Duration::from_secs(5)).unwrap();
+        let mut output = String::new();
+        stdout.read_to_string(&mut output).unwrap();
+        assert_eq!(
+            output.lines().map(str::trim).collect::<Vec<_>>(),
+            ["first-fixture", "second-fixture"]
+        );
         output.clear();
         stderr.read_to_string(&mut output).unwrap();
         assert!(output.is_empty());

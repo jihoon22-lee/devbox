@@ -401,6 +401,40 @@ pub async fn validate_identity(
     Ok(observed)
 }
 
+/// Read-only membership check for a broker-selected process. The current
+/// leader marker and the selected PID/start tick must both remain exact.
+pub async fn contains_process(
+    distro: &str,
+    owner: &WslProcessIdentity,
+    pid: u32,
+    start_tick: u64,
+) -> Result<bool, WslExecutionError> {
+    validate_identity(distro, owner).await?;
+    let argv = build_wsl_proc_stat_argv(distro, pid)?;
+    let output = run_helper_output(&argv).await?;
+    if !output.status.success() {
+        return Err(WslExecutionError::CommandFailed {
+            argv,
+            code: output.status.code(),
+        });
+    }
+    let observed = parse_proc_stat_identity(pid, &output.stdout, &owner.marker)?;
+    let text = std::str::from_utf8(&output.stdout)
+        .map_err(|_| WslExecutionError::Shell(ShellError::InvalidNumericField("start tick")))?;
+    let tick = text
+        .rsplit_once(") ")
+        .and_then(|(_, fields)| fields.split_whitespace().nth(19))
+        .and_then(|value| value.parse::<u64>().ok())
+        .filter(|tick| *tick > 0);
+    if tick != Some(start_tick) {
+        return Err(WslExecutionError::Shell(ShellError::InvalidNumericField(
+            "start tick",
+        )));
+    }
+    validate_identity(distro, owner).await?;
+    Ok(observed.pgid == owner.pgid && observed.sid == owner.sid)
+}
+
 async fn read_process_environ(distro: &str, pid: u32) -> Result<Vec<u8>, WslExecutionError> {
     let argv = build_wsl_proc_environ_argv(distro, pid)?;
     let output = run_helper_output(&argv).await?;

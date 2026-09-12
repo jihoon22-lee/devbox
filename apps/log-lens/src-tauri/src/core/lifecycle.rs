@@ -47,6 +47,8 @@ struct OperationEntry {
 #[derive(Debug, Default)]
 struct RegistryInner {
     current_generation: u64,
+    shutting_down: bool,
+    workers: usize,
     operations: HashMap<String, OperationEntry>,
 }
 
@@ -58,7 +60,39 @@ pub struct OperationRegistry {
     inner: Mutex<RegistryInner>,
 }
 
+/// Lives in the actual blocking worker, independently of the IPC future and
+/// the bounded cancellation lookup (which may evict superseded operations).
+pub struct ReaderLease(Arc<OperationRegistry>);
+impl Drop for ReaderLease {
+    fn drop(&mut self) {
+        if let Ok(mut inner) = self.0.inner.lock() {
+            inner.workers -= 1;
+        }
+    }
+}
+
 impl OperationRegistry {
+    pub fn worker(self: &Arc<Self>) -> Result<ReaderLease, CoreError> {
+        let mut inner = self.inner.lock().map_err(|_| CoreError::Io)?;
+        if inner.shutting_down {
+            return Err(CoreError::OperationCancelled);
+        }
+        if inner.workers >= MAX_TRACKED_OPERATIONS {
+            return Err(CoreError::InvalidInput);
+        }
+        inner.workers += 1;
+        Ok(ReaderLease(self.clone()))
+    }
+
+    pub fn shutdown(&self) -> Result<bool, CoreError> {
+        let mut inner = self.inner.lock().map_err(|_| CoreError::Io)?;
+        inner.shutting_down = true;
+        for operation in inner.operations.values() {
+            operation.token.cancel();
+        }
+        Ok(inner.workers == 0)
+    }
+
     pub fn begin(
         &self,
         operation_id: &str,
@@ -66,6 +100,9 @@ impl OperationRegistry {
     ) -> Result<CancellationToken, CoreError> {
         validate_operation_id(operation_id)?;
         let mut inner = self.inner.lock().map_err(|_| CoreError::Io)?;
+        if inner.shutting_down {
+            return Err(CoreError::OperationCancelled);
+        }
         if generation < inner.current_generation {
             return Err(CoreError::StaleOperation);
         }
@@ -160,6 +197,32 @@ fn validate_operation_id(operation_id: &str) -> Result<(), CoreError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn shutdown_waits_for_real_workers_even_after_cancellation_lookup_eviction() {
+        let registry = Arc::new(OperationRegistry::default());
+        let worker = registry.worker().unwrap();
+        let token = registry.begin("first", 1).unwrap();
+        for index in 0..(MAX_TRACKED_OPERATIONS + 8) {
+            registry.begin(&format!("new-{index}"), 1).unwrap();
+        }
+        assert!(token.is_cancelled());
+        assert!(!registry.shutdown().unwrap());
+        assert!(registry.begin("late", 2).is_err());
+        assert!(registry.worker().is_err());
+        drop(worker);
+        assert!(registry.shutdown().unwrap());
+    }
+    #[test]
+    fn live_reader_work_is_bounded_independently_of_request_cancellation() {
+        let registry = Arc::new(OperationRegistry::default());
+        let leases = (0..MAX_TRACKED_OPERATIONS)
+            .map(|_| registry.worker().unwrap())
+            .collect::<Vec<_>>();
+        assert!(registry.worker().is_err());
+        drop(leases);
+        assert!(registry.worker().is_ok());
+    }
 
     #[test]
     fn newer_operation_cancels_previous_single_flight() {

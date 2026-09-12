@@ -11,7 +11,10 @@
     "./source": "./src/source/App.tsx",
     "./source-panel": "./src/source/SourcePanel.tsx",
     "./files": "./src/files/App.tsx",
-    "./transport": "./src/transport.ts"
+    "./transport": "./src/transport.ts",
+    "./tasks": "./src/tasks/App.tsx",
+    "./runtime": "./src/runtime/App.tsx",
+    "./logs": "./src/logs/App.tsx"
   },
   "scripts": {
     "build": "tsc --noEmit",

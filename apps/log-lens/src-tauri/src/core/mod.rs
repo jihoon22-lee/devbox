@@ -11,6 +11,7 @@ pub mod handoff;
 mod lifecycle;
 mod model;
 mod parser;
+pub mod product_saved_views;
 pub mod saved_views;
 mod sources;
 
@@ -26,4 +27,8 @@ pub use parser::{
     export_records, filter_records, merge_records, merge_records_with_stats, parse_bytes,
     parse_line, ExportedText, MergeBuffer, ParseBatch,
 };
-pub use sources::{adapter_argv, load_source, AdapterPlan, LoadContext};
+pub use sources::{
+    adapter_argv, load_source, AdapterPlan, LoadContext, RuntimeLogLease, RuntimeLogProvider,
+};
+
+pub mod runtime_views;

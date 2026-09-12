@@ -11,6 +11,8 @@ pub enum Source {
     CodePad,
     CodePadLegacy,
     RepoManager,
+    PortManager,
+    LogLens,
 }
 
 #[derive(Clone, Copy)]
@@ -30,6 +32,8 @@ impl Source {
             Self::CodePad => "com.devbox.codepad",
             Self::CodePadLegacy => "com.workbench.codepad",
             Self::RepoManager => "com.devbox.repomanager",
+            Self::PortManager => "com.devbox.portmanager",
+            Self::LogLens => "com.devbox.loglens",
         }
     }
     /// Snapshot v1 predates window inventory. Keep its exact fixed file set so
@@ -76,6 +80,20 @@ impl Source {
             // v0.7 scan root, selected repository and panel preferences are
             // React state only. Dependency enrichment is a derived cache.
             Self::RepoManager => &[WINDOW],
+            Self::PortManager => &[
+                FileSpec {
+                    name: "port-manager-preferences-v1.json",
+                    limit: 64 * 1024,
+                },
+                WINDOW,
+            ],
+            Self::LogLens => &[
+                FileSpec {
+                    name: "saved-views.json",
+                    limit: 128 * 1024,
+                },
+                WINDOW,
+            ],
         }
     }
 }
@@ -112,6 +130,10 @@ fn known_shape(raw: &Value, normalized: &Value, cursor_aliases: bool) -> bool {
             let key =
                 if cursor_aliases && matches!(key.as_str(), "cursorPosition" | "cursor_position") {
                     "cursor"
+                } else if key == "source_id" && normalized.contains_key("sourceId") {
+                    "sourceId"
+                } else if key == "container_id" && normalized.contains_key("containerId") {
+                    "containerId"
                 } else {
                     key
                 };
@@ -157,6 +179,18 @@ fn decode(source: Source, name: &str, bytes: &[u8], limit: usize) -> Result<usiz
     {
         return Err(Issue::UnsupportedSchema);
     }
+    if matches!(source, Source::PortManager | Source::LogLens)
+        && raw
+            .get(if source == Source::PortManager {
+                "schema_version"
+            } else {
+                "schemaVersion"
+            })
+            .and_then(Value::as_u64)
+            .is_some_and(|version| version != 1)
+    {
+        return Err(Issue::UnsupportedSchema);
+    }
     if name == "window-state-v1.json" {
         if raw
             .get("schemaVersion")
@@ -169,6 +203,26 @@ fn decode(source: Source, name: &str, bytes: &[u8], limit: usize) -> Result<usiz
         return Ok(1);
     }
     let (normalized, count) = match (source, name) {
+        (Source::PortManager, "port-manager-preferences-v1.json") => {
+            let parsed: port_manager_lib::component::PortManagerPreferences =
+                serde_json::from_str(text).map_err(|_| Issue::Corrupt)?;
+            parsed.validate().map_err(|_| Issue::Corrupt)?;
+            let count = parsed.favorite_ports.len() + parsed.favorite_processes.len();
+            (
+                serde_json::to_value(parsed).map_err(|_| Issue::Corrupt)?,
+                count,
+            )
+        }
+        (Source::LogLens, "saved-views.json") => {
+            let parsed: log_lens_lib::core::saved_views::SavedViewsDocument =
+                serde_json::from_str(text).map_err(|_| Issue::Corrupt)?;
+            parsed.validate().map_err(|_| Issue::Corrupt)?;
+            let count = parsed.views.len();
+            (
+                serde_json::to_value(parsed).map_err(|_| Issue::Corrupt)?,
+                count,
+            )
+        }
         (Source::Workbench, "project-profiles.json") => {
             let parsed =
                 workbench_lib::component::ProfileStore::load(text).map_err(|_| Issue::Corrupt)?;

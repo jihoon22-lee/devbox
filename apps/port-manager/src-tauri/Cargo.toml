@@ -15,6 +15,17 @@ edition = "2021"
 name = "port_manager_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Product consumers reuse commands without embedding the standalone frontend.
+[features]
+default = ["standalone"]
+standalone = ["desktop"]
+desktop = []
+
+[[bin]]
+name = "port-manager"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -41,5 +52,6 @@ tempfile = "3"
 windows = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_System_JobObjects",
+  "Win32_System_Diagnostics_ToolHelp",
   "Win32_System_Threading",
 ] }

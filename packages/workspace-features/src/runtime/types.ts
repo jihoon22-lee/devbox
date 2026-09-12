@@ -45,6 +45,7 @@ export interface PortObservationSnapshot {
   rows: PortRow[];
   sources: SnapshotSourceStatus[];
   correlations_truncated: boolean;
+  unavailable_wsl?: string[];
 }
 
 export type LogStream = "stdout" | "stderr";
@@ -96,6 +97,7 @@ export interface ContainerStopHandoff {
 }
 
 export type ListenerActionResult =
+  | { kind: "ownedTask"; taskId: string }
   | { kind: "terminated" }
   | { kind: "handoff"; handoff: ContainerStopHandoff };
 

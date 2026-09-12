@@ -31,6 +31,12 @@ devbox-git = { package = "git", path = "../../../crates/git" }
 workbench = { path = "../../workbench/src-tauri", default-features = false }
 code-pad = { path = "../../code-pad/src-tauri", default-features = false, features = ["desktop"] }
 repo-manager = { path = "../../repo-manager/src-tauri", default-features = false, features = ["desktop"] }
+run-manager = { path = "../../run-manager/src-tauri", default-features = false, features = ["desktop"] }
+port-manager = { path = "../../port-manager/src-tauri", default-features = false, features = ["desktop"] }
+log-lens = { path = "../../log-lens/src-tauri", default-features = false, features = ["desktop"] }
+devbox-integration = { package = "integration", path = "../../../crates/integration" }
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
+tauri-plugin-notification = "2"
 
 sha2 = "0.11.0"
 tokio = { version = "1", features = ["time", "sync", "process", "io-util", "rt", "macros"] }

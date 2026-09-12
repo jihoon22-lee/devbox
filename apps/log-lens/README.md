@@ -1,5 +1,13 @@
 # Log Lens
 
+The v0.8 B05 extraction moves UI, API adapters and tests into
+`packages/workspace-features/src/logs`; this standalone app renders the same
+feature. Workspace composes the native engine with Runtime-issued log leases
+and a separate product saved-view store. Legacy saved views import disconnected;
+explicit reconnect renews mapped Runtime references while retaining filters.
+Validation results and final CI status are recorded in the
+[B05 workthrough](../../workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md).
+
 Log Lens 0.2.1 is a bounded, offline log viewer for explicitly selected local
 files/directories and fixed WSL, local-container, Run Manager, or one-time
 Webhook Lab capture adapters. It parses plain text, JSONL, and logfmt lines,

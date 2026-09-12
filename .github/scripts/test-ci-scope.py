@@ -33,7 +33,7 @@ assert frontend_only.dependency_scope == "none"
 rust_only = resolve("apps/run-manager/src-tauri/src/lib.rs")
 assert rust_only.frontend_scope == "none"
 assert rust_only.rust_scope == "packages"
-assert rust_only.rust_packages == ["run-manager"]
+assert rust_only.rust_packages == ["devbox-workspace", "run-manager"]
 
 frontend_manifest_lock = resolve("apps/wsl-desktop/package.json", "pnpm-lock.yaml")
 assert frontend_manifest_lock.frontend_scope == "apps"
@@ -55,10 +55,17 @@ assert pnpm_lock_only.dependency_scope == "all"
 
 editor = resolve("packages/editor/src/index.ts")
 assert editor.frontend_packages == [
-    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/repo-manager",
+    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/log-lens", "apps/port-manager", "apps/repo-manager", "apps/run-manager",
     "apps/workbench", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
 ]
-assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
+assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench"]
+for feature in ["tasks", "runtime", "logs"]:
+    workspace_feature = resolve(f"packages/workspace-features/src/{feature}/api.ts")
+    assert workspace_feature.frontend_apps == [
+        "code-pad", "devbox-workspace", "log-lens", "port-manager", "repo-manager",
+        "run-manager", "workbench",
+    ]
+    assert workspace_feature.rust_scope == "none"
 knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
 assert knowledge_features.frontend_apps == ["devbox-knowledge", "everything-plus", "knowledge-base", "life-log"]
 
@@ -75,7 +82,10 @@ for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "deve
     shared_domain = resolve(f"crates/{crate}/src/lib.rs")
     assert shared_domain.rust_packages == sorted([crate, legacy, "devbox-api-studio"])
 migration = resolve("crates/data-migration/src/lib.rs")
-assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge"]
+assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "run-manager"]
+for app in ["run-manager", "port-manager", "log-lens"]:
+    native_runtime = resolve(f"apps/{app}/src-tauri/src/component.rs")
+    assert native_runtime.rust_packages == sorted([app, "devbox-workspace"])
 api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
 assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
 
@@ -84,7 +94,7 @@ assert len(a11y.frontend_apps) == 19
 assert "packages/a11y" in a11y.frontend_packages
 
 process = resolve("crates/process/src/lib.rs")
-assert process.rust_packages == ["port-manager", "process"]
+assert process.rust_packages == ["devbox-workspace", "port-manager", "process"]
 
 search = resolve("crates/search/src/lib.rs")
 assert search.rust_packages == ["devbox-knowledge", "everything-plus", "knowledge-base", "search"]
@@ -111,7 +121,7 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "repo-manager", "workbench"]
+assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench"]
 assert "packages/workspace-features" in catalog.frontend_packages
 assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages

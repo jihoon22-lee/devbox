@@ -39,6 +39,7 @@ pub struct RuntimeState {
     shutdown_requested: AtomicBool,
     exit_authorized: AtomicBool,
     shutdown_notify: Notify,
+    cleanup_lock: tokio::sync::Mutex<()>,
 }
 
 impl RuntimeState {
@@ -59,6 +60,7 @@ impl RuntimeState {
             shutdown_requested: AtomicBool::new(false),
             exit_authorized: AtomicBool::new(false),
             shutdown_notify: Notify::new(),
+            cleanup_lock: tokio::sync::Mutex::new(()),
         }
     }
 
@@ -275,17 +277,25 @@ pub fn request_orderly_exit(app: &AppHandle, state: Arc<RuntimeState>) {
     }
 
     let app = app.clone();
+    tauri::async_runtime::spawn(async move {
+        shutdown_owner(&state).await;
+        if let Some(window) = app.get_webview_window("main") {
+            devbox_window_state_tauri::save_main_webview_window(&window);
+        }
+        app.exit(0);
+    });
+}
+
+/// Shared retirement boundary. Serialize joins so a second caller cannot
+/// mistake an already-taken task handle for a completed scheduler.
+pub async fn shutdown_owner(state: &RuntimeState) {
+    state.request_shutdown();
+    let _cleanup = state.cleanup_lock.lock().await;
     let scheduler_task = state.take_scheduler_task();
     let maintenance_task = state.take_maintenance_task();
-    tauri::async_runtime::spawn(async move {
-        if wait_for_scheduler_cleanup(&state, scheduler_task, maintenance_task).await {
-            state.authorize_exit();
-            if let Some(window) = app.get_webview_window("main") {
-                devbox_window_state_tauri::save_main_webview_window(&window);
-            }
-            app.exit(0);
-        }
-    });
+    if wait_for_scheduler_cleanup(state, scheduler_task, maintenance_task).await {
+        state.authorize_exit();
+    }
 }
 
 /// Completes the same shutdown boundary synchronously for WM_ENDSESSION.
@@ -340,6 +350,50 @@ mod tests {
         assert!(state.request_shutdown());
         assert!(!state.request_shutdown());
         assert!(state.status().shutdown_requested);
+    }
+
+    #[test]
+    fn concurrent_product_shutdown_callers_both_wait_for_scheduler_retirement() {
+        let database = Arc::new(crate::storage::DatabaseState::open_in_memory().unwrap());
+        let coordinator = SchedulerCoordinator::new(
+            database,
+            Arc::new(crate::scheduler::UnavailableExecutionAdapter),
+        );
+        let state = Arc::new(RuntimeState::new(
+            PathBuf::from("data.db"),
+            false,
+            coordinator,
+        ));
+        let (release, wait) = tokio::sync::oneshot::channel();
+        state.install_scheduler_task(spawn_runtime_task(async move {
+            let _ = wait.await;
+            Ok(())
+        }));
+        tauri::async_runtime::block_on(async {
+            let first_state = state.clone();
+            let first = tokio::spawn(async move {
+                shutdown_owner(&first_state).await;
+            });
+            while !state.shutdown_requested() {
+                tokio::task::yield_now().await;
+            }
+            let second_state = state.clone();
+            let second = tokio::spawn(async move {
+                shutdown_owner(&second_state).await;
+            });
+            tokio::time::sleep(Duration::from_millis(20)).await;
+            assert!(!first.is_finished());
+            assert!(!second.is_finished());
+            assert!(!state.exit_authorized());
+            release.send(()).unwrap();
+            tokio::time::timeout(Duration::from_secs(1), async {
+                first.await.unwrap();
+                second.await.unwrap();
+            })
+            .await
+            .unwrap();
+            assert!(state.exit_authorized());
+        });
     }
 
     #[test]

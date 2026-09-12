@@ -13,7 +13,7 @@ use devbox_applink::{
 use serde::Serialize;
 use std::path::Path;
 use std::sync::{Arc, Mutex, MutexGuard, OnceLock, TryLockError};
-use tauri::{AppHandle, Manager, State};
+use tauri::{AppHandle, State};
 
 const HANDOFF_CAPABILITY: &str = "handoff:log-source/v1";
 
@@ -124,10 +124,8 @@ pub fn open_run_log_in_log_lens(
         .get_run(&run_id)
         .map_err(map_storage_error)?
         .ok_or_else(|| "run-not-found".to_string())?;
-    let data_root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|_| "logs-unavailable".to_string())?;
+    let data_root =
+        crate::component::data_root(&app).map_err(|_| "logs-unavailable".to_string())?;
     validate_run_log_dir_for_handoff(&data_root, &run_id, run.log_dir.as_deref())?;
     if !log_lens_is_installed() {
         return Err("log-lens-unavailable".to_string());
@@ -160,6 +158,31 @@ pub fn open_run_log_in_log_lens(
     Ok(LogLensDispatch {
         handoff_id: publication.descriptor.id,
     })
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_open_run_log_in_log_lens(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        run_id: String,
+        stream: LogStream,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = open_run_log_in_log_lens(
+        input.run_id,
+        input.stream,
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]

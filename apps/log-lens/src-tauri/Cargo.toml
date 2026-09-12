@@ -10,6 +10,17 @@ edition = "2021"
 name = "log_lens_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
 
+# Product consumers reuse commands without embedding the standalone frontend.
+[features]
+default = ["standalone"]
+standalone = ["desktop"]
+desktop = []
+
+[[bin]]
+name = "log-lens"
+path = "src/main.rs"
+required-features = ["standalone"]
+
 [build-dependencies]
 tauri-build = { version = "2", features = [] }
 
@@ -20,7 +31,7 @@ serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 chrono = { version = "0.4", default-features = false, features = ["alloc", "std"] }
 regex = "1"
-tokio = { version = "1", features = ["rt"] }
+tokio = { version = "1", features = ["rt", "time"] }
 wsl = { path = "../../../crates/wsl" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../../../crates/window-state-tauri" }
 devbox-applink = { package = "applink", path = "../../../crates/applink" }

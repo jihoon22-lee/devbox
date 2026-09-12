@@ -213,14 +213,26 @@ src/
 
 | 단계 | 명령 | 위치 |
 |---|---|---|
-| 앱 로컬 로직 개발 | `cargo test` | `apps/<app>/src-tauri` |
-| 영향 범위 완료 검증 | `pnpm verify:affected` | 워크스페이스 루트 |
+| 커밋 전 최소 확인 | 변경 diff·계획 대조, 필요한 문법·타입 검사 | 변경한 앱/모듈 |
+| PR 구현 완료 후 상세 검증 | `pnpm verify:affected` 및 미포함 수용 검사 | 워크스페이스 루트 |
 | 명시적 전체 감사 | `pnpm verify:all` | 워크스페이스 루트 |
 | 프론트 UI 미리보기 | `pnpm dev` (mock 데이터) | `apps/<app>` |
 | 프론트 타입/빌드 검증 | `pnpm build` | `apps/<app>` |
 | 실제 앱 실행 | `pnpm tauri dev` | Windows PowerShell, `apps/<app>` |
 | 배포 빌드 | `pnpm tauri build` | Windows PowerShell, `apps/<app>` |
 
+- 검증은 커밋 횟수에 맞추지 않는다. 커밋 전에는 diff를 계획과 대조하고 문법·타입 오류를
+  확인하는 데 필요한 최소 검사만 선택한다. 문서 변경은 내용·링크·diff 확인으로 충분하며,
+  코드 변경은 편집기 진단이나 필요한 대상의 typecheck/`cargo check`를 활용한다.
+  작은 수정마다 test·Clippy·build·affected를 연속 실행하는 절차는 금지한다.
+- 상세 검증은 PR에 계획한 구현·importer·fixture가 모두 끝났을 때 수행한다. 먼저 수용 기준과
+  검사 항목을 대응시키고, `verify:affected`에 포함된 테스트·타입·빌드·lint를 별도 명령으로
+  선행 반복하지 않는다. 포함되지 않은 회귀·migration·Windows/WSL 실기 검사는 이때 함께
+  수행한다. v0.8의 완료 시점은 B01~B09 각각의 PR 묶음 전체를 기준으로 한다.
+- 구현 도중 상세 검사는 재현 없이는 해결할 수 없는 구체적 결함·설계 불확실성에 한해
+  필요한 최소 범위로 실행한다. 이미 통과한 검사는 관련 변경·실패·새 위험이 없으면 반복하지
+  않는다. 실패 수정 후에는 해당 실패와 영향을 받은 범위부터 확인하며, 문서 정리나 커밋
+  생성만을 이유로 전체 검증을 다시 시작하지 않는다. 실행 시점·범위는 [검증 운영](./docs/verification.md)을 따른다.
 - WSL 컴파일엔 Linux 시스템 라이브러리 필요:
   `libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
 - 프론트는 `src/lib/isTauri.ts` 분기로 Tauri 없이 mock 데이터 표시
@@ -253,7 +265,7 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 
 이후 진행 순서:
 1. 앱 로컬 `core/` + 테스트 작성 (Rust 로직)
-2. 집중 `cargo check`(src-tauri) / `pnpm build`(프론트) 후 루트 `pnpm verify:affected` 통과 확인
+2. 커밋 전 최소 문법·타입·범위 확인; PR 구현 완료 후 루트 `pnpm verify:affected`와 필요한 수용 검사 수행
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
@@ -301,8 +313,8 @@ docs/<scope>           문서 작업   예: docs/roadmap
   유지한다. 단순히 같은 앱이라는 이유만으로 묶지 않는다.
 - 여러 이슈를 묶은 PR은 본문에 모든 이슈 번호, 묶는 이유, 이슈별 acceptance와 검증 결과를
   구분해 적는다. 수용 기준 전체를 충족한 이슈만 `Closes #...`로 닫고, 일부 기여는 `Refs #...`로
-  연결한다. CI와 Windows 검증 gate는 최종 통합 상태에서 한 번 수행하되, 각 이슈의 집중 회귀
-  테스트를 생략하지 않는다.
+  연결한다. 각 이슈의 회귀 테스트를 준비하고, PR 전체 구현이 끝난 최종 통합 상태에서
+  상세 검증·CI·Windows 수용 gate를 수행한다. 커밋별 상세 검증을 의무화하지 않는다.
 
 ### v0.8 통합 PR 정책 (일반 PR 단위 규칙보다 우선)
 
@@ -316,8 +328,9 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - B01 기반 확정 후 B02/B03/B04를 독립 진행할 수 있다. 공용 파일의 writer는 한 묶음이 소유한다.
   병렬 에이전트는 사용자가 요청하거나 적용 지침에서 허용할 때만 사용한다.
 - review packet에는 semantic 변경, pure moves, 데이터·authority 변경, 요구사항/legacy parity 매핑,
-  CI·실기 증거, 제한과 rollback을 담는다. 준비 전 반복적인 전체 리뷰·전체 package 검증을 피하되
-  필요한 위험 gate와 각 이슈의 집중 회귀 검증은 유지한다.
+  CI·실기 증거, 제한과 rollback을 담는다. PR 구현 중에는 문법·타입·계획 범위를 확인하고,
+  구현 완료 후 필요한 위험 gate와 각 이슈의 회귀 검증을 모아 수행한다. 동일 검사를 커밋마다
+  반복하거나 일부 구현만 끝난 상태에서 PR 완료 검증을 앞당기지 않는다.
 - #541/#542는 구현 PR에서 자동으로 닫지 않는다. WP도 수용 기준 전체가 충족될 때만 닫는다.
   문서 반영·결과 기록만을 위한 PR은 기본 계획에 추가하지 않는다. 사용자가 별도 준비 작업을
   명시한 경우 그 범위만 독립 PR로 마무리하며 B01 구현 완료로 계산하지 않는다.
@@ -334,9 +347,11 @@ docs/<scope>           문서 작업   예: docs/roadmap
 - 예: `feat(port-manager): add netstat parser with unit tests`
 - 예: `refactor(workspace): extract process crate from port-manager`
 - 1커밋 = 1논리적 단위. WIP 커밋 금지
-- 커밋 전에는 변경에 맞는 집중 검증과 `pnpm verify:affected`를 통과시킨다.
-- PR 최종 변경에 대해 `.github/workflows/ci.yml` 통과를 확인한 뒤에만 main으로 머지한다.
-  코드 완료는 로컬 집중 검증 + affected 검증 + GitHub Actions CI 통과로 판단한다.
+- 커밋 전에는 해당 변경의 문법·타입 오류와 계획 범위 이탈을 최소한으로 확인한다.
+  상세 테스트·Clippy·전체 빌드·`verify:affected`는 커밋별 의무가 아니다.
+- PR의 계획한 구현이 모두 끝난 뒤 §5의 상세 검증을 수행한다. PR 최종 변경에 대해
+  `.github/workflows/ci.yml` 통과를 확인한 뒤에만 main으로 머지한다. PR 수용 완료는
+  필요한 회귀·실기 검사 + affected 검증 + GitHub Actions CI 통과로 판단한다.
 - 머지/종료 시 직접 만든 전용 worktree가 clean이고 머지됐는지 확인한 뒤 worktree 제거,
   `git worktree prune`, 로컬 작업 브랜치 삭제, 원격 작업 브랜치 삭제 순으로 정리한다.
   활성·잠김·미머지·dirty 또는 호스트 소유 worktree는 삭제하지 않고 상황을 보고한다.

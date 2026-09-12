@@ -29,6 +29,12 @@ impl StartupShortcut {
         })
     }
 
+    pub(crate) fn workspace(startup_directory: &Path, executable: &Path) -> Result<Self, String> {
+        let mut shortcut = Self::new(startup_directory, executable)?;
+        shortcut.shortcut_path = startup_directory.join("Devbox Workspace.lnk");
+        Ok(shortcut)
+    }
+
     pub fn shortcut_path(&self) -> &Path {
         &self.shortcut_path
     }

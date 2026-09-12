@@ -264,8 +264,23 @@ CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
 
 /// A process-wide SQLite connection. Every connection is configured with the
 /// same foreign-key and busy-timeout policy before migrations run.
+mod controls;
+mod imports;
+pub use imports::{ImportReceipt, ImportedJobReview};
+pub(crate) fn import_schema() -> Result<Connection, String> {
+    let connection = Connection::open_in_memory().map_err(|_| "runtime_import_invalid")?;
+    connection
+        .execute_batch(MIGRATION_SQL)
+        .map_err(|_| "runtime_import_invalid")?;
+    Ok(connection)
+}
+pub(crate) use controls::ControlReservation;
+pub use controls::RuntimeControlReceipt;
+
 pub struct DatabaseState {
     connection: Mutex<Connection>,
+    legacy_publication: bool,
+    log_maintenance: Mutex<()>,
 }
 
 /// Minimal definition projection for integration consumers. Keeping this DTO
@@ -339,12 +354,33 @@ impl From<rusqlite::Error> for StorageError {
 }
 
 impl DatabaseState {
+    /// Product-owned state cannot publish snapshots into a legacy owner's
+    /// namespace. Workspace consumes native read-only projections instead.
+    pub(crate) fn open_product(path: &Path) -> rusqlite::Result<Self> {
+        let mut connection = Connection::open(path)?;
+        configure(&connection)?;
+        controls::validate_schema(&connection)?;
+        migrate_connection(&mut connection)?;
+        controls::initialize(&mut connection)?;
+        imports::initialize(&connection)?;
+        Ok(Self {
+            connection: Mutex::new(connection),
+            log_maintenance: Mutex::new(()),
+            legacy_publication: false,
+        })
+    }
+    pub(crate) fn allows_legacy_publication(&self) -> bool {
+        self.legacy_publication
+    }
+
     pub fn open(path: &Path) -> rusqlite::Result<Self> {
         let mut connection = Connection::open(path)?;
         configure(&connection)?;
         migrate_connection(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            log_maintenance: Mutex::new(()),
+            legacy_publication: true,
         })
     }
 
@@ -354,7 +390,15 @@ impl DatabaseState {
         migrate_connection(&mut connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
+            log_maintenance: Mutex::new(()),
+            legacy_publication: true,
         })
+    }
+
+    pub(crate) fn log_maintenance(&self) -> Result<MutexGuard<'_, ()>, StorageError> {
+        self.log_maintenance
+            .lock()
+            .map_err(|_| StorageError::ConnectionPoisoned)
     }
 
     pub fn migrate(&self) -> Result<(), StorageError> {
@@ -1954,14 +1998,14 @@ impl DatabaseState {
 
     /// Return ciphertext only for the execution layer. The normal read DTO
     /// deliberately exposes only `env_configured`.
-    pub fn get_job_environment_ciphertext(
+    pub fn get_run_environment_ciphertext(
         &self,
         id: &str,
     ) -> Result<Option<Vec<u8>>, StorageError> {
         let connection = self.lock()?;
         connection
             .query_row(
-                "SELECT env_ciphertext FROM jobs WHERE id = ? AND kind = 'job'",
+                "SELECT env_ciphertext FROM jobs WHERE id = ?",
                 [id],
                 |row| row.get(0),
             )
@@ -2119,6 +2163,9 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_service(&transaction, id)?;
+        if !self.legacy_publication && !matches!(environment, EnvironmentCiphertextUpdate::Keep) {
+            imports::resolve_secret_review(&transaction, id)?;
+        }
         let (environment_action, environment_ciphertext) = match environment {
             EnvironmentCiphertextUpdate::Keep => ("keep", None),
             EnvironmentCiphertextUpdate::Replace(ciphertext) => ("replace", Some(ciphertext)),
@@ -2261,7 +2308,7 @@ impl DatabaseState {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let changed = transaction.execute(
             "UPDATE service_instances SET state = 'stopping', updated_at = ?
-             WHERE job_id = ? AND state IN ('running', 'starting', 'retry_waiting')",
+             WHERE job_id = ? AND state IN ('running', 'starting', 'retry_waiting', 'stopping')",
             params![now, service_id],
         )?;
         let instance = if changed == 1 {
@@ -2288,7 +2335,11 @@ impl DatabaseState {
              SET state = 'stopped', active_run_id = NULL,
                  owner_instance_id = NULL, attempt_token = NULL,
                  next_retry_at = NULL, updated_at = ?
-             WHERE job_id = ? AND generation = ?",
+             WHERE job_id = ? AND generation = ?
+               AND (active_run_id IS NULL OR NOT EXISTS (
+                   SELECT 1 FROM runs WHERE id = service_instances.active_run_id
+                     AND status IN ('queued', 'starting', 'running', 'stopping')
+               ))",
             params![now, service_id, generation],
         )?;
         Ok(changed == 1)
@@ -2462,6 +2513,9 @@ impl DatabaseState {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = ensure_job(&transaction, id)?;
+        if !self.legacy_publication && !matches!(environment, EnvironmentCiphertextUpdate::Keep) {
+            imports::resolve_secret_review(&transaction, id)?;
+        }
         ensure_workspace_task_managed_fields_unchanged(&transaction, id, &current, &input)?;
         if input.enabled {
             ensure_workspace_task_can_enable_connection(&transaction, id)?;
@@ -5377,6 +5431,28 @@ mod tests {
         }
     }
 
+    #[test]
+    fn execution_ciphertext_lookup_supports_services_and_jobs_without_read_dto_values() {
+        let database = DatabaseState::open_in_memory().unwrap();
+        let ciphertext = vec![11, 22, 33];
+        let service = database
+            .create_service_with_ciphertext_at(
+                service_input(),
+                EnvironmentCiphertextUpdate::Replace(ciphertext.clone()),
+                100,
+            )
+            .unwrap();
+        assert_eq!(
+            database
+                .get_run_environment_ciphertext(&service.id)
+                .unwrap(),
+            Some(ciphertext)
+        );
+        let projection = serde_json::to_value(&service).unwrap();
+        assert_eq!(projection["envConfigured"], true);
+        assert!(projection.get("envCiphertext").is_none());
+    }
+
     fn service_input() -> ServiceInput {
         ServiceInput {
             name: "web".to_string(),
@@ -5782,7 +5858,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             database
-                .get_job_environment_ciphertext(&created.id)
+                .get_run_environment_ciphertext(&created.id)
                 .unwrap(),
             Some(vec![4, 5, 6])
         );
@@ -5798,7 +5874,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             database
-                .get_job_environment_ciphertext(&created.id)
+                .get_run_environment_ciphertext(&created.id)
                 .unwrap(),
             None
         );

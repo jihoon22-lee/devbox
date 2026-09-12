@@ -1,4 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted } from "../transport";
+const invoke = componentInvoke("workspace.logs");
 import { listen } from "@tauri-apps/api/event";
 import { browserSnapshot } from "./browserFixture";
 import { filterRecords as applyFilter, utf8ByteLength } from "./filter";
@@ -350,7 +351,7 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
 
 export async function onOpenRequest(handler: () => void): Promise<() => void> {
   if (!isTauri()) return () => undefined;
-  return listen<OpenRequest>("devbox://open", () => handler());
+  return listen<OpenRequest>(isProductHosted() ? "workspace://logs-open" : "devbox://open", () => handler());
 }
 
 export async function previewLogSource(handoffKind: OpenRequest["target"]["handoffKind"], id: string): Promise<LogSourcePreview> {
@@ -393,6 +394,14 @@ function parsePersistedSource(value: unknown): SourceSpec | null {
       && typeof value.sourceId === "string"
       && RUN_SOURCE_PATTERN.test(value.sourceId)
       ? { kind: "run", sourceId: value.sourceId }
+      : null;
+  }
+  if (value.kind === "runtimeRun") {
+    return hasOnlyKeys(value, ["kind", "runId", "stream", "revision"])
+      && typeof value.runId === "string" && /^[A-Za-z0-9_-]{1,128}$/.test(value.runId)
+      && (value.stream === "stdout" || value.stream === "stderr")
+      && typeof value.revision === "string" && /^[a-f0-9]{64}$/.test(value.revision)
+      ? { kind: "runtimeRun", runId: value.runId, stream: value.stream, revision: value.revision }
       : null;
   }
   if (value.kind === "container") {
@@ -640,4 +649,9 @@ export async function exportRecords(records: LogRecord[]): Promise<ExportedText>
     return { text, truncated };
   }
   return invoke<ExportedText>("export_log_records", { records });
+}
+
+export async function reconnectRuntimeSources(sources:SourceSpec[],filter:FilterSpec):Promise<{sources:SourceSpec[];filter:FilterSpec;unavailableSources:number}> {
+  if (!isProductHosted()) return {sources,filter,unavailableSources:0};
+  return invoke("reconnect_runtime_sources",{sources,filter});
 }

@@ -4,14 +4,18 @@ use crate::core::{
     SourceSnapshot, SourceSpec, SourceSummary,
 };
 use serde::Serialize;
+#[cfg(feature = "standalone")]
 use std::path::PathBuf;
 use std::sync::Arc;
-use tauri::{AppHandle, Manager, State};
+#[cfg(feature = "standalone")]
+use tauri::AppHandle;
+use tauri::State;
 use zeroize::Zeroizing;
 
 #[derive(Default)]
 pub struct AppState {
     pub operations: Arc<OperationRegistry>,
+    pub runtime_logs: Option<Arc<dyn crate::core::RuntimeLogProvider>>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -108,13 +112,14 @@ pub fn summarize_source(source: SourceSpec) -> Result<SourceSummary, String> {
     source.summary().map_err(|error| error.to_string())
 }
 
+#[cfg(feature = "standalone")]
 fn saved_views_directory(app: &AppHandle) -> Result<PathBuf, String> {
-    app.path()
-        .app_local_data_dir()
+    crate::component::data_root(app)
         .map_err(|_| crate::core::saved_views::SAVED_VIEWS_READ_ERROR.to_string())
 }
 
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub fn list_saved_views(
     app: AppHandle,
 ) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
@@ -122,6 +127,7 @@ pub fn list_saved_views(
 }
 
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub fn save_saved_view(
     app: AppHandle,
     expected_revision: u64,
@@ -135,6 +141,7 @@ pub fn save_saved_view(
 }
 
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub fn delete_saved_view(
     app: AppHandle,
     expected_revision: u64,
@@ -178,15 +185,24 @@ pub async fn read_source(
     {
         return Err(CoreError::InvalidInput.to_string());
     }
+    let runtime_logs = state.runtime_logs.clone();
+    if let Some(provider) = &runtime_logs {
+        provider
+            .validate_source(&source)
+            .map_err(|error| error.to_string())?;
+    }
     let operations = Arc::clone(&state.operations);
+    let worker = operations.worker().map_err(|error| error.to_string())?;
     let token = operations
         .begin(&operation_id, generation)
         .map_err(|error| error.to_string())?;
     let task_operations = Arc::clone(&operations);
     let task_operation_id = operation_id.clone();
     let result = match tokio::task::spawn_blocking(move || {
+        let _worker = worker;
         let context =
-            crate::core::LoadContext::new(&task_operation_id, generation, &token, &task_operations);
+            crate::core::LoadContext::new(&task_operation_id, generation, &token, &task_operations)
+                .with_runtime_logs(runtime_logs.as_deref());
         load_source(&source, cursor.as_ref(), sequence_start, &context)
             .map_err(|error| error.to_string())
     })
@@ -232,15 +248,26 @@ pub async fn read_sources(
     if crate::core::validate_source_list(&sources).is_err() {
         return Err(CoreError::InvalidSource.to_string());
     }
+    let runtime_logs = state.runtime_logs.clone();
+    if let Some(provider) = &runtime_logs {
+        for source in &sources {
+            provider
+                .validate_source(source)
+                .map_err(|error| error.to_string())?;
+        }
+    }
     let operations = Arc::clone(&state.operations);
+    let worker = operations.worker().map_err(|error| error.to_string())?;
     let token = operations
         .begin(&operation_id, generation)
         .map_err(|error| error.to_string())?;
     let task_operations = Arc::clone(&operations);
     let task_operation_id = operation_id.clone();
     let result = match tokio::task::spawn_blocking(move || {
+        let _worker = worker;
         let context =
-            crate::core::LoadContext::new(&task_operation_id, generation, &token, &task_operations);
+            crate::core::LoadContext::new(&task_operation_id, generation, &token, &task_operations)
+                .with_runtime_logs(runtime_logs.as_deref());
         let result = (|| {
             let mut merge_buffer = MergeBuffer::default();
             let mut source_summaries = Vec::with_capacity(sources.len());
@@ -323,4 +350,185 @@ pub fn filter_log_records(
 #[tauri::command]
 pub fn export_log_records(records: Vec<LogRecord>) -> Result<ExportedText, String> {
     export_records(&records).map_err(|error| error.to_string())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_send_selection_to_toolbox(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        text: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = send_selection_to_toolbox(input.text)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_summarize_source(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        source: SourceSpec,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = summarize_source(input.source)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_receive_log_source(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        reference: LogSourceRef,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = receive_log_source(input.reference)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_fixed_adapter(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        source: SourceSpec,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = fixed_adapter(input.source)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_read_source(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        source: SourceSpec,
+        cursor: Option<FileCursor>,
+        sequence_start: u64,
+        generation: u64,
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = read_source(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.source,
+        input.cursor,
+        input.sequence_start,
+        input.generation,
+        input.operation_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_read_sources(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        sources: Vec<SourceSpec>,
+        cursors: Vec<Option<FileCursor>>,
+        sequence_starts: Vec<u64>,
+        generation: u64,
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = read_sources(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.sources,
+        input.cursors,
+        input.sequence_starts,
+        input.generation,
+        input.operation_id,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_cancel_read(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_read(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        input.operation_id,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_filter_log_records(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        records: Vec<LogRecord>,
+        filter: FilterSpec,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = filter_log_records(input.records, input.filter)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_export_log_records(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        records: Vec<LogRecord>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = export_log_records(input.records)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }

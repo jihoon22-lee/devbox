@@ -16,7 +16,8 @@ use crate::core::workspace_tasks::{
 };
 use crate::logs::{LogStream, LogStreamHandle, LogStreams, LOG_RELATIVE_ROOT};
 use crate::scheduler::{
-    AdapterError, AdapterFuture, ExecutionAdapter, ExecutionExit, ExecutionHandle, ExecutionRequest,
+    AdapterError, AdapterFuture, ExecutionAdapter, ExecutionExit, ExecutionHandle,
+    ExecutionRequest, ObservedProcess,
 };
 use crate::storage::DatabaseState;
 #[cfg(windows)]
@@ -206,7 +207,7 @@ impl PlatformExecutionAdapter {
         let workspace_task = self.resolve_workspace_task(&request.job).await?;
         let ciphertext = self
             .database
-            .get_job_environment_ciphertext(&request.job.id)
+            .get_run_environment_ciphertext(&request.job.id)
             .map_err(|_| failure(FailureCode::Storage))?;
         let plaintext = self
             .protector
@@ -733,19 +734,40 @@ async fn finish_wsl_wait_owner(wait_task: &mut JoinHandle<()>) {
 /// `kill_on_drop`, so dropping its child cannot leave a wrapper orphaned.
 async fn reap_wsl_wrapper(
     reap_tx: &mpsc::UnboundedSender<ReapRequest>,
+    natural_wait: &mut oneshot::Receiver<ChildWaitResult>,
     wait_task: &mut JoinHandle<()>,
     timeout: Duration,
 ) -> Result<ExecutionExit, AdapterError> {
-    let (response, wait_rx) = oneshot::channel();
-    if reap_tx.send(ReapRequest { response }).is_err() {
-        return Err(failure(FailureCode::Wait));
-    }
-    match tokio::time::timeout(timeout, wait_rx).await {
-        Ok(Ok(result)) => {
-            finish_wsl_wait_owner(wait_task).await;
+    let (response, response_rx) = oneshot::channel();
+    let requested = reap_tx.send(ReapRequest { response }).is_ok();
+    let acknowledgement = async {
+        if requested {
+            if let Ok(result) = response_rx.await {
+                return result;
+            }
+        }
+        // Group termination may let the wrapper exit naturally before the
+        // owner receives the reap request. A closed request/response channel
+        // alone is not cleanup evidence: require the owner's native wait.
+        let result = (&mut *natural_wait)
+            .await
+            .unwrap_or_else(|_| Err(failure(FailureCode::Wait)));
+        if result.is_err() {
+            // The monitor still owns error recovery. Keep this completed wait
+            // observable there instead of letting it poll a consumed oneshot.
+            let (sender, receiver) = oneshot::channel();
+            let _ = sender.send(result.clone());
+            *natural_wait = receiver;
+        }
+        result
+    };
+    match tokio::time::timeout(timeout, acknowledgement).await {
+        Ok(result) => {
+            if result.is_ok() {
+                finish_wsl_wait_owner(wait_task).await;
+            }
             result
         }
-        Ok(Err(_)) => Err(failure(FailureCode::Wait)),
         Err(_) => Err(failure(FailureCode::Termination)),
     }
 }
@@ -898,6 +920,7 @@ fn spawn_windows_drain(
 
 #[cfg(windows)]
 struct WindowsExecutionHandle {
+    child: Arc<windows::WindowsChild>,
     shared: Arc<SharedTerminal>,
     metadata: RunExecutionMetadata,
 }
@@ -916,6 +939,7 @@ impl WindowsExecutionHandle {
         grace: Duration,
     ) -> Self {
         let child = Arc::new(child);
+        let owned_child = child.clone();
         let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let (failure_tx, mut failure_rx) = spawn_drain_error_channel();
         let mut drains = vec![
@@ -1128,6 +1152,7 @@ impl WindowsExecutionHandle {
             let _ = result_tx.send(Some(final_result));
         });
         Self {
+            child: owned_child,
             shared: Arc::new(shared),
             metadata,
         }
@@ -1145,12 +1170,32 @@ impl ExecutionHandle for WindowsExecutionHandle {
         Box::pin(async move { SharedTerminal::wait(receiver).await })
     }
 
+    fn owns_process(&self, process: ObservedProcess) -> AdapterFuture<'_, bool> {
+        let child = self.child.clone();
+        Box::pin(async move {
+            match process {
+                ObservedProcess::Windows {
+                    pid,
+                    creation_filetime,
+                } => tokio::task::spawn_blocking(move || {
+                    child.contains_process(pid, creation_filetime)
+                })
+                .await
+                .map_err(|_| AdapterError::new("process-owner-unavailable"))?
+                .map_err(|_| AdapterError::new("process-owner-unavailable")),
+                _ => Ok(false),
+            }
+        })
+    }
+
     fn metadata(&self) -> RunExecutionMetadata {
         self.metadata.clone()
     }
 }
 
 struct WslExecutionHandle {
+    distro: String,
+    identity: crate::core::shell::WslProcessIdentity,
     shared: Arc<SharedTerminal>,
     metadata: RunExecutionMetadata,
 }
@@ -1169,6 +1214,8 @@ impl WslExecutionHandle {
         metadata: RunExecutionMetadata,
         grace: Duration,
     ) -> Self {
+        let owned_distro = distro.clone();
+        let owned_identity = identity.clone();
         let (shared, _receiver, mut terminate_rx) = SharedTerminal::new();
         let (failure_tx, mut failure_rx) = spawn_drain_error_channel();
         let mut drains = vec![
@@ -1264,7 +1311,7 @@ impl WslExecutionHandle {
                             .await
                             .is_ok()
                         {
-                            reap_wsl_wrapper(&reap_tx, &mut wait_task, grace).await
+                            reap_wsl_wrapper(&reap_tx, &mut wait_rx, &mut wait_task, grace).await
                         } else {
                             Err(failure(FailureCode::Termination))
                         };
@@ -1291,7 +1338,7 @@ impl WslExecutionHandle {
                             .await
                             .is_ok()
                         {
-                            reap_wsl_wrapper(&reap_tx, &mut wait_task, grace)
+                            reap_wsl_wrapper(&reap_tx, &mut wait_rx, &mut wait_task, grace)
                                 .await
                                 .is_ok()
                         } else {
@@ -1351,6 +1398,8 @@ impl WslExecutionHandle {
             let _ = result_tx.send(Some(final_result));
         });
         Self {
+            distro: owned_distro,
+            identity: owned_identity,
             shared: Arc::new(shared),
             metadata,
         }
@@ -1365,6 +1414,23 @@ impl ExecutionHandle for WslExecutionHandle {
     fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
         let receiver = self.shared.result.subscribe();
         Box::pin(async move { SharedTerminal::wait(receiver).await })
+    }
+
+    fn owns_process(&self, process: ObservedProcess) -> AdapterFuture<'_, bool> {
+        Box::pin(async move {
+            match process {
+                ObservedProcess::Wsl {
+                    distro,
+                    pid,
+                    start_tick,
+                } if distro == self.distro => {
+                    wsl::contains_process(&self.distro, &self.identity, pid, start_tick)
+                        .await
+                        .map_err(|_| AdapterError::new("process-owner-unavailable"))
+                }
+                _ => Ok(false),
+            }
+        })
     }
 
     fn metadata(&self) -> RunExecutionMetadata {
@@ -1686,19 +1752,136 @@ mod tests {
             .stderr(Stdio::null())
             .kill_on_drop(true);
         let child = command.spawn().unwrap();
-        let (wait_tx, _wait_rx) = oneshot::channel();
+        let (wait_tx, mut wait_rx) = oneshot::channel();
         let (reap_tx, reap_rx) = mpsc::unbounded_channel();
         let mut wait_task = spawn_wsl_wait_owner(child, reap_rx, wait_tx);
 
         let result = tokio::time::timeout(
             Duration::from_secs(1),
-            reap_wsl_wrapper(&reap_tx, &mut wait_task, Duration::from_millis(250)),
+            reap_wsl_wrapper(
+                &reap_tx,
+                &mut wait_rx,
+                &mut wait_task,
+                Duration::from_millis(250),
+            ),
         )
         .await
         .expect("wrapper reap must be bounded")
         .expect("wrapper reap must succeed");
         assert_eq!(result.exit_code, None);
         assert!(wait_task.is_finished());
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_reap_accepts_completed_natural_wait() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel();
+        let mut wait_task = tokio::spawn(async move {
+            drop(reap_rx);
+            let _ = wait_tx.send(Ok(ExecutionExit { exit_code: Some(7) }));
+        });
+        while !wait_task.is_finished() {
+            tokio::task::yield_now().await;
+        }
+        let result = reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.exit_code, Some(7));
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_reap_accepts_natural_wait_winning_queued_request() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, mut reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let mut wait_task = tokio::spawn(async move {
+            let request = reap_rx.recv().await.unwrap();
+            let _ = wait_tx.send(Ok(ExecutionExit { exit_code: Some(3) }));
+            drop(request);
+        });
+        let result = reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250),
+        )
+        .await
+        .unwrap();
+        assert_eq!(result.exit_code, Some(3));
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_reap_requires_native_wait_evidence() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let mut wait_task = tokio::spawn(async move {
+            drop(reap_rx);
+            drop(wait_tx);
+        });
+        assert!(reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250),
+        )
+        .await
+        .is_err());
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_failed_natural_wait_remains_observable_to_the_monitor() {
+        let (wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let mut wait_task = tokio::spawn(async move {
+            drop(reap_rx);
+            let _ = wait_tx.send(Err(failure(FailureCode::Wait)));
+        });
+        assert!(reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250)
+        )
+        .await
+        .is_err());
+        assert!(
+            tokio::time::timeout(Duration::from_millis(250), &mut wait_rx)
+                .await
+                .unwrap()
+                .unwrap()
+                .is_err()
+        );
+        finish_wsl_wait_owner(&mut wait_task).await;
+    }
+
+    #[tokio::test]
+    async fn wsl_wrapper_failed_reap_retains_the_owner_for_retry() {
+        let (_wait_tx, mut wait_rx) = oneshot::channel();
+        let (reap_tx, mut reap_rx) = mpsc::unbounded_channel::<ReapRequest>();
+        let release = Arc::new(tokio::sync::Notify::new());
+        let release_owner = release.clone();
+        let mut wait_task = tokio::spawn(async move {
+            let request = reap_rx.recv().await.unwrap();
+            let _ = request
+                .response
+                .send(Err(failure(FailureCode::Termination)));
+            release_owner.notified().await;
+        });
+        assert!(reap_wsl_wrapper(
+            &reap_tx,
+            &mut wait_rx,
+            &mut wait_task,
+            Duration::from_millis(250)
+        )
+        .await
+        .is_err());
+        assert!(!wait_task.is_finished());
+        release.notify_one();
+        finish_wsl_wait_owner(&mut wait_task).await;
     }
 
     #[cfg(unix)]

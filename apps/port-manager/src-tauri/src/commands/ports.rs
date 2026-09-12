@@ -105,7 +105,37 @@ pub async fn kill_listener(request: KillListenerRequest) -> Result<ListenerActio
         .map_err(|error| error.to_string())
 }
 
+pub(crate) async fn kill_product_listener(
+    request: KillListenerRequest,
+    deadline_ms: u64,
+) -> Result<ListenerActionResult, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        kill_listener_sync_until(request, Some(deadline_ms))
+    })
+    .await
+    .map_err(|_| ListenerError::SourceUnavailable.to_string())?
+    .map_err(|error| error.to_string())
+}
 fn kill_listener_sync(request: KillListenerRequest) -> Result<ListenerActionResult, ListenerError> {
+    kill_listener_sync_until(request, None)
+}
+fn kill_listener_sync_until(
+    request: KillListenerRequest,
+    deadline_ms: Option<u64>,
+) -> Result<ListenerActionResult, ListenerError> {
+    let check_deadline = || {
+        if let Some(deadline) = deadline_ms {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| ListenerError::CommandTimedOut)?
+                .as_millis();
+            if now >= u128::from(deadline) {
+                return Err(ListenerError::CommandTimedOut);
+            }
+        }
+        Ok(())
+    };
+    check_deadline()?;
     request.endpoint.validate_listener()?;
     request.identity.validate()?;
 
@@ -118,6 +148,7 @@ fn kill_listener_sync(request: KillListenerRequest) -> Result<ListenerActionResu
         })
         .ok_or(ListenerError::StaleTarget)?;
     let action = validate_kill_target(&request, &observed)?;
+    check_deadline()?;
 
     match action {
         KillAction::WindowsProcess => terminate_windows_process(&request.identity)?,
@@ -269,25 +300,40 @@ fn is_safe_browser_url(url: &str) -> bool {
             .is_none_or(|character| matches!(character, '/' | '?' | '#'))
 }
 
-#[cfg(target_os = "windows")]
+pub(crate) struct PortCollection {
+    pub rows: Vec<PortRow>,
+    pub unavailable_wsl: Vec<String>,
+}
+
 pub(crate) fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
+    Ok(collect_ports_with_status()?.rows)
+}
+
+#[cfg(target_os = "windows")]
+pub(crate) fn collect_ports_with_status() -> Result<PortCollection, ListenerError> {
     let deadline = command_deadline();
-    let native = collect_windows_ports(deadline)?;
-    let mut rows = native;
+    let mut rows = collect_windows_ports(deadline)?;
     rows.truncate(MAX_LISTENER_ROWS);
     let distros = running_wsl_distros(deadline).unwrap_or_default();
     let remaining = MAX_LISTENER_ROWS.saturating_sub(rows.len());
-    rows.extend(collect_wsl_ports(&distros, remaining, deadline));
+    let wsl = collect_wsl_ports(&distros, remaining, deadline);
+    rows.extend(wsl.rows);
     let remaining = MAX_LISTENER_ROWS.saturating_sub(rows.len());
     rows.extend(collect_container_ports(&distros, remaining, deadline));
     sort_rows(&mut rows);
     rows.truncate(MAX_LISTENER_ROWS);
-    Ok(rows)
+    Ok(PortCollection {
+        rows,
+        unavailable_wsl: wsl.unavailable_wsl,
+    })
 }
 
 #[cfg(not(target_os = "windows"))]
-pub(crate) fn collect_ports() -> Result<Vec<PortRow>, ListenerError> {
-    Ok(Vec::new())
+pub(crate) fn collect_ports_with_status() -> Result<PortCollection, ListenerError> {
+    Ok(PortCollection {
+        rows: Vec::new(),
+        unavailable_wsl: Vec::new(),
+    })
 }
 
 #[cfg(target_os = "windows")]
@@ -366,10 +412,14 @@ fn collect_wsl_ports(
     distros: &[String],
     max_rows: usize,
     deadline: std::time::Instant,
-) -> Vec<PortRow> {
+) -> PortCollection {
     let mut rows = Vec::new();
+    let mut unavailable_wsl = Vec::new();
     if max_rows == 0 {
-        return rows;
+        return PortCollection {
+            rows,
+            unavailable_wsl,
+        };
     }
     let mut detail_cache = WslProcessDetailCache::new();
     for distro in distros.iter().take(MAX_WSL_DISTROS) {
@@ -377,11 +427,14 @@ fn collect_wsl_ports(
             continue;
         };
         let listener_args = listener_args.iter().map(String::as_str).collect::<Vec<_>>();
-        let Ok(output) = run_fixed_command("wsl.exe", &listener_args, deadline) else {
+        let Ok(output) = run_fixed_command_checked("wsl.exe", &listener_args, deadline, true)
+        else {
+            unavailable_wsl.push(distro.clone());
             continue;
         };
         let text = devbox_wsl::output::decode_output(&output);
         let Ok(ports) = parse_wsl_ss_output(&text) else {
+            unavailable_wsl.push(distro.clone());
             continue;
         };
         for parsed in ports.into_iter().take(max_rows.saturating_sub(rows.len())) {
@@ -432,7 +485,10 @@ fn collect_wsl_ports(
             });
         }
     }
-    rows
+    PortCollection {
+        rows,
+        unavailable_wsl,
+    }
 }
 
 #[cfg(target_os = "windows")]
@@ -710,6 +766,77 @@ impl FixedCommandJob {
         Ok(Self { handle })
     }
 
+    fn resume(&self, child: &std::process::Child) -> Result<(), ListenerError> {
+        use std::mem::size_of;
+        use windows::Win32::Foundation::CloseHandle;
+        use windows::Win32::System::Diagnostics::ToolHelp::{
+            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
+        };
+        use windows::Win32::System::JobObjects::{
+            JobObjectBasicAccountingInformation, QueryInformationJobObject,
+            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
+        };
+        use windows::Win32::System::Threading::{
+            GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
+            THREAD_SUSPEND_RESUME,
+        };
+        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
+        unsafe {
+            QueryInformationJobObject(
+                Some(self.handle),
+                JobObjectBasicAccountingInformation,
+                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
+                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
+                None,
+            )
+        }
+        .map_err(|_| ListenerError::SourceUnavailable)?;
+        if accounting.ActiveProcesses != 1 {
+            return Err(ListenerError::SourceUnavailable);
+        }
+        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
+            .map_err(|_| ListenerError::SourceUnavailable)?;
+        let mut entry = THREADENTRY32 {
+            dwSize: size_of::<THREADENTRY32>() as u32,
+            ..Default::default()
+        };
+        let mut threads = Vec::new();
+        if unsafe { Thread32First(snapshot, &mut entry) }.is_ok() {
+            loop {
+                if entry.th32OwnerProcessID == child.id() {
+                    threads.push(entry.th32ThreadID);
+                }
+                if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
+                    break;
+                }
+            }
+        }
+        unsafe {
+            let _ = CloseHandle(snapshot);
+        }
+        if threads.len() != 1 {
+            return Err(ListenerError::SourceUnavailable);
+        }
+        let thread = unsafe {
+            OpenThread(
+                THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
+                false,
+                threads[0],
+            )
+        }
+        .map_err(|_| ListenerError::SourceUnavailable)?;
+        let valid = unsafe { GetProcessIdOfThread(thread) } == child.id();
+        let resumed = valid && unsafe { ResumeThread(thread) } == 1;
+        unsafe {
+            let _ = CloseHandle(thread);
+        }
+        if resumed {
+            Ok(())
+        } else {
+            Err(ListenerError::SourceUnavailable)
+        }
+    }
+
     fn terminate(&self, child: &mut std::process::Child) {
         use windows::Win32::System::JobObjects::TerminateJobObject;
         let _ = unsafe { TerminateJobObject(self.handle, 1) };
@@ -735,6 +862,16 @@ fn run_fixed_command(
     args: &[&str],
     deadline: std::time::Instant,
 ) -> Result<Vec<u8>, ListenerError> {
+    run_fixed_command_checked(program, args, deadline, false)
+}
+
+#[cfg(target_os = "windows")]
+fn run_fixed_command_checked(
+    program: &str,
+    args: &[&str],
+    deadline: std::time::Instant,
+    reject_stderr: bool,
+) -> Result<Vec<u8>, ListenerError> {
     use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
     use std::sync::mpsc::{self, TryRecvError};
@@ -750,8 +887,14 @@ fn run_fixed_command(
         .args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
-        .stderr(Stdio::null())
-        .creation_flags(0x0800_0000);
+        .stderr(if reject_stderr {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
+        // Assign the discovery Job before user code can exit or spawn a
+        // descendant. An already-exited fast command cannot be assigned.
+        .creation_flags(0x0800_0000 | 0x0000_0004);
     let mut child = command
         .spawn()
         .map_err(|_| ListenerError::SourceUnavailable)?;
@@ -763,12 +906,42 @@ fn run_fixed_command(
             return Err(error);
         }
     };
+    if let Err(error) = job.resume(&child) {
+        job.terminate(&mut child);
+        return Err(error);
+    }
     let Some(mut stdout) = child.stdout.take() else {
         job.terminate(&mut child);
         return Err(ListenerError::SourceUnavailable);
     };
-    let (sender, receiver) = mpsc::sync_channel(1);
-    let _reader = thread::spawn(move || {
+    let (sender, receiver) = mpsc::sync_channel(2);
+    if reject_stderr {
+        let Some(mut stderr) = child.stderr.take() else {
+            job.terminate(&mut child);
+            return Err(ListenerError::SourceUnavailable);
+        };
+        let sender = sender.clone();
+        thread::spawn(move || {
+            // ss can return zero while the kernel rejected its socket query
+            // (WSL1). Never turn that diagnostic into a successful empty poll.
+            // Drain within the same bound/deadline without retaining raw text.
+            let mut bytes = Vec::new();
+            let result = stderr
+                .by_ref()
+                .take((MAX_SOURCE_OUTPUT_BYTES + 1) as u64)
+                .read_to_end(&mut bytes)
+                .map_err(|_| ListenerError::SourceUnavailable)
+                .and_then(|size| {
+                    if size == 0 {
+                        Ok((true, Vec::new()))
+                    } else {
+                        Err(ListenerError::SourceUnavailable)
+                    }
+                });
+            let _ = sender.send(result);
+        });
+    }
+    thread::spawn(move || {
         let mut output = Vec::with_capacity(MAX_SOURCE_OUTPUT_BYTES.min(64 * 1024));
         let result = stdout
             .by_ref()
@@ -779,17 +952,19 @@ fn run_fixed_command(
                 if read > MAX_SOURCE_OUTPUT_BYTES {
                     Err(ListenerError::CommandOutputTooLarge)
                 } else {
-                    Ok(output)
+                    Ok((false, output))
                 }
             });
         let _ = sender.send(result);
     });
 
     let mut output = None;
+    let mut stderr_complete = !reject_stderr;
     loop {
-        if output.is_none() {
+        if output.is_none() || !stderr_complete {
             match receiver.try_recv() {
-                Ok(Ok(bytes)) => output = Some(bytes),
+                Ok(Ok((true, _))) => stderr_complete = true,
+                Ok(Ok((false, bytes))) => output = Some(bytes),
                 Ok(Err(error)) => {
                     job.terminate(&mut child);
                     return Err(error);
@@ -805,8 +980,10 @@ fn run_fixed_command(
         match child.try_wait() {
             Ok(Some(status)) if !status.success() => return Err(ListenerError::SourceUnavailable),
             Ok(Some(_)) => {
-                if let Some(bytes) = output {
-                    return Ok(bytes);
+                if stderr_complete {
+                    if let Some(bytes) = output {
+                        return Ok(bytes);
+                    }
                 }
             }
             Ok(None) => {}
@@ -934,5 +1111,145 @@ fn identity_sort_key(row: &PortRow) -> String {
             distro,
         }) => format!("container:{engine}:{distro}:{container_id}"),
         None => String::new(),
+    }
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_ports(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_ports().await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_kill_listener(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: KillListenerRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = kill_listener(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_handoff_container_stop(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        request: KillListenerRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = handoff_container_stop(input.request).await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_process_info(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        pid: u32,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_process_info(input.pid)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_reveal_process(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        pid: u32,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    reveal_process(_component_app.clone(), input.pid).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_open_browser(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        url: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    open_browser(_component_app.clone(), input.url).await?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+#[cfg(all(test, target_os = "windows"))]
+mod command_status_tests {
+    use super::*;
+
+    #[test]
+    fn successful_exit_with_source_diagnostic_is_unavailable() {
+        let shell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32")
+            .join("cmd.exe");
+        let args = [
+            "/D",
+            "/C",
+            "echo synthetic-listener& echo synthetic-unavailable 1>&2",
+        ];
+        assert!(run_fixed_command_checked(
+            shell.to_str().unwrap(),
+            &args,
+            command_deadline(),
+            true
+        )
+        .is_err());
+        assert_eq!(
+            run_fixed_command_checked(shell.to_str().unwrap(), &args, command_deadline(), false)
+                .unwrap(),
+            b"synthetic-listener\r\n"
+        );
+    }
+
+    #[test]
+    fn complete_empty_query_remains_successful() {
+        let shell = std::path::PathBuf::from(std::env::var_os("SystemRoot").unwrap())
+            .join("System32")
+            .join("cmd.exe");
+        assert_eq!(
+            run_fixed_command_checked(
+                shell.to_str().unwrap(),
+                &["/D", "/C", "exit 0"],
+                command_deadline(),
+                true
+            )
+            .unwrap(),
+            Vec::<u8>::new()
+        );
     }
 }

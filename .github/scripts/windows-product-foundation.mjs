@@ -1,3 +1,4 @@
+import {prepareRuntimeCrash,verifyRuntimeCrash} from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
 import { measureWorkspaceStartup } from "./windows-workspace-performance.mjs";
@@ -183,6 +184,15 @@ async function start(product, suffix) {
     if (product.id === "workspace") {
       progress(product, suffix, "workspace-registration");
       componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network});
+      progress(product,suffix,"workspace-runtime-crash");
+      const runtimeCrash=await prepareRuntimeCrash(cdp,directory);
+      cdp.close();const crashed=once(child,"exit");child.kill();
+      await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
+      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:"ignore"});
+      cdp=await connect(port,child,performance.now()+45000);
+      await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
+      componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);
+      writeFileSync(`product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.runtimeCrash},null,2));
     }
     if (product.id === "api-studio") {
       progress(product, suffix, "component-authority");

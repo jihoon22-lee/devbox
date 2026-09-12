@@ -58,6 +58,25 @@ pub fn is_supported_request(request: &OpenRequest) -> bool {
     }
 }
 
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_take_pending_open(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = take_pending_open(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    );
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -186,13 +186,21 @@ pub enum SourceSpec {
         unit: Option<String>,
     },
     Run {
+        #[serde(rename = "sourceId", alias = "source_id")]
         source_id: String,
+    },
+    RuntimeRun {
+        #[serde(rename = "runId")]
+        run_id: String,
+        stream: String,
+        revision: String,
     },
     WebhookCapture {
         capture: devbox_applink::WebhookLogPayload,
     },
     Container {
         engine: ContainerEngine,
+        #[serde(rename = "containerId", alias = "container_id")]
         container_id: String,
     },
 }
@@ -252,6 +260,7 @@ pub enum SourceKind {
     WslFile,
     WslJournal,
     Run,
+    RuntimeRun,
     WebhookCapture,
     Container,
 }
@@ -549,6 +558,26 @@ impl SourceSpec {
                 Ok(())
             }
             Self::Run { source_id } => validate_run_source_id(source_id),
+            Self::RuntimeRun {
+                run_id,
+                stream,
+                revision,
+            } => {
+                if run_id.is_empty()
+                    || run_id.len() > 128
+                    || run_id
+                        .bytes()
+                        .any(|byte| !(byte.is_ascii_alphanumeric() || matches!(byte, b'-' | b'_')))
+                    || !matches!(stream.as_str(), "stdout" | "stderr")
+                    || revision.len() != 64
+                    || revision
+                        .bytes()
+                        .any(|byte| !(byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte)))
+                {
+                    return Err(CoreError::InvalidSource);
+                }
+                Ok(())
+            }
             Self::WebhookCapture { capture } => {
                 devbox_applink::validate_webhook_log_payload(capture)
                     .map_err(|_| CoreError::InvalidSource)
@@ -567,6 +596,7 @@ impl SourceSpec {
             Self::WslFile { .. } => SourceKind::WslFile,
             Self::WslJournal { .. } => SourceKind::WslJournal,
             Self::Run { .. } => SourceKind::Run,
+            Self::RuntimeRun { .. } => SourceKind::RuntimeRun,
             Self::WebhookCapture { .. } => SourceKind::WebhookCapture,
             Self::Container { .. } => SourceKind::Container,
         }
@@ -576,7 +606,31 @@ impl SourceSpec {
     /// container name, so status/snapshot payloads do not echo source inputs.
     pub fn opaque_id(&self) -> String {
         let mut hash = 0xcbf29ce484222325_u64;
-        let encoded = serde_json::to_vec(self).unwrap_or_default();
+        // Preserve the legacy identity bytes when correcting wire field names.
+        // Existing saved filters refer to these hashes across application updates.
+        #[derive(Serialize)]
+        #[serde(tag = "kind", rename_all = "camelCase")]
+        enum LegacyIdentity<'a> {
+            Run {
+                source_id: &'a str,
+            },
+            Container {
+                engine: ContainerEngine,
+                container_id: &'a str,
+            },
+        }
+        let encoded = match self {
+            Self::Run { source_id } => serde_json::to_vec(&LegacyIdentity::Run { source_id }),
+            Self::Container {
+                engine,
+                container_id,
+            } => serde_json::to_vec(&LegacyIdentity::Container {
+                engine: *engine,
+                container_id,
+            }),
+            _ => serde_json::to_vec(self),
+        }
+        .unwrap_or_default();
         for byte in encoded {
             hash ^= u64::from(byte);
             hash = hash.wrapping_mul(0x100000001b3);
@@ -592,6 +646,7 @@ impl SourceSpec {
             Self::WslFile { .. } => "WSL file",
             Self::WslJournal { .. } => "WSL journal",
             Self::Run { .. } => "Run Manager handoff",
+            Self::RuntimeRun { .. } => "Workspace Runtime logs",
             Self::WebhookCapture { .. } => "Webhook capture",
             Self::Container { .. } => "Container logs",
         };
@@ -606,6 +661,7 @@ impl SourceSpec {
             handoff: matches!(
                 self,
                 Self::Run { .. }
+                    | Self::RuntimeRun { .. }
                     | Self::WslFile { .. }
                     | Self::WslJournal { .. }
                     | Self::WebhookCapture { .. }
@@ -672,6 +728,43 @@ impl SavedView {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn source_wire_fields_match_frontend_and_old_saved_sources_keep_their_identity() {
+        for (old, current) in [
+            (
+                r#"{"kind":"run","source_id":"run-manager:run-1:stdout"}"#,
+                r#"{"kind":"run","sourceId":"run-manager:run-1:stdout"}"#,
+            ),
+            (
+                r#"{"kind":"container","engine":"docker","container_id":"abc123"}"#,
+                r#"{"kind":"container","engine":"docker","containerId":"abc123"}"#,
+            ),
+        ] {
+            let legacy: SourceSpec = serde_json::from_str(old).unwrap();
+            let canonical: SourceSpec = serde_json::from_str(current).unwrap();
+            assert_eq!(legacy, canonical);
+            assert_eq!(serde_json::to_string(&legacy).unwrap(), current);
+            let mut hash = 0xcbf29ce484222325_u64;
+            for byte in old.bytes() {
+                hash ^= u64::from(byte);
+                hash = hash.wrapping_mul(0x100000001b3);
+            }
+            assert_eq!(legacy.opaque_id(), format!("log-source:{hash:016x}"));
+        }
+        let source = SourceSpec::RuntimeRun {
+            run_id: "run-1".into(),
+            stream: "stdout".into(),
+            revision: "a".repeat(64),
+        };
+        let encoded = serde_json::to_value(&source).unwrap();
+        assert_eq!(encoded["kind"], "runtimeRun");
+        assert_eq!(encoded["runId"], "run-1");
+        assert_eq!(
+            serde_json::from_value::<SourceSpec>(encoded).unwrap(),
+            source
+        );
+    }
+
     use super::*;
 
     #[test]

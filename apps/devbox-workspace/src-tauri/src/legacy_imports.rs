@@ -82,6 +82,43 @@ impl LegacyImports {
             .map_err(|_| "legacy_import_busy")?
             .clone())
     }
+    pub(crate) fn runtime_settings_source(
+        &self,
+        job_id: &str,
+        source: Source,
+    ) -> Result<(String, Vec<u8>)> {
+        let snapshot = self
+            .current
+            .lock()
+            .map_err(|_| "legacy_import_busy")?
+            .as_ref()
+            .filter(|job| job.id == job_id && job.phase == Phase::Ready)
+            .and_then(|job| job.snapshot.clone())
+            .ok_or("runtime_settings_stale")?;
+        if snapshot.manifest.source != source {
+            return Err("runtime_settings_stale");
+        }
+        let name = match source {
+            Source::PortManager => "port-manager-preferences-v1.json",
+            Source::LogLens => "saved-views.json",
+            _ => return Err("runtime_settings_stale"),
+        };
+        if !snapshot
+            .manifest
+            .files
+            .iter()
+            .any(|file| file.name == name && file.issue.is_none())
+        {
+            return Err("runtime_settings_stale");
+        }
+        Ok((
+            snapshot.id()?,
+            snapshot
+                .bytes(name)
+                .ok_or("runtime_settings_stale")?
+                .to_vec(),
+        ))
+    }
     pub(crate) fn window_source(
         &self,
         job_id: &str,

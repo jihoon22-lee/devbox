@@ -1,4 +1,19 @@
-import { invoke } from "@tauri-apps/api/core";
+import { componentInvoke, isProductHosted, WorkspaceOperationError } from "../transport";
+import { isRuntimeControl, submitRuntimeControl } from "./runtimeControls";
+const nativeInvoke = componentInvoke("workspace.runtime");
+function invoke<T>(method: string, args?: Record<string, unknown>): Promise<T> {
+  return isProductHosted() && isRuntimeControl(method) ? submitRuntimeControl<T>(nativeInvoke, method, args ?? {}) : nativeInvoke<T>(method, args);
+}
+export interface RuntimeControlReceipt {
+  operationId: string; method: string; targetId: string; state: "pending" | "interrupted";
+  createdAt: number; reviewed: boolean;
+}
+export function listRuntimeControls(): Promise<RuntimeControlReceipt[]> {
+  return isProductHosted() ? nativeInvoke("list_runtime_controls") : Promise.resolve([]);
+}
+export function reviewRuntimeControl(operationId: string): Promise<void> {
+  return nativeInvoke("review_runtime_control", {operationId});
+}
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { isTauri } from "./lib/isTauri";
 import type {
@@ -38,7 +53,7 @@ export async function takePendingOpen(): Promise<OpenRequest | null> {
 
 export function onOpenRequest(handler: () => void): Promise<UnlistenFn> {
   if (!isTauri()) return Promise.resolve(() => undefined);
-  return listen<OpenRequest>("devbox://open", () => handler());
+  return listen<OpenRequest>(isProductHosted() ? "workspace://tasks-open" : "devbox://open", () => handler());
 }
 
 let mockJobs: Job[] = [];
@@ -694,6 +709,7 @@ const FRIENDLY_BACKEND_ERRORS: Record<string, string> = {
 /** Convert fixed native workspace-task codes to actionable UI text without
  * echoing paths, commands, argv, source text, or environment values. */
 export function friendlyErrorMessage(cause: unknown): string {
+  if (cause instanceof WorkspaceOperationError) return cause.message;
   const value = cause instanceof Error ? cause.message : String(cause);
   const normalized = value.trim();
   const code = normalized.startsWith("workspace-task-")

@@ -51,12 +51,26 @@ pub struct AdapterPlan {
     pub read_only: bool,
 }
 
+/// Implemented by the native Workspace composition owner. The only lookup
+/// inputs are a validated run identity and its immutable opaque revision.
+pub trait RuntimeLogProvider: Send + Sync {
+    fn validate_source(&self, _source: &SourceSpec) -> Result<(), CoreError> {
+        Ok(())
+    }
+    fn resolve(&self, run_id: &str, revision: &str) -> Result<Box<dyn RuntimeLogLease>, CoreError>;
+}
+pub trait RuntimeLogLease: Send {
+    fn data_root(&self) -> &Path;
+    fn revalidate(&self) -> Result<(), CoreError>;
+}
+
 pub struct LoadContext<'a> {
     pub operation_id: &'a str,
     pub generation: u64,
     pub token: &'a CancellationToken,
     pub registry: &'a OperationRegistry,
     pub deadline: Instant,
+    runtime_logs: Option<&'a dyn RuntimeLogProvider>,
 }
 
 impl<'a> LoadContext<'a> {
@@ -72,7 +86,13 @@ impl<'a> LoadContext<'a> {
             token,
             registry,
             deadline: Instant::now() + DEFAULT_TIMEOUT,
+            runtime_logs: None,
         }
+    }
+
+    pub fn with_runtime_logs(mut self, provider: Option<&'a dyn RuntimeLogProvider>) -> Self {
+        self.runtime_logs = provider;
+        self
     }
 
     pub fn check(&self) -> Result<(), CoreError> {
@@ -144,7 +164,9 @@ pub fn adapter_argv(source: &SourceSpec) -> Result<Option<AdapterPlan>, CoreErro
             source_kind: SourceKind::Container,
             read_only: true,
         },
-        SourceSpec::Run { .. } | SourceSpec::WebhookCapture { .. } => return Ok(None),
+        SourceSpec::Run { .. }
+        | SourceSpec::RuntimeRun { .. }
+        | SourceSpec::WebhookCapture { .. } => return Ok(None),
     };
     Ok(Some(plan))
 }
@@ -157,9 +179,27 @@ pub fn load_source(
 ) -> Result<SourceSnapshot, CoreError> {
     context.check()?;
     let summary = source.summary()?;
+    if let Some(provider) = context.runtime_logs {
+        provider.validate_source(source)?;
+    }
     if let SourceSpec::WebhookCapture { capture } = source {
         return load_webhook_capture(capture, summary, sequence_start, context);
     }
+    let runtime_lease = match source {
+        SourceSpec::RuntimeRun {
+            run_id, revision, ..
+        } => Some(
+            context
+                .runtime_logs
+                .ok_or(CoreError::AdapterUnavailable)?
+                .resolve(run_id, revision)?,
+        ),
+        // A product host never falls back into the old Run Manager directory.
+        SourceSpec::Run { .. } if context.runtime_logs.is_some() => {
+            return Err(CoreError::InvalidSource)
+        }
+        _ => None,
+    };
     let (bytes, next_cursor, status, initial_truncated) = match source {
         SourceSpec::LocalFile { path } => {
             let read = read_file(Path::new(path), cursor, context)?;
@@ -184,6 +224,15 @@ pub fn load_source(
             let read = read_run_source(source_id, cursor, context)?;
             (read.bytes, Some(read.cursor), read.status, read.truncated)
         }
+        SourceSpec::RuntimeRun { run_id, stream, .. } => {
+            let lease = runtime_lease
+                .as_ref()
+                .ok_or(CoreError::AdapterUnavailable)?;
+            lease.revalidate()?;
+            let read = read_run_parts_in(lease.data_root(), run_id, stream, cursor, context)?;
+            lease.revalidate()?;
+            (read.bytes, Some(read.cursor), read.status, read.truncated)
+        }
         SourceSpec::WebhookCapture { .. } => unreachable!("handled before byte readers"),
     };
     context.check()?;
@@ -198,6 +247,9 @@ pub fn load_source(
     } else {
         status
     };
+    if let Some(lease) = runtime_lease {
+        lease.revalidate()?;
+    }
     Ok(SourceSnapshot {
         operation_id: context.operation_id.to_string(),
         generation: context.generation,
@@ -287,6 +339,16 @@ fn read_run_source_in(
     context: &LoadContext<'_>,
 ) -> Result<ReadResult, CoreError> {
     let (run_id, stream) = run_source_parts(source_id)?;
+    read_run_parts_in(app_data_root, run_id, stream, previous, context)
+}
+
+fn read_run_parts_in(
+    app_data_root: &Path,
+    run_id: &str,
+    stream: &str,
+    previous: Option<&FileCursor>,
+    context: &LoadContext<'_>,
+) -> Result<ReadResult, CoreError> {
     if previous.is_some_and(|cursor| cursor.identity.is_some() || cursor.anchor_hash.is_some()) {
         return Err(CoreError::InvalidInput);
     }
@@ -1312,6 +1374,119 @@ mod tests {
             "raw-body-secret",
         ] {
             assert!(!encoded.contains(secret));
+        }
+    }
+
+    struct FixtureRuntimeProvider {
+        root: PathBuf,
+        checks: std::sync::Arc<std::sync::atomic::AtomicUsize>,
+        revoke_on_check: usize,
+    }
+    struct FixtureRuntimeLease(FixtureRuntimeProvider);
+    impl RuntimeLogProvider for FixtureRuntimeProvider {
+        fn resolve(
+            &self,
+            run_id: &str,
+            revision: &str,
+        ) -> Result<Box<dyn RuntimeLogLease>, CoreError> {
+            if run_id != "run-1" || revision != "a".repeat(64) {
+                return Err(CoreError::StaleOperation);
+            }
+            Ok(Box::new(FixtureRuntimeLease(Self {
+                root: self.root.clone(),
+                checks: self.checks.clone(),
+                revoke_on_check: self.revoke_on_check,
+            })))
+        }
+    }
+    impl RuntimeLogLease for FixtureRuntimeLease {
+        fn data_root(&self) -> &Path {
+            &self.0.root
+        }
+        fn revalidate(&self) -> Result<(), CoreError> {
+            let count = self
+                .0
+                .checks
+                .fetch_add(1, std::sync::atomic::Ordering::SeqCst)
+                + 1;
+            if count >= self.0.revoke_on_check {
+                Err(CoreError::StaleOperation)
+            } else {
+                Ok(())
+            }
+        }
+    }
+    #[test]
+    fn runtime_source_requires_native_revision_and_never_reads_legacy_root() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("logs/runs/run-1");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("stdout.g0.o0-6.log"), b"owned\n").unwrap();
+        let registry = OperationRegistry::default();
+        let token = registry.begin("runtime-reader", 1).unwrap();
+        let source = SourceSpec::RuntimeRun {
+            run_id: "run-1".into(),
+            stream: "stdout".into(),
+            revision: "a".repeat(64),
+        };
+        let provider = FixtureRuntimeProvider {
+            root: root.path().into(),
+            checks: Default::default(),
+            revoke_on_check: usize::MAX,
+        };
+        let base = context("runtime-reader", 1, &token, &registry);
+        assert!(load_source(&source, None, 0, &base).is_err());
+        let owned = base.with_runtime_logs(Some(&provider));
+        let result = load_source(&source, None, 0, &owned).unwrap();
+        assert_eq!(result.records[0].message, "owned");
+        assert_eq!(result.source.kind, SourceKind::RuntimeRun);
+        assert_eq!(provider.checks.load(std::sync::atomic::Ordering::SeqCst), 3);
+        assert!(load_source(
+            &SourceSpec::RuntimeRun {
+                run_id: "run-1".into(),
+                stream: "stdout".into(),
+                revision: "b".repeat(64)
+            },
+            None,
+            0,
+            &owned
+        )
+        .is_err());
+        assert!(load_source(
+            &SourceSpec::Run {
+                source_id: "run-manager:run-1:stdout".into()
+            },
+            None,
+            0,
+            &owned
+        )
+        .is_err());
+    }
+    #[test]
+    fn native_revocation_during_read_or_parsing_discards_the_entire_result() {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("logs/runs/run-1");
+        fs::create_dir_all(&directory).unwrap();
+        fs::write(directory.join("stdout.g0.o0-6.log"), b"owned\n").unwrap();
+        let registry = OperationRegistry::default();
+        let token = registry.begin("runtime-reader", 1).unwrap();
+        let source = SourceSpec::RuntimeRun {
+            run_id: "run-1".into(),
+            stream: "stdout".into(),
+            revision: "a".repeat(64),
+        };
+        for revoke_on_check in [1, 2, 3] {
+            let provider = FixtureRuntimeProvider {
+                root: root.path().into(),
+                checks: Default::default(),
+                revoke_on_check,
+            };
+            let context =
+                context("runtime-reader", 1, &token, &registry).with_runtime_logs(Some(&provider));
+            assert!(matches!(
+                load_source(&source, None, 0, &context),
+                Err(CoreError::StaleOperation)
+            ));
         }
     }
 

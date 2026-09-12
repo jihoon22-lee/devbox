@@ -208,7 +208,7 @@ export async function nativeCall<T>(component: string, method: string, args: Rec
 export async function componentCall<T>(description: Description, component: string, method: string, args: Record<string, unknown>, route: string): Promise<T> {
   const header = makeRequest(description.handshake, route, Date.now(), description.context);
   // Stay inside the native 30-second ceiling across renderer/native clock precision.
-  if (component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp" || (component === "workspace.files" && ["reconnect_wsl_files", "open_file"].includes(method)) || (component === "workspace.registry" && ["list_wsl_distros","preview_wsl","apply_registration","cancel_registration","select_project","clear_project"].includes(method))) header.deadlineMs += 24_000;
+  if (["workspace.runtime", "workspace.processes", "workspace.process-actions", "workspace.logs"].includes(component) || component === "workspace.dependencies" || component === "workspace.source" || component === "workspace.lsp" || (component === "workspace.files" && ["reconnect_wsl_files", "open_file"].includes(method)) || (component === "workspace.registry" && ["list_wsl_distros","preview_wsl","apply_registration","cancel_registration","select_project","clear_project"].includes(method))) header.deadlineMs += 24_000;
   const provenance = { product: "workspace", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: {operation: unknown; value: T & {issue?: string}};
   try {response = await invoke("plugin:workspace|execute", {request:{header, component, method, args}});}
@@ -216,8 +216,8 @@ export async function componentCall<T>(description: Description, component: stri
   if (!response || !isOperation(response.operation, provenance)) throw new Error("응답을 확인하지 못했습니다.");
   if (response.operation.outcome.state !== "succeeded") {
     const issue=response.value?.issue??"operation_failed";
-    const message=issue.startsWith("wsl_")?await import("./wslIssues").then(module=>module.wslIssueMessage(issue)).catch(()=>undefined):undefined;
-    throw new WorkspaceOperationError(message??issueMessage(issue));
+    const message=/^(runtime_|process_|logs_owner_)/.test(issue)?await import("./runtimeIssues").then(module=>module.runtimeIssueMessage(issue)).catch(()=>undefined):issue.startsWith("wsl_")?await import("./wslIssues").then(module=>module.wslIssueMessage(issue)).catch(()=>undefined):undefined;
+    throw new WorkspaceOperationError(message??issueMessage(issue), issue);
   }
   return response.value;
 }

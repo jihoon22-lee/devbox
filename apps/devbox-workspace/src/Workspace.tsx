@@ -13,6 +13,10 @@ const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
+const NativeRuntimeRoutes = lazy(() => import("./NativeRuntimeRoutes"));
+const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
+const Runtime = lazy(() => import("@devbox/workspace-features/runtime"));
+const Logs = lazy(() => import("@devbox/workspace-features/logs"));
 const LegacyLspImport = lazy(() => import("./LegacyLspImport"));
 const LegacyRecoveryImport = lazy(() => import("./LegacyRecoveryImport"));
 const LegacySessionImport = lazy(() => import("./LegacySessionImport"));
@@ -26,11 +30,17 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
       const snapshot = displayed;
       if (!snapshot) return Promise.reject(new Error("제품 연결 정보를 확인하지 못했습니다."));
       const ownerRoute = component === "workspace.files" || component === "workspace.lsp" ? "files"
-        : component === "workspace.source" ? "source" : component === "workspace.dependencies" ? "dependencies" : "overview";
+        : component === "workspace.source" ? "source" : component === "workspace.dependencies" ? "dependencies"
+        : component === "workspace.runtime" ? "tasks" : component === "workspace.logs" ? "logs"
+        : component === "workspace.processes" || component === "workspace.process-actions" ? "runtime" : "overview";
       return componentCall<T>(snapshot, component, method, args, ownerRoute);
-    });
+    }, description.handshake.installationId);
     connected = true;
   }
+  const [tasksDirty, setTasksDirty] = useState(false);
+  const isRuntimeRoute=["tasks","runtime","logs"].includes(route);
+  const [runtimeVisited,setRuntimeVisited]=useState(isRuntimeRoute);
+  useEffect(()=>{if(isRuntimeRoute)setRuntimeVisited(true);},[isRuntimeRoute]);
   const [ready, setReady] = useState(false);
   const [registry, setRegistry] = useState<Registry | null>(null);
   const [dependenciesBusy, setDependenciesBusy] = useState(false);
@@ -49,7 +59,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
   const refreshRegistry = useCallback(() => setRegistrySignal(value => value + 1), []);
-  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null}|null>(null);
+  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null;column?:number|null}|null>(null);
   const reloadImportedSession=useCallback(()=>{setFileRequest(null);setSessionRevision(value=>value+1);},[]);
   const [sourceNavigationError, setSourceNavigationError] = useState("");
   const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string;target:NonNullable<Description["context"]>["target"]}|null>(null);
@@ -69,11 +79,18 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
     setFilesVisited(true); navigate("files");
   };
   const [filesVisited, setFilesVisited] = useState(route === "files");
+  const openDiagnostic = (request:{id:string;relativePath:string;line:number;column:number|null}) => {
+    if (!selectedTree) return;
+    const path=sourceFilePath(selectedTree.binding.root,request.relativePath);
+    if(!path)return;
+    setFileRequest({id:request.id,contextKey:JSON.stringify(description.context),path,line:request.line,column:request.column});
+    setFilesVisited(true);navigate("files");
+  };
   const markReady = useCallback(() => setReady(true), []);
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
+      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={tasksDirty || editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
     </div>
     {ready && description.context && <div hidden={route !== "overview"}>
       <ProjectDefinitions description={description} onDirtyChange={setDefinitionsEditing} onChanged={refreshRegistry}/>
@@ -89,6 +106,9 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         <Dependencies repo={{path:selectedTree.binding.root, canonicalKey:JSON.stringify(description.context), hasWorktrees:false}} onBusyChange={setDependenciesBusy}/>
       </Suspense>}
     </div>}
+    {ready && (runtimeVisited||isRuntimeRoute) && <Suspense fallback={<p role="status">실행 화면을 불러오고 있습니다…</p>}>
+      <NativeRuntimeRoutes route={route} description={description} navigate={navigate} tasksDirty={tasksDirty} onDirtyChange={setTasksDirty} onDiagnostic={openDiagnostic}/>
+    </Suspense>}
     {ready && (filesVisited || route === "files") && <div className="workspace-feature-files" hidden={route !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}>
         <LegacySessionImport key={JSON.stringify(description.context)} description={description} disabled={editing||recoveryImportBusy||lspImportBusy} onBusyChange={setSessionImportBusy} onApplied={reloadImportedSession}/>
@@ -103,7 +123,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
 }
 
 function Content({ route, description }: ShellContentProps) {
-  const group = route === "files" ? "files" : ["source", "dependencies"].includes(route) ? "source" : route === "overview" ? "overview" : "unavailable";
+  const group = ["tasks", "runtime", "logs"].includes(route) ? route : route === "files" ? "files" : ["source", "dependencies"].includes(route) ? "source" : route === "overview" ? "overview" : "unavailable";
   const [visited, setVisited] = useState(() => new Set([group]));
   useEffect(() => {
     setVisited(previous => previous.has(group) ? previous : new Set([...previous, group]));
@@ -115,6 +135,15 @@ function Content({ route, description }: ShellContentProps) {
     </div>}
     {(visited.has("source") || group === "source") && <div className="workspace-feature-source" hidden={group !== "source"}>
       <Suspense fallback={<p role="status">저장소를 불러오고 있습니다…</p>}><Source/></Suspense>
+    </div>}
+    {(visited.has("tasks") || group === "tasks") && <div className="workspace-feature-tasks" hidden={group !== "tasks"} inert={group !== "tasks"}>
+      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><Tasks active={group === "tasks"}/></Suspense>
+    </div>}
+    {(visited.has("runtime") || group === "runtime") && <div className="workspace-feature-runtime" hidden={group !== "runtime"} inert={group !== "runtime"}>
+      <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><Runtime active={group === "runtime"}/></Suspense>
+    </div>}
+    {(visited.has("logs") || group === "logs") && <div className="workspace-feature-logs" hidden={group !== "logs"} inert={group !== "logs"}>
+      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><Logs active={group === "logs"}/></Suspense>
     </div>}
     {(visited.has("files") || group === "files") && <div className="workspace-feature-files" hidden={group !== "files"}>
       <Suspense fallback={<p role="status">편집기를 불러오고 있습니다…</p>}><Files active={group === "files"}/></Suspense>

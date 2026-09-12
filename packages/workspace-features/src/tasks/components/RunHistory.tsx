@@ -93,6 +93,7 @@ const STATUS_LABEL: Record<RunStatus, string> = {
 };
 
 interface RunHistoryProps {
+  active?: boolean;
   jobs: Job[];
   requestedJobId?: string | null;
 }
@@ -173,7 +174,7 @@ function isSafeSearchResponse(response: LogSearchResponse, runId: string): boole
   });
 }
 
-export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryProps) {
+export default function RunHistory({ active: visible = true, jobs, requestedJobId = null }: RunHistoryProps) {
   const initialJobId = requestedJobId && jobs.some((job) => job.id === requestedJobId)
     ? requestedJobId
     : jobs[0]?.id ?? "";
@@ -221,20 +222,23 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const logLensOperation = useRef(0);
   const logLensContextRef = useRef({ runId: selectedRunId, stream });
   logLensContextRef.current = { runId: selectedRunId, stream };
+  const logCursor = useRef<string | null>(null);
   const logLineRefs = useRef(new Map<number, HTMLSpanElement>());
   const queryRef = useRef({ jobId, kind, status, startDate, endDate, minDuration, maxDuration });
   queryRef.current = { jobId, kind, status, startDate, endDate, minDuration, maxDuration };
 
   useEffect(() => {
-    mountedRef.current = true;
+    mountedRef.current = visible;
     return () => {
       mountedRef.current = false;
+      viewGeneration.current += 1;
+      refreshPending.current = false;
       searchGeneration.current += 1;
       logLensGeneration.current += 1;
       logLensOperation.current += 1;
       logLensBusyRef.current = false;
     };
-  }, []);
+  }, [visible]);
 
   const prepareRunContext = useCallback((target: HTMLElement) => {
     if (logLensBusyRef.current) return;
@@ -247,6 +251,10 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   const runContextMenu = useContextMenu({
     onBeforeOpen: (_reason, target) => prepareRunContext(target),
   });
+
+  useEffect(() => {
+    if (!visible) { runContextMenu.close(); setContextRun(null); }
+  }, [visible, runContextMenu.close]);
 
   useEffect(() => {
     if (!(kind ? jobs.some((job) => job.id === jobId && job.kind === kind) : jobs.some((job) => job.id === jobId))) {
@@ -346,13 +354,14 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
 
   useEffect(() => {
     viewGeneration.current += 1;
-    void refresh();
-  }, [refresh]);
+    if (visible) void refresh();
+  }, [visible, refresh]);
 
   useEffect(() => {
+    if (!visible) return;
     const timer = window.setInterval(() => void refresh(), 1_000);
     return () => window.clearInterval(timer);
-  }, [refresh]);
+  }, [visible, refresh]);
 
   const selectedDefinition = jobs.find((job) => job.id === jobId) ?? null;
   const activeRun = activeSnapshotFresh && selectedDefinition?.kind === "job"
@@ -575,6 +584,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   };
 
   useEffect(() => {
+    logCursor.current = null;
     setLogBytes(new Uint8Array());
     setLogTrimmed(false);
     setLogError(null);
@@ -595,9 +605,9 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   }, [selectedRun?.status]);
 
   useEffect(() => {
-    if (!selectedRun?.logsAvailable) return;
+    if (!visible || !selectedRun?.logsAvailable) return;
     let active = true;
-    let nextCursor: string | null = null;
+    let nextCursor: string | null = logCursor.current;
     let timer = 0;
 
     const poll = async () => {
@@ -605,6 +615,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
         const response = await tailLog(selectedRun.id, stream, nextCursor);
         if (!active) return;
         nextCursor = response.nextCursor;
+        logCursor.current = response.nextCursor;
         setLogBytes((current) => {
           const incoming = Uint8Array.from(response.data);
           const base = response.truncated ? new Uint8Array() : current;
@@ -632,7 +643,7 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
       active = false;
       window.clearTimeout(timer);
     };
-  }, [selectedRun?.id, selectedRun?.logsAvailable, stream]);
+  }, [visible, selectedRun?.id, selectedRun?.logsAvailable, stream]);
 
   const logText = useMemo(() => new TextDecoder().decode(logBytes), [logBytes]);
   const logLines = useMemo(() => logText.split("\n"), [logText]);
@@ -648,12 +659,12 @@ export default function RunHistory({ jobs, requestedJobId = null }: RunHistoryPr
   );
 
   useEffect(() => {
-    if (!activeSearchMatch || activeSearchMatch.stream !== stream) return;
+    if (!visible || !activeSearchMatch || activeSearchMatch.stream !== stream) return;
     const line = logLineRefs.current.get(activeSearchMatch.lineNumber);
     if (line && typeof line.scrollIntoView === "function") {
       line.scrollIntoView({ block: "center" });
     }
-  }, [activeSearchMatch, logLines, stream]);
+  }, [visible, activeSearchMatch, logLines, stream]);
 
   const renderLogText = () => {
     if (!logText) return "로그를 기다리는 중…";

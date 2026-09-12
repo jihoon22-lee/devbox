@@ -148,7 +148,12 @@ pub fn hide_main_window(app: AppHandle) -> Result<(), String> {
 
 #[tauri::command]
 pub fn quit_app(app: AppHandle, state: State<'_, Arc<RuntimeState>>) {
-    lifecycle::request_orderly_exit(&app, state.inner().clone());
+    if crate::component::is_initialized(&app) {
+        // The product exit handler coordinates every native owner.
+        app.exit(0);
+    } else {
+        lifecycle::request_orderly_exit(&app, state.inner().clone());
+    }
 }
 
 fn startup_shortcut(app: &AppHandle) -> Result<StartupShortcut, String> {
@@ -162,7 +167,11 @@ fn startup_shortcut(app: &AppHandle) -> Result<StartupShortcut, String> {
         .join("Programs")
         .join("Startup");
     let executable = std::env::current_exe().map_err(|error| error.to_string())?;
-    StartupShortcut::new(&startup_directory, &executable)
+    if crate::component::is_initialized(app) {
+        StartupShortcut::workspace(&startup_directory, &executable)
+    } else {
+        StartupShortcut::new(&startup_directory, &executable)
+    }
 }
 
 #[tauri::command]
@@ -1028,7 +1037,7 @@ pub async fn stop_workspace_task_operation(
     .await
 }
 
-async fn workspace_task_diagnostics_for_run(
+pub(crate) async fn workspace_task_diagnostics_for_run(
     app: &AppHandle,
     database: &DatabaseState,
     run_id: &str,
@@ -1059,9 +1068,7 @@ async fn workspace_task_diagnostics_for_run(
     let log_dir = run
         .log_dir
         .ok_or_else(|| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
-    let data_root = app
-        .path()
-        .app_local_data_dir()
+    let data_root = crate::component::data_root(app)
         .map_err(|_| "workspace-task-diagnostic-logs-unavailable".to_owned())?;
     let streams = open_search_streams(data_root, log_dir, run_id.to_owned()).await?;
     let (stdout, stderr) = tokio::join!(
@@ -1521,10 +1528,8 @@ pub async fn tail_log(
         .map_err(|_| "run-storage-failed".to_string())?
         .ok_or_else(|| "run-not-found".to_string())?;
     let log_dir = run.log_dir.ok_or_else(|| "logs-unavailable".to_string())?;
-    let data_root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|_| "logs-unavailable".to_string())?;
+    let data_root =
+        crate::component::data_root(&app).map_err(|_| "logs-unavailable".to_string())?;
     crate::logs::resolve_run_directory(&data_root, &log_dir, &input.run_id)
         .map_err(|_| "logs-unavailable".to_string())?;
     let streams = LogStreams::open_default(&data_root, &input.run_id)
@@ -1554,10 +1559,8 @@ pub async fn search_run_logs(
         .map_err(|_| "run-storage-failed".to_string())?
         .ok_or_else(|| "run-not-found".to_string())?;
     let log_dir = run.log_dir.ok_or_else(|| "logs-unavailable".to_string())?;
-    let data_root = app
-        .path()
-        .app_local_data_dir()
-        .map_err(|_| "logs-unavailable".to_string())?;
+    let data_root =
+        crate::component::data_root(&app).map_err(|_| "logs-unavailable".to_string())?;
     let streams =
         open_search_streams(data_root.clone(), log_dir.clone(), input.run_id.clone()).await?;
 
@@ -1592,6 +1595,1161 @@ pub async fn search_run_logs(
             .map_err(log_search_command_error)?;
     response.truncated |= read_truncated;
     Ok(response)
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_runtime_status(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = runtime_status(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    );
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_show_main_window(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    show_main_window(_component_app.clone())?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_hide_main_window(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    hide_main_window(_component_app.clone())?;
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_quit_app(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    quit_app(
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    );
+    serde_json::to_value(()).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_startup_shortcut_status(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = startup_shortcut_status(_component_app.clone())?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_set_startup_shortcut_enabled(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        enabled: bool,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = set_startup_shortcut_enabled(_component_app.clone(), input.enabled)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_jobs(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_jobs(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_job(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_job(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_create_job(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: JobInput,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = create_job(
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_update_job(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+        input: JobInput,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = update_job(
+        input.id,
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_set_job_enabled(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+        enabled: bool,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = set_job_enabled(
+        input.id,
+        input.enabled,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_delete_job(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = delete_job(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_services(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_services(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_service(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_service_observability(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = service_observability(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_import_definitions(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        json: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = import_definitions(
+        input.json,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_apply_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        json: String,
+        selected: Vec<String>,
+        revision: Option<String>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = apply_import(
+        input.json,
+        input.selected,
+        input.revision,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_preview_workspace_task_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        target_kind: crate::core::models::TargetKind,
+        target_distro: Option<String>,
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = preview_workspace_task_import(
+        input.path,
+        input.target_kind,
+        input.target_distro,
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_cancel_workspace_task_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_workspace_task_import(
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_apply_workspace_task_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        source_root: String,
+        project_identity: String,
+        revision: String,
+        target_kind: crate::core::models::TargetKind,
+        target_distro: Option<String>,
+        selected: Vec<String>,
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = apply_workspace_task_import(
+        input.path,
+        input.source_root,
+        input.project_identity,
+        input.revision,
+        input.target_kind,
+        input.target_distro,
+        input.selected,
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_workspace_tasks(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_workspace_tasks(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_trust_workspace_task_source(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        source_id: String,
+        revision: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = trust_workspace_task_source(
+        input.source_id,
+        input.revision,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_trust_workspace_task_shell_source(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        source_id: String,
+        revision: String,
+        acknowledgement: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = trust_workspace_task_shell_source(
+        input.source_id,
+        input.revision,
+        input.acknowledgement,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_run_workspace_task_operation(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+        fail_fast: bool,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = run_workspace_task_operation(
+        input.id,
+        input.fail_fast,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_workspace_task_operation(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_workspace_task_operation(
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_workspace_task_operations(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        limit: Option<usize>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_workspace_task_operations(
+        input.limit,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_stop_workspace_task_operation(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = stop_workspace_task_operation(
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_workspace_task_diagnostics(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        run_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_workspace_task_diagnostics(
+        input.run_id,
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_open_workspace_task_diagnostic(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        run_id: String,
+        diagnostic_index: u32,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = open_workspace_task_diagnostic(
+        input.run_id,
+        input.diagnostic_index,
+        _component_app.clone(),
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_preview_project_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = preview_project_import(
+        input.path,
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_cancel_project_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = cancel_project_import(
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_apply_project_import(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        path: String,
+        source_root: String,
+        revision: String,
+        selected: Vec<String>,
+        operation_id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = apply_project_import(
+        input.path,
+        input.source_root,
+        input.revision,
+        input.selected,
+        input.operation_id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_create_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: ServiceInput,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = create_service(
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_update_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+        input: ServiceInput,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = update_service(
+        input.id,
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_delete_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = delete_service(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_export_definitions(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = export_definitions(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_service_instance(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_service_instance(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_start_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = start_service(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_stop_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = stop_service(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_restart_service(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = restart_service(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_run(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_run(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_runs(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        job_id: Option<String>,
+        limit: Option<u32>,
+        start_at: Option<i64>,
+        end_at: Option<i64>,
+        status: Option<RunStatus>,
+        kind: Option<JobKind>,
+        min_duration_ms: Option<i64>,
+        max_duration_ms: Option<i64>,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_runs(
+        input.job_id,
+        input.limit,
+        input.start_at,
+        input.end_at,
+        input.status,
+        input.kind,
+        input.min_duration_ms,
+        input.max_duration_ms,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_run_history(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: RunHistoryFilter,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_run_history(
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_run_job_now(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = run_job_now(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_stop_active_run(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = stop_active_run(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_get_active_run(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        id: String,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = get_active_run(
+        input.id,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_active_runs(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    let _: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = list_active_runs(
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_preview_cron(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: CronPreviewInput,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = preview_cron(input.input)?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_tail_log(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: TailLogInput,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = tail_log(
+        _component_app.clone(),
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
+}
+
+/// Typed product adapter; native admission precedes this existing command.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_search_run_logs(
+    _component_app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        input: LogSearchRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = search_run_logs(
+        _component_app.clone(),
+        input.input,
+        _component_app
+            .try_state()
+            .ok_or("component_state_unavailable")?,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "component_response_invalid".into())
 }
 
 #[cfg(test)]
