@@ -82,7 +82,11 @@ impl Lease {
 fn callback() -> native::ShortcutCallback {
     std::sync::Arc::new(|app, command| {
         if let Some(window) = app.get_webview_window("main") {
-            let was_focused = window.is_focused().unwrap_or(false);
+            // WebView2 can hold keyboard focus while Tao's top-level cache is
+            // false. The IME/modal guard needs this exact foreground window.
+            let was_focused = window.hwnd().is_ok_and(|handle| unsafe {
+                windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 == handle.0
+            });
             if command == "control-center.launcher" {
                 let _ = window.show();
                 let _ = window.unminimize();
