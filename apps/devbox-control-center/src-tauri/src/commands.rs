@@ -220,27 +220,13 @@ async fn command_open(
         .next()
         .unwrap_or("")
         .to_owned();
-    let operation_id = request.command.operation_id.clone();
-    let value = crate::suite::remote(
+    let value = crate::command_receipts::open(
         window.app_handle(),
         &owner,
-        product_contract::transport::Call::OpenCommand {
-            request: request.command,
-        },
+        request.command,
         request.header.deadline_ms,
     )
     .await
-    .and_then(|value| {
-        serde_json::from_value::<product_contract::navigation::Receipt>(value)
-            .map_err(|_| "command_reply_invalid")
-    })
-    .and_then(|receipt| {
-        if receipt.operation_id == operation_id {
-            Ok(receipt)
-        } else {
-            Err("command_reply_mismatch")
-        }
-    })
     .map_err(|_| Problem {
         code: ProblemCode::Unavailable,
         provenance: provenance.clone(),
@@ -351,7 +337,12 @@ async fn command_preferences(
             }
             Some((command.command_id, None))
         }
-        PreferenceAction::ClearRecents => Some((String::new(), None)),
+        PreferenceAction::ClearRecents => {
+            window
+                .state::<crate::command_receipts::Owner>()
+                .clear_recents();
+            Some((String::new(), None))
+        }
         PreferenceAction::Read => None,
     };
     let _guard = owner.0.lock().map_err(|_| failure())?;
@@ -455,13 +446,14 @@ async fn command_trigger_shortcut(
             selection_id: None,
         };
         descriptor.validate_request(&command)?;
-        crate::suite::remote(
+        let receipt = crate::command_receipts::open(
             window.app_handle(),
             product,
-            product_contract::transport::Call::OpenCommand { request: command },
+            command,
             request.header.deadline_ms,
         )
-        .await
+        .await?;
+        serde_json::to_value(receipt).map_err(|_| "command_reply_invalid")
     }
     .await;
     let value = result.map_err(|_| {
@@ -531,11 +523,16 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .map_err(std::io::Error::other)?;
             app.manage(index);
             app.manage(PreferenceOwner::default());
+            app.manage(crate::command_receipts::Owner::default());
+            tauri::async_runtime::spawn(crate::command_receipts::run(app.clone()));
             app.manage(crate::shortcuts::Owner::default());
             use tauri::Listener;
             let handle = app.clone();
             app.listen("suite-disconnected", move |_| {
                 handle.state::<crate::shortcuts::Owner>().stop();
+                handle
+                    .state::<crate::command_receipts::Owner>()
+                    .disconnect();
             });
             let handle = app.clone();
             app.listen("suite-connected", move |_| {
@@ -552,4 +549,18 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             }
         })
         .build()
+}
+
+/// Called only after a native destination receipt proves this queued command opened.
+pub(crate) fn record_remote_recent(app: &tauri::AppHandle, id: &str) -> Result<(), &'static str> {
+    let owner = app.state::<PreferenceOwner>();
+    let _guard = owner.0.lock().map_err(|_| "preferences_unavailable")?;
+    let path = preferences_path(app)?;
+    let mut preferences = Preferences::load(&path).map_err(|_| "preferences_unavailable")?;
+    preferences
+        .record_recent(id)
+        .map_err(|_| "preferences_unavailable")?;
+    preferences
+        .save(&path)
+        .map_err(|_| "preferences_unavailable")
 }

@@ -16,4 +16,5 @@ pub fn run() {
 }
 pub mod core;
 
+mod command_receipts;
 mod commands;
