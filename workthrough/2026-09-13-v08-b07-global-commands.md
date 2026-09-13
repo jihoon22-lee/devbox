@@ -489,3 +489,12 @@ without relaxing the Clippy gate.
 Windows four-product fixture and final CI remain required. B06 dependency is
 3033d68; its retained-artifact diagnosis commits will be incorporated before merge.
 No local Docker/WSL provisioning or host service/network changes were performed.
+
+
+First CI: frontend and Rust workspace passed. The catalog accessibility gate
+required Launcher standalone token imports; dependency notices were regenerated
+for the new runtime consumers. Those focused policy checks passed (3.102 seconds).
+Windows compile found one Arc<ProjectOwner> dereference in the WSL Editor selection
+proof; the native call now passes its referenced owner explicitly. No local full
+verification repeats are needed for these changes. B06's joined WSL inventory
+runtime repair and paged terminal fixture will be rebased into this PR.
