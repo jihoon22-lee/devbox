@@ -88,3 +88,17 @@ missing or an update owns it. Detailed bootstrap/legacy writer quiesce and contr
 health/import worker admission remain to connect; this is not completed recovery
 acceptance. Minimal library type checks passed (34.755 seconds), with unused legacy
 Manager entrypoint warnings in embedded mode to resolve before final Clippy.
+
+
+Legacy inventory now reads Manager's original identifier namespace and pinned
+v0.7 catalog revision instead of treating the Control Center data directory as a
+legacy root. ARP discovery reads bounded current-user/machine x64/x86 registry
+views and reports partial access and uninspected other users explicitly. ARP strings
+are retained only as hashed observation identities; no uninstall command is run.
+Manager-owned records and Windows installer declarations are separate in Migration.
+Actual executable/uninstaller proofs and reviewed cleanup are still to implement.
+The embedded library excludes the unused standalone AppLink module; legacy Manager
+install entrypoints remain unregistered, with their intentional dead code annotation
+limited to that module when standalone is disabled. ZIP's full existing deflate
+feature now selects a backend even when Control Center is compiled alone. Minimum
+native/frontend type checks passed after that feature correction (9.620 seconds).

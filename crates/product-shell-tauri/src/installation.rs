@@ -109,6 +109,68 @@ pub(crate) fn namespace(executable: &Path, product: &str, version: &str) -> Resu
     ))
 }
 
+/// Held by every product UI and its dedicated browser/service worker through
+/// shutdown. The updater's exclusive lease prevents a late writer from starting.
+#[must_use = "the writer lease must be retained through product shutdown"]
+pub struct WriterGuard(Option<File>);
+impl WriterGuard {
+    pub(crate) fn acquire(executable: &Path) -> Result<Self> {
+        let parent = executable.parent().ok_or("installation_path_invalid")?;
+        let Some(products) = parent
+            .parent()
+            .filter(|p| p.file_name().is_some_and(|n| n == "products"))
+        else {
+            return Ok(Self(None));
+        };
+        let generation = products.parent().ok_or("installation_path_invalid")?;
+        let Some(generations) = generation
+            .parent()
+            .filter(|p| p.file_name().is_some_and(|n| n == "generations"))
+        else {
+            return Ok(Self(None));
+        };
+        let root = generations.parent().ok_or("installation_path_invalid")?;
+        let path = root.join("suite-writers.lock");
+        devbox_filesystem::ensure_no_links(&path).map_err(|_| "suite_writer_gate_unavailable")?;
+        #[cfg(windows)]
+        let (file, identity) = {
+            use std::os::windows::fs::OpenOptionsExt;
+            // A live writer also prevents deletion/replacement of the lock file.
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(3)
+                .custom_flags(0x0020_0000)
+                .open(&path)
+                .map_err(|_| "suite_writer_gate_unavailable")?;
+            let identity = devbox_filesystem::opened_filesystem_identity(&file, false)
+                .map_err(|_| "suite_writer_gate_unavailable")?;
+            (file, identity)
+        };
+        #[cfg(not(windows))]
+        let (file, identity) = devbox_filesystem::open_filesystem_object(&path, false)
+            .map_err(|_| "suite_writer_gate_unavailable")?;
+        if !devbox_filesystem::try_lock_shared(&file)
+            .map_err(|_| "suite_writer_gate_unavailable")?
+        {
+            return Err("suite_update_in_progress");
+        }
+        if devbox_filesystem::filesystem_identity(&path, false)
+            .map_err(|_| "suite_writer_gate_changed")?
+            != identity
+        {
+            return Err("suite_writer_gate_changed");
+        }
+        Ok(Self(Some(file)))
+    }
+}
+impl Drop for WriterGuard {
+    fn drop(&mut self) {
+        if let Some(file) = &self.0 {
+            let _ = devbox_filesystem::unlock_exclusive(file);
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -201,67 +263,5 @@ mod tests {
         let staged = root.generation("next");
         fs::remove_file(root.0.join("devbox-installation.json")).unwrap();
         assert!(namespace(&staged, "workspace", "0.8.0").is_err());
-    }
-}
-
-/// Held by every product UI and its dedicated browser/service worker through
-/// shutdown. The updater's exclusive lease prevents a late writer from starting.
-#[must_use = "the writer lease must be retained through product shutdown"]
-pub struct WriterGuard(Option<File>);
-impl WriterGuard {
-    pub(crate) fn acquire(executable: &Path) -> Result<Self> {
-        let parent = executable.parent().ok_or("installation_path_invalid")?;
-        let Some(products) = parent
-            .parent()
-            .filter(|p| p.file_name().is_some_and(|n| n == "products"))
-        else {
-            return Ok(Self(None));
-        };
-        let generation = products.parent().ok_or("installation_path_invalid")?;
-        let Some(generations) = generation
-            .parent()
-            .filter(|p| p.file_name().is_some_and(|n| n == "generations"))
-        else {
-            return Ok(Self(None));
-        };
-        let root = generations.parent().ok_or("installation_path_invalid")?;
-        let path = root.join("suite-writers.lock");
-        devbox_filesystem::ensure_no_links(&path).map_err(|_| "suite_writer_gate_unavailable")?;
-        #[cfg(windows)]
-        let (file, identity) = {
-            use std::os::windows::fs::OpenOptionsExt;
-            // A live writer also prevents deletion/replacement of the lock file.
-            let file = std::fs::OpenOptions::new()
-                .read(true)
-                .share_mode(3)
-                .custom_flags(0x0020_0000)
-                .open(&path)
-                .map_err(|_| "suite_writer_gate_unavailable")?;
-            let identity = devbox_filesystem::opened_filesystem_identity(&file, false)
-                .map_err(|_| "suite_writer_gate_unavailable")?;
-            (file, identity)
-        };
-        #[cfg(not(windows))]
-        let (file, identity) = devbox_filesystem::open_filesystem_object(&path, false)
-            .map_err(|_| "suite_writer_gate_unavailable")?;
-        if !devbox_filesystem::try_lock_shared(&file)
-            .map_err(|_| "suite_writer_gate_unavailable")?
-        {
-            return Err("suite_update_in_progress");
-        }
-        if devbox_filesystem::filesystem_identity(&path, false)
-            .map_err(|_| "suite_writer_gate_changed")?
-            != identity
-        {
-            return Err("suite_writer_gate_changed");
-        }
-        Ok(Self(Some(file)))
-    }
-}
-impl Drop for WriterGuard {
-    fn drop(&mut self) {
-        if let Some(file) = &self.0 {
-            let _ = devbox_filesystem::unlock_exclusive(file);
-        }
     }
 }
