@@ -406,3 +406,7 @@ Shared shell and four product TypeScript passed (14.544 seconds) after replacing
 unsupported Object.hasOwn with the repository-compatible property check. Rust
 syntax/format and diff checks are the remaining commit checks. Cancellation-phase
 and reviewed-route regressions are prepared for the B07 completion audit.
+
+The B06 retained-artifact observation also applies to Control Center's shortcut
+callback: native foreground HWND now supplies wasFocused for the existing modal,
+text-editor and IME guards. No additional shortcut or key interception is added.
