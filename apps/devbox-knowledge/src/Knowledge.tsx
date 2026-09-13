@@ -1,3 +1,4 @@
+import {useIncomingReview} from "@devbox/product-shell/incoming";
 import type {SavedSearchInput} from "@devbox/knowledge-features/search";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
@@ -12,6 +13,8 @@ const Activity = lazy(() => import("@devbox/knowledge-features/activity"));
 const IncomingSearchReview = lazy(() => import("./IncomingSearchReview"));
 const Search = lazy(() => import("@devbox/knowledge-features/search"));
 function Content({ route, navigate }: ShellContentProps) {
+  const {review:incoming}=useIncomingReview();
+  const captureRequest=incoming?.route==="notes"&&incoming.target.kind==="entity"&&incoming.target.entity==="capture"&&incoming.target.id==="inbox"?incoming.operationId:undefined;
   const [savedSearch,setSavedSearch]=useState<SavedSearchInput>();
   const [showSettings, setShowSettings] = useState<"import" | "vault" | null>(null);
   const activateNotes = useCallback(() => { setShowSettings(null); navigate("notes"); }, [navigate]);
@@ -42,7 +45,7 @@ function Content({ route, navigate }: ShellContentProps) {
     {group === "notes" && showSettings && <div className="knowledge-settings-page"><button type="button" onClick={() => setShowSettings(null)}>노트로 돌아가기</button><Suspense fallback={<p role="status">설정을 불러오고 있습니다…</p>}>{showSettings === "vault" ? <VaultSettings/> : <MigrationSettings/>}</Suspense></div>}
     {group === "daily" && <Suspense fallback={<p role="status">일일 기록을 불러오고 있습니다…</p>}><Daily date={date} onDateChange={setDate} onOpen={openNote} onActivity={activateActivity}/></Suspense>}
     {(visited.has("notes") || group === "notes") && <div className="knowledge-feature-notes" hidden={group !== "notes" || showSettings !== null}>
-      <Suspense fallback={<p role="status">노트를 불러오고 있습니다…</p>}><Notes active={group === "notes" && !showSettings} onActivate={activateNotes} onDaily={activateDaily} onImport={() => setShowSettings("import")} onVaultSettings={() => setShowSettings("vault")} openRequest={openRequest}/></Suspense>
+      <Suspense fallback={<p role="status">노트를 불러오고 있습니다…</p>}><Notes active={group === "notes" && !showSettings} onActivate={activateNotes} onDaily={activateDaily} onImport={() => setShowSettings("import")} onVaultSettings={() => setShowSettings("vault")} openRequest={openRequest} captureRequest={captureRequest}/></Suspense>
     </div>}
     {(visited.has("activity") || group === "activity") && <div className="knowledge-feature-activity" hidden={group !== "activity"}>
       <Suspense fallback={<p role="status">활동을 불러오고 있습니다…</p>}><Activity projectRevision={projectRevision} active={group === "activity"} selectedDate={date} onDateChange={setDate} onDaily={activateDaily} onDraft={activateNotes} lifecycleSettings={<Suspense fallback={<p role="status">종료 설정을 불러오고 있습니다…</p>}><LifecycleSettings/></Suspense>}/></Suspense>

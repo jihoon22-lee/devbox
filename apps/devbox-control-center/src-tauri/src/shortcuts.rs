@@ -3,60 +3,11 @@
 #[path = "../../../../devbox-launcher/src-tauri/src/hotkey.rs"]
 #[allow(dead_code)] // The product uses the common multi-binding worker, not legacy window toggling.
 mod native;
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{Emitter, Manager};
 
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub(crate) struct Config {
-    pub accelerator: String,
-    pub enabled: bool,
-    #[serde(default)]
-    pub terminal: bool,
-    #[serde(default)]
-    pub capture: bool,
-    #[serde(default)]
-    pub project: bool,
-}
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            accelerator: "Ctrl+Alt+Space".into(),
-            enabled: false,
-            terminal: false,
-            capture: false,
-            project: false,
-        }
-    }
-}
-impl Config {
-    fn validate(&self) -> Result<(), String> {
-        if self.terminal || self.capture || self.project {
-            return Err("shortcut_command_unavailable".into());
-        }
-        native::validate(&native::ShortcutConfig {
-            accelerator: self.accelerator.clone(),
-            enabled: self.enabled,
-        })
-    }
-    fn bindings(&self) -> Vec<(String, String)> {
-        if !self.enabled {
-            return Vec::new();
-        }
-        let mut values = vec![("control-center.launcher".into(), self.accelerator.clone())];
-        for (enabled, command, key) in [
-            (self.terminal, "workspace.summon-terminal", "Ctrl+Alt+T"),
-            (self.capture, "knowledge.quick-capture", "Ctrl+Alt+N"),
-            (self.project, "workspace.open-current-project", "Ctrl+Alt+P"),
-        ] {
-            if enabled {
-                values.push((command.into(), key.into()));
-            }
-        }
-        values
-    }
-}
+pub(crate) use product_contract::shortcuts::Config;
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct View {
@@ -132,9 +83,11 @@ fn callback() -> native::ShortcutCallback {
     std::sync::Arc::new(|app, command| {
         if let Some(window) = app.get_webview_window("main") {
             let was_focused = window.is_focused().unwrap_or(false);
-            let _ = window.show();
-            let _ = window.unminimize();
-            let _ = window.set_focus();
+            if command == "control-center.launcher" {
+                let _ = window.show();
+                let _ = window.unminimize();
+                let _ = window.set_focus();
+            }
             let _ = window.emit(
                 "suite-shortcut",
                 serde_json::json!({"command":command,"wasFocused":was_focused}),
@@ -262,6 +215,16 @@ impl Owner {
             state.lease.take();
         }
         Ok(view(&state))
+    }
+    pub(crate) fn resume(&self, app: &tauri::AppHandle) -> Result<(), String> {
+        if !crate::suite::connection_ready(app) {
+            return Ok(());
+        }
+        let current = self.load(app)?;
+        if current.config.enabled && current.registration != native::RegistrationState::Registered {
+            self.configure(app, current.config)?;
+        }
+        Ok(())
     }
     pub(crate) fn stop(&self) {
         if let Ok(mut state) = self.state.lock() {

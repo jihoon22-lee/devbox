@@ -27,6 +27,7 @@ pub struct Receipt {
 pub struct Review {
     pub operation_id: String,
     pub revision: String,
+    pub command_revision: String,
     pub label: String,
     pub route: String,
     pub target: Target,
@@ -35,6 +36,7 @@ pub struct Review {
 struct Entry {
     receipt: Receipt,
     revision: String,
+    command_revision: String,
     label: String,
     route: String,
     expires: u64,
@@ -114,6 +116,7 @@ impl Queue {
             Entry {
                 receipt: receipt.clone(),
                 revision,
+                command_revision: descriptor.revision.clone(),
                 label: descriptor.label.clone(),
                 route: route.clone(),
                 expires: now.saturating_add(REVIEW_MS),
@@ -123,6 +126,49 @@ impl Queue {
         );
         Ok(receipt)
     }
+    /// Visibility of an already-owned Terminal window is the only direct
+    /// action. Reserve before native work; duplicate requests never retoggle.
+    pub fn begin_terminal_action(
+        &mut self,
+        descriptor: &Descriptor,
+        request: &Request,
+        now: u64,
+    ) -> Result<(bool, Receipt)> {
+        if descriptor.owner != "workspace"
+            || descriptor.component != "workspace.terminal"
+            || descriptor.requires_review
+            || descriptor.destructive
+            || !matches!(
+                descriptor.target,
+                Target::Entity {
+                    entity: crate::commands::EntityKind::TerminalWindow,
+                    ..
+                }
+            )
+        {
+            return Err("navigation_action_denied");
+        }
+        let fresh = !self.entries.contains_key(&request.operation_id);
+        let mut review = descriptor.clone();
+        review.requires_review = true;
+        self.enqueue(&review, request, now)?;
+        let entry = self
+            .entries
+            .get_mut(&request.operation_id)
+            .ok_or("navigation_missing")?;
+        if fresh {
+            entry.receipt.phase = Phase::Opening;
+        }
+        Ok((fresh, entry.receipt.clone()))
+    }
+    pub fn finish_terminal_action(&mut self, id: &str) -> Result<Receipt> {
+        let entry = self.entries.get_mut(id).ok_or("navigation_missing")?;
+        if entry.receipt.phase != Phase::Opening {
+            return Err("navigation_action_invalid");
+        }
+        entry.receipt.phase = Phase::Opened;
+        Ok(entry.receipt.clone())
+    }
     pub fn pending(&mut self, now: u64) -> Vec<Review> {
         self.expire(now);
         self.entries
@@ -131,6 +177,7 @@ impl Queue {
             .map(|entry| Review {
                 operation_id: entry.receipt.operation_id.clone(),
                 revision: entry.revision.clone(),
+                command_revision: entry.command_revision.clone(),
                 label: entry.label.clone(),
                 route: entry.route.clone(),
                 target: entry.target.clone(),
@@ -318,5 +365,46 @@ mod tests {
             queue.status(&request.operation_id, 2).unwrap().phase,
             Phase::Opening
         );
+    }
+    #[test]
+    fn native_terminal_action_is_reserved_once_and_keeps_the_command_revision() {
+        let (mut descriptor, mut request) = command();
+        descriptor.owner = "workspace".into();
+        descriptor.component = "workspace.terminal".into();
+        descriptor.id = "workspace.summon-terminal-window".into();
+        descriptor.requires_review = false;
+        descriptor.target = Target::Entity {
+            entity: crate::commands::EntityKind::TerminalWindow,
+            id: "window".into(),
+        };
+        descriptor.review_route = Some("terminal".into());
+        request.command_id = descriptor.id.clone();
+        let mut queue = Queue::default();
+        assert!(
+            queue
+                .begin_terminal_action(&descriptor, &request, 0)
+                .unwrap()
+                .0
+        );
+        assert!(
+            !queue
+                .begin_terminal_action(&descriptor, &request, 1)
+                .unwrap()
+                .0
+        );
+        assert!(queue.pending(1).is_empty());
+        queue.finish_terminal_action(&request.operation_id).unwrap();
+        let (again, receipt) = queue
+            .begin_terminal_action(&descriptor, &request, 2)
+            .unwrap();
+        assert!(!again);
+        assert_eq!(receipt.phase, Phase::Opened);
+        descriptor.target = Target::Entity {
+            entity: crate::commands::EntityKind::Capture,
+            id: "capture".into(),
+        };
+        assert!(queue
+            .begin_terminal_action(&descriptor, &request, 3)
+            .is_err());
     }
 }

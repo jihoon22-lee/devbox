@@ -16,6 +16,7 @@
     "commands:allow-command-status",
     "commands:allow-command-preferences",
     "commands:allow-command-shortcut",
-    "commands:allow-command-cancel"
+    "commands:allow-command-cancel",
+    "commands:allow-command-trigger-shortcut"
   ]
 }

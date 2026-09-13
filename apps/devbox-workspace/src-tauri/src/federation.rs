@@ -130,6 +130,144 @@ fn runtime_metadata(
     }
     Ok((index, snapshot.truncated))
 }
+fn terminal_metadata(app: &tauri::AppHandle) -> Result<Index, &'static str> {
+    let host = crate::component::provider_host(app)?;
+    let catalog = crate::component::terminal_owner(app)?.command_catalog(app, &host)?;
+    let mut index = Index::default();
+    for window in catalog["windows"]
+        .as_array()
+        .ok_or("workspace_terminal_invalid")?
+    {
+        let id = window["id"]
+            .as_str()
+            .filter(|id| commands::opaque_id(id))
+            .ok_or("workspace_terminal_invalid")?;
+        let context: Option<ProjectContext> = serde_json::from_value(window["context"].clone())
+            .map_err(|_| "workspace_terminal_invalid")?;
+        let revision =
+            Sha256::digest(serde_json::to_vec(window).map_err(|_| "workspace_terminal_invalid")?)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+        index.insert(Descriptor {
+            id: format!("workspace.summon-terminal-{id}"),
+            owner: "workspace".into(),
+            component: "workspace.terminal".into(),
+            label: format!("터미널 표시·숨김 · {}", &id[..id.len().min(8)]),
+            revision,
+            target: Target::Entity {
+                entity: EntityKind::TerminalWindow,
+                id: id.into(),
+            },
+            review_route: Some("terminal".into()),
+            required_context: if context.is_some() {
+                ContextRequirement::Project
+            } else {
+                ContextRequirement::None
+            },
+            context,
+            destructive: false,
+            requires_review: false,
+            disabled_reason: None,
+        })?;
+    }
+    for profile in catalog["profiles"]
+        .as_array()
+        .ok_or("workspace_terminal_invalid")?
+    {
+        let id = profile["id"]
+            .as_str()
+            .filter(|id| commands::opaque_id(id))
+            .ok_or("workspace_terminal_invalid")?;
+        let name = profile["name"]
+            .as_str()
+            .ok_or("workspace_terminal_invalid")?;
+        let label = if name.len() > 200 || devbox_applink::contains_sensitive_value(name) {
+            "저장한 터미널 프로필"
+        } else {
+            name
+        };
+        index.insert(Descriptor {
+            id: format!("workspace.terminal-profile-{id}"),
+            owner: "workspace".into(),
+            component: "workspace.terminal".into(),
+            label: label.into(),
+            revision: profile["revision"]
+                .as_str()
+                .ok_or("workspace_terminal_invalid")?
+                .into(),
+            target: Target::Entity {
+                entity: EntityKind::TerminalProfile,
+                id: id.into(),
+            },
+            review_route: Some("terminal".into()),
+            required_context: ContextRequirement::None,
+            context: None,
+            destructive: false,
+            requires_review: true,
+            disabled_reason: None,
+        })?;
+    }
+    Ok(index)
+}
+fn shortcut(
+    app: &tauri::AppHandle,
+    registry: &Registry,
+    command: &str,
+) -> Result<Descriptor, &'static str> {
+    use tauri::Manager;
+    let window = app
+        .get_webview_window("main")
+        .ok_or("workspace_window_unavailable")?;
+    let context = product_shell_tauri::workspace_context(&window)?;
+    if command == "workspace.open-current-project" {
+        let context = context.ok_or("workspace_context_required")?;
+        let mut index = metadata(registry, &Source::Projects)?;
+        index.retain_context(&context);
+        return index
+            .search("")?
+            .results
+            .into_iter()
+            .next()
+            .ok_or("workspace_context_stale");
+    }
+    if command != "workspace.summon-terminal" {
+        return Err("workspace_shortcut_unavailable");
+    }
+    let windows = terminal_metadata(app)?
+        .search("")?
+        .results
+        .into_iter()
+        .filter(|row| {
+            matches!(
+                row.target,
+                Target::Entity {
+                    entity: EntityKind::TerminalWindow,
+                    ..
+                }
+            )
+        })
+        .collect::<Vec<_>>();
+    if let Some(focused)=windows.iter().find(|row|matches!(&row.target,Target::Entity{id,..} if app.get_webview_window(&format!("terminal-{id}")).is_some_and(|window|window.is_focused().unwrap_or(false)))){return Ok(focused.clone());}
+    let current = windows
+        .into_iter()
+        .filter(|row| row.context == context)
+        .collect::<Vec<_>>();
+    if current.len() == 1 {
+        return Ok(current[0].clone());
+    }
+    let catalog =
+        devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE)?;
+    Index::catalog(
+        &catalog,
+        &std::collections::BTreeSet::from(["workspace".into()]),
+    )?
+    .search("")?
+    .results
+    .into_iter()
+    .find(|row| matches!(&row.target,Target::Route{route} if route=="terminal"))
+    .ok_or("workspace_shortcut_unavailable")
+}
 pub(crate) fn handle(
     app: tauri::AppHandle,
     call: Call,
@@ -148,6 +286,17 @@ pub(crate) fn handle(
             if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
             let registry=crate::component::provider_host(&app)?.projects()?.snapshot()?;
             match call {
+                Call::ResolveShortcut{command}=>serde_json::to_value(shortcut(&app,&registry,&command)?).map_err(|_|"workspace_command_invalid"),
+                Call::Query{source:Source::Commands,query,generation,..}=>{
+                    let mut index=terminal_metadata(&app)?;
+                    if let Ok(current)=shortcut(&app,&registry,"workspace.open-current-project"){index.insert(current)?;}
+                    Ok(json!({"generation":generation,"source":"commands","owner":"workspace","result":index.search(&query)?}))
+                }
+                Call::OpenCommand{request} if request.command_id.starts_with("workspace.summon-terminal-")=>{
+                    let index=terminal_metadata(&app)?;let selected=index.resolve(&request)?;
+                    let Target::Entity{entity:EntityKind::TerminalWindow,id}=&selected.target else{return Err("workspace_command_invalid");};
+                    crate::component::terminal_owner(&app)?.summon(&app,id,selected.context.as_ref(),&request.operation_id,_deadline)
+                }
                 Call::Query {source:source @ (Source::Projects|Source::Repositories),query,generation,context,mode,..}=>{
                     if mode!=product_contract::transport::QueryMode::Name{return Err("workspace_query_mode_unavailable");}
                     commands::validate_query(&query)?;
@@ -164,6 +313,9 @@ pub(crate) fn handle(
                     Ok(json!({"generation":generation,"source":source,"owner":"workspace","result":result}))
                 }
                 Call::PreviewCommand{request}=>{
+                    if request.command_id.starts_with("workspace.summon-terminal-")||request.command_id.starts_with("workspace.terminal-profile-"){
+                        return serde_json::to_value(terminal_metadata(&app)?.resolve(&request)?).map_err(|_|"workspace_command_invalid");
+                    }
                     for (prefix,source) in [("workspace.task-",Source::Tasks),("workspace.service-",Source::Services),("workspace.run-",Source::Runs)]{
                         if request.command_id.starts_with(prefix){return serde_json::to_value(runtime_metadata(&app,&source)?.0.resolve(&request)?).map_err(|_|"workspace_command_invalid");}
                     }

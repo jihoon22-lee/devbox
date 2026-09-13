@@ -27,6 +27,7 @@ export interface SearchResponse {
 export interface ShortcutConfig {
   accelerator: "Ctrl+Alt+Space" | "Ctrl+Alt+L" | "Ctrl+Alt+J";
   enabled: boolean;
+  terminal?:boolean;capture?:boolean;project?:boolean;
 }
 
 export type ShortcutRegistration = "registered" | "unavailable" | "unsupported" | "disabled" | "pending";

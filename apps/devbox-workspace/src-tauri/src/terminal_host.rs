@@ -671,7 +671,7 @@ impl Terminals {
                 record.state == "active"
                     && inner.peers.contains_key(&format!("terminal-{}", record.id))
             })
-            .map(|record| json!({"id":record.id,"context":record.context}))
+            .map(|record| json!({"id":record.id,"context":record.context,"generation":record.restore_generation}))
             .collect::<Vec<_>>();
         Ok(json!({"profiles":profiles,"windows":windows,"defaultShortcut":null}))
     }

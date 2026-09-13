@@ -62,6 +62,13 @@ pub enum Call {
     CancelQuery {
         query_id: String,
     },
+    ShortcutStatus {},
+    ConfigureShortcuts {
+        config: crate::shortcuts::Config,
+    },
+    ResolveShortcut {
+        command: String,
+    },
     PreviewCommand {
         request: commands::Request,
     },
@@ -136,7 +143,12 @@ impl Guard {
         }
         // The command host is the only federated query/dispatch principal. Other
         // product roles acquire specific artifact/navigation capabilities separately.
-        if self.peer.product != "control-center" && !matches!(request.call, Call::Describe {}) {
+        if self.peer.product != "control-center"
+            && !matches!(
+                request.call,
+                Call::Describe {} | Call::ShortcutStatus {} | Call::ConfigureShortcuts { .. }
+            )
+        {
             return Err("peer_method_denied");
         }
         validate_call(&request.call)?;
@@ -154,6 +166,19 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ConfigureShortcuts { config } => {
+            config.validate().map_err(|_| "peer_shortcut_invalid")?
+        }
+        Call::ResolveShortcut { command }
+            if ![
+                "workspace.summon-terminal",
+                "workspace.open-current-project",
+                "knowledge.quick-capture",
+            ]
+            .contains(&command.as_str()) =>
+        {
+            return Err("peer_shortcut_invalid")
+        }
         Call::Query {
             query_id,
             mode,

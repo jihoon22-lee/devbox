@@ -20,6 +20,7 @@ fn main() {
                     "command_status",
                     "command_preferences",
                     "command_shortcut",
+                    "command_trigger_shortcut",
                 ]),
             ),
     )

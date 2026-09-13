@@ -33,6 +33,7 @@ function command(value:unknown):value is Command {
 async function call(description:Description,route:string,method:string,args:Record<string,unknown>,signal?:AbortSignal):Promise<unknown>{
   if(signal?.aborted)throw new DOMException("Cancelled","AbortError");
   const header=makeRequest(description.handshake,route,Date.now(),description.context);
+  if(["command_preview","command_open","command_trigger_shortcut"].includes(method))header.deadlineMs=Date.now()+29000;
   const cancel=()=>{if(method==="command_source"&&typeof args.product==="string")void call(description,route,"command_cancel",{product:args.product,queryId:header.requestId}).catch(()=>undefined);};
   signal?.addEventListener("abort",cancel,{once:true});
   const provenance={product:description.product.id,component:description.product.id+".commands",requestId:header.requestId,revision:catalog.catalogRevision};
@@ -135,4 +136,9 @@ export async function onConnectionChanged(callback:()=>void):Promise<()=>void>{
   const results=await Promise.allSettled([listen("suite-connected",callback),listen("suite-disconnected",callback)]);
   const stops=results.flatMap(result=>result.status==="fulfilled"?[result.value]:[]);
   return ()=>stops.forEach(stop=>stop());
+}
+
+export async function triggerShortcut(description:Description,route:string,command:string,operationId:string):Promise<CommandReceipt>{
+  if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
+  return receipt(await call(description,route,"command_trigger_shortcut",{command,operationId}),operationId);
 }

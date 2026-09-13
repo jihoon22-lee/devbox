@@ -14,10 +14,10 @@ export default function IncomingSearchReview({onNoteOpen,onSaved}:{onNoteOpen:()
  const id=review?.route==="search"&&review.target.kind==="entity"&&["note","file","savedQuery"].includes(review.target.entity)?review.target.id:null;
  useEffect(()=>{
   let current=true;setReference(null);setSaved(null);setIssue("");
-  if(id&&savedTarget)void invoke<SavedSearchInput&{name:string}>("source_saved_reference",{id,revision:review?.revision}).then(value=>{if(current)setSaved(value);}).catch(()=>{if(current)setIssue("저장한 검색이 변경되었거나 삭제되었습니다. 다시 검색해 주세요.");});
+  if(id&&savedTarget)void invoke<SavedSearchInput&{name:string}>("source_saved_reference",{id,revision:review?.commandRevision}).then(value=>{if(current)setSaved(value);}).catch(()=>{if(current)setIssue("저장한 검색이 변경되었거나 삭제되었습니다. 다시 검색해 주세요.");});
   if(id&&!savedTarget)void invoke<Reference>("source_reference",{reference:id}).then(value=>{if(current)setReference(value);}).catch(()=>{if(current)setIssue("검색 결과가 만료되었거나 원본이 바뀌었습니다. 다시 검색해 주세요.");});
   return()=>{current=false;};
- },[id,savedTarget,review?.revision]);
+ },[id,savedTarget,review?.commandRevision]);
  if(!id)return null;
  const open=async()=>{
   if(!reference||busy)return;setBusy(true);setIssue("");

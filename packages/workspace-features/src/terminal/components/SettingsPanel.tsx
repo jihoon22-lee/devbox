@@ -154,7 +154,7 @@ export default function SettingsPanel({
 
         <fieldset className="settings-group quick-summon-settings">
           <legend>빠른 호출</legend>
-          {isProductHosted()?<p role="status">전역 단축키는 Workspace에서 관리합니다. 이 보조 창을 닫으면 창만 숨기고 터미널은 유지합니다.</p>:<>
+          {isProductHosted()?<p role="status">전역 단축키는 제품 연결의 공용 설정에서 Control Center가 관리합니다. 이 보조 창을 닫으면 창만 숨기고 터미널은 유지합니다.</p>:<>
           <label className="settings-row">
             <input
               type="checkbox"

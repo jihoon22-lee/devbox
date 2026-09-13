@@ -345,3 +345,5 @@ pub mod navigation;
 pub mod launcher_preferences;
 
 pub mod query;
+
+pub mod shortcuts;

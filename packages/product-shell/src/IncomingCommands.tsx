@@ -19,7 +19,7 @@ export default function IncomingCommands({description,route,navigate,onReview}:{
     if(!nativeMode)return;
     let active=true,remove:(()=>void)|undefined;
     const refresh=()=>{void call<Review[]>({kind:"pending"}).then(value=>{
-      if(!Array.isArray(value)||value.length>32||value.some(row=>!description.features.some(feature=>feature.route===row.route)||!row.target||!["route","entity"].includes(row.target.kind)||(row.context!==null&&!isProjectContext(row.context))))throw new Error("invalid navigation");
+      if(!Array.isArray(value)||value.length>32||value.some(row=>typeof row.commandRevision!=="string"||!/^[a-f0-9]{64}$/.test(row.commandRevision)||!description.features.some(feature=>feature.route===row.route)||!row.target||!["route","entity"].includes(row.target.kind)||(row.context!==null&&!isProjectContext(row.context))))throw new Error("invalid navigation");
       if(active)setReviews(value);
     }).catch(()=>{if(active)setIssue("다른 제품의 열기 요청을 확인하지 못했습니다.");});};
     void listen("suite-navigation",refresh).then(unlisten=>{if(!active)unlisten();else{remove=unlisten;refresh();}}).catch(()=>{if(active)setIssue("제품 요청 알림을 연결하지 못했습니다.");});
