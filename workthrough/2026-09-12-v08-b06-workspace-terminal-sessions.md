@@ -354,3 +354,21 @@ execution-result tests passed in a 0.266-second runner. Existing all-scope build
 Clippy/frontend/test evidence remains preserved. The new isolated job YAML parsed
 and contains no Cargo or product build step. These are targeted supplements for
 the reproduced race and changed execution boundary, not another full local audit.
+
+### Retained-artifact terminal diagnosis after fifth CI
+
+Final implementation CI [34729198146](https://github.com/jihoon22-lee/devbox/actions/runs/34729198146)
+passed. Foundation [34729198195](https://github.com/jihoon22-lee/devbox/actions/runs/34729198195)
+passed native authority, service cancellation/fast failure and product builds, then
+failed waiting for two companion panes. No native panic was recorded. Hosted WSL2
+acceptance did not run because its prerequisite job failed; this is not a pass.
+
+A dispatch-only hosted diagnostic reuses that exact private executable/helper
+artifact, verifies its manifest/digests, and records bounded companion UI/native
+state without Cargo, frontend builds, Runtime acceptance or Docker. Artifact source
+and diagnostic script source are recorded separately. The shared CDP adapter is
+side-effect free on import; local execution still fails at the hosted-only guard.
+Ordinary terminal acceptance now captures companion state before cleanup on failure.
+Only script/YAML syntax and the no-build diagnostic boundary were checked locally.
+This diagnostic-only commit suppresses automatic full CI; final implementation
+changes still require CI before merge. No local WSL or service operation is used.

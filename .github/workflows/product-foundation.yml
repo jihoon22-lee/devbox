@@ -59,6 +59,10 @@ on:
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
     inputs:
+      terminal_diagnostic_run:
+        description: Reuse this prior foundation run's exact Workspace artifact for hosted companion diagnosis only
+        type: string
+        default: ''
       wsl_fixture_artifact_only:
         description: Build only private Windows unit-test executables for an isolated WSL fixture
         type: boolean
@@ -66,14 +70,60 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.terminal_diagnostic_run || 'full' }}
   cancel-in-progress: true
 
 jobs:
+  terminal-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '' }}
+    name: Retained Workspace artifact companion diagnostic
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Download the original private artifact without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIAGNOSTIC_RUN: ${{ inputs.terminal_diagnostic_run }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:DIAGNOSTIC_RUN -notmatch '^\d+$') { throw 'Invalid source run' }
+          $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:DIAGNOSTIC_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected source workflow' }
+          gh run download $env:DIAGNOSTIC_RUN --name "workspace-webview-fixture-$env:DIAGNOSTIC_RUN" --dir "$env:RUNNER_TEMP/workspace-retained-fixture"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source artifact unavailable' }
+      - name: Prepare disposable hosted WSL1 fixture
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Diagnose only the companion restore failure
+        env:
+          DIAGNOSTIC_RUN: ${{ inputs.terminal_diagnostic_run }}
+        shell: pwsh
+        run: node .github/scripts/windows-workspace-terminal-diagnostic.mjs "$env:RUNNER_TEMP/workspace-retained-fixture" "$env:DIAGNOSTIC_RUN"
+      - name: Remove the diagnostic VM's owned fixture
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
+      - name: Retain bounded synthetic diagnosis
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-terminal-diagnostic-${{ github.run_id }}
+          path: product-foundation-evidence
+          retention-days: 7
+          if-no-files-found: error
+
   workspace-wsl-helper:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -119,7 +169,7 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
     name: Hidden products (Windows native)
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
@@ -342,7 +392,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -392,7 +442,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:

@@ -126,7 +126,13 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     success(await terminal("open_terminal_profile",{operationId:windowId,profileId,revision:command.revision}));
     companion=await connectTerminal(windowId);
     const invoke=async(method,args={})=>companion.evaluate("(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:workspace|terminal_describe');return invoke('plugin:workspace|terminal_execute',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:'terminal',context:d.context},method:"+JSON.stringify(method)+",args:"+JSON.stringify(args)+"}});})()",{timeoutMs:35000});
-    const panes=await until(async()=>{const value=await invoke("list_sessions");return value.length===2&&value;},"Companion did not restore both panes");
+    let panes;
+    try { panes=await until(async()=>{const value=await invoke("list_sessions");return value.length===2&&value;},"Companion did not restore both panes"); }
+    catch(error) {
+      const state=await companion.evaluate("({text:(document.body?.innerText??'').slice(0,12000),alerts:[...document.querySelectorAll('[role=alert]')].map(node=>node.textContent)})").catch(()=>null);
+      writeFileSync(path.join(directory,"terminal-companion-failure.json"),JSON.stringify({source:process.env.GITHUB_SHA,windowId,state,sessions:await invoke("list_sessions").catch(error=>String(error))},null,2));
+      throw error;
+    }
     assert.deepEqual(panes.map(value=>value.paneKey).sort(),["one","two"]);
     const nativeId=panes.find(value=>value.paneKey==="two").id;
     assert.equal((await invoke("terminal_window_policy")).closeBehavior,"hideToTray");
