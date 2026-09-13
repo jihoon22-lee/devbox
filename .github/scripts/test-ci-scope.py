@@ -56,14 +56,14 @@ assert pnpm_lock_only.dependency_scope == "all"
 editor = resolve("packages/editor/src/index.ts")
 assert editor.frontend_packages == [
     "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/log-lens", "apps/port-manager", "apps/repo-manager", "apps/run-manager",
-    "apps/workbench", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
+    "apps/workbench", "apps/wsl-desktop", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
 ]
-assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench"]
-for feature in ["tasks", "runtime", "logs"]:
+assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench", "wsl-desktop"]
+for feature in ["tasks", "runtime", "logs", "terminal"]:
     workspace_feature = resolve(f"packages/workspace-features/src/{feature}/api.ts")
     assert workspace_feature.frontend_apps == [
         "code-pad", "devbox-workspace", "log-lens", "port-manager", "repo-manager",
-        "run-manager", "workbench",
+        "run-manager", "workbench", "wsl-desktop",
     ]
     assert workspace_feature.rust_scope == "none"
 knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
@@ -105,7 +105,7 @@ for app in ["knowledge-base", "life-log", "everything-plus"]:
 secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == [
     "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
-    "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
+    "devbox-launcher", "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
     "secrets", "workbench", "workspace-wsl",
 ]
 
@@ -121,7 +121,7 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench"]
+assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench", "wsl-desktop"]
 assert "packages/workspace-features" in catalog.frontend_packages
 assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages
@@ -207,12 +207,33 @@ for path in (".github/scripts/verify-resources.py", ".github/scripts/check-agent
     driver = resolve(path)
     assert driver.frontend_scope == driver.rust_scope == "all"
 
-print("CI scope regression tests passed")
 
 for path in ("apps/products.json", "packages/product-shell/fixtures/route-request.json"):
     products = resolve(path)
     assert products.frontend_scope == "apps"
-    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
+    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center", "devbox-launcher"}
     assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
 parity = resolve("apps/v0.8-feature-parity.json")
 assert parity.frontend_scope == parity.rust_scope == "all"
+
+# Every cross-app platform include must retain its second consumer in affected CI.
+native_module = ROOT / "apps/devbox-workspace/src-tauri/src/platform/mod.rs"
+included_sources = {
+    (native_module.parent / relative).resolve().relative_to(ROOT).as_posix()
+    for relative in re.findall(r'#\[path = "([^"]+)"\]', native_module.read_text())
+}
+assert included_sources <= set(module.RUST_SHARED_PLATFORM_CONSUMERS)
+for path in included_sources:
+    shared = resolve(path)
+    assert "devbox-workspace" in shared.rust_packages
+    assert shared.frontend_scope == "none"
+print("CI scope regression tests passed")
+
+for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
+    if path.startswith("apps/devbox-control-center/src-tauri/src/"):
+        shared = resolve(path)
+        assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(shared.rust_packages)
+        assert shared.frontend_scope == "none"
+
+hotkey = resolve("apps/devbox-launcher/src-tauri/src/hotkey.rs")
+assert {"devbox-launcher", "devbox-control-center"} <= set(hotkey.rust_packages)

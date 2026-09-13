@@ -1,7 +1,5 @@
 //! B04/B07 native registry projection. No renderer command installs this state.
 //! Registry aliases are metadata; search separately pins the actual root object.
-use product_contract::ProjectContext;
-use serde::{Deserialize, Serialize};
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,
@@ -9,30 +7,7 @@ use std::sync::{
 
 const INVALID: &str = "project_provider_invalid";
 const MAX_BYTES: usize = 64 * 1024;
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "snake_case")]
-pub enum Availability {
-    Available,
-    Offline,
-    Missing,
-}
-
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Project {
-    pub context: ProjectContext,
-    pub root: String,
-    pub availability: Availability,
-    pub activity_paths: Vec<String>,
-}
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Snapshot {
-    pub schema_version: u32,
-    pub revision: u64,
-    pub current: Option<ProjectContext>,
-    pub projects: Vec<Project>,
-}
+pub use product_contract::project_provider::{Availability, Project, Snapshot};
 #[derive(Clone)]
 pub struct Selection {
     pub project: Project,
@@ -50,7 +25,10 @@ pub struct Registry(Arc<Mutex<Option<State>>>);
 fn path_identity(path: &str) -> Option<String> {
     devbox_filesystem::parse_safe_project_path(path).map(|p| p.identity().to_owned())
 }
-impl Snapshot {
+trait Validate {
+    fn validate(&mut self) -> Result<(), &'static str>;
+}
+impl Validate for Snapshot {
     fn validate(&mut self) -> Result<(), &'static str> {
         if self.schema_version != 1
             || self.revision == 0
@@ -176,7 +154,7 @@ impl Registry {
         match matches.as_slice() {
             [] => json!({"state":"unmapped"}),
             [project] => {
-                json!({"state": match project.availability { Availability::Available=>"mapped",Availability::Offline=>"offline",Availability::Missing=>"missing" }, "context":project.context})
+                json!({"state": match project.availability { Availability::Available=>"mapped",Availability::Offline=>"offline",Availability::Missing=>"missing",Availability::Unverified=>"unverified" }, "context":project.context})
             }
             _ => json!({"state":"ambiguous"}),
         }
@@ -229,6 +207,23 @@ mod tests {
         assert_eq!(registry.association("C:/old/project")["state"], "ambiguous");
         registry.disconnect();
         assert!(registry.current().is_none());
+    }
+    #[test]
+    fn unverified_associations_remain_metadata_and_cannot_advertise_available_roots() {
+        let mut snapshot = fixture();
+        snapshot.projects[0].availability = Availability::Unverified;
+        let registry = Registry::default();
+        registry
+            .replace(&serde_json::to_vec(&snapshot).unwrap())
+            .unwrap();
+        assert_eq!(
+            registry.association("C:/old/project")["state"],
+            "unverified"
+        );
+        assert_ne!(
+            registry.current().unwrap().project.availability,
+            Availability::Available
+        );
     }
     #[test]
     fn wsl_association_normalizes_the_unc_alias_without_folding_linux_case() {

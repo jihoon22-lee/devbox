@@ -28,3 +28,8 @@
 .workspace-source-worktree input { display: block; width: min(100%, 640px); box-sizing: border-box; padding: 0.5rem; }
 .workspace-source-worktree button { margin: 0.5rem 0.5rem 0.5rem 0; padding: 0.4rem 0.7rem; }
 .workspace-source-worktree p { overflow-wrap: anywhere; }
+
+.workspace-development-sessions { margin-block: 1rem 1.5rem; }
+.workspace-session-choice { display: block; margin-block: .4rem; }
+.workspace-development-sessions pre { white-space: pre-wrap; overflow-wrap: anywhere; }
+.workspace-development-sessions li { margin-block: .75rem; }

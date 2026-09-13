@@ -25,13 +25,16 @@ impl Owners {
         let data = host.component("runtime")?;
         let common = host.component("common")?;
         *self.runtime.get_or_init(|| {
-            run_manager_lib::component::initialize(
+            run_manager_lib::component::initialize_with_sources(
                 app,
                 &data,
                 &common,
                 host.storage_root()
                     .parent()
                     .ok_or("runtime_owner_unavailable")?,
+                Some(Arc::new(crate::platform::task_sources::Sources {
+                    host: crate::component::provider_host(app)?,
+                })),
             )
             .map_err(|_| "runtime_owner_unavailable")
         })
@@ -134,7 +137,8 @@ pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
     match component {
         "workspace.runtime" => {
             route == "tasks"
-                && run_manager_lib::component::COMMANDS.contains(&method)
+                && (method == "workspace_task_source"
+                    || run_manager_lib::component::COMMANDS.contains(&method))
                 && !run_manager_lib::component::legacy_control_method(method)
         }
         "workspace.processes" => {
@@ -256,6 +260,18 @@ fn bindings(
             .unwrap_or(0),
     }
 }
+pub(crate) async fn session_ports(
+    app: &tauri::AppHandle,
+    host: &Host,
+    definitions: &Mutex<Definitions>,
+    context: &ProjectContext,
+    deadline: u64,
+) -> Result<port_manager_lib::component::PortObservationSnapshot> {
+    observations::observe(app, host, definitions, Some(context), deadline)
+        .await
+        .map(|(snapshot, _)| snapshot)
+}
+
 fn navigate(app: &tauri::AppHandle, route: &str, context: Option<&ProjectContext>) -> Result<()> {
     app.emit_to(
         "main",
@@ -300,6 +316,8 @@ pub(crate) struct EngineRequest<'a> {
     pub value: Value,
     pub context: Option<&'a ProjectContext>,
     pub deadline: u64,
+    pub operation_id: &'a str,
+    pub terminals: &'a Arc<crate::terminal_host::Terminals>,
 }
 pub(crate) async fn dispatch(
     app: &tauri::AppHandle,
@@ -314,6 +332,8 @@ pub(crate) async fn dispatch(
         value,
         context,
         deadline,
+        operation_id,
+        terminals,
     } = request;
     crate::files_host::current_deadline(deadline)?;
     owners.initialize_runtime(app, host)?;
@@ -329,6 +349,32 @@ pub(crate) async fn dispatch(
         "workspace.runtime" => {
             host.component("runtime")?;
             match method {
+                "workspace_task_source" => {
+                    empty(value)?;
+                    let context = context.ok_or("runtime_context_required")?;
+                    let binding = host.projects()?.binding(context)?;
+                    let source = match &context.target {
+                        product_contract::ExecutionTarget::Windows => {
+                            json!({"path":binding.root,"targetKind":"windows","targetDistro":null})
+                        }
+                        product_contract::ExecutionTarget::Wsl { distro_id } => {
+                            #[cfg(windows)]
+                            {
+                                let distro = crate::platform::wsl_distro::list()?
+                                    .into_iter()
+                                    .find(|distro| distro.id == *distro_id)
+                                    .ok_or("wsl_distro_missing")?;
+                                json!({"path":binding.root,"targetKind":"wsl","targetDistro":distro.name})
+                            }
+                            #[cfg(not(windows))]
+                            {
+                                let _ = distro_id;
+                                return Err("runtime_windows_required");
+                            }
+                        }
+                    };
+                    Ok(json!({"context":context,"source":source}))
+                }
                 "open_run_log_in_log_lens" => {
                     #[derive(Deserialize)]
                     #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -361,17 +407,46 @@ pub(crate) async fn dispatch(
                     .await
                     .map_err(issue)?;
                     let context = context.ok_or("project_selection_required")?;
-                    let lease = host.projects()?.admit(context)?;
-                    let root = std::fs::canonicalize(&lease.binding().root)
-                        .map_err(|_| "runtime_diagnostic_target_mismatch")?;
-                    let path = std::fs::canonicalize(&target.path)
-                        .map_err(|_| "runtime_diagnostic_target_mismatch")?;
-                    let relative = path
-                        .strip_prefix(&root)
-                        .map_err(|_| "runtime_diagnostic_target_mismatch")?
-                        .to_str()
-                        .ok_or("runtime_diagnostic_target_mismatch")?
-                        .replace('\\', "/");
+                    if !crate::platform::task_sources::diagnostic_matches(
+                        app,
+                        host,
+                        context,
+                        &input.run_id,
+                    ) {
+                        return Err("runtime_diagnostic_target_mismatch");
+                    }
+                    let windows_lease =
+                        if matches!(context.target, product_contract::ExecutionTarget::Windows) {
+                            Some(host.projects()?.admit(context)?)
+                        } else {
+                            None
+                        };
+                    let relative = if matches!(
+                        context.target,
+                        product_contract::ExecutionTarget::Wsl { .. }
+                    ) {
+                        let binding = host.projects()?.binding(context)?;
+                        target
+                            .path
+                            .strip_prefix(&binding.root)
+                            .map_err(|_| "runtime_diagnostic_target_mismatch")?
+                            .to_str()
+                            .ok_or("runtime_diagnostic_target_mismatch")?
+                            .to_owned()
+                    } else {
+                        let lease = windows_lease
+                            .as_ref()
+                            .ok_or("runtime_diagnostic_target_mismatch")?;
+                        let root = std::fs::canonicalize(&lease.binding().root)
+                            .map_err(|_| "runtime_diagnostic_target_mismatch")?;
+                        let path = std::fs::canonicalize(&target.path)
+                            .map_err(|_| "runtime_diagnostic_target_mismatch")?;
+                        path.strip_prefix(&root)
+                            .map_err(|_| "runtime_diagnostic_target_mismatch")?
+                            .to_str()
+                            .ok_or("runtime_diagnostic_target_mismatch")?
+                            .replace('\\', "/")
+                    };
                     if relative.is_empty()
                         || relative
                             .split('/')
@@ -379,7 +454,10 @@ pub(crate) async fn dispatch(
                     {
                         return Err("runtime_diagnostic_target_mismatch");
                     }
-                    lease.revalidate()?;
+                    if let Some(lease) = windows_lease {
+                        lease.revalidate()?;
+                    }
+                    host.projects()?.binding(context)?;
                     crate::files_host::current_deadline(deadline)?;
                     app.emit_to("main", "workspace://runtime-diagnostic", json!({
                         "id":uuid::Uuid::new_v4().simple().to_string(),"relativePath":relative,"line":target.line,
@@ -493,7 +571,27 @@ pub(crate) async fn dispatch(
                             pid: *pid,
                             start_tick: *start_tick,
                         },
-                        _ => return Err("runtime_container_owner_unavailable"),
+                        port_manager_lib::component::ListenerIdentity::Container {
+                            engine,
+                            container_id,
+                            distro,
+                        } => {
+                            if engine != "docker" {
+                                return Err("runtime_container_engine_unsupported");
+                            }
+                            let (container_id, distro) = (container_id.clone(), distro.clone());
+                            // The observation owner revalidates the selected endpoint and
+                            // container identity. The WSL owner then refreshes its full ID.
+                            port_manager_lib::component::dispatch(
+                                app,
+                                "handoff_container_stop",
+                                json!({"request":input.request}),
+                            )
+                            .await
+                            .map_err(issue)?;
+                            terminals.wsl_control(app,host,"docker_action",json!({"operationId":operation_id,"distro":distro,"containerId":container_id,"action":"stop"}),deadline).await?;
+                            return Ok(json!({"kind":"terminated"}));
+                        }
                     };
                     let owner = run_manager_lib::component::owning_task(app, observed)
                         .await
@@ -526,7 +624,19 @@ pub(crate) async fn dispatch(
             owners.initialize_logs(app, host)?;
             host.component("logs")?;
             match method {
-                "send_selection_to_toolbox" => Err("runtime_artifact_delivery_unavailable"),
+                "send_selection_to_toolbox" => {
+                    crate::selection_send::send_logs(app, value, context, deadline).await
+                }
+                "read_sources" => {
+                    crate::selection_logs::begin(
+                        value["generation"].as_u64().ok_or("invalid_request")?,
+                    );
+                    let result = log_lens_lib::component::dispatch(app, method, value.clone())
+                        .await
+                        .map_err(issue)?;
+                    crate::selection_logs::capture(value, &result, context);
+                    Ok(result)
+                }
                 "preview_log_source" | "accept_log_source" | "discard_log_source"
                 | "renew_log_source" => Err("runtime_handoff_review_required"),
                 _ => log_lens_lib::component::dispatch(app, method, value)

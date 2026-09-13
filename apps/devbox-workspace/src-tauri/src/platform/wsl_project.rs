@@ -13,6 +13,7 @@ mod native {
     type Result<T> = std::result::Result<T, &'static str>;
     pub struct WslProjectLease {
         binding: Binding,
+        native_root_object: workspace_wsl::ObjectStamp,
         token: String,
         connection: Mutex<Connection>,
     }
@@ -36,6 +37,7 @@ mod native {
                 scope: connection.lease().scope(&source.scope),
                 object: source.object,
             };
+            let native_root_object = report.root_object.clone();
             let binding = Binding {
                 target: ExecutionTarget::Wsl {
                     distro_id: connection.lease().id().into(),
@@ -48,9 +50,13 @@ mod native {
             connection.validate(&report.token)?;
             Ok(Self {
                 binding,
+                native_root_object,
                 token: report.token,
                 connection: Mutex::new(connection),
             })
+        }
+        pub(crate) fn native_root_object(&self) -> workspace_wsl::ObjectStamp {
+            self.native_root_object.clone()
         }
         pub fn binding(&self) -> &Binding {
             &self.binding

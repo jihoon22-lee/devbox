@@ -231,3 +231,29 @@ pub async fn dispatch(
         _ => Err("component_method_unavailable".into()),
     }
 }
+
+/// Native Knowledge query provider; it owns authorization and retained worker
+/// limits. This returns validated definitions without executing a saved query.
+pub fn saved_query_definitions(app: &tauri::AppHandle) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    let state = app
+        .try_state::<std::sync::Arc<crate::commands::indexing::AppState>>()
+        .ok_or("component_state_unavailable")?;
+    let rows = crate::commands::saved_queries::list_saved_queries(state)?;
+    serde_json::to_value(rows).map_err(|_| "component_response_invalid".into())
+}
+
+/// Current index worker counters only; no roots, paths, query text or DB reads.
+pub fn product_index_operation(app: &tauri::AppHandle) -> Option<(bool, bool, bool, u64, u64)> {
+    use std::sync::atomic::Ordering;
+    use tauri::Manager;
+    let state = app.try_state::<std::sync::Arc<crate::commands::indexing::AppState>>()?;
+    let failed = state.last_error.lock().ok()?.is_some();
+    Some((
+        state.indexing.load(Ordering::Acquire),
+        state.cancel_requested.load(Ordering::Acquire),
+        failed,
+        state.indexed.load(Ordering::Acquire).max(0) as u64,
+        state.last_indexed_at.load(Ordering::Acquire).max(0) as u64,
+    ))
+}

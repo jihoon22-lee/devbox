@@ -1,3 +1,4 @@
+import {isProductHosted} from "../transport";
 import { reconnectRuntimeSources } from "./api";
 import {
   ContextMenu,
@@ -19,6 +20,7 @@ import {
   removeSavedView,
   renewLogSource,
   saveSavedView,
+  sendNativeLogSelection,
   sendSelectionToToolbox,
   takePendingOpen,
 } from "./api";
@@ -217,9 +219,10 @@ function highlightMessage(message: string, filter: FilterSpec): ReactNode {
 
 export interface RuntimeLogOpenRequest {
   id: string;
-  source: Extract<SourceSpec, {kind: "runtimeRun"}>;
+  source: Extract<SourceSpec, {kind: "runtimeRun" | "wslFile" | "wslJournal"}>;
+  offset?: string | null;
 }
-function App({ active = true, openRequest, settingsRevision = 0 }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null; settingsRevision?:number }) {
+function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 }: { active?: boolean; openRequest?: RuntimeLogOpenRequest | null; onOpenConsumed?:(id:string)=>void; settingsRevision?:number }) {
   const activeRef = useRef(active);
   activeRef.current = active;
   const consumedOpen = useRef<string | null>(null);
@@ -821,14 +824,25 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
     if (!active || !openRequest || consumedOpen.current === openRequest.id) return;
     consumedOpen.current = openRequest.id;
     const source = openRequest.source;
-    const retained = sources.filter(candidate => candidate.kind !== "runtimeRun" || candidate.runId !== source.runId || candidate.stream !== source.stream);
+    const retained = sources.filter(candidate => source.kind === "runtimeRun"
+      ? candidate.kind !== "runtimeRun" || candidate.runId !== source.runId || candidate.stream !== source.stream
+      : JSON.stringify(candidate) !== JSON.stringify(source));
+    onOpenConsumed?.(openRequest.id);
     if (retained.length >= MAX_SOURCES) {
       setError(`source는 한 번에 최대 ${MAX_SOURCES}개까지 불러올 수 있습니다.`);
       return;
     }
     generation.current += 1;
     const nextSources = [...retained, source];
-    const nextCursors = nextSources.map(() => null);
+    const nextCursors: Array<FileCursor | null> = nextSources.map(() => null);
+    if (openRequest.offset != null) {
+      if (source.kind !== "runtimeRun" || !/^(0|[1-9][0-9]{0,19})$/.test(openRequest.offset)
+        || BigInt(openRequest.offset) > 18446744073709551615n) {
+        setError("진단 로그 위치가 올바르지 않습니다.");
+        return;
+      }
+      nextCursors[nextCursors.length - 1] = { identity: null, offset: openRequest.offset, anchorHash: null };
+    }
     connectedRef.current = true;
     setConnected(true);
     setSources(nextSources);
@@ -838,9 +852,9 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
     setSelected(new Set());
     setSelectedGeneration(null);
     setBookmarks(new Set());
-    setNotice("선택한 Workspace 실행의 로그를 불러옵니다.");
+    setNotice(source.kind === "runtimeRun" ? "선택한 Workspace 실행의 로그를 불러옵니다." : "선택한 WSL 로그를 불러옵니다.");
     void refresh(nextSources, nextCursors);
-  }, [active, openRequest, sources, refresh]);
+  }, [active, openRequest, onOpenConsumed, sources, refresh]);
 
   const visibleRecords = useMemo(
     () => filterRecords(records, filter).slice(-MAX_RENDERED_ROWS),
@@ -913,7 +927,7 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
         setNotice(null);
         return;
       }
-      const dispatch = await sendSelectionToToolbox(exported.text);
+      const dispatch = isProductHosted() ? await sendNativeLogSelection(actionSnapshotGeneration,targets) : await sendSelectionToToolbox(exported.text);
       if (!mounted.current) return;
       if (!isCurrentSelection()) {
         setError(STALE_SELECTION_ERROR);
@@ -921,7 +935,7 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
         return;
       }
       setError(null);
-      setNotice(dispatch.redacted ? TOOLBOX_SEND_REDACTED : TOOLBOX_SEND_SUCCESS);
+      setNotice(isProductHosted() ? "API Studio에 검토를 요청했습니다." + (dispatch.redacted ? " 민감한 값은 마스킹되었습니다." : "") : dispatch.redacted ? TOOLBOX_SEND_REDACTED : TOOLBOX_SEND_SUCCESS);
     } catch {
       if (!mounted.current) return;
       setError(isCurrentSelection() ? TOOLBOX_SEND_ERROR : STALE_SELECTION_ERROR);
@@ -1308,7 +1322,7 @@ function App({ active = true, openRequest, settingsRevision = 0 }: { active?: bo
 
       <section className="filter-panel" aria-labelledby="filter-heading">
         <div className="section-heading"><h2 id="filter-heading">필터</h2><span className="muted">{visibleRecords.length}개 표시 · {records.length}개 보관</span></div>
-        <div className="filter-row"><label className="filter-grow">텍스트<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="메시지 또는 필드 값" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> 정규식</label><label>레벨<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">모든 레벨</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source 필터<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">모든 source</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{labelForKind(source.kind)}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>내보내기</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>복사</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>선택 로그를 Developer Toolbox로 보내기</button></div>
+        <div className="filter-row"><label className="filter-grow">텍스트<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="메시지 또는 필드 값" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> 정규식</label><label>레벨<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">모든 레벨</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source 필터<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">모든 source</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{labelForKind(source.kind)}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>내보내기</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>복사</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>{isProductHosted()?"선택 로그를 API Studio에서 변환":"선택 로그를 Developer Toolbox로 보내기"}</button></div>
         <div className="filter-row"><label>필드<input value={filter.field ?? ""} onChange={(event) => setFilter((current) => ({ ...current, field: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="필드 이름" /></label><label>필드 값<input value={filter.fieldValue ?? ""} onChange={(event) => setFilter((current) => ({ ...current, fieldValue: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="값" /></label><label>시작 epoch ms<input type="number" value={filter.startAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, startAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>종료 epoch ms<input type="number" value={filter.endAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, endAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>뷰 이름<input value={viewName} onChange={(event) => setViewName(truncateUtf8(event.target.value, 128))} placeholder="뷰 이름" /></label><button className="button" type="button" onClick={() => void saveView()} disabled={savedViewsBusy || !sources.length || sources.some((source) => source.kind === "wslFile" || source.kind === "webhookCapture")}>저장</button><select aria-label="저장된 뷰 불러오기" value={selectedViewName} disabled={savedViewsBusy} onChange={(event) => loadView(event.target.value)}><option value="">뷰 불러오기…</option>{savedViews.map((view) => <option key={view.name} value={view.name}>{view.name}</option>)}</select><button className="button" type="button" onClick={() => void deleteView()} disabled={savedViewsBusy || !selectedViewName}>뷰 삭제</button></div>
       </section>
 

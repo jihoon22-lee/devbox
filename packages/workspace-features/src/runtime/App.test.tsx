@@ -939,3 +939,14 @@ describe("identity-safe listener UI boundaries", () => {
     expect(within(listeningRow).getByRole("button", { name: "포트 즐겨찾기" })).toBeTruthy();
   });
 });
+
+it("selects an exact Problem port without terminating a process", async () => {
+  const consumed = vi.fn();
+  render(<App openPort={{id:"synthetic-problem-port",port:3000}} onPortConsumed={consumed}/>);
+  await waitFor(()=>expect(consumed).toHaveBeenCalledWith("synthetic-problem-port"));
+  await screen.findByText("node.exe");
+  expect(screen.queryByText("browser.exe")).toBeNull();
+  expect(screen.getAllByRole("row")).toHaveLength(2);
+  expect(killListener).not.toHaveBeenCalled();
+  expect(handoffContainerStop).not.toHaveBeenCalled();
+});

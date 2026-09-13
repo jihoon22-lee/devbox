@@ -32,6 +32,10 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   명시적 전체 감사에 사용한다. 재검증은 실패·관련 변경·새 위험이 생긴 범위에 한정한다.
 - 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
   제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
+- 로컬의 기존 서비스·Docker·방화벽·공유 네트워크를 테스트 때문에 변경하지 않는다.
+  새 WSL 배포판·별도 socket/data-root만으로 네트워크 격리를 인정하지 않는다. Docker 데몬
+  설치/시작/중지, container/network 조작, iptables/nftables·라우팅 변경을 수반하는 검사는
+  일회성 hosted CI 또는 검증된 독립 VM으로 제한한다. 환경 변수·옵션으로 차단을 우회하지 않는다.
 - 사용자 데이터·secret을 fixture로 쓰지 않는다. v0.8 migration은 원본 보존·WAL consistent
   snapshot·destination namespace·재개/복구 경계를 검증한다. UI route 통합을 권한 통합으로 취급하지 않는다.
 

@@ -13,6 +13,7 @@ pub mod scheduler;
 pub mod storage;
 mod task_control;
 mod workspace_orchestration;
+pub mod workspace_sources;
 
 #[cfg(feature = "standalone")]
 use lifecycle::{is_background_launch, request_orderly_exit, RuntimeState};

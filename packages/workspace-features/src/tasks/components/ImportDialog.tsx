@@ -25,6 +25,7 @@ import type {
 } from "../types";
 
 interface Props {
+  initialSource?:{path:string;targetKind:TargetKind;targetDistro:string|null}|null;
   active?: boolean;
   onDone: (created: number, workspaceResult?: WorkspaceTaskApplyResult) => void;
   onClose: () => void;
@@ -300,13 +301,13 @@ function WorkspaceTaskPreview({
   );
 }
 
-export default function ImportDialog({ active = true, onDone, onClose }: Props) {
-  const [mode, setMode] = useState<"definitions" | "project" | "workspace">("definitions");
+export default function ImportDialog({ active = true, onDone, onClose, initialSource }: Props) {
+  const [mode, setMode] = useState<"definitions" | "project" | "workspace">(initialSource?"workspace":"definitions");
   const [json, setJson] = useState("");
   const [projectPath, setProjectPath] = useState("");
-  const [workspacePath, setWorkspacePath] = useState("");
-  const [workspaceTargetKind, setWorkspaceTargetKind] = useState<TargetKind>("windows");
-  const [workspaceTargetDistro, setWorkspaceTargetDistro] = useState("");
+  const [workspacePath, setWorkspacePath] = useState(initialSource?.path??"");
+  const [workspaceTargetKind, setWorkspaceTargetKind] = useState<TargetKind>(initialSource?.targetKind??"windows");
+  const [workspaceTargetDistro, setWorkspaceTargetDistro] = useState(initialSource?.targetDistro??"");
   const [preview, setPreview] = useState<Preview | null>(null);
   const [workspaceSelectedIds, setWorkspaceSelectedIds] = useState<Set<string>>(new Set());
   const [workspaceResult, setWorkspaceResult] = useState<WorkspaceTaskApplyResult | null>(null);

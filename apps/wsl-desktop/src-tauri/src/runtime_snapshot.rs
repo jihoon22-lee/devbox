@@ -22,6 +22,7 @@ use tokio::time::{sleep, timeout, Duration};
 
 const PRODUCER_ID: &str = "wsl-desktop";
 const RUNTIME_VIEW_KIND: &str = "runtime";
+#[cfg(feature = "standalone")]
 const SNAPSHOT_INTERVAL: Duration = Duration::from_secs(60);
 const SNAPSHOT_DEBOUNCE: Duration = Duration::from_millis(250);
 const COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
@@ -67,6 +68,7 @@ impl Default for SnapshotCoordinator {
 
 /// 앱 시작 이후 60초 주기 writer를 시작한다. 초기 발행도 debounce worker를 통해
 /// 수행하므로 setup 경계에서 WSL process를 동기 실행하지 않는다.
+#[cfg(feature = "standalone")]
 pub fn spawn_snapshot_writer(state: Arc<SessionState>) {
     tauri::async_runtime::spawn(async move {
         request_snapshot_write(Arc::clone(&state));
@@ -80,6 +82,9 @@ pub fn spawn_snapshot_writer(state: Arc<SessionState>) {
 /// 성공한 dashboard refresh 또는 terminal lifecycle 변화가 snapshot을 갱신하도록
 /// 요청한다. 여러 이벤트는 하나의 debounce worker로 합쳐진다.
 pub fn request_snapshot_write(state: Arc<SessionState>) {
+    if !state.legacy_publication {
+        return;
+    }
     let coordinator = Arc::clone(&state.snapshot_coordinator);
     coordinator.pending.store(true, Ordering::Release);
     if coordinator
@@ -161,7 +166,9 @@ pub async fn refresh_dashboard_snapshot(
             distros: collected.dashboard,
         };
         let envelope = build_envelope(collected.runtime)?;
-        write_envelope(&coordinator, &envelope)?;
+        if state.legacy_publication {
+            write_envelope(&coordinator, &envelope)?;
+        }
         Ok::<model::DashboardSnapshot, String>(snapshot)
     })
     .await

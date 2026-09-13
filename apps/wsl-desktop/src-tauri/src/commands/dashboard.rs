@@ -12,6 +12,7 @@ use tokio::time::{timeout, Duration};
 const MAX_WSL_STDOUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_WSL_STDERR_BYTES: usize = 64 * 1024;
 const WSL_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+#[cfg(feature = "standalone")]
 const MAX_WSL_COMMAND_BYTES: usize = 4 * 1024;
 const MAX_DISTRO_BYTES: usize = 128;
 const MAX_CONTAINER_ID_BYTES: usize = 128;
@@ -42,6 +43,7 @@ pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<Dis
 
 /// 임의의 WSL 명령을 지정한 배포판에서 실행하고 출력을 반환한다.
 #[tauri::command]
+#[cfg(feature = "standalone")]
 pub async fn run_wsl_command(distro: String, command: String) -> Result<String, String> {
     if command.is_empty() || command.len() > MAX_WSL_COMMAND_BYTES {
         return Err(SAFE_WSL_ERROR.into());
@@ -105,10 +107,83 @@ pub async fn docker_action(
     Ok(())
 }
 
+/// Product container controls retain a native distro/executable lease through
+/// fresh full-ID observation and action. Friendly aliases never become a kill PID.
+pub async fn docker_action_owned(
+    distro: &str,
+    container_id: &str,
+    action: &str,
+    lease: &dyn crate::component::TerminalLaunchLease,
+) -> Result<(), String> {
+    let distro = normalize_distro(distro)?;
+    if !matches!(action, "start" | "stop" | "restart")
+        || container_id.len() != 64
+        || !container_id
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || matches!(byte, b'a'..=b'f'))
+    {
+        return Err(SAFE_DOCKER_ERROR.into());
+    }
+    let output = run_wsl_bound(
+        &[
+            "-d",
+            &distro,
+            "--exec",
+            "docker",
+            "ps",
+            "-a",
+            "--no-trunc",
+            "--format",
+            DOCKER_PS_FORMAT,
+        ],
+        None,
+        Some(lease),
+    )
+    .await?;
+    let containers = parse_docker_ps(&output).map_err(|_| SAFE_DOCKER_ERROR)?;
+    if containers
+        .iter()
+        .filter(|container| container.id == container_id)
+        .count()
+        != 1
+    {
+        return Err(SAFE_DOCKER_ERROR.into());
+    }
+    lease.revalidate()?;
+    run_wsl_bound(
+        &[
+            "-d",
+            &distro,
+            "--exec",
+            "docker",
+            action,
+            "--",
+            container_id,
+        ],
+        None,
+        Some(lease),
+    )
+    .await?;
+    Ok(())
+}
+
 /// `wsl.exe` 명령을 실행하고 bounded stdout만 반환한다. stderr, OS status, path와
 /// command line은 호출자에게 반향하지 않는다.
 async fn run_wsl(args: &[&str], cwd: Option<&str>) -> Result<String, String> {
-    let mut cmd = Command::new("wsl.exe");
+    run_wsl_bound(args, cwd, None).await
+}
+async fn run_wsl_bound(
+    args: &[&str],
+    cwd: Option<&str>,
+    lease: Option<&dyn crate::component::TerminalLaunchLease>,
+) -> Result<String, String> {
+    let mut argv = vec!["wsl.exe".to_owned()];
+    argv.extend(args.iter().map(|arg| (*arg).to_owned()));
+    if let Some(lease) = lease {
+        argv = lease.bind_argv(argv)?;
+    }
+    let (program, args) = argv.split_first().ok_or(SAFE_WSL_ERROR)?;
+    let mut cmd = Command::new(program);
     cmd.args(args)
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
@@ -216,6 +291,91 @@ async fn drain_bounded<R: AsyncRead + Unpin>(mut reader: R, max_bytes: usize) ->
 async fn terminate_child(child: &mut Child) {
     let _ = child.kill().await;
     let _ = child.wait().await;
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_list_distros(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = list_distros(app.try_state().ok_or("terminal_state_unavailable")?).await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_dashboard_snapshot(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {}
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let _input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = dashboard_snapshot(app.try_state().ok_or("terminal_state_unavailable")?).await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_docker_ps(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = docker_ps(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.distro,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_docker_action(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+        container_id: String,
+        action: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    docker_action(input.distro, input.container_id, input.action).await?;
+    Ok(serde_json::Value::Null)
 }
 
 #[cfg(test)]

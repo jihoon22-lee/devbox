@@ -88,6 +88,16 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
                 "external-process-action"
             )
             | ("workspace", "workspace.logs", "log-read")
+            | ("workspace", "workspace.terminal", "terminal-session")
+            | ("workspace", "workspace.problems", "problem-read")
+            | ("workspace", "workspace.commands", "command-dispatch")
+            | ("api-studio", "api-studio.commands", "command-dispatch")
+            | ("knowledge", "knowledge.commands", "command-dispatch")
+            | (
+                "control-center",
+                "control-center.commands",
+                "command-dispatch"
+            )
     )
 }
 

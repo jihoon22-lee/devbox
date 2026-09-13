@@ -83,6 +83,7 @@ export default function LegacyImports({selected=false,existingProfiles=[],existi
       {job.phase==="failed"&&<p role="alert">{issueMessage(job.issue??"operation_failed")}</p>}
       {job.phase==="ready"&&job.manifest&&<>
         <p role="status">{job.operation==="verify"?"보관 파일 확인이 완료되었습니다.":"설정 보관이 완료되었습니다."}</p>
+        {job.source==="wsl-desktop"&&<p>WSL Desktop의 기본 창 상태를 Workspace 기본 창에 적용할지 검토합니다. 프로필과 WebView 설정은 터미널 화면에서 별도로 가져옵니다.</p>}
         {job.source==="repo-manager"&&<p>Repo Manager의 스캔 폴더와 선택 상태는 앱을 닫으면 사라지는 항목으로, 스캔·선택 설정은 이전하지 않습니다. 저장된 기본 창 상태는 별도로 검토할 수 있습니다.</p>}
         {job.manifest.files.length>0&&<table><thead><tr><th>항목</th><th>확인 결과</th></tr></thead><tbody>{job.manifest.files.map(entry=><tr key={entry.name}><td>{labels[entry.name]??entry.name}</td><td>{entry.issue==="unsupported-schema"?"지원하지 않는 형식 — 원본 보관":entry.issue==="corrupt"?"내용 확인 필요 — 원본 보관":entry.issue==="limit"?"크기 제한 초과":`${entry.records??0}개 항목`}</td></tr>)}</tbody></table>}
         {job.manifest.missing.length>0&&<p>저장 파일 없음: {job.manifest.missing.map(name=>labels[name]??name).join(", ")}</p>}

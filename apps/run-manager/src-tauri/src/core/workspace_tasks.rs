@@ -248,10 +248,6 @@ pub fn preview_workspace_tasks(
 ) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
     validate_target(target_kind, target_distro)?;
     let source = read_source(root)?;
-    let selected_platform = match target_kind {
-        TargetKind::Windows => "windows",
-        TargetKind::Wsl => "linux",
-    };
     let target_root = target_workspace_root(&source.display_root, target_kind, target_distro)?;
     let project_identity = identity_digest(source.root_identity, b"project");
     let revision = source_revision(
@@ -261,7 +257,60 @@ pub fn preview_workspace_tasks(
         target_kind,
         target_distro,
     );
-    let document = parse_jsonc(&source.bytes)?;
+    let plan = project_workspace_tasks(TaskProjection {
+        source_root: &source.display_root,
+        target_root: &target_root,
+        project_identity: &project_identity,
+        revision: &revision,
+        target_kind,
+        target_distro,
+        bytes: &source.bytes,
+    })?;
+    ensure_root_identity(&source.root, source.root_identity)
+        .map_err(|_| WorkspaceTaskError::SourceChanged)?;
+    if filesystem_identity(source.root.join(TASKS_JSON_RELATIVE_PATH), false)
+        .map_err(|_| WorkspaceTaskError::SourceChanged)?
+        != source.file_identity
+    {
+        return Err(WorkspaceTaskError::SourceChanged);
+    }
+
+    Ok(plan)
+}
+
+/// Inputs come from an OS-owned snapshot. This pure projection neither reads a
+/// path nor grants trust; the owner must revalidate its snapshot after projection.
+pub struct TaskProjection<'a> {
+    pub source_root: &'a str,
+    pub target_root: &'a str,
+    pub project_identity: &'a str,
+    pub revision: &'a str,
+    pub target_kind: TargetKind,
+    pub target_distro: Option<&'a str>,
+    pub bytes: &'a [u8],
+}
+pub fn project_workspace_tasks(
+    input: TaskProjection<'_>,
+) -> Result<WorkspaceTaskPlan, WorkspaceTaskError> {
+    let target_kind = input.target_kind;
+    let target_distro = input.target_distro;
+    validate_target(target_kind, target_distro)?;
+    if input.bytes.len() as u64 > MAX_TASK_SOURCE_BYTES {
+        return Err(WorkspaceTaskError::SourceTooLarge);
+    }
+    if !valid_digest(input.project_identity)
+        || !valid_digest(input.revision)
+        || [input.source_root, input.target_root]
+            .iter()
+            .any(|root| root.is_empty() || root.len() > 32768 || root.chars().any(char::is_control))
+    {
+        return Err(WorkspaceTaskError::InvalidRoot);
+    }
+    let selected_platform = match target_kind {
+        TargetKind::Windows => "windows",
+        TargetKind::Wsl => "linux",
+    };
+    let document = parse_jsonc(input.bytes)?;
     let object = document
         .as_object()
         .ok_or(WorkspaceTaskError::InvalidTasks)?;
@@ -296,32 +345,23 @@ pub fn preview_workspace_tasks(
         items.push(project_task(
             task,
             index,
-            &revision,
+            input.revision,
             selected_platform,
-            &target_root,
+            input.target_root,
             target_kind,
             duplicate,
         ));
     }
     validate_dependency_graph(&mut items);
-    ensure_root_identity(&source.root, source.root_identity)
-        .map_err(|_| WorkspaceTaskError::SourceChanged)?;
-    if filesystem_identity(source.root.join(TASKS_JSON_RELATIVE_PATH), false)
-        .map_err(|_| WorkspaceTaskError::SourceChanged)?
-        != source.file_identity
-    {
-        return Err(WorkspaceTaskError::SourceChanged);
-    }
-
     Ok(WorkspaceTaskPlan {
         schema_version: WORKSPACE_TASK_SCHEMA_VERSION,
-        source_root: source.display_root,
-        source_path: TASKS_JSON_RELATIVE_PATH.to_owned(),
-        project_identity,
-        revision,
+        source_root: input.source_root.into(),
+        source_path: TASKS_JSON_RELATIVE_PATH.into(),
+        project_identity: input.project_identity.into(),
+        revision: input.revision.into(),
         target_kind,
         target_distro: target_distro.map(str::to_owned),
-        selected_platform: selected_platform.to_owned(),
+        selected_platform: selected_platform.into(),
         items,
     })
 }
@@ -395,6 +435,30 @@ pub fn verify_workspace_task_executions(
         &first.project_identity,
         &first.revision,
     )?;
+    verify_projected_executions(&plan, executions)?;
+    Ok(plan)
+}
+
+/// Compare all persisted execution fields against one OS-owned current projection.
+pub fn verify_projected_executions(
+    plan: &WorkspaceTaskPlan,
+    executions: &[WorkspaceTaskExecution],
+) -> Result<(), WorkspaceTaskError> {
+    if executions.is_empty() || executions.len() > MAX_TASKS {
+        return Err(WorkspaceTaskError::SourceChanged);
+    }
+    for execution in executions {
+        plan.validate_claim(
+            &execution.source_root,
+            &execution.project_identity,
+            &execution.revision,
+        )?;
+        if plan.target_kind != execution.target_kind
+            || plan.target_distro != execution.target_distro
+        {
+            return Err(WorkspaceTaskError::SourceChanged);
+        }
+    }
     for execution in executions {
         let item = plan
             .items
@@ -416,7 +480,7 @@ pub fn verify_workspace_task_executions(
             return Err(WorkspaceTaskError::SourceChanged);
         }
     }
-    Ok(plan)
+    Ok(())
 }
 
 fn validate_target(

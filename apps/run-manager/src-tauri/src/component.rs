@@ -2,6 +2,7 @@
 //! Calling these does not start the standalone application or select its stores.
 
 mod imports;
+pub mod search;
 use std::{
     fs::File,
     path::{Path, PathBuf},
@@ -11,6 +12,8 @@ use tauri::{Emitter, Manager};
 
 #[cfg(feature = "desktop")]
 mod control;
+#[cfg(feature = "desktop")]
+pub mod sessions;
 pub use crate::core::runtime_controls::legacy_control_method;
 mod logs;
 pub use logs::OwnedRunLog;
@@ -97,6 +100,38 @@ pub async fn process_owner(
     }))
 }
 
+/// Native metadata for binding an already-owned operation's diagnostics.
+pub fn diagnostic_scope(app: &tauri::AppHandle, run_id: &str) -> Result<(String, String), String> {
+    data_root(app)?;
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    let source = database
+        .get_workspace_task_execution_for_operation_run(run_id)
+        .map_err(|_| "runtime_diagnostic_invalid")?
+        .ok_or("runtime_diagnostic_invalid")?;
+    Ok((source.source_root, source.project_identity))
+}
+
+pub fn diagnostic_identity(
+    app: &tauri::AppHandle,
+    run_id: &str,
+) -> Result<(String, String, i64), String> {
+    data_root(app)?;
+    let database = app
+        .try_state::<Arc<crate::storage::DatabaseState>>()
+        .ok_or("component_state_unavailable")?;
+    let run = database
+        .get_run(run_id)
+        .map_err(|_| "runtime_diagnostic_invalid")?
+        .ok_or("runtime_diagnostic_invalid")?;
+    let source = database
+        .get_workspace_task_execution_for_operation_run(run_id)
+        .map_err(|_| "runtime_diagnostic_invalid")?
+        .ok_or("runtime_diagnostic_invalid")?;
+    Ok((source.source_root, run.job_id, run.queue_sequence))
+}
+
 pub struct DiagnosticTarget {
     pub path: PathBuf,
     pub line: u32,
@@ -122,12 +157,23 @@ pub async fn diagnostic_target(
         .iter()
         .find(|item| item.index == index)
         .ok_or("runtime_diagnostic_invalid")?;
-    let path = crate::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
-        &execution.source_root,
-        &diagnostic.file,
-    )
-    .map_err(str::to_owned)?;
-    crate::core::workspace_tasks::verify_workspace_task_execution(&execution)
+    let path = if execution.target_kind == crate::core::models::TargetKind::Wsl
+        && execution.source_root.starts_with('/')
+        && database.task_sources.get().is_some()
+    {
+        // The product's native Files owner admits the POSIX path at actual navigation.
+        let relative =
+            crate::core::workspace_diagnostics::relative_diagnostic_file(&diagnostic.file)
+                .map_err(str::to_owned)?;
+        PathBuf::from(&execution.source_root).join(relative)
+    } else {
+        crate::core::workspace_diagnostics::resolve_workspace_diagnostic_path(
+            &execution.source_root,
+            &diagnostic.file,
+        )
+        .map_err(str::to_owned)?
+    };
+    crate::workspace_sources::verify(&database, std::slice::from_ref(&execution), false)
         .map_err(|_| "workspace-task-source-changed")?;
     lease.revalidate()?;
     Ok(DiagnosticTarget {
@@ -283,6 +329,16 @@ pub fn initialize(
     common: &Path,
     legacy_base: &Path,
 ) -> Result<(), String> {
+    initialize_with_sources(app, data, common, legacy_base, None)
+}
+
+pub fn initialize_with_sources(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    legacy_base: &Path,
+    sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
+) -> Result<(), String> {
     use crate::{
         core::imports::ImportOperationRegistry, lifecycle::RuntimeState, storage::DatabaseState,
     };
@@ -332,6 +388,12 @@ pub fn initialize(
     let database = Arc::new(
         DatabaseState::open_product(&database_path).map_err(|_| "component_storage_unavailable")?,
     );
+    if let Some(sources) = sources {
+        database
+            .task_sources
+            .set(sources)
+            .map_err(|_| "component_state_conflict")?;
+    }
     paths.database = Some(ProductFile::open(&database_path)?);
     if !database.is_ready() {
         return Err("component_storage_unavailable".into());

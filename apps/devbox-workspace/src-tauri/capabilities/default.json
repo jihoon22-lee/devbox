@@ -8,6 +8,7 @@
     "core:default",
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
-    "workspace:allow-execute"
+    "workspace:allow-execute",
+    "suite:allow-connection"
   ]
 }

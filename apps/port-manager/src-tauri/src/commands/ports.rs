@@ -704,6 +704,7 @@ fn run_wsl_docker_ps(distro: &str, deadline: std::time::Instant) -> Result<Vec<u
         "--".to_owned(),
         "docker".to_owned(),
         "ps".to_owned(),
+        "--no-trunc".to_owned(),
         "--format".to_owned(),
         "{{.ID}}\t{{.Names}}\t{{.Ports}}".to_owned(),
     ];

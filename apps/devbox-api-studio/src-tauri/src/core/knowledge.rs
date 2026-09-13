@@ -4,7 +4,6 @@ use product_contract::{
     references::{OwnedArtifactKind, OwnedArtifactReference},
     Provenance,
 };
-use serde::{Deserialize, Serialize};
 use std::{
     fs,
     io::Read,
@@ -14,33 +13,7 @@ use std::{
 const MAX_DRAFTS: usize = 50;
 const MAX_FILE_BYTES: usize = 600 * 1024;
 const ERROR: &str = "knowledge_storage_unavailable";
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct Draft {
-    pub artifact: OwnedArtifactReference,
-    pub created_at_ms: u64,
-    pub title: String,
-    pub body: String,
-    pub redacted: bool,
-}
-#[derive(Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct Summary {
-    pub artifact: OwnedArtifactReference,
-    pub created_at_ms: u64,
-    pub title: String,
-    pub redacted: bool,
-}
-impl Draft {
-    pub fn summary(&self) -> Summary {
-        Summary {
-            artifact: self.artifact.clone(),
-            created_at_ms: self.created_at_ms,
-            title: self.title.clone(),
-            redacted: self.redacted,
-        }
-    }
-}
+pub use product_contract::knowledge_draft::{Draft, Summary};
 fn io<T>(value: std::io::Result<T>) -> Result<T, String> {
     value.map_err(|_| ERROR.into())
 }
@@ -113,34 +86,7 @@ impl Store {
         Ok(path)
     }
     fn validate(&self, draft: &Draft) -> Result<(), String> {
-        let provenance = &draft.artifact.provenance;
-        if draft.artifact.kind != OwnedArtifactKind::KnowledgeDraft
-            || !valid_id(&draft.artifact.id)
-            || provenance.product != "api-studio"
-            || provenance.component != self.component
-            || provenance.revision == 0
-            || provenance.revision > 9_007_199_254_740_991
-            || provenance.request_id.is_empty()
-            || provenance.request_id.len() > 64
-            || !provenance
-                .request_id
-                .bytes()
-                .all(|b| b.is_ascii_alphanumeric() || b == b'-')
-            || draft.created_at_ms == 0
-            || draft.created_at_ms > 9_007_199_254_740_991
-            || draft.title != self.title()
-            || draft.body.len() > 512 * 1024
-            || draft.body.trim().is_empty()
-            || draft
-                .body
-                .chars()
-                .any(|c| c.is_control() && !matches!(c, '\n' | '\r' | '\t'))
-            || draft.body.chars().count() > 256_000
-            || applink::validate_handoff_text(&draft.body).is_err()
-        {
-            return Err("knowledge_draft_invalid".into());
-        }
-        Ok(())
+        draft.validate_for(&self.component).map_err(str::to_owned)
     }
     fn title(&self) -> String {
         format!(

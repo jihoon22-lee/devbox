@@ -110,7 +110,7 @@ export interface KnowledgeDraftSource {
 
 export interface KnowledgeDraftPreview {
   id: string;
-  kind: "knowledge-draft/v1" | "knowledge-draft/v2" | "knowledge-session/v1";
+  kind: "knowledge-draft/v1" | "knowledge-draft/v2" | "knowledge-session/v1" | "knowledge-result/v1";
   producerId: "life-log" | "developer-toolbox" | "devbox-workspace";
   expiresAtMs: number;
   leaseUntilMs: number;
@@ -792,6 +792,7 @@ export async function discardQuickCapturePreview(previewId: string): Promise<voi
 }
 
 export async function quickCaptureShortcutStatus(): Promise<QuickCaptureShortcutStatus> {
+  if(isProductHosted())return {shortcut:"Ctrl+Alt+N",state:"managed"};
   if (!isTauri()) {
     return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unsupported" };
   }
@@ -811,6 +812,7 @@ export async function onQuickCaptureRequested(cb: () => void): Promise<() => voi
 export async function onQuickCaptureShortcutStatusChanged(
   cb: (status: QuickCaptureShortcutStatus) => void,
 ): Promise<() => void> {
+  if(isProductHosted())return ()=>undefined;
   if (!isTauri()) return () => undefined;
   const { listen } = await import("@tauri-apps/api/event");
   return listen<QuickCaptureShortcutStatus>("knowledge://quick-capture-shortcut-status", (event) => {

@@ -322,7 +322,7 @@ function processState(pid) {
   return output ? JSON.parse(output) : null;
 }
 
-function nativeWindowState(pid, expectedTitle, minimize = false) {
+export function nativeWindowState(pid, expectedTitle, minimize = false) {
   const title = powershellUtf8(expectedTitle);
   const output = powershell(
     `Add-Type -Namespace DevboxAcceptance -Name NativeMethods -MemberDefinition '` +
@@ -353,7 +353,7 @@ function nativeWindowState(pid, expectedTitle, minimize = false) {
       `Title=$(if($handle -eq [IntPtr]::Zero){''}else{$expectedTitle});` +
       `Visible=$(if($handle -eq [IntPtr]::Zero){$false}else{[DevboxAcceptance.NativeMethods]::IsWindowVisible($handle)});` +
       `Minimized=$(if($handle -eq [IntPtr]::Zero){$false}else{[DevboxAcceptance.NativeMethods]::IsIconic($handle)});` +
-      `ForegroundPid=[int]$foregroundPid} | ConvertTo-Json -Compress`,
+      `ForegroundPid=[int]$foregroundPid;ForegroundMatchesWindow=($handle -ne [IntPtr]::Zero -and $foreground -eq $handle)} | ConvertTo-Json -Compress`,
   );
   return output ? JSON.parse(output) : null;
 }
@@ -766,7 +766,7 @@ function secondProcessIdentityConfirmed(child, identity, exitedBeforeObservation
   );
 }
 
-async function stopOwnedProcess(identity, executable, child) {
+export async function stopOwnedProcess(identity, executable, child) {
   if (!identity) return { forced: false, alreadyExited: child.exitCode !== null, descendants: [] };
   const expected = path.resolve(executable).toLowerCase();
   if (path.resolve(identity.Path).toLowerCase() !== expected) fail("owned process path identity changed");

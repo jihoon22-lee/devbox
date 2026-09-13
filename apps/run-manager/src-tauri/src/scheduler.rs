@@ -495,12 +495,60 @@ impl Drop for ShutdownExecutionGuard {
     }
 }
 
+#[derive(Default)]
+pub(crate) struct StartCancellation {
+    cancelled: AtomicBool,
+    changed: Notify,
+}
+impl StartCancellation {
+    pub(crate) fn cancel(&self) {
+        self.cancelled.store(true, Ordering::Release);
+        self.changed.notify_waiters();
+    }
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+    async fn wait(&self) {
+        let changed = self.changed.notified();
+        tokio::pin!(changed);
+        changed.as_mut().enable();
+        if !self.is_cancelled() {
+            changed.await;
+        }
+    }
+}
+
+struct PendingStart {
+    job_id: String,
+    service_generation: Option<i64>,
+    cancel: watch::Sender<bool>,
+}
+struct PendingStartGuard {
+    inner: Arc<SchedulerInner>,
+    run_id: String,
+}
+impl Drop for PendingStartGuard {
+    fn drop(&mut self) {
+        self.inner
+            .pending_starts
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .remove(&self.run_id);
+    }
+}
+
+pub(crate) type RunClaimObserver<'a> = dyn Fn(&Run) -> Result<(), StorageError> + Send + Sync + 'a;
+pub(crate) type ServiceClaimObserver<'a> =
+    dyn Fn(&ServiceInstance, bool) -> Result<(), StorageError> + Send + Sync + 'a;
+
 struct SchedulerInner {
     database: Arc<DatabaseState>,
     adapter: Arc<dyn ExecutionAdapter>,
     terminal_listener: Arc<dyn TerminalRunListener>,
     config: SchedulerConfig,
     permits: Arc<Semaphore>,
+    pending_starts: StdMutex<HashMap<String, PendingStart>>,
+    pending_start_changed: Notify,
     job_locks: Mutex<HashMap<String, Arc<Mutex<()>>>>,
     active: Mutex<HashMap<String, ActiveExecution>>,
     stops: StdMutex<HashMap<String, StopResultSender>>,
@@ -670,6 +718,8 @@ impl SchedulerCoordinator {
                 terminal_listener,
                 config,
                 permits,
+                pending_starts: StdMutex::new(HashMap::new()),
+                pending_start_changed: Notify::new(),
                 job_locks: Mutex::new(HashMap::new()),
                 active: Mutex::new(HashMap::new()),
                 stops: StdMutex::new(HashMap::new()),
@@ -789,25 +839,119 @@ impl SchedulerCoordinator {
     /// used by scheduled occurrences.  The returned row is refreshed after a
     /// successful immediate start so callers can observe `running`.
     pub async fn trigger_manual_at(&self, job_id: &str, now: i64) -> Result<Run, SchedulerError> {
+        self.trigger_manual_reviewed_at(job_id, None, now).await
+    }
+    pub(crate) async fn trigger_manual_reviewed_at(
+        &self,
+        job_id: &str,
+        reviewed: Option<&Job>,
+        now: i64,
+    ) -> Result<Run, SchedulerError> {
+        self.trigger_manual_observed_at(job_id, reviewed, None, None, now)
+            .await
+    }
+    pub(crate) async fn trigger_manual_observed_at(
+        &self,
+        job_id: &str,
+        reviewed: Option<&Job>,
+        observer: Option<&RunClaimObserver<'_>>,
+        cancellation: Option<&StartCancellation>,
+        now: i64,
+    ) -> Result<Run, SchedulerError> {
         let job = self
             .inner
             .database
             .get_job(job_id)?
             .ok_or_else(|| StorageError::NotFound(format!("job {job_id}")))?;
         let lock = self.job_mutex(job_id).await;
-        let _guard = lock.lock().await;
+        let _guard = self.lock_for_start(&lock, cancellation).await?;
         if self.is_cleanup_pending(job_id).await {
             return Err(SchedulerError::Adapter {
                 run_id: job_id.to_string(),
                 source: AdapterError::new("termination-unverified"),
             });
         }
-        let claim = self.inner.database.claim_manual_run(job_id, now)?;
+        let job = reviewed.cloned().unwrap_or(job);
+        let claim = match reviewed {
+            Some(reviewed) => self
+                .inner
+                .database
+                .claim_manual_run_reviewed(reviewed, now)?,
+            None if observer.is_some() => self
+                .inner
+                .database
+                .claim_workspace_run_reviewed(&job, now)?,
+            None => self.inner.database.claim_manual_run(job_id, now)?,
+        };
+        if claim.inserted {
+            if let Some(observer) = observer {
+                if let Err(error) = observer(&claim.run) {
+                    // Publication precedes any spawn. If the operation lost its
+                    // reservation, retire only this newly allocated queued row.
+                    let _ =
+                        self.inner
+                            .database
+                            .cancel_session_queued_run(job_id, &claim.run.id, now);
+                    return Err(error.into());
+                }
+            }
+        }
         self.process_claim_locked(&job, claim.clone(), now).await?;
         self.inner
             .database
             .get_run(&claim.run.id)?
             .ok_or_else(|| StorageError::NotFound(format!("run {}", claim.run.id)).into())
+    }
+
+    pub(crate) async fn stop_session_run_at(
+        &self,
+        job_id: &str,
+        run_id: &str,
+        now: i64,
+    ) -> Result<Option<Run>, SchedulerError> {
+        let prior = self
+            .inner
+            .database
+            .get_run(run_id)?
+            .ok_or_else(|| StorageError::NotFound(run_id.into()))?;
+        if prior.job_id != job_id {
+            return Err(service_adapter_error(job_id, "run-identity-changed"));
+        }
+        if matches!(
+            prior.status,
+            RunStatus::Succeeded | RunStatus::Failed | RunStatus::Cancelled | RunStatus::Skipped
+        ) {
+            return Ok(Some(prior));
+        }
+        {
+            let lock = self.job_mutex(job_id).await;
+            let _guard = self.lock_for_stop(&lock, job_id, Some(run_id), None).await;
+            let run = self
+                .inner
+                .database
+                .get_run(run_id)?
+                .ok_or_else(|| StorageError::NotFound(run_id.into()))?;
+            if run.job_id != job_id {
+                return Err(service_adapter_error(job_id, "run-identity-changed"));
+            }
+            if matches!(
+                run.status,
+                RunStatus::Succeeded
+                    | RunStatus::Failed
+                    | RunStatus::Cancelled
+                    | RunStatus::Skipped
+            ) {
+                return Ok(Some(run));
+            }
+            if self
+                .inner
+                .database
+                .cancel_session_queued_run(job_id, run_id, now)?
+            {
+                return self.inner.database.get_run(run_id).map_err(Into::into);
+            }
+        }
+        self.stop_exact_active_at(job_id, run_id, now).await
     }
 
     /// Stop the current process run for one job. The database `running` /
@@ -843,9 +987,22 @@ impl SchedulerCoordinator {
         expected_run_id: Option<&str>,
         now: i64,
     ) -> Result<Option<Run>, SchedulerError> {
+        if let Some(expected) = expected_run_id {
+            if !self.inner.database.get_run(expected)?.is_some_and(|run| {
+                run.job_id == job_id
+                    && matches!(
+                        run.status,
+                        RunStatus::Starting | RunStatus::Running | RunStatus::Stopping
+                    )
+            }) {
+                return Ok(None);
+            }
+        }
         let lock = self.job_mutex(job_id).await;
         let (run_id, mut result_rx, start_operation) = {
-            let _guard = lock.lock().await;
+            let _guard = self
+                .lock_for_stop(&lock, job_id, expected_run_id, None)
+                .await;
             self.restore_shutdown_orphans_for_job(job_id).await;
             let pending_cleanup = self.is_cleanup_pending(job_id).await;
             let active_run = match self.inner.database.active_process_run(job_id)? {
@@ -974,6 +1131,10 @@ impl SchedulerCoordinator {
 
     /// Return the durable active process row for command/UI polling. This is
     /// a read-only snapshot and never exposes environment ciphertext.
+    pub(crate) fn native_owner_id(&self) -> &str {
+        &self.inner.config.owner_instance_id
+    }
+
     pub fn active_run(&self, job_id: &str) -> Result<Option<Run>, SchedulerError> {
         self.inner.database.active_run(job_id).map_err(Into::into)
     }
@@ -1000,6 +1161,34 @@ impl SchedulerCoordinator {
         service_id: &str,
         now: i64,
     ) -> Result<ServiceInstance, SchedulerError> {
+        self.acquire_service_at(service_id, None, false, now)
+            .await
+            .map(|(instance, _)| instance)
+    }
+
+    /// Native session acquisition serializes create-or-borrow with ordinary
+    /// service start/stop. A reviewed definition is compared under that lock.
+    pub(crate) async fn acquire_service_at(
+        &self,
+        service_id: &str,
+        reviewed: Option<&Job>,
+        allow_borrow: bool,
+        now: i64,
+    ) -> Result<(ServiceInstance, bool), SchedulerError> {
+        self.acquire_service_observed_at(service_id, reviewed, allow_borrow, None, None, now)
+            .await
+    }
+    pub(crate) async fn acquire_service_observed_at(
+        &self,
+        service_id: &str,
+        reviewed: Option<&Job>,
+        allow_borrow: bool,
+        observer: Option<&ServiceClaimObserver<'_>>,
+        cancellation: Option<&StartCancellation>,
+        now: i64,
+    ) -> Result<(ServiceInstance, bool), SchedulerError> {
+        let lock = self.job_mutex(service_id).await;
+        let _guard = self.lock_for_start(&lock, cancellation).await?;
         let service = self
             .inner
             .database
@@ -1007,16 +1196,46 @@ impl SchedulerCoordinator {
             .ok_or_else(|| StorageError::NotFound(format!("service {service_id}")))?;
         let owner = self.inner.config.owner_instance_id.clone();
         let attempt_token = Uuid::new_v4().to_string();
-        let lock = self.job_mutex(service_id).await;
-        let _guard = lock.lock().await;
         if self.is_cleanup_pending(service_id).await {
             return Err(service_adapter_error(service_id, "termination-unverified"));
+        }
+        if reviewed.is_some_and(|reviewed| {
+            reviewed.execution_definition() != service.execution_definition()
+        }) {
+            return Err(service_adapter_error(
+                service_id,
+                "service-definition-changed",
+            ));
+        }
+        if allow_borrow {
+            if let Some(instance) = self.inner.database.get_service_instance(service_id)? {
+                if instance.owner_instance_id.as_deref() == Some(owner.as_str())
+                    && matches!(
+                        instance.state,
+                        ServiceInstanceState::Running | ServiceInstanceState::RetryWaiting
+                    )
+                {
+                    if let Some(observer) = observer {
+                        observer(&instance, false)?;
+                    }
+                    return Ok((instance, false));
+                }
+            }
         }
         let instance = self
             .inner
             .database
-            .claim_service_start(service_id, &owner, &attempt_token, now)?
+            .claim_service_start_reviewed(service_id, &owner, &attempt_token, now, reviewed)?
             .ok_or_else(|| service_adapter_error(service_id, "service-already-running"))?;
+        if let Some(observer) = observer {
+            if let Err(error) = observer(&instance, true) {
+                let _ =
+                    self.inner
+                        .database
+                        .mark_service_stopped(service_id, instance.generation, now);
+                return Err(error.into());
+            }
+        }
         let generation = instance.generation;
         let run = self.inner.database.create_service_run_at(service_id, now)?;
         let handle = match self.start_owned_claim(&service, &run).await {
@@ -1051,6 +1270,7 @@ impl SchedulerCoordinator {
         self.inner
             .database
             .get_service_instance(service_id)?
+            .map(|instance| (instance, true))
             .ok_or_else(|| StorageError::NotFound(format!("service instance {service_id}")).into())
     }
 
@@ -1062,9 +1282,52 @@ impl SchedulerCoordinator {
         service_id: &str,
         now: i64,
     ) -> Result<Option<ServiceInstance>, SchedulerError> {
+        self.stop_service_matching_at(service_id, None, now).await
+    }
+    pub(crate) async fn stop_service_generation_at(
+        &self,
+        service_id: &str,
+        generation: i64,
+        now: i64,
+    ) -> Result<Option<ServiceInstance>, SchedulerError> {
+        self.stop_service_matching_at(service_id, Some(generation), now)
+            .await
+    }
+    async fn stop_service_matching_at(
+        &self,
+        service_id: &str,
+        expected: Option<i64>,
+        now: i64,
+    ) -> Result<Option<ServiceInstance>, SchedulerError> {
+        if let Some(expected) = expected {
+            if !self
+                .inner
+                .database
+                .get_service_instance(service_id)?
+                .is_some_and(|instance| instance.generation == expected)
+            {
+                return Err(service_adapter_error(
+                    service_id,
+                    "service-generation-changed",
+                ));
+            }
+        }
         let instance = {
             let lock = self.job_mutex(service_id).await;
-            let _guard = lock.lock().await;
+            let _guard = self.lock_for_stop(&lock, service_id, None, expected).await;
+            if let Some(expected) = expected {
+                if !self
+                    .inner
+                    .database
+                    .get_service_instance(service_id)?
+                    .is_some_and(|instance| instance.generation == expected)
+                {
+                    return Err(service_adapter_error(
+                        service_id,
+                        "service-generation-changed",
+                    ));
+                }
+            }
             self.inner.database.begin_service_stop(service_id, now)?
         };
         let Some(instance) = instance else {
@@ -1284,6 +1547,40 @@ impl SchedulerCoordinator {
                 }
             }
         }
+    }
+
+    pub(crate) async fn service_generation_ready(
+        &self,
+        id: &str,
+        generation: i64,
+    ) -> Result<bool, SchedulerError> {
+        let service = self
+            .inner
+            .database
+            .get_service(id)?
+            .ok_or_else(|| StorageError::NotFound(id.into()))?;
+        let instance = self
+            .inner
+            .database
+            .get_service_instance(id)?
+            .ok_or_else(|| StorageError::NotFound(id.into()))?;
+        if instance.generation != generation
+            || instance.owner_instance_id.as_deref() != Some(self.native_owner_id())
+        {
+            return Err(service_adapter_error(id, "service-generation-changed"));
+        }
+        if instance.state != ServiceInstanceState::Running {
+            return Ok(false);
+        }
+        let healthy = self.service_healthy(&service, &instance).await;
+        let current = self.inner.database.get_service_instance(id)?;
+        Ok(healthy
+            && current.is_some_and(|current| {
+                current.generation == generation
+                    && current.active_run_id == instance.active_run_id
+                    && current.state == ServiceInstanceState::Running
+                    && current.owner_instance_id == instance.owner_instance_id
+            }))
     }
 
     async fn service_healthy(&self, service: &Job, instance: &ServiceInstance) -> bool {
@@ -1786,7 +2083,10 @@ impl SchedulerCoordinator {
             .database
             .get_run(&run.id)?
             .ok_or_else(|| StorageError::NotFound(format!("run {}", run.id)))?;
-        let Some(handle) = self.start_owned_run(&claimed, &attempt_token).await? else {
+        let Some(handle) = self
+            .start_owned_run(&claimed, &attempt_token, Some(job))
+            .await?
+        else {
             return Ok(None);
         };
         self.spawn_monitor(
@@ -1803,16 +2103,46 @@ impl SchedulerCoordinator {
         &self,
         run: &Run,
         attempt_token: &str,
+        reviewed_job: Option<&Job>,
     ) -> Result<Option<Arc<dyn ExecutionHandle>>, SchedulerError> {
         self.inner.process_starts.fetch_add(1, Ordering::AcqRel);
         let _starting = ProcessStartLease(&self.inner.process_starts);
-        let job = self
-            .inner
-            .database
-            .get_run_job(&run.job_id)?
-            .ok_or_else(|| StorageError::NotFound(format!("job {}", run.job_id)))?;
+        let job = match reviewed_job {
+            Some(job) => job.clone(),
+            None => self
+                .inner
+                .database
+                .get_run_job(&run.job_id)?
+                .ok_or_else(|| StorageError::NotFound(format!("job {}", run.job_id)))?,
+        };
         let owner = self.inner.config.owner_instance_id.clone();
-        if self.is_shutdown_requested() {
+        let (cancel, mut cancellation) = watch::channel(false);
+        let service_generation = if job.kind == crate::core::models::JobKind::Service {
+            self.inner
+                .database
+                .get_service_instance(&job.id)?
+                .map(|instance| instance.generation)
+        } else {
+            None
+        };
+        self.inner
+            .pending_starts
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
+            .insert(
+                run.id.clone(),
+                PendingStart {
+                    job_id: job.id.clone(),
+                    service_generation,
+                    cancel,
+                },
+            );
+        let _pending = PendingStartGuard {
+            inner: self.inner.clone(),
+            run_id: run.id.clone(),
+        };
+        self.inner.pending_start_changed.notify_waiters();
+        if self.is_shutdown_requested() || *cancellation.borrow() {
             self.cancel_starting_run(run, &owner, attempt_token);
             return Ok(None);
         }
@@ -1822,7 +2152,7 @@ impl SchedulerCoordinator {
         let shutdown = self.inner.shutdown_notify.notified();
         tokio::pin!(shutdown);
         shutdown.as_mut().enable();
-        if self.is_shutdown_requested() {
+        if self.is_shutdown_requested() || *cancellation.borrow() {
             self.cancel_starting_run(run, &owner, attempt_token);
             return Ok(None);
         }
@@ -1832,11 +2162,15 @@ impl SchedulerCoordinator {
                 self.cancel_starting_run(run, &owner, attempt_token);
                 return Ok(None);
             }
+            _ = cancellation.changed() => {
+                self.cancel_starting_run(run, &owner, attempt_token);
+                return Ok(None);
+            }
             acquired = self.inner.permits.clone().acquire_owned() => {
                 acquired.map_err(|error| SchedulerError::Join(error.to_string()))?
             }
         };
-        if self.is_shutdown_requested() {
+        if self.is_shutdown_requested() || *cancellation.borrow() {
             let _ = self.finish_run_and_notify(
                 &run.id,
                 &run.job_id,
@@ -2016,15 +2350,34 @@ impl SchedulerCoordinator {
                     .await
                     .get(&run_id)
                     .cloned()
-                    .unwrap_or(PendingTerminal {
-                        status: RunStatus::Failed,
-                        exit_code: None,
-                        error_message: Some(
-                            TerminalFailureCode::StorageFailed
-                                .as_db_message()
-                                .to_string(),
-                        ),
-                        failure_code: Some(TerminalFailureCode::StorageFailed),
+                    .unwrap_or_else(|| {
+                        // The durable stopping row already records a user/owner
+                        // stop intent. A late cleanup witness must preserve it,
+                        // not invent a storage failure because no secondary
+                        // terminal error was recorded by the failed stop attempt.
+                        let stopping = self
+                            .inner
+                            .database
+                            .get_run(&run_id)
+                            .ok()
+                            .flatten()
+                            .is_some_and(|run| run.status == RunStatus::Stopping);
+                        PendingTerminal {
+                            status: if stopping {
+                                RunStatus::Cancelled
+                            } else {
+                                RunStatus::Failed
+                            },
+                            exit_code: None,
+                            error_message: Some(if stopping {
+                                "manual-stop".to_owned()
+                            } else {
+                                TerminalFailureCode::StorageFailed
+                                    .as_db_message()
+                                    .to_owned()
+                            }),
+                            failure_code: (!stopping).then_some(TerminalFailureCode::StorageFailed),
+                        }
                     });
                 let terminal = self.finish_run_and_notify(
                     &run_id,
@@ -2186,7 +2539,7 @@ impl SchedulerCoordinator {
             let token = claimed.attempt_token.clone().ok_or_else(|| {
                 StorageError::Validation("starting run has no attempt token".into())
             })?;
-            match self.start_owned_run(&claimed, &token).await? {
+            match self.start_owned_run(&claimed, &token, None).await? {
                 Some(handle) => {
                     self.spawn_monitor(claimed.id, job_id.to_string(), owner, token, handle);
                     break;
@@ -2692,6 +3045,61 @@ impl SchedulerCoordinator {
         });
     }
 
+    async fn lock_for_start<'a>(
+        &self,
+        lock: &'a Mutex<()>,
+        cancellation: Option<&StartCancellation>,
+    ) -> Result<tokio::sync::MutexGuard<'a, ()>, SchedulerError> {
+        if let Some(cancellation) = cancellation {
+            tokio::select! {
+                biased;
+                _=cancellation.wait() => Err(SchedulerError::Join("session-start-cancelled".into())),
+                guard=lock.lock() => Ok(guard),
+            }
+        } else {
+            Ok(lock.lock().await)
+        }
+    }
+
+    /// Keep the per-job start/stop ordering while waking a start blocked by
+    /// unrelated global capacity. Register notification before inspecting the
+    /// map so a start published during stop admission cannot be missed.
+    async fn lock_for_stop<'a>(
+        &self,
+        lock: &'a Mutex<()>,
+        job_id: &str,
+        expected_run: Option<&str>,
+        expected_generation: Option<i64>,
+    ) -> tokio::sync::MutexGuard<'a, ()> {
+        let waiting = lock.lock();
+        tokio::pin!(waiting);
+        loop {
+            let changed = self.inner.pending_start_changed.notified();
+            tokio::pin!(changed);
+            changed.as_mut().enable();
+            {
+                let pending = self
+                    .inner
+                    .pending_starts
+                    .lock()
+                    .unwrap_or_else(|p| p.into_inner());
+                for (run_id, start) in pending.iter() {
+                    if start.job_id == job_id
+                        && expected_run.is_none_or(|expected| expected == run_id)
+                        && expected_generation
+                            .is_none_or(|expected| Some(expected) == start.service_generation)
+                    {
+                        let _ = start.cancel.send(true);
+                    }
+                }
+            }
+            tokio::select! {
+                guard = &mut waiting => return guard,
+                _ = &mut changed => {}
+            }
+        }
+    }
+
     async fn job_mutex(&self, job_id: &str) -> Arc<Mutex<()>> {
         let mut locks = self.inner.job_locks.lock().await;
         Arc::clone(
@@ -2974,6 +3382,28 @@ mod tests {
             Box::pin(async move {
                 Ok(Arc::new(RetryTerminateHandle { attempts }) as Arc<dyn ExecutionHandle>)
             })
+        }
+    }
+
+    #[derive(Clone)]
+    struct LateCleanupAfterFailedStop {
+        completed: Arc<tokio::sync::Notify>,
+    }
+    impl ExecutionHandle for LateCleanupAfterFailedStop {
+        fn terminate(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async { Err(AdapterError::new("terminate-failed")) })
+        }
+        fn wait(&self) -> AdapterFuture<'_, ExecutionExit> {
+            Box::pin(async move {
+                self.completed.notified().await;
+                Ok(ExecutionExit { exit_code: Some(1) })
+            })
+        }
+    }
+    impl ExecutionAdapter for LateCleanupAfterFailedStop {
+        fn spawn(&self, _: ExecutionRequest) -> AdapterFuture<'_, Arc<dyn ExecutionHandle>> {
+            let handle = self.clone();
+            Box::pin(async move { Ok(Arc::new(handle) as Arc<dyn ExecutionHandle>) })
         }
     }
 
@@ -3354,6 +3784,43 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn late_cleanup_after_failed_stop_preserves_cancel_intent_without_fake_storage_error() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("late-stop", false, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let completed = Arc::new(tokio::sync::Notify::new());
+        let scheduler = SchedulerCoordinator::new(
+            database.clone(),
+            Arc::new(LateCleanupAfterFailedStop {
+                completed: completed.clone(),
+            }),
+        );
+        let run = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        assert!(scheduler.stop_active_at(&job.id, 1_002).await.is_err());
+        assert_eq!(
+            database.get_run(&run.id).unwrap().unwrap().status,
+            RunStatus::Stopping
+        );
+        assert!(!scheduler.cleanup_confirmed().await);
+        completed.notify_one();
+        tokio::time::timeout(Duration::from_secs(1), async {
+            loop {
+                if database.get_run(&run.id).unwrap().unwrap().status == RunStatus::Cancelled
+                    && scheduler.cleanup_confirmed().await
+                {
+                    break;
+                }
+                tokio::task::yield_now().await;
+            }
+        })
+        .await
+        .unwrap();
+        let finished = database.get_run(&run.id).unwrap().unwrap();
+        assert_eq!(finished.error_message.as_deref(), Some("manual-stop"));
+    }
+
+    #[tokio::test]
     async fn exact_stop_never_terminates_a_replacement_run() {
         let database = Arc::new(DatabaseState::open_in_memory().unwrap());
         let job = database
@@ -3659,6 +4126,129 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn session_cancel_before_job_admission_allocates_no_run_or_process() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("locked", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        let lock = scheduler.job_mutex(&job.id).await;
+        let _busy = lock.lock().await;
+        let cancellation = StartCancellation::default();
+        cancellation.cancel();
+        let observed = AtomicUsize::new(0);
+        let observer = |_run: &Run| {
+            observed.fetch_add(1, Ordering::SeqCst);
+            Ok(())
+        };
+        assert!(tokio::time::timeout(
+            Duration::from_secs(1),
+            scheduler.trigger_manual_observed_at(
+                &job.id,
+                Some(&job),
+                Some(&observer),
+                Some(&cancellation),
+                1_001
+            )
+        )
+        .await
+        .unwrap()
+        .is_err());
+        assert_eq!(observed.load(Ordering::SeqCst), 0);
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 0);
+        assert!(database.active_process_run(&job.id).unwrap().is_none());
+    }
+
+    #[tokio::test]
+    async fn exact_stop_cancels_a_start_waiting_for_foreign_capacity() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let first = database
+            .create_job_at(input("foreign", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let second = database
+            .create_job_at(input("session", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::with_config(
+            database.clone(),
+            adapter.clone(),
+            SchedulerConfig::default().with_max_concurrent_runs(1),
+        );
+        let foreign = scheduler.trigger_manual_at(&first.id, 1_001).await.unwrap();
+        let (observed, claimed) = tokio::sync::oneshot::channel();
+        let starting = tokio::spawn({
+            let scheduler = scheduler.clone();
+            let second = second.clone();
+            async move {
+                let sender = StdMutex::new(Some(observed));
+                let observer = |run: &Run| {
+                    if let Some(sender) = sender.lock().unwrap().take() {
+                        let _ = sender.send(run.id.clone());
+                    }
+                    Ok(())
+                };
+                scheduler
+                    .trigger_manual_observed_at(
+                        &second.id,
+                        Some(&second),
+                        Some(&observer),
+                        None,
+                        1_001,
+                    )
+                    .await
+            }
+        });
+        let run_id = claimed.await.unwrap();
+        // A stale selection must neither release the foreign permit nor cancel
+        // this start. The exact stop then completes without freeing that permit.
+        assert!(tokio::time::timeout(
+            Duration::from_secs(1),
+            scheduler.stop_exact_active_at(&second.id, &foreign.id, 1_002)
+        )
+        .await
+        .unwrap()
+        .unwrap()
+        .is_none());
+        let stop = scheduler.stop_session_run_at(&second.id, &run_id, 1_002);
+        tokio::time::timeout(Duration::from_secs(1), stop)
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(
+            starting.await.unwrap().unwrap().status,
+            RunStatus::Cancelled
+        );
+        assert_eq!(
+            database.get_run(&foreign.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn reviewed_session_does_not_apply_kill_previous_to_an_existing_run() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("foreign", true, OverlapPolicy::KillPrevious), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        let foreign = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        assert!(scheduler
+            .trigger_manual_reviewed_at(&job.id, Some(&job), 1_002)
+            .await
+            .is_err());
+        assert_eq!(
+            database.get_run(&foreign.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
     async fn queued_manual_runs_drain_after_the_same_adapter_completion_path() {
         let database = Arc::new(DatabaseState::open_in_memory().unwrap());
         let job = database
@@ -3849,6 +4439,77 @@ mod tests {
         );
         assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
         adapter.finish_next(0).await;
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn two_reviewed_sessions_create_or_borrow_one_exact_service_generation() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let service = database
+            .create_service_at(service_input("shared", false), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        let (first, second) = tokio::join!(
+            scheduler.acquire_service_at(&service.id, Some(&service), true, 1_001),
+            scheduler.acquire_service_at(&service.id, Some(&service), true, 1_001)
+        );
+        let (first, first_created) = first.unwrap();
+        let (second, second_created) = second.unwrap();
+        assert_ne!(first_created, second_created);
+        assert_eq!(first.generation, second.generation);
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
+        let replacement = scheduler
+            .restart_service_at(&service.id, 1_002)
+            .await
+            .unwrap();
+        assert!(scheduler
+            .stop_service_generation_at(&service.id, first.generation, 1_003)
+            .await
+            .is_err());
+        assert_eq!(
+            database
+                .get_service_instance(&service.id)
+                .unwrap()
+                .unwrap()
+                .generation,
+            replacement.generation
+        );
+        assert_eq!(
+            database
+                .get_service_instance(&service.id)
+                .unwrap()
+                .unwrap()
+                .state,
+            ServiceInstanceState::Running
+        );
+        scheduler.shutdown().await.unwrap();
+    }
+
+    #[tokio::test]
+    async fn session_cancellation_removes_only_its_queued_intent() {
+        let database = Arc::new(DatabaseState::open_in_memory().unwrap());
+        let job = database
+            .create_job_at(input("queued session", true, OverlapPolicy::Queue), 1_000)
+            .unwrap();
+        let adapter = MockAdapter::new();
+        let scheduler = SchedulerCoordinator::new(database.clone(), adapter.clone());
+        let existing = scheduler.trigger_manual_at(&job.id, 1_001).await.unwrap();
+        let queued = scheduler.trigger_manual_at(&job.id, 1_002).await.unwrap();
+        assert_eq!(queued.status, RunStatus::Queued);
+        scheduler
+            .stop_session_run_at(&job.id, &queued.id, 1_003)
+            .await
+            .unwrap();
+        assert_eq!(
+            database.get_run(&queued.id).unwrap().unwrap().status,
+            RunStatus::Cancelled
+        );
+        assert_eq!(
+            database.get_run(&existing.id).unwrap().unwrap().status,
+            RunStatus::Running
+        );
+        assert_eq!(adapter.starts.load(Ordering::SeqCst), 1);
         scheduler.shutdown().await.unwrap();
     }
 

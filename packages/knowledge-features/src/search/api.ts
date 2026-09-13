@@ -208,9 +208,9 @@ export async function openTargets(): Promise<EverythingOpenTarget[]> {
   return invoke<EverythingOpenTarget[]>("open_targets");
 }
 
-export async function openIn(appId: string, path: string): Promise<void> {
+export async function openIn(appId: string, path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
-  await invoke("open_in", { appId, path });
+  await invoke("open_in", isProductHosted()?{appId,reference}:{appId,path});
 }
 
 export async function listSavedQueries(): Promise<SavedQuery[]> {

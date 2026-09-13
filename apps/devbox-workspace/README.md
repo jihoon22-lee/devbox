@@ -472,6 +472,60 @@ checks destination revision and explicit replacement. Source/filter mappings sur
 import; view loading stays disconnected and explicit reconnect renews Runtime leases.
 
 The [B05 workthrough](../../workthrough/2026-09-11-v08-b05-workspace-runtime-logs.md)
-records implementation and pending acceptance. Per-commit syntax/type checks are
-separate from the complete PR's detailed validation. New actual Windows, WSL and WAL
-import fixtures are authored but have not yet been executed.
+records B05's passing final CI, packaged Windows acceptance and owned WSL2 evidence
+for merge 41bb98b. WP06/WP07 consumers have separate acceptance boundaries.
+
+B06 in progress: the Terminal route manages Workspace-owned companion windows.
+Each native companion has its own context/session principal; hiding or reloading
+does not close its PTYs. Native layouts precede process creation, output uses a
+bounded replay cursor, and concurrent profile edits require the latest revision.
+Stopped/interrupted windows can explicitly reconnect with the same multiplexer
+identity and fresh PTYs; this state-only path preserves definitions and never
+resends start commands. Development Sessions preflight reviewed definitions, retain
+created/borrowed/shared Runtime leases, and stop only owned resources after the last
+shared holder. Native Problems and context status join LSP, Git, dependencies,
+matcher/run/health and Session observations with revision-aware file/log/task/port
+navigation. WSL-native task sources use the packaged helper and retained distro
+identity rather than Windows filesystem emulation. Summary previews expose bounded
+metadata with immutable operation receipts; delivery to Knowledge and the global
+shortcut owner are B07 work. Final B06 detailed and Windows/WSL acceptance is pending.
+
+### Terminal settings ownership and import
+
+Workspace Terminal now keeps normal preferences with its native profile document.
+Companions preload that document before rendering and save one key with its previous
+value; a stale window cannot replace another window's settings. Existing development
+product preference keys are adopted only when the native key is absent. Companion
+layout remains native and session-specific. Legacy WSL Desktop keeps its own stores.
+
+| Legacy persistence | Workspace destination / behavior |
+|---|---|
+| `terminal-profiles.json` | Separate named profiles with original/destination ID mapping; existing profiles remain |
+| `wsl-desktop:last-layout` in localStorage | A named profile for explicit restoration, including stable pane keys and ratios |
+| `wsl-desktop:cwd-pinned`, `cwd-value`, `recent-paths` | Native Terminal preferences; malformed or oversized values are reported |
+| `wsl-desktop:copy-on-select`, `font-size` | Native Terminal preferences |
+| `wsl-desktop:settings` v1/v2 | Native Terminal preferences, with unsupported versions/fields reported |
+| `window-state-v1.json` | Separate reviewed window-state import (surface mapping must be selected explicitly) |
+| Active PTYs, output buffers, broadcast arming, transient zoom | Excluded; importing starts no terminal and sends no command |
+| Bash/Zsh rc integration blocks and backups | Stay in the distro; existing marker/revision/backup checks govern explicit changes |
+
+Import preparation uses the fixed legacy identifier, holds the JSON source read
+handle, copies a closed LevelDB store with its LOCK and log files, then runs only an
+owned copied-profile exporter. The actual WebView2 data directory must match before
+seven fixed storage keys are read. No normal Workspace startup or single-instance
+routing runs in that worker. Missing/ambiguous browser stores and unsupported values
+have individual report entries; JSON-only success does not imply browser settings
+were migrated. Preparing/cancelling/restarting leaves an explicit job record. Applying
+a reviewed revision commits profiles, selected preferences and the repeat receipt
+in one native document. The previous bytes and ID map remain in Terminal import history.
+Repeat import preserves later edits/deletions. Close companion windows before applying.
+
+The source-copy, child ownership and profile identity helpers are shared with API
+Studio's existing exporter. Detailed migration and actual Windows execution of this
+B06 path remain pending until the whole PR bundle is implemented.
+
+The B06 acceptance packet is recorded in the
+[B06 workthrough](../../workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md).
+The owned WSL2 runner uses exact packaged artifacts and an explicitly created
+disposable distro. It provisions tmux, Docker and a digest-pinned Zellij there only;
+these test tools are not product dependencies or automatically installed by Workspace.

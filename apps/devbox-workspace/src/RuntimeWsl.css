@@ -1,0 +1,16 @@
+.workspace-wsl { padding: 16px; border-top: 1px solid var(--border); }
+.workspace-wsl .dash-header, .workspace-wsl .card-row, .workspace-wsl .docker-container-summary { display: flex; align-items: center; gap: 12px; }
+.workspace-wsl .dash-header { margin-bottom: 12px; }
+.workspace-wsl .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 12px; margin: 12px 0; }
+.workspace-wsl .card, .workspace-wsl .docker-container { padding: 12px; border: 1px solid var(--border); border-radius: 6px; }
+.workspace-wsl .card-row { justify-content: space-between; }
+.workspace-wsl .card-title { font-weight: 600; margin-bottom: 8px; }
+.workspace-wsl .resource-summary { margin: 8px 0; font-size: 12px; }
+.workspace-wsl .docker-container { margin: 6px 0; }
+.workspace-wsl .docker-container summary { cursor: pointer; }
+.workspace-wsl .docker-container-name { font-weight: 600; }
+.workspace-wsl .docker-container dd { margin: 0 0 8px; overflow-wrap: anywhere; }
+.workspace-wsl button { margin: 4px; }
+.workspace-wsl .snapshot-state, .workspace-wsl .docker-state { font-size: 12px; }
+.workspace-wsl form { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.workspace-wsl form input { min-width: 280px; }

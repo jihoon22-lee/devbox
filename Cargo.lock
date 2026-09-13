@@ -1175,6 +1175,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tempfile",
  "uuid",
 ]
 
@@ -1293,6 +1294,7 @@ version = "0.8.0"
 dependencies = [
  "api-playground",
  "applink",
+ "catalog",
  "data-migration",
  "developer-toolbox",
  "dirs",
@@ -1323,8 +1325,10 @@ dependencies = [
 name = "devbox-control-center"
 version = "0.8.0"
 dependencies = [
+ "catalog",
  "data-migration",
  "filesystem",
+ "product-contract",
  "product-shell-tauri",
  "rusqlite",
  "serde",
@@ -1332,13 +1336,17 @@ dependencies = [
  "sha2 0.11.0",
  "tauri",
  "tauri-build",
+ "tokio",
  "uuid",
+ "windows 0.61.3",
 ]
 
 [[package]]
 name = "devbox-knowledge"
 version = "0.8.0"
 dependencies = [
+ "applink",
+ "catalog",
  "data-migration",
  "everything-plus",
  "filesystem",
@@ -1356,6 +1364,7 @@ dependencies = [
  "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
  "tempfile",
+ "tokio",
  "uuid",
  "windows 0.61.3",
  "wsl",
@@ -1370,6 +1379,7 @@ dependencies = [
  "filesystem",
  "integration",
  "launch",
+ "product-contract",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -1417,7 +1427,10 @@ name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
  "applink",
+ "catalog",
+ "chrono",
  "code-pad",
+ "data-migration",
  "filesystem",
  "git",
  "integration",
@@ -1439,12 +1452,14 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "webview2-com",
  "window-state",
  "window-state-tauri",
  "windows 0.61.3",
  "workbench",
  "workspace-wsl",
  "wsl",
+ "wsl-desktop",
 ]
 
 [[package]]
@@ -4719,9 +4734,12 @@ name = "product-contract"
 version = "0.1.0"
 dependencies = [
  "applink",
+ "catalog",
+ "filesystem",
  "secrets",
  "serde",
  "serde_json",
+ "sha2 0.11.0",
  "tempfile",
 ]
 

@@ -13,6 +13,14 @@ on:
       - 'packages/product-shell/**'
       - 'packages/api-studio-features/**'
       - 'packages/knowledge-features/**'
+      - 'packages/workspace-features/**'
+      - 'apps/workbench/src-tauri/**'
+      - 'apps/repo-manager/src-tauri/**'
+      - 'apps/code-pad/src-tauri/**'
+      - 'apps/run-manager/src-tauri/**'
+      - 'apps/log-lens/src-tauri/**'
+      - 'apps/port-manager/src-tauri/**'
+      - 'apps/wsl-desktop/src-tauri/**'
       - 'crates/api-protocols/**'
       - 'crates/data-migration/**'
       - 'crates/webhook-core/**'
@@ -27,7 +35,9 @@ on:
       - 'Cargo.lock'
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/scripts/windows-suite-workflows.mjs'
       - '.github/scripts/windows-workspace-*'
+      - '.github/scripts/copy-owned-terminal-profile.ps1'
       - '.github/scripts/workspace-wsl-*'
       - '.github/scripts/windows-api-migration.mjs'
       - '.github/scripts/windows-knowledge-migration.mjs'
@@ -50,21 +60,71 @@ on:
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
     inputs:
+      terminal_diagnostic_run:
+        description: Reuse this prior foundation run's exact Workspace artifact for hosted companion diagnosis only
+        type: string
+        default: ''
       wsl_fixture_artifact_only:
-        description: Build only private Windows unit-test executables for an owned local WSL fixture
+        description: Build only private Windows unit-test executables for an isolated WSL fixture
         type: boolean
         default: false
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.terminal_diagnostic_run || 'full' }}
   cancel-in-progress: true
 
 jobs:
+  terminal-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '' }}
+    name: Retained Workspace artifact companion diagnostic
+    runs-on: windows-2025
+    timeout-minutes: 12
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Download the original private artifact without rebuilding
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DIAGNOSTIC_RUN: ${{ inputs.terminal_diagnostic_run }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:DIAGNOSTIC_RUN -notmatch '^\d+$') { throw 'Invalid source run' }
+          $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:DIAGNOSTIC_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected source workflow' }
+          gh run download $env:DIAGNOSTIC_RUN --name "workspace-webview-fixture-$env:DIAGNOSTIC_RUN" --dir "$env:RUNNER_TEMP/workspace-retained-fixture"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source artifact unavailable' }
+      - name: Prepare disposable hosted WSL1 fixture
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Diagnose only the companion restore failure
+        env:
+          DIAGNOSTIC_RUN: ${{ inputs.terminal_diagnostic_run }}
+        shell: pwsh
+        run: node .github/scripts/windows-workspace-terminal-diagnostic.mjs "$env:RUNNER_TEMP/workspace-retained-fixture" "$env:DIAGNOSTIC_RUN"
+      - name: Remove the diagnostic VM's owned fixture
+        if: ${{ always() }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
+      - name: Retain bounded synthetic diagnosis
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-terminal-diagnostic-${{ github.run_id }}
+          path: product-foundation-evidence
+          retention-days: 7
+          if-no-files-found: error
+
   workspace-wsl-helper:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -110,8 +170,10 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
     name: Hidden products (Windows native)
+    outputs:
+      workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -130,6 +192,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-product-foundation
+          # Preserve compiled dependencies after a fixture fails; results are never cached.
+          cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Check generated Workspace fixture requests
         run: node --test .github/scripts/windows-workspace-registration.test.mjs
@@ -214,7 +278,7 @@ jobs:
       - name: Exercise packaged shell and installation namespace isolation
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
-      - name: Export Workspace build for owned local WSL2 WebView acceptance
+      - name: Export Workspace build for isolated WSL2 WebView acceptance
         id: workspace-export
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
@@ -253,6 +317,10 @@ jobs:
           path: product-foundation-evidence
           if-no-files-found: error
           retention-days: 7
+      - name: Verify four-product commands and artifact workflows
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        timeout-minutes: 15
+        run: node .github/scripts/windows-suite-workflows.mjs
       - name: Verify API Studio migration from pinned legacy storage
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:
@@ -289,8 +357,47 @@ jobs:
           if-no-files-found: error
           retention-days: 7
 
+  windows-wsl2:
+    needs: windows
+    if: ${{ needs.windows.result == 'success' && needs.windows.outputs.workspace_fixture_exported == 'success' }}
+    name: Workspace WSL2 and containers (isolated hosted VM)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          name: workspace-webview-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/workspace-webview-fixture
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/devbox-wsl-rootfs
+          key: owned-wsl-rootfs-2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934
+      - name: Exercise the compiled artifact on an independent hosted WSL2 VM
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs'
+          New-Item -ItemType Directory -Force -Path $directory | Out-Null
+          $archive = Join-Path $directory 'ubuntu-rootfs.tar.gz'
+          if (-not (Test-Path -LiteralPath $archive)) {
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri 'https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz' -OutFile $archive
+          }
+          .github/scripts/windows-workspace-owned-wsl2.ps1 -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID
+      - name: Preserve isolated WSL2 acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl2-acceptance-${{ github.run_id }}
+          path: ${{ runner.temp }}/workspace-webview-fixture/*acceptance.json
+          if-no-files-found: warn
+          retention-days: 7
+
   baseline-performance:
-    if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -340,7 +447,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:
@@ -354,6 +461,8 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-product-foundation
+          # Preserve compiled dependencies after a fixture fails; results are never cached.
+          cache-on-failure: true
       - name: Compile only explicit native WSL fixtures
         shell: pwsh
         run: .github/scripts/export-knowledge-wsl-fixtures.ps1

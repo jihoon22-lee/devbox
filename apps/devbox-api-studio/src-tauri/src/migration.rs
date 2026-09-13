@@ -40,6 +40,7 @@ const LEGACY: [LegacyApp; 3] = [
 ];
 #[derive(Default)]
 struct Work {
+    completed: VecDeque<product_contract::operations::Row>,
     stage: &'static str,
     current: Option<(String, Arc<AtomicBool>)>,
     cancelled: VecDeque<(String, Instant)>,
@@ -440,7 +441,17 @@ fn no_args(args: &Value) -> Result<(), String> {
 }
 pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
     let state = app.state::<MigrationState>();
-    match method {
+    let projection_id = if matches!(
+        method,
+        "prepare_migration" | "apply_migration" | "rollback_migration" | "acknowledge_migration"
+    ) {
+        args.get("operationId")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+    } else {
+        None
+    };
+    let result=async { match method {
         "migration_status" => {
             no_args(&args)?;
             let work = state.work.lock().map_err(|_| io_error())?;
@@ -631,6 +642,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
             }
             let input: Input = decode(args)?;
             let _guard = state.begin(input.operation_id)?;
+            _guard.stage("rollback-commit");
             encode(state.repository()?.rollback(&input.id)?)
         }
         "acknowledge_migration" => {
@@ -644,6 +656,7 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
             }
             let input: Input = decode(args)?;
             let _guard = state.begin(input.operation_id)?;
+            _guard.stage("acknowledge-commit");
             state
                 .repository()?
                 .acknowledge(&input.id, &input.browser, input.rollback)?;
@@ -692,7 +705,38 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
             app.restart()
         }
         _ => Err("migration_request_invalid".into()),
+    } }.await;
+    if let Some(id) = projection_id {
+        use product_contract::operations::{Phase, Row};
+        let phase = match &result {
+            Ok(_) => Phase::Succeeded,
+            Err(error)
+                if error == "legacy_snapshot_cancelled" || error == "migration_cancelled" =>
+            {
+                Phase::Cancelled
+            }
+            Err(_) => Phase::Failed,
+        };
+        if let (Ok(mut work), Ok(row)) = (
+            state.work.lock(),
+            Row::new(
+                "api-studio",
+                "api-studio.migration",
+                "requests",
+                &id,
+                "API Studio 가져오기",
+                phase,
+                &phase,
+            ),
+        ) {
+            work.completed.retain(|previous| previous.id != row.id);
+            work.completed.push_back(row);
+            while work.completed.len() > 16 {
+                work.completed.pop_front();
+            }
+        }
     }
+    result
 }
 /// Only closed fixed codes cross the product IPC boundary; source paths and
 /// native error text never become renderer-visible diagnostics.
@@ -718,6 +762,37 @@ pub fn issue(error: &str) -> &'static str {
         "migration_startup_required" => "restart-required",
         _ => "unavailable",
     }
+}
+
+pub(crate) fn operation_rows(
+    app: &tauri::AppHandle,
+) -> Result<Vec<product_contract::operations::Row>, &'static str> {
+    use product_contract::operations::{Phase, Row};
+    let Some(state) = app.try_state::<MigrationState>() else {
+        return Ok(vec![]);
+    };
+    let work = state.work.lock().map_err(|_| "migration_busy")?;
+    let mut rows = work.completed.iter().cloned().collect::<Vec<_>>();
+    if let Some((id, cancel)) = &work.current {
+        rows.retain(|row| row.id != *id);
+        let phase = if matches!(work.stage, "rollback-commit" | "acknowledge-commit") {
+            Phase::Uncancellable
+        } else if cancel.load(Ordering::Acquire) {
+            Phase::CancelRequested
+        } else {
+            Phase::Running
+        };
+        rows.push(Row::new(
+            "api-studio",
+            "api-studio.migration",
+            "requests",
+            id,
+            "API Studio 가져오기",
+            phase,
+            &work.stage,
+        )?);
+    }
+    Ok(rows)
 }
 
 #[cfg(test)]

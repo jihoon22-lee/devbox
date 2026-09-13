@@ -3,9 +3,13 @@
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+pub mod commands;
 pub mod context;
+pub mod installation;
 pub mod operation;
 pub mod references;
+pub mod session_summary;
+pub mod transport;
 pub use context::{ExecutionTarget, ProjectContext};
 pub use operation::{Operation, OperationState, Problem, ProblemCode};
 
@@ -75,6 +79,7 @@ pub struct RouteStatus {
 /// This is a per-native-session replay cache. Unexpired entries are never
 /// evicted to admit a new request; overload fails closed until expiry.
 pub struct SessionGuard {
+    caller_window: String,
     handshake: Handshake,
     seen: HashMap<String, u64>,
     context: Option<ProjectContext>,
@@ -83,10 +88,28 @@ pub struct SessionGuard {
 impl SessionGuard {
     pub fn new(handshake: Handshake) -> Self {
         Self {
+            caller_window: "main".into(),
             handshake,
             seen: HashMap::new(),
             context: None,
         }
+    }
+
+    /// The native companion factory supplies this immutable label before creating
+    /// the window. This constructor is not exposed through a renderer request.
+    pub fn for_window(handshake: Handshake, native_label: &str) -> Result<Self, &'static str> {
+        if native_label.is_empty()
+            || native_label.len() > 96
+            || !native_label
+                .bytes()
+                .all(|byte| byte.is_ascii_alphanumeric() || byte == b'-')
+        {
+            return Err("invalid native window");
+        }
+        Ok(Self {
+            caller_window: native_label.into(),
+            ..Self::new(handshake)
+        })
     }
 
     pub fn handshake(&self) -> &Handshake {
@@ -115,7 +138,7 @@ impl SessionGuard {
         now_ms: u64,
         allowed_routes: &[&str],
     ) -> Result<(), ProblemCode> {
-        if caller_window != "main" || !local_origin {
+        if caller_window != self.caller_window || !local_origin {
             return Err(ProblemCode::Unauthorized);
         }
         if let Some(context) = &request.context {
@@ -205,6 +228,28 @@ mod tests {
         .unwrap()
     }
     #[test]
+    fn native_companion_binding_cannot_borrow_the_main_or_another_window() {
+        let handshake = guard().handshake().clone();
+        let mut companion = SessionGuard::for_window(handshake, "terminal-fixture").unwrap();
+        for window in ["main", "terminal-other"] {
+            assert_eq!(
+                companion.authorize(window, true, &request(), 1000, &["overview"]),
+                Err(ProblemCode::Unauthorized)
+            );
+        }
+        assert_eq!(
+            companion.authorize("terminal-fixture", false, &request(), 1000, &["overview"]),
+            Err(ProblemCode::Unauthorized)
+        );
+        assert!(companion
+            .authorize("terminal-fixture", true, &request(), 1000, &["overview"])
+            .is_ok());
+        assert_eq!(
+            guard().authorize("terminal-fixture", true, &request(), 1000, &["overview"]),
+            Err(ProblemCode::Unauthorized)
+        );
+    }
+    #[test]
     fn shared_fixture_replay_expiry_and_capacity() {
         let mut g = guard();
         assert!(g
@@ -292,3 +337,23 @@ mod tests {
         assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
     }
 }
+
+pub mod command_index;
+
+pub mod navigation;
+
+pub mod launcher_preferences;
+
+pub mod query;
+
+pub mod shortcuts;
+
+pub mod project_provider;
+
+pub mod file_reference;
+
+pub mod knowledge_draft;
+
+pub mod transform_selection;
+
+pub mod operations;

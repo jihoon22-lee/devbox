@@ -58,6 +58,7 @@ interface CodeEditorProps {
   canFindReferences?: boolean;
   navigationBusy?: boolean;
   onNavigate?: (docId: string, kind: "definition" | "references", cursor: number) => void;
+  onTransform?: (docId:string,from:number,to:number,current:()=>boolean)=>Promise<void>;
   onError?: (message: string | null) => void;
 }
 
@@ -87,6 +88,7 @@ export default function CodeEditor({
   canFindReferences = false,
   navigationBusy = false,
   onNavigate,
+  onTransform,
   onError,
 }: CodeEditorProps) {
   const mountRef = useRef<HTMLDivElement>(null);
@@ -122,6 +124,7 @@ export default function CodeEditor({
   const readOnlyRef = useRef(readOnly);
   readOnlyRef.current = readOnly;
   const [hasSelection, setHasSelection] = useState(false);
+  const sending = useRef(false);
   const editorMenu = useContextMenu();
   const openMenuRef = useRef(editorMenu.openAt);
   openMenuRef.current = editorMenu.openAt;
@@ -130,10 +133,11 @@ export default function CodeEditor({
     { type: "item", id: "cut", label: "잘라내기", shortcut: "Ctrl+X", disabled: readOnly || !hasSelection },
     { type: "item", id: "copy", label: "복사", shortcut: "Ctrl+C", disabled: !hasSelection },
     { type: "item", id: "paste", label: "붙여넣기", shortcut: "Ctrl+V", disabled: readOnly },
+    ...(onTransform ? [{type:"item" as const,id:"transform",label:"선택 내용을 API Studio에서 변환",disabled:readOnly || !hasSelection}] : []),
     { type: "separator", id: "navigation-separator" },
     { type: "item", id: "definition", label: "정의로 이동", disabled: navigationBusy || !canGoToDefinition },
     { type: "item", id: "references", label: "참조 찾기", disabled: navigationBusy || !canFindReferences },
-  ], [canFindReferences, canGoToDefinition, hasSelection, navigationBusy, readOnly]);
+  ], [canFindReferences, canGoToDefinition, hasSelection, navigationBusy, readOnly, onTransform]);
 
   useEffect(() => {
     if (!mountRef.current) return;
@@ -288,6 +292,15 @@ export default function CodeEditor({
     const view = viewRef.current;
     if (!view) return;
     onErrorRef.current?.(null);
+    if(id === "transform") {
+      if(sending.current || readOnlyRef.current || !onTransform || view.compositionStarted)return;
+      const before=view.state;
+      if(before.selection.ranges.length!==1 || before.selection.main.empty)throw new Error("한 개의 선택 영역을 지정해 주세요.");
+      sending.current=true;
+      try { await onTransform(docId,before.selection.main.from,before.selection.main.to,()=>viewRef.current===view && sameClipboardTarget(before,view.state)); }
+      finally { sending.current=false; }
+      return;
+    }
     if (id === "copy" || id === "cut") {
       const before = view.state;
       const text = selectedText(before);

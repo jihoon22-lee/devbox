@@ -14,6 +14,9 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+devbox-applink = { package = "applink", path = "../../../crates/applink" }
+tokio = { version = "1", features = ["net", "sync", "rt", "time", "io-util", "macros"] }
+devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
 tauri = { version = "2", features = ["tray-icon"] }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 
@@ -33,7 +36,7 @@ sha2 = "0.11.0"
 devbox-wsl = { package = "wsl", path = "../../../crates/wsl" }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61.3", features = ["Win32_Storage_FileSystem"] }
+windows = { version = "0.61.3", features = ["Win32_Storage_FileSystem", "Win32_Foundation", "Win32_System_Threading", "Win32_System_Pipes", "Win32_Security"] }
 
 [target.'cfg(unix)'.dependencies]
 libc = "0.2"

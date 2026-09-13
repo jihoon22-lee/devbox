@@ -76,16 +76,32 @@ def check(root=ROOT):
         capability = json.loads((root / entry["appDir"] / "src-tauri/capabilities/default.json").read_text())
         assert capability["windows"] == ["main"]
         assert "remote" not in capability
-        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status"}
+        expected_permissions = {"core:default", "product-shell:allow-describe", "product-shell:allow-route-status", "suite:allow-connection"}
         if product["id"] == "workspace":
             expected_permissions.add("workspace:allow-execute")
         if product["id"] == "api-studio":
             expected_permissions.add("api-studio:allow-execute")
         if product["id"] == "knowledge":
             expected_permissions.add("knowledge:allow-execute")
+        if product["id"] == "control-center":
+            expected_permissions.update({"commands:allow-command-search", "commands:allow-command-preview", "commands:allow-command-source", "commands:allow-command-cancel", "commands:allow-command-open", "commands:allow-command-status", "commands:allow-command-preferences", "commands:allow-command-shortcut", "commands:allow-command-trigger-shortcut", "commands:allow-command-import-launcher"})
         assert set(capability["permissions"]) == expected_permissions
         capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
         expected_files = {"default.json"}
+        if product["id"] == "workspace":
+            expected_files.update({"terminal.json", "terminal-export.json"})
+            terminal = json.loads((capability_dir / "terminal.json").read_text())
+            assert terminal["windows"] == ["terminal-*"]
+            assert "remote" not in terminal and not terminal.get("webviews")
+            assert set(terminal["permissions"]) == {
+                "core:default", "workspace:allow-terminal-describe",
+                "workspace:allow-terminal-execute", "clipboard-manager:allow-read-text",
+                "opener:allow-open-url",
+            }
+            exporter = json.loads((capability_dir / "terminal-export.json").read_text())
+            assert exporter["windows"] == ["legacy-terminal-export"]
+            assert "remote" not in exporter and not exporter.get("webviews")
+            assert exporter["permissions"] == ["workspace:allow-terminal-export-message"]
         if product["id"] == "api-studio":
             expected_files.add("legacy-export.json")
             exporter = json.loads((capability_dir / "legacy-export.json").read_text())

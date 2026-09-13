@@ -11,9 +11,7 @@ use super::environment::EnvironmentProtectorState;
 use super::windows;
 use super::wsl;
 use crate::core::models::{RunExecutionMetadata, TargetKind};
-use crate::core::workspace_tasks::{
-    revalidate_workspace_task_execution, WorkspaceTaskExecution, WorkspaceTaskKind,
-};
+use crate::core::workspace_tasks::{WorkspaceTaskExecution, WorkspaceTaskKind};
 use crate::logs::{LogStream, LogStreamHandle, LogStreams, LOG_RELATIVE_ROOT};
 use crate::scheduler::{
     AdapterError, AdapterFuture, ExecutionAdapter, ExecutionExit, ExecutionHandle,
@@ -270,8 +268,14 @@ impl PlatformExecutionAdapter {
             && execution.target_distro == job.target_distro;
         let revalidation = if exact_job_projection {
             let verification = execution.clone();
+            let database = self.database.clone();
             tokio::task::spawn_blocking(move || {
-                revalidate_workspace_task_execution(&verification).map(|_| ())
+                crate::workspace_sources::verify(
+                    &database,
+                    std::slice::from_ref(&verification),
+                    true,
+                )
+                .map(|_| ())
             })
             .await
             .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?
@@ -412,27 +416,37 @@ impl PlatformExecutionAdapter {
             .target_distro
             .as_deref()
             .ok_or_else(|| failure(FailureCode::Spawn))?;
+        let database = self.database.clone();
+        let native_distro = distro.to_owned();
+        let native_task = workspace_task.cloned();
+        let target = tokio::task::spawn_blocking(move || {
+            crate::workspace_sources::wsl_target(&database, &native_distro, native_task.as_ref())
+        })
+        .await
+        .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?
+        .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?;
         let cwd = match workspace_task {
             Some(task) => Some(task.cwd.clone()),
             None => match request.job.cwd.as_deref() {
                 None => None,
                 Some(path) if path.starts_with('/') => Some(path.to_owned()),
-                Some(path) => wsl::convert_windows_path(distro, path)
+                Some(path) => target
+                    .convert_windows_path(path)
                     .await
                     .map(Some)
                     .map_err(|_| failure(FailureCode::Spawn))?,
             },
         };
         let mut child = match workspace_task {
-            Some(task) if task.task_kind == WorkspaceTaskKind::Process => wsl::spawn_process(
-                distro,
-                cwd.as_deref(),
-                &task.command,
-                &task.args,
-                &request.run.id,
-                environment,
-            )
-            .map_err(|_| failure(FailureCode::Spawn)),
+            Some(task) if task.task_kind == WorkspaceTaskKind::Process => target
+                .spawn_process(
+                    cwd.as_deref(),
+                    &task.command,
+                    &task.args,
+                    &request.run.id,
+                    environment,
+                )
+                .map_err(|_| failure(FailureCode::Spawn)),
             Some(task) => {
                 let command = crate::core::shell::build_workspace_shell_source(
                     false,
@@ -440,23 +454,18 @@ impl PlatformExecutionAdapter {
                     &task.args,
                 )
                 .map_err(|_| failure(FailureCode::WorkspaceTaskConfiguration))?;
-                wsl::spawn(
-                    distro,
+                target
+                    .spawn(cwd.as_deref(), &command, &request.run.id, environment)
+                    .map_err(|_| failure(FailureCode::Spawn))
+            }
+            None => target
+                .spawn(
                     cwd.as_deref(),
-                    &command,
+                    &request.job.command,
                     &request.run.id,
                     environment,
                 )
-                .map_err(|_| failure(FailureCode::Spawn))
-            }
-            None => wsl::spawn(
-                distro,
-                cwd.as_deref(),
-                &request.job.command,
-                &request.run.id,
-                environment,
-            )
-            .map_err(|_| failure(FailureCode::Spawn)),
+                .map_err(|_| failure(FailureCode::Spawn)),
         }?;
         let handshake = match child.read_handshake(&request.run.id).await {
             Ok(value) => value,
@@ -498,7 +507,7 @@ impl PlatformExecutionAdapter {
                 return Err(failure(FailureCode::Spawn));
             }
         };
-        let (distro, child, _, _) = child.into_parts();
+        let (distro, child, _, _) = child.into_bound_parts();
         let handle = WslExecutionHandle::start(
             distro,
             child,
@@ -563,7 +572,20 @@ impl ExecutionAdapter for PlatformExecutionAdapter {
                         sid,
                         marker,
                     };
-                    wsl::recover_stale_group(distro, &identity, adapter.termination_grace)
+                    let execution = adapter
+                        .database
+                        .get_workspace_task_execution(&request.job.id)
+                        .map_err(|_| failure(FailureCode::Storage))?;
+                    let database = adapter.database.clone();
+                    let distro = distro.to_owned();
+                    let target = tokio::task::spawn_blocking(move || {
+                        crate::workspace_sources::wsl_target(&database, &distro, execution.as_ref())
+                    })
+                    .await
+                    .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?
+                    .map_err(|_| failure(FailureCode::WorkspaceTaskSourceChanged))?;
+                    target
+                        .recover_stale_group(&identity, adapter.termination_grace)
                         .await
                         .map_err(|_| failure(FailureCode::Termination))
                 }
@@ -592,6 +614,16 @@ impl ExecutionAdapter for PlatformExecutionAdapter {
             }
         })
     }
+}
+
+/// A very short process may finish before the scheduler subscribes after its
+/// metadata CAS. `send` discards the value when there are no receivers; keep the
+/// terminal witness even across that gap and after the actor has exited.
+fn publish_terminal(
+    sender: &watch::Sender<Option<Result<ExecutionExit, AdapterError>>>,
+    result: Result<ExecutionExit, AdapterError>,
+) {
+    sender.send_replace(Some(result));
 }
 
 struct SharedTerminal {
@@ -1149,7 +1181,7 @@ impl WindowsExecutionHandle {
             if let Some(response) = termination_response {
                 let _ = response.send(final_result.clone());
             }
-            let _ = result_tx.send(Some(final_result));
+            publish_terminal(&result_tx, final_result);
         });
         Self {
             child: owned_child,
@@ -1194,7 +1226,7 @@ impl ExecutionHandle for WindowsExecutionHandle {
 }
 
 struct WslExecutionHandle {
-    distro: String,
+    distro: wsl::Target,
     identity: crate::core::shell::WslProcessIdentity,
     shared: Arc<SharedTerminal>,
     metadata: RunExecutionMetadata,
@@ -1203,7 +1235,7 @@ struct WslExecutionHandle {
 impl WslExecutionHandle {
     #[allow(clippy::too_many_arguments)]
     fn start(
-        distro: String,
+        distro: wsl::Target,
         child: tokio::process::Child,
         identity: crate::core::shell::WslProcessIdentity,
         stdout: tokio::io::BufReader<tokio::process::ChildStdout>,
@@ -1262,10 +1294,7 @@ impl WslExecutionHandle {
                     MonitorEvent::Wait(mut result) => {
                         wait_complete = true;
                         natural_result = Some(result.clone());
-                        if wsl::confirm_group_gone(&distro, &identity, grace)
-                            .await
-                            .is_err()
-                        {
+                        if distro.confirm_group_gone(&identity, grace).await.is_err() {
                             // The wrapper exited (or its wait failed) before
                             // its supervisor proved that the exact group was
                             // empty. Keep the actor alive for a bounded probe
@@ -1286,10 +1315,7 @@ impl WslExecutionHandle {
                         let Some(mut result) = natural_result.clone() else {
                             continue;
                         };
-                        if wsl::confirm_group_gone(&distro, &identity, grace)
-                            .await
-                            .is_err()
-                        {
+                        if distro.confirm_group_gone(&identity, grace).await.is_err() {
                             continue;
                         }
                         if let Err(error) = result {
@@ -1303,14 +1329,12 @@ impl WslExecutionHandle {
                     }
                     MonitorEvent::Terminate(request) => {
                         let cleaned = if wait_complete {
-                            wsl::confirm_group_gone(&distro, &identity, grace)
+                            distro
+                                .confirm_group_gone(&identity, grace)
                                 .await
                                 .map(|()| ExecutionExit { exit_code: None })
                                 .map_err(|_| failure(FailureCode::Termination))
-                        } else if wsl::terminate_group(&distro, &identity, grace)
-                            .await
-                            .is_ok()
-                        {
+                        } else if distro.terminate_group(&identity, grace).await.is_ok() {
                             reap_wsl_wrapper(&reap_tx, &mut wait_rx, &mut wait_task, grace).await
                         } else {
                             Err(failure(FailureCode::Termination))
@@ -1331,13 +1355,8 @@ impl WslExecutionHandle {
                     MonitorEvent::LogFailure => {
                         log_failure = true;
                         let cleaned = if wait_complete {
-                            wsl::confirm_group_gone(&distro, &identity, grace)
-                                .await
-                                .is_ok()
-                        } else if wsl::terminate_group(&distro, &identity, grace)
-                            .await
-                            .is_ok()
-                        {
+                            distro.confirm_group_gone(&identity, grace).await.is_ok()
+                        } else if distro.terminate_group(&identity, grace).await.is_ok() {
                             reap_wsl_wrapper(&reap_tx, &mut wait_rx, &mut wait_task, grace)
                                 .await
                                 .is_ok()
@@ -1362,7 +1381,7 @@ impl WslExecutionHandle {
                 {
                     DrainControl::Complete(result) => result,
                     DrainControl::Terminate(request) => {
-                        let killed = wsl::terminate_group(&distro, &identity, grace).await;
+                        let killed = distro.terminate_group(&identity, grace).await;
                         if killed.is_ok() {
                             outcome = Ok(ExecutionExit { exit_code: None });
                             termination_response = Some(request.response);
@@ -1376,7 +1395,7 @@ impl WslExecutionHandle {
                         join_drain_tasks_bounded(&mut drains, grace).await
                     }
                     DrainControl::Failure => {
-                        let killed = wsl::terminate_group(&distro, &identity, grace).await;
+                        let killed = distro.terminate_group(&identity, grace).await;
                         if killed.is_err() {
                             abort_drain_tasks(&mut drains);
                         }
@@ -1395,7 +1414,7 @@ impl WslExecutionHandle {
             if let Some(response) = termination_response {
                 let _ = response.send(final_result.clone());
             }
-            let _ = result_tx.send(Some(final_result));
+            publish_terminal(&result_tx, final_result);
         });
         Self {
             distro: owned_distro,
@@ -1423,11 +1442,11 @@ impl ExecutionHandle for WslExecutionHandle {
                     distro,
                     pid,
                     start_tick,
-                } if distro == self.distro => {
-                    wsl::contains_process(&self.distro, &self.identity, pid, start_tick)
-                        .await
-                        .map_err(|_| AdapterError::new("process-owner-unavailable"))
-                }
+                } if distro == self.distro.name() => self
+                    .distro
+                    .contains_process(&self.identity, pid, start_tick)
+                    .await
+                    .map_err(|_| AdapterError::new("process-owner-unavailable")),
                 _ => Ok(false),
             }
         })
@@ -1661,6 +1680,51 @@ mod tests {
         assert!(!output
             .windows(b"abcdef".len())
             .any(|window| window == b"abcdef"));
+    }
+
+    #[tokio::test]
+    async fn fast_exit_before_scheduler_subscription_remains_visible_to_wait_and_stop() {
+        let (shared, receiver, terminate_rx) = SharedTerminal::new();
+        drop(receiver);
+        drop(terminate_rx);
+        assert_eq!(shared.result.receiver_count(), 0);
+        publish_terminal(&shared.result, Ok(ExecutionExit { exit_code: Some(7) }));
+        let waited = tokio::time::timeout(
+            Duration::from_millis(100),
+            SharedTerminal::wait(shared.result.subscribe()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let stopped = tokio::time::timeout(Duration::from_millis(100), shared.request_terminate())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(waited.exit_code, Some(7));
+        assert_eq!(stopped.exit_code, Some(7));
+    }
+    #[tokio::test]
+    async fn confirmed_error_before_subscription_preserves_its_cleanup_witness() {
+        let (shared, receiver, terminate_rx) = SharedTerminal::new();
+        drop(receiver);
+        drop(terminate_rx);
+        publish_terminal(
+            &shared.result,
+            Err(AdapterError::confirmed(FailureCode::LogWrite.as_str())),
+        );
+        let waited = tokio::time::timeout(
+            Duration::from_millis(100),
+            SharedTerminal::wait(shared.result.subscribe()),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        let stopped = tokio::time::timeout(Duration::from_millis(100), shared.request_terminate())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(waited.cleanup_confirmed);
+        assert!(stopped.cleanup_confirmed);
     }
 
     #[tokio::test]

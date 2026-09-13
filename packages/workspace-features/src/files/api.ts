@@ -52,8 +52,8 @@ export interface RenamedFile {
   contentHash: string;
 }
 
-export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
-  return invoke<OpenedFile>("open_file", { request: { path, encoding } });
+export function openFile(path: string, encoding: Encoding | null = null, receivedReference?: string): Promise<OpenedFile> {
+  return invoke<OpenedFile>("open_file", { request: { path, encoding }, ...(receivedReference?{receivedReference}:{}) });
 }
 
 export function pickFiles(): Promise<string[]> {
@@ -492,4 +492,9 @@ export function applyLspRecovery(previewId: string): Promise<LspRecoveryResult> 
 }
 export function cancelLspRecovery(previewId: string): Promise<void> {
   return componentInvoke("workspace.lsp")<void>("lsp_recovery_cancel", { previewId });
+}
+
+export async function sendEditorSelection(path:string,nativeRevision:string,text:string,from:number,to:number):Promise<void> {
+  if(!isProductHosted())throw new Error("Workspace에서 사용할 수 있습니다.");
+  await invoke("send_editor_selection",{path,nativeRevision,text,from,to});
 }
