@@ -455,3 +455,14 @@ Run `pnpm verify:affected` once now that the bundle's implementation/importer/fi
 packet is assembled. On failure retain completed evidence and continue only failed,
 changed or not-yet-run checks. Windows execution and final-head CI remain separate
 required gates. B08/B09 remain unfinished; #541/#542 are not automatically closed.
+
+
+First detailed audit progress: metadata/resource checks passed; scope regression
+expectations required the legacy Launcher's new shared-contract/UI dependency and
+the shared remembered-connection source edge. Failed scope tests and remaining
+runner tests then passed (3.633 seconds); resolver correctly selected all.
+All frontend builds completed. The budget check found Workspace initial JS at
+283,907 bytes versus 280,000. RegistryGate is now a lazy feature boundary, preserving
+its UI and loading it after the shell. Other products' passed builds/budgets remain
+valid; rerun only Workspace build/budget, then continue unrun frontend tests/types
+and Rust checks. Full compiler continuation before that failure took 137.752 seconds.
