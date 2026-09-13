@@ -65,6 +65,7 @@ RUST_SHARED_PLATFORM_CONSUMERS = {
     "apps/devbox-control-center/src-tauri/src/platform/component_scope.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
     "apps/devbox-control-center/src-tauri/src/platform/peer_identity.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
     "apps/devbox-control-center/src-tauri/src/platform/component_bus.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
+    "apps/devbox-control-center/src-tauri/src/platform/connection_preference.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
 }
 
 
