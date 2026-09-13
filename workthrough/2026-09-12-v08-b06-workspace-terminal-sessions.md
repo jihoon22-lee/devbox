@@ -450,3 +450,11 @@ from the component catalog checked by product-shell authorization. Register its
 read-only authority and advance the catalog revision. This is an actual native
 authorization repair; old executable diagnostics cannot substitute for rebuilding
 that declaration. Passed unrelated local/frontend/native owner evidence is retained.
+
+
+Native 34741996452 passed terminal sessions, WSL execution, matcher/log offsets,
+Problems→Files and cleanup. Its next independent LSP installer UI test retained the
+old WSL task context in the renderer although native fixture cleanup had restored
+the original Windows project. The captured renderer shows Native WSL task fixture
+and a disconnected LSP panel. Reload the closed editor's shell at that fixture
+boundary; normal user project selection already refreshes the UI explicitly.

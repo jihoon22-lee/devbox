@@ -143,6 +143,11 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   record("runtime-import",runtimeImport);
   const terminalSessions=await exerciseWorkspaceTerminalSessions({cdp,directory,call,success,connectTerminal});
   record("terminal-sessions",terminalSessions);
+  // The native Session fixture restores its original project through IPC. Its
+  // closed editor leaves no user draft; reload the shell's context before the
+  // next independent UI scenario instead of retaining the WSL fixture view.
+  await cdp.command("Page.reload");
+  await waitForRenderer(cdp, `!!document.querySelector('nav[aria-label="제품 화면"]')`, "Workspace context did not reload after native Session cleanup");
   const lspInstaller = await exerciseWorkspaceLspInstaller({cdp,root:canonicalRoot,directory,call,success,waitForRenderer,processId,executable,network});
   record("lsp-installer",lspInstaller);
   await cdp.evaluate(`(async()=>{const d=await window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe");const label=d.features.find(f=>f.route==="overview").label;Array.from(document.querySelectorAll('nav[aria-label="제품 화면"] button')).find(b=>b.textContent.trim()===label).click();})()`);
