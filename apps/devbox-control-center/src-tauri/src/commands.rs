@@ -92,15 +92,23 @@ struct Response<T> {
 #[tauri::command]
 async fn command_search(
     window: WebviewWindow,
-    index: State<'_, Index>,
     request: SearchRequest,
 ) -> Result<Response<Search>, Problem> {
     let provenance =
         product_shell_tauri::authorize(&window, &request.header, "control-center.commands")?;
-    let value = index.search(&request.query).map_err(|_| Problem {
-        code: ProblemCode::InvalidRequest,
-        provenance: provenance.clone(),
-    })?;
+    let catalog = devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE);
+    let index = catalog.and_then(|catalog| {
+        Index::catalog(
+            &catalog,
+            &crate::suite::installed_products(window.app_handle()),
+        )
+    });
+    let value = index
+        .and_then(|index| index.search(&request.query))
+        .map_err(|_| Problem {
+            code: ProblemCode::InvalidRequest,
+            provenance: provenance.clone(),
+        })?;
     Ok(Response {
         operation: Operation {
             provenance,

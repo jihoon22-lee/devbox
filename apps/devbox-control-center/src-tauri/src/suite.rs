@@ -39,6 +39,9 @@ struct Link {
     navigation: Arc<Mutex<product_contract::navigation::Queue>>,
     review_slots: Arc<tokio::sync::Semaphore>,
     queries: Arc<product_contract::query::Queries>,
+    epoch: u64,
+    remembered: bool,
+    launches: std::collections::BTreeMap<String, Arc<tokio::sync::Mutex<()>>>,
 }
 #[cfg(windows)]
 impl Default for Link {
@@ -50,6 +53,12 @@ impl Default for Link {
             navigation: Arc::default(),
             review_slots: Arc::new(tokio::sync::Semaphore::new(2)),
             queries: Arc::default(),
+            epoch: 0,
+            remembered: false,
+            launches: product_contract::installation::PRODUCTS
+                .iter()
+                .map(|product| (product.to_string(), Arc::new(tokio::sync::Mutex::new(()))))
+                .collect(),
         }
     }
 }
@@ -75,6 +84,8 @@ enum Method {
     Preview,
     Approve {
         token: String,
+        #[serde(default)]
+        remember: bool,
     },
     Disconnect,
     Probe {
@@ -123,8 +134,8 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
-            Method::Approve { token } => {
-                let _ = token;
+            Method::Approve { token, remember } => {
+                let _ = (token, remember);
             }
             Method::Probe { product } => {
                 let _ = product;
@@ -157,6 +168,84 @@ async fn connection(
 }
 
 #[cfg(windows)]
+fn capture_own(product: &str) -> Result<platform::component_scope::CapturedScope, &'static str> {
+    let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
+    let root = image
+        .parent()
+        .ok_or("suite_image_unavailable")?
+        .ancestors()
+        .take(6)
+        .find(|root| root.join("devbox-installation.json").is_file())
+        .ok_or("suite_package_unavailable")?;
+    platform::component_scope::CapturedScope::capture(
+        root,
+        product,
+        &image,
+        env!("CARGO_PKG_VERSION"),
+    )
+}
+#[cfg(windows)]
+async fn resume(
+    app: tauri::AppHandle,
+    product: &'static str,
+    domain: Option<DomainHandler>,
+    sources: &'static [product_contract::transport::Source],
+    state: Arc<Mutex<Link>>,
+) {
+    let Ok(permit) = state.lock().map_err(|_| ()).and_then(|state| {
+        state
+            .review_slots
+            .clone()
+            .try_acquire_owned()
+            .map_err(|_| ())
+    }) else {
+        return;
+    };
+    let storage_app = app.clone();
+    let captured = tokio::task::spawn_blocking(move || {
+        let _permit = permit;
+        let Some(preference) = platform::connection_preference::read(&storage_app)? else {
+            return Ok::<_, &'static str>(None);
+        };
+        let scope = capture_own(product)?;
+        if !preference.matches(product, &scope) {
+            return Err("suite_review_required");
+        }
+        Ok(Some(Arc::new(scope)))
+    })
+    .await;
+    let Ok(Ok(Some(scope))) = captured else {
+        return;
+    };
+    // A manual review/disconnect wins over a late startup capture.
+    let Ok(mut state) = state.lock() else {
+        return;
+    };
+    if state.epoch != 0 || state.approved.is_some() {
+        return;
+    }
+    let Ok(handler) = handler(
+        product,
+        app.clone(),
+        state.navigation.clone(),
+        domain,
+        sources,
+        state.queries.clone(),
+    ) else {
+        return;
+    };
+    let Ok(bus) = platform::component_bus::Bus::start(scope.clone(), product, handler) else {
+        return;
+    };
+    state.approved = Some(scope);
+    state.bus = Some(bus);
+    state.remembered = true;
+    drop(state);
+    use tauri::Emitter;
+    let _ = app.emit("suite-connected", ());
+}
+
+#[cfg(windows)]
 async fn execute(
     product: &'static str,
     app: tauri::AppHandle,
@@ -167,7 +256,7 @@ async fn execute(
     deadline: u64,
     route: String,
 ) -> Result<serde_json::Value, &'static str> {
-    use platform::{component_bus, component_scope::CapturedScope};
+    use platform::component_bus;
     use serde_json::json;
     match method {
         Method::Pending => {
@@ -200,7 +289,7 @@ async fn execute(
         Method::Status => {
             let state = state.lock().map_err(|_| "suite_busy")?;
             Ok(
-                json!({"connected": state.approved.is_some(), "generation": state.approved.as_ref().map(|scope|&scope.id)}),
+                json!({"connected": state.approved.is_some(), "generation": state.approved.as_ref().map(|scope|&scope.id),"remembered":state.remembered}),
             )
         }
         Method::Preview => {
@@ -210,15 +299,7 @@ async fn execute(
             let permit = slots.try_acquire_owned().map_err(|_| "suite_review_busy")?;
             let scope = tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
-                let root = image
-                    .parent()
-                    .ok_or("suite_image_unavailable")?
-                    .ancestors()
-                    .take(6)
-                    .find(|root| root.join("devbox-installation.json").is_file())
-                    .ok_or("suite_package_unavailable")?;
-                CapturedScope::capture(root, product, &image, env!("CARGO_PKG_VERSION"))
+                capture_own(product)
             })
             .await
             .map_err(|_| "suite_review_unavailable")??;
@@ -227,11 +308,12 @@ async fn execute(
                 "installationId": scope.manifest.installation_id, "generation": scope.id,
                 "root": scope.review_root(), "products": scope.manifest.members.iter().map(|member|
                     json!({"product":member.product,"available":!scope.issues.contains_key(&member.product)})).collect::<Vec<_>>()});
-            state.lock().map_err(|_| "suite_busy")?.pending =
-                Some((token, Instant::now(), Arc::new(scope)));
+            let mut state = state.lock().map_err(|_| "suite_busy")?;
+            state.epoch = state.epoch.wrapping_add(1);
+            state.pending = Some((token, Instant::now(), Arc::new(scope)));
             Ok(value)
         }
-        Method::Approve { token } => {
+        Method::Approve { token, remember } => tokio::task::spawn_blocking(move || {
             let mut state = state.lock().map_err(|_| "suite_busy")?;
             if state.bus.is_some() {
                 return Err("suite_already_connected");
@@ -246,29 +328,47 @@ async fn execute(
                 product,
                 handler(
                     product,
-                    app,
+                    app.clone(),
                     state.navigation.clone(),
                     domain,
                     sources,
                     state.queries.clone(),
                 )?,
             )?;
+            platform::connection_preference::write(
+                &app,
+                product,
+                remember.then_some(scope.as_ref()),
+            )?;
+            state.epoch = state.epoch.wrapping_add(1);
+            state.remembered = remember;
             let generation = scope.id.clone();
             state.bus = Some(bus);
             state.approved = Some(scope);
-            Ok(json!({"connected":true,"generation":generation}))
-        }
+            drop(state);
+            use tauri::Emitter;
+            let _ = app.emit("suite-connected", ());
+            Ok(json!({"connected":true,"generation":generation,"remembered":remember}))
+        })
+        .await
+        .map_err(|_| "suite_worker_unavailable")?,
         Method::Disconnect => {
-            let bus = {
+            let storage_app = app.clone();
+            let bus = tokio::task::spawn_blocking(move || {
                 let mut state = state.lock().map_err(|_| "suite_busy")?;
+                platform::connection_preference::write(&storage_app, product, None)?;
+                state.epoch = state.epoch.wrapping_add(1);
+                state.remembered = false;
                 if let Some(scope) = state.approved.take() {
                     scope.retire();
                 }
                 state.pending.take();
                 state.queries.cancel_all();
                 state.navigation.lock().map_err(|_| "suite_busy")?.revoke();
-                state.bus.take()
-            };
+                Ok::<_, &'static str>(state.bus.take())
+            })
+            .await
+            .map_err(|_| "suite_worker_unavailable")??;
             if let Some(mut bus) = bus {
                 bus.shutdown().await;
             }
@@ -454,6 +554,33 @@ fn now() -> u64 {
         .as_millis()
         .min(u128::from(u64::MAX)) as u64
 }
+#[allow(dead_code)]
+pub(crate) fn installed_products(app: &tauri::AppHandle) -> std::collections::BTreeSet<String> {
+    #[allow(unused_mut)]
+    let mut products = std::collections::BTreeSet::from(["control-center".to_owned()]);
+    #[cfg(windows)]
+    {
+        if let Some(suite) = app.try_state::<Suite>() {
+            if let Ok(state) = suite.state.lock() {
+                if let Some(scope) = &state.approved {
+                    if scope.revalidate().is_ok() {
+                        products.extend(
+                            scope
+                                .manifest
+                                .members
+                                .iter()
+                                .filter(|member| scope.member(&member.product).is_ok())
+                                .map(|member| member.product.clone()),
+                        );
+                    }
+                }
+            }
+        }
+    }
+    #[cfg(not(windows))]
+    let _ = app;
+    products
+}
 pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
     #[cfg(windows)]
     {
@@ -489,6 +616,29 @@ pub(crate) async fn remote(
             .approved
             .clone()
             .ok_or("suite_review_required")?;
+        if matches!(
+            call,
+            product_contract::transport::Call::PreviewCommand { .. }
+                | product_contract::transport::Call::OpenCommand { .. }
+        ) {
+            let launch = suite
+                .state
+                .lock()
+                .map_err(|_| "suite_busy")?
+                .launches
+                .get(product)
+                .cloned()
+                .ok_or("suite_product_invalid")?;
+            let _guard = tokio::time::timeout(
+                Duration::from_millis(deadline.saturating_sub(now())),
+                launch.lock(),
+            )
+            .await
+            .map_err(|_| "suite_activation_timeout")?;
+            activate(scope.clone(), product, deadline).await?;
+        }
+        // The actual command is sent once. A lost reply remains an unknown
+        // operation receipt; only read-only readiness probes are retried.
         platform::component_bus::call(scope, product, call, deadline).await
     }
     #[cfg(not(windows))]
@@ -496,6 +646,60 @@ pub(crate) async fn remote(
         let _ = (app, product, call, deadline);
         Err("suite_windows_required")
     }
+}
+
+#[cfg(windows)]
+async fn activate(
+    scope: Arc<platform::component_scope::CapturedScope>,
+    product: &str,
+    deadline: u64,
+) -> Result<(), &'static str> {
+    use product_contract::transport::Call;
+    match platform::component_bus::call(scope.clone(), product, Call::Describe {}, deadline).await {
+        Ok(_) => return Ok(()),
+        Err("peer_provider_unavailable") => {}
+        Err(error) => return Err(error),
+    }
+    let launch_scope = scope.clone();
+    let destination = product.to_owned();
+    let mut child = tokio::task::spawn_blocking(move || {
+        use std::os::windows::process::CommandExt;
+        if now() >= deadline {
+            return Err("suite_activation_timeout");
+        }
+        launch_scope.revalidate()?;
+        let (_, image, _) = launch_scope.member(&destination)?;
+        let child = std::process::Command::new(image)
+            .current_dir(image.parent().ok_or("suite_image_unavailable")?)
+            .creation_flags(0x08000000)
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .spawn()
+            .map_err(|_| "suite_activation_unavailable")?;
+        Ok(child)
+    })
+    .await
+    .map_err(|_| "suite_activation_unavailable")??;
+    while now() < deadline {
+        // Readiness verifies the actual server PID/image and native session each time.
+        match platform::component_bus::call(scope.clone(), product, Call::Describe {}, deadline)
+            .await
+        {
+            Ok(_) => return Ok(()),
+            Err("peer_provider_unavailable") => {}
+            Err(error) => return Err(error),
+        }
+        if child
+            .try_wait()
+            .map_err(|_| "suite_activation_unavailable")?
+            .is_some_and(|status| !status.success())
+        {
+            return Err("suite_activation_unavailable");
+        }
+        tokio::time::sleep(Duration::from_millis(200)).await;
+    }
+    Err("suite_activation_timeout")
 }
 
 pub(crate) fn plugin(
@@ -513,6 +717,11 @@ pub(crate) fn plugin(
                 #[cfg(windows)]
                 state: Arc::new(Mutex::new(Link::default())),
             });
+            #[cfg(windows)]
+            {
+                let state = app.state::<Suite>().state.clone();
+                tauri::async_runtime::spawn(resume(app.clone(), product, domain, sources, state));
+            }
             Ok(())
         })
         .build()

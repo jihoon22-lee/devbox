@@ -169,3 +169,25 @@ This slice passed Rust syntax/format parsing and the three changed product TypeS
 checks (12.682 seconds). No Cargo tests, Clippy, frontend tests/builds or affected
 verification were run while B07 remains incomplete. B06's independent final failure
 repair is not a reason to repeat B07 checks.
+
+## Reviewed reconnection and cold product routes
+
+Connection review can explicitly remember permission in that product's own
+installation data. Startup captures its native package again and reconnects only
+when root identity, manifest generation/member digests and product version match
+the stored bounded receipt. Unknown/corrupt/replaced receipts never auto-approve;
+manual disconnect removes persistence and wins over a late startup capture.
+The first connection in each product still requires its own visible review.
+
+Control Center catalog availability now comes from its approved, pinned package
+members. Selecting an available cold product route launches only that member's
+exact native image and waits for an authenticated pipe peer. Per-product launch
+locks prevent duplicate concurrent cold launches. Only readiness Describe probes
+repeat; the real command is sent once, with ambiguous replies retaining the existing
+operation receipt. Search queries never start an unavailable product. No command,
+query, file path or payload is put in argv and no startup entry is added.
+
+This slice passed Rust syntax parsing and the changed Control Center TypeScript
+check (2.345 seconds). Native lifecycle/namespace fixtures remain pending. Shortcut restoration, remaining
+shortcut commands, registry/Editor provider and Artifact integration still follow
+within this same B07 PR before detailed verification.
