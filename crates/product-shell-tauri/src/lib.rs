@@ -188,7 +188,11 @@ pub fn replace_project_context(
     if session.context() != expected {
         return Err("stale_context");
     }
-    session.bind_context(next)
+    session.bind_context(next)?;
+    drop(session);
+    use tauri::Emitter;
+    let _ = window.emit("workspace-context-changed", ());
+    Ok(())
 }
 
 pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {

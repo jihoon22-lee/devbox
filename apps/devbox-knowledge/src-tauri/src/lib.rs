@@ -3,6 +3,7 @@ mod core;
 mod federation;
 mod lifecycle;
 mod migration;
+mod project_provider;
 mod search;
 #[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
 mod suite;
@@ -27,6 +28,7 @@ pub fn run() {
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_opener::init())
             .plugin(component::plugin())
+            .plugin(project_provider::plugin())
     })
     .expect("error while running Devbox Knowledge");
 }

@@ -62,6 +62,10 @@ pub enum Call {
     CancelQuery {
         query_id: String,
     },
+    ProjectSnapshot {
+        verify_current: bool,
+    },
+    InvalidateProjectSnapshot {},
     ShortcutStatus {},
     ConfigureShortcuts {
         config: crate::shortcuts::Config,
@@ -141,9 +145,20 @@ impl Guard {
         {
             return Err("peer_request_denied");
         }
+        if (matches!(request.call, Call::ProjectSnapshot { .. })
+            && self.peer.product != "knowledge")
+            || (matches!(request.call, Call::InvalidateProjectSnapshot {})
+                && self.peer.product != "workspace")
+        {
+            return Err("peer_method_denied");
+        }
         // The command host is the only federated query/dispatch principal. Other
         // product roles acquire specific artifact/navigation capabilities separately.
         if self.peer.product != "control-center"
+            && !(self.peer.product == "knowledge"
+                && matches!(request.call, Call::ProjectSnapshot { .. }))
+            && !(self.peer.product == "workspace"
+                && matches!(request.call, Call::InvalidateProjectSnapshot {}))
             && !matches!(
                 request.call,
                 Call::Describe {} | Call::ShortcutStatus {} | Call::ConfigureShortcuts { .. }
@@ -301,6 +316,30 @@ mod tests {
             product.authorize(&request(), 1000),
             Err("peer_method_denied")
         );
+    }
+    #[test]
+    fn project_paths_are_only_delivered_to_knowledge_and_revocation_only_from_workspace() {
+        for product in ["control-center", "workspace", "knowledge", "api-studio"] {
+            for revoke in [false, true] {
+                let mut guard = Guard::new(
+                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                    "native-session",
+                )
+                .unwrap();
+                let mut request = request();
+                request.call = if revoke {
+                    Call::InvalidateProjectSnapshot {}
+                } else {
+                    Call::ProjectSnapshot {
+                        verify_current: true,
+                    }
+                };
+                assert_eq!(
+                    guard.authorize(&request, 1000).is_ok(),
+                    product == if revoke { "workspace" } else { "knowledge" }
+                );
+            }
+        }
     }
     #[test]
     fn executable_strings_and_raw_payloads_are_not_wire_methods() {

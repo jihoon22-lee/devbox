@@ -227,3 +227,27 @@ The user's Docker/network incident constraint is active on this checkout too:
 local network-changing fixtures and private-copy bypasses are forbidden. B06 owns
 the shared instruction and runner-guard commit; these identical safety edits are
 kept here immediately and will be reconciled when rebasing onto merged B06.
+
+## Native project provider for Knowledge
+
+Current Project query, Activity projections and native open now refresh Workspace's
+registry through the authenticated product pipe. Only Knowledge can request this
+path-bearing snapshot; Control Center search receives its existing metadata-only
+results. The producer resolves GUID-bound WSL names, re-admits the current root
+against Registry object evidence without starting a stopped distro, and marks
+noncurrent roots unverified. It never initializes the Runtime scheduler. Snapshot
+size/row bounds fail closed instead of widening Current Project to all indexed roots.
+
+Native producer epoch and monotonic content revisions cover restart, selection and
+availability changes. Knowledge serializes refresh, revokes old project references
+on disconnect/failed refresh, and rejects late replies across invalidation. Native
+Workspace selection/registry-change notifications invalidate the receiver; query
+and open also refresh independently. There is no idle polling or automatic product
+start. Existing Activity rows/aggregation remain intact, with explicit unverified
+association labels rather than invented availability.
+
+The shared snapshot structs now have two actual consumers. Rust syntax/format
+parsing and the diff/plan review cover this commit; role-isolation and unverified
+association regression cases are prepared for B07's single completion verification.
+Native changed-context/disconnected-provider fixtures remain pending with the other
+B07 acceptance work.
