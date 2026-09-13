@@ -21,6 +21,7 @@ fn main() {
                     "command_preferences",
                     "command_shortcut",
                     "command_trigger_shortcut",
+                    "command_import_launcher",
                 ]),
             ),
     )
