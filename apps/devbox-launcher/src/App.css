@@ -1,2 +1,5 @@
+@import "@devbox/tokens/tokens.css";
+@import "@devbox/a11y/styles.css";
+
 :root { color: var(--db-color-text); background: transparent; font-family: var(--db-font-sans); }
 body { margin: 0; min-width: 520px; background: transparent; }

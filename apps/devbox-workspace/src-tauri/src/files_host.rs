@@ -409,7 +409,7 @@ impl FilesHost {
             return Ok(self
                 .wsl_owner(Some(context))?
                 .editor_proof(
-                    &host.projects()?,
+                    host.projects()?.as_ref(),
                     context,
                     workspace_wsl::lsp_wire::ProofRequest {
                         path: input.path.clone(),
