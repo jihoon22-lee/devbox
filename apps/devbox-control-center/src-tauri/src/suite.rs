@@ -150,9 +150,7 @@ async fn connection(
         suite.domain,
         suite.sources,
         suite.state.clone(),
-        request.method,
-        request.header.deadline_ms,
-        request.header.route,
+        request,
     )
     .await;
     #[cfg(not(windows))]
@@ -300,10 +298,11 @@ async fn execute(
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
     state: Arc<Mutex<Link>>,
-    method: Method,
-    deadline: u64,
-    route: String,
+    request: Input,
 ) -> Result<serde_json::Value, &'static str> {
+    let method = request.method;
+    let deadline = request.header.deadline_ms;
+    let route = request.header.route;
     use platform::component_bus;
     use serde_json::json;
     match method {
