@@ -347,3 +347,5 @@ pub mod launcher_preferences;
 pub mod query;
 
 pub mod shortcuts;
+
+pub mod project_provider;

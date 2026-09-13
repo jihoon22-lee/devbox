@@ -1638,6 +1638,11 @@ async fn execute(
         &request.method,
         &request.args,
     );
+    let notify_registry = request.component == "workspace.registry"
+        && matches!(
+            request.method.as_str(),
+            "apply_registration" | "remove" | "apply_profile_import" | "apply_template_import"
+        );
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
@@ -1883,6 +1888,10 @@ async fn execute(
             (Err(issue), _) | (_, Err(issue)) => Err(issue),
         }
     };
+    if notify_registry && result.is_ok() {
+        use tauri::Emitter;
+        let _ = window.emit("workspace-context-changed", ());
+    }
     if select {
         result = result.and_then(|value| {
             // The worker produced this context after native Registry/object

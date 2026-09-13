@@ -286,6 +286,7 @@ pub(crate) fn handle(
             if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
             let registry=crate::component::provider_host(&app)?.projects()?.snapshot()?;
             match call {
+                Call::ProjectSnapshot { verify_current } => crate::project_provider::snapshot(&app, &registry, verify_current),
                 Call::ResolveShortcut{command}=>serde_json::to_value(shortcut(&app,&registry,&command)?).map_err(|_|"workspace_command_invalid"),
                 Call::Query{source:Source::Commands,query,generation,..}=>{
                     let mut index=terminal_metadata(&app)?;

@@ -202,6 +202,18 @@ async fn execute(
     if request.component != "knowledge.migration" {
         crate::startup::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
     }
+    if (request.component == "knowledge.search"
+        && request.method == "source_query"
+        && request.args["source"] == "current_project")
+        || (request.component == "knowledge.activity"
+            && matches!(
+                request.method.as_str(),
+                "project_attribution" | "get_digest" | "get_day" | "get_range"
+            ))
+        || request.component == "knowledge.opener"
+    {
+        crate::project_provider::refresh(app, request.header.deadline_ms).await;
+    }
     let value = match request.component.as_str() {
         "knowledge.migration" => crate::startup::dispatch(app, &request.method, request.args),
         "knowledge.notes"

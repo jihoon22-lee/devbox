@@ -213,6 +213,10 @@ pub(crate) fn handle(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         match call {
+            Call::InvalidateProjectSnapshot {} => {
+                crate::project_provider::invalidate(&app);
+                Ok(Value::Null)
+            }
             Call::ResolveShortcut { command } if command == "knowledge.quick-capture" => {
                 serde_json::to_value(capture_command()).map_err(|_| "knowledge_command_invalid")
             }

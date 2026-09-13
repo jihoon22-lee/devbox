@@ -59,6 +59,9 @@ pub fn run() {
             .plugin(tauri_plugin_opener::init())
             .plugin(tauri_plugin_notification::init())
             .plugin(component::plugin())
+            .plugin(project_provider::plugin())
     })
     .expect("error while running Devbox Workspace");
 }
+
+mod project_provider;
