@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 9,
+  "catalogRevision": 10,
   "channel": "development",
   "products": [
     {
@@ -208,6 +208,13 @@
       "id": "workspace.terminal",
       "owner": "workspace",
       "authority": "terminal-session",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.problems",
+      "owner": "workspace",
+      "authority": "problem-read",
       "lifecycle": "product",
       "protocolVersion": 1
     }

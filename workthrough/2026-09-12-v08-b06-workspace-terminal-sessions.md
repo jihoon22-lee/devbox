@@ -441,3 +441,12 @@ B06 graph (526.191 seconds). Future focused repairs must account for worktree gr
 changes rather than assuming one shared target makes all test executables reusable.
 No local WSL/Docker process, service or network fixture was executed. The native
 Windows product change still requires CI and hosted WSL2 acceptance.
+
+
+CI 34740337999 passed at 97d383c. Native 34740338010 passed the terminal
+lifetime and native WSL task execution, then rejected the Problems snapshot:
+workspace.problems was in the route list and native method allowlist but absent
+from the component catalog checked by product-shell authorization. Register its
+read-only authority and advance the catalog revision. This is an actual native
+authorization repair; old executable diagnostics cannot substitute for rebuilding
+that declaration. Passed unrelated local/frontend/native owner evidence is retained.

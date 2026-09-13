@@ -89,6 +89,7 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
             )
             | ("workspace", "workspace.logs", "log-read")
             | ("workspace", "workspace.terminal", "terminal-session")
+            | ("workspace", "workspace.problems", "problem-read")
     )
 }
 
