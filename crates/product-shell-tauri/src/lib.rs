@@ -17,6 +17,8 @@ struct ShellState {
     catalog: ProductCatalog,
     product: String,
     session: Mutex<SessionGuard>,
+    executable: std::path::PathBuf,
+    version: String,
 }
 
 #[derive(Serialize)]
@@ -26,6 +28,7 @@ struct Description {
     product: Product,
     features: Vec<Feature>,
     context: Option<ProjectContext>,
+    delivery_state: &'static str,
 }
 
 fn local_main(window: &WebviewWindow) -> bool {
@@ -59,7 +62,19 @@ fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Descr
         .map_err(|_| "세션을 사용할 수 없습니다.")?;
     let handshake = session.handshake().clone();
     let context = session.context().cloned();
+    drop(session);
+    let delivery_state = match installation::activation(&state.executable, &state.version) {
+        Ok(None) => "direct",
+        Ok(Some(marker)) => match marker.phase {
+            product_contract::activation::Phase::Import => "import",
+            product_contract::activation::Phase::Health => "health",
+            product_contract::activation::Phase::Committed => "committed",
+            product_contract::activation::Phase::Recover => "recover",
+        },
+        Err(_) => "unavailable",
+    };
     Ok(Description {
+        delivery_state,
         handshake,
         context,
         product,
@@ -132,6 +147,12 @@ pub fn authorize(
         .filter(|f| f.owner == state.product)
         .map(|f| f.route.as_str())
         .collect();
+    if !installation::activation(&state.executable, &state.version)
+        .map_err(|_| problem(ProblemCode::Unavailable))?
+        .is_none_or(|marker| marker.allows(&state.product, component))
+    {
+        return Err(problem(ProblemCode::Unavailable));
+    }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| problem(ProblemCode::Unavailable))?
@@ -234,6 +255,8 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 catalog,
                 product: product.into(),
                 session: Mutex::new(session),
+                executable,
+                version: app.package_info().version.to_string(),
             });
             window_state_tauri::restore_main_window(app.handle());
             Ok(())
@@ -288,6 +311,24 @@ pub fn run_with(
     }
     let _installation = isolate_installation(&mut context)?;
     configure(builder(product)).run(context)
+}
+
+/// Owners call this before background initialization as well as route dispatch.
+/// Import-only authorization must not start activity collectors or schedulers.
+pub fn require_suite_writable(app: &tauri::AppHandle) -> Result<(), &'static str> {
+    require_suite_committed(&app.package_info().version.to_string())
+}
+pub fn require_suite_committed(version: &str) -> Result<(), &'static str> {
+    let executable = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|_| "suite_activation_unavailable")?;
+    if installation::activation(&executable, version)?
+        .is_none_or(|marker| marker.phase == product_contract::activation::Phase::Committed)
+    {
+        Ok(())
+    } else {
+        Err("suite_activation_pending")
+    }
 }
 
 /// Shared by the product UI and its explicitly owned import worker. This only

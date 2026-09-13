@@ -46,7 +46,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
         tauri::async_runtime::spawn_blocking(move || {
             let manager = devbox_manager_lib::component::legacy_installations(&app).ok();
             #[cfg(windows)]
-            let installers = crate::suite::platform::legacy_installer::inventory()
+            let installers = crate::legacy_installer::inventory()
                 .ok()
                 .and_then(|report| serde_json::to_value(report).ok());
             #[cfg(not(windows))]

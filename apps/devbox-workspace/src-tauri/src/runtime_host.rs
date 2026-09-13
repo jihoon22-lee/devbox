@@ -22,6 +22,7 @@ pub(crate) struct Owners {
 }
 impl Owners {
     pub(crate) fn initialize_runtime(&self, app: &tauri::AppHandle, host: &Host) -> Result<()> {
+        product_shell_tauri::require_suite_writable(app)?;
         let data = host.component("runtime")?;
         let common = host.component("common")?;
         *self.runtime.get_or_init(|| {

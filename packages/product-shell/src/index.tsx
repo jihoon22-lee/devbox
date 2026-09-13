@@ -45,6 +45,11 @@ function ReadyShell({ description, renderContent, refreshContext }: { descriptio
   }}>
     <a className="shell-skip" href="#product-content" onClick={() => content.current?.focus()}>본문으로 이동</a>
     <header><strong>{description.product.label}</strong><span className="shell-badge">{nativeMode ? "개발 빌드" : "브라우저 미리보기 · 모의 데이터"}</span></header>
+    {description.deliveryState && !["direct","committed"].includes(description.deliveryState) && <p role="status" className="shell-delivery-notice">{
+      description.deliveryState === "import" ? "Suite 전환 중입니다. 데이터 이전을 마친 뒤 Control Center에서 활성화를 완료해 주세요. 일반 작업과 자동 실행은 대기합니다."
+      : description.deliveryState === "health" ? "Suite 활성화 전 제품 상태를 확인하고 있습니다. 일반 작업은 아직 시작할 수 없습니다."
+      : "Suite 전환 상태를 확인해야 합니다. Control Center의 설치·데이터 복구 화면에서 기록을 확인해 주세요."
+    }</p>}
     <aside><nav aria-label="제품 화면">{description.features.map((feature) => <button key={feature.id} aria-current={current === feature.route ? "page" : undefined} onClick={() => open(feature.route)}>{feature.label}</button>)}</nav></aside>
     <main id="product-content" ref={content} tabIndex={-1}>
       <div className="shell-toolbar"><button aria-label="뒤로" disabled={history.cursor === 0} onClick={() => setHistory((h) => traverse(h, -1))}>←</button><button aria-label="앞으로" disabled={history.cursor === history.entries.length - 1} onClick={() => setHistory((h) => traverse(h, 1))}>→</button><span>{description.context ? "프로젝트 연결됨" : "프로젝트 선택 없이 사용"}</span><button aria-expanded={connectionOpen} onClick={() => setConnectionOpen(value => !value)}>제품 연결</button><button aria-expanded={operationsOpen} onClick={()=>setOperationsOpen(value=>!value)}>작업 상태</button></div>

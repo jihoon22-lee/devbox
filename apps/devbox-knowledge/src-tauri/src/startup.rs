@@ -184,6 +184,7 @@ pub fn activate_with_owner(
     manifest: &stores::Manifest,
     owner: VaultOwner,
 ) -> Result<(), String> {
+    product_shell_tauri::require_suite_writable(app).map_err(str::to_owned)?;
     let state = app.state::<Startup>();
     require_uninitialized(app)?;
     *state.owner.lock().map_err(|_| "store_unavailable")? = Some(owner);

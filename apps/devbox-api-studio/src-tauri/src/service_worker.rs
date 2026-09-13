@@ -19,6 +19,8 @@ pub fn run(id: String, mut context: tauri::Context<tauri::Wry>) -> tauri::Result
         let _ = windows::Win32::System::Console::FreeConsole();
     }
     let _installation = product_shell_tauri::isolate_installation(&mut context)?;
+    product_shell_tauri::require_suite_committed(&context.package_info().version.to_string())
+        .map_err(std::io::Error::other)?;
     // Match Tauri's desktop app_local_data_dir without constructing an App.
     // The installation identifier is derived natively from this executable.
     let root = dirs::data_local_dir()

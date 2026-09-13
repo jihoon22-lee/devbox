@@ -755,6 +755,12 @@ fn normalize_input(input: &str) -> Result<String, CustomRootError> {
     Ok(normalized)
 }
 
+/// The suite bootstrapper reuses Manager's existing local-root protections.
+/// This validates a directory; it grants no permission to replace its contents.
+pub fn verify_suite_directory(path: &Path) -> Result<PathBuf, CustomRootError> {
+    canonical_safe_directory(path, &[])
+}
+
 fn canonical_safe_directory(path: &Path, protected: &[&Path]) -> Result<PathBuf, CustomRootError> {
     let raw = path.to_str().ok_or(CustomRootError::NonUtf8Path)?;
     let normalized = normalize_input(raw)?;

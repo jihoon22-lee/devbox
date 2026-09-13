@@ -1,5 +1,6 @@
 [package]
 name = "devbox-control-center"
+default-run = "devbox-control-center"
 version = "0.8.0"
 publish = false
 edition = "2021"
