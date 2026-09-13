@@ -78,7 +78,12 @@ struct Input {
     method: Method,
 }
 #[derive(Deserialize)]
-#[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[serde(
+    tag = "kind",
+    rename_all = "camelCase",
+    rename_all_fields = "camelCase",
+    deny_unknown_fields
+)]
 enum Method {
     Status,
     Preview,
@@ -90,6 +95,10 @@ enum Method {
     Disconnect,
     Probe {
         product: String,
+    },
+    SendSessionSummary {
+        source_id: String,
+        operation_id: String,
     },
     ShortcutStatus,
     ConfigureShortcuts {
@@ -138,6 +147,12 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
+            Method::SendSessionSummary {
+                source_id,
+                operation_id,
+            } => {
+                let _ = (source_id, operation_id);
+            }
             Method::ConfigureShortcuts { config } => {
                 let _ = config;
             }
@@ -266,6 +281,45 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::SendSessionSummary {
+            source_id,
+            operation_id,
+        } => {
+            if product != "workspace"
+                || uuid::Uuid::parse_str(&source_id).is_err()
+                || uuid::Uuid::parse_str(&operation_id).is_err()
+            {
+                return Err("suite_summary_denied");
+            }
+            let value = domain.ok_or("suite_method_unavailable")?(
+                app.clone(),
+                product_contract::transport::Call::ReadSessionSummary {
+                    source_id: source_id.clone(),
+                },
+                deadline,
+                None,
+            )
+            .await?;
+            use sha2::{Digest, Sha256};
+            let metadata: product_contract::session_summary::Metadata =
+                serde_json::from_value(value).map_err(|_| "suite_summary_invalid")?;
+            let revision =
+                Sha256::digest(serde_json::to_vec(&metadata).map_err(|_| "suite_summary_invalid")?)
+                    .iter()
+                    .map(|b| format!("{b:02x}"))
+                    .collect();
+            remote(
+                &app,
+                "knowledge",
+                product_contract::transport::Call::DeliverSessionSummary {
+                    source_id,
+                    operation_id,
+                    revision,
+                },
+                deadline,
+            )
+            .await
+        }
         Method::ShortcutStatus | Method::ConfigureShortcuts { .. } => {
             let call = match method {
                 Method::ConfigureShortcuts { config } => {
@@ -699,6 +753,7 @@ pub(crate) async fn remote(
                 | product_contract::transport::Call::ResolveShortcut { .. }
                 | product_contract::transport::Call::ShortcutStatus { .. }
                 | product_contract::transport::Call::ConfigureShortcuts { .. }
+                | product_contract::transport::Call::DeliverSessionSummary { .. }
         ) {
             let launch = suite
                 .state
@@ -804,4 +859,80 @@ pub(crate) fn plugin(
             Ok(())
         })
         .build()
+}
+
+/// Shared native adapter used by product-specific incoming Artifact consumers.
+#[allow(dead_code)]
+pub(crate) fn enqueue_review(
+    app: &tauri::AppHandle,
+    descriptor: &product_contract::commands::Descriptor,
+    request: &product_contract::commands::Request,
+) -> Result<serde_json::Value, &'static str> {
+    #[cfg(windows)]
+    {
+        use tauri::Emitter;
+        let suite = app.state::<Suite>();
+        if descriptor.owner != suite.product {
+            return Err("suite_route_owner_mismatch");
+        }
+        let queue = suite
+            .state
+            .lock()
+            .map_err(|_| "suite_busy")?
+            .navigation
+            .clone();
+        let receipt =
+            queue
+                .lock()
+                .map_err(|_| "suite_busy")?
+                .enqueue(descriptor, request, now())?;
+        if receipt.phase == product_contract::navigation::Phase::AwaitingReview {
+            let window = app
+                .get_webview_window("main")
+                .ok_or("suite_window_unavailable")?;
+            window.show().map_err(|_| "suite_window_unavailable")?;
+            window.set_focus().map_err(|_| "suite_window_unavailable")?;
+            window
+                .emit("suite-navigation", ())
+                .map_err(|_| "suite_window_unavailable")?;
+        }
+        serde_json::to_value(receipt).map_err(|_| "suite_reply_invalid")
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, descriptor, request);
+        Err("suite_windows_required")
+    }
+}
+#[allow(dead_code)]
+pub(crate) fn require_reviewed(
+    app: &tauri::AppHandle,
+    id: &str,
+    revision: &str,
+    route: &str,
+    target: &product_contract::commands::Target,
+) -> Result<(), &'static str> {
+    #[cfg(windows)]
+    {
+        let suite = app.state::<Suite>();
+        let queue = suite
+            .state
+            .lock()
+            .map_err(|_| "suite_busy")?
+            .navigation
+            .clone();
+        let result = queue.lock().map_err(|_| "suite_busy")?.require_reviewed(
+            id,
+            revision,
+            route,
+            target,
+            now(),
+        );
+        result
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (app, id, revision, route, target);
+        Err("suite_windows_required")
+    }
 }

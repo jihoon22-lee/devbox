@@ -286,6 +286,7 @@ pub(crate) fn handle(
             if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
             let registry=crate::component::provider_host(&app)?.projects()?.snapshot()?;
             match call {
+                Call::ReadSessionSummary { source_id } => serde_json::to_value(crate::session_summary::delivery(&app, &source_id).map_err(|_| "workspace_summary_stale")?).map_err(|_| "workspace_summary_invalid"),
                 Call::LegacyCommandMappings { ids } => {
                     use crate::core::{legacy_references, registry::LegacyOwner};
                     let mut mappings = std::collections::BTreeMap::new();

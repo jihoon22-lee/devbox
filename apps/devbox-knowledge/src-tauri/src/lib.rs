@@ -5,6 +5,7 @@ mod lifecycle;
 mod migration;
 mod project_provider;
 mod search;
+mod session_receive;
 #[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
 mod suite;
 pub use search::{disconnect_project_provider, install_project_snapshot};
@@ -29,6 +30,7 @@ pub fn run() {
             .plugin(tauri_plugin_opener::init())
             .plugin(component::plugin())
             .plugin(project_provider::plugin())
+            .plugin(session_receive::plugin())
     })
     .expect("error while running Devbox Knowledge");
 }

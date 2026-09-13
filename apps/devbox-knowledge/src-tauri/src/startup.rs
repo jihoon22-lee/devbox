@@ -277,3 +277,8 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
         _ => Err("component_method_invalid".into()),
     }
 }
+
+pub(crate) fn integration_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
+    require_active(app)?;
+    Ok(app.state::<Startup>().root.join("integration"))
+}

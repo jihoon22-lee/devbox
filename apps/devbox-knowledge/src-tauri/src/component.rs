@@ -57,7 +57,13 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 && method != "daily_note"
                 && (knowledge_base_lib::component::COMMANDS.contains(&method)
                     || knowledge_base_lib::component::DAILY_METHODS.contains(&method)
-                    || matches!(method, "read_clipboard_text" | "open_external_url"))
+                    || matches!(
+                        method,
+                        "read_clipboard_text"
+                            | "open_external_url"
+                            | "preview_session_summary"
+                            | "open_session_summary"
+                    ))
         }
         "knowledge.activity" => {
             route == "activity"
@@ -216,6 +222,20 @@ async fn execute(
     }
     let value = match request.component.as_str() {
         "knowledge.migration" => crate::startup::dispatch(app, &request.method, request.args),
+        "knowledge.notes"
+            if matches!(
+                request.method.as_str(),
+                "preview_session_summary" | "open_session_summary"
+            ) =>
+        {
+            crate::session_receive::dispatch(
+                app,
+                &request.method,
+                request.args,
+                request.header.deadline_ms,
+            )
+            .await
+        }
         "knowledge.notes"
             if knowledge_base_lib::component::DAILY_METHODS.contains(&request.method.as_str()) =>
         {

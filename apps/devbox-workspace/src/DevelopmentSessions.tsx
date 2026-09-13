@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
+import {sendSessionSummary} from "@devbox/product-shell/commands";
 import { componentCall } from "./native";
 
 interface SummaryPreview {operationId:string;draft:{title:string;body:string;metadata:{binding:{context:ProjectContext;sessionId:string;revision:number}}}}
@@ -18,6 +19,7 @@ const preflightStates:Record<string,string>={"repository-verified":"저장소 �
 export default function DevelopmentSessions({ description, registry }: { description: Description; registry: Registry | null }) {
   const [summary,setSummary]=useState<SummaryPreview|null>(null);
   const [summaryProblems,setSummaryProblems]=useState(false);
+  const [summaryDelivery,setSummaryDelivery]=useState("");
   const [jobs, setJobs] = useState<Candidate[]>([]);
   const [profiles, setProfiles] = useState<Array<{ id: string; name: string }>>([]);
   const [selectedProfile, setSelectedProfile] = useState<string | null>(null);
@@ -133,7 +135,12 @@ export default function DevelopmentSessions({ description, registry }: { descrip
     {summary&&JSON.stringify(summary.draft.metadata.binding.context)===contextKey&&<section aria-label="세션 요약 미리보기">
       <h3>{summary.draft.title}</h3><pre>{summary.draft.body}</pre>
       <p>전체 기간의 실행·커밋 수를 확인할 수 없으면 확인 불가로 표시합니다.</p>
-      <button onClick={()=>setSummary(null)}>미리보기 닫기</button>
+      <button disabled={busy} onClick={()=>{
+        if(!summary)return;setBusy(true);setSummaryDelivery("");
+        void sendSessionSummary(description,"tasks",summary.operationId,crypto.randomUUID()).then(receipt=>setSummaryDelivery(receipt.phase==="opened"?"Knowledge에서 요약을 확인할 수 있습니다.":"Knowledge에서 일일 기록 화면 열기를 확인해 주세요.")).catch(()=>setSummaryDelivery("요약을 전달하지 못했습니다. Knowledge 설치·제품 연결을 확인해 주세요. 원본 요약은 유지됩니다.")).finally(()=>setBusy(false));
+      }}>Knowledge에서 요약 검토</button>
+      {summaryDelivery&&<p role="status">{summaryDelivery}</p>}
+      <button onClick={()=>{setSummary(null);setSummaryDelivery("");}}>미리보기 닫기</button>
     </section>}
     {issue && <p role="alert">{issue}</p>}
     <ul>{snapshot.sessions.map(session => {

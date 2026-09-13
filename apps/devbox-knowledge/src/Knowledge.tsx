@@ -7,6 +7,7 @@ import { localDateKey } from "./dates";
 const LifecycleSettings = lazy(() => import("./LifecycleSettings"));
 const VaultSettings = lazy(() => import("./VaultSettings"));
 const MigrationSettings = lazy(() => import("./MigrationSettings"));
+const IncomingSessionSummary=lazy(()=>import("./IncomingSessionSummary"));
 const Daily = lazy(() => import("./Daily"));
 const Notes = lazy(() => import("@devbox/knowledge-features/notes"));
 const Activity = lazy(() => import("@devbox/knowledge-features/activity"));
@@ -43,7 +44,7 @@ function Content({ route, navigate }: ShellContentProps) {
   useEffect(() => { setVisited(previous => previous.has(group) ? previous : new Set([...previous, group])); }, [group]);
   return <>
     {group === "notes" && showSettings && <div className="knowledge-settings-page"><button type="button" onClick={() => setShowSettings(null)}>노트로 돌아가기</button><Suspense fallback={<p role="status">설정을 불러오고 있습니다…</p>}>{showSettings === "vault" ? <VaultSettings/> : <MigrationSettings/>}</Suspense></div>}
-    {group === "daily" && <Suspense fallback={<p role="status">일일 기록을 불러오고 있습니다…</p>}><Daily date={date} onDateChange={setDate} onOpen={openNote} onActivity={activateActivity}/></Suspense>}
+    {group === "daily" && <Suspense fallback={<p role="status">일일 기록을 불러오고 있습니다…</p>}><IncomingSessionSummary onNotes={activateNotes}/><Daily date={date} onDateChange={setDate} onOpen={openNote} onActivity={activateActivity}/></Suspense>}
     {(visited.has("notes") || group === "notes") && <div className="knowledge-feature-notes" hidden={group !== "notes" || showSettings !== null}>
       <Suspense fallback={<p role="status">노트를 불러오고 있습니다…</p>}><Notes active={group === "notes" && !showSettings} onActivate={activateNotes} onDaily={activateDaily} onImport={() => setShowSettings("import")} onVaultSettings={() => setShowSettings("vault")} openRequest={openRequest} captureRequest={captureRequest}/></Suspense>
     </div>}

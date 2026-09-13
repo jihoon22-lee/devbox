@@ -69,6 +69,14 @@ pub enum Call {
     LegacyCommandMappings {
         ids: Vec<String>,
     },
+    ReadSessionSummary {
+        source_id: String,
+    },
+    DeliverSessionSummary {
+        source_id: String,
+        operation_id: String,
+        revision: String,
+    },
     ShortcutStatus {},
     ConfigureShortcuts {
         config: crate::shortcuts::Config,
@@ -148,10 +156,14 @@ impl Guard {
         {
             return Err("peer_request_denied");
         }
-        if (matches!(request.call, Call::ProjectSnapshot { .. })
-            && self.peer.product != "knowledge")
-            || (matches!(request.call, Call::InvalidateProjectSnapshot {})
-                && self.peer.product != "workspace")
+        if (matches!(
+            request.call,
+            Call::ProjectSnapshot { .. } | Call::ReadSessionSummary { .. }
+        ) && self.peer.product != "knowledge")
+            || (matches!(
+                request.call,
+                Call::InvalidateProjectSnapshot {} | Call::DeliverSessionSummary { .. }
+            ) && self.peer.product != "workspace")
         {
             return Err("peer_method_denied");
         }
@@ -159,9 +171,15 @@ impl Guard {
         // product roles acquire specific artifact/navigation capabilities separately.
         if self.peer.product != "control-center"
             && !(self.peer.product == "knowledge"
-                && matches!(request.call, Call::ProjectSnapshot { .. }))
+                && matches!(
+                    request.call,
+                    Call::ProjectSnapshot { .. } | Call::ReadSessionSummary { .. }
+                ))
             && !(self.peer.product == "workspace"
-                && matches!(request.call, Call::InvalidateProjectSnapshot {}))
+                && matches!(
+                    request.call,
+                    Call::InvalidateProjectSnapshot {} | Call::DeliverSessionSummary { .. }
+                ))
             && !matches!(
                 request.call,
                 Call::Describe {} | Call::ShortcutStatus {} | Call::ConfigureShortcuts { .. }
@@ -184,6 +202,18 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ReadSessionSummary { source_id } | Call::DeliverSessionSummary { source_id, .. }
+            if !commands::opaque_id(source_id) =>
+        {
+            return Err("peer_summary_invalid")
+        }
+        Call::DeliverSessionSummary {
+            operation_id,
+            revision,
+            ..
+        } if !commands::opaque_id(operation_id) || !commands::revision(revision) => {
+            return Err("peer_summary_invalid")
+        }
         Call::LegacyCommandMappings { ids } => {
             if ids.len() > 128
                 || ids.iter().any(|id| {

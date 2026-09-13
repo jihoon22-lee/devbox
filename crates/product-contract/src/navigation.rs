@@ -169,6 +169,28 @@ impl Queue {
         entry.receipt.phase = Phase::Opened;
         Ok(entry.receipt.clone())
     }
+    /// A route acknowledgement is not a mutation grant. Native receivers use
+    /// this exact reviewed target/revision check before their own preview path.
+    pub fn require_reviewed(
+        &mut self,
+        id: &str,
+        revision: &str,
+        route: &str,
+        target: &Target,
+        now: u64,
+    ) -> Result<()> {
+        self.expire(now);
+        let entry = self.entries.get(id).ok_or("navigation_missing")?;
+        if entry.expires <= now
+            || entry.command_revision != revision
+            || entry.route != route
+            || &entry.target != target
+            || !matches!(entry.receipt.phase, Phase::Opening | Phase::Opened)
+        {
+            return Err("navigation_review_required");
+        }
+        Ok(())
+    }
     pub fn pending(&mut self, now: u64) -> Vec<Review> {
         self.expire(now);
         self.entries
@@ -365,6 +387,62 @@ mod tests {
             queue.status(&request.operation_id, 2).unwrap().phase,
             Phase::Opening
         );
+    }
+    #[test]
+    fn an_artifact_preview_requires_the_exact_reviewed_target_and_revision() {
+        let (mut descriptor, request) = command();
+        descriptor.target = Target::Entity {
+            entity: crate::commands::EntityKind::Artifact,
+            id: "source-one".into(),
+        };
+        descriptor.review_route = Some("notes".into());
+        descriptor.requires_review = true;
+        let route = descriptor.review_route.clone().unwrap();
+        let mut queue = Queue::default();
+        queue.enqueue(&descriptor, &request, 0).unwrap();
+        assert!(queue
+            .require_reviewed(
+                &request.operation_id,
+                &descriptor.revision,
+                &route,
+                &descriptor.target,
+                1
+            )
+            .is_err());
+        let review = queue.pending(1).remove(0);
+        queue
+            .decide(&request.operation_id, &review.revision, true, 2)
+            .unwrap();
+        queue
+            .require_reviewed(
+                &request.operation_id,
+                &descriptor.revision,
+                &route,
+                &descriptor.target,
+                3,
+            )
+            .unwrap();
+        assert!(queue
+            .require_reviewed(
+                &request.operation_id,
+                &"f".repeat(64),
+                &route,
+                &descriptor.target,
+                3
+            )
+            .is_err());
+        assert!(queue
+            .require_reviewed(
+                &request.operation_id,
+                &descriptor.revision,
+                &route,
+                &Target::Entity {
+                    entity: crate::commands::EntityKind::Artifact,
+                    id: "other-source".into()
+                },
+                3
+            )
+            .is_err());
     }
     #[test]
     fn native_terminal_action_is_reserved_once_and_keeps_the_command_revision() {
