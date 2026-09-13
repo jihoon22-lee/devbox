@@ -48,6 +48,14 @@ try {
  do { evidence.observations.sessions=await invoke("list_sessions");if(evidence.observations.sessions.length===2)break;await delay(300); } while(performance.now()<deadline);
  evidence.observations.renderer=await companion.evaluate("({text:(document.body?.innerText??'').slice(0,16000),alerts:[...document.querySelectorAll('[role=alert]')].map(node=>node.textContent),storage:[...Array(localStorage.length)].map((_,i)=>localStorage.key(i))})");
  for(const method of ["terminal_layout","terminal_window_policy","list_distros"]){try{evidence.observations[method]=await invoke(method);}catch(error){evidence.observations[method]={error:String(error)};}}
+ if(evidence.observations.sessions.length!==2){
+   evidence.observations.explicitNativeStarts=[];
+   for(const paneKey of ["two","one"]){
+     try { await invoke("reset_failed_pane",{paneKey}); const result=await invoke("start_session",{paneKey,distro:owner.name,cwd:"/home/devbox-fixture",multiplexer:"native"}); evidence.observations.explicitNativeStarts.push({paneKey,result}); }
+     catch(error){evidence.observations.explicitNativeStarts.push({paneKey,error:String(error)});}
+   }
+   evidence.observations.sessionsAfterExplicitStart=await invoke("list_sessions");
+ }
  assert.equal(evidence.observations.sessions.length,2,"Companion did not restore both panes; diagnostic state retained");
  evidence.observations.twoPanesRestored=true;
 } catch(error) { evidence.failure=String(error);process.exitCode=1; }
