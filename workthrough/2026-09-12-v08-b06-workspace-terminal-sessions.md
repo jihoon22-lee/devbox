@@ -427,3 +427,17 @@ packaged fixture's continuation; the earlier HWND diagnosis remains its evidence
 The registry-readiness regression passed (one focused test, 2.64 seconds), and
 Workspace TypeScript passed in the same 11.38-second resource-limited run. No full
 local audit was repeated. CI 34736166660 passed for the preceding dde28c1 changes.
+
+
+Retained artifact 34737823532 was diagnosed on hosted Windows run 34739600443:
+both panes, actual output and exact native foreground window passed. The output
+fixture now consumes paged VT frames and uses an octal-encoded unique probe so
+command echo cannot satisfy execution. Run 34739774070 reused the same artifact
+and progressed through terminal lifetime checks to the WSL task fixture, where
+native running-distribution lookup panicked from nested Tokio block_on. The
+existing joined runtime bridge is now shared with that lookup. Its regression
+passed locally; the filtered workspace invocation unnecessarily rebuilt the older
+B06 graph (526.191 seconds). Future focused repairs must account for worktree graph
+changes rather than assuming one shared target makes all test executables reusable.
+No local WSL/Docker process, service or network fixture was executed. The native
+Windows product change still requires CI and hosted WSL2 acceptance.
