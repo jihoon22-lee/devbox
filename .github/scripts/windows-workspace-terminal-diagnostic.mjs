@@ -58,7 +58,8 @@ try {
  }
  assert.equal(evidence.observations.sessions.length,2,"Companion did not restore both panes; diagnostic state retained");
  evidence.observations.twoPanesRestored=true;
- const title=await companion.evaluate("document.title");
+ const title="Devbox Workspace · 터미널";
+ evidence.observations.appPid=child.pid;
  evidence.observations.focus=[];
  for(const mode of ["native-request","cdp-bring-to-front","native-request-again"]){
    if(mode==="cdp-bring-to-front")await companion.command("Page.bringToFront");

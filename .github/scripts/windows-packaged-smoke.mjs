@@ -353,7 +353,7 @@ export function nativeWindowState(pid, expectedTitle, minimize = false) {
       `Title=$(if($handle -eq [IntPtr]::Zero){''}else{$expectedTitle});` +
       `Visible=$(if($handle -eq [IntPtr]::Zero){$false}else{[DevboxAcceptance.NativeMethods]::IsWindowVisible($handle)});` +
       `Minimized=$(if($handle -eq [IntPtr]::Zero){$false}else{[DevboxAcceptance.NativeMethods]::IsIconic($handle)});` +
-      `ForegroundPid=[int]$foregroundPid} | ConvertTo-Json -Compress`,
+      `ForegroundPid=[int]$foregroundPid;ForegroundMatchesWindow=($handle -ne [IntPtr]::Zero -and $foreground -eq $handle)} | ConvertTo-Json -Compress`,
   );
   return output ? JSON.parse(output) : null;
 }
