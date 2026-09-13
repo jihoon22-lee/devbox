@@ -1,4 +1,6 @@
-import { invoke } from "@tauri-apps/api/core";
+import { runDockerControl } from "./wslControl";
+import { componentInvoke, isProductHosted } from "../transport";
+import { followTerminalOutput, type OutputBatch } from "./lib/terminalReplay";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
 import { openUrl } from "@tauri-apps/plugin-opener";
@@ -16,6 +18,23 @@ import type {
   WorkspaceProfile,
 } from "./types";
 import type { QuickSummonShortcut } from "./lib/settings";
+const invoke = componentInvoke("workspace.terminal");
+const productClosedListeners = new Set<(payload:TerminalOutput)=>void>();
+
+export function connectProductTerminalOutput(sessionId:string,write:(text:string,truncated:boolean)=>Promise<void>,failed:()=>void):()=>void {
+  if(!isProductHosted())return ()=>undefined;
+  return followTerminalOutput(
+    after=>invoke<OutputBatch>("terminal_output",{sessionId,after}),
+    write,
+    ()=>{for(const listener of productClosedListeners)listener({session_id:sessionId,data:""});},
+    failed,
+  );
+}
+
+export async function writeInitialCommand(sessionId:string,data:string):Promise<void> {
+  if(isProductHosted()){await invoke("write_initial_command",{sessionId,data});return;}
+  await writeSession(sessionId,data);
+}
 
 export type QuickSummonIssue =
   | "invalidShortcut"
@@ -105,7 +124,8 @@ export async function dockerPs(distro: string): Promise<ContainerInfo[]> {
 
 export async function dockerAction(distro: string, containerId: string, action: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("docker_action", { distro, containerId, action });
+  if (!isProductHosted()) { await invoke("docker_action", { distro, containerId, action }); return; }
+  await runDockerControl(invoke, distro, containerId, action);
 }
 
 /** Publish a validated WSL file adapter handoff. Browser preview never writes
@@ -143,6 +163,11 @@ export async function startSession(
     paneKey,
     multiplexer,
   });
+}
+
+export async function retrySession(distro:string,cwd:string|undefined,paneKey:string,multiplexer:MultiplexerKind):Promise<StartedSession> {
+  if(isProductHosted())await invoke("reset_failed_pane",{paneKey});
+  return startSession(distro,cwd,paneKey,multiplexer);
 }
 
 export async function detectMultiplexers(distro: string): Promise<MultiplexerAvailability[]> {
@@ -196,6 +221,7 @@ export async function updateShellIntegration(
 /** Apply the renderer-persisted summon preferences to native process state.
  * Browser preview mirrors the successful state without reserving a system key. */
 export async function configureQuickSummon(config: QuickSummonConfig): Promise<QuickSummonStatus> {
+  if(isProductHosted())return invoke<QuickSummonStatus>("terminal_window_policy",{});
   if (!isTauri()) return {
     shortcutRegistered: config.shortcutEnabled,
     activeShortcut: config.shortcutEnabled ? config.shortcut : null,
@@ -207,9 +233,15 @@ export async function configureQuickSummon(config: QuickSummonConfig): Promise<Q
 }
 
 let mockProfiles: WorkspaceProfile[] = [];
+let profileRevision:string|undefined;
 
 export async function listWorkspaceProfiles(): Promise<WorkspaceProfile[]> {
   if (!isTauri()) return mockProfiles;
+  if(isProductHosted()){
+    const result=await invoke<{revision:string;profiles:WorkspaceProfile[]}>("list_workspace_profiles");
+    if(!/^[a-f0-9]{64}$/.test(result.revision)||!Array.isArray(result.profiles))throw new Error("프로필 응답을 확인하지 못했습니다.");
+    profileRevision=result.revision;return result.profiles;
+  }
   return invoke<WorkspaceProfile[]>("list_workspace_profiles");
 }
 
@@ -219,6 +251,11 @@ export async function saveWorkspaceProfile(profile: WorkspaceProfile): Promise<W
     mockProfiles = [...mockProfiles.filter((item) => item.id !== saved.id), saved];
     return saved;
   }
+  if(isProductHosted()){
+    if(!profileRevision)throw new Error("프로필 목록을 먼저 확인해 주세요.");
+    const result=await invoke<{revision:string;profile:WorkspaceProfile}>("save_workspace_profile",{profile,expectedRevision:profileRevision});
+    profileRevision=result.revision;return result.profile;
+  }
   return invoke<WorkspaceProfile>("save_workspace_profile", { profile });
 }
 
@@ -226,6 +263,11 @@ export async function deleteWorkspaceProfile(id: string): Promise<void> {
   if (!isTauri()) {
     mockProfiles = mockProfiles.filter((profile) => profile.id !== id);
     return;
+  }
+  if(isProductHosted()){
+    if(!profileRevision)throw new Error("프로필 목록을 먼저 확인해 주세요.");
+    const result=await invoke<{revision:string}>("delete_workspace_profile",{id,expectedRevision:profileRevision});
+    profileRevision=result.revision;return;
   }
   await invoke("delete_workspace_profile", { id });
 }
@@ -265,11 +307,16 @@ export async function listSessions(): Promise<SessionInfo[]> {
 }
 
 export async function onTerminalOutput(cb: (payload: TerminalOutput) => void): Promise<UnlistenFn> {
+  if(isProductHosted())return ()=>undefined;
   if (!isTauri()) return () => undefined;
   return listen<TerminalOutput>("terminal-output", (e) => cb(e.payload));
 }
 
 export async function onTerminalClosed(cb: (payload: TerminalOutput) => void): Promise<UnlistenFn> {
+  if(isProductHosted()){
+    productClosedListeners.add(cb);
+    return ()=>{productClosedListeners.delete(cb);};
+  }
   if (!isTauri()) return () => undefined;
   return listen<TerminalOutput>("terminal-closed", (e) => cb(e.payload));
 }
@@ -281,12 +328,14 @@ export async function onTerminalClosed(cb: (payload: TerminalOutput) => void): P
  * (`docs/superpowers/specs/2026-08-17-app-interop-design.md` §3).
  */
 export async function takePendingOpen(): Promise<OpenRequest | null> {
+  if(isProductHosted())return null;
   if (!isTauri()) return null;
   return invoke<OpenRequest | null>("take_pending_open");
 }
 
 /** Fired when an already-running instance is relaunched with argv (§3). */
 export async function onOpenRequest(cb: (payload: OpenRequest) => void): Promise<UnlistenFn> {
+  if(isProductHosted())return ()=>undefined;
   if (!isTauri()) return () => undefined;
   return listen<OpenRequest>("devbox://open", (e) => cb(e.payload));
 }

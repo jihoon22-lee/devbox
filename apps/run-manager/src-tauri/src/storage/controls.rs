@@ -100,7 +100,7 @@ impl DatabaseState {
     ) -> Result<ControlReservation, StorageError> {
         if self.legacy_publication
             || !valid_operation_id(id)
-            || !crate::core::runtime_controls::legacy_control_method(method)
+            || !crate::core::runtime_controls::stored_control_method(method)
             || target_id.is_empty()
             || target_id.len() > 128
             || target_id

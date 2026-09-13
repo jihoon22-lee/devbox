@@ -1175,6 +1175,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "tempfile",
  "uuid",
 ]
 
@@ -1417,7 +1418,9 @@ name = "devbox-workspace"
 version = "0.8.0"
 dependencies = [
  "applink",
+ "chrono",
  "code-pad",
+ "data-migration",
  "filesystem",
  "git",
  "integration",
@@ -1439,12 +1442,14 @@ dependencies = [
  "tempfile",
  "tokio",
  "uuid",
+ "webview2-com",
  "window-state",
  "window-state-tauri",
  "windows 0.61.3",
  "workbench",
  "workspace-wsl",
  "wsl",
+ "wsl-desktop",
 ]
 
 [[package]]

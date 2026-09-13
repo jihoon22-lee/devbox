@@ -36,6 +36,14 @@ struct Runtime {
     shutdown_started: Arc<AtomicBool>,
     ui_ready: Arc<AtomicBool>,
     engines: Arc<crate::runtime_host::Owners>,
+    terminals: Arc<crate::terminal_host::Terminals>,
+    sessions: Arc<crate::development_host::Sessions>,
+    terminal_requests: Pool,
+    terminal_io_requests: Pool,
+    terminal_stop_requests: Pool,
+    terminal_io_workers: Arc<tokio::sync::Semaphore>,
+    terminal_workers: Arc<tokio::sync::Semaphore>,
+    terminal_stop_workers: Arc<tokio::sync::Semaphore>,
     engine_requests: Pool,
     engine_workers: Arc<tokio::sync::Semaphore>,
     engine_stop_workers: Arc<tokio::sync::Semaphore>,
@@ -68,6 +76,14 @@ impl Default for Runtime {
             shutdown_started: Arc::default(),
             ui_ready: Arc::default(),
             engines: Arc::default(),
+            terminals: Arc::default(),
+            sessions: Arc::default(),
+            terminal_requests: Pool::default(),
+            terminal_io_requests: Pool::default(),
+            terminal_stop_requests: Pool::default(),
+            terminal_io_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            terminal_workers: Arc::new(tokio::sync::Semaphore::new(4)),
+            terminal_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             engine_requests: Pool::default(),
             engine_workers: Arc::new(tokio::sync::Semaphore::new(4)),
             engine_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
@@ -237,6 +253,52 @@ struct Response {
     value: Value,
 }
 fn allowed(component: &str, route: &str, method: &str) -> bool {
+    if component == "workspace.problems" {
+        return matches!(
+            route,
+            "overview"
+                | "source"
+                | "files"
+                | "dependencies"
+                | "tasks"
+                | "runtime"
+                | "logs"
+                | "terminal"
+                | "problems"
+        ) && matches!(method, "snapshot" | "resolve");
+    }
+    if component == "workspace.terminal" {
+        if matches!(route, "terminal" | "runtime") && crate::terminal_host::wsl_management(method) {
+            return true;
+        }
+        return route == "terminal"
+            && (crate::development_host::Sessions::handles(method)
+                || matches!(
+                    method,
+                    "terminal_sessions"
+                        | "terminal_commands"
+                        | "summon_terminal"
+                        | "open_terminal_profile"
+                        | "restore_terminal"
+                        | "start_terminal_import"
+                        | "cancel_terminal_import"
+                        | "cleanup_terminal_import"
+                        | "terminal_imports"
+                        | "preview_terminal_import"
+                        | "apply_terminal_import"
+                        | "terminal_import_history"
+                        | "preview_terminal_import_restore"
+                        | "restore_terminal_import"
+                        | "read_terminal_log"
+                        | "ack_terminal_log"
+                        | "open_terminal"
+                        | "focus_terminal"
+                        | "stop_terminal"
+                        | "list_workspace_profiles"
+                        | "save_workspace_profile"
+                        | "delete_workspace_profile"
+                ));
+    }
     if crate::runtime_host::component(component) {
         return crate::runtime_host::allowed(component, route, method);
     }
@@ -329,6 +391,158 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
     }
 }
 
+async fn terminal_worker(
+    window: WebviewWindow,
+    runtime: Runtime,
+    header: RouteRequest,
+    method: String,
+    args: Value,
+    companion: bool,
+    context: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    let io = matches!(
+        method.as_str(),
+        "write_session"
+            | "write_initial_command"
+            | "broadcast"
+            | "resize_session"
+            | "terminal_output"
+            | "attach_session"
+            | "list_sessions"
+    );
+    let stopping = matches!(
+        method.as_str(),
+        "close_session" | "stop_terminal" | "stop_development_session" | "cancel_terminal_import"
+    );
+    let permit = if io {
+        &runtime.terminal_io_requests
+    } else if stopping {
+        &runtime.terminal_stop_requests
+    } else {
+        &runtime.terminal_requests
+    }
+    .reserve_with_limit(64)?;
+    let host = runtime.host()?;
+    let workers = if io {
+        runtime.terminal_io_workers.clone()
+    } else if stopping {
+        runtime.terminal_stop_workers.clone()
+    } else {
+        runtime.terminal_workers.clone()
+    };
+    // The native worker owns the request even if its renderer disappears.
+    tauri::async_runtime::spawn(async move {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "request_expired")?
+            .as_millis() as u64;
+        let worker = tokio::time::timeout(
+            Duration::from_millis(header.deadline_ms.saturating_sub(now).min(30_000)),
+            workers.acquire_owned(),
+        )
+        .await
+        .map_err(|_| "request_expired")?
+        .map_err(|_| "request_cancelled")?;
+        tauri::async_runtime::spawn_blocking(move || {
+            let (_permit, _worker, _context) = (permit, worker, context);
+            crate::files_host::current_deadline(header.deadline_ms)?;
+            if runtime.shutdown_started.load(Ordering::Acquire) {
+                return Err("request_cancelled");
+            }
+            if companion {
+                tauri::async_runtime::block_on(
+                    runtime
+                        .terminals
+                        .execute(&window, &host, &header, &method, args),
+                )
+            } else if crate::development_host::Sessions::handles(&method) {
+                runtime
+                    .engines
+                    .initialize_runtime(window.app_handle(), &host)?;
+                runtime.sessions.manage(
+                    &window,
+                    &host,
+                    &runtime.terminals,
+                    &runtime.definitions,
+                    &header,
+                    &method,
+                    args,
+                )
+            } else {
+                runtime
+                    .terminals
+                    .manage(&window, &host, &header, &method, args)
+            }
+        })
+        .await
+        .unwrap_or(Err("worker_unavailable"))
+    })
+    .await
+    .unwrap_or(Err("worker_unavailable"))
+}
+async fn execute_terminal_main(
+    window: &WebviewWindow,
+    runtime: &Runtime,
+    request: Request,
+    context: Option<crate::core::context_activity::ContextPermit>,
+) -> Result<Value, &'static str> {
+    terminal_worker(
+        window.clone(),
+        runtime.clone(),
+        request.header,
+        request.method,
+        request.args,
+        false,
+        context,
+    )
+    .await
+}
+#[tauri::command]
+fn terminal_describe(window: WebviewWindow, runtime: State<'_, Runtime>) -> Result<Value, String> {
+    if runtime.shutdown_started.load(Ordering::Acquire) {
+        return Err("request_cancelled".into());
+    }
+    runtime.terminals.describe(&window).map_err(str::to_owned)
+}
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct TerminalRequest {
+    header: RouteRequest,
+    method: String,
+    args: Value,
+}
+#[tauri::command]
+async fn terminal_execute(
+    window: WebviewWindow,
+    runtime: State<'_, Runtime>,
+    request: TerminalRequest,
+) -> Result<Value, String> {
+    if runtime.shutdown_started.load(Ordering::Acquire) {
+        return Err("request_cancelled".into());
+    }
+    if request.method.len() > 96
+        || !request.args.is_object()
+        || serde_json::to_vec(&request.args).map_or(true, |bytes| bytes.len() > 2 * 1024 * 1024)
+    {
+        return Err("terminal_args_invalid".into());
+    }
+    runtime
+        .terminals
+        .authorize(&window, &request.header)
+        .map_err(str::to_owned)?;
+    terminal_worker(
+        window,
+        runtime.inner().clone(),
+        request.header,
+        request.method,
+        request.args,
+        true,
+        None,
+    )
+    .await
+    .map_err(str::to_owned)
+}
+
 async fn execute_runtime(
     window: &WebviewWindow,
     runtime: &Runtime,
@@ -350,6 +564,7 @@ async fn execute_runtime(
         .reserve_with_limit(if stopping { 32 } else { 24 })?;
     let host = runtime.host()?;
     let owners = runtime.engines.clone();
+    let terminals = runtime.terminals.clone();
     let definitions = runtime.definitions.clone();
     let shutdown = runtime.shutdown_started.clone();
     let workers = if stopping {
@@ -390,6 +605,8 @@ async fn execute_runtime(
                     value: request.args,
                     context: request.header.context.as_ref(),
                     deadline: request.header.deadline_ms,
+                    operation_id: &request.header.request_id,
+                    terminals: &terminals,
                 },
             ))
         })
@@ -1312,6 +1529,8 @@ async fn execute(
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
+    let problems = request.component == "workspace.problems";
+    let terminal = request.component == "workspace.terminal";
     let engine = crate::runtime_host::component(&request.component);
     let files = request.component == "workspace.files";
     let lsp = request.component == "workspace.lsp";
@@ -1326,7 +1545,9 @@ async fn execute(
         code,
         provenance: provenance.clone(),
     };
-    let context_permit = if engine
+    let context_permit = if problems
+        || terminal
+        || engine
         || files
         || definitions
         || dependencies
@@ -1386,6 +1607,37 @@ async fn execute(
             return Err(problem(ProblemCode::Unavailable));
         }
     }
+    let document_observation = if lsp
+        && matches!(
+            request.method.as_str(),
+            "open_lsp_document"
+                | "change_lsp_document"
+                | "reload_lsp_document"
+                | "close_lsp_document"
+        ) {
+        request.header.context.clone().map(|context| {
+            (
+                context,
+                request.method.clone(),
+                request
+                    .args
+                    .get("uri")
+                    .and_then(Value::as_str)
+                    .unwrap_or("")
+                    .to_string(),
+            )
+        })
+    } else {
+        None
+    };
+    let observation = crate::problems_host::begin_observation(
+        window.app_handle(),
+        runtime.host().ok().as_deref(),
+        request.header.context.as_ref(),
+        &request.component,
+        &request.method,
+        &request.args,
+    );
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
@@ -1399,6 +1651,30 @@ async fn execute(
     };
     let mut result = if let Err(issue) = retired {
         Err(issue)
+    } else if problems {
+        let host = runtime.host();
+        match (host, runtime.metadata.reserve()) {
+            (Ok(host), Ok(permit)) => {
+                let app = window.app_handle().clone();
+                let retained_context = context_permit.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _retained = (permit, retained_context);
+                    crate::files_host::current_deadline(request.header.deadline_ms)?;
+                    crate::problems_host::manage(
+                        &app,
+                        &host,
+                        request.header.context.as_ref(),
+                        &request.method,
+                        request.args,
+                    )
+                })
+                .await
+                .unwrap_or(Err("problems_unavailable"))
+            }
+            (Err(issue), _) | (_, Err(issue)) => Err(issue),
+        }
+    } else if terminal {
+        execute_terminal_main(&window, &runtime, request, context_permit.clone()).await
     } else if engine {
         execute_runtime(&window, &runtime, request, context_permit.clone()).await
     } else if lsp {
@@ -1622,6 +1898,22 @@ async fn execute(
             Ok(value)
         });
     }
+    if let (Some((context, method, uri)), Ok(value)) = (document_observation, &result) {
+        if let Ok(owner) = crate::problems_host::owner(window.app_handle()) {
+            let uri = value.get("uri").and_then(Value::as_str).unwrap_or(&uri);
+            let version = value
+                .get("version")
+                .and_then(Value::as_i64)
+                .and_then(|value| i32::try_from(value).ok());
+            owner.document_changed(&context, uri, version, method == "close_lsp_document");
+        }
+    }
+    crate::problems_host::finish_observation(
+        window.app_handle(),
+        runtime.host().ok().as_deref(),
+        observation,
+        &result,
+    );
     let (outcome, value) = match result {
         Ok(value) => (OperationState::Succeeded {}, value),
         Err(issue) => (
@@ -1671,10 +1963,17 @@ fn setup_runtime_tray(app: &tauri::AppHandle) -> tauri::Result<()> {
 
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("workspace")
-        .invoke_handler(tauri::generate_handler![execute])
+        .invoke_handler(tauri::generate_handler![
+            execute,
+            terminal_describe,
+            terminal_execute
+        ])
         .setup(|app, _| {
             let runtime = Runtime::default();
             app.manage(runtime.clone());
+            app.manage(Arc::new(crate::problems_host::Problems::default()));
+            app.manage(runtime.sessions.clone());
+            app.manage(runtime.terminals.clone());
             setup_runtime_tray(app)?;
             #[cfg(windows)]
             runtime.start_wsl_poll(app.clone());
@@ -1751,12 +2050,22 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         })
         .on_window_ready(|window| {
             if window.label() != "main" {
+                if window.state::<Runtime>().terminals.owns(window.label()) {
+                    let owner = window.clone();
+                    window.on_window_event(move |event| {
+                        if let tauri::WindowEvent::CloseRequested { api, .. } = event {
+                            api.prevent_close();
+                            let _ = owner.hide();
+                        }
+                    });
+                }
                 return;
             }
             let owner = window.clone();
             window.on_window_event(move |event| {
                 if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                    if run_manager_lib::component::is_initialized(owner.app_handle())
+                    if (run_manager_lib::component::is_initialized(owner.app_handle())
+                        || wsl_desktop_lib::component::is_product(owner.app_handle()))
                         && !owner
                             .state::<Runtime>()
                             .exit_authorized
@@ -1795,6 +2104,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let app = app.clone();
             let exit_code = code.unwrap_or(0);
             tauri::async_runtime::spawn(async move {
+                let _ = runtime.sessions.request_shutdown();
                 if run_manager_lib::component::is_initialized(&app) {
                     run_manager_lib::component::request_shutdown(&app);
                 }
@@ -1806,6 +2116,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let retired = tokio::time::timeout(Duration::from_secs(5), async {
                     while runtime.lsp_requests.0.load(Ordering::Acquire) != 0
                         || runtime.engine_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.terminal_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.terminal_io_requests.0.load(Ordering::Acquire) != 0
+                        || runtime.terminal_stop_requests.0.load(Ordering::Acquire) != 0
                     {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -1824,6 +2137,7 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 let files_stopped = runtime.retire_files().await.is_ok();
                 #[cfg(not(windows))]
                 let files_stopped = true;
+                let sessions_stopped = runtime.sessions.shutdown().await.is_ok();
                 let runtime_stopped = if run_manager_lib::component::is_initialized(&app) {
                     run_manager_lib::component::shutdown(&app).await.is_ok()
                 } else {
@@ -1834,7 +2148,22 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 } else {
                     true
                 };
+                let terminal_owner = runtime.terminals.clone();
+                let terminal_app = app.clone();
+                let terminals_stopped = tauri::async_runtime::spawn_blocking(move || {
+                    terminal_owner.shutdown(&terminal_app)
+                })
+                .await
+                .is_ok_and(|result| result.is_ok());
+                let retired = retired
+                    || (runtime.lsp_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.engine_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.terminal_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.terminal_io_requests.0.load(Ordering::Acquire) == 0
+                        && runtime.terminal_stop_requests.0.load(Ordering::Acquire) == 0);
                 if retired
+                    && sessions_stopped
+                    && terminals_stopped
                     && stopped
                     && actor_stopped
                     && files_stopped
@@ -1852,6 +2181,21 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         })
         .build()
 }
+pub(crate) fn provider_context(
+    app: &tauri::AppHandle,
+    context: &product_contract::ProjectContext,
+) -> Result<(), &'static str> {
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("session_summary_unavailable")?;
+    runtime.host()?.projects()?.binding(context)?;
+    Ok(())
+}
+
+pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'static str> {
+    app.try_state::<Runtime>().ok_or("initializing")?.host()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1906,6 +2250,60 @@ mod tests {
         ));
         assert!(runtime.filesystem_activity.enter(true).is_ok());
     }
+    #[test]
+    fn terminal_restore_saturation_preserves_live_input_and_stop_capacity() {
+        let runtime = Runtime::default();
+        let _restores = (0..4)
+            .map(|_| {
+                runtime
+                    .terminal_workers
+                    .clone()
+                    .try_acquire_owned()
+                    .unwrap()
+            })
+            .collect::<Vec<_>>();
+        let _queued = (0..64)
+            .map(|_| runtime.terminal_requests.reserve_with_limit(64).unwrap())
+            .collect::<Vec<_>>();
+        assert!(runtime.terminal_requests.reserve_with_limit(64).is_err());
+        let _input = runtime.terminal_io_requests.reserve_with_limit(64).unwrap();
+        let _input_worker = runtime
+            .terminal_io_workers
+            .clone()
+            .try_acquire_owned()
+            .unwrap();
+        let _stop = runtime
+            .terminal_stop_requests
+            .reserve_with_limit(64)
+            .unwrap();
+        let _stop_worker = runtime
+            .terminal_stop_workers
+            .clone()
+            .try_acquire_owned()
+            .unwrap();
+    }
+
+    #[test]
+    fn runtime_wsl_controls_do_not_grant_raw_terminal_io() {
+        for method in [
+            "dashboard_snapshot",
+            "docker_action",
+            "open_wsl_file_in_log_lens",
+            "open_distro_terminal",
+        ] {
+            assert!(allowed("workspace.terminal", "runtime", method));
+            assert!(!allowed("workspace.terminal", "files", method));
+        }
+        for method in [
+            "write_session",
+            "start_session",
+            "broadcast",
+            "run_wsl_command",
+        ] {
+            assert!(!allowed("workspace.terminal", "runtime", method));
+        }
+    }
+
     #[test]
     fn template_writes_are_overview_registry_only() {
         for method in ["save_template", "archive_template"] {

@@ -281,6 +281,7 @@ pub struct DatabaseState {
     connection: Mutex<Connection>,
     legacy_publication: bool,
     log_maintenance: Mutex<()>,
+    pub(crate) task_sources: std::sync::OnceLock<crate::workspace_sources::Provider>,
 }
 
 /// Minimal definition projection for integration consumers. Keeping this DTO
@@ -366,6 +367,7 @@ impl DatabaseState {
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
+            task_sources: std::sync::OnceLock::new(),
             legacy_publication: false,
         })
     }
@@ -380,6 +382,7 @@ impl DatabaseState {
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
+            task_sources: std::sync::OnceLock::new(),
             legacy_publication: true,
         })
     }
@@ -391,6 +394,7 @@ impl DatabaseState {
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
+            task_sources: std::sync::OnceLock::new(),
             legacy_publication: true,
         })
     }
@@ -2241,10 +2245,29 @@ impl DatabaseState {
         attempt_token: &str,
         now: i64,
     ) -> Result<Option<ServiceInstance>, StorageError> {
+        self.claim_service_start_reviewed(service_id, owner_instance_id, attempt_token, now, None)
+    }
+    pub(crate) fn claim_service_start_reviewed(
+        &self,
+        service_id: &str,
+        owner_instance_id: &str,
+        attempt_token: &str,
+        now: i64,
+        reviewed: Option<&Job>,
+    ) -> Result<Option<ServiceInstance>, StorageError> {
         validate_token("owner_instance_id", owner_instance_id)?;
         validate_token("attempt_token", attempt_token)?;
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
+        if let Some(reviewed) = reviewed {
+            let current = fetch_service(&transaction, service_id)?
+                .ok_or_else(|| StorageError::NotFound(service_id.into()))?;
+            if current.execution_definition() != reviewed.execution_definition() {
+                return Err(StorageError::Validation(
+                    "session-service-definition-changed".into(),
+                ));
+            }
+        }
         let changed = transaction.execute(
             "UPDATE service_instances
              SET state = 'starting', generation = generation + 1,
@@ -2782,6 +2805,7 @@ impl DatabaseState {
             Some(occurrence_wall_key),
             now,
             false,
+            None,
         )
     }
 
@@ -2792,7 +2816,32 @@ impl DatabaseState {
         // `enabled` gates automatic scheduling only.  An explicit manual
         // invocation is still allowed for a disabled job, but it must use the
         // exact same overlap/queue decision and CAS path as scheduled work.
-        self.claim_run_with_policy(job_id, None, None, now, true)
+        self.claim_run_with_policy(job_id, None, None, now, true, None)
+    }
+
+    pub(crate) fn claim_manual_run_reviewed(
+        &self,
+        job: &Job,
+        now: i64,
+    ) -> Result<PolicyClaim, StorageError> {
+        self.claim_run_with_policy(&job.id, None, None, now, true, Some((job, false)))
+    }
+    pub(crate) fn claim_workspace_run_reviewed(
+        &self,
+        job: &Job,
+        now: i64,
+    ) -> Result<PolicyClaim, StorageError> {
+        self.claim_run_with_policy(&job.id, None, None, now, true, Some((job, true)))
+    }
+    pub(crate) fn cancel_session_queued_run(
+        &self,
+        job_id: &str,
+        run_id: &str,
+        now: i64,
+    ) -> Result<bool, StorageError> {
+        let connection = self.lock_mut()?;
+        let changed=connection.execute("UPDATE runs SET status='cancelled',ended_at=?,error_message='session-cancelled' WHERE id=? AND job_id=? AND status='queued' AND owner_instance_id IS NULL AND attempt_token IS NULL",params![now,run_id,job_id])?;
+        Ok(changed == 1)
     }
 
     /// CAS a durable queued intent into an owned starting attempt.  A false
@@ -3081,10 +3130,29 @@ impl DatabaseState {
         occurrence_wall_key: Option<&str>,
         now: i64,
         allow_disabled: bool,
+        reviewed: Option<(&Job, bool)>,
     ) -> Result<PolicyClaim, StorageError> {
         let mut connection = self.lock_mut()?;
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let job = ensure_job(&transaction, job_id)?;
+        if reviewed.is_some_and(|(reviewed, _)| {
+            reviewed.execution_definition() != job.execution_definition()
+        }) {
+            return Err(StorageError::Validation(
+                "session-job-definition-changed".into(),
+            ));
+        }
+        if reviewed.is_some_and(|(_, workspace)| !workspace)
+            && transaction.query_row(
+                "SELECT EXISTS(SELECT 1 FROM workspace_tasks WHERE job_id=?)",
+                [job_id],
+                |row| row.get::<_, bool>(0),
+            )?
+        {
+            return Err(StorageError::Validation(
+                "session-task-orchestration-required".into(),
+            ));
+        }
         if !job.enabled && !allow_disabled {
             return Err(StorageError::JobDisabled(job_id.to_string()));
         }
@@ -3106,6 +3174,12 @@ impl DatabaseState {
         }
 
         let active_run = fetch_active_run(&transaction, job_id)?;
+        // A Development Session must resolve an existing run as an explicit
+        // ownership conflict. It cannot queue work past its lifetime or apply
+        // a global job's kill-previous policy to somebody else's run.
+        if reviewed.is_some() && active_run.is_some() {
+            return Err(StorageError::ConcurrentChange("session-job-busy".into()));
+        }
         let sequence = allocate_queue_sequence(&transaction, job_id)?;
         let decision = decide_overlap(&OverlapPolicyInput {
             enabled: job.enabled || allow_disabled,

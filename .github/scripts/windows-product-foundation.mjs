@@ -1,3 +1,4 @@
+import {seedTerminalImport,copyClosedTerminalImport,verifyTerminalImport,cleanupTerminalImport} from "./windows-workspace-terminal-import.mjs";
 import {prepareRuntimeCrash,verifyRuntimeCrash} from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
@@ -34,14 +35,14 @@ async function freePort() {
   const port = server.address().port; await new Promise((resolve) => server.close(resolve)); return port;
 }
 
-async function connect(port, child, deadline = performance.now() + 30_000) {
+async function connect(port, child, deadline = performance.now() + 30_000, terminalId = null) {
   while (performance.now() < deadline) {
     if (child.exitCode !== null) throw new Error("product exited before renderer opened");
     try {
       const response = await fetch(`http://127.0.0.1:${port}/json/list`, { signal: AbortSignal.timeout(500) });
       const pages = await response.json(); const page = pages.find((p) => {
         if (p.type !== "page" || !p.webSocketDebuggerUrl) return false;
-        try { const url = new URL(p.url); return (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) && ["/", "/index.html"].includes(url.pathname); } catch { return false; }
+        try { const url = new URL(p.url); return (url.hostname === "tauri.localhost" || (url.protocol === "tauri:" && url.hostname === "localhost")) && ["/", "/index.html"].includes(url.pathname) && (terminalId ? url.searchParams.get("surface")==="terminal"&&url.searchParams.get("id")===terminalId : !url.searchParams.has("surface")); } catch { return false; }
       });
       if (page) {
         const socket = new WebSocket(page.webSocketDebuggerUrl); await once(socket, "open");
@@ -99,6 +100,11 @@ async function waitForRenderer(cdp, expression, label) {
   throw new Error(`${label}: route=${snapshot.route}, dialogs=${snapshot.dialogs}`);
 }
 
+function retainNativeErrors(child,product,suffix){
+  let error="";
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data",value=>{error=(error+value).slice(-16000);writeFileSync(`product-foundation-evidence/native-errors-${product.id}-${suffix}.txt`,error);});
+}
 async function start(product, suffix) {
   const directory = path.join(root, `${product.id}-${suffix}`); mkdirSync(directory);
   // Elevated WebView2 reads per-image machine policy instead of the process
@@ -116,11 +122,12 @@ async function start(product, suffix) {
   const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
   if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
   const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
-  let cdp, child;
+  let cdp, child, terminalImport;
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
-    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: "ignore" });
+    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
+    retainNativeErrors(child,product,suffix);
     await once(child, "spawn");
     cdp = await connect(port, child);
     progress(product, suffix, "renderer-connected");
@@ -183,15 +190,21 @@ async function start(product, suffix) {
     let componentProbe;
     if (product.id === "workspace") {
       progress(product, suffix, "workspace-registration");
-      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network});
+      componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
       progress(product,suffix,"workspace-runtime-crash");
       const runtimeCrash=await prepareRuntimeCrash(cdp,directory);
+      terminalImport=await seedTerminalImport(cdp);
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
-      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:"ignore"});
+      copyClosedTerminalImport(terminalImport);
+      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
+      retainNativeErrors(child,product,suffix);
       cdp=await connect(port,child,performance.now()+45000);
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
       componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);
+      componentProbe.terminalImport=await verifyTerminalImport(cdp,terminalImport,id=>connect(port,child,performance.now()+45000,id));
+      cleanupTerminalImport(terminalImport);
+      writeFileSync("product-foundation-evidence/workspace-terminal-import-"+suffix+".json",JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.terminalImport},null,2));
       writeFileSync(`product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.runtimeCrash},null,2));
     }
     if (product.id === "api-studio") {
@@ -425,7 +438,11 @@ async function start(product, suffix) {
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
     return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
-  } catch (error) { stop({ child, cdp, policy, network }); throw error; }
+  } catch (error) {
+    stop({ child, cdp, policy, network });
+    try{cleanupTerminalImport(terminalImport);}catch(cleanup){throw new AggregateError([error,cleanup],"Native fixture cleanup incomplete");}
+    throw error;
+  }
 }
 
 function stop(instance) {

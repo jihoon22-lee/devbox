@@ -47,3 +47,14 @@ For each finding, provide severity, file/location, concrete failure scenario,
 violated contract, and the missing or failing check. Record uncertain assumptions
 and unperformed Windows observations separately from confirmed findings.
 Put the result in the existing PR/workthrough packet when one exists.
+
+## Preserve running local services
+
+Never provision/start/stop Docker or mutate containers, networks, firewall rules,
+routes or shared host services for a local test. A disposable WSL distro, unique
+socket/data-root or container name is not network isolation. Run network-changing
+acceptance only on a disposable hosted runner or a separately verified independent
+VM. Do not spoof CI environment variables, use private script copies or weaken the
+local execution guard. Without that environment, retain an unrun acceptance item
+and continue implementation. Do not restart existing services or restore firewall
+state without an explicit recovery request and verified restoration evidence.

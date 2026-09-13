@@ -58,3 +58,14 @@ Read the repository [AGENTS.md](../../../AGENTS.md) and relevant sections of
   wait for CI on the final PR changes and complete CONVENTIONS §8 cleanup.
 - Before a context handoff, preserve scope, WP IDs, worktree/branch, decisions,
   verification, and the next action. Recheck live Git/CI state on resume.
+
+## Preserve running local services
+
+Never provision/start/stop Docker or mutate containers, networks, firewall rules,
+routes or shared host services for a local test. A disposable WSL distro, unique
+socket/data-root or container name is not network isolation. Run network-changing
+acceptance only on a disposable hosted runner or a separately verified independent
+VM. Do not spoof CI environment variables, use private script copies or weaken the
+local execution guard. Without that environment, retain an unrun acceptance item
+and continue implementation. Do not restart existing services or restore firewall
+state without an explicit recovery request and verified restoration evidence.

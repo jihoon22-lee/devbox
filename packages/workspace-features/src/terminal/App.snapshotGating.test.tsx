@@ -1,11 +1,19 @@
 import { useEffect, useRef, type CSSProperties, type HTMLAttributes } from "react";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
-import { dockerAction, getDashboardSnapshot, startSession } from "./api";
+import { dockerAction, getDashboardSnapshot, startSession, listDistros } from "./api";
+import {configureProductTransport} from "../transport";
+import {configureTerminalStorage,initializeTerminalPreferences} from "./lib/storageNamespace";
+import * as workspace from "./lib/workspace";
 import type { DashboardSnapshot } from "./types";
 
-const mocks = vi.hoisted(() => ({ nextSession: 0 }));
+const mocks = vi.hoisted(() => ({ nextSession: 0, hosted: false }));
+
+vi.mock("../transport", async importOriginal => ({
+  ...await importOriginal<typeof import("../transport")>(),
+  isProductHosted:()=>mocks.hosted,
+}));
 
 vi.mock("./components/TermPane", () => ({
   default: (props: {
@@ -65,6 +73,7 @@ vi.mock("./api", () => ({
     issues: [],
   }),
   getDashboardSnapshot: vi.fn(),
+  listDistros: vi.fn(),
   dockerAction: vi.fn().mockResolvedValue(undefined),
   startSession: vi.fn(),
   detectMultiplexers: vi.fn().mockResolvedValue([
@@ -112,11 +121,20 @@ async function armBroadcast(): Promise<HTMLInputElement> {
   return toggle;
 }
 
+beforeAll(()=>{
+  configureProductTransport(async<T,>(_component:unknown,method:string)=>
+    (method==="terminal_preferences"?{"wsl-desktop:settings":JSON.stringify({version:1,openTerminalOnStart:false})}:null) as T,"fixture-installation");
+  configureTerminalStorage("fixture-installation","12345678-1234-1234-1234-123456789abc");
+});
+async function hostedPreferences(){ mocks.hosted=true; await initializeTerminalPreferences(); }
+
 beforeEach(() => {
   localStorage.clear();
   // 이 스위트는 시작 시 자동으로 열리는 터미널이 아니라 명시적으로 연 터미널을 검증한다.
   localStorage.setItem("wsl-desktop:settings", JSON.stringify({ version: 1, openTerminalOnStart: false }));
   mocks.nextSession = 0;
+  mocks.hosted = false;
+  vi.mocked(listDistros).mockReset();
   snapshotMock.mockReset().mockImplementation(async () => snapshot());
   dockerActionMock.mockReset().mockResolvedValue(undefined);
   startSessionMock.mockReset().mockImplementation(async () => ({
@@ -126,9 +144,34 @@ beforeEach(() => {
   }));
 });
 
-afterEach(() => cleanup());
+afterEach(() => { cleanup(); vi.restoreAllMocks(); });
 
 describe("snapshot-gated controls", () => {
+  it("restores an explicitly opened product profile using fresh distro identity when telemetry fails", async()=>{
+    await hostedPreferences();
+    snapshotMock.mockRejectedValue(new Error("telemetry unavailable"));
+    vi.mocked(listDistros).mockResolvedValue([{name:"Ubuntu",version:2,default:true,state:"Stopped"}]);
+    vi.spyOn(workspace,"saveLastWorkspace").mockResolvedValue();
+    workspace.initializeProductLayout("12345678-1234-1234-1234-123456789abc",{revision:"a".repeat(64),layout:{
+      tabs:[{id:"main",title:"Profile",layout:"grid",paneKeys:["one","two"],sizing:{columns:[0.5,0.5],rows:[1]}}],
+      panes:[{key:"one",distro:"Ubuntu",cwd:"/owned/one",multiplexer:"native"},{key:"two",distro:"Ubuntu",cwd:"/owned/two",multiplexer:"native"}],activeTabId:"main",activePaneKey:"two",
+    }});
+    render(<App/>);
+    await waitFor(()=>expect(startSessionMock).toHaveBeenCalledTimes(2));
+    expect(startSessionMock).toHaveBeenNthCalledWith(1,"Ubuntu","/owned/two","two","native");
+    expect(startSessionMock).toHaveBeenNthCalledWith(2,"Ubuntu","/owned/one","one","native");
+    expect(screen.getByText(/WSL resource snapshot을 갱신하지 못했습니다/u)).toBeInTheDocument();
+    expect(screen.getByLabelText("동시 입력 활성화")).toBeDisabled();
+  });
+  it("does not guess a product target when telemetry and fresh distro discovery both fail",async()=>{
+    await hostedPreferences();
+    snapshotMock.mockRejectedValue(new Error("telemetry unavailable"));
+    vi.mocked(listDistros).mockRejectedValue(new Error("distro unavailable"));
+    render(<App/>);
+    await waitFor(()=>expect(listDistros).toHaveBeenCalled());
+    expect(startSessionMock).not.toHaveBeenCalled();
+  });
+
   it("동시 입력은 진행 중인 refresh를 넘겨 유지된다", async () => {
     const toggle = await armBroadcast();
 

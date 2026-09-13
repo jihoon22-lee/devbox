@@ -11,3 +11,16 @@ pub fn legacy_control_method(method: &str) -> bool {
             | "stop_workspace_task_operation"
     )
 }
+
+/// Private typed Session adapters share the durable receipt table, while the
+/// generic renderer control endpoint keeps its original closed allowlist.
+pub(crate) fn stored_control_method(method: &str) -> bool {
+    legacy_control_method(method)
+        || matches!(
+            method,
+            "session_start_job"
+                | "session_acquire_service"
+                | "session_stop_service_generation"
+                | "session_stop_exact_run"
+        )
+}

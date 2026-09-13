@@ -391,12 +391,14 @@ mod native {
         }
     }
     fn running() -> Result<Vec<String>> {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|_| "wsl_unavailable")?;
-        let args = ["--list", "--running", "--quiet"].map(str::to_owned);
-        let bytes = runtime.block_on(output(&args, Duration::from_secs(5)))?;
+        let bytes = crate::platform::runtime_bridge::outside_runtime(|| {
+            let runtime = tokio::runtime::Builder::new_current_thread()
+                .enable_all()
+                .build()
+                .map_err(|_| "wsl_unavailable")?;
+            let args = ["--list", "--running", "--quiet"].map(str::to_owned);
+            runtime.block_on(output(&args, Duration::from_secs(5)))
+        })??;
         let output = devbox_wsl::output::decode_output(&bytes);
         if output.contains('\u{fffd}') {
             return Err("wsl_output_invalid");
@@ -533,6 +535,14 @@ mod native {
         /// WSL accepts an absolute Windows --cd path. Its native launcher
         /// maps the installed resource directory; no shell or wslpath utility
         /// participates in selecting the first-party helper executable.
+        pub fn require_running(&self) -> Result<()> {
+            self.revalidate()?;
+            if running()?.contains(&self.registration.name) {
+                Ok(())
+            } else {
+                Err("wsl_distro_stopped")
+            }
+        }
         pub fn helper_args(
             &self,
             directory: &Path,

@@ -300,3 +300,8 @@ mod lsp_authority;
 mod lsp_documents;
 #[cfg(all(feature = "helper", target_os = "linux"))]
 mod lsp_runtime;
+
+#[cfg(all(target_os = "linux", feature = "helper"))]
+pub mod task_launch;
+
+pub mod task_contract;

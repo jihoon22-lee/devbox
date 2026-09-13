@@ -242,6 +242,13 @@ src/
   dependency graph의 역의존 closure만 검사한다. 미분류 경로·lockfile 단독 변경은 fail-safe로
   전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip하며, release와 주간 CI 감사는
   전체 검증을 유지한다.
+- 로컬 테스트는 기존 서비스의 실행 상태·Docker 데몬·방화벽·공유 네트워크를 변경하지 않는다.
+  전용 WSL 배포판, 별도 Docker socket/data-root, 고유 container 이름은 네트워크 격리 증거가
+  아니다. Docker 설치/데몬 시작·종료/container·network 조작, iptables/nftables/라우팅 변경,
+  WSL 전역 재시작처럼 공유 시스템에 영향을 줄 수 있는 검사는 일회성 hosted CI 또는 네트워크가
+  독립된 VM에서만 실행한다. 로컬 차단을 환경 변수·사설 스크립트·daemon 옵션으로 우회하지
+  않는다. 격리된 실행 환경이 없으면 해당 실기 항목을 미실행으로 남기고 구현은 계속한다.
+  기존 서비스 재시작·방화벽 복원은 별도의 명시적 복구 요청과 확인된 근거 없이 수행하지 않는다.
 - 로컬 `verify:affected/all`은 패키지 1개, Vitest worker 2개, Cargo job 2개, Rust test thread
   2개로 제한한다. CPU 4개·nice +10을 적용하고, 지원 호스트에서는 메모리 high 6GiB/max 8GiB,
   swap max 1GiB를 검증 process scope에 적용한다. worktree 간 검증은 한 번에 하나만 실행한다.

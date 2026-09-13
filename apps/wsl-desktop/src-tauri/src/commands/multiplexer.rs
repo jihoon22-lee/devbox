@@ -80,6 +80,22 @@ impl ProbeRunner for SystemProbeRunner {
     }
 }
 
+struct OwnedProbeRunner<'a>(&'a dyn crate::component::TerminalLaunchLease);
+impl ProbeRunner for OwnedProbeRunner<'_> {
+    fn run(&self, argv: Vec<String>) -> Pin<Box<dyn Future<Output = RunOutcome> + Send + '_>> {
+        Box::pin(async move {
+            let Ok(argv) = self.0.bind_argv(argv) else {
+                return RunOutcome::Failed;
+            };
+            let result = run_argv(argv).await;
+            if self.0.revalidate().is_err() {
+                return RunOutcome::Failed;
+            }
+            result
+        })
+    }
+}
+
 async fn run_argv(argv: Vec<String>) -> RunOutcome {
     let Some((program, args)) = argv.split_first() else {
         return RunOutcome::Failed;
@@ -265,10 +281,17 @@ async fn detect_one(distro: &str, kind: MultiplexerKind) -> MultiplexerAvailabil
 pub(crate) async fn resolve_for_launch(
     distro: &str,
     kind: MultiplexerKind,
+    lease: Option<&dyn crate::component::TerminalLaunchLease>,
 ) -> Option<ResolvedMultiplexer> {
-    resolve_with_runner(distro, kind, &SystemProbeRunner)
-        .await
-        .1
+    if let Some(lease) = lease {
+        resolve_with_runner(distro, kind, &OwnedProbeRunner(lease))
+            .await
+            .1
+    } else {
+        resolve_with_runner(distro, kind, &SystemProbeRunner)
+            .await
+            .1
+    }
 }
 
 #[tauri::command]
@@ -289,13 +312,19 @@ pub(crate) async fn session_is_running(
     distro: &str,
     pane_key: &str,
     resolved: &ResolvedMultiplexer,
+    lease: Option<&dyn crate::component::TerminalLaunchLease>,
 ) -> bool {
     let argv =
         match build_session_probe_argv(distro, pane_key, resolved.kind(), resolved.executable()) {
             Ok(argv) => argv,
             Err(_) => return false,
         };
-    let RunOutcome::Completed { exit_code, stdout } = run_argv(argv).await else {
+    let outcome = if let Some(lease) = lease {
+        OwnedProbeRunner(lease).run(argv).await
+    } else {
+        run_argv(argv).await
+    };
+    let RunOutcome::Completed { exit_code, stdout } = outcome else {
         return false;
     };
     match resolved.kind() {
@@ -312,6 +341,26 @@ pub(crate) async fn session_is_running(
                     .is_some_and(|value| zellij_session_is_running(value, &expected))
         }
     }
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_detect_multiplexers(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = detect_multiplexers(input.distro).await;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
 }
 
 #[cfg(test)]

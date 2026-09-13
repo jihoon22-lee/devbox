@@ -1,9 +1,8 @@
 //! Windows WebView2 profile acquisition. No legacy app is launched or upgraded.
-use crate::core::source_snapshot::ClosedStoreSnapshot;
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::AtomicBool;
 
-#[cfg(windows)]
+#[cfg(all(test, windows))]
 fn exclusive_read(path: &Path) -> std::io::Result<std::fs::File> {
     use std::os::windows::fs::OpenOptionsExt;
     std::fs::OpenOptions::new()
@@ -77,101 +76,9 @@ mod tests {
     }
 }
 
+pub use super::browser_profile::verify_profile;
 /// Returns the new owned WebView2 data directory plus a consistent-copy receipt.
-#[cfg(windows)]
-pub fn snapshot(
-    source_data: &Path,
-    owned_stage: &Path,
-    cancelled: &AtomicBool,
-) -> Result<(PathBuf, ClosedStoreSnapshot), String> {
-    use std::os::windows::fs::OpenOptionsExt;
-    // Prevent replacement of the source directory while its individual files
-    // and LevelDB LOCK are held. No write/create access is requested.
-    devbox_filesystem::ensure_no_links(source_data).map_err(|_| "legacy_store_links_forbidden")?;
-    let _directory = std::fs::OpenOptions::new()
-        .read(true)
-        .share_mode(3)
-        .custom_flags(0x0200_0000 | 0x0020_0000)
-        .open(source_data)
-        .map_err(|_| "legacy_app_must_be_closed")?;
-    let candidates = [
-        "EBWebView/Default/Local Storage/leveldb",
-        "Default/Local Storage/leveldb",
-    ];
-    let existing: Vec<_> = candidates
-        .iter()
-        .filter(|relative| source_data.join(relative).exists())
-        .collect();
-    if existing.len() != 1 {
-        return Err("legacy_browser_store_missing_or_ambiguous".into());
-    }
-    let data = owned_stage.join("webview-copy");
-    std::fs::create_dir(&data).map_err(|_| "legacy_snapshot_target_must_be_new")?;
-    let target = data.join(existing[0]);
-    std::fs::create_dir_all(target.parent().ok_or("legacy_snapshot_target_invalid")?)
-        .map_err(|_| "legacy_snapshot_write_failed")?;
-    let receipt = crate::core::source_snapshot::copy_closed_store(
-        &source_data.join(existing[0]),
-        &target,
-        cancelled,
-        exclusive_read,
-    )?;
-    Ok((data, receipt))
-}
-#[cfg(not(windows))]
-pub fn snapshot(
-    _: &Path,
-    _: &Path,
-    _: &AtomicBool,
-) -> Result<(PathBuf, ClosedStoreSnapshot), String> {
-    Err("legacy_browser_export_requires_windows".into())
-}
-
-/// Environment or registry WebView2 overrides must never redirect the exporter
-/// into the live source or another product profile. Verify the actual COM value.
-#[cfg(windows)]
-pub fn verify_profile(
-    window: &tauri::WebviewWindow,
-    expected: PathBuf,
-    complete: impl FnOnce(Result<(), String>) + Send + 'static,
-) -> tauri::Result<()> {
-    window.with_webview(move |view| {
-        use webview2_com::Microsoft::Web::WebView2::Win32::ICoreWebView2Environment7;
-        use windows::core::{Interface, PWSTR};
-        let result = (|| {
-            let environment = view
-                .environment()
-                .cast::<ICoreWebView2Environment7>()
-                .map_err(|_| "legacy_profile_verification_unavailable")?;
-            let mut raw = PWSTR::null();
-            unsafe { environment.UserDataFolder(&mut raw) }
-                .map_err(|_| "legacy_profile_verification_unavailable")?;
-            if raw.is_null() {
-                return Err("legacy_profile_verification_unavailable".into());
-            }
-            let actual = PathBuf::from(webview2_com::take_pwstr(raw));
-            devbox_filesystem::ensure_no_links(&actual).map_err(|_| "legacy_profile_redirected")?;
-            let actual_id = devbox_filesystem::filesystem_identity(&actual, true)
-                .map_err(|_| "legacy_profile_verification_unavailable")?;
-            let expected_id = devbox_filesystem::filesystem_identity(&expected, true)
-                .map_err(|_| "legacy_profile_verification_unavailable")?;
-            if actual_id != expected_id {
-                return Err("legacy_profile_redirected".into());
-            }
-            Ok(())
-        })();
-        complete(result);
-    })
-}
-#[cfg(not(windows))]
-pub fn verify_profile(
-    _: &tauri::WebviewWindow,
-    _: PathBuf,
-    complete: impl FnOnce(Result<(), String>) + Send + 'static,
-) -> tauri::Result<()> {
-    complete(Err("legacy_browser_export_requires_windows".into()));
-    Ok(())
-}
+pub use super::browser_snapshot::snapshot;
 
 /// A separate owned process fixes WEBVIEW2_USER_DATA_FOLDER to the copy without
 /// mutating this running product's environment. That override takes precedence

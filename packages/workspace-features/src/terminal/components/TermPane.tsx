@@ -1,3 +1,4 @@
+import { isProductHosted } from "../../transport";
 import { useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
 import type { ContextMenuTriggerProps } from "@devbox/context-menu";
 import { Terminal } from "@xterm/xterm";
@@ -8,6 +9,8 @@ import { WebLinksAddon } from "@xterm/addon-web-links";
 import "@xterm/xterm/css/xterm.css";
 import {
   attachSession,
+  connectProductTerminalOutput,
+  writeInitialCommand,
   broadcast,
   openTerminalLink,
   readClipboardText,
@@ -612,9 +615,23 @@ export default function TermPane({
     // registerWrite 직후, 마운트당 정확히 한 번. 리더 스레드는 start_session이 아니라
     // 이 호출로 spawn된다 — 그 사이 출력은 ConPTY 내부 버퍼가 보관하므로 프론트
     // 핸들러가 등록되기 전에 나온 바이트가 유실되지 않는다.
-    void attachSession(sessionId);
+    void attachSession(sessionId).catch(() => {
+      onTerminalErrorRef.current("터미널 출력에 연결하지 못했습니다.");
+    });
+    let completeOutputWrite: (() => void) | undefined;
+    const stopOutput = isProductHosted() ? connectProductTerminalOutput(sessionId, (data, truncated) => {
+      if (torndown) return Promise.resolve();
+      if (truncated) {
+        term.reset();
+        term.write("\r\n[연결이 끊긴 동안 출력 일부가 생략되었습니다.]\r\n");
+      }
+      return new Promise<void>(resolve => {
+        completeOutputWrite = resolve;
+        term.write(data, () => { completeOutputWrite = undefined; resolve(); });
+      });
+    }, () => onTerminalErrorRef.current("터미널 출력 연결이 중단되었습니다. 창을 다시 열어 재연결해 주세요.")) : () => undefined;
     if (initialCommand) {
-      void writeSession(sessionId, `${initialCommand}\r`).catch(() => {
+      void (isProductHosted() ? writeInitialCommand : writeSession)(sessionId, `${initialCommand}\r`).catch(() => {
         onTerminalErrorRef.current("프로필 시작 명령을 터미널에 전달하지 못했습니다.");
       });
     }
@@ -630,6 +647,8 @@ export default function TermPane({
 
     return () => {
       torndown = true;
+      stopOutput();
+      completeOutputWrite?.();
       window.clearTimeout(selectionCopyTimerRef.current);
       window.clearTimeout(resizeTimerRef.current);
       confirmOpenRef.current = false;

@@ -44,11 +44,11 @@ export default function RegistryGate({context = null, onContextChanged = async (
     const requestId = ++loadId.current;
     const next = await nativeCall<Status>("workspace.migration", "status");
     if (!alive.current || loadId.current !== requestId) return;
-    setStatus(next);
     if (next.phase === "selected") {
       const snapshot = await registryCall<Registry>("snapshot");
       if (alive.current && loadId.current === requestId) setRegistry(snapshot);
     }
+    if (alive.current && loadId.current === requestId) setStatus(next);
   }
   useEffect(() => {if (refreshSignal) void refresh().catch(cause => setError(cause instanceof Error ? cause.message : "목록을 확인하지 못했습니다."));}, [refreshSignal]);
   useEffect(() => {
@@ -60,12 +60,14 @@ export default function RegistryGate({context = null, onContextChanged = async (
       try {
         const next = await nativeCall<Status>("workspace.migration", "status");
         if (disposed || !alive.current || loadId.current !== requestId) return;
-        setStatus(next);
         if (next.phase === "loading") timer = setTimeout(() => { void load(); }, 300);
         if (next.phase === "selected") {
           const snapshot = await registryCall<Registry>("snapshot");
           if (!disposed && alive.current && loadId.current === requestId) setRegistry(snapshot);
         }
+        // Publish readiness only after the registry read; otherwise dependent
+        // panels can occupy both native metadata slots before this read starts.
+        if (!disposed && alive.current && loadId.current === requestId) setStatus(next);
       } catch (cause) {if (!disposed && alive.current && loadId.current === requestId) setError(cause instanceof Error ? cause.message : "정보를 불러오지 못했습니다.");}
     }
     void load();
@@ -104,7 +106,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
   }
   return <section className="workspace-registry" aria-label="프로젝트 관리" aria-busy={busy}>
     <h1>프로젝트</h1>
-    {error && <p role="alert">{error}</p>}
+    {error && <><p role="alert">{error}</p><button disabled={busy} onClick={()=>void act(refresh)}>프로젝트 정보 다시 읽기</button></>}
     {status.phase === "loading" && <p role="status">저장된 정보를 불러오고 있습니다…</p>}
     {status.phase === "failed" && <p role="alert">{issueMessage(status.issue ?? "operation_failed")}</p>}
     {status.phase === "setup" && <>

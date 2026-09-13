@@ -1,3 +1,4 @@
+import {isProductHosted} from "../../transport";
 import { useRef } from "react";
 import { restoreFocus, trapDialogKeyDown } from "@devbox/a11y";
 import {
@@ -153,6 +154,7 @@ export default function SettingsPanel({
 
         <fieldset className="settings-group quick-summon-settings">
           <legend>빠른 호출</legend>
+          {isProductHosted()?<p role="status">전역 단축키는 Workspace에서 관리합니다. 이 보조 창을 닫으면 창만 숨기고 터미널은 유지합니다.</p>:<>
           <label className="settings-row">
             <input
               type="checkbox"
@@ -209,6 +211,7 @@ export default function SettingsPanel({
                   ? "현재 닫기 버튼: 창만 숨기고 터미널 상태 유지"
                   : "현재 닫기 버튼: 앱과 native PTY 세션 종료"}
           </div>
+          </>}
         </fieldset>
 
         <ShellIntegrationSettings distro={distro} ask={ask} onError={onError} />

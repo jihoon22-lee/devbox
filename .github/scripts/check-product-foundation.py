@@ -86,6 +86,20 @@ def check(root=ROOT):
         assert set(capability["permissions"]) == expected_permissions
         capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
         expected_files = {"default.json"}
+        if product["id"] == "workspace":
+            expected_files.update({"terminal.json", "terminal-export.json"})
+            terminal = json.loads((capability_dir / "terminal.json").read_text())
+            assert terminal["windows"] == ["terminal-*"]
+            assert "remote" not in terminal and not terminal.get("webviews")
+            assert set(terminal["permissions"]) == {
+                "core:default", "workspace:allow-terminal-describe",
+                "workspace:allow-terminal-execute", "clipboard-manager:allow-read-text",
+                "opener:allow-open-url",
+            }
+            exporter = json.loads((capability_dir / "terminal-export.json").read_text())
+            assert exporter["windows"] == ["legacy-terminal-export"]
+            assert "remote" not in exporter and not exporter.get("webviews")
+            assert exporter["permissions"] == ["workspace:allow-terminal-export-message"]
         if product["id"] == "api-studio":
             expected_files.add("legacy-export.json")
             exporter = json.loads((capability_dir / "legacy-export.json").read_text())
