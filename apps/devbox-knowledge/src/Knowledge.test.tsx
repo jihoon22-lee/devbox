@@ -4,6 +4,8 @@ import Knowledge from "./Knowledge";
 vi.mock("@tauri-apps/api/core", () => ({ isTauri: () => false, invoke: vi.fn(() => { throw new Error("native work in browser fixture"); }) }));
 afterEach(cleanup);
 it("retains the actual template draft and ignores background Escape across Activity and Search", async () => {
+  // This is a state-retention test, not a cold Vite transform timing budget.
+  await import("@devbox/knowledge-features/notes");
   render(<Knowledge/>);
   const nav = await screen.findByRole("navigation", { name: "제품 화면" });
   await act(async () => { await vi.dynamicImportSettled(); });
