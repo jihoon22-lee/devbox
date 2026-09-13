@@ -410,3 +410,22 @@ and reviewed-route regressions are prepared for the B07 completion audit.
 The B06 retained-artifact observation also applies to Control Center's shortcut
 callback: native foreground HWND now supplies wasFocused for the existing modal,
 text-editor and IME guards. No additional shortcut or key interception is added.
+
+
+## Four-product native fixture packet
+
+The hosted suite fixture stages the four already-built executables under one exact
+manifest, exercises approved peers, same-name projects, route rejection/acceptance,
+replay/stale revision, remembered cold activation, native Editor/Logs selections,
+indexed file opening with a dirty editor, saved API results and Session summaries
+through real destination previews. It also checks a second installation's shortcut
+conflict/provider isolation, native global hotkeys and bounded Operations surfaces.
+High contrast/DPI use renderer emulation; composition guards use WebView events and
+Unicode input. These do not claim an OS Korean IME or multi-monitor DPI observation.
+
+The fixture is prepared, syntax checked and not executed yet. It uses only a guarded
+disposable hosted Windows VM and reuses the completed product build. Existing owned
+process-identity cleanup is shared for cold-launched processes. Native cold launch
+now removes sender-specific WebView profile/debug environment overrides so another
+product cannot inherit the sender's browser store. The Transforms producer label and
+stored-draft assertion were aligned with the final behavior before the PR audit.

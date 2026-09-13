@@ -935,7 +935,7 @@ function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 
         return;
       }
       setError(null);
-      setNotice(dispatch.redacted ? TOOLBOX_SEND_REDACTED : TOOLBOX_SEND_SUCCESS);
+      setNotice(isProductHosted() ? "API Studio에 검토를 요청했습니다." + (dispatch.redacted ? " 민감한 값은 마스킹되었습니다." : "") : dispatch.redacted ? TOOLBOX_SEND_REDACTED : TOOLBOX_SEND_SUCCESS);
     } catch {
       if (!mounted.current) return;
       setError(isCurrentSelection() ? TOOLBOX_SEND_ERROR : STALE_SELECTION_ERROR);

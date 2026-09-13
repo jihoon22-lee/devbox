@@ -23,6 +23,7 @@ export const TOOLBOX_TEXT_SOURCE_LABELS: Readonly<Record<string, string>> = {
   "api-playground": "API Playground",
   "devbox-launcher": "Devbox Launcher",
   "log-lens": "Log Lens",
+  "code-pad": "Workspace Editor",
 };
 
 const HANDOFF_ID_PATTERN = /^[0-9a-f]{32}$/u;

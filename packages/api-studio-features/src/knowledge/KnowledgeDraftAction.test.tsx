@@ -13,14 +13,14 @@ const fixture = () => ({
 afterEach(() => { cleanup(); vi.clearAllMocks(); });
 describe("producer-owned Knowledge fallback", () => {
   it("requires explicit saving and reports unavailable with a durable export", async () => {
-    native.invoke.mockResolvedValue({ delivery: "unavailable", draft: fixture() });
+    native.invoke.mockResolvedValue({ delivery: "stored", draft: fixture() });
     render(<KnowledgeDraftAction value={"safe\npassword=synthetic-secret"} owner={owner} source={{ kind: "tool", toolId: "json-format" }} />);
     expect(native.invoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "Knowledge 초안 보관" }));
     expect(screen.getByRole("dialog")).toBeTruthy();
     expect(native.invoke).not.toHaveBeenCalled();
     fireEvent.click(screen.getByRole("button", { name: "마스킹 사본 보관" }));
-    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("수신 연결을 사용할 수 없어"));
+    await waitFor(() => expect(screen.getByRole("status").textContent).toContain("API Studio에 마스킹한 초안을 보관했습니다"));
     expect(native.invoke).toHaveBeenCalledExactlyOnceWith("save_knowledge_draft", {
       output: "safe\npassword=synthetic-secret", source: { kind: "tool", toolId: "json-format" },
     });
