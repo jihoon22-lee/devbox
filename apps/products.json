@@ -247,6 +247,13 @@
       "protocolVersion": 1
     },
     {
+      "id": "control-center.delivery",
+      "owner": "control-center",
+      "authority": "suite-delivery",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
       "id": "workspace.problems",
       "owner": "workspace",
       "authority": "problem-read",

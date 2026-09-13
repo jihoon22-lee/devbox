@@ -44,3 +44,29 @@ Official URLs resolve against the native curated list without installation probe
 The new tool component/capability and catalog dependency edges are registered.
 Dependency locks add only the internal consumers; unrelated transitive pnpm changes
 from lockfile resolution were removed. No B08 detailed test/build/audit has run.
+
+
+## Inventory and recovery implementation
+
+Native package capture supplies a four-product/component inventory without starting
+peers. Unknown binary/ARP/runtime observations stay unknown; a verified portable
+manifest can separately report an omitted product. Products/Components consume the
+local delivery authority. Recovery displays durable journal metadata only; it does
+not repair/delete user stores. Manager diagnostics remains a separate existing tool.
+
+The generation journal records stage/verify/backup/import/validate/quiesce/activate/
+health/commit/cleanup phases, owner/source/destination mappings and retained backup
+metadata. Conflicting replay, stale revisions and incomplete cleanup are explicit.
+Precommit recovery blocks writers before restoring prior packages; postcommit cleanup
+failure keeps the new suite active. Native durable storage uses a retained lock,
+filesystem identities, bounded JSON and compare/write revisions. The actual package
+stager/bootstrapper/owner importer orchestration is not connected yet.
+
+Product namespace selection now recognizes only verified closed generation layouts.
+The physical root identity plus manifest installation ID keeps data identity across
+package generations; a copied manifest ID in another root does not alias that data.
+Direct portable/development location identity remains compatible. The executable
+hash/version and active generation must match before selecting a generation's data
+namespace. Synthetic regression cases are prepared, not executed ahead of B08's
+complete PR audit. Installer startup/write barriers and health/commit integration
+still need implementation before this is an accepted activation path.

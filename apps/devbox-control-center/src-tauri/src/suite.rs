@@ -214,7 +214,7 @@ async fn connection(
 }
 
 #[cfg(windows)]
-fn capture_own(product: &str) -> Result<platform::component_scope::CapturedScope, &'static str> {
+pub(crate) fn capture_own(product: &str) -> Result<platform::component_scope::CapturedScope, &'static str> {
     let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
     let root = image
         .parent()

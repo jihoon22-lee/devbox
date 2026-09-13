@@ -4751,8 +4751,10 @@ name = "product-shell-tauri"
 version = "0.1.0"
 dependencies = [
  "catalog",
+ "filesystem",
  "product-contract",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
  "tauri",
  "tauri-plugin-single-instance",
