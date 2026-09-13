@@ -10,7 +10,7 @@ export interface Command {
   requiredContext:"none"|"project"|"selection";context:ProjectContext|null;
   destructive:boolean;requiresReview:boolean;disabledReason:string|null;
 }
-export interface CommandSearch {results:Command[];truncated:boolean}
+export interface CommandSearch {results:Command[];truncated:boolean;state?:string;partial?:boolean;freshness?:Record<string,{availability:string;indexStale:boolean}>}
 const owners=["workspace","api-studio","knowledge","control-center"];
 function command(value:unknown):value is Command {
   if(!value||typeof value!=="object"||Array.isArray(value))return false;
@@ -30,14 +30,18 @@ function command(value:unknown):value is Command {
   return target.kind==="route"?typeof target.route==="string"&&/^[a-z0-9-]{1,96}$/.test(target.route)
     :target.kind==="entity"&&typeof target.entity==="string"&&typeof target.id==="string"&&/^[A-Za-z0-9_-]{1,128}$/.test(target.id);
 }
-async function call(description:Description,route:string,method:string,args:Record<string,unknown>):Promise<unknown>{
+async function call(description:Description,route:string,method:string,args:Record<string,unknown>,signal?:AbortSignal):Promise<unknown>{
+  if(signal?.aborted)throw new DOMException("Cancelled","AbortError");
   const header=makeRequest(description.handshake,route,Date.now(),description.context);
+  const cancel=()=>{if(method==="command_source"&&typeof args.product==="string")void call(description,route,"command_cancel",{product:args.product,queryId:header.requestId}).catch(()=>undefined);};
+  signal?.addEventListener("abort",cancel,{once:true});
   const provenance={product:description.product.id,component:description.product.id+".commands",requestId:header.requestId,revision:catalog.catalogRevision};
   try{
     const response=await invoke<{operation:unknown;value:unknown}>("plugin:commands|"+method,{request:{header,...args}});
     if(!isOperation(response.operation,provenance)||response.operation.outcome.state!=="succeeded")throw new Error("invalid operation");
     return response.value;
   }catch(error){throw new Error(problemMessage(error,provenance));}
+  finally{signal?.removeEventListener("abort",cancel);}
 }
 export async function searchCommands(description:Description,route:string,query:string):Promise<CommandSearch>{
   if(new TextEncoder().encode(query).length>512||/[\x00-\x1f\x7f]/.test(query))throw new Error("검색어 길이와 내용을 확인해 주세요.");
@@ -69,9 +73,9 @@ function receipt(value:unknown,id:string):CommandReceipt{
     ||!["awaitingReview","opening","opened","rejected","expired"].includes(String(value.phase)))throw new Error("명령 전달 결과를 확인하지 못했습니다.");
   return value as CommandReceipt;
 }
-export async function searchCommandSource(description:Description,route:string,product:string,query:string,generation:number,source="commands"):Promise<CommandSearch>{
+export async function searchCommandSource(description:Description,route:string,product:string,query:string,generation:number,source="commands",signal?:AbortSignal,mode:"name"|"content"="name"):Promise<CommandSearch>{
   if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
-  const value=await call(description,route,"command_source",{product,query,generation,source});
+  const value=await call(description,route,"command_source",{product,query,generation,source,mode},signal);
   if(!value||typeof value!=="object"||!("generation" in value)||value.generation!==generation
     ||!("source" in value)||value.source!==source||!("owner" in value)||value.owner!==product
     ||!("result" in value)||!value.result||typeof value.result!=="object")throw new Error("검색 출처가 일치하지 않습니다.");
@@ -79,7 +83,18 @@ export async function searchCommandSource(description:Description,route:string,p
   if(!("results" in result)||!Array.isArray(result.results)||result.results.length>256
     ||!result.results.every(row=>command(row)&&row.owner===product)||!("truncated" in result)||typeof result.truncated!=="boolean")
     throw new Error("검색 결과를 확인할 수 없습니다.");
-  return {results:result.results,truncated:result.truncated};
+  const extra=result as Record<string,unknown>;
+  const freshness:NonNullable<CommandSearch["freshness"]>={};
+  if(extra.freshness&&typeof extra.freshness==="object"&&!Array.isArray(extra.freshness)){
+    for(const item of result.results){
+      const row=(extra.freshness as Record<string,unknown>)[item.id];
+      if(!row||typeof row!=="object"||!("availability" in row)||typeof row.availability!=="string"
+        ||!["available","unverified","stale"].includes(row.availability)||!("indexStale" in row)||typeof row.indexStale!=="boolean")throw new Error("검색 결과의 최신 상태를 확인하지 못했습니다.");
+      freshness[item.id]={availability:row.availability,indexStale:row.indexStale};
+    }
+  }
+  const state=typeof extra.state==="string"&&["complete","timed_out","unavailable","unsupported","cancelled"].includes(extra.state)?extra.state:undefined;
+  return {results:result.results,truncated:result.truncated,state,partial:extra.partial===true,freshness};
 }
 export async function openCommand(description:Description,route:string,item:Command,operationId:string):Promise<CommandReceipt>{
   if(!nativeMode)throw new Error("브라우저 미리보기에서는 제품을 열 수 없습니다.");

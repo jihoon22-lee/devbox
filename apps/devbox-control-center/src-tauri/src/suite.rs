@@ -16,6 +16,7 @@ pub(crate) type DomainHandler = fn(
     tauri::AppHandle,
     product_contract::transport::Call,
     u64,
+    Option<product_contract::query::Cancellation>,
 ) -> std::pin::Pin<
     Box<dyn std::future::Future<Output = Result<serde_json::Value, &'static str>> + Send>,
 >;
@@ -37,6 +38,7 @@ struct Link {
     bus: Option<platform::component_bus::Bus>,
     navigation: Arc<Mutex<product_contract::navigation::Queue>>,
     review_slots: Arc<tokio::sync::Semaphore>,
+    queries: Arc<product_contract::query::Queries>,
 }
 #[cfg(windows)]
 impl Default for Link {
@@ -47,12 +49,14 @@ impl Default for Link {
             bus: None,
             navigation: Arc::default(),
             review_slots: Arc::new(tokio::sync::Semaphore::new(2)),
+            queries: Arc::default(),
         }
     }
 }
 #[cfg(windows)]
 impl Drop for Link {
     fn drop(&mut self) {
+        self.queries.cancel_all();
         if let Some(scope) = &self.approved {
             scope.retire();
         }
@@ -240,7 +244,14 @@ async fn execute(
             let bus = component_bus::Bus::start(
                 scope.clone(),
                 product,
-                handler(product, app, state.navigation.clone(), domain, sources)?,
+                handler(
+                    product,
+                    app,
+                    state.navigation.clone(),
+                    domain,
+                    sources,
+                    state.queries.clone(),
+                )?,
             )?;
             let generation = scope.id.clone();
             state.bus = Some(bus);
@@ -254,6 +265,7 @@ async fn execute(
                     scope.retire();
                 }
                 state.pending.take();
+                state.queries.cancel_all();
                 state.navigation.lock().map_err(|_| "suite_busy")?.revoke();
                 state.bus.take()
             };
@@ -290,6 +302,7 @@ fn handler(
     navigation: Arc<Mutex<product_contract::navigation::Queue>>,
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
+    queries: Arc<product_contract::query::Queries>,
 ) -> Result<platform::component_bus::Handler, &'static str> {
     use product_contract::{
         command_index::Index,
@@ -316,7 +329,19 @@ fn handler(
         let routes = routes.clone();
         let app = app.clone();
         let navigation = navigation.clone();
+        let queries = queries.clone();
         Box::pin(async move {
+            let cancellation = match &call {
+                Call::Query { query_id, .. } => Some(queries.begin(query_id, deadline, now())?),
+                Call::CancelQuery { query_id } => {
+                    queries.cancel(query_id, now())?;
+                    return Ok(serde_json::json!({"state":"cancelRequested"}));
+                }
+                _ => None,
+            };
+            if cancellation.as_ref().is_some_and(|token| token.requested()) {
+                return Err("query_cancelled");
+            }
             match call {
                 Call::Describe {} => Ok(
                     serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
@@ -369,7 +394,7 @@ fn handler(
                     Ok(serde_json::json!(receipt))
                 }
                 call => match domain {
-                    Some(domain) => domain(app, call, deadline).await,
+                    Some(domain) => domain(app, call, deadline, cancellation).await,
                     None => Err("suite_method_unavailable"),
                 },
             }
@@ -410,6 +435,7 @@ async fn resolve(
                     request: request.clone(),
                 },
                 deadline,
+                None,
             )
             .await?;
             let descriptor: product_contract::commands::Descriptor =

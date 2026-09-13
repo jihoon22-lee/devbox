@@ -1,5 +1,6 @@
 mod component;
 mod core;
+mod federation;
 mod lifecycle;
 mod migration;
 mod search;
@@ -14,7 +15,15 @@ mod vault_owner;
 pub fn run() {
     product_shell_tauri::run_with("knowledge", tauri::generate_context!(), |builder| {
         builder
-            .plugin(suite::plugin("knowledge", None, &[]))
+            .plugin(suite::plugin(
+                "knowledge",
+                Some(federation::handle),
+                &[
+                    product_contract::transport::Source::Notes,
+                    product_contract::transport::Source::Files,
+                    product_contract::transport::Source::SavedQueries,
+                ],
+            ))
             .plugin(tauri_plugin_clipboard_manager::init())
             .plugin(tauri_plugin_opener::init())
             .plugin(component::plugin())

@@ -9,7 +9,7 @@ export default function HostedLauncher({description,route,navigate,close}:ShellC
   const dialog=useRef<HTMLDialogElement>(null);
   useEffect(()=>{const previous=document.activeElement;dialog.current?.showModal();return()=>{if(previous instanceof HTMLElement&&previous.isConnected)previous.focus();};},[]);
   const adapter=useMemo<LauncherAdapter>(()=>{
-    let generation=0,current:Command[]=[];
+    let generation=0,current:Command[]=[];let controller:AbortController|undefined;
     let preferences:LauncherPreferences={version:1,favorites:[],recents:[]};
     const listeners=new Set<(response:SearchResponse)=>void>();
     const result=(sources:SourceDiagnostic[]):SearchResponse=>({sources,results:current.map(item=>({
@@ -21,6 +21,7 @@ export default function HostedLauncher({description,route,navigate,close}:ShellC
     const request=(item:Command,operationId:string)=>({operationId,commandId:item.id,revision:item.revision,context:item.context,selectionId:null});
     return {
       async search(query){
+        controller?.abort();controller=new AbortController();const signal=controller.signal;
         const ticket=++generation;
         const base=await searchCommands(description,route,query);
         try{preferences=await launcherPreferences(description,route);}catch{/* Search remains available; writes still reject corrupt preferences. */}
@@ -28,7 +29,7 @@ export default function HostedLauncher({description,route,navigate,close}:ShellC
         current=base.results;
         const sources:SourceDiagnostic[]=providers.map(producer=>({producer,view:"commands",status:"missing"}));
         for(const product of providers){
-          void searchCommandSource(description,route,product,query,ticket).then((remote:CommandSearch)=>{
+          void searchCommandSource(description,route,product,query,ticket,"commands",signal).then((remote:CommandSearch)=>{
             if(ticket!==generation)return;
             current=[...current.filter(item=>item.owner!==product),...remote.results].slice(0,256);
             sources.find(source=>source.producer===product)!.status="fresh";
@@ -51,8 +52,8 @@ export default function HostedLauncher({description,route,navigate,close}:ShellC
       async clearRecents(){preferences=await launcherPreferences(description,route,{kind:"clearRecents"});},
       getShortcut:()=>launcherShortcut(description,route),
       setShortcut:config=>launcherShortcut(description,route,config),
-      hide:async()=>{generation++;close();},
-      subscribe:listener=>{listeners.add(listener);return()=>{listeners.delete(listener);generation++;};},
+      hide:async()=>{generation++;controller?.abort();close();},
+      subscribe:listener=>{listeners.add(listener);return()=>{listeners.delete(listener);generation++;controller?.abort();};},
       // No clipboard/text action is offered by this command-only source. The
       // separate source-owned Artifact adapter will supply explicit selections.
       previewTextAction:async()=>{throw new Error("text action unavailable");},

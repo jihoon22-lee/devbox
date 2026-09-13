@@ -18,7 +18,13 @@ use std::{
 };
 use tauri::Manager;
 
-pub const METHODS: &[&str] = &["source_query", "source_poll", "source_cancel"];
+pub const METHODS: &[&str] = &[
+    "source_query",
+    "source_poll",
+    "source_cancel",
+    "source_reference",
+    "source_saved_reference",
+];
 struct Host {
     root: PathBuf,
     manifest: stores::Manifest,
@@ -336,8 +342,40 @@ fn run(
     });
 }
 pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
-    let host = app.state::<Host>();
+    dispatch_for(
+        app,
+        method,
+        args,
+        crate::core::source_search::Consumer::Product,
+    )
+}
+pub(crate) fn dispatch_for(
+    app: &tauri::AppHandle,
+    method: &str,
+    args: Value,
+    consumer: crate::core::source_search::Consumer,
+) -> Result<Value, String> {
+    let host = app.try_state::<Host>().ok_or("setup_required")?;
+    if stores::read(&host.root)?.as_ref() != Some(&host.manifest) {
+        return Err("search_stale".into());
+    }
     match method {
+        "source_reference" => {
+            #[derive(Deserialize)]
+            #[serde(deny_unknown_fields)]
+            struct Input {
+                reference: String,
+            }
+            let input: Input =
+                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+            if uuid::Uuid::parse_str(&input.reference).is_err() {
+                return Err("component_args_invalid".into());
+            }
+            let reference = host.jobs.resolve(&input.reference)?;
+            Ok(
+                json!({"reference":input.reference,"source":reference.source,"name":reference.candidate.value["name"],"path":reference.candidate.path}),
+            )
+        }
         "source_query" => {
             let mut request: Query =
                 serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
@@ -360,11 +398,11 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
             if (request.source == "current_project" && project.is_none())
                 || (request.source == "notes" && !request.filter.is_empty())
             {
-                let work = host
-                    .jobs
-                    .begin(&request.source, &host.manifest.generation)?;
+                let work =
+                    host.jobs
+                        .begin_for(&request.source, &host.manifest.generation, consumer)?;
                 work.finish("unsupported");
-                return serde_json::to_value(host.jobs.snapshot(&work.generation)?)
+                return serde_json::to_value(host.jobs.snapshot_for(&work.generation, consumer)?)
                     .map_err(|_| "search_unavailable".into());
             }
             let limit = request.limit.unwrap_or(200).clamp(
@@ -377,13 +415,13 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                     2000
                 },
             );
-            let mut work = host
-                .jobs
-                .begin(&request.source, &host.manifest.generation)?;
+            let mut work =
+                host.jobs
+                    .begin_for(&request.source, &host.manifest.generation, consumer)?;
             if let Some(project) = &project {
                 work.bind_project(project);
             }
-            let snapshot = host.jobs.snapshot(&work.generation)?;
+            let snapshot = host.jobs.snapshot_for(&work.generation, consumer)?;
             let root = host.root.clone();
             let manifest = host.manifest.clone();
             let app = app.clone();
@@ -399,16 +437,28 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 return Err("component_args_invalid".into());
             }
             if method == "source_cancel" {
-                host.jobs.cancel(&request.generation)?;
+                host.jobs.cancel_for(&request.generation, consumer)?;
                 Ok(Value::Null)
             } else {
-                serde_json::to_value(host.jobs.snapshot(&request.generation)?)
+                serde_json::to_value(host.jobs.snapshot_for(&request.generation, consumer)?)
                     .map_err(|_| "search_unavailable".into())
             }
         }
         _ => Err("component_method_invalid".into()),
     }
 }
+pub(crate) fn federated_reference(
+    app: &tauri::AppHandle,
+    id: &str,
+) -> Result<crate::core::source_search::Reference, String> {
+    let host = app.try_state::<Host>().ok_or("setup_required")?;
+    if stores::read(&host.root)?.as_ref() != Some(&host.manifest) {
+        return Err("search_stale".into());
+    }
+    host.jobs
+        .resolve_consumer(id, Some(crate::core::source_search::Consumer::Federated))
+}
+
 struct OpenPermit(Arc<AtomicUsize>);
 impl Drop for OpenPermit {
     fn drop(&mut self) {
@@ -618,4 +668,12 @@ mod tests {
             Some(rusqlite::ErrorCode::OperationInterrupted)
         );
     }
+}
+
+pub(crate) fn current_generation(app: &tauri::AppHandle) -> Result<String, String> {
+    let host = app.try_state::<Host>().ok_or("setup_required")?;
+    if stores::read(&host.root)?.as_ref() != Some(&host.manifest) {
+        return Err("search_stale".into());
+    }
+    Ok(host.manifest.generation.clone())
 }

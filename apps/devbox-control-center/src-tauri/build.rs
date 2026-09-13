@@ -15,6 +15,7 @@ fn main() {
                     "command_search",
                     "command_preview",
                     "command_source",
+                    "command_cancel",
                     "command_open",
                     "command_status",
                     "command_preferences",

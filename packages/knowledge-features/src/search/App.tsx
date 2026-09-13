@@ -187,7 +187,8 @@ interface ResultContext {
   source?: string;
 }
 
-export default function App({ onNoteOpen, projectRevision = 0 }: { onNoteOpen?: () => void; projectRevision?: number } = {}) {
+export interface SavedSearchInput {id:string;query:string;filter:SearchFilter}
+export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { onNoteOpen?: () => void; projectRevision?: number;savedSearch?:SavedSearchInput } = {}) {
   const product = isProductHosted();
   const [source, setSource] = useState<SearchSource>("files");
   const [sourceSnapshot, setSourceSnapshot] = useState<SourceSnapshot>();
@@ -315,6 +316,12 @@ export default function App({ onNoteOpen, projectRevision = 0 }: { onNoteOpen?: 
   };
   const handleOpenRequestRef = useRef(handleOpenRequest);
   handleOpenRequestRef.current = handleOpenRequest;
+
+  useEffect(()=>{
+    if(!savedSearch)return;
+    setSource("files");setError(null);setRegexError(null);setMode("name");setRegexMode(false);
+    setQuery(savedSearch.query);setFilter(savedSearch.filter);setExtensionInput(savedSearch.filter.extensions?.join(", ")??"");setFilterOpen(true);
+  },[savedSearch]);
 
   // Event listener를 먼저 준비한 다음 cold request를 pull한다. Hot event도
   // payload를 직접 적용하지 않고 같은 one-shot pending slot을 소비한다.

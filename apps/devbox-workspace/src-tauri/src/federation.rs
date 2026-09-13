@@ -75,10 +75,66 @@ fn metadata(registry: &Registry, source: &Source) -> Result<Index, &'static str>
     }
     Ok(index)
 }
+fn runtime_metadata(
+    app: &tauri::AppHandle,
+    source: &Source,
+) -> Result<(Index, bool), &'static str> {
+    use run_manager_lib::component::search as runtime;
+    let (kind, entity, selected) = match source {
+        Source::Tasks => ("task", EntityKind::Task, runtime::Source::Tasks),
+        Source::Services => ("service", EntityKind::Service, runtime::Source::Services),
+        Source::Runs => ("run", EntityKind::Run, runtime::Source::Runs),
+        _ => return Err("workspace_source_unavailable"),
+    };
+    let host = crate::component::provider_host(app)?;
+    let root = host.component("runtime")?;
+    let snapshot = runtime::read(&root, selected).map_err(|_| "workspace_runtime_unavailable")?;
+    if host.component("runtime")? != root {
+        return Err("workspace_runtime_stale");
+    }
+    let mut index = Index::default();
+    for entry in snapshot.entries {
+        if !commands::opaque_id(&entry.id) || !commands::opaque_id(&entry.job_id) {
+            return Err("workspace_runtime_invalid");
+        }
+        let name = if entry.name.len() > 210
+            || entry.name.chars().any(char::is_control)
+            || devbox_applink::contains_sensitive_value(&entry.name)
+        {
+            "이름 숨김"
+        } else {
+            &entry.name
+        };
+        let revision =
+            Sha256::digest(serde_json::to_vec(&entry).map_err(|_| "workspace_runtime_invalid")?)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect();
+        index.insert(Descriptor {
+            id: format!("workspace.{kind}-{}", entry.id),
+            owner: "workspace".into(),
+            component: "workspace.runtime".into(),
+            label: format!("{name} · {}", &entry.id[..entry.id.len().min(8)]),
+            revision,
+            target: Target::Entity {
+                entity: entity.clone(),
+                id: entry.id,
+            },
+            review_route: Some("tasks".into()),
+            required_context: ContextRequirement::None,
+            context: None,
+            destructive: false,
+            requires_review: true,
+            disabled_reason: None,
+        })?;
+    }
+    Ok((index, snapshot.truncated))
+}
 pub(crate) fn handle(
     app: tauri::AppHandle,
     call: Call,
     _deadline: u64,
+    cancellation: Option<product_contract::query::Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         static READERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
@@ -89,16 +145,29 @@ pub(crate) fn handle(
             .map_err(|_| "workspace_source_busy")?;
         tokio::task::spawn_blocking(move||{
             let _permit=permit;
+            if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
             let registry=crate::component::provider_host(&app)?.projects()?.snapshot()?;
             match call {
-                Call::Query {source:source @ (Source::Projects|Source::Repositories),query,generation,context}=>{
+                Call::Query {source:source @ (Source::Projects|Source::Repositories),query,generation,context,mode,..}=>{
+                    if mode!=product_contract::transport::QueryMode::Name{return Err("workspace_query_mode_unavailable");}
                     commands::validate_query(&query)?;
                     if let Some(context)=&context {if !registry.worktrees.iter().any(|tree|tree.context()==*context){return Err("stale_context");}}
                     let mut index=metadata(&registry,&source)?;if let Some(context)=&context{index.retain_context(context);}
                     let result=index.search(&query)?;
+                    if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
+                    Ok(json!({"generation":generation,"source":source,"owner":"workspace","result":result}))
+                }
+                Call::Query{source:source @ (Source::Tasks|Source::Services|Source::Runs),query,generation,mode,..}=>{
+                    if mode!=product_contract::transport::QueryMode::Name{return Err("workspace_query_mode_unavailable");}
+                    let (index,truncated)=runtime_metadata(&app,&source)?;let mut result=index.search(&query)?;result.truncated|=truncated;
+                    if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
                     Ok(json!({"generation":generation,"source":source,"owner":"workspace","result":result}))
                 }
                 Call::PreviewCommand{request}=>{
+                    for (prefix,source) in [("workspace.task-",Source::Tasks),("workspace.service-",Source::Services),("workspace.run-",Source::Runs)]{
+                        if request.command_id.starts_with(prefix){return serde_json::to_value(runtime_metadata(&app,&source)?.0.resolve(&request)?).map_err(|_|"workspace_command_invalid");}
+                    }
+
                     let source=if request.command_id.starts_with("workspace.project-"){Source::Projects}else if request.command_id.starts_with("workspace.worktree-"){Source::Repositories}else{return Err("workspace_command_unavailable");};
                     let index=metadata(&registry,&source)?;
                     serde_json::to_value(index.resolve(&request)?).map_err(|_|"workspace_command_invalid")

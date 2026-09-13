@@ -34,6 +34,13 @@ pub enum Source {
     Operations,
 }
 
+#[derive(Clone, Copy, Debug, Default, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub enum QueryMode {
+    #[default]
+    Name,
+    Content,
+}
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(
     tag = "method",
@@ -44,13 +51,16 @@ pub enum Source {
 )]
 pub enum Call {
     Query {
+        query_id: String,
+        #[serde(default)]
+        mode: QueryMode,
         source: Source,
         query: String,
         generation: u64,
         context: Option<ProjectContext>,
     },
     CancelQuery {
-        generation: u64,
+        query_id: String,
     },
     PreviewCommand {
         request: commands::Request,
@@ -145,13 +155,25 @@ impl Guard {
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
         Call::Query {
+            query_id,
+            mode,
+            source,
             query,
             generation,
             context,
             ..
         } => {
-            commands::validate_query(query)?;
-            if *generation == 0
+            if matches!(source, Source::Commands) {
+                commands::validate_query(query)?;
+                if *mode != QueryMode::Name {
+                    return Err("peer_query_invalid");
+                }
+            } else if query.len() > commands::MAX_QUERY_BYTES || query.chars().any(char::is_control)
+            {
+                return Err("peer_query_invalid");
+            }
+            if !commands::opaque_id(query_id)
+                || *generation == 0
                 || *generation > 9_007_199_254_740_991
                 || context
                     .as_ref()
@@ -160,9 +182,7 @@ pub fn validate_call(call: &Call) -> Result<()> {
                 return Err("peer_query_invalid");
             }
         }
-        Call::CancelQuery { generation }
-            if *generation == 0 || *generation > 9_007_199_254_740_991 =>
-        {
+        Call::CancelQuery { query_id } if !commands::opaque_id(query_id) => {
             return Err("peer_query_invalid");
         }
         Call::PreviewCommand { request } | Call::OpenCommand { request } => {
@@ -217,6 +237,8 @@ mod tests {
             request_id: "request".into(),
             deadline_ms: 2000,
             call: Call::Query {
+                query_id: "query".into(),
+                mode: QueryMode::Name,
                 source: Source::Commands,
                 query: "terminal".into(),
                 generation: 1,

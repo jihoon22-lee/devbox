@@ -49,6 +49,9 @@ pub fn run() {
                 &[
                     product_contract::transport::Source::Projects,
                     product_contract::transport::Source::Repositories,
+                    product_contract::transport::Source::Tasks,
+                    product_contract::transport::Source::Services,
+                    product_contract::transport::Source::Runs,
                 ],
             ))
             .plugin(tauri_plugin_dialog::init())
