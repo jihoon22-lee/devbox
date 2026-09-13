@@ -429,3 +429,29 @@ process-identity cleanup is shared for cold-launched processes. Native cold laun
 now removes sender-specific WebView profile/debug environment overrides so another
 product cannot inherit the sender's browser store. The Transforms producer label and
 stored-draft assertion were aligned with the final behavior before the PR audit.
+
+
+## B07 verification boundary
+
+B07 has been rebased onto B06 dde28c1 before its first detailed audit, retaining the
+native Runtime/PTY/focus repairs and all local network-test guards. The copied safety
+changes were stashed, not reapplied over the newer B06 scripts; their policy and
+entrypoint guards are present upstream. Cargo's conflict combined Pipes and Windows
+UI features. The four-product fixture now runs against the existing Windows product
+build in foundation CI. No build is added just for this fixture.
+
+Acceptance mapping for the one PR audit:
+- R03/04/11-19/21/24-25: command/provider/native transport, exact peer identities,
+  source cancellation/freshness and preference importer unit/authority tests.
+- S01-05/S08: existing product native fixtures plus windows-suite-workflows.mjs for
+  actual destination reviews, source preservation and four-product delivery.
+- Owner Operations/Review: projection and navigation tests plus real product panel
+  reads; cancellation intent is never reported as completed cancellation.
+- Focus/keyboard/budgets: native registration/input, composition and modal guards,
+  route/bundle checks and existing Windows performance measurements. Renderer DPI
+  emulation remains distinct from an OS multi-monitor observation.
+
+Run `pnpm verify:affected` once now that the bundle's implementation/importer/fixture
+packet is assembled. On failure retain completed evidence and continue only failed,
+changed or not-yet-run checks. Windows execution and final-head CI remain separate
+required gates. B08/B09 remain unfinished; #541/#542 are not automatically closed.

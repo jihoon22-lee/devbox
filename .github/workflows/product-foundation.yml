@@ -35,6 +35,7 @@ on:
       - 'Cargo.lock'
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
+      - '.github/scripts/windows-suite-workflows.mjs'
       - '.github/scripts/windows-workspace-*'
       - '.github/scripts/copy-owned-terminal-profile.ps1'
       - '.github/scripts/workspace-wsl-*'
@@ -316,6 +317,10 @@ jobs:
           path: product-foundation-evidence
           if-no-files-found: error
           retention-days: 7
+      - name: Verify four-product commands and artifact workflows
+        if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
+        timeout-minutes: 15
+        run: node .github/scripts/windows-suite-workflows.mjs
       - name: Verify API Studio migration from pinned legacy storage
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         env:

@@ -6,12 +6,12 @@ v0.8 B01 development shell; domain migration and feature parity remain owned by 
 
 Uses a new `com.devbox.v08.controlcenter` identity; no legacy data root is opened. Navigation retains mounted route drafts in memory, with bounded history. Native runtime and installer identity proof must be recorded in B01 acceptance before claiming Windows parity.
 
-B07 currently connects reviewed package identities, authenticated native peer
-transport and per-product command metadata. Received route commands require the
-destination's review and a separate UI acknowledgement. The shared legacy Launcher
-is hosted as a lazy modal with product-native favorites and an explicitly enabled
-shortcut owner; opening it retains the current product route. Domain/entity search,
-Terminal/Capture bindings, cold launch, cross-product artifacts and preference
-migration remain in the same unfinished B07 bundle. Detailed verification is
-scheduled after that complete implementation; see the
+B07 connects the actual Launcher, bounded native search providers, four managed
+shortcuts, explicit artifact reviews and shared Operations to the four products.
+Package approval pins the installation's manifest and executable identities;
+remembered cold activation and native peer checks retain that exact namespace.
+Launcher preferences migrate by exact opaque IDs with unresolved entries preserved.
+Operations reports owner state and opens owner reviews without acquiring execution
+or cancellation authority. The native four-product fixture and one PR audit own
+acceptance; implementation commits alone are not acceptance evidence. See the
 [B07 workthrough](../../workthrough/2026-09-13-v08-b07-global-commands.md).
