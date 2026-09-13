@@ -7,6 +7,7 @@ use serde_json::{json, Value};
 use tauri::{Emitter, Manager};
 
 struct Store {
+    selection_lock: std::sync::Mutex<()>,
     handoffs: HandoffStore,
     navigation: std::sync::Mutex<Option<Navigation>>,
 }
@@ -54,6 +55,7 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<HandoffStore, String> {
         .map_err(|_| "handoff_storage_unavailable")?;
     let store = HandoffStore::new(root.join("handoff/v1"));
     if !app.manage(Store {
+        selection_lock: std::sync::Mutex::new(()),
         handoffs: store.clone(),
         navigation: std::sync::Mutex::new(None),
     }) {
@@ -342,4 +344,113 @@ mod tests {
             "send_selection_to_toolbox"
         ));
     }
+}
+
+pub(crate) fn receive_selection(
+    app: &tauri::AppHandle,
+    id: &str,
+    revision: &str,
+    selection: product_contract::transform_selection::Selection,
+    now: u64,
+) -> Result<&'static str, &'static str> {
+    use std::collections::BTreeMap;
+    #[derive(serde::Serialize, serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Receipt {
+        revision: String,
+        descriptor: applink::HandoffDescriptor,
+        expires: u64,
+    }
+    if uuid::Uuid::parse_str(id).is_err() || selection.revision()? != revision {
+        return Err("selection_invalid");
+    }
+    let owner = app.state::<Store>();
+    let _lock = owner.selection_lock.lock().map_err(|_| "selection_busy")?;
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "selection_unavailable")?;
+    #[cfg(windows)]
+    let _pins = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let path = root.join("transform-selection-receipts-v1.json");
+    let mut receipts: BTreeMap<String, Receipt> =
+        if path.try_exists().map_err(|_| "selection_unavailable")? {
+            use std::io::Read;
+            devbox_filesystem::ensure_no_links(&path).map_err(|_| "selection_store_invalid")?;
+            let (file, identity) = devbox_filesystem::open_filesystem_object(&path, false)
+                .map_err(|_| "selection_unavailable")?;
+            let mut bytes = Vec::new();
+            file.take(128 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "selection_unavailable")?;
+            if bytes.len() > 128 * 1024
+                || devbox_filesystem::filesystem_identity(&path, false).ok() != Some(identity)
+            {
+                return Err("selection_store_invalid");
+            }
+            serde_json::from_slice(&bytes).map_err(|_| "selection_store_invalid")?
+        } else {
+            BTreeMap::new()
+        };
+    if receipts.len() > 256
+        || receipts.iter().any(|(id, receipt)| {
+            uuid::Uuid::parse_str(id).is_err()
+                || !product_contract::commands::revision(&receipt.revision)
+                || receipt.descriptor.kind != applink::TOOLBOX_TEXT_HANDOFF_KIND
+        })
+    {
+        return Err("selection_store_invalid");
+    }
+    receipts.retain(|_, entry| entry.expires > now);
+    if !receipts.contains_key(id) {
+        if receipts.len() == 256 {
+            return Err("selection_limit");
+        }
+        let descriptor = owner
+            .handoffs
+            .create(
+                CreateHandoff {
+                    kind: applink::TOOLBOX_TEXT_HANDOFF_KIND.into(),
+                    source_app: selection.source.clone(),
+                    target_app: Some(applink::TOOLBOX_TEXT_TARGET_APP.into()),
+                    payload: json!({"text":selection.text}),
+                },
+                now,
+            )
+            .map_err(|_| "selection_unavailable")?;
+        receipts.insert(
+            id.into(),
+            Receipt {
+                revision: revision.into(),
+                descriptor,
+                expires: now.saturating_add(applink::DEFAULT_HANDOFF_TTL_MS),
+            },
+        );
+        devbox_filesystem::atomic_write(
+            &path,
+            &serde_json::to_vec(&receipts).map_err(|_| "selection_invalid")?,
+        )
+        .map_err(|_| "selection_unavailable")?;
+    }
+    let receipt = &receipts[id];
+    if receipt.revision != revision {
+        return Err("selection_stale");
+    }
+    if owner
+        .handoffs
+        .read_status(&receipt.descriptor.id)
+        .map_err(|_| "selection_unavailable")?
+        .is_some_and(|status| status.status == applink::HandoffStatus::Consumed)
+    {
+        return Ok("applied");
+    }
+    developer_toolbox_lib::component::deliver(
+        app,
+        OpenRequest {
+            target: receipt.descriptor.clone().into(),
+            from: Some(selection.source),
+        },
+    )
+    .map_err(|_| "selection_preview_busy")?;
+    Ok("previewPending")
 }

@@ -50,6 +50,14 @@ pub enum QueryMode {
     deny_unknown_fields
 )]
 pub enum Call {
+    ReadTransformSelection {
+        id: String,
+    },
+    DeliverTransformSelection {
+        id: String,
+        operation_id: String,
+        revision: String,
+    },
     Query {
         query_id: String,
         #[serde(default)]
@@ -174,8 +182,10 @@ impl Guard {
         {
             return Err("peer_request_denied");
         }
-        if matches!(request.call, Call::DeliverKnowledgeDraft { .. })
-            && self.peer.product != "api-studio"
+        if matches!(
+            request.call,
+            Call::DeliverKnowledgeDraft { .. } | Call::ReadTransformSelection { .. }
+        ) && self.peer.product != "api-studio"
         {
             return Err("peer_method_denied");
         }
@@ -189,6 +199,7 @@ impl Guard {
             || (matches!(
                 request.call,
                 Call::InvalidateProjectSnapshot {}
+                    | Call::DeliverTransformSelection { .. }
                     | Call::DeliverSessionSummary { .. }
                     | Call::ReadFileReference { .. }
             ) && self.peer.product != "workspace")
@@ -199,7 +210,10 @@ impl Guard {
         // product roles acquire specific artifact/navigation capabilities separately.
         if self.peer.product != "control-center"
             && !(self.peer.product == "api-studio"
-                && matches!(request.call, Call::DeliverKnowledgeDraft { .. }))
+                && matches!(
+                    request.call,
+                    Call::DeliverKnowledgeDraft { .. } | Call::ReadTransformSelection { .. }
+                ))
             && !(self.peer.product == "knowledge"
                 && matches!(
                     request.call,
@@ -212,6 +226,7 @@ impl Guard {
                 && matches!(
                     request.call,
                     Call::InvalidateProjectSnapshot {}
+                        | Call::DeliverTransformSelection { .. }
                         | Call::DeliverSessionSummary { .. }
                         | Call::ReadFileReference { .. }
                 ))
@@ -237,6 +252,20 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ReadTransformSelection { id } if !commands::opaque_id(id) => {
+            Err("peer_request_invalid")
+        }
+        Call::DeliverTransformSelection {
+            id,
+            operation_id,
+            revision,
+        } if !commands::opaque_id(id)
+            || !commands::opaque_id(operation_id)
+            || !commands::revision(revision) =>
+        {
+            Err("peer_request_invalid")
+        }
+
         Call::ReadKnowledgeDraft { component, id }
         | Call::DeliverKnowledgeDraft { component, id, .. }
             if !crate::knowledge_draft::COMPONENTS.contains(&component.as_str())
@@ -500,6 +529,34 @@ mod tests {
                 assert_eq!(
                     guard.authorize(&request, 1000).is_ok(),
                     product == if deliver { "api-studio" } else { "knowledge" }
+                );
+            }
+        }
+    }
+    #[test]
+    fn workspace_selection_text_has_only_the_native_api_receiver() {
+        for product in ["control-center", "workspace", "knowledge", "api-studio"] {
+            for deliver in [false, true] {
+                let mut guard = Guard::new(
+                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                    "native-session",
+                )
+                .unwrap();
+                let mut request = request();
+                request.call = if deliver {
+                    Call::DeliverTransformSelection {
+                        id: "selection-one".into(),
+                        operation_id: "delivery-one".into(),
+                        revision: "a".repeat(64),
+                    }
+                } else {
+                    Call::ReadTransformSelection {
+                        id: "selection-one".into(),
+                    }
+                };
+                assert_eq!(
+                    guard.authorize(&request, 1000).is_ok(),
+                    product == if deliver { "workspace" } else { "api-studio" }
                 );
             }
         }

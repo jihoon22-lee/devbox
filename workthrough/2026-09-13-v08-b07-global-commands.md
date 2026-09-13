@@ -352,3 +352,32 @@ Changed API Studio/Knowledge TypeScript passed (6.107 seconds). Shared DTO owner
 content revision and native wire role regressions are prepared for PR completion;
 Rust syntax/format and diff review are the commit checks. Detailed B07 verification
 has not started. No local service or networking fixture was executed.
+
+
+## Workspace selections to Transforms
+
+Files' context menu now sends one explicit UTF-16 selection after the existing
+native editor mirror flush. Native Windows/WSL document identity, disk baseline,
+current buffer hash and project context must still match. The bounded source lease
+retains only masked selected text and proof metadata, and the receiver rechecks the
+source before opening Transforms' existing preview/apply/cancel flow. Closing,
+changing or replacing the source rejects a delayed read. No clipboard fallback,
+legacy executable or implicit replacement of existing Transforms input is used.
+
+Logs resolves selected source/sequence IDs from bounded native read snapshots.
+It re-reads the original source cursors and matches the selected records before
+publication and destination resolution; missing/changed source rows fail closed.
+This shares the same native transport/review/publication path as Editor selections.
+The receiver's bounded receipt journal reuses the one-time publication across
+retries/restart and recognizes consumed receipts. Control Center cannot read text.
+The existing API selection and HMAC/ephemeral-source restrictions remain owned by
+their original producers. A new Code Pad producer is admitted to the existing
+masked Toolbox text format; the receiver still requires preview and explicit apply.
+
+Workspace/API TypeScript passed for the Editor slice (11.416 seconds). Logs adapter
+completion receives only a changed-type check; UTF-16/masking/native role and stale
+source cases are prepared for the complete B07 audit. No B07 detailed audit yet.
+
+Logs adapter changed TypeScript passed (9.668 seconds); syntax/diff checks passed.
+Native role, Unicode offset and native buffer hash regressions are prepared,
+with the detailed tests still deferred to PR completion.

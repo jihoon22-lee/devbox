@@ -275,6 +275,9 @@ pub(crate) fn handle(
     cancellation: Option<product_contract::query::Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
+        if let Call::ReadTransformSelection { id } = &call {
+            return crate::selection_send::read(&app, id, _deadline).await;
+        }
         if let Call::ReadFileReference { reference } = &call {
             return crate::file_receive::open(&app, reference, _deadline).await;
         }

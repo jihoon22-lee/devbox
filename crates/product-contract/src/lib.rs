@@ -353,3 +353,5 @@ pub mod project_provider;
 pub mod file_reference;
 
 pub mod knowledge_draft;
+
+pub mod transform_selection;

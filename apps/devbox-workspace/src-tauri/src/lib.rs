@@ -67,3 +67,7 @@ pub fn run() {
 mod project_provider;
 
 mod file_receive;
+
+mod selection_send;
+
+mod selection_logs;

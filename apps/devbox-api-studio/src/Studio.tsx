@@ -6,6 +6,7 @@ import { componentInvoke } from "@devbox/api-studio-features/transport";
 const invokeNavigation = componentInvoke("api-studio.api");
 import { MigrationStartup } from "./migration/Startup";
 const ListenerControls = lazy(() => import("./ListenerControls").then(module => ({ default: module.ListenerControls })));
+const IncomingSelection = lazy(() => import("./IncomingSelection"));
 const Requests = lazy(() => import("@devbox/api-studio-features/requests"));
 const Webhooks = lazy(() => import("@devbox/api-studio-features/webhooks"));
 const Transforms = lazy(() => import("@devbox/api-studio-features/transforms"));
@@ -48,7 +49,7 @@ function Content({ route, navigate }: ShellContentProps) {
       <Suspense fallback={<p role="status">Webhook 화면을 불러오고 있습니다…</p>}>{group === "webhooks" && <ListenerControls/>}<Webhooks active={group === "webhooks"}/></Suspense>
     </div>}
     {(visited.has("transforms") || group === "transforms") && <div className="api-feature-transforms" hidden={group !== "transforms"}>
-      <Suspense fallback={<p role="status">변환 도구를 불러오고 있습니다…</p>}><Transforms/></Suspense>
+      <Suspense fallback={<p role="status">변환 도구를 불러오고 있습니다…</p>}><IncomingSelection/><Transforms/></Suspense>
     </div>}
   </>;
 }
