@@ -15,6 +15,7 @@ import {
   getDashboardSnapshot,
   getWindowsBuildNumber,
   listWorkspaceProfiles,
+  listDistros,
   onOpenRequest,
   onTerminalClosed,
   onTerminalOutput,
@@ -443,16 +444,28 @@ export default function App() {
         setDashboardState("fresh");
         setDistrosLoaded(true);
       })
-      .catch(() => {
+      .catch(async () => {
         if (!dashboardMountedRef.current || sequence !== dashboardRequestSequence.current) return;
         // Keep the last good snapshot and its Docker/session/resource data. The terminal
         // transport remains usable; only broadcast is fail-closed by the shared status below.
         // Keep an error state even when the last snapshot is still younger than its normal TTL;
-        // a failed poll must never silently re-enable broadcast on the next freshness tick.  On
-        // the initial failure, leave distro hydration incomplete so profile restore cannot start
-        // a guessed distro before the server-owned snapshot has established one.
+        // a failed poll must never silently re-enable broadcast on the next freshness tick.
         setDashboardState("error");
         setError(DASHBOARD_ERROR_MESSAGE);
+        if(isProductHosted()&&!dashboardSnapshotRef.current){
+          // CPU/Docker telemetry does not authorize a PTY. A companion already
+          // owns an explicitly opened profile; hydrate its target names from a
+          // fresh read-only distro list while native launch rechecks each binding.
+          // Keep the failed dashboard state so broadcast/default-shell guessing
+          // remains disabled. Never use an old cached list after this read fails.
+          try {
+            const current=await listDistros();
+            if(!dashboardMountedRef.current||sequence!==dashboardRequestSequence.current)return;
+            setDistros(current);
+            setSelected(previous=>current.some(distro=>distro.name===previous)?previous:current.find(distro=>distro.default)?.name??current[0]?.name??"");
+            setDistrosLoaded(true);
+          }catch { /* No fresh target list: saved-profile restoration stays blocked. */ }
+        }
       })
       .finally(() => {
         if (dashboardMountedRef.current && sequence === dashboardRequestSequence.current) {

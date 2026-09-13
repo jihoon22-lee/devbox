@@ -379,3 +379,20 @@ debug-port override; the established packaged-shell harness already handles this
 through a uniquely named image's temporary policy. Both new hosted runners now reuse
 that exact inspect/install/restore adapter and record the actual artifact source.
 The failed diagnostic did not exercise PTY restore and is not acceptance evidence.
+
+Retained-artifact diagnostic 34731448607 reached the companion and showed failed
+resource/Docker dashboard hydration, an empty PTY list, and a valid current distro
+list. Diagnostic 34731767885 then started both exact profile panes through the native
+owner successfully (s1/s2), confirming that dashboard hydration—not PTY creation—
+blocked the UI restore. Both diagnostics used the same built source 96976ba8fccd6b15dfb9a0a9c7d3aeb347298d84
+on disposable hosted WSL1, and confirmed their app/data cleanup. They are diagnostic
+evidence, not full Terminal acceptance.
+
+The product companion now obtains a fresh read-only distro list when initial
+telemetry fails. That permits an explicitly opened saved profile to reach existing
+native binding admission; it does not guess a default target or re-enable broadcast.
+A failed distro read still blocks restore, and legacy behavior is unchanged. The
+five existing snapshot-control cases passed; the two new product cases passed after
+repairing their missing native-storage fixture setup (2.901 seconds). No unrelated
+passing test suite or Cargo audit was repeated. Changed feature/product type checks
+passed (18.180 seconds) and were the only other local verification before the final CI repair commit.
