@@ -93,6 +93,39 @@ pub(crate) struct Inventory {
     pub complete: bool,
     pub other_users: &'static str,
 }
+fn verified_binary(
+    app: &str,
+    version: Option<&str>,
+    location: Option<&str>,
+    icon: Option<&str>,
+) -> bool {
+    let (Some(version), Some(location), Some(icon)) = (version, location, icon) else {
+        return false;
+    };
+    let root = std::path::Path::new(location.trim_matches('"'));
+    let Ok(root) = devbox_manager_lib::core::custom_root::verify_suite_directory(root) else {
+        return false;
+    };
+    let Ok(_directories) = crate::suite::platform::component_scope::pin_directories(&root) else {
+        return false;
+    };
+    let expected = root.join(format!("{app}.exe"));
+    let icon = icon.strip_suffix(",0").unwrap_or(icon).trim_matches('"');
+    let Ok(icon) = std::path::Path::new(icon).canonicalize() else {
+        return false;
+    };
+    let Ok(canonical) = expected.canonicalize() else {
+        return false;
+    };
+    if !icon
+        .to_string_lossy()
+        .eq_ignore_ascii_case(&canonical.to_string_lossy())
+    {
+        return false;
+    }
+    crate::core::legacy_binary::verify(app, version, &expected).is_ok()
+}
+
 fn scan(
     hive: HKEY,
     scope: &'static str,
@@ -145,6 +178,16 @@ fn scan(
             text(&key, "UninstallString")?,
             text(&key, "DisplayIcon")?,
         );
+        let binary = if verified_binary(
+            &app.id,
+            version.as_deref(),
+            values.0.as_deref(),
+            values.2.as_deref(),
+        ) {
+            "verified"
+        } else {
+            "unknown"
+        };
         // Repeat the bounded metadata observation before publishing its revision.
         if text(&key, "DisplayName")?.as_deref() != Some(display.as_str())
             || values
@@ -168,7 +211,7 @@ fn scan(
             scope,
             architecture,
             registration_id,
-            binary: "unknown",
+            binary,
             cleanup: "requiresVerifiedInstaller",
         });
         if entries.len() > 60 {
