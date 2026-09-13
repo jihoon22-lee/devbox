@@ -36,3 +36,5 @@ pub(crate) mod owned_copy;
 pub(crate) mod owned_process;
 
 pub(crate) mod task_sources;
+
+pub(crate) mod terminal_focus;

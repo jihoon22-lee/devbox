@@ -404,3 +404,12 @@ observation; isolated WSL2 remains unrun. Retained-artifact diagnosis captures
 native foreground/window state, Tauri focus and renderer focus before/after the
 native request and CDP foreground action. It makes no product change and does not
 count hosted diagnostics as acceptance. No local Windows/Docker fixture was run.
+
+
+Retained-artifact diagnostic 34735750016 confirmed the exact companion HWND was
+foreground (matching the Workspace PID) while Tao/Tauri reported focused=false;
+renderer focus was true. Native Quick Summon and policy queries now compare the
+actual foreground HWND, preserving child WebView2 keyboard focus semantics. The
+explicit focus action also restores a minimized window. No fixture assertion was
+weakened, and no local service/network fixture ran. This Windows adapter change
+requires the affected Windows native/packaged checks; prior unrelated passes remain.

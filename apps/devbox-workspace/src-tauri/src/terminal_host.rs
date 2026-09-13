@@ -570,6 +570,9 @@ impl Terminals {
                         .ok_or("terminal_window_unavailable")?;
                     target.show().map_err(|_| "terminal_window_unavailable")?;
                     target
+                        .unminimize()
+                        .map_err(|_| "terminal_window_unavailable")?;
+                    target
                         .set_focus()
                         .map_err(|_| "terminal_window_unavailable")?;
                 } else {
@@ -691,9 +694,7 @@ impl Terminals {
         let hide = target
             .is_visible()
             .map_err(|_| "terminal_window_unavailable")?
-            && target
-                .is_focused()
-                .map_err(|_| "terminal_window_unavailable")?
+            && crate::platform::terminal_focus::focused(&target)?
             && !target
                 .is_minimized()
                 .map_err(|_| "terminal_window_unavailable")?;
@@ -1047,7 +1048,7 @@ impl Terminals {
             return Ok(json!({"shortcutRegistered":false,"activeShortcut":null,
                 "trayEnabled":true,"closeBehavior":"hideToTray","issues":[],
                 "visible":window.is_visible().map_err(|_|"terminal_window_unavailable")?,
-                "focused":window.is_focused().map_err(|_|"terminal_window_unavailable")?}));
+                "focused":crate::platform::terminal_focus::focused(window)?}));
         }
         if matches!(
             method,
