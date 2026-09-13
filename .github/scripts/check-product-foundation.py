@@ -84,7 +84,7 @@ def check(root=ROOT):
         if product["id"] == "knowledge":
             expected_permissions.add("knowledge:allow-execute")
         if product["id"] == "control-center":
-            expected_permissions.update({"commands:allow-command-search", "commands:allow-command-preview", "commands:allow-command-source", "commands:allow-command-cancel", "commands:allow-command-open", "commands:allow-command-status", "commands:allow-command-preferences", "commands:allow-command-shortcut", "commands:allow-command-trigger-shortcut"})
+            expected_permissions.update({"commands:allow-command-search", "commands:allow-command-preview", "commands:allow-command-source", "commands:allow-command-cancel", "commands:allow-command-open", "commands:allow-command-status", "commands:allow-command-preferences", "commands:allow-command-shortcut", "commands:allow-command-trigger-shortcut", "commands:allow-command-import-launcher"})
         assert set(capability["permissions"]) == expected_permissions
         capability_dir = root / entry["appDir"] / "src-tauri/capabilities"
         expected_files = {"default.json"}

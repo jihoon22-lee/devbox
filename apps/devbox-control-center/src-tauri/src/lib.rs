@@ -18,3 +18,5 @@ pub mod core;
 
 mod command_receipts;
 mod commands;
+
+mod launcher_import;

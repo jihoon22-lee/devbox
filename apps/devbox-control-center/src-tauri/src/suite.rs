@@ -2,7 +2,7 @@
 //! The file declaration alone never activates a listener or launches a product.
 #[cfg(windows)]
 #[path = "platform/mod.rs"]
-mod platform;
+pub(crate) mod platform;
 use product_contract::{Operation, OperationState, Problem, ProblemCode, RouteRequest};
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]

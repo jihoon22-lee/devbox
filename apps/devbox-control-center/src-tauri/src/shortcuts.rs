@@ -216,6 +216,32 @@ impl Owner {
         }
         Ok(view(&state))
     }
+    /// Explicit migration installs a disabled configuration only when no suite
+    /// preference exists. Existing settings and native registrations are preserved.
+    pub(crate) fn import_disabled(
+        &self,
+        app: &tauri::AppHandle,
+        config: &Config,
+    ) -> Result<(), String> {
+        config.validate()?;
+        if config.enabled {
+            return Err("shortcut_import_invalid".into());
+        }
+        let mut state = self.state.lock().map_err(|_| "shortcut_busy")?;
+        let path = path(app)?;
+        let bytes = serde_json::to_vec(config).map_err(|_| "shortcut_invalid")?;
+        if path.try_exists().map_err(|_| "shortcut_unavailable")? {
+            let current =
+                crate::launcher_import::read_bounded(&path, 4096).map_err(str::to_owned)?;
+            if current.as_deref() == Some(bytes.as_slice()) {
+                return Ok(());
+            }
+            return Err("shortcut_import_stale".into());
+        }
+        devbox_filesystem::atomic_write(&path, &bytes).map_err(|_| "shortcut_save_failed")?;
+        state.config = config.clone();
+        Ok(())
+    }
     pub(crate) fn resume(&self, app: &tauri::AppHandle) -> Result<(), String> {
         if !crate::suite::connection_ready(app) {
             return Ok(());

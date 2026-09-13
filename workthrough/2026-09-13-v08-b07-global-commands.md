@@ -266,3 +266,26 @@ shortcut commands after Launcher closes or Control Center loses focus.
 Only Rust syntax/format and diff/plan checks ran for this slice. Bounded-capacity,
 retargeted-operation, clear and disconnect cases are prepared for PR completion;
 real remote acknowledgement/lost-reply fixtures still belong to B07 acceptance.
+
+## Legacy Launcher preference import
+
+The migration route now previews the native legacy Launcher's bounded JSON
+preferences and allowed shortcut settings. Fourteen exact legacy catalog IDs map
+to suite commands. Dynamic Workbench/Repository IDs use Workspace's existing native
+legacy-reference resolver only when it returns one exact current context; ambiguous,
+missing or unavailable mappings remain visible unresolved IDs. Existing suite order
+wins, repeat imports deduplicate, and capacity exclusions are visible. Labels and
+paths never serve as identity guesses or enter the preference journal.
+
+Explicit apply rechecks the source fingerprint, owner mappings and destination
+preimage. A bounded destination journal is written before preferences, followed by
+optional disabled shortcut configuration and a committed receipt. Resume recognizes
+the exact before/after images and refuses changed destination settings. Source files
+are never written. Existing suite shortcuts remain intact; a newly imported binding
+stays disabled until the user enables the reviewed installation in common settings.
+The old Launcher/Terminal default collision and suggested suite bindings are shown.
+
+Changed Control Center TypeScript passed (2.065 seconds), with Rust syntax/format
+and diff review only. Exact-ID/unresolved/repeat and interrupted-write preimage
+cases are prepared; native source-preservation/journal-resume and shortcut conflict
+acceptance will run with the completed B07 PR, not after this commit.

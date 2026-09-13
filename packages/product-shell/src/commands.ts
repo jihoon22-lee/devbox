@@ -142,3 +142,19 @@ export async function triggerShortcut(description:Description,route:string,comma
   if(!nativeMode)throw new Error("제품 연결을 확인해 주세요.");
   return receipt(await call(description,route,"command_trigger_shortcut",{command,operationId}),operationId);
 }
+
+export interface LauncherImport {
+  id:string; committed:boolean;
+  plan:{preferences:LauncherPreferences; unresolvedFavorites:string[]; unresolvedRecents:string[]; capacityFavorites:string[]; capacityRecents:string[];
+    legacyShortcut:{accelerator:string;enabled:boolean}|null; proposedShortcut:import("./launcher/types").ShortcutConfig|null; launcherTerminalConflict:boolean};
+}
+export async function importLauncher(description:Description,route:string,method:"status"|"preview"|"apply"|"resume",id:string|null=null):Promise<LauncherImport|null>{
+  if(!nativeMode)throw new Error("Windows 제품에서 가져오기를 사용할 수 있습니다.");
+  const value=await call(description,route,"command_import_launcher",{method,id});
+  if(value===null&&method==="status")return null;
+  if(!value||typeof value!=="object"||!("id" in value)||typeof value.id!=="string"||!("committed" in value)||typeof value.committed!=="boolean"
+    ||!("plan" in value)||!value.plan||typeof value.plan!=="object")throw new Error("가져오기 계획을 확인하지 못했습니다.");
+  const plan=value.plan as Record<string,unknown>;
+  if(!["unresolvedFavorites","unresolvedRecents","capacityFavorites","capacityRecents"].every(key=>Array.isArray(plan[key])&&(plan[key] as unknown[]).length<=64&&(plan[key] as unknown[]).every(id=>typeof id==="string"&&/^[A-Za-z0-9_./:-]{1,256}$/.test(id))))throw new Error("가져오기 항목을 확인하지 못했습니다.");
+  return value as LauncherImport;
+}

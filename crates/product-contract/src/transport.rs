@@ -66,6 +66,9 @@ pub enum Call {
         verify_current: bool,
     },
     InvalidateProjectSnapshot {},
+    LegacyCommandMappings {
+        ids: Vec<String>,
+    },
     ShortcutStatus {},
     ConfigureShortcuts {
         config: crate::shortcuts::Config,
@@ -181,6 +184,16 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::LegacyCommandMappings { ids } => {
+            if ids.len() > 128
+                || ids.iter().any(|id| {
+                    crate::launcher_preferences::validate_result_id(id).is_err()
+                        || !id.starts_with("snapshot/")
+                })
+            {
+                return Err("peer_mapping_invalid");
+            }
+        }
         Call::ConfigureShortcuts { config } => {
             config.validate().map_err(|_| "peer_shortcut_invalid")?
         }
