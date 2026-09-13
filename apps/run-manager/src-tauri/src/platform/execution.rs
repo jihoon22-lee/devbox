@@ -616,6 +616,16 @@ impl ExecutionAdapter for PlatformExecutionAdapter {
     }
 }
 
+/// A very short process may finish before the scheduler subscribes after its
+/// metadata CAS. `send` discards the value when there are no receivers; keep the
+/// terminal witness even across that gap and after the actor has exited.
+fn publish_terminal(
+    sender: &watch::Sender<Option<Result<ExecutionExit, AdapterError>>>,
+    result: Result<ExecutionExit, AdapterError>,
+) {
+    sender.send_replace(Some(result));
+}
+
 struct SharedTerminal {
     result: watch::Sender<Option<Result<ExecutionExit, AdapterError>>>,
     terminate_requests: mpsc::UnboundedSender<TerminateRequest>,
@@ -1171,7 +1181,7 @@ impl WindowsExecutionHandle {
             if let Some(response) = termination_response {
                 let _ = response.send(final_result.clone());
             }
-            let _ = result_tx.send(Some(final_result));
+            publish_terminal(&result_tx, final_result);
         });
         Self {
             child: owned_child,
@@ -1404,7 +1414,7 @@ impl WslExecutionHandle {
             if let Some(response) = termination_response {
                 let _ = response.send(final_result.clone());
             }
-            let _ = result_tx.send(Some(final_result));
+            publish_terminal(&result_tx, final_result);
         });
         Self {
             distro: owned_distro,
@@ -1670,6 +1680,51 @@ mod tests {
         assert!(!output
             .windows(b"abcdef".len())
             .any(|window| window == b"abcdef"));
+    }
+
+    #[tokio::test]
+    async fn fast_exit_before_scheduler_subscription_remains_visible_to_wait_and_stop() {
+        let (shared, receiver, terminate_rx) = SharedTerminal::new();
+        drop(receiver);
+        drop(terminate_rx);
+        assert_eq!(shared.result.receiver_count(), 0);
+        publish_terminal(&shared.result, Ok(ExecutionExit { exit_code: Some(7) }));
+        let waited = tokio::time::timeout(
+            Duration::from_millis(100),
+            SharedTerminal::wait(shared.result.subscribe()),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let stopped = tokio::time::timeout(Duration::from_millis(100), shared.request_terminate())
+            .await
+            .unwrap()
+            .unwrap();
+        assert_eq!(waited.exit_code, Some(7));
+        assert_eq!(stopped.exit_code, Some(7));
+    }
+    #[tokio::test]
+    async fn confirmed_error_before_subscription_preserves_its_cleanup_witness() {
+        let (shared, receiver, terminate_rx) = SharedTerminal::new();
+        drop(receiver);
+        drop(terminate_rx);
+        publish_terminal(
+            &shared.result,
+            Err(AdapterError::confirmed(FailureCode::LogWrite.as_str())),
+        );
+        let waited = tokio::time::timeout(
+            Duration::from_millis(100),
+            SharedTerminal::wait(shared.result.subscribe()),
+        )
+        .await
+        .unwrap()
+        .unwrap_err();
+        let stopped = tokio::time::timeout(Duration::from_millis(100), shared.request_terminate())
+            .await
+            .unwrap()
+            .unwrap_err();
+        assert!(waited.cleanup_confirmed);
+        assert!(stopped.cleanup_confirmed);
     }
 
     #[tokio::test]

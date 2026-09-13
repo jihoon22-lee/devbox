@@ -60,7 +60,7 @@ on:
   workflow_dispatch:
     inputs:
       wsl_fixture_artifact_only:
-        description: Build only private Windows unit-test executables for an owned local WSL fixture
+        description: Build only private Windows unit-test executables for an isolated WSL fixture
         type: boolean
         default: false
 
@@ -121,6 +121,8 @@ jobs:
     needs: workspace-wsl-helper
     if: ${{ github.event_name != 'workflow_dispatch' || !inputs.wsl_fixture_artifact_only }}
     name: Hidden products (Windows native)
+    outputs:
+      workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
     runs-on: windows-2025
     timeout-minutes: 60
     env:
@@ -225,7 +227,7 @@ jobs:
       - name: Exercise packaged shell and installation namespace isolation
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
-      - name: Export Workspace build for owned local WSL2 WebView acceptance
+      - name: Export Workspace build for isolated WSL2 WebView acceptance
         id: workspace-export
         if: ${{ !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
@@ -298,6 +300,45 @@ jobs:
           name: product-foundation-${{ github.run_id }}
           path: product-foundation-evidence
           if-no-files-found: error
+          retention-days: 7
+
+  windows-wsl2:
+    needs: windows
+    if: ${{ needs.windows.result == 'success' && needs.windows.outputs.workspace_fixture_exported == 'success' }}
+    name: Workspace WSL2 and containers (isolated hosted VM)
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          name: workspace-webview-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/workspace-webview-fixture
+      - uses: actions/cache@v6
+        with:
+          path: ${{ runner.temp }}/devbox-wsl-rootfs
+          key: owned-wsl-rootfs-2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934
+      - name: Exercise the compiled artifact on an independent hosted WSL2 VM
+        shell: powershell
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $directory = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs'
+          New-Item -ItemType Directory -Force -Path $directory | Out-Null
+          $archive = Join-Path $directory 'ubuntu-rootfs.tar.gz'
+          if (-not (Test-Path -LiteralPath $archive)) {
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri 'https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz' -OutFile $archive
+          }
+          .github/scripts/windows-workspace-owned-wsl2.ps1 -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID
+      - name: Preserve isolated WSL2 acceptance evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: workspace-wsl2-acceptance-${{ github.run_id }}
+          path: ${{ runner.temp }}/workspace-webview-fixture/*acceptance.json
+          if-no-files-found: warn
           retention-days: 7
 
   baseline-performance:

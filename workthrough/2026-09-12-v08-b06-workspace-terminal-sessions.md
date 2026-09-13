@@ -331,3 +331,26 @@ The two pure execution-guard cases passed (0.272-second runner), and an actual
 local PowerShell invocation was rejected before provisioning. The guard cases
 are included in the existing Windows fixture-script test entry. No Docker or
 existing service command was run to verify this prevention change.
+
+## Fast-exit result retention and isolated CI continuation
+
+CI 34727358256 passed on 2ab3837. Foundation 34727358186 again hit the
+intermittent early service-exit case before reaching Terminal. The shared Windows/
+WSL execution actor used watch::Sender::send after its initial receiver was dropped;
+a fast process could finish before the scheduler subscribed and permanently lose
+its terminal/cleanup witness. Both actor publishers now use the same retained-value
+publication helper. Pure late-subscriber wait/stop and confirmed-error fixtures
+cover the gap without starting a process or touching Docker/network state.
+
+The remaining WSL2/real-container suite is moved to a separate disposable
+windows-2025 GitHub-hosted job after the preceding native job passes. It consumes
+that run's exact Workspace artifact and does not compile the products again. The
+paired runner checks the actual hosted environment and artifact source/run before
+provisioning. Unsupported WSL2 remains a failed/unrun gate; no local fallback or
+network-isolation bypass is supplied.
+
+The same-feature test artifact refresh took 61 seconds; the three affected pure
+execution-result tests passed in a 0.266-second runner. Existing all-scope build,
+Clippy/frontend/test evidence remains preserved. The new isolated job YAML parsed
+and contains no Cargo or product build step. These are targeted supplements for
+the reproduced race and changed execution boundary, not another full local audit.
