@@ -19,13 +19,14 @@ struct Response {
 async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Response, Problem> {
     let inventory = request.method == "suite_inventory";
     let recovery = request.method == "suite_recovery";
-    let component = if inventory || recovery {
+    let legacy = request.method == "legacy_inventory";
+    let component = if inventory || recovery || legacy {
         "control-center.delivery"
     } else {
         "control-center.tools"
     };
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
-    let allowed = if inventory || recovery {
+    let allowed = if inventory || recovery || legacy {
         matches!(
             request.header.route.as_str(),
             "products" | "updates" | "components" | "migration" | "recovery"
@@ -40,7 +41,22 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             code: ProblemCode::Unauthorized,
         });
     }
-    let value = if recovery {
+    let value = if legacy {
+        let app = window.app_handle().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            let manager = devbox_manager_lib::component::legacy_installations(&app).ok();
+            #[cfg(windows)]
+            let installers = crate::suite::platform::legacy_installer::inventory()
+                .ok()
+                .and_then(|report| serde_json::to_value(report).ok());
+            #[cfg(not(windows))]
+            let installers: Option<Value> = None;
+            Ok(serde_json::json!({"manager":manager,"installers":installers}))
+        })
+        .await
+        .map_err(|_| "legacy_inventory_unavailable".to_string())
+        .and_then(|value| value)
+    } else if recovery {
         let root = window.app_handle().path().app_local_data_dir();
         match root {
             Err(_) => Err("suite_store_unavailable".into()),

@@ -198,12 +198,15 @@ fn registry_path(app: &tauri::AppHandle) -> Result<PathBuf, String> {
 fn active_install_location(app: &tauri::AppHandle) -> Result<ActiveInstallLocation, String> {
     // Resolving the active root is read-only. In particular, preview must not
     // create the legacy root as a side effect of asking where it is.
-    let default_root = data_dir_path(app)?;
+    let default_root =
+        crate::component::legacy_default_root(app)?.map_or_else(|| data_dir_path(app), Ok)?;
     let locator_path = devbox_launch::install_root_registry_path()
         .ok_or_else(|| "설치 root 출처를 확인할 수 없습니다.".to_string())?;
     let location = custom_root::resolve_active_location(&locator_path, &default_root)
         .map_err(|_| "설치 root 상태를 안전하게 확인할 수 없습니다.".to_string())?;
-    if !location.from_legacy_fallback && location.catalog_revision != selected_catalog_revision()? {
+    let expected_catalog = crate::component::legacy_catalog_revision(app)
+        .map_or_else(selected_catalog_revision, Ok)?;
+    if !location.from_legacy_fallback && location.catalog_revision != expected_catalog {
         return Err("설치 root 상태를 안전하게 확인할 수 없습니다.".to_string());
     }
     Ok(location)

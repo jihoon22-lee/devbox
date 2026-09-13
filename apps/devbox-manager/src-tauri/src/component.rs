@@ -4,8 +4,11 @@ use crate::commands::{dev_setup, diagnostics, doctor, local_quality, related_too
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tauri::Manager;
+pub(crate) struct EmbeddedTools;
+
 pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
-    if !app.manage(diagnostics::DiagnosticsState::default())
+    if !app.manage(EmbeddedTools)
+        || !app.manage(diagnostics::DiagnosticsState::default())
         || !app.manage(dev_setup::DevSetupConfigurationState::default())
     {
         return Err("manager_state_conflict".into());
@@ -181,4 +184,26 @@ pub async fn dispatch(
         }
         _ => Err("manager_method_denied".into()),
     }
+}
+
+/// Existing Manager-owned registrations are read from their original namespace;
+/// the Control Center host must not reinterpret its own empty app-data directory
+/// as an empty legacy installation inventory.
+pub(crate) fn legacy_default_root(
+    app: &tauri::AppHandle,
+) -> Result<Option<std::path::PathBuf>, String> {
+    if app.try_state::<EmbeddedTools>().is_none() {
+        return Ok(None);
+    }
+    app.path()
+        .local_data_dir()
+        .map(|root| Some(root.join("com.devbox.devboxmanager")))
+        .map_err(|_| "legacy_manager_root_unavailable".into())
+}
+pub fn legacy_installations(app: &tauri::AppHandle) -> Result<Value, String> {
+    value(crate::commands::manager::installed(app.clone()))
+}
+
+pub(crate) fn legacy_catalog_revision(app: &tauri::AppHandle) -> Option<u64> {
+    app.try_state::<EmbeddedTools>().map(|_| 18)
 }

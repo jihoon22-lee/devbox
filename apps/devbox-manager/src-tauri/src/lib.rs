@@ -1,3 +1,4 @@
+#[cfg(feature = "standalone")]
 mod applink;
 mod commands;
 pub mod component;
