@@ -148,6 +148,51 @@ fn resource_key(identity: &ResourceIdentity) -> String {
 }
 
 impl Sessions {
+    pub(crate) fn operation_rows(&self) -> Result<Vec<product_contract::operations::Row>> {
+        use product_contract::operations::{Phase as State, Row};
+        let inner = self.inner.lock().map_err(|_| "session_owner_busy")?;
+        let Some(inner) = inner.as_ref() else {
+            return Ok(vec![]);
+        };
+        inner
+            .document
+            .store
+            .sessions
+            .values()
+            .filter(|session| !inner.document.store.archived.contains(&session.id))
+            .map(|session| {
+                let phase = match session.phase {
+                    Phase::Preflight | Phase::Review => State::Review,
+                    Phase::Stopped => {
+                        if session.cancel_requested {
+                            State::Cancelled
+                        } else {
+                            State::Succeeded
+                        }
+                    }
+                    Phase::Degraded => State::Failed,
+                    Phase::Stopping => State::CancelRequested,
+                    _ => {
+                        if session.cancel_requested {
+                            State::CancelRequested
+                        } else {
+                            State::Running
+                        }
+                    }
+                };
+                Row::new(
+                    "workspace",
+                    "workspace.terminal",
+                    "terminal",
+                    &session.id,
+                    "개발 세션",
+                    phase,
+                    &session.revision,
+                )
+            })
+            .collect()
+    }
+
     /// Read cached owner state only. Native resource leases are cloned before DB access.
     pub(crate) fn problem_snapshots(
         &self,

@@ -290,6 +290,16 @@ pub(crate) fn handle(
         tokio::task::spawn_blocking(move||{
             let _permit=permit;
             if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
+        if matches!(
+            &call,
+            Call::ReadOperations {} | Call::ReviewOperation { .. }
+        ) {
+            return crate::suite::project_operations(
+                &app,
+                &call,
+                crate::component::operation_rows(&app)?,
+            );
+        }
             let registry=crate::component::provider_host(&app)?.projects()?.snapshot()?;
             match call {
                 Call::DeliverFileReference { reference, operation_id, revision } => crate::file_receive::offer(&app, &reference, &operation_id, &revision),

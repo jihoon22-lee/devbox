@@ -381,3 +381,28 @@ source cases are prepared for the complete B07 audit. No B07 detailed audit yet.
 Logs adapter changed TypeScript passed (9.668 seconds); syntax/diff checks passed.
 Native role, Unicode offset and native buffer hash regressions are prepared,
 with the detailed tests still deferred to PR completion.
+
+
+## Owner Operations and common Review
+
+All four product shells now lazy-load the same Operations surface. Control Center
+reads each already-running, approved product independently; other products show
+their own rows. Native projections cover Workspace development sessions, legacy
+preservation and recent task/service runs; API migration and temporary listener;
+Knowledge migration and cached index-worker progress. Source paths, commands,
+queries and payloads are absent. Reads do not start a scheduler, indexer or product.
+Requests stop when the panel closes or document hides, with at most one refresh
+round active; capped phase-change announcements avoid duplicate notifications.
+
+Cancel requested, cancelled, uncancellable commit, failure and unknown state remain
+distinct. Completed API migration observations retain a bounded native in-memory
+history. Index idle state does not invent success when worker completion evidence
+is unavailable. Each row opens an exact-revision review in its owning product;
+the common surface has no cancellation or approval authority. Existing owner
+screens keep their stricter action reviews. Incoming Review now describes the
+owner, exact target, current revision and screen-opening effect together.
+
+Shared shell and four product TypeScript passed (14.544 seconds) after replacing
+unsupported Object.hasOwn with the repository-compatible property check. Rust
+syntax/format and diff checks are the remaining commit checks. Cancellation-phase
+and reviewed-route regressions are prepared for the B07 completion audit.

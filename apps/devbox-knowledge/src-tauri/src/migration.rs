@@ -353,3 +353,68 @@ mod tests {
         assert_eq!(fs::read(schedule_path(root.path())).unwrap(), before);
     }
 }
+
+pub(crate) fn operation_rows(
+    app: &tauri::AppHandle,
+) -> Result<Vec<product_contract::operations::Row>, &'static str> {
+    use product_contract::operations::{Phase, Row};
+    let mut rows = Vec::new();
+    if let Some(state) = app.try_state::<Migration>() {
+        let job = state.job.lock().map_err(|_| "store_busy")?;
+        if let Some(job) = job.as_ref() {
+            let phase = match &job.result {
+                Some(Ok(_)) => Phase::Succeeded,
+                Some(Err(error)) => {
+                    if crate::component::issue(error) == "cancelled" {
+                        Phase::Cancelled
+                    } else {
+                        Phase::Failed
+                    }
+                }
+                None => {
+                    if job.cancel.load(Ordering::Acquire) {
+                        Phase::CancelRequested
+                    } else {
+                        Phase::Running
+                    }
+                }
+            };
+            rows.push(Row::new(
+                "knowledge",
+                "knowledge.migration",
+                "notes",
+                &job.id,
+                "Knowledge 가져오기",
+                phase,
+                &phase,
+            )?);
+        }
+    }
+    if let Some((running, cancel_requested, failed, indexed, last)) =
+        everything_plus_lib::component::product_index_operation(app)
+    {
+        if running || failed || last > 0 {
+            let phase = if failed {
+                Phase::Failed
+            } else if running {
+                if cancel_requested {
+                    Phase::CancelRequested
+                } else {
+                    Phase::Running
+                }
+            } else {
+                Phase::Unknown
+            };
+            rows.push(Row::new(
+                "knowledge",
+                "knowledge.search",
+                "search",
+                "index-worker",
+                &format!("파일 색인 · {indexed}개 처리"),
+                phase,
+                &(running, cancel_requested, failed, indexed, last),
+            )?);
+        }
+    }
+    Ok(rows)
+}

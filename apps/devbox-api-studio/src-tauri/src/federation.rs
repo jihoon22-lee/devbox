@@ -36,6 +36,16 @@ pub(crate) fn handle(
     _cancel: Option<Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
+        if matches!(
+            &call,
+            Call::ReadOperations {} | Call::ReviewOperation { .. }
+        ) {
+            return crate::suite::project_operations(&app, &call, {
+                let mut rows = crate::migration::operation_rows(&app)?;
+                rows.extend(crate::lifecycle::operation_rows(&app)?);
+                rows
+            });
+        }
         match call {
             Call::DeliverTransformSelection {
                 id,

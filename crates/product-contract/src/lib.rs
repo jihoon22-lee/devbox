@@ -355,3 +355,5 @@ pub mod file_reference;
 pub mod knowledge_draft;
 
 pub mod transform_selection;
+
+pub mod operations;

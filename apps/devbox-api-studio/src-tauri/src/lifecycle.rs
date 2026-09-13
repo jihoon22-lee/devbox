@@ -260,3 +260,34 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
         _ => Err("component_method_unavailable".into()),
     }
 }
+
+pub(crate) fn operation_rows(
+    app: &tauri::AppHandle,
+) -> Result<Vec<product_contract::operations::Row>, &'static str> {
+    use product_contract::operations::{Phase, Row};
+    let Some(state) = app.try_state::<State>() else {
+        return Ok(vec![]);
+    };
+    let running = webhook_lab_lib::component::listener_running(app);
+    let closing = state.closing.load(Ordering::Acquire);
+    let failed = state.failed.load(Ordering::Acquire);
+    if !running && !closing && !failed {
+        return Ok(vec![]);
+    };
+    let phase = if failed {
+        Phase::Failed
+    } else if closing {
+        Phase::Uncancellable
+    } else {
+        Phase::Running
+    };
+    Ok(vec![Row::new(
+        "api-studio",
+        "api-studio.webhooks",
+        "webhooks",
+        "temporary-listener",
+        "임시 Webhook 서버",
+        phase,
+        &(running, closing, failed),
+    )?])
+}

@@ -85,6 +85,15 @@ struct Input {
     deny_unknown_fields
 )]
 enum Method {
+    ReadOperations {
+        product: String,
+    },
+    ReviewOperation {
+        product: String,
+        id: String,
+        revision: String,
+        operation_id: String,
+    },
     Status,
     Preview,
     Approve {
@@ -150,6 +159,17 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
+            Method::ReadOperations { product } => {
+                let _ = product;
+            }
+            Method::ReviewOperation {
+                product,
+                id,
+                revision,
+                operation_id,
+            } => {
+                let _ = (product, id, revision, operation_id);
+            }
             Method::OpenReceivedFile { reference } => {
                 let _ = reference;
             }
@@ -287,6 +307,51 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::ReadOperations { product: target } => {
+            if target == product {
+                match domain {
+                    Some(domain) => {
+                        domain(
+                            app,
+                            product_contract::transport::Call::ReadOperations {},
+                            deadline,
+                            None,
+                        )
+                        .await
+                    }
+                    None => Ok(serde_json::json!([])),
+                }
+            } else if product == "control-center" {
+                remote(
+                    &app,
+                    &target,
+                    product_contract::transport::Call::ReadOperations {},
+                    deadline,
+                )
+                .await
+            } else {
+                Err("suite_operation_denied")
+            }
+        }
+        Method::ReviewOperation {
+            product: target,
+            id,
+            revision,
+            operation_id,
+        } => {
+            let call = product_contract::transport::Call::ReviewOperation {
+                id,
+                revision,
+                operation_id,
+            };
+            if target == product {
+                domain.ok_or("suite_method_unavailable")?(app, call, deadline, None).await
+            } else if product == "control-center" {
+                remote(&app, &target, call, deadline).await
+            } else {
+                Err("suite_operation_denied")
+            }
+        }
         Method::OpenReceivedFile { reference } => {
             if product != "workspace" {
                 return Err("suite_file_denied");
@@ -955,5 +1020,33 @@ pub(crate) fn require_reviewed(
     {
         let _ = (app, id, revision, route, target);
         Err("suite_windows_required")
+    }
+}
+
+pub(crate) fn project_operations(
+    app: &tauri::AppHandle,
+    call: &product_contract::transport::Call,
+    rows: Vec<product_contract::operations::Row>,
+) -> Result<serde_json::Value, &'static str> {
+    if rows.len() > 128 {
+        return Err("operation_limit");
+    }
+    match call {
+        product_contract::transport::Call::ReadOperations {} => {
+            serde_json::to_value(rows).map_err(|_| "operation_invalid")
+        }
+        product_contract::transport::Call::ReviewOperation {
+            id,
+            revision,
+            operation_id,
+        } => {
+            let row = rows
+                .into_iter()
+                .find(|row| row.id == *id && row.revision == *revision)
+                .ok_or("operation_stale")?;
+            let (descriptor, request) = row.review(operation_id);
+            enqueue_review(app, &descriptor, &request)
+        }
+        _ => Err("operation_invalid"),
     }
 }
