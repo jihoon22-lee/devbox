@@ -190,7 +190,6 @@ impl Owner {
             );
             #[cfg(windows)]
             if !restored {
-                let mut state = state;
                 state.lease.take();
             }
             return Ok(view(&state));
@@ -256,6 +255,7 @@ impl Owner {
             state.runtime.stop_global_listener();
             #[cfg(windows)]
             {
+                let mut state = state;
                 state.lease.take();
             }
         }
