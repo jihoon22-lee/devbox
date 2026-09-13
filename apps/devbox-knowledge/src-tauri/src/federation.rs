@@ -213,6 +213,12 @@ pub(crate) fn handle(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         match call {
+            Call::DeliverKnowledgeDraft {
+                component,
+                id,
+                revision,
+                operation_id,
+            } => crate::result_receive::offer(&app, &component, &id, &revision, &operation_id),
             Call::ReadFileReference { reference } => crate::search::open(
                 &app,
                 "native_file_reference",

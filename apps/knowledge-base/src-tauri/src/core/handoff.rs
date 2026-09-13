@@ -81,6 +81,7 @@ pub enum IncomingKnowledgeDraft {
     LifeLog(KnowledgeDraftPayload),
     Toolbox(ToolboxDraftPayload),
     Session(super::session_summary::Draft),
+    Result(product_contract::knowledge_draft::Draft, Vec<String>),
 }
 
 impl IncomingKnowledgeDraft {
@@ -89,6 +90,7 @@ impl IncomingKnowledgeDraft {
             Self::LifeLog(payload) => &payload.title,
             Self::Toolbox(payload) => &payload.title,
             Self::Session(payload) => &payload.title,
+            Self::Result(payload, _) => &payload.title,
         }
     }
 
@@ -97,6 +99,7 @@ impl IncomingKnowledgeDraft {
             Self::LifeLog(payload) => &payload.body,
             Self::Toolbox(payload) => &payload.body,
             Self::Session(payload) => &payload.body,
+            Self::Result(payload, _) => &payload.body,
         }
     }
 
@@ -105,6 +108,7 @@ impl IncomingKnowledgeDraft {
             Self::LifeLog(payload) => &payload.tags,
             Self::Toolbox(payload) => &payload.tags,
             Self::Session(payload) => &payload.tags,
+            Self::Result(_, tags) => tags,
         }
     }
 
@@ -118,6 +122,7 @@ impl IncomingKnowledgeDraft {
                 format!("Journal/{}-developer-toolbox-result", payload.created_date)
             }
             Self::Session(payload) => payload.note_stem(),
+            Self::Result(payload, _) => format!("Journal/api-studio-{}", payload.artifact.id),
         }
     }
 }
@@ -143,9 +148,9 @@ impl KnowledgeDraftPreview {
             IncomingKnowledgeDraft::LifeLog(payload) => {
                 (Some(payload.summary.clone()), payload.sources.clone())
             }
-            IncomingKnowledgeDraft::Toolbox(_) | IncomingKnowledgeDraft::Session(_) => {
-                (None, Vec::new())
-            }
+            IncomingKnowledgeDraft::Toolbox(_)
+            | IncomingKnowledgeDraft::Session(_)
+            | IncomingKnowledgeDraft::Result(_, _) => (None, Vec::new()),
         };
         Self {
             id: claim.envelope.id.clone(),
@@ -184,6 +189,13 @@ pub fn parse_claim(claim: &HandoffClaim) -> Result<IncomingKnowledgeDraft, Strin
                     .map_err(|_| "handoff draft 형식이 올바르지 않습니다".to_string())?;
             validate_toolbox_draft(&payload)?;
             IncomingKnowledgeDraft::Toolbox(payload)
+        }
+        (product_contract::knowledge_draft::KIND, product_contract::knowledge_draft::PRODUCER) => {
+            let payload: product_contract::knowledge_draft::Draft =
+                serde_json::from_value(claim.envelope.payload.clone())
+                    .map_err(|_| "knowledge_draft_invalid")?;
+            payload.validate_for(&payload.artifact.provenance.component)?;
+            IncomingKnowledgeDraft::Result(payload, vec!["api-studio".into(), "draft".into()])
         }
         (super::session_summary::KIND, super::session_summary::PRODUCER) => {
             let payload: super::session_summary::Draft =

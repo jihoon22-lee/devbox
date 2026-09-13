@@ -1016,7 +1016,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
                 ? "Life Log 초안 미리보기"
                 : draftPreview.kind === "knowledge-session/v1"
                   ? "개발 세션 요약 미리보기"
-                  : "Developer Toolbox 초안 미리보기"}
+                  : draftPreview.kind === "knowledge-result/v1" ? "API Studio 결과 초안 미리보기" : "Developer Toolbox 초안 미리보기"}
             </h2>
             <p className="rename-note" id="knowledge-draft-description">
               저장하기 전 본문과 태그를 확인하세요. 취소하면 파일을 만들지 않고
@@ -1028,7 +1028,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
               {draftPreview.summary ? (
                 <div><span className="dim">기간</span><span>{draftPreview.summary.startDate} ~ {draftPreview.summary.endDate} · {draftPreview.summary.timezone}</span></div>
               ) : (
-                <div><span className="dim">소스</span><span>{draftPreview.kind === "knowledge-session/v1" ? "Workspace · 선택한 세션 메타데이터" : "Developer Toolbox · 명시적 변환 결과"}</span></div>
+                <div><span className="dim">소스</span><span>{draftPreview.kind === "knowledge-session/v1" ? "Workspace · 선택한 세션 메타데이터" : draftPreview.kind === "knowledge-result/v1" ? "API Studio · 보관한 마스킹 결과" : "Developer Toolbox · 명시적 변환 결과"}</span></div>
               )}
             </div>
             <pre className="handoff-body" aria-label="Knowledge 초안 본문">{draftPreview.body}</pre>

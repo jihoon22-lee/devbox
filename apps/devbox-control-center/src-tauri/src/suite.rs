@@ -773,6 +773,7 @@ pub(crate) async fn remote(
                 | product_contract::transport::Call::ConfigureShortcuts { .. }
                 | product_contract::transport::Call::DeliverSessionSummary { .. }
                 | product_contract::transport::Call::DeliverFileReference { .. }
+                | product_contract::transport::Call::DeliverKnowledgeDraft { .. }
         ) {
             let launch = suite
                 .state

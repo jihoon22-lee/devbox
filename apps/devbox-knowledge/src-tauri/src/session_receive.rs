@@ -3,7 +3,7 @@
 use devbox_applink::{CreateHandoff, HandoffDescriptor, HandoffStatus, HandoffStore, OpenRequest};
 use product_contract::{
     commands::{ContextRequirement, Descriptor, EntityKind, Request, Target},
-    session_summary::{self, Draft, Metadata},
+    session_summary::{self, Metadata},
     transport::Call,
 };
 use serde::{Deserialize, Serialize};
@@ -124,9 +124,13 @@ fn read_ledger(path: &Path) -> Result<Ledger> {
     if ledger.schema != 1
         || ledger.entries.len() > 256
         || ledger.entries.iter().any(|(id, entry)| {
-            uuid::Uuid::parse_str(id).is_err()
+            !product_contract::commands::revision(id)
                 || !product_contract::commands::revision(&entry.revision)
-                || entry.descriptor.kind != session_summary::KIND
+                || ![
+                    session_summary::KIND,
+                    product_contract::knowledge_draft::KIND,
+                ]
+                .contains(&entry.descriptor.kind.as_str())
                 || entry.descriptor.id.len() != 32
                 || !entry
                     .descriptor
@@ -139,13 +143,32 @@ fn read_ledger(path: &Path) -> Result<Ledger> {
     }
     Ok(ledger)
 }
-fn prepare(
+pub(crate) fn publish(
     app: &tauri::AppHandle,
+    kind: &str,
+    producer: &str,
     source_id: &str,
     revision: &str,
-    draft: &Draft,
+    draft: &Value,
     open: bool,
 ) -> Result<Value> {
+    if !matches!(
+        (kind, producer),
+        (session_summary::KIND, session_summary::PRODUCER)
+            | (
+                product_contract::knowledge_draft::KIND,
+                product_contract::knowledge_draft::PRODUCER
+            )
+    ) {
+        return Err("summary_invalid");
+    }
+    let source_key = Sha256::digest(
+        serde_json::to_vec(&(kind, producer, source_id)).map_err(|_| "summary_invalid")?,
+    )
+    .iter()
+    .map(|byte| format!("{byte:02x}"))
+    .collect::<String>();
+    let source_id = source_key.as_str();
     let owner = app.state::<Owner>();
     let _guard = owner.lock.lock().map_err(|_| "summary_busy")?;
     let root = crate::startup::integration_root(app).map_err(|_| "summary_unavailable")?;
@@ -159,7 +182,7 @@ fn prepare(
     devbox_filesystem::ensure_no_links(&root).map_err(|_| "summary_store_invalid")?;
     #[cfg(windows)]
     let _pins = crate::suite::platform::component_scope::pin_directories(&root)?;
-    let path = root.join("workspace-summary-receipts-v1.json");
+    let path = root.join("product-draft-receipts-v1.json");
     let mut ledger = read_ledger(&path)?;
     let store = HandoffStore::new(devbox_applink::handoff_root_in(&root));
     if !ledger.entries.contains_key(source_id) {
@@ -170,10 +193,10 @@ fn prepare(
         let descriptor = store
             .create(
                 CreateHandoff {
-                    kind: session_summary::KIND.into(),
-                    source_app: session_summary::PRODUCER.into(),
+                    kind: kind.into(),
+                    source_app: producer.into(),
                     target_app: Some("knowledge-base".into()),
-                    payload: serde_json::to_value(draft).map_err(|_| "summary_invalid")?,
+                    payload: draft.clone(),
                 },
                 timestamp,
             )
@@ -213,7 +236,7 @@ fn prepare(
             app,
             &OpenRequest {
                 target: entry.descriptor.clone().into(),
-                from: Some(session_summary::PRODUCER.into()),
+                from: Some(producer.into()),
             },
         )
         .map_err(|_| "summary_preview_busy")?;
@@ -277,7 +300,15 @@ pub(crate) async fn dispatch(
                 id: input.source_id.clone(),
             },
         )?;
-        prepare(&app, &input.source_id, &input.revision, &draft, open)
+        publish(
+            &app,
+            session_summary::KIND,
+            session_summary::PRODUCER,
+            &input.source_id,
+            &input.revision,
+            &serde_json::to_value(draft).map_err(|_| "summary_invalid")?,
+            open,
+        )
     })
     .await
     .map_err(|_| "summary_unavailable")?
@@ -290,4 +321,12 @@ pub(crate) fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             Ok(())
         })
         .build()
+}
+
+pub(crate) fn reserve(app: &tauri::AppHandle) -> Result<tokio::sync::OwnedSemaphorePermit> {
+    app.state::<Owner>()
+        .slots
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| "summary_busy")
 }

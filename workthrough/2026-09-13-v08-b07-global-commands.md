@@ -335,3 +335,20 @@ Changed Workspace/Knowledge TypeScript passed (9.242 seconds) and Rust syntax/fo
 parsed. File-object/revision and transport-role regression cases are prepared;
 detailed same-name/replaced-file/expired-reference/dirty-editor/WSL fixtures run at
 B07 completion. No detailed B07 test/build/Clippy/affected run has started.
+
+
+## Saved API/Transforms result to Notes
+
+Explicitly saved, masked results now offer the authenticated Knowledge Notes review.
+The producer keeps the original draft and export/delete actions; saving alone does
+not send it. Knowledge re-reads the exact source-owned artifact revision after native
+route review, then reuses Notes' existing claim, preview, cancel and exclusive-save
+flow. The shared bounded receipt ledger reuses one handoff per source artifact.
+Control Center cannot resolve draft bodies, and legacy external AppLinks cannot
+inject the new product-only kind. Requests/Transforms owners are the only admitted
+result components; the Protocols route remains non-exportable.
+
+Changed API Studio/Knowledge TypeScript passed (6.107 seconds). Shared DTO ownership,
+content revision and native wire role regressions are prepared for PR completion;
+Rust syntax/format and diff review are the commit checks. Detailed B07 verification
+has not started. No local service or networking fixture was executed.

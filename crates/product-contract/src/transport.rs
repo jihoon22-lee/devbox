@@ -85,6 +85,16 @@ pub enum Call {
         operation_id: String,
         revision: String,
     },
+    ReadKnowledgeDraft {
+        component: String,
+        id: String,
+    },
+    DeliverKnowledgeDraft {
+        component: String,
+        id: String,
+        revision: String,
+        operation_id: String,
+    },
     ShortcutStatus {},
     ConfigureShortcuts {
         config: crate::shortcuts::Config,
@@ -164,9 +174,15 @@ impl Guard {
         {
             return Err("peer_request_denied");
         }
+        if matches!(request.call, Call::DeliverKnowledgeDraft { .. })
+            && self.peer.product != "api-studio"
+        {
+            return Err("peer_method_denied");
+        }
         if (matches!(
             request.call,
             Call::ProjectSnapshot { .. }
+                | Call::ReadKnowledgeDraft { .. }
                 | Call::ReadSessionSummary { .. }
                 | Call::DeliverFileReference { .. }
         ) && self.peer.product != "knowledge")
@@ -182,10 +198,13 @@ impl Guard {
         // The command host is the only federated query/dispatch principal. Other
         // product roles acquire specific artifact/navigation capabilities separately.
         if self.peer.product != "control-center"
+            && !(self.peer.product == "api-studio"
+                && matches!(request.call, Call::DeliverKnowledgeDraft { .. }))
             && !(self.peer.product == "knowledge"
                 && matches!(
                     request.call,
                     Call::ProjectSnapshot { .. }
+                        | Call::ReadKnowledgeDraft { .. }
                         | Call::ReadSessionSummary { .. }
                         | Call::DeliverFileReference { .. }
                 ))
@@ -218,6 +237,20 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ReadKnowledgeDraft { component, id }
+        | Call::DeliverKnowledgeDraft { component, id, .. }
+            if !crate::knowledge_draft::COMPONENTS.contains(&component.as_str())
+                || !commands::opaque_id(id) =>
+        {
+            return Err("peer_draft_invalid")
+        }
+        Call::DeliverKnowledgeDraft {
+            revision,
+            operation_id,
+            ..
+        } if !commands::revision(revision) || !commands::opaque_id(operation_id) => {
+            return Err("peer_draft_invalid")
+        }
         Call::ReadFileReference { reference } | Call::DeliverFileReference { reference, .. }
             if !commands::opaque_id(reference) =>
         {
@@ -436,6 +469,37 @@ mod tests {
                 assert_eq!(
                     guard.authorize(&request, 1000).is_ok(),
                     product == if receive { "knowledge" } else { "workspace" }
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn result_drafts_are_read_only_by_knowledge_and_offered_only_by_api_studio() {
+        for product in ["control-center", "workspace", "knowledge", "api-studio"] {
+            for deliver in [false, true] {
+                let mut guard = Guard::new(
+                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                    "native-session",
+                )
+                .unwrap();
+                let mut request = request();
+                request.call = if deliver {
+                    Call::DeliverKnowledgeDraft {
+                        component: "api-studio.transforms".into(),
+                        id: "draft-one".into(),
+                        revision: "a".repeat(64),
+                        operation_id: "operation-one".into(),
+                    }
+                } else {
+                    Call::ReadKnowledgeDraft {
+                        component: "api-studio.transforms".into(),
+                        id: "draft-one".into(),
+                    }
+                };
+                assert_eq!(
+                    guard.authorize(&request, 1000).is_ok(),
+                    product == if deliver { "api-studio" } else { "knowledge" }
                 );
             }
         }

@@ -63,6 +63,7 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                             | "open_external_url"
                             | "preview_session_summary"
                             | "open_session_summary"
+                            | "open_result_draft"
                     ))
         }
         "knowledge.activity" => {
@@ -222,6 +223,9 @@ async fn execute(
     }
     let value = match request.component.as_str() {
         "knowledge.migration" => crate::startup::dispatch(app, &request.method, request.args),
+        "knowledge.notes" if request.method == "open_result_draft" => {
+            crate::result_receive::open(app, request.args, request.header.deadline_ms).await
+        }
         "knowledge.notes"
             if matches!(
                 request.method.as_str(),

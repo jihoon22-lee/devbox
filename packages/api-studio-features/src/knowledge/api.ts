@@ -36,7 +36,7 @@ export function parseDraft(value: unknown, owner: DraftOwner): KnowledgeDraft {
 }
 export async function saveDraft(owner: DraftOwner, output: string, source?: OutputSource): Promise<KnowledgeDraft> {
   const result = await componentInvoke(owner)<unknown>("save_knowledge_draft", { output, ...(source ? { source } : {}) });
-  if (!record(result) || result.delivery !== "unavailable") throw new Error(ERROR);
+  if (!record(result) || !["stored","unavailable"].includes(String(result.delivery))) throw new Error(ERROR);
   return parseDraft(result.draft, owner);
 }
 export async function listDrafts(owner: DraftOwner): Promise<DraftSummary[]> {
@@ -61,4 +61,9 @@ export function exportDraft(draft: KnowledgeDraft): void {
     const link = document.createElement("a"); link.href = url;
     link.download = `api-studio-knowledge-${draft.artifact.id}.txt`; link.click();
   } finally { URL.revokeObjectURL(url); }
+}
+
+export async function sendDraft(owner:DraftOwner,id:string):Promise<void>{
+  const result=await componentInvoke(owner)<unknown>("send_knowledge_draft",{id});
+  if(!record(result)||typeof result.operationId!=="string"||!["awaitingReview","opening","opened"].includes(String(result.phase)))throw new Error(ERROR);
 }
