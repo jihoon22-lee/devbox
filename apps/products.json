@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 11,
+  "catalogRevision": 12,
   "channel": "development",
   "products": [
     {
@@ -236,6 +236,13 @@
       "id": "knowledge.commands",
       "owner": "knowledge",
       "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "control-center.tools",
+      "owner": "control-center",
+      "authority": "manager-tools",
       "lifecycle": "product",
       "protocolVersion": 1
     },

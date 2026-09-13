@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import catalogJson from "../../catalog.json";
+import catalogJson from "../../../../apps/catalog.json";
 import App from "./App";
 import {
   available,

@@ -2,6 +2,10 @@ fn main() {
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .plugin(
+                "control-center",
+                tauri_build::InlinedPlugin::new().commands(&["execute"]),
+            )
+            .plugin(
                 "suite",
                 tauri_build::InlinedPlugin::new().commands(&["connection"]),
             )

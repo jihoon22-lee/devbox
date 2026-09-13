@@ -18,6 +18,7 @@
     "commands:allow-command-shortcut",
     "commands:allow-command-cancel",
     "commands:allow-command-trigger-shortcut",
-    "commands:allow-command-import-launcher"
+    "commands:allow-command-import-launcher",
+    "control-center:allow-execute"
   ]
 }

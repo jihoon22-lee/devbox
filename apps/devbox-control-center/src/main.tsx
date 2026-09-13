@@ -6,6 +6,7 @@ import {onShortcut,triggerShortcut} from "@devbox/product-shell/commands";
 import {nativeMode} from "@devbox/product-shell/api";
 const HostedLauncher=lazy(()=>import("./HostedLauncher"));
 const LauncherImport=lazy(()=>import("./LauncherImport"));
+const Tools=lazy(()=>import("./Tools"));
 const Commands=lazy(()=>import("./Commands"));
 const RouteView=lazy(()=>import("@devbox/product-shell/route-view"));
 function Content(props:ShellContentProps) {
@@ -36,7 +37,7 @@ function Content(props:ShellContentProps) {
   },[]);
   const feature=props.description.features.find(feature=>feature.route===props.route);
   return <>{shortcutIssue&&<p role="alert">{shortcutIssue}</p>}<button onClick={()=>setLauncher(true)}>Launcher 열기</button>{launcher&&<Suspense fallback={<p role="status">Launcher를 불러오고 있습니다…</p>}><HostedLauncher {...props} close={close}/></Suspense>}<Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}>{
-    props.route==="products"?<Commands {...props}/>:props.route==="migration"?<LauncherImport {...props}/>:feature?<RouteView description={props.description} feature={feature}/>:null
+    ["environment","diagnostics","recovery","tools"].includes(props.route)?<Tools route={props.route}/>:props.route==="products"?<Commands {...props}/>:props.route==="migration"?<LauncherImport {...props}/>:feature?<RouteView description={props.description} feature={feature}/>:null
   }</Suspense></>;
 }
 ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><ProductShell product="control-center" renderContent={Content}/></React.StrictMode>);
