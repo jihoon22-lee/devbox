@@ -58,6 +58,17 @@ try {
  }
  assert.equal(evidence.observations.sessions.length,2,"Companion did not restore both panes; diagnostic state retained");
  evidence.observations.twoPanesRestored=true;
+ const outputSession=evidence.observations.sessions.find(value=>value.paneKey==="two").id;
+ evidence.observations.outputBefore=await invoke("terminal_output",{sessionId:outputSession,after:0});
+ await invoke("write_session",{sessionId:outputSession,data:"printf 'synthetic-b06-output\\n'\r"});
+ const outputDeadline=performance.now()+20000;
+ do {
+   evidence.observations.outputAfter=await invoke("terminal_output",{sessionId:outputSession,after:0});
+   if(evidence.observations.outputAfter.frames.map(frame=>frame.data).join("").includes("\r\nsynthetic-b06-output\r\n"))break;
+   await delay(300);
+ } while(performance.now()<outputDeadline);
+ evidence.observations.outputExactMatch=evidence.observations.outputAfter.frames.map(frame=>frame.data).join("").includes("\r\nsynthetic-b06-output\r\n");
+
  const title="Devbox Workspace · 터미널";
  evidence.observations.appPid=child.pid;
  evidence.observations.focus=[];
