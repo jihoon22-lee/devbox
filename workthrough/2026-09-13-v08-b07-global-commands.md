@@ -251,3 +251,18 @@ parsing and the diff/plan review cover this commit; role-isolation and unverifie
 association regression cases are prepared for B07's single completion verification.
 Native changed-context/disconnected-provider fixtures remain pending with the other
 B07 acceptance work.
+
+## Confirmed remote recency
+
+Control Center reserves bounded native command receipts before explicit dispatch.
+One native observer checks destination status while a request remains pending and
+sleeps when no work remains. It never replays OpenCommand. Only an authenticated
+Opened receipt for the same operation/product/command writes that opaque command
+ID to existing Launcher preferences; missing replies, rejection and expiry do not.
+Manual recent-history clearing suppresses pending writes and disconnect revokes
+pending observations. Corrupt preference files remain untouched. This also covers
+shortcut commands after Launcher closes or Control Center loses focus.
+
+Only Rust syntax/format and diff/plan checks ran for this slice. Bounded-capacity,
+retargeted-operation, clear and disconnect cases are prepared for PR completion;
+real remote acknowledgement/lost-reply fixtures still belong to B07 acceptance.
