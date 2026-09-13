@@ -1,6 +1,7 @@
 import {exerciseNativeWslTasks} from "./windows-workspace-tasks-wsl.mjs";
 // Actual Workspace companions and native Session ownership, using owned fixture data only.
 import assert from "node:assert/strict";
+import {stripVTControlCharacters} from "node:util";
 import {mkdirSync,writeFileSync,readFileSync,realpathSync,rmSync} from "node:fs";
 import {spawnSync} from "node:child_process";
 import {randomUUID} from "node:crypto";
@@ -136,16 +137,33 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     assert.deepEqual(panes.map(value=>value.paneKey).sort(),["one","two"]);
     const nativeId=panes.find(value=>value.paneKey==="two").id;
     assert.equal((await invoke("terminal_window_policy")).closeBehavior,"hideToTray");
-    await invoke("write_session",{sessionId:nativeId,data:"printf 'synthetic-b06-output\\n'\r"});
-    await until(async()=>(await invoke("terminal_output",{sessionId:nativeId,after:0})).frames.map(frame=>frame.data).join("").includes("\r\nsynthetic-b06-output\r\n"),"PTY output did not arrive");
+    // ConPTY emits VT redraws and paged output. Encode the probe so command echo
+    // cannot satisfy it; consume every batch rather than repeatedly reading page 1.
+    const outputProbe=async(marker)=>{
+      let cursor=0,raw="";
+      const encoded=[...Buffer.from(marker)].map(byte=>"\\"+byte.toString(8).padStart(3,"0")).join("");
+      await invoke("write_session",{sessionId:nativeId,data:"printf '"+encoded+"\\n'\r"});
+      try {
+        await until(async()=>{
+          const batch=await invoke("terminal_output",{sessionId:nativeId,after:cursor});
+          cursor=batch.cursor;
+          if(batch.truncated)raw="";
+          raw=(raw+batch.frames.map(frame=>frame.data).join("")).slice(-512*1024);
+          return stripVTControlCharacters(raw).includes(marker);
+        },"PTY probe did not arrive: "+marker);
+      } catch(error) {
+        writeFileSync(path.join(directory,"terminal-output-failure.json"),JSON.stringify({marker,cursor,raw},null,2));
+        throw error;
+      }
+    };
+    await outputProbe("synthetic-b06-output");
     success(await terminal("focus_terminal",{id:windowId}));
     await until(async()=>(await invoke("terminal_window_policy")).focused,"Companion did not receive native focus");
     const hide={operationId:randomUUID(),terminalId:windowId,deadlineMs:Date.now()+29000};
     const hidden=success(await terminal("summon_terminal",hide));assert.equal(hidden.visible,false);
     assert.deepEqual(success(await terminal("summon_terminal",hide)),hidden);
     assert.equal((await invoke("terminal_window_policy")).visible,false);
-    await invoke("write_session",{sessionId:nativeId,data:"printf 'synthetic-hidden-output\\n'\r"});
-    await until(async()=>(await invoke("terminal_output",{sessionId:nativeId,after:0})).frames.map(frame=>frame.data).join("").includes("\r\nsynthetic-hidden-output\r\n"),"Hidden companion lost its PTY");
+    await outputProbe("synthetic-hidden-output");
     success(await terminal("focus_terminal",{id:windowId}));
     await companion.command("Page.addScriptToEvaluateOnNewDocument",{source:"const previous=HTMLCanvasElement.prototype.getContext;window.__fixtureWebGLDenied=0;HTMLCanvasElement.prototype.getContext=function(kind,...args){if(String(kind).includes('webgl')){window.__fixtureWebGLDenied++;return null;}return previous.call(this,kind,...args);};"});
     await companion.command("Page.reload");
@@ -153,8 +171,7 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     await until(async()=>companion.evaluate("document.querySelectorAll('.xterm').length===2&&window.__fixtureWebGLDenied>0"),"WebGL fallback was not exercised");
     await invoke("write_session",{sessionId:nativeId,data:"sleep 30\r"});
     await delay(200);await invoke("write_session",{sessionId:nativeId,data:"\u0003"});
-    await invoke("write_session",{sessionId:nativeId,data:"printf 'synthetic-after-sigint\\n'\r"});
-    await until(async()=>(await invoke("terminal_output",{sessionId:nativeId,after:0})).frames.map(frame=>frame.data).join("").includes("\r\nsynthetic-after-sigint\r\n"),"SIGINT killed the companion PTY");
+    await outputProbe("synthetic-after-sigint");
     assert.deepEqual((await invoke("list_sessions")).map(value=>value.id).sort(),panes.map(value=>value.id).sort());
     // Explicit reopen keeps the multiplexer name but allocates a fresh native PTY.
     success(await terminal("stop_terminal",{id:windowId}));companion.close();companion=null;

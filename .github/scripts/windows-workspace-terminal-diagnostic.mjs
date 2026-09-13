@@ -5,7 +5,8 @@ import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
 import assert from "node:assert/strict";
 import {createHash,randomUUID} from "node:crypto";
 import {readFileSync,writeFileSync,mkdirSync,lstatSync,existsSync,realpathSync,rmSync,copyFileSync} from "node:fs";
-import {spawn} from "node:child_process";
+import {spawn,spawnSync} from "node:child_process";
+import {exerciseTerminalSessionFixture} from "./windows-workspace-terminal-sessions.mjs";
 import {once} from "node:events";
 import {nativeWindowState,windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
 import {setTimeout as delay} from "node:timers/promises";
@@ -79,6 +80,12 @@ try {
    evidence.observations.focus.push({mode,policy:await invoke("terminal_window_policy"),documentFocus:await companion.evaluate("document.hasFocus()"),native:nativeWindowState(child.pid,title)});
  }
 
+ success(await call("workspace.terminal","stop_terminal",{id:windowId}));companion.close();companion=null;
+ const wsl=(args,input)=>{
+   const result=spawnSync("wsl.exe",["--distribution",owner.name,"--exec",...args],{input,encoding:"utf8",timeout:15000,windowsHide:true});
+   assert.equal(result.status,0,result.stderr);return result.stdout.trim();
+ };
+ evidence.terminalAcceptance=await exerciseTerminalSessionFixture({cdp:main,directory:evidenceDirectory,call,success,distro:owner.name,wsl,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
 } catch(error) { evidence.failure=String(error);process.exitCode=1; }
 finally {
  companion?.close();main?.close();
