@@ -1,5 +1,6 @@
 //! Product session and navigation boundary. Domain plugins separately declare
 //! their command allowlists and reuse this native session authorization.
+mod installation;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
@@ -239,9 +240,8 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
         .on_window_event(window_state_tauri::handle_window_event)
 }
 
-/// Hidden development installations use an executable-location namespace for
-/// data and single-instance identity. This does not claim suite registration or
-/// portable migration support; WP08 replaces it with verified install records.
+/// Direct portable/development binaries use their executable location; verified
+/// suite generations keep a physical installation key across package replacement.
 pub fn run(product: &'static str, context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
     run_with(product, context, |builder| builder)
 }
@@ -293,10 +293,18 @@ pub fn run_with(
 /// selects this executable installation's namespace; it grants no IPC authority.
 pub fn isolate_installation(context: &mut tauri::Context<tauri::Wry>) -> tauri::Result<()> {
     let executable = std::env::current_exe()?.canonicalize()?;
-    let suffix: String = Sha256::digest(executable.to_string_lossy().as_bytes())
+    let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
+    let product = catalog
+        .products
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+        .find(|product| product.identifier == context.config().identifier)
+        .ok_or_else(|| std::io::Error::other("installation_product_invalid"))?;
+    let suffix = installation::namespace(
+        &executable,
+        &product.id,
+        &context.package_info().version.to_string(),
+    )
+    .map_err(std::io::Error::other)?;
     context.config_mut().identifier = format!("{}.i{}", context.config().identifier, suffix);
     Ok(())
 }
