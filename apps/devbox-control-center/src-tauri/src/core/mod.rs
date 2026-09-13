@@ -7,3 +7,5 @@ pub mod launcher_import;
 pub mod delivery;
 pub mod inventory;
 pub mod delivery_store;
+pub mod suite_package;
+pub mod package_stage;

@@ -168,6 +168,28 @@ mod tests {
         assert!(namespace(&second, "workspace", "0.8.0").is_err());
     }
     #[test]
+    fn all_products_and_workers_hold_shared_leases_until_update_can_exclude_new_writers() {
+        let root = Fixture::new();
+        let executable = root.generation("one");
+        let gate = root.0.join("suite-writers.lock");
+        fs::write(&gate, b"").unwrap();
+        let first = WriterGuard::acquire(&executable).unwrap();
+        let second = WriterGuard::acquire(&executable).unwrap();
+        let update = std::fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .open(&gate)
+            .unwrap();
+        assert!(!devbox_filesystem::try_lock_exclusive(&update).unwrap());
+        drop(first);
+        assert!(!devbox_filesystem::try_lock_exclusive(&update).unwrap());
+        drop(second);
+        assert!(devbox_filesystem::try_lock_exclusive(&update).unwrap());
+        assert!(WriterGuard::acquire(&executable).is_err());
+        devbox_filesystem::unlock_exclusive(&update).unwrap();
+        assert!(WriterGuard::acquire(&executable).is_ok());
+    }
+    #[test]
     fn portable_key_is_unchanged_and_generation_without_manifest_is_rejected() {
         let root = Fixture::new();
         let direct = root.0.join("devbox-workspace.exe");
@@ -179,5 +201,67 @@ mod tests {
         let staged = root.generation("next");
         fs::remove_file(root.0.join("devbox-installation.json")).unwrap();
         assert!(namespace(&staged, "workspace", "0.8.0").is_err());
+    }
+}
+
+/// Held by every product UI and its dedicated browser/service worker through
+/// shutdown. The updater's exclusive lease prevents a late writer from starting.
+#[must_use = "the writer lease must be retained through product shutdown"]
+pub struct WriterGuard(Option<File>);
+impl WriterGuard {
+    pub(crate) fn acquire(executable: &Path) -> Result<Self> {
+        let parent = executable.parent().ok_or("installation_path_invalid")?;
+        let Some(products) = parent
+            .parent()
+            .filter(|p| p.file_name().is_some_and(|n| n == "products"))
+        else {
+            return Ok(Self(None));
+        };
+        let generation = products.parent().ok_or("installation_path_invalid")?;
+        let Some(generations) = generation
+            .parent()
+            .filter(|p| p.file_name().is_some_and(|n| n == "generations"))
+        else {
+            return Ok(Self(None));
+        };
+        let root = generations.parent().ok_or("installation_path_invalid")?;
+        let path = root.join("suite-writers.lock");
+        devbox_filesystem::ensure_no_links(&path).map_err(|_| "suite_writer_gate_unavailable")?;
+        #[cfg(windows)]
+        let (file, identity) = {
+            use std::os::windows::fs::OpenOptionsExt;
+            // A live writer also prevents deletion/replacement of the lock file.
+            let file = std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(3)
+                .custom_flags(0x0020_0000)
+                .open(&path)
+                .map_err(|_| "suite_writer_gate_unavailable")?;
+            let identity = devbox_filesystem::opened_filesystem_identity(&file, false)
+                .map_err(|_| "suite_writer_gate_unavailable")?;
+            (file, identity)
+        };
+        #[cfg(not(windows))]
+        let (file, identity) = devbox_filesystem::open_filesystem_object(&path, false)
+            .map_err(|_| "suite_writer_gate_unavailable")?;
+        if !devbox_filesystem::try_lock_shared(&file)
+            .map_err(|_| "suite_writer_gate_unavailable")?
+        {
+            return Err("suite_update_in_progress");
+        }
+        if devbox_filesystem::filesystem_identity(&path, false)
+            .map_err(|_| "suite_writer_gate_changed")?
+            != identity
+        {
+            return Err("suite_writer_gate_changed");
+        }
+        Ok(Self(Some(file)))
+    }
+}
+impl Drop for WriterGuard {
+    fn drop(&mut self) {
+        if let Some(file) = &self.0 {
+            let _ = devbox_filesystem::unlock_exclusive(file);
+        }
     }
 }
