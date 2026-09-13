@@ -413,3 +413,17 @@ actual foreground HWND, preserving child WebView2 keyboard focus semantics. The
 explicit focus action also restores a minimized window. No fixture assertion was
 weakened, and no local service/network fixture ran. This Windows adapter change
 requires the affected Windows native/packaged checks; prior unrelated passes remain.
+
+
+Native run 34736166650 stopped earlier in the existing Source fixture after page
+reload: RegistryGate reported selected before fetching its registry snapshot, so
+newly mounted metadata consumers could fill both native slots. The snapshot failed
+busy and Source had no selected-tree data. Registry readiness is now published only
+after that snapshot, with an explicit read retry on error. The regression delays
+the snapshot and requires readiness/dependent reads to wait. This does not increase
+native limits or retry mutations. Terminal focus repair remains awaiting the full
+packaged fixture's continuation; the earlier HWND diagnosis remains its evidence.
+
+The registry-readiness regression passed (one focused test, 2.64 seconds), and
+Workspace TypeScript passed in the same 11.38-second resource-limited run. No full
+local audit was repeated. CI 34736166660 passed for the preceding dde28c1 changes.
