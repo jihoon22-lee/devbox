@@ -110,7 +110,7 @@ export interface KnowledgeDraftSource {
 
 export interface KnowledgeDraftPreview {
   id: string;
-  kind: "knowledge-draft/v1" | "knowledge-draft/v2" | "knowledge-session/v1";
+  kind: "knowledge-draft/v1" | "knowledge-draft/v2" | "knowledge-session/v1" | "knowledge-result/v1";
   producerId: "life-log" | "developer-toolbox" | "devbox-workspace";
   expiresAtMs: number;
   leaseUntilMs: number;

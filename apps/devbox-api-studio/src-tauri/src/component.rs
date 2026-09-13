@@ -44,6 +44,13 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
             route == "requests" && crate::migration::COMMANDS.contains(&method)
         }
         "api-studio.api" => {
+            if route == "protocols"
+                && (crate::knowledge::is_command(component, method)
+                    || crate::handoff::is_send(component, method)
+                    || method == "send_selection_to_toolbox")
+            {
+                return false;
+            }
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
                     || crate::api_workspace::COMMANDS.contains(&method)
@@ -169,6 +176,7 @@ async fn execute(
             &request.method,
             request.args,
             provenance.clone(),
+            request.header.deadline_ms,
         )
         .await
     } else if request.component == "api-studio.webhooks"

@@ -114,12 +114,17 @@ pub fn preview_knowledge_draft(
             handoff::KNOWLEDGE_DRAFT_KIND
                 | handoff::TOOLBOX_DRAFT_KIND
                 | crate::core::session_summary::KIND
+                | product_contract::knowledge_draft::KIND
         )
     {
         return Err("Knowledge draft를 사용할 수 없습니다".into());
     }
     // Workspace metadata is admitted only by the product-owned native store.
-    if kind == crate::core::session_summary::KIND && pending.1.is_none() {
+    if matches!(
+        kind.as_str(),
+        crate::core::session_summary::KIND | product_contract::knowledge_draft::KIND
+    ) && pending.1.is_none()
+    {
         return Err("session_summary_unavailable".into());
     }
     let now_ms = current_epoch_ms();

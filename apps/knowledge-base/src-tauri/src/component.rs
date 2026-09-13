@@ -181,6 +181,9 @@ pub fn offer_product_draft(
         (devbox_applink::OpenTarget::Handoff { kind, .. }, Some("life-log")) if kind == "knowledge-draft/v1")
         || matches!((&request.target, request.from.as_deref()),
         (devbox_applink::OpenTarget::Handoff { kind, .. }, Some(crate::core::session_summary::PRODUCER)) if kind == crate::core::session_summary::KIND);
+    let producer_matches = producer_matches
+        || matches!((&request.target,request.from.as_deref()),
+        (devbox_applink::OpenTarget::Handoff { kind, .. },Some(product_contract::knowledge_draft::PRODUCER)) if kind == product_contract::knowledge_draft::KIND);
     if !producer_matches || devbox_applink::build_argv(request).is_err() {
         return Err("draft_delivery_invalid".into());
     }
