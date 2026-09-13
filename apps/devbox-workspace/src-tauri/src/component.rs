@@ -2217,6 +2217,55 @@ pub(crate) fn terminal_owner(
         .terminals
         .clone())
 }
+
+pub(crate) fn operation_rows(
+    app: &tauri::AppHandle,
+) -> Result<Vec<product_contract::operations::Row>, &'static str> {
+    let runtime = app.try_state::<Runtime>().ok_or("initializing")?;
+    let mut rows = runtime.sessions.operation_rows()?;
+    if let Ok(host) = runtime.host() {
+        rows.extend(host.legacy.operation_rows()?);
+        if let Ok(root) = host.component("runtime") {
+            use product_contract::operations::{Phase, Row};
+            match run_manager_lib::component::search::read(
+                &root,
+                run_manager_lib::component::search::Source::Runs,
+            ) {
+                Ok(snapshot) => {
+                    for entry in snapshot.entries.into_iter().take(63) {
+                        let phase = match entry.revision[1].as_str() {
+                            Some("queued" | "starting" | "running") => Phase::Running,
+                            Some("stopping") => Phase::CancelRequested,
+                            Some("succeeded") => Phase::Succeeded,
+                            Some("cancelled") => Phase::Cancelled,
+                            Some("failed") => Phase::Failed,
+                            _ => Phase::Unknown,
+                        };
+                        rows.push(Row::new(
+                            "workspace",
+                            "workspace.runtime",
+                            "tasks",
+                            &format!("run-{}", entry.id),
+                            "작업·서비스 실행",
+                            phase,
+                            &entry.revision,
+                        )?);
+                    }
+                }
+                Err(_) => rows.push(Row::new(
+                    "workspace",
+                    "workspace.runtime",
+                    "tasks",
+                    "runtime-unavailable",
+                    "작업 실행 상태 확인 필요",
+                    Phase::Unknown,
+                    &0,
+                )?),
+            }
+        }
+    }
+    Ok(rows)
+}
 pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'static str> {
     app.try_state::<Runtime>().ok_or("initializing")?.host()
 }

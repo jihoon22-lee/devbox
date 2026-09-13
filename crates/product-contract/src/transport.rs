@@ -50,6 +50,12 @@ pub enum QueryMode {
     deny_unknown_fields
 )]
 pub enum Call {
+    ReadOperations {},
+    ReviewOperation {
+        id: String,
+        revision: String,
+        operation_id: String,
+    },
     ReadTransformSelection {
         id: String,
     },
@@ -252,6 +258,16 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ReviewOperation {
+            id,
+            revision,
+            operation_id,
+        } if !commands::opaque_id(id)
+            || !commands::revision(revision)
+            || !commands::opaque_id(operation_id) =>
+        {
+            Err("peer_request_invalid")
+        }
         Call::ReadTransformSelection { id } if !commands::opaque_id(id) => {
             Err("peer_request_invalid")
         }

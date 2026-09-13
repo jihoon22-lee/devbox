@@ -61,6 +61,35 @@ pub(crate) struct LegacyImports {
     current: Arc<Mutex<Option<Job>>>,
 }
 impl LegacyImports {
+    pub(crate) fn operation_rows(&self) -> Result<Vec<product_contract::operations::Row>> {
+        use product_contract::operations::{Phase as State, Row};
+        let job = self.current.lock().map_err(|_| "legacy_import_busy")?;
+        let Some(job) = job.as_ref() else {
+            return Ok(vec![]);
+        };
+        let phase = match job.phase {
+            Phase::Ready => State::Succeeded,
+            Phase::Cancelled => State::Cancelled,
+            Phase::Failed => State::Failed,
+            _ => {
+                if job.cancelled.load(Ordering::Acquire) {
+                    State::CancelRequested
+                } else {
+                    State::Running
+                }
+            }
+        };
+        Ok(vec![Row::new(
+            "workspace",
+            "workspace.migration",
+            "overview",
+            &job.id,
+            "기존 데이터 보존",
+            phase,
+            &job.phase,
+        )?])
+    }
+
     pub(crate) fn new(stores: Arc<StoreRoot>) -> Result<Self> {
         // Host receives app_local_data_dir from native startup. Legacy owners
         // use fixed sibling identifiers under that same local-data directory.

@@ -42,7 +42,7 @@ export default function IncomingCommands({description,route,navigate,onReview}:{
   };
   if(!reviews.length&&!issue)return null;
   return <section aria-label="다른 제품의 열기 요청">
-    {reviews.map(review=><div key={review.operationId}><span>{review.label} 화면을 열도록 요청받았습니다.</span>
+    {reviews.map(review=><div key={review.operationId}><strong>{review.label}</strong><dl><dt>담당 제품</dt><dd>{description.product.label}</dd><dt>대상</dt><dd>{review.target.kind==="route"?review.target.route:`${review.target.entity} · ${review.target.id}`}</dd><dt>변경 내용</dt><dd>담당 화면을 열고 현재 대상을 확인합니다. 실행·저장·삭제는 해당 화면에서 별도로 검토합니다.</dd><dt>확인한 버전</dt><dd>{review.commandRevision.slice(0,12)}</dd></dl>
       <button disabled={busy} onClick={()=>void decide(review,true)}>화면 열기</button><button disabled={busy} onClick={()=>void decide(review,false)}>거절</button></div>)}
     {issue&&<p role="alert">{issue}</p>}
   </section>;
