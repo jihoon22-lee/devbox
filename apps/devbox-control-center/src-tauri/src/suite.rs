@@ -891,6 +891,10 @@ async fn activate(
         let (_, image, _) = launch_scope.member(&destination)?;
         let child = std::process::Command::new(image)
             .current_dir(image.parent().ok_or("suite_image_unavailable")?)
+            // A product's WebView profile/debug override belongs to that
+            // process. Inheriting it would reopen the sender's browser store.
+            .env_remove("WEBVIEW2_USER_DATA_FOLDER")
+            .env_remove("WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS")
             .creation_flags(0x08000000)
             .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::null())
