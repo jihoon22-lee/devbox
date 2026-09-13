@@ -45,6 +45,7 @@ pub struct Candidate {
 }
 #[derive(Clone)]
 pub struct Reference {
+    pub expires: Instant,
     pub candidate: Candidate,
     pub file_identity: FilesystemIdentity,
     pub root_identity: FilesystemIdentity,
@@ -420,6 +421,7 @@ impl Work {
                         job.references.insert(
                             reference,
                             Reference {
+                                expires: job.started + TTL,
                                 candidate: candidate.clone(),
                                 project: project.map(|p| p.reference.clone()),
                                 root_identity,

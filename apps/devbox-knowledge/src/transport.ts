@@ -13,6 +13,7 @@ configureProductTransport(async <T>(component: Component, method: string, args: 
   if (!nativeMode) throw new Error("데스크톱 앱에서 사용할 수 있습니다.");
   const description = await describe("knowledge");
   const header = makeRequest(description.handshake, routeFor[component], Date.now(), description.context);
+  if(component==="knowledge.opener"&&method==="open_in")header.deadlineMs=Date.now()+29000;
   const provenance = { product: "knowledge", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: { operation: Operation; value: T };
   try { response = await invoke("plugin:knowledge|execute", { request: { header, component, method, args } }); }

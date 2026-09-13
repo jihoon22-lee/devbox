@@ -488,6 +488,7 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
     let root = host.root.clone();
     let app = app.clone();
     let reveal = method == "reveal_file";
+    let native_reference = method == "native_file_reference";
     let deadline = Instant::now() + Duration::from_secs(2);
     let (sender, receiver) = std::sync::mpsc::sync_channel(1);
     tauri::async_runtime::spawn_blocking(move || {
@@ -561,6 +562,34 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
             }
             if Instant::now() >= deadline {
                 return Err("search_stale".into());
+            }
+            if native_reference {
+                if source == "notes" {
+                    return Err("search_source_denied".into());
+                }
+                let (volume, object) = reference.file_identity.components();
+                let proof = product_contract::file_reference::Proof {
+                    reference: input.reference.clone(),
+                    path: row.path.to_str().ok_or("search_stale")?.into(),
+                    volume: format!("{volume:x}"),
+                    object: format!("{object:x}"),
+                    expires_at_ms: (std::time::SystemTime::now()
+                        .duration_since(std::time::UNIX_EPOCH)
+                        .map_err(|_| "search_stale")?
+                        .as_millis()
+                        + reference
+                            .expires
+                            .saturating_duration_since(Instant::now())
+                            .as_millis())
+                    .min(u128::from(u64::MAX)) as u64,
+                    context: reference.project.as_ref().and_then(|_| {
+                        projects
+                            .current()
+                            .map(|selection| selection.project.context)
+                    }),
+                };
+                proof.validate().map_err(str::to_owned)?;
+                return serde_json::to_value(proof).map_err(|_| "search_stale".into());
             }
             if source == "notes" && !reveal {
                 knowledge_base_lib::component::offer_product_path(&app, &row.path)?;

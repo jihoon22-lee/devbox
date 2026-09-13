@@ -275,6 +275,9 @@ pub(crate) fn handle(
     cancellation: Option<product_contract::query::Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
+        if let Call::ReadFileReference { reference } = &call {
+            return crate::file_receive::open(&app, reference, _deadline).await;
+        }
         static READERS: OnceLock<Arc<tokio::sync::Semaphore>> = OnceLock::new();
         let permit = READERS
             .get_or_init(|| Arc::new(tokio::sync::Semaphore::new(2)))
@@ -286,6 +289,7 @@ pub(crate) fn handle(
             if cancellation.as_ref().is_some_and(|token|token.requested()){return Err("query_cancelled");}
             let registry=crate::component::provider_host(&app)?.projects()?.snapshot()?;
             match call {
+                Call::DeliverFileReference { reference, operation_id, revision } => crate::file_receive::offer(&app, &reference, &operation_id, &revision),
                 Call::ReadSessionSummary { source_id } => serde_json::to_value(crate::session_summary::delivery(&app, &source_id).map_err(|_| "workspace_summary_stale")?).map_err(|_| "workspace_summary_invalid"),
                 Call::LegacyCommandMappings { ids } => {
                     use crate::core::{legacy_references, registry::LegacyOwner};

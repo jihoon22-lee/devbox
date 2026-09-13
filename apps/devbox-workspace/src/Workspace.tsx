@@ -18,6 +18,7 @@ const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
+const IncomingFileReview=lazy(()=>import("./IncomingFileReview"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
 const NativeRuntimeRoutes = lazy(() => import("./NativeRuntimeRoutes"));
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
@@ -79,7 +80,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
   const refreshRegistry = useCallback(() => setRegistrySignal(value => value + 1), []);
-  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null;column?:number|null}|null>(null);
+  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null;column?:number|null;receivedReference?:string}|null>(null);
   const reloadImportedSession=useCallback(()=>{setFileRequest(null);setSessionRevision(value=>value+1);},[]);
   const [sourceNavigationError, setSourceNavigationError] = useState("");
   const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string;target:NonNullable<Description["context"]>["target"]}|null>(null);
@@ -141,6 +142,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         <LegacyRecoveryImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy||lspImportBusy} onBusyChange={setRecoveryImportBusy} onApplied={reloadImportedSession}/>
         <LegacyLspImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy||recoveryImportBusy} onBusyChange={setLspImportBusy} onApplied={reloadImportedSession}/>
         <div inert={sessionImportBusy||recoveryImportBusy||lspImportBusy}>
+          <IncomingFileReview description={description} onOpen={setFileRequest}/>
           <Files key={sessionRevision} contextKey={JSON.stringify(description.context)} active={route === "files"&&!sessionImportBusy&&!recoveryImportBusy&&!lspImportBusy} onDirtyChange={setEditing} openRequest={fileRequest}/>
         </div>
       </Suspense>

@@ -216,7 +216,7 @@ export interface NavEntry {
   cursor: number;
 }
 
-export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null; column?: number | null}
+export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null; column?: number | null; receivedReference?:string}
 function isWslContext(context: string): boolean {
   try { return JSON.parse(context)?.target?.kind === "wsl"; }
   catch { return false; }
@@ -515,12 +515,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       }
     });
 
-  const openPath = async (path: string, metadata?: SessionState["docs"][number]) => {
+  const openPath = async (path: string, metadata?: SessionState["docs"][number], receivedReference?:string) => {
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
     const openingContext = contextRef.current;
-    const opened = await openFile(path, null);
+    const opened = receivedReference ? await openFile(path, null, receivedReference) : await openFile(path, null);
     if (openingContext !== contextRef.current) throw new Error("프로젝트가 변경되어 파일 열기를 중단했습니다.");
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
@@ -1310,8 +1310,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   // line was given. line/column follow 1-based editor convention (not
   // specified by the applink contract itself); column defaults to the start
   // of the line when omitted.
-  const openApplinkPath = async (path: string, line: number | null, column: number | null) => {
-    const doc = await openPath(path);
+  const openApplinkPath = async (path: string, line: number | null, column: number | null, receivedReference?:string) => {
+    const doc = await openPath(path,undefined,receivedReference);
     if (line === null) return;
     const position = {
       line: Math.max(0, line - 1),
@@ -1483,7 +1483,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (!openRequest || !active || !hydrated || !hydratedRef.current || busyRef.current || renameApplyBusyRef.current
       || openRequest.contextKey !== contextKey || handledOpenRequest.current === openRequest.id) return;
     handledOpenRequest.current = openRequest.id;
-    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null));
+    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null,openRequest.receivedReference));
     // The operation reads current document refs and retains an existing dirty buffer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest, active, hydrated, busy, renameApplyBusy, contextKey]);

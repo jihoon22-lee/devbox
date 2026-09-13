@@ -52,8 +52,8 @@ export interface RenamedFile {
   contentHash: string;
 }
 
-export function openFile(path: string, encoding: Encoding | null = null): Promise<OpenedFile> {
-  return invoke<OpenedFile>("open_file", { request: { path, encoding } });
+export function openFile(path: string, encoding: Encoding | null = null, receivedReference?: string): Promise<OpenedFile> {
+  return invoke<OpenedFile>("open_file", { request: { path, encoding }, ...(receivedReference?{receivedReference}:{}) });
 }
 
 export function pickFiles(): Promise<string[]> {

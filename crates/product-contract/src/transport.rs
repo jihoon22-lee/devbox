@@ -69,6 +69,14 @@ pub enum Call {
     LegacyCommandMappings {
         ids: Vec<String>,
     },
+    ReadFileReference {
+        reference: String,
+    },
+    DeliverFileReference {
+        reference: String,
+        operation_id: String,
+        revision: String,
+    },
     ReadSessionSummary {
         source_id: String,
     },
@@ -158,11 +166,15 @@ impl Guard {
         }
         if (matches!(
             request.call,
-            Call::ProjectSnapshot { .. } | Call::ReadSessionSummary { .. }
+            Call::ProjectSnapshot { .. }
+                | Call::ReadSessionSummary { .. }
+                | Call::DeliverFileReference { .. }
         ) && self.peer.product != "knowledge")
             || (matches!(
                 request.call,
-                Call::InvalidateProjectSnapshot {} | Call::DeliverSessionSummary { .. }
+                Call::InvalidateProjectSnapshot {}
+                    | Call::DeliverSessionSummary { .. }
+                    | Call::ReadFileReference { .. }
             ) && self.peer.product != "workspace")
         {
             return Err("peer_method_denied");
@@ -173,12 +185,16 @@ impl Guard {
             && !(self.peer.product == "knowledge"
                 && matches!(
                     request.call,
-                    Call::ProjectSnapshot { .. } | Call::ReadSessionSummary { .. }
+                    Call::ProjectSnapshot { .. }
+                        | Call::ReadSessionSummary { .. }
+                        | Call::DeliverFileReference { .. }
                 ))
             && !(self.peer.product == "workspace"
                 && matches!(
                     request.call,
-                    Call::InvalidateProjectSnapshot {} | Call::DeliverSessionSummary { .. }
+                    Call::InvalidateProjectSnapshot {}
+                        | Call::DeliverSessionSummary { .. }
+                        | Call::ReadFileReference { .. }
                 ))
             && !matches!(
                 request.call,
@@ -202,6 +218,18 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ReadFileReference { reference } | Call::DeliverFileReference { reference, .. }
+            if !commands::opaque_id(reference) =>
+        {
+            return Err("peer_file_reference_invalid")
+        }
+        Call::DeliverFileReference {
+            operation_id,
+            revision,
+            ..
+        } if !commands::opaque_id(operation_id) || !commands::revision(revision) => {
+            return Err("peer_file_reference_invalid")
+        }
         Call::ReadSessionSummary { source_id } | Call::DeliverSessionSummary { source_id, .. }
             if !commands::opaque_id(source_id) =>
         {
@@ -380,6 +408,34 @@ mod tests {
                 assert_eq!(
                     guard.authorize(&request, 1000).is_ok(),
                     product == if revoke { "workspace" } else { "knowledge" }
+                );
+            }
+        }
+    }
+    #[test]
+    fn file_paths_and_offers_have_distinct_native_product_principals() {
+        for product in ["control-center", "workspace", "knowledge", "api-studio"] {
+            for receive in [false, true] {
+                let mut guard = Guard::new(
+                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                    "native-session",
+                )
+                .unwrap();
+                let mut request = request();
+                request.call = if receive {
+                    Call::DeliverFileReference {
+                        reference: "reference-one".into(),
+                        operation_id: "delivery-one".into(),
+                        revision: "a".repeat(64),
+                    }
+                } else {
+                    Call::ReadFileReference {
+                        reference: "reference-one".into(),
+                    }
+                };
+                assert_eq!(
+                    guard.authorize(&request, 1000).is_ok(),
+                    product == if receive { "knowledge" } else { "workspace" }
                 );
             }
         }

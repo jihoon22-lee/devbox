@@ -2214,6 +2214,39 @@ pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'stati
     app.try_state::<Runtime>().ok_or("initializing")?.host()
 }
 
+pub(crate) async fn approve_received_file(
+    app: &tauri::AppHandle,
+    proof: product_contract::file_reference::Proof,
+    deadline: u64,
+) -> Result<Value, &'static str> {
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("initializing")?
+        .inner()
+        .clone();
+    let _context = runtime.context_activity.enter(false)?;
+    let window = app.get_webview_window("main").ok_or("window_unavailable")?;
+    let context = product_shell_tauri::workspace_context(&window)?;
+    let permit = runtime
+        .file_workers
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| "file_busy")?;
+    let app = app.clone();
+    tokio::task::spawn_blocking(move || {
+        let (_permit, _context) = (permit, _context);
+        let host = runtime.host()?;
+        let path = runtime
+            .files
+            .lock()
+            .map_err(|_| "file_busy")?
+            .approve_received(&app, &host, context.as_ref(), proof, deadline)?;
+        Ok(json!({"path":path,"context":context}))
+    })
+    .await
+    .map_err(|_| "file_unavailable")?
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

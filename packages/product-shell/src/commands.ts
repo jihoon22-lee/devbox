@@ -167,3 +167,14 @@ export async function sendSessionSummary(description:Description,route:string,so
   if(!isOperation(response.operation,provenance)||response.operation.outcome.state!=="succeeded")throw new Error("요약 전달 결과를 확인하지 못했습니다.");
   return receipt(response.value,operationId);
 }
+
+export async function openReceivedFile(description:Description,route:string,reference:string):Promise<{path:string;context:ProjectContext|null}>{
+  if(!nativeMode||description.product.id!=="workspace")throw new Error("Workspace에서 파일을 확인할 수 있습니다.");
+  const header=makeRequest(description.handshake,route,Date.now(),description.context);header.deadlineMs=Date.now()+29000;
+  const provenance={product:"workspace",component:"workspace.commands",requestId:header.requestId,revision:catalog.catalogRevision};
+  const response=await invoke<{operation:unknown;value:unknown}>("plugin:suite|connection",{request:{header,method:{kind:"openReceivedFile",reference}}});
+  if(!isOperation(response.operation,provenance)||response.operation.outcome.state!=="succeeded")throw new Error("파일 열기 요청을 확인하지 못했습니다.");
+  const value=response.value;
+  if(!value||typeof value!=="object"||!("path" in value)||typeof value.path!=="string"||value.path.length>32768||!("context" in value)||(value.context!==null&&!isProjectContext(value.context)))throw new Error("파일 응답을 확인하지 못했습니다.");
+  return value as {path:string;context:ProjectContext|null};
+}
