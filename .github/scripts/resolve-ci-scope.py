@@ -42,6 +42,7 @@ CATALOG_FRONTEND_CONSUMERS = {
     "apps/devbox-launcher",
     "apps/devbox-manager",
     "packages/workspace-features",
+    "packages/control-center-features",
     "packages/knowledge-features",
 }
 CATALOG_RUST_CONSUMERS = {

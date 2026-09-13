@@ -1327,6 +1327,7 @@ version = "0.8.0"
 dependencies = [
  "catalog",
  "data-migration",
+ "devbox-manager",
  "filesystem",
  "product-contract",
  "product-shell-tauri",
@@ -1336,6 +1337,8 @@ dependencies = [
  "sha2 0.11.0",
  "tauri",
  "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
  "tokio",
  "uuid",
  "windows 0.61.3",

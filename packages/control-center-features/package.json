@@ -1,0 +1,33 @@
+{
+  "name": "@devbox/control-center-features",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./manager": "./src/manager/App.tsx",
+    "./manager-api": "./src/manager/api.ts",
+    "./manager-types": "./src/manager/types.ts",
+    "./manager.css": "./src/manager/App.css",
+    "./transport": "./src/transport.ts"
+  },
+  "scripts": {
+    "build": "tsc --noEmit",
+    "test": "vitest run --passWithNoTests"
+  },
+  "dependencies": {
+    "@devbox/a11y": "workspace:*",
+    "react": "^19.1.0",
+    "react-dom": "^19.1.0",
+    "@tauri-apps/api": "^2",
+    "@tauri-apps/plugin-opener": "^2",
+    "@devbox/tokens": "workspace:*",
+    "@devbox/context-menu": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.8",
+    "@types/react-dom": "^19.1.6",
+    "typescript": "~5.8.3",
+    "vitest": "^4.1.11",
+    "jsdom": "^30.0.1"
+  }
+}

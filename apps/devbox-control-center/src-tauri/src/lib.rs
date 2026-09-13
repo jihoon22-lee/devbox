@@ -11,6 +11,9 @@ pub fn run() {
                 &[],
             ))
             .plugin(commands::plugin())
+            .plugin(tauri_plugin_dialog::init())
+            .plugin(tauri_plugin_opener::init())
+            .plugin(tools_host::plugin())
     })
     .expect("error while running Devbox Control Center");
 }
@@ -20,3 +23,5 @@ mod command_receipts;
 mod commands;
 
 mod launcher_import;
+
+mod tools_host;
