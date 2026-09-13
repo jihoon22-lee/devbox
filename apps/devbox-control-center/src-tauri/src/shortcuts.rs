@@ -1,6 +1,6 @@
 //! Control Center owns the native shortcut registration. No startup entry is
 //! added, and other installation namespaces cannot become simultaneous owners.
-#[path = "../../../../devbox-launcher/src-tauri/src/hotkey.rs"]
+#[path = "../../../devbox-launcher/src-tauri/src/hotkey.rs"]
 #[allow(dead_code)] // The product uses the common multi-binding worker, not legacy window toggling.
 mod native;
 use serde::Serialize;
@@ -21,23 +21,13 @@ pub(crate) struct View {
 pub(crate) struct Owner {
     state: Mutex<State>,
 }
+#[derive(Default)]
 struct State {
     config: Config,
     runtime: native::RuntimeState,
     issue: Option<String>,
     #[cfg(windows)]
     lease: Option<Lease>,
-}
-impl Default for State {
-    fn default() -> Self {
-        Self {
-            config: Config::default(),
-            runtime: native::RuntimeState::default(),
-            issue: None,
-            #[cfg(windows)]
-            lease: None,
-        }
-    }
 }
 impl Drop for State {
     fn drop(&mut self) {
@@ -84,9 +74,12 @@ fn callback() -> native::ShortcutCallback {
         if let Some(window) = app.get_webview_window("main") {
             // WebView2 can hold keyboard focus while Tao's top-level cache is
             // false. The IME/modal guard needs this exact foreground window.
+            #[cfg(windows)]
             let was_focused = window.hwnd().is_ok_and(|handle| unsafe {
                 windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow().0 == handle.0
             });
+            #[cfg(not(windows))]
+            let was_focused = window.is_focused().unwrap_or(false);
             if command == "control-center.launcher" {
                 let _ = window.show();
                 let _ = window.unminimize();
@@ -197,6 +190,7 @@ impl Owner {
             );
             #[cfg(windows)]
             if !restored {
+                let mut state = state;
                 state.lease.take();
             }
             return Ok(view(&state));
@@ -222,6 +216,7 @@ impl Owner {
     }
     /// Explicit migration installs a disabled configuration only when no suite
     /// preference exists. Existing settings and native registrations are preserved.
+    #[cfg_attr(not(windows), allow(dead_code))]
     pub(crate) fn import_disabled(
         &self,
         app: &tauri::AppHandle,
@@ -257,7 +252,7 @@ impl Owner {
         Ok(())
     }
     pub(crate) fn stop(&self) {
-        if let Ok(mut state) = self.state.lock() {
+        if let Ok(state) = self.state.lock() {
             state.runtime.stop_global_listener();
             #[cfg(windows)]
             {

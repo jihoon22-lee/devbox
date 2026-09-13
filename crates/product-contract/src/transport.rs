@@ -266,10 +266,10 @@ pub fn validate_call(call: &Call) -> Result<()> {
             || !commands::revision(revision)
             || !commands::opaque_id(operation_id) =>
         {
-            Err("peer_request_invalid")
+            return Err("peer_request_invalid");
         }
         Call::ReadTransformSelection { id } if !commands::opaque_id(id) => {
-            Err("peer_request_invalid")
+            return Err("peer_request_invalid");
         }
         Call::DeliverTransformSelection {
             id,
@@ -279,7 +279,7 @@ pub fn validate_call(call: &Call) -> Result<()> {
             || !commands::opaque_id(operation_id)
             || !commands::revision(revision) =>
         {
-            Err("peer_request_invalid")
+            return Err("peer_request_invalid");
         }
 
         Call::ReadKnowledgeDraft { component, id }

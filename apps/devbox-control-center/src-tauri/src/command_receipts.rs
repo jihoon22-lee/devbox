@@ -32,6 +32,36 @@ fn now() -> u64 {
         .min(u128::from(u64::MAX)) as u64
 }
 impl Owner {
+    pub(crate) fn operation_rows(
+        &self,
+    ) -> Result<Vec<product_contract::operations::Row>, &'static str> {
+        use product_contract::operations::{Phase as State, Row};
+        let entries = self.entries.lock().map_err(|_| "command_receipts_busy")?;
+        entries
+            .iter()
+            .filter(|(_, entry)| entry.expires > now())
+            .map(|(id, entry)| {
+                let (phase, label) = match entry.phase {
+                    Some(Phase::AwaitingReview) => (State::Review, "제품 화면 열기 요청"),
+                    Some(Phase::Opening) => (State::Running, "제품 화면 열기 요청"),
+                    Some(Phase::Opened) => (State::Succeeded, "제품 화면 열기 요청"),
+                    Some(Phase::Rejected) => (State::Failed, "제품 화면 열기 거절"),
+                    Some(Phase::Expired) => (State::Unknown, "제품 화면 열기 만료"),
+                    None => (State::Unknown, "제품 화면 열기 확인 필요"),
+                };
+                Row::new(
+                    "control-center",
+                    "control-center.commands",
+                    "products",
+                    id,
+                    label,
+                    phase,
+                    &entry.phase,
+                )
+            })
+            .collect()
+    }
+
     fn reserve(&self, product: &str, command: &Request) -> Result<(), &'static str> {
         product_contract::transport::validate_call(&Call::OpenCommand {
             request: command.clone(),

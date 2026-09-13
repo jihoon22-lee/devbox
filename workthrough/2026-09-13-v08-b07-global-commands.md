@@ -466,3 +466,26 @@ All frontend builds completed. The budget check found Workspace initial JS at
 its UI and loading it after the shell. Other products' passed builds/budgets remain
 valid; rerun only Workspace build/budget, then continue unrun frontend tests/types
 and Rust checks. Full compiler continuation before that failure took 137.752 seconds.
+
+
+## Completed local PR audit
+
+The all-scope audit and failure continuations are complete: frontend builds,
+budgets, tests and types passed; Rust check, Clippy, fmt, workspace tests and
+doctests passed with workspace-wsl/test-fixtures. Workspace initial bundle is
+249,556 raw / 75,506 gzip bytes. Passed stages were preserved rather than restarted.
+Final Rust continuation took 957.619 seconds including test compilation; Clippy
+and formatting had already passed before test execution.
+
+Repairs preserve the legacy two-argument openIn adapter when no reference exists,
+serialize private bounded receipt records instead of native descriptors, correct
+native module paths/Windows cfg boundaries, and return transport authorization
+errors directly. Native Operations now includes Control Center's own screen-open
+receipts, with expired requests unknown and navigation success explicitly separate
+from business-task success. Existing test mocks subscribe/unsubscribe to the new
+connection event. Shared test-only helpers and module placement were corrected
+without relaxing the Clippy gate.
+
+Windows four-product fixture and final CI remain required. B06 dependency is
+3033d68; its retained-artifact diagnosis commits will be incorporated before merge.
+No local Docker/WSL provisioning or host service/network changes were performed.

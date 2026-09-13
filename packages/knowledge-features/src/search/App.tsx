@@ -697,7 +697,8 @@ export default function App({ onNoteOpen, projectRevision = 0, savedSearch }: { 
     const target = availableTargets?.find((candidate) => `open-in:${candidate.id}` === id);
     if (!target) return;
     setError(null);
-    void openIn(target.id, result.path, result.reference).catch((cause: unknown) => {
+    const opening = result.reference ? openIn(target.id, result.path, result.reference) : openIn(target.id, result.path);
+    void opening.catch((cause: unknown) => {
       setError(cause instanceof Error ? cause.message : String(cause));
     });
   };

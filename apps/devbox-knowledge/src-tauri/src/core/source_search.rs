@@ -138,6 +138,7 @@ impl SearchJobs {
             .map_err(|_| "search_unavailable".to_owned())?;
         Ok(())
     }
+    #[cfg(test)]
     pub fn begin(&self, source: &str, store_generation: &str) -> Result<Work, String> {
         self.begin_for(source, store_generation, Consumer::Product)
     }
@@ -221,6 +222,7 @@ impl SearchJobs {
             project_valid: None,
         })
     }
+    #[cfg(test)]
     pub fn snapshot(&self, generation: &str) -> Result<Snapshot, String> {
         self.snapshot_for(generation, Consumer::Product)
     }
@@ -252,6 +254,7 @@ impl SearchJobs {
             serde_json::json!(inner.workers.get(source).copied().unwrap_or(0));
         Ok(snapshot)
     }
+    #[cfg(test)]
     pub fn cancel(&self, generation: &str) -> Result<(), String> {
         self.cancel_for(generation, Consumer::Product)
     }

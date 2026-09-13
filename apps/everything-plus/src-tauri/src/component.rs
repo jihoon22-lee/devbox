@@ -248,10 +248,11 @@ pub fn product_index_operation(app: &tauri::AppHandle) -> Option<(bool, bool, bo
     use std::sync::atomic::Ordering;
     use tauri::Manager;
     let state = app.try_state::<std::sync::Arc<crate::commands::indexing::AppState>>()?;
+    let failed = state.last_error.lock().ok()?.is_some();
     Some((
         state.indexing.load(Ordering::Acquire),
         state.cancel_requested.load(Ordering::Acquire),
-        state.last_error.lock().ok()?.is_some(),
+        failed,
         state.indexed.load(Ordering::Acquire).max(0) as u64,
         state.last_indexed_at.load(Ordering::Acquire).max(0) as u64,
     ))
