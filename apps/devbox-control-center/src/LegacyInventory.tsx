@@ -24,7 +24,7 @@ export default function LegacyInventory({description,route}:ShellContentProps){
   <h3>Windows 설치 프로그램 등록</h3>
   {entries.installers===null?<p>등록 상태를 확인하지 못했습니다.</p>:<>
    {!entries.installers.complete&&<p role="alert">일부 등록 영역을 읽지 못해 목록이 완전하지 않습니다.</p>}
-   {entries.installers.entries.length?<table><thead><tr><th>앱</th><th>버전</th><th>등록 범위</th><th>파일 확인</th></tr></thead><tbody>{entries.installers.entries.map(entry=><tr key={entry.registrationId}><td>{entry.app}</td><td>{entry.version??"—"}</td><td>{entry.scope==="currentUser"?"현재 사용자":"컴퓨터"} · {entry.architecture}</td><td>추가 확인 필요</td></tr>)}</tbody></table>:<p>읽은 영역에 해당 앱의 등록이 없습니다.</p>}
+   {entries.installers.entries.length?<table><thead><tr><th>앱</th><th>버전</th><th>등록 범위</th><th>파일 확인</th></tr></thead><tbody>{entries.installers.entries.map(entry=><tr key={entry.registrationId}><td>{entry.app}</td><td>{entry.version??"—"}</td><td>{entry.scope==="currentUser"?"현재 사용자":"컴퓨터"} · {entry.architecture}</td><td>{entry.binary==="verified"?"v0.7 실행 파일 확인됨":"추가 확인 필요"}</td></tr>)}</tbody></table>:<p>읽은 영역에 해당 앱의 등록이 없습니다.</p>}
    <p>다른 사용자 계정의 등록은 조사하지 않았습니다.</p>
   </>}
   <p>설치 프로그램 실행 기록만으로 현재 설치 위치나 제거 가능 여부를 확정하지 않습니다. 직접 복사한 미등록 앱은 이 목록에 포함되지 않습니다.</p>

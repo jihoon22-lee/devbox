@@ -1,0 +1,222 @@
+{
+  "schemaVersion": 1,
+  "releaseTag": "v0.7.0",
+  "generatedAt": "2026-09-03T17:31:49Z",
+  "apps": [
+    {
+      "id": "port-manager",
+      "version": "0.4.0",
+      "portable": {
+        "name": "port-manager.exe",
+        "sha256": "ea7adfd1f9318694d94abeb837f7943f141ef0ba84c8c4b4f4b85ac198089ffd",
+        "size": 9889280
+      },
+      "installer": {
+        "name": "port-manager_0.4.0_x64-setup.exe",
+        "sha256": "5a3698186f210b262aea7a5a8b32ac5b59cdd531b198b2ee526af0240ee79129",
+        "size": 2331290
+      }
+    },
+    {
+      "id": "developer-toolbox",
+      "version": "0.4.1",
+      "portable": {
+        "name": "developer-toolbox.exe",
+        "sha256": "2dfd1257a20522ddfe57122e1f4ebb408d7ec130cc5344a6ad1f25605dcab650",
+        "size": 11585536
+      },
+      "installer": {
+        "name": "developer-toolbox_0.4.1_x64-setup.exe",
+        "sha256": "cfb776f514d97cdc635610678d96ef65bee93105360f2aae0acfa96352b51a91",
+        "size": 2900611
+      }
+    },
+    {
+      "id": "wsl-desktop",
+      "version": "0.6.0",
+      "portable": {
+        "name": "wsl-desktop.exe",
+        "sha256": "bb93b9d21bc4cbea9aa0535cb552ebdd6fb5d06a46827554ba76f34653406dfb",
+        "size": 11315200
+      },
+      "installer": {
+        "name": "wsl-desktop_0.6.0_x64-setup.exe",
+        "sha256": "0fa033a0b0ea81cc067def1a879b391ff9a130088e2b80f2583dd00ab139238d",
+        "size": 2804699
+      }
+    },
+    {
+      "id": "api-playground",
+      "version": "0.5.1",
+      "portable": {
+        "name": "api-playground.exe",
+        "sha256": "5b184f330c67c6d39e921bc069894bc39429ba5abc878c9930b0a50efef6fcd7",
+        "size": 21065216
+      },
+      "installer": {
+        "name": "api-playground_0.5.1_x64-setup.exe",
+        "sha256": "c9fdf18e91e7965cecb8d4e5b1f775367d8b27cf2d98dfd6f0fd09057b57d958",
+        "size": 5468386
+      }
+    },
+    {
+      "id": "everything-plus",
+      "version": "0.5.0",
+      "portable": {
+        "name": "everything-plus.exe",
+        "sha256": "b3cd0359c2844e348038b653548c7eb3c31c5270a690fffa17f8e0e1ff90456a",
+        "size": 13362688
+      },
+      "installer": {
+        "name": "everything-plus_0.5.0_x64-setup.exe",
+        "sha256": "86cf4d123ebf92bf6e1bc962523f91f57519969178d61575cede0f90d3472ba4",
+        "size": 3737617
+      }
+    },
+    {
+      "id": "knowledge-base",
+      "version": "0.5.1",
+      "portable": {
+        "name": "knowledge-base.exe",
+        "sha256": "00d70719f02be0767b46db9f0cb948a0ad74a22d844a2c2c0e312d0cb714e48f",
+        "size": 14786560
+      },
+      "installer": {
+        "name": "knowledge-base_0.5.1_x64-setup.exe",
+        "sha256": "a1a9a85c4bb799afaabb4c38cf87209d500d4650cde9cb0fd8815a2889bcff95",
+        "size": 4778908
+      }
+    },
+    {
+      "id": "life-log",
+      "version": "0.5.0",
+      "portable": {
+        "name": "life-log.exe",
+        "sha256": "0985b992d31581d87e27548f88a07404b9fddb8d3b346692329eb30ed3ef3fe8",
+        "size": 13939200
+      },
+      "installer": {
+        "name": "life-log_0.5.0_x64-setup.exe",
+        "sha256": "d95fe92700e5e0d1ec19b7f49efb0b2764c3a24b594c1ee3c4ea383efa057d7d",
+        "size": 3690187
+      }
+    },
+    {
+      "id": "devbox-manager",
+      "version": "0.5.1",
+      "portable": {
+        "name": "devbox-manager.exe",
+        "sha256": "7cf818538eaa62eedce8750149afb34bcab12260b196ec58bf53bf470e65e3e8",
+        "size": 16836608
+      },
+      "installer": {
+        "name": "devbox-manager_0.5.1_x64-setup.exe",
+        "sha256": "89e90324d1d5f80ef0ed383b072feb535ddad67070a326fce01a5e00d94a434a",
+        "size": 4829453
+      }
+    },
+    {
+      "id": "code-pad",
+      "version": "0.5.1",
+      "portable": {
+        "name": "code-pad.exe",
+        "sha256": "cc5276e5d0784c5094183a5a74bf214aaa1d7ecf525f07ad4eadf5a148bcbc5f",
+        "size": 20785152
+      },
+      "installer": {
+        "name": "code-pad_0.5.1_x64-setup.exe",
+        "sha256": "1519fddaa98168e06ec02d5457ff74280f33f515b4ebcaa1ab10000ed5f402f8",
+        "size": 6525253
+      }
+    },
+    {
+      "id": "run-manager",
+      "version": "0.5.1",
+      "portable": {
+        "name": "run-manager.exe",
+        "sha256": "88adbc4e5bf1bd21d6e4f7954ffeb1b6958d917a4e7e013dc6c9e71fe915ccc9",
+        "size": 16719872
+      },
+      "installer": {
+        "name": "run-manager_0.5.1_x64-setup.exe",
+        "sha256": "c5086f35b30fcfb7a9b09a79bfe2e2ec217553e738fa73df4e85a3f1918205c9",
+        "size": 4386246
+      }
+    },
+    {
+      "id": "workbench",
+      "version": "0.3.0",
+      "portable": {
+        "name": "workbench.exe",
+        "sha256": "b39b24f8e5d454997b41095a465854f78346bf2f734cd8afe2155074fac52eee",
+        "size": 10829312
+      },
+      "installer": {
+        "name": "workbench_0.3.0_x64-setup.exe",
+        "sha256": "ce60d5da03b9b576a49299f9d75999916ff3d7bc1ac1e2228ca9ae58674a25bb",
+        "size": 2608097
+      }
+    },
+    {
+      "id": "webhook-lab",
+      "version": "0.3.0",
+      "portable": {
+        "name": "webhook-lab.exe",
+        "sha256": "7f1cf001bbd2d3eccc7d2e3fc13cedd11a2677d7edc740d4bbc489a5a6aa9bb9",
+        "size": 9567232
+      },
+      "installer": {
+        "name": "webhook-lab_0.3.0_x64-setup.exe",
+        "sha256": "80847f2f895b42c9a4a0985822f619f938bfb9e28c2a8e57303fd150a3ca5593",
+        "size": 2317341
+      }
+    },
+    {
+      "id": "repo-manager",
+      "version": "0.3.0",
+      "portable": {
+        "name": "repo-manager.exe",
+        "sha256": "25bc1ad68b949a18aaf5a73586dffee7649b88e09ffcd746c2db1121e0088568",
+        "size": 14526976
+      },
+      "installer": {
+        "name": "repo-manager_0.3.0_x64-setup.exe",
+        "sha256": "20e710b638e192cce6116e50d0d45515e89f9655496fb8a8e053292687624bbf",
+        "size": 3872304
+      }
+    },
+    {
+      "id": "devbox-launcher",
+      "version": "0.2.0",
+      "portable": {
+        "name": "devbox-launcher.exe",
+        "sha256": "e31ec7d1c7bcf5f4fec86e84efa8e6d4fabe9010d2d6b0007120ff137c81bd49",
+        "size": 9394688
+      },
+      "installer": {
+        "name": "devbox-launcher_0.2.0_x64-setup.exe",
+        "sha256": "0627892d3c9f427b2c17049d8ac394d2af316a8e8822e2b4f98d3a4803f74b8e",
+        "size": 2259232
+      }
+    },
+    {
+      "id": "log-lens",
+      "version": "0.2.1",
+      "portable": {
+        "name": "log-lens.exe",
+        "sha256": "051f9f8bb190025910b471d1fd12b3b8bcbf05eb0b0e4968d3b193adebbbad0b",
+        "size": 10898432
+      },
+      "installer": {
+        "name": "log-lens_0.2.1_x64-setup.exe",
+        "sha256": "faffd0f532e8b351f7d674939797d5bc219f7e4ef8c7c29eea7e5a086906b5e8",
+        "size": 2632544
+      }
+    }
+  ],
+  "notices": {
+    "name": "THIRD_PARTY_NOTICES.md",
+    "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+    "size": 146028
+  }
+}

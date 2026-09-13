@@ -127,3 +127,12 @@ ID contract (37.819 seconds). The completed bootstrap/native description and sha
 shell types passed (7.497 seconds). No B08 detailed tests, builds, actual staging or
 installer execution have run. The ARP module now belongs only to Control Center,
 not the shared suite platform source included by all four product crates.
+
+
+Legacy binary observation now verifies declared installer executables against the
+actual public v0.7 release manifest, pinned to the existing baseline SHA-256. The
+manifest was downloaded read-only and matched the 15-app baseline before inclusion.
+Native ARP inspection validates the declared local root, exact display-icon target,
+version, executable size/hash and file identity. This confirms only the executable;
+uninstaller verification/cleanup remains separate. Minimum CC library/bin and UI
+types passed (8.071 seconds); no installed legacy app or uninstaller was run.
