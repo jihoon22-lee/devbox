@@ -94,57 +94,7 @@ impl Release {
         {
             return Err("suite_asset_name_invalid");
         }
-        let mut ids = BTreeSet::new();
-        for product in &self.products {
-            if !PRODUCTS.contains(&product.id.as_str())
-                || !ids.insert(&product.id)
-                || product.version != self.suite_version
-                || product.portable.name
-                    != format!("devbox-{}_{}_x64.zip", product.id, self.suite_version)
-            {
-                return Err("suite_product_invalid");
-            }
-            asset(&product.portable)?;
-            let mut names = BTreeSet::new();
-            let mut total = 0u64;
-            for file in &product.files {
-                asset(file)?;
-                if !product_file(&product.id, &file.name) || !names.insert(file.name.as_str()) {
-                    return Err("suite_package_file_invalid");
-                }
-                total = total
-                    .checked_add(file.size)
-                    .filter(|v| *v <= MAX_PACKAGE_BYTES)
-                    .ok_or("suite_package_limit")?;
-            }
-            let exe = format!("devbox-{}.exe", product.id);
-            let mut expected = vec![
-                exe.as_str(),
-                "THIRD_PARTY_NOTICES.md",
-                "devbox-installation.json",
-            ];
-            if product.id == "workspace" {
-                expected.extend([
-                    "resources/wsl/manifest.json",
-                    "resources/wsl/devbox-workspace-wsl",
-                ]);
-            }
-            if product.id == "control-center" {
-                expected.push("resources/suite/devbox-suite-bootstrap.exe");
-            }
-            if names != expected.into_iter().collect() {
-                return Err("suite_package_incomplete");
-            }
-            if product
-                .files
-                .iter()
-                .find(|f| f.name == "THIRD_PARTY_NOTICES.md")
-                .is_none_or(|f| f.sha256 != self.notices.sha256 || f.size != self.notices.size)
-            {
-                return Err("suite_notices_mismatch");
-            }
-        }
-        Ok(())
+        validate_products(&self.products, &self.suite_version, &self.notices)
     }
     pub fn asset_url(&self, asset: &Asset) -> Result<String> {
         self.validate()?;
@@ -162,5 +112,95 @@ impl Release {
             return Err("suite_asset_url_denied");
         }
         Ok(url)
+    }
+}
+
+fn validate_products(products: &[ProductPackage], version: &str, notices: &Asset) -> Result<()> {
+    let mut ids = BTreeSet::new();
+    for product in products {
+        if !PRODUCTS.contains(&product.id.as_str())
+            || !ids.insert(&product.id)
+            || product.version != version
+            || product.portable.name != format!("devbox-{}_{}_x64.zip", product.id, version)
+        {
+            return Err("suite_product_invalid");
+        }
+        asset(&product.portable)?;
+        let mut names = BTreeSet::new();
+        let mut total = 0u64;
+        for file in &product.files {
+            asset(file)?;
+            if !product_file(&product.id, &file.name) || !names.insert(file.name.as_str()) {
+                return Err("suite_package_file_invalid");
+            }
+            total = total
+                .checked_add(file.size)
+                .filter(|v| *v <= MAX_PACKAGE_BYTES)
+                .ok_or("suite_package_limit")?;
+        }
+        let exe = format!("devbox-{}.exe", product.id);
+        let mut expected = vec![
+            exe.as_str(),
+            "THIRD_PARTY_NOTICES.md",
+            "devbox-installation.json",
+        ];
+        if product.id == "workspace" {
+            expected.extend([
+                "resources/wsl/manifest.json",
+                "resources/wsl/devbox-workspace-wsl",
+            ]);
+        }
+        if product.id == "control-center" {
+            expected.push("resources/suite/devbox-suite-bootstrap.exe");
+        }
+        if names != expected.into_iter().collect() {
+            return Err("suite_package_incomplete");
+        }
+        if product
+            .files
+            .iter()
+            .find(|f| f.name == "THIRD_PARTY_NOTICES.md")
+            .is_none_or(|f| f.sha256 != notices.sha256 || f.size != notices.size)
+        {
+            return Err("suite_notices_mismatch");
+        }
+    }
+    Ok(())
+}
+
+#[derive(Clone, Debug, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct Payload {
+    pub schema_version: u32,
+    pub suite_version: String,
+    pub source_sha: String,
+    pub protocol_version: u32,
+    pub products: Vec<ProductPackage>,
+    pub notices: Asset,
+}
+impl Payload {
+    pub fn parse(bytes: &[u8]) -> Result<Self> {
+        if bytes.len() > MAX_RELEASE_BYTES {
+            return Err("suite_payload_limit");
+        }
+        let value: Self = serde_json::from_slice(bytes).map_err(|_| "suite_payload_invalid")?;
+        if value.schema_version != 1
+            || value.protocol_version != 1
+            || !version(&value.suite_version)
+            || value.products.len() != 4
+            || value.source_sha.len() != 40
+            || !value
+                .source_sha
+                .bytes()
+                .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
+        {
+            return Err("suite_payload_invalid");
+        }
+        asset(&value.notices)?;
+        if value.notices.name != "THIRD_PARTY_NOTICES.md" {
+            return Err("suite_notices_mismatch");
+        }
+        validate_products(&value.products, &value.suite_version, &value.notices)?;
+        Ok(value)
     }
 }

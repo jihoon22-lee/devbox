@@ -28,6 +28,41 @@ fn read(path: &Path, limit: u64) -> Result<(Vec<u8>, File)> {
     }
     Ok((bytes, file))
 }
+pub(crate) fn generation_root(executable: &Path) -> Option<std::path::PathBuf> {
+    let products = executable.parent()?.parent()?;
+    let generation = products.parent()?;
+    let generations = generation.parent()?;
+    if products.file_name()? != "products" || generations.file_name()? != "generations" {
+        return None;
+    }
+    Some(generations.parent()?.to_owned())
+}
+pub(crate) fn activation(
+    executable: &Path,
+    version: &str,
+) -> Result<Option<product_contract::activation::Activation>> {
+    let Some(root) = generation_root(executable) else {
+        return Ok(None);
+    };
+    let (manifest_bytes, _manifest) = read(
+        &root.join("devbox-installation.json"),
+        MAX_MANIFEST_BYTES as u64,
+    )?;
+    let manifest = Manifest::parse(&manifest_bytes, version)?;
+    if !manifest
+        .members
+        .iter()
+        .any(|member| root.join(&member.executable) == executable)
+    {
+        return Err("installation_generation_mismatch");
+    }
+    let (bytes, _marker) = read(&root.join("devbox-activation.json"), 4096)?;
+    let marker: product_contract::activation::Activation =
+        serde_json::from_slice(&bytes).map_err(|_| "suite_activation_invalid")?;
+    marker.validate(&manifest)?;
+    Ok(Some(marker))
+}
+
 pub(crate) fn namespace(executable: &Path, product: &str, version: &str) -> Result<String> {
     let product_dir = executable.parent().ok_or("installation_path_invalid")?;
     let Some(products) = product_dir

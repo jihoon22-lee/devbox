@@ -102,3 +102,28 @@ install entrypoints remain unregistered, with their intentional dead code annota
 limited to that module when standalone is disabled. ZIP's full existing deflate
 feature now selects a backend even when Control Center is compiled alone. Minimum
 native/frontend type checks passed after that feature correction (9.620 seconds).
+
+
+## Bootstrap and activation barrier
+
+Control Center now has a separate devbox-suite-bootstrap binary target. Its stage
+entrypoint validates its own image against the private payload, reuses Manager's
+local-root protections, admits a new empty generation directory, and records a
+root-identity/payload-bound owner and receipt. A fully written interrupted stage can
+be re-observed without overwriting files; partial or unrecognized content requires
+recovery and remains preserved. No registry edit, active-generation replacement or
+user-data migration is implemented by this stage-only command.
+
+The shared native activation marker distinguishes Import/Health/Committed/Recover.
+Generation product requests cannot start business writers before commit; native
+Runtime initialization, Knowledge background activation and standalone API service
+workers check the same barrier. Peer command execution also checks it. Products
+show the pending phase in their shared shell. Direct development/portable behavior
+is preserved. The bootstrap install/finalize/rollback orchestration, owned-worker
+admission, owner importer reports and installer UI remain unfinished.
+
+Minimum library/bin type checking passed after using the existing opaque operation
+ID contract (37.819 seconds). The completed bootstrap/native description and shared
+shell types passed (7.497 seconds). No B08 detailed tests, builds, actual staging or
+installer execution have run. The ARP module now belongs only to Control Center,
+not the shared suite platform source included by all four product crates.

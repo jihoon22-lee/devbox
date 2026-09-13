@@ -11,7 +11,7 @@ export interface ProjectContext {
   revision: number;
 }
 export interface Handshake { protocolVersion: number; product: string; installationId: string; sessionId: string }
-export interface Description { handshake: Handshake; product: typeof catalog.products[number]; features: Feature[]; context: ProjectContext | null }
+export interface Description { handshake: Handshake; product: typeof catalog.products[number]; features: Feature[]; context: ProjectContext | null; deliveryState?: "direct" | "import" | "health" | "committed" | "recover" | "unavailable" }
 export interface RouteRequest { protocolVersion: number; installationId: string; sessionId: string; requestId: string; deadlineMs: number; route: string; context?: ProjectContext }
 export interface RouteStatus { route: string; availability: string; operation: Operation }
 
@@ -40,6 +40,7 @@ export async function describe(product: ProductId): Promise<Description> {
   const result = nativeMode ? await invoke<Description>("plugin:product-shell|describe") : fixtureDescription(product);
   if (result.handshake.protocolVersion !== 1 || result.handshake.product !== product || result.product.id !== product
     || result.features.some((feature) => feature.owner !== product)
+    || (result.deliveryState !== undefined && !["direct","import","health","committed","recover","unavailable"].includes(result.deliveryState))
     || (result.context !== null && !isProjectContext(result.context))) throw new Error("제품 연결 정보를 확인할 수 없습니다.");
   return result;
 }

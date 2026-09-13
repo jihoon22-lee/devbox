@@ -25,3 +25,9 @@ mod commands;
 mod launcher_import;
 
 mod tools_host;
+
+pub mod bootstrap;
+
+#[cfg(windows)]
+#[path = "platform/legacy_installer.rs"]
+mod legacy_installer;

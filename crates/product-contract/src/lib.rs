@@ -357,3 +357,5 @@ pub mod knowledge_draft;
 pub mod transform_selection;
 
 pub mod operations;
+
+pub mod activation;

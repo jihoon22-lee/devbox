@@ -220,7 +220,9 @@ async fn connection(
 }
 
 #[cfg(windows)]
-pub(crate) fn capture_own(product: &str) -> Result<platform::component_scope::CapturedScope, &'static str> {
+pub(crate) fn capture_own(
+    product: &str,
+) -> Result<platform::component_scope::CapturedScope, &'static str> {
     let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
     let root = image
         .parent()
@@ -589,6 +591,16 @@ fn handler(
         let navigation = navigation.clone();
         let queries = queries.clone();
         Box::pin(async move {
+            if !matches!(
+                &call,
+                Call::Describe {}
+                    | Call::ReadOperations {}
+                    | Call::CommandStatus { .. }
+                    | Call::ShortcutStatus {}
+            ) {
+                product_shell_tauri::require_suite_writable(&app)?;
+            }
+
             let cancellation = match &call {
                 Call::Query { query_id, .. } => Some(queries.begin(query_id, deadline, now())?),
                 Call::CancelQuery { query_id } => {
