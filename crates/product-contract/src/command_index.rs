@@ -6,7 +6,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, BTreeSet};
 
 type Result<T> = std::result::Result<T, &'static str>;
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct Index {
     commands: BTreeMap<String, Descriptor>,
 }

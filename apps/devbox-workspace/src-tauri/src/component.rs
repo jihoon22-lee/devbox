@@ -2192,6 +2192,15 @@ pub(crate) fn provider_context(
     Ok(())
 }
 
+pub(crate) fn terminal_owner(
+    app: &tauri::AppHandle,
+) -> Result<Arc<crate::terminal_host::Terminals>, &'static str> {
+    Ok(app
+        .try_state::<Runtime>()
+        .ok_or("initializing")?
+        .terminals
+        .clone())
+}
 pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'static str> {
     app.try_state::<Runtime>().ok_or("initializing")?.host()
 }

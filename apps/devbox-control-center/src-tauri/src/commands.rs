@@ -408,6 +408,79 @@ async fn command_shortcut(
     })
 }
 
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct TriggerRequest {
+    header: RouteRequest,
+    command: String,
+    operation_id: String,
+}
+#[tauri::command]
+async fn command_trigger_shortcut(
+    window: WebviewWindow,
+    request: TriggerRequest,
+) -> Result<Response<serde_json::Value>, Problem> {
+    let provenance =
+        product_shell_tauri::authorize(&window, &request.header, "control-center.commands")?;
+    let result = async {
+        if uuid::Uuid::parse_str(&request.operation_id).is_err() {
+            return Err("shortcut_operation_invalid");
+        }
+        let call = product_contract::transport::Call::ResolveShortcut {
+            command: request.command.clone(),
+        };
+        product_contract::transport::validate_call(&call)?;
+        let product = request
+            .command
+            .split('.')
+            .next()
+            .ok_or("shortcut_command_invalid")?;
+        let value = crate::suite::remote(
+            window.app_handle(),
+            product,
+            call,
+            request.header.deadline_ms,
+        )
+        .await?;
+        let descriptor: Descriptor =
+            serde_json::from_value(value).map_err(|_| "shortcut_command_invalid")?;
+        if descriptor.owner != product {
+            return Err("shortcut_owner_invalid");
+        }
+        let command = Request {
+            operation_id: request.operation_id,
+            command_id: descriptor.id.clone(),
+            revision: descriptor.revision.clone(),
+            context: descriptor.context.clone(),
+            selection_id: None,
+        };
+        descriptor.validate_request(&command)?;
+        crate::suite::remote(
+            window.app_handle(),
+            product,
+            product_contract::transport::Call::OpenCommand { request: command },
+            request.header.deadline_ms,
+        )
+        .await
+    }
+    .await;
+    let value = result.map_err(|_| {
+        let _ = window.show();
+        let _ = window.set_focus();
+        Problem {
+            code: ProblemCode::Unavailable,
+            provenance: provenance.clone(),
+        }
+    })?;
+    Ok(Response {
+        operation: Operation {
+            provenance,
+            outcome: OperationState::Succeeded {},
+        },
+        value,
+    })
+}
+
 #[tauri::command]
 async fn command_cancel(
     window: WebviewWindow,
@@ -447,7 +520,8 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             command_open,
             command_status,
             command_preferences,
-            command_shortcut
+            command_shortcut,
+            command_trigger_shortcut
         ])
         .setup(|app, _| {
             let catalog =
@@ -462,6 +536,13 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             let handle = app.clone();
             app.listen("suite-disconnected", move |_| {
                 handle.state::<crate::shortcuts::Owner>().stop();
+            });
+            let handle = app.clone();
+            app.listen("suite-connected", move |_| {
+                let handle = handle.clone();
+                tauri::async_runtime::spawn_blocking(move || {
+                    let _ = handle.state::<crate::shortcuts::Owner>().resume(&handle);
+                });
             });
             Ok(())
         })

@@ -1,8 +1,9 @@
-import {useState} from "react";
+import {lazy,Suspense,useState} from "react";
 import {invoke} from "@tauri-apps/api/core";
 import {makeRequest,nativeMode,type Description} from "./api";
 import {isOperation,type Operation} from "./operation";
 import catalog from "../../../apps/products.json";
+const ShortcutSettings=lazy(()=>import("./ShortcutSettings"));
 interface Review {token:string;version:string;root:string;installationId:string;generation:string;products:{product:string;available:boolean}[]}
 interface Status {connected:boolean;generation:string|null}
 const labels:Record<string,string>=Object.fromEntries(catalog.products.map(product=>[product.id,product.label]));
@@ -40,6 +41,7 @@ export default function SuiteConnection({description,route}:{description:Descrip
       <button disabled={busy} onClick={()=>void perform(async()=>{setStatus(await call<Status>({kind:"approve",token:review.token,remember}));setReview(null);})}>확인한 제품 연결</button>
       <button disabled={busy} onClick={()=>setReview(null)}>취소</button>
     </div>}
+    {status?.connected&&<Suspense fallback={<p role="status">단축키 설정을 불러오고 있습니다…</p>}><ShortcutSettings description={description} route={route}/></Suspense>}
     {busy&&<p role="status">제품 연결을 확인하고 있습니다…</p>}{issue&&<p role="alert">{issue}</p>}
     {!nativeMode&&<p>브라우저 미리보기에서는 실제 제품을 연결하지 않습니다.</p>}
   </section>;

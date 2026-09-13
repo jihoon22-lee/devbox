@@ -91,6 +91,10 @@ enum Method {
     Probe {
         product: String,
     },
+    ShortcutStatus,
+    ConfigureShortcuts {
+        config: product_contract::shortcuts::Config,
+    },
     Pending,
     Decide {
         id: String,
@@ -134,6 +138,9 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
+            Method::ConfigureShortcuts { config } => {
+                let _ = config;
+            }
             Method::Approve { token, remember } => {
                 let _ = (token, remember);
             }
@@ -259,6 +266,15 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::ShortcutStatus | Method::ConfigureShortcuts { .. } => {
+            let call = match method {
+                Method::ConfigureShortcuts { config } => {
+                    product_contract::transport::Call::ConfigureShortcuts { config }
+                }
+                _ => product_contract::transport::Call::ShortcutStatus {},
+            };
+            remote(&app, "control-center", call, deadline).await
+        }
         Method::Pending => {
             let queue = state.lock().map_err(|_| "suite_busy")?.navigation.clone();
             let value = queue.lock().map_err(|_| "suite_busy")?.pending(now());
@@ -447,14 +463,44 @@ fn handler(
                     serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
                 ),
                 Call::Query {
+                    query_id,
                     source: Source::Commands,
                     query,
                     generation,
-                    ..
+                    context,
+                    mode,
                 } => {
-                    let result = index.search(&query)?;
+                    let mut combined = (*index).clone();
+                    if let Some(domain) = domain {
+                        if let Ok(extra) = domain(
+                            app.clone(),
+                            Call::Query {
+                                query_id,
+                                source: Source::Commands,
+                                query: query.clone(),
+                                generation,
+                                context,
+                                mode,
+                            },
+                            deadline,
+                            cancellation,
+                        )
+                        .await
+                        {
+                            let rows: Vec<product_contract::commands::Descriptor> =
+                                serde_json::from_value(extra["result"]["results"].clone())
+                                    .map_err(|_| "suite_source_invalid")?;
+                            if rows.len() > 256 {
+                                return Err("suite_source_limit");
+                            }
+                            for row in rows {
+                                validate_route_owner(&row, product, &routes)?;
+                                combined.insert(row)?;
+                            }
+                        }
+                    }
                     Ok(
-                        serde_json::json!({"generation":generation,"source":"commands","owner":product,"result":result}),
+                        serde_json::json!({"generation":generation,"source":"commands","owner":product,"result":combined.search(&query)?}),
                     )
                 }
                 Call::PreviewCommand { request } => {
@@ -469,6 +515,36 @@ fn handler(
                     let descriptor =
                         resolve(&app, &index, domain, request.clone(), deadline).await?;
                     validate_route_owner(&descriptor, product, &routes)?;
+                    if !descriptor.requires_review
+                        && matches!(
+                            descriptor.target,
+                            product_contract::commands::Target::Entity {
+                                entity: product_contract::commands::EntityKind::TerminalWindow,
+                                ..
+                            }
+                        )
+                    {
+                        let (fresh, receipt) = navigation
+                            .lock()
+                            .map_err(|_| "suite_busy")?
+                            .begin_terminal_action(&descriptor, &request, now())?;
+                        if !fresh {
+                            return Ok(serde_json::json!(receipt));
+                        }
+                        domain.ok_or("suite_method_unavailable")?(
+                            app,
+                            Call::OpenCommand {
+                                request: request.clone(),
+                            },
+                            deadline,
+                            None,
+                        )
+                        .await?;
+                        return Ok(serde_json::json!(navigation
+                            .lock()
+                            .map_err(|_| "suite_busy")?
+                            .finish_terminal_action(&request.operation_id)?));
+                    }
                     let receipt = navigation.lock().map_err(|_| "suite_busy")?.enqueue(
                         &descriptor,
                         &request,
@@ -620,6 +696,9 @@ pub(crate) async fn remote(
             call,
             product_contract::transport::Call::PreviewCommand { .. }
                 | product_contract::transport::Call::OpenCommand { .. }
+                | product_contract::transport::Call::ResolveShortcut { .. }
+                | product_contract::transport::Call::ShortcutStatus { .. }
+                | product_contract::transport::Call::ConfigureShortcuts { .. }
         ) {
             let launch = suite
                 .state

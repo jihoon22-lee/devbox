@@ -96,6 +96,28 @@ fn row_descriptor(
         row.reference.is_some() && row.availability == "available",
     )
 }
+fn capture_command() -> Descriptor {
+    Descriptor {
+        id: "knowledge.quick-capture".into(),
+        owner: "knowledge".into(),
+        component: "knowledge.notes".into(),
+        label: "빠른 캡처".into(),
+        revision: Sha256::digest(b"knowledge-quick-capture-v1")
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect(),
+        target: Target::Entity {
+            entity: EntityKind::Capture,
+            id: "inbox".into(),
+        },
+        review_route: Some("notes".into()),
+        required_context: ContextRequirement::None,
+        context: None,
+        destructive: false,
+        requires_review: true,
+        disabled_reason: None,
+    }
+}
 async fn saved_index(
     app: tauri::AppHandle,
 ) -> Result<(product_contract::command_index::Index, Vec<Value>), &'static str> {
@@ -191,6 +213,22 @@ pub(crate) fn handle(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         match call {
+            Call::ResolveShortcut { command } if command == "knowledge.quick-capture" => {
+                serde_json::to_value(capture_command()).map_err(|_| "knowledge_command_invalid")
+            }
+            Call::Query {
+                source: Source::Commands,
+                query,
+                generation,
+                ..
+            } => {
+                let mut index = product_contract::command_index::Index::default();
+                index.insert(capture_command())?;
+                Ok(
+                    json!({"generation":generation,"source":"commands","owner":"knowledge","result":index.search(&query)?}),
+                )
+            }
+
             Call::Query {
                 source: Source::SavedQueries,
                 query,
@@ -279,6 +317,12 @@ pub(crate) fn handle(
                 )
             }
             Call::PreviewCommand { request } => {
+                if request.command_id == "knowledge.quick-capture" {
+                    let current = capture_command();
+                    current.validate_request(&request)?;
+                    return serde_json::to_value(current).map_err(|_| "knowledge_command_invalid");
+                }
+
                 if request.command_id.starts_with("knowledge.saved-query-") {
                     return serde_json::to_value(saved_index(app).await?.0.resolve(&request)?)
                         .map_err(|_| "knowledge_source_invalid");

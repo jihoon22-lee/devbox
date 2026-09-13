@@ -1,3 +1,4 @@
+import ShortcutControls from "../ShortcutControls";
 import { useCallback, useEffect, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { isImeComposing } from "@devbox/a11y";
@@ -263,12 +264,13 @@ export default function App({adapter,embedded=false,description="앱과 검증�
     finally { if (mounted.current) setBusy(false); }
   };
 
-  const saveShortcut = async (value: ShortcutConfig["accelerator"]) => {
-    const next = { accelerator: value, enabled: true } as ShortcutConfig;
+  const saveShortcutConfig = async (next:ShortcutConfig) => {
     setShortcutBusy(true);
     try { setShortcutState(await setShortcut(next)); } catch { setError(safeError()); }
     finally { if (mounted.current) setShortcutBusy(false); }
   };
+  const saveShortcut = (value:ShortcutConfig["accelerator"]) => saveShortcutConfig({accelerator:value,enabled:true,...(shortcut?.terminal===undefined?{}:{terminal:shortcut.terminal,capture:shortcut.capture,project:shortcut.project})});
+
 
   return (
     <Root className="launcher-shell">
@@ -338,6 +340,7 @@ export default function App({adapter,embedded=false,description="앱과 검증�
             <label>단축키 <select aria-label="Launcher 단축키" value={shortcut?.accelerator ?? "Ctrl+Alt+Space"} disabled={shortcutBusy} onChange={(event) => void saveShortcut(event.target.value as ShortcutConfig["accelerator"])}><option>Ctrl+Alt+Space</option><option>Ctrl+Alt+L</option><option>Ctrl+Alt+J</option></select><small>즉시 적용</small></label>
           </div>
         </footer>
+        {shortcut&&<ShortcutControls status={shortcut} busy={shortcutBusy} onChange={config=>void saveShortcutConfig(config)} hideAccelerator/>}
         {shortcut?.issue && <p className="shortcut-status" role="status">{SHORTCUT_ISSUES[shortcut.issue]??"단축키 상태를 확인해 주세요."}</p>}
         {shortcut && !shortcut.issue && shortcut.registration !== "registered" && <p className="shortcut-status" role="status">{shortcut.registration === "unavailable" ? `전역 단축키를 등록하지 못했습니다. ${shortcut.alternatives.join(" 또는 ")} 중 하나를 선택해 다시 시도하세요.` : shortcut.registration === "unsupported" ? "이 환경에서는 전역 단축키를 사용할 수 없습니다. 앱 메뉴나 다시 실행으로 Launcher를 여세요." : shortcut.registration === "pending" ? "전역 단축키를 확인하는 중입니다…" : "전역 단축키가 꺼져 있습니다. 위 선택에서 다시 켤 수 있습니다."}</p>}
         <details className="sources"><summary>snapshot source 상태</summary><ul className="source-list">{response.sources.map((source) => { const status = SOURCE_STATUS_COPY[source.status]; return <li key={`${source.producer}:${source.view}`}><span className="source-name">{SOURCE_NAMES[source.producer] ?? source.producer} · {SOURCE_VIEW_NAMES[source.view] ?? source.view}</span><span className={`source-status source-${source.status}`}>{status.label}</span><small>{status.description}</small></li>; })}</ul></details>

@@ -1,3 +1,4 @@
+import {useIncomingReview} from "@devbox/product-shell/incoming";
 import { useCallback, useEffect, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
@@ -9,6 +10,7 @@ interface Commands {profiles:Array<{id:string;name:string;revision:string}>}
 interface Session {id:string;context:ProjectContext|null;state:string;restoreGeneration:number}
 const labels:Record<string,string>={preparing:"준비 중",active:"실행 중",stopping:"종료 중",stopped:"종료됨",interrupted:"복구 검토 필요"};
 export default function Terminal({description,registry}:{description:Description;registry:Registry|null}) {
+  const {review:incoming,clear:clearIncoming}=useIncomingReview();
   const [commands,setCommands]=useState<Commands>({profiles:[]});
   const [profileId,setProfileId]=useState("");
   const [sessions,setSessions]=useState<Session[]>([]);
@@ -20,6 +22,18 @@ export default function Terminal({description,registry}:{description:Description
     setSessions(sessions);setCommands(commands);
   },[call]);
   useEffect(()=>{let current=true;void Promise.all([call<Session[]>("terminal_sessions"),call<Commands>("terminal_commands")]).then(([sessions,commands])=>{if(current){setSessions(sessions);setCommands(commands);}}).catch(()=>{if(current)setIssue("터미널 세션 목록을 읽지 못했습니다.");});return()=>{current=false;};},[call]);
+  useEffect(()=>{
+    if(incoming?.route!=="terminal"||incoming.target.kind!=="entity"||incoming.target.entity!=="terminalProfile")return;
+    let disposed=false;const id=incoming.target.id;
+    void call<Commands>("terminal_commands").then(value=>{
+      if(disposed)return;setCommands(value);
+      const profile=value.profiles.find(profile=>profile.id===id&&profile.revision===incoming.commandRevision);
+      if(profile)setProfileId(profile.id);else setIssue("받은 터미널 프로필이 변경되었거나 삭제되었습니다. 다시 선택해 주세요.");
+      clearIncoming();
+    }).catch(()=>{if(!disposed)setIssue("받은 터미널 프로필을 확인하지 못했습니다.");});
+    return()=>{disposed=true;};
+  },[incoming,call,clearIncoming]);
+
   const action=async(method:string,args:Record<string,unknown>)=>{
     setBusy(true);setIssue("");
     try {await call(method,args);await refresh();}catch {setIssue("터미널 작업을 완료하지 못했습니다. 상태를 새로 고친 뒤 다시 확인해 주세요.");}finally{setBusy(false);}

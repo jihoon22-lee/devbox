@@ -191,3 +191,39 @@ This slice passed Rust syntax parsing and the changed Control Center TypeScript
 check (2.345 seconds). Native lifecycle/namespace fixtures remain pending. Shortcut restoration, remaining
 shortcut commands, registry/Editor provider and Artifact integration still follow
 within this same B07 PR before detailed verification.
+
+## Four shortcut commands and shared product settings
+
+The single native registration worker now binds Launcher, existing Terminal
+visibility, Knowledge Quick Capture and current-project review. Non-Launcher
+callbacks no longer focus Control Center before the destination acts, preserving
+Terminal show/hide behavior. The command host resolves current native descriptors
+and sends the command once; an unavailable/ambiguous terminal opens its existing
+chooser instead of starting a shell or selecting another worktree. Existing-window
+visibility reserves a destination receipt before action so retry cannot retoggle.
+
+Terminal profile commands select only a matching current profile revision for the
+existing explicit open button. Knowledge capture opens the existing Inbox dialog;
+preview/save and existing drafts remain with Notes. Current-project commands use
+the existing Registry review/selection. The receiver now carries the descriptor
+revision separately from its navigation-review proof, including Saved Query review.
+
+Product-local connection settings and hosted Launcher use the same shortcut controls.
+The shared pure configuration only admits the fixed four command bindings; no Ctrl+C
+or arbitrary key/command crosses IPC. Other authenticated products can read/change
+only this installation's native Control Center shortcut owner through the common
+settings surface. Remembered connection restoration re-establishes explicitly
+enabled registration; disconnect/exit releases it, and foreign-owner conflict stays
+visible. Legacy standalone shortcut configuration remains its original allowed set.
+Notes/Terminal labels identify the suite owner instead of reporting a second local
+registration. Modal/IME/editor guards and existing dirty checks remain active.
+
+Syntax and changed product/legacy Launcher type checks passed (15.324 seconds for
+wiring, 3.907 seconds for extracted shared controls). Knowledge label/type checks also passed (4.708 seconds). Native shortcut/focus/lifecycle fixtures and the
+prepared direct-action/unique-binding cases run at B07 PR completion. No detailed
+B07 test/build/Clippy/affected verification has started.
+
+The user's Docker/network incident constraint is active on this checkout too:
+local network-changing fixtures and private-copy bypasses are forbidden. B06 owns
+the shared instruction and runner-guard commit; these identical safety edits are
+kept here immediately and will be reconciled when rebasing onto merged B06.
