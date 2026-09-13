@@ -372,3 +372,10 @@ Ordinary terminal acceptance now captures companion state before cleanup on fail
 Only script/YAML syntax and the no-build diagnostic boundary were checked locally.
 This diagnostic-only commit suppresses automatic full CI; final implementation
 changes still require CI before merge. No local WSL or service operation is used.
+
+The first retained-artifact diagnostic (34731262944) could not attach CDP before
+its startup deadline. The hosted runner is elevated, so WebView2 ignores the process
+debug-port override; the established packaged-shell harness already handles this
+through a uniquely named image's temporary policy. Both new hosted runners now reuse
+that exact inspect/install/restore adapter and record the actual artifact source.
+The failed diagnostic did not exercise PTY restore and is not acceptance evidence.

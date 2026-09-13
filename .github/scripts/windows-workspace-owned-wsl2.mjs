@@ -1,5 +1,6 @@
 import {requireHostedNetworkFixture} from "./fixture-network-safety.mjs";
 // Exact-artifact acceptance only on a disposable GitHub-hosted Windows runner.
+import {windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
 import {exerciseTerminalSessionFixture} from "./windows-workspace-terminal-sessions.mjs";
 import {exerciseMultiplexerReconnect} from "./windows-workspace-multiplexer.mjs";
 import {exerciseOwnedContainers} from "./windows-workspace-containers.mjs";
@@ -31,7 +32,8 @@ for(const entry of metadata.files){
  const source=path.join(artifact,entry.path);assert.ok(lstatSync(source).isFile());assert.equal(digest(readFileSync(source)),entry.sha256);copyFileSync(source,path.join(appDirectory,entry.path));
 }
 process.chdir(directory);mkdirSync('product-foundation-evidence');
-const executable=path.join(appDirectory,'devbox-workspace.exe');
+const imageName='devbox-workspace-wsl2-'+randomUUID()+'.exe';
+const executable=path.join(appDirectory,imageName);copyFileSync(path.join(appDirectory,'devbox-workspace.exe'),executable);
 const installationId=digest(Buffer.from('\\\\?\\'+realpathSync.native(executable)));
 const dataRoot=path.join(process.env.LOCALAPPDATA,`com.devbox.v08.workspace.i${installationId}`);
 assert.equal(existsSync(dataRoot),false);
@@ -41,11 +43,12 @@ const wsl=(args,input)=>{
  const result=spawnSync(wslExe,['--distribution-id',owner.distroId,'--user','root','--cd','/','--exec',...args],{input,encoding:'utf8',timeout:15000,maxBuffer:1024*1024,windowsHide:true});
  if(result.status!==0)throw new Error('Owned WSL command failed '+result.status+' '+String(result.stderr).slice(0,500));return result.stdout.trim();
 };
-let child,cdp,confirmed=false,appExited=false,ownedDataRemoved=false;
-const evidence={source:expectedSource,environment:'owned-local-windows-wsl2',result:'diagnostic',observations:{}};
+let child,cdp,policy,confirmed=false,appExited=false,ownedDataRemoved=false;
+const evidence={source:expectedSource,environment:'github-hosted-windows-wsl2',result:'diagnostic',observations:{}};
 const success=result=>{if(result.operation.outcome.state!=='succeeded')throw new Error('Native operation failed: '+JSON.stringify(result.operation.outcome));return result.value;};
 try{
- const port=await freePort();child=spawn(executable,['--route=overview'],{cwd:appDirectory,env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(appDirectory,'webview2')},stdio:['ignore','ignore','pipe']});
+ const port=await freePort();policy=windowsProcessIsElevated()?inspectElevatedCdpPolicy(imageName,port):null;if(policy)installElevatedCdpPolicy(policy);
+ child=spawn(executable,['--route=overview'],{cwd:appDirectory,env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(appDirectory,'webview2')},stdio:['ignore','ignore','pipe']});
  child.stderr.setEncoding('utf8');child.stderr.on('data',value=>{evidence.nativeError=((evidence.nativeError??'')+value).slice(-16000);});
  await once(child,'spawn');cdp=await connect(port,child);
  const deadline=performance.now()+30000;let ready=false;
@@ -72,6 +75,6 @@ try{
 finally{
  try{cdp?.close();if(child&&child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),delay(10000)]);}appExited=!!child&&(child.exitCode!==null||child.signalCode!==null);
   if(confirmed&&appExited){rmSync(dataRoot,{recursive:true,force:true});ownedDataRemoved=!existsSync(dataRoot);}
- }finally{writeFileSync(path.join(artifact,'local-wsl2-workspace-acceptance.json'),JSON.stringify({...evidence,appExited,ownedDataRemoved},null,2));}
+ }finally{if(policy)restoreElevatedCdpPolicy(policy);writeFileSync(path.join(artifact,'hosted-wsl2-workspace-acceptance.json'),JSON.stringify({...evidence,appExited,ownedDataRemoved},null,2));}
 }
 console.log(JSON.stringify({result:'pass',appExited,ownedDataRemoved,acceptanceComplete:true}));

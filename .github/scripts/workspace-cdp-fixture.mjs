@@ -75,6 +75,3 @@ export async function waitForRenderer(cdp, expression, label) {
   writeFileSync(path.join("product-foundation-evidence", `renderer-failure-${Date.now()}.json`), JSON.stringify({ label, snapshot }, null, 2));
   throw new Error(`${label}: route=${snapshot.route}, dialogs=${snapshot.dialogs}`);
 }
-
-
-

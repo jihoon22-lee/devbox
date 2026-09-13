@@ -4,9 +4,10 @@ import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
 import assert from "node:assert/strict";
 import {createHash,randomUUID} from "node:crypto";
-import {readFileSync,writeFileSync,mkdirSync,lstatSync,existsSync,realpathSync,rmSync} from "node:fs";
+import {readFileSync,writeFileSync,mkdirSync,lstatSync,existsSync,realpathSync,rmSync,copyFileSync} from "node:fs";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
+import {windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
 import {setTimeout as delay} from "node:timers/promises";
 import path from "node:path";
 const hosted=requireHostedNetworkFixture();assert.equal(process.platform,"win32");
@@ -18,15 +19,17 @@ const expected=new Set(["devbox-workspace.exe","THIRD_PARTY_NOTICES.md","resourc
 for(const file of metadata.files){assert.ok(expected.delete(file.path));const selected=path.join(artifact,file.path);assert.ok(lstatSync(selected).isFile());assert.equal(createHash("sha256").update(readFileSync(selected)).digest("hex"),file.sha256);}
 assert.equal(expected.size,0);
 const owner=json(path.join(process.env.RUNNER_TEMP,"devbox-knowledge-wsl-owner.json"));assert.equal(owner.runId,hosted.runId);assert.equal(owner.name,process.env.DEVBOX_KNOWLEDGE_WSL_DISTRO);
-const executable=path.join(artifact,"devbox-workspace.exe");
+const imageName="devbox-workspace-diagnostic-"+randomUUID()+".exe";
+const executable=path.join(artifact,imageName);copyFileSync(path.join(artifact,"devbox-workspace.exe"),executable);
 const installationId=createHash("sha256").update('\\\\?\\'+realpathSync.native(executable)).digest("hex");
 const dataRoot=path.join(process.env.LOCALAPPDATA,`com.devbox.v08.workspace.i${installationId}`);assert.equal(existsSync(dataRoot),false);
 const evidenceDirectory=path.join(process.env.GITHUB_WORKSPACE,"product-foundation-evidence");mkdirSync(evidenceDirectory,{recursive:true});
 const evidence={result:"diagnostic",artifactSource:metadata.sourceSha,artifactRun:priorRun,diagnosticSource:process.env.GITHUB_SHA,diagnosticRun:hosted.runId,environment:"github-hosted-windows-wsl1",observations:{}};
-let child,main,companion;
+let child,main,companion,policy;let appExited=false;
 try {
- const port=await freePort();child=spawn(executable,["--route=overview"],{cwd:artifact,env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(artifact,"webview2")},stdio:["ignore","ignore","pipe"]});
- child.stderr.setEncoding("utf8");child.stderr.on("data",value=>{evidence.nativeError=((evidence.nativeError??"")+value).slice(-16000);});await once(child,"spawn");
+ const port=await freePort();policy=windowsProcessIsElevated()?inspectElevatedCdpPolicy(imageName,port):null;if(policy)installElevatedCdpPolicy(policy);
+ child=spawn(executable,["--route=overview"],{cwd:artifact,env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(artifact,"webview2")},stdio:["ignore","ignore","pipe"]});
+ child.stderr.setEncoding("utf8");child.stderr.on("data",value=>{evidence.nativeError=((evidence.nativeError??"")+value).slice(-16000);});child.on("exit",()=>{appExited=true;});await once(child,"spawn");
  main=await connect(port,child);await waitForRenderer(main,"!!window.__TAURI_INTERNALS__","Workspace did not start");
  const success=result=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
  const call=(component,method,args={})=>main.evaluate(workspaceRequestExpression(component,method,args,29000),{timeoutMs:35000});
@@ -51,7 +54,8 @@ try {
 finally {
  companion?.close();main?.close();
  if(child&&child.exitCode===null){const exited=once(child,"exit");child.kill();await Promise.race([exited,delay(10000)]);}
- evidence.appExited=!child||child.exitCode!==null;
+ if(policy)restoreElevatedCdpPolicy(policy);
+ evidence.appExited=!child||appExited;
  if(evidence.appExited&&existsSync(dataRoot)){rmSync(dataRoot,{recursive:true});evidence.ownedDataRemoved=!existsSync(dataRoot);}
  writeFileSync(path.join(evidenceDirectory,"terminal-companion-diagnostic.json"),JSON.stringify(evidence,null,2));
 }
