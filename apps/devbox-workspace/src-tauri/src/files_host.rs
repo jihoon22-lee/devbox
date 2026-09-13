@@ -191,9 +191,16 @@ struct SessionImportPreview {
     created: Instant,
     restore: Option<StoredSession>,
 }
+struct ReceivedFile {
+    _object: std::fs::File,
+    proof: product_contract::file_reference::Proof,
+    path: String,
+    context: Option<ProjectContext>,
+}
 #[derive(Default)]
 pub struct FilesHost {
     owner: FileOwner,
+    received: HashMap<String, ReceivedFile>,
     #[cfg(windows)]
     wsl: Vec<crate::platform::wsl_files::WslFiles>,
     data: Option<MetadataRoot>,
@@ -468,6 +475,127 @@ impl FilesHost {
         }
         self.persist_choices()?;
         Ok(json!(selected))
+    }
+    pub(crate) fn approve_received(
+        &mut self,
+        app: &tauri::AppHandle,
+        host: &Host,
+        context: Option<&ProjectContext>,
+        proof: product_contract::file_reference::Proof,
+        deadline: u64,
+    ) -> Result<String> {
+        self.initialize(app, host)?;
+        current_deadline(deadline)?;
+        proof.validate()?;
+        current_deadline(proof.expires_at_ms)?;
+        self.received
+            .retain(|_, value| current_deadline(value.proof.expires_at_ms).is_ok());
+        if self.received.len() >= 32 && !self.received.contains_key(&proof.reference) {
+            return Err("file_limit");
+        }
+        let path = if let Some(unc) = devbox_wsl::path::parse_wsl_unc_path(&proof.path)
+            .map_err(|_| "file_reference_invalid")?
+        {
+            #[cfg(windows)]
+            {
+                let context = context.ok_or("project_selection_required")?;
+                let product_contract::ExecutionTarget::Wsl { distro_id } = &context.target else {
+                    return Err("wsl_context_required");
+                };
+                if proof
+                    .context
+                    .as_ref()
+                    .is_some_and(|source| source != context)
+                {
+                    return Err("file_context_changed");
+                }
+                let binding = host.projects()?.binding(context)?;
+                let lease = crate::platform::wsl_distro::Lease::capture(distro_id, false)?;
+                lease.require_running()?;
+                if !lease.name().eq_ignore_ascii_case(unc.distro())
+                    || !unc
+                        .linux_path()
+                        .strip_prefix(binding.root.trim_end_matches('/'))
+                        .is_some_and(|suffix| suffix.starts_with('/'))
+                {
+                    return Err("file_context_changed");
+                }
+                unc.linux_path().to_owned()
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = unc;
+                return Err("windows_required");
+            }
+        } else {
+            crate::platform::windows_path::admit(Path::new(&proof.path))?;
+            proof.path.clone()
+        };
+        let (object, identity) =
+            devbox_filesystem::open_filesystem_object(Path::new(&proof.path), false)
+                .map_err(|_| "file_reference_stale")?;
+        if !proof.matches(identity) {
+            return Err("file_reference_stale");
+        }
+        if devbox_wsl::path::parse_wsl_unc_path(&proof.path)
+            .map_err(|_| "file_reference_invalid")?
+            .is_none()
+        {
+            self.owner.approve_native_selection(Path::new(&path))?;
+            self.persist_choices()?;
+        }
+        if !proof.matches(
+            devbox_filesystem::filesystem_identity(Path::new(&proof.path), false)
+                .map_err(|_| "file_reference_stale")?,
+        ) {
+            return Err("file_reference_stale");
+        }
+        current_deadline(deadline)?;
+        current_deadline(proof.expires_at_ms)?;
+        self.received.insert(
+            proof.reference.clone(),
+            ReceivedFile {
+                _object: object,
+                proof,
+                path: path.clone(),
+                context: context.cloned(),
+            },
+        );
+        Ok(path)
+    }
+    fn received_open(
+        &self,
+        reference: &str,
+        path: &str,
+        context: Option<&ProjectContext>,
+    ) -> Result<std::fs::File> {
+        let entry = self.received.get(reference).ok_or("file_reference_stale")?;
+        current_deadline(entry.proof.expires_at_ms)?;
+        if entry.path != path || entry.context.as_ref() != context {
+            return Err("file_reference_stale");
+        }
+        #[cfg(windows)]
+        if let Some(unc) = devbox_wsl::path::parse_wsl_unc_path(&entry.proof.path)
+            .map_err(|_| "file_reference_invalid")?
+        {
+            let Some(product_contract::ExecutionTarget::Wsl { distro_id }) =
+                context.map(|context| &context.target)
+            else {
+                return Err("wsl_context_required");
+            };
+            let lease = crate::platform::wsl_distro::Lease::capture(distro_id, false)?;
+            if !lease.name().eq_ignore_ascii_case(unc.distro()) {
+                return Err("file_context_changed");
+            }
+            lease.require_running()?;
+        }
+        let (object, identity) =
+            devbox_filesystem::open_filesystem_object(Path::new(&entry.proof.path), false)
+                .map_err(|_| "file_reference_stale")?;
+        if !entry.proof.matches(identity) {
+            return Err("file_reference_stale");
+        }
+        Ok(object)
     }
     fn view(&mut self, host: &Host, context: Option<&ProjectContext>) -> Result<MetadataRoot> {
         let name = if let Some(context) = context {
@@ -837,7 +965,7 @@ impl FilesHost {
             context,
             component,
             method,
-            args,
+            mut args,
             deadline,
         } = invocation;
         self.initialize(app, host)?;
@@ -855,6 +983,34 @@ impl FilesHost {
         struct Nested {
             request: Value,
         }
+        let received_reference = args
+            .get("receivedReference")
+            .map(|value| {
+                value
+                    .as_str()
+                    .map(str::to_owned)
+                    .ok_or("file_reference_invalid")
+            })
+            .transpose()?;
+        if received_reference.is_some() && method != "open_file" {
+            return Err("file_reference_invalid");
+        }
+        if let Some(value) = args.as_object_mut() {
+            value.remove("receivedReference");
+        }
+        let _received_object = if let Some(reference) = &received_reference {
+            Some(
+                self.received_open(
+                    reference,
+                    args["request"]["path"]
+                        .as_str()
+                        .ok_or("file_reference_invalid")?,
+                    context,
+                )?,
+            )
+        } else {
+            None
+        };
         let requested_path = match method {
             "open_file" | "save_file" | "rename_file_action" | "delete_file_action" => args
                 .get("request")
@@ -926,7 +1082,17 @@ impl FilesHost {
                         .map_err(|_| "file_action_unavailable")
                 });
             }
-            return self.execute_wsl(host, context, method, args, deadline);
+            let received_path = requested_path.map(str::to_owned);
+            let result = self.execute_wsl(host, context, method, args, deadline)?;
+            if let Some(reference) = &received_reference {
+                self.received_open(
+                    reference,
+                    received_path.as_deref().ok_or("file_reference_invalid")?,
+                    context,
+                )?;
+                self.received.remove(reference);
+            }
+            return Ok(result);
         }
         let needs_project = matches!(
             method,
@@ -1072,7 +1238,11 @@ impl FilesHost {
                 let opened = self
                     .owner
                     .open(scope, file_input(request.request, &["path", "encoding"])?)?;
-                self.document_value(&opened.path, &opened)
+                let result = self.document_value(&opened.path, &opened)?;
+                if let Some(reference) = &received_reference {
+                    self.received.remove(reference);
+                }
+                Ok(result)
             }
             "save_file" => {
                 let request: Nested = input(args)?;

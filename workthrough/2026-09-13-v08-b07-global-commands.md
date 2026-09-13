@@ -311,3 +311,27 @@ Workspace/Knowledge TypeScript passed (8.334 seconds); Rust syntax/format and di
 checks passed. Exact reviewed-target regression is prepared. Native cancellation,
 duplicate delivery, expired/source-deleted reference and dirty Notes acceptance
 remain with the completed B07 PR verification.
+
+## Indexed file to Workspace Editor
+
+Knowledge Search and received federated file results now offer Workspace Editor
+using the native source reference. Raw renderer paths are not sent. The existing
+source opener rechecks index revision/root/file identity and exports a bounded
+native proof only to Workspace; Control Center cannot resolve it. Explicit delivery
+can activate the pinned Workspace member, then the existing destination route review
+precedes native file approval. Missing installation/connection remains an explicit
+unavailable action, with the default-app action separately available.
+
+Workspace retains the confirmed file object and source lease expiry through the
+existing Files open request. The file API carries the received reference separately
+from the path, so delayed opening cannot fall back to an unrelated root grant.
+Windows files use the existing native choice owner. WSL UNC files require the current
+registered GUID/context/root, a running distro and exact Linux path mapping; both
+sides of the helper read recheck the same Windows file identity. No project selection
+or stopped distro start is implicit. Existing editor hydration, dirty buffers,
+rename barriers and per-context checks remain in the actual open/adopt path.
+
+Changed Workspace/Knowledge TypeScript passed (9.242 seconds) and Rust syntax/format
+parsed. File-object/revision and transport-role regression cases are prepared;
+detailed same-name/replaced-file/expired-reference/dirty-editor/WSL fixtures run at
+B07 completion. No detailed B07 test/build/Clippy/affected run has started.

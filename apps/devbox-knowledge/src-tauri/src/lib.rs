@@ -36,3 +36,5 @@ pub fn run() {
 }
 
 mod vault_binding;
+
+mod file_send;

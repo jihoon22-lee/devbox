@@ -297,8 +297,22 @@ async fn execute(
         "knowledge.search" if request.method == "source_saved_reference" => {
             crate::federation::saved_reference(app, request.args).await
         }
-        "knowledge.opener" if request.method == "open_targets" => Ok(json!([])),
-        "knowledge.opener" if request.method == "open_in" => Err("provider_unavailable".into()),
+        "knowledge.opener" if request.method == "open_targets" => Ok(
+            if crate::suite::installed_products(app).contains("workspace") {
+                json!([{"id":"devbox-workspace","displayName":"Workspace Editor"}])
+            } else {
+                json!([{"id":"devbox-workspace","displayName":"Workspace Editor · 설치·제품 연결 필요"}])
+            },
+        ),
+        "knowledge.opener" if request.method == "open_in" => {
+            crate::file_send::send(
+                app,
+                request.args,
+                &request.header.request_id,
+                request.header.deadline_ms,
+            )
+            .await
+        }
         "knowledge.opener" => crate::search::open(app, &request.method, request.args).await,
         "knowledge.search" if crate::search::METHODS.contains(&request.method.as_str()) => {
             crate::search::dispatch(app, &request.method, request.args)

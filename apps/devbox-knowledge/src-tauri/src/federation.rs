@@ -213,6 +213,13 @@ pub(crate) fn handle(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         match call {
+            Call::ReadFileReference { reference } => crate::search::open(
+                &app,
+                "native_file_reference",
+                json!({"reference":reference}),
+            )
+            .await
+            .map_err(|_| "knowledge_file_stale"),
             Call::DeliverSessionSummary {
                 source_id,
                 operation_id,

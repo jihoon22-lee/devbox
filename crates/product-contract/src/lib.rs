@@ -349,3 +349,5 @@ pub mod query;
 pub mod shortcuts;
 
 pub mod project_provider;
+
+pub mod file_reference;

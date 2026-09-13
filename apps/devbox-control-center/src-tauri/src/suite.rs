@@ -100,6 +100,9 @@ enum Method {
         source_id: String,
         operation_id: String,
     },
+    OpenReceivedFile {
+        reference: String,
+    },
     ShortcutStatus,
     ConfigureShortcuts {
         config: product_contract::shortcuts::Config,
@@ -147,6 +150,9 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
+            Method::OpenReceivedFile { reference } => {
+                let _ = reference;
+            }
             Method::SendSessionSummary {
                 source_id,
                 operation_id,
@@ -281,6 +287,18 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::OpenReceivedFile { reference } => {
+            if product != "workspace" {
+                return Err("suite_file_denied");
+            }
+            domain.ok_or("suite_method_unavailable")?(
+                app.clone(),
+                product_contract::transport::Call::ReadFileReference { reference },
+                deadline,
+                None,
+            )
+            .await
+        }
         Method::SendSessionSummary {
             source_id,
             operation_id,
@@ -754,6 +772,7 @@ pub(crate) async fn remote(
                 | product_contract::transport::Call::ShortcutStatus { .. }
                 | product_contract::transport::Call::ConfigureShortcuts { .. }
                 | product_contract::transport::Call::DeliverSessionSummary { .. }
+                | product_contract::transport::Call::DeliverFileReference { .. }
         ) {
             let launch = suite
                 .state
