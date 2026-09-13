@@ -8,7 +8,7 @@ pub const TOOLBOX_TEXT_TARGET_APP: &str = "developer-toolbox";
 pub const TOOLBOX_TEXT_MAX_BYTES: usize = 512 * 1024;
 pub const TOOLBOX_TEXT_MAX_CHARS: usize = 256_000;
 
-const ALLOWED_SOURCES: [&str; 3] = ["api-playground", "devbox-launcher", "log-lens"];
+const ALLOWED_SOURCES: [&str; 4] = ["api-playground", "devbox-launcher", "log-lens", "code-pad"];
 
 /// The v1 payload deliberately stays a single text field.  Producer identity
 /// comes from the signed-by-storage envelope, while Developer Toolbox performs

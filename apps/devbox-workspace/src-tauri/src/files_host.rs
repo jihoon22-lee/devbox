@@ -107,6 +107,7 @@ pub fn allowed(component: &str, method: &str) -> bool {
                 | "open_file"
                 | "reconnect_wsl_files"
                 | "sync_editor_document"
+                | "send_editor_selection"
                 | "save_file"
                 | "rename_file_action"
                 | "delete_file_action"
@@ -390,6 +391,50 @@ impl FilesHost {
     }
     pub(crate) fn guard_editor_write(&self, context: &ProjectContext, path: &str) -> Result<()> {
         self.owner.guard_editor_write(context, path)
+    }
+
+    pub(crate) fn selection_hash(
+        &self,
+        host: &Host,
+        context: Option<&ProjectContext>,
+        input: &crate::selection_send::Editor,
+        deadline: u64,
+    ) -> Result<[u8; 32]> {
+        current_deadline(deadline)?;
+        #[cfg(windows)]
+        if context.is_some_and(|value| {
+            matches!(value.target, product_contract::ExecutionTarget::Wsl { .. })
+        }) {
+            let context = context.ok_or("file_context_changed")?;
+            return Ok(self
+                .wsl_owner(Some(context))?
+                .editor_proof(
+                    &host.projects()?,
+                    context,
+                    workspace_wsl::lsp_wire::ProofRequest {
+                        path: input.path.clone(),
+                        native_revision: input.native_revision.clone(),
+                        verify_disk: true,
+                    },
+                    deadline,
+                )?
+                .buffer_text_hash);
+        }
+        let projects = host.projects()?;
+        let lease = if self.owner.needs_project(&input.path)? {
+            Some(projects.admit(context.ok_or("file_context_changed")?)?)
+        } else {
+            None
+        };
+        let scope = context.zip(
+            lease
+                .as_ref()
+                .map(|lease| lease as &dyn workspace_wsl::files::RootLease),
+        );
+        Ok(self
+            .owner
+            .editor_snapshot(scope, &input.path, &input.native_revision, true)?
+            .buffer_text_hash)
     }
     pub(crate) fn editor_snapshot(
         &self,

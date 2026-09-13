@@ -25,6 +25,7 @@ interface DocHostProps {
   canNavigate?: (docId: DocId, kind: "definition" | "references") => boolean;
   navigationBusy?: boolean;
   onNavigate?: (docId: DocId, kind: "definition" | "references", cursor: number) => void;
+  onTransform?: (docId:string,from:number,to:number,current:()=>boolean)=>Promise<void>;
   onError?: (message: string | null) => void;
 }
 
@@ -77,6 +78,7 @@ export default function DocHost({
   canNavigate,
   navigationBusy,
   onNavigate,
+  onTransform,
   onError,
 }: DocHostProps) {
   return (
@@ -100,6 +102,7 @@ export default function DocHost({
             style={placement?.style ?? { display: "none" }}
             visible={placement?.style.display !== "none"}
             tabId={tabIdForDoc(doc.id)}
+            onTransform={onTransform}
             onChange={(text) => onChange(doc.id, text)}
             cursor={doc.cursor}
             bookmarks={doc.bookmarks}

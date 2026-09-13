@@ -37,6 +37,11 @@ pub(crate) fn handle(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         match call {
+            Call::DeliverTransformSelection {
+                id,
+                operation_id,
+                revision,
+            } => crate::selection_receive::offer(&app, &id, &operation_id, &revision),
             Call::ReadKnowledgeDraft { component, id } => {
                 serde_json::to_value(read(&app, &component, &id).await?)
                     .map_err(|_| "draft_invalid")

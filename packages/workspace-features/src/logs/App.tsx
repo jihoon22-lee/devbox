@@ -1,3 +1,4 @@
+import {isProductHosted} from "../transport";
 import { reconnectRuntimeSources } from "./api";
 import {
   ContextMenu,
@@ -19,6 +20,7 @@ import {
   removeSavedView,
   renewLogSource,
   saveSavedView,
+  sendNativeLogSelection,
   sendSelectionToToolbox,
   takePendingOpen,
 } from "./api";
@@ -925,7 +927,7 @@ function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 
         setNotice(null);
         return;
       }
-      const dispatch = await sendSelectionToToolbox(exported.text);
+      const dispatch = isProductHosted() ? await sendNativeLogSelection(actionSnapshotGeneration,targets) : await sendSelectionToToolbox(exported.text);
       if (!mounted.current) return;
       if (!isCurrentSelection()) {
         setError(STALE_SELECTION_ERROR);
@@ -1320,7 +1322,7 @@ function App({ active = true, openRequest, onOpenConsumed, settingsRevision = 0 
 
       <section className="filter-panel" aria-labelledby="filter-heading">
         <div className="section-heading"><h2 id="filter-heading">필터</h2><span className="muted">{visibleRecords.length}개 표시 · {records.length}개 보관</span></div>
-        <div className="filter-row"><label className="filter-grow">텍스트<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="메시지 또는 필드 값" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> 정규식</label><label>레벨<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">모든 레벨</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source 필터<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">모든 source</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{labelForKind(source.kind)}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>내보내기</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>복사</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>선택 로그를 Developer Toolbox로 보내기</button></div>
+        <div className="filter-row"><label className="filter-grow">텍스트<input value={filter.text} onChange={(event) => setFilter((current) => ({ ...current, text: truncateUtf8(event.target.value, 512) }))} placeholder="메시지 또는 필드 값" /></label><label className="toggle"><input type="checkbox" checked={filter.regex} onChange={(event) => setFilter((current) => ({ ...current, regex: event.target.checked }))} /> 정규식</label><label>레벨<select value={filter.level ?? ""} onChange={(event) => setFilter((current) => ({ ...current, level: (event.target.value || undefined) as LogLevel | undefined }))}><option value="">모든 레벨</option>{(["trace", "debug", "info", "warn", "error", "fatal"] as LogLevel[]).map((value) => <option key={value} value={value}>{value}</option>)}</select></label><label>Source 필터<select value={filter.sourceId ?? ""} onChange={(event) => setFilter((current) => ({ ...current, sourceId: event.target.value || undefined }))}><option value="">모든 source</option>{(snapshot?.sources ?? []).map((source) => <option key={source.sourceId} value={source.sourceId}>{labelForKind(source.kind)}</option>)}</select></label><button className="button" type="button" onClick={() => void exportVisible(false)} disabled={!visibleRecords.length}>내보내기</button><button className="button" type="button" onClick={() => void exportVisible(true)} disabled={!visibleRecords.length}>복사</button><button className="button primary" type="button" onClick={() => void sendSelectedLogs()} disabled={busy || toolboxBusy || !selectedRecords.length}>{isProductHosted()?"선택 로그를 API Studio에서 변환":"선택 로그를 Developer Toolbox로 보내기"}</button></div>
         <div className="filter-row"><label>필드<input value={filter.field ?? ""} onChange={(event) => setFilter((current) => ({ ...current, field: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="필드 이름" /></label><label>필드 값<input value={filter.fieldValue ?? ""} onChange={(event) => setFilter((current) => ({ ...current, fieldValue: event.target.value ? truncateUtf8(event.target.value, 4 * 1024) : undefined }))} placeholder="값" /></label><label>시작 epoch ms<input type="number" value={filter.startAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, startAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>종료 epoch ms<input type="number" value={filter.endAt ?? ""} onChange={(event) => setFilter((current) => ({ ...current, endAt: event.target.value ? Number(event.target.value) : undefined }))} /></label><label>뷰 이름<input value={viewName} onChange={(event) => setViewName(truncateUtf8(event.target.value, 128))} placeholder="뷰 이름" /></label><button className="button" type="button" onClick={() => void saveView()} disabled={savedViewsBusy || !sources.length || sources.some((source) => source.kind === "wslFile" || source.kind === "webhookCapture")}>저장</button><select aria-label="저장된 뷰 불러오기" value={selectedViewName} disabled={savedViewsBusy} onChange={(event) => loadView(event.target.value)}><option value="">뷰 불러오기…</option>{savedViews.map((view) => <option key={view.name} value={view.name}>{view.name}</option>)}</select><button className="button" type="button" onClick={() => void deleteView()} disabled={savedViewsBusy || !selectedViewName}>뷰 삭제</button></div>
       </section>
 

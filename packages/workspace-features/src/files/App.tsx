@@ -6,6 +6,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
 import {
+  sendEditorSelection,
   deleteFileAction,
   listWorkspaceFiles,
   loadSession,
@@ -230,6 +231,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const [state, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const [pathInput, setPathInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selectionNotice,setSelectionNotice]=useState("");
   const [busy, setBusy] = useState(false);
   const [watchPending, setWatchPending] = useState(0);
   const [zoom, setZoom] = useState(100);
@@ -1982,6 +1984,16 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
               const latest = stateRef.current.docs.find((doc) => doc.id === docId);
               if (before && latest && latest.revision !== before.revision) void lspSync.change(latest);
             }}
+            onTransform={isProductHosted() ? async(docId,from,to,current)=>{
+              setSelectionNotice("");
+              const expectedContext=contextRef.current;
+              const selected=stateRef.current.docs.find(doc=>doc.id===docId);
+              if(!selected?.nativeRevision || selected.readOnly || renameApplyBusyRef.current)throw new Error("편집 가능한 문서를 다시 선택해 주세요.");
+              await editorMirror.flush(stateRef.current.docs);
+              if(contextRef.current!==expectedContext || !current() || !stateRef.current.docs.some(doc=>doc.id===docId && doc.revision===selected.revision))throw new Error("선택 내용이 변경되었습니다. 다시 선택해 주세요.");
+              await sendEditorSelection(selected.path,selected.nativeRevision,selected.text,from,to);
+              setSelectionNotice("API Studio에 검토를 요청했습니다. 기존 변환 입력은 미리보기에서 적용할 때 변경됩니다.");
+            } : undefined}
             onCursorChange={(docId, cursor) => dispatchAction({ type: "setCursor", docId, cursor })}
             onBookmarksChange={(docId, bookmarks) => dispatchAction({ type: "setBookmarks", docId, bookmarks })}
             onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
@@ -2003,6 +2015,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         )}
       </section>
 
+      {selectionNotice && <p role="status">{selectionNotice}</p>}
       <StatusBar
         doc={activeDoc}
         zoom={zoom}

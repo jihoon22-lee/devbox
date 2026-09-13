@@ -53,6 +53,7 @@ const TOOLBOX_TEXT_ALLOWED_PRODUCERS = new Set([
   "api-playground",
   "devbox-launcher",
   "log-lens",
+  "code-pad",
 ]);
 
 /** 데이터를 해시한다. browser 미리보기에서는 Web Crypto(SHA)만 지원. */

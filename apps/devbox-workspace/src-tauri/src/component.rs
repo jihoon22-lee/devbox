@@ -1656,6 +1656,13 @@ async fn execute(
     };
     let mut result = if let Err(issue) = retired {
         Err(issue)
+    } else if files && request.method == "send_editor_selection" {
+        crate::selection_send::send(
+            window.app_handle(),
+            request.args,
+            request.header.deadline_ms,
+        )
+        .await
     } else if problems {
         let host = runtime.host();
         match (host, runtime.metadata.reserve()) {
@@ -2214,6 +2221,51 @@ pub(crate) fn provider_host(app: &tauri::AppHandle) -> Result<Arc<Host>, &'stati
     app.try_state::<Runtime>().ok_or("initializing")?.host()
 }
 
+pub(crate) async fn validate_log_selection(
+    app: &tauri::AppHandle,
+    context: Option<&product_contract::ProjectContext>,
+    proof: &crate::selection_logs::Proof,
+    deadline: u64,
+) -> Result<(), &'static str> {
+    let runtime = app.try_state::<Runtime>().ok_or("initializing")?;
+    let _context = runtime.context_activity.enter(false)?;
+    let window = app.get_webview_window("main").ok_or("window_unavailable")?;
+    if product_shell_tauri::workspace_context(&window)?.as_ref() != context {
+        return Err("selection_stale");
+    }
+    crate::selection_logs::revalidate(app, proof, deadline).await
+}
+pub(crate) async fn editor_selection_proof(
+    app: &tauri::AppHandle,
+    input: crate::selection_send::Editor,
+    deadline: u64,
+) -> Result<(Option<product_contract::ProjectContext>, [u8; 32]), &'static str> {
+    let runtime = app
+        .try_state::<Runtime>()
+        .ok_or("initializing")?
+        .inner()
+        .clone();
+    let context_permit = runtime.context_activity.enter(false)?;
+    let window = app.get_webview_window("main").ok_or("window_unavailable")?;
+    let context = product_shell_tauri::workspace_context(&window)?;
+    let worker = runtime
+        .file_workers
+        .clone()
+        .try_acquire_owned()
+        .map_err(|_| "file_busy")?;
+    tokio::task::spawn_blocking(move || {
+        let _retained = (context_permit, worker);
+        let host = runtime.host()?;
+        let hash = runtime
+            .files
+            .lock()
+            .map_err(|_| "file_busy")?
+            .selection_hash(&host, context.as_ref(), &input, deadline)?;
+        Ok((context, hash))
+    })
+    .await
+    .map_err(|_| "file_unavailable")?
+}
 pub(crate) async fn approve_received_file(
     app: &tauri::AppHandle,
     proof: product_contract::file_reference::Proof,
