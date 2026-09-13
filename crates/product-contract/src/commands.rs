@@ -43,6 +43,7 @@ pub enum EntityKind {
     TerminalWindow,
     Session,
     Capture,
+    Artifact,
     Transform,
 }
 

@@ -289,3 +289,25 @@ Changed Control Center TypeScript passed (2.065 seconds), with Rust syntax/forma
 and diff review only. Exact-ID/unresolved/repeat and interrupted-write preimage
 cases are prepared; native source-preservation/journal-resume and shortcut conflict
 acceptance will run with the completed B07 PR, not after this commit.
+
+## Session summary to Daily and Notes preview
+
+Workspace's explicit summary action now requests the authenticated Knowledge Daily
+review. Only Workspace can deliver and only Knowledge can read the immutable source
+summary; Control Center does not acquire these methods. After destination route
+review, Knowledge re-reads the exact source operation/revision and prepares the
+existing strict metadata-only Session draft. A separate action opens Notes' existing
+claim/preview/cancel/save flow. No existing Daily note is appended or overwritten.
+
+A bounded receiver ledger persists the source operation -> one-time handoff identity
+before any offer. Retries reuse it, consumed receipts report saved, and expired or
+changed references fail closed. Interrupted pre-ledger publication can leave only an
+unoffered expiring envelope. Existing native Notes claim restoration, acknowledgement
+and exclusive note creation remain authoritative. Two retained receiver permits
+bound the source/IO flow; direct preview invocation must prove the exact reviewed
+route, target and descriptor revision. No body, path or command is put in argv.
+
+Workspace/Knowledge TypeScript passed (8.334 seconds); Rust syntax/format and diff
+checks passed. Exact reviewed-target regression is prepared. Native cancellation,
+duplicate delivery, expired/source-deleted reference and dirty Notes acceptance
+remain with the completed B07 PR verification.

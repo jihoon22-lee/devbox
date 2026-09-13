@@ -158,3 +158,12 @@ export async function importLauncher(description:Description,route:string,method
   if(!["unresolvedFavorites","unresolvedRecents","capacityFavorites","capacityRecents"].every(key=>Array.isArray(plan[key])&&(plan[key] as unknown[]).length<=64&&(plan[key] as unknown[]).every(id=>typeof id==="string"&&/^[A-Za-z0-9_./:-]{1,256}$/.test(id))))throw new Error("가져오기 항목을 확인하지 못했습니다.");
   return value as LauncherImport;
 }
+
+export async function sendSessionSummary(description:Description,route:string,sourceId:string,operationId:string):Promise<CommandReceipt>{
+  if(!nativeMode||description.product.id!=="workspace")throw new Error("Workspace에서 요약을 전달할 수 있습니다.");
+  const header=makeRequest(description.handshake,route,Date.now(),description.context);header.deadlineMs=Date.now()+29000;
+  const provenance={product:description.product.id,component:"workspace.commands",requestId:header.requestId,revision:catalog.catalogRevision};
+  const response=await invoke<{operation:unknown;value:unknown}>("plugin:suite|connection",{request:{header,method:{kind:"sendSessionSummary",sourceId,operationId}}});
+  if(!isOperation(response.operation,provenance)||response.operation.outcome.state!=="succeeded")throw new Error("요약 전달 결과를 확인하지 못했습니다.");
+  return receipt(response.value,operationId);
+}

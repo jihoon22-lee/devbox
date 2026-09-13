@@ -213,6 +213,11 @@ pub(crate) fn handle(
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
         match call {
+            Call::DeliverSessionSummary {
+                source_id,
+                operation_id,
+                revision,
+            } => crate::session_receive::offer(&app, &source_id, &operation_id, &revision),
             Call::InvalidateProjectSnapshot {} => {
                 crate::project_provider::invalidate(&app);
                 Ok(Value::Null)
