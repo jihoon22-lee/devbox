@@ -764,6 +764,37 @@ pub fn issue(error: &str) -> &'static str {
     }
 }
 
+pub(crate) fn operation_rows(
+    app: &tauri::AppHandle,
+) -> Result<Vec<product_contract::operations::Row>, &'static str> {
+    use product_contract::operations::{Phase, Row};
+    let Some(state) = app.try_state::<MigrationState>() else {
+        return Ok(vec![]);
+    };
+    let work = state.work.lock().map_err(|_| "migration_busy")?;
+    let mut rows = work.completed.iter().cloned().collect::<Vec<_>>();
+    if let Some((id, cancel)) = &work.current {
+        rows.retain(|row| row.id != *id);
+        let phase = if matches!(work.stage, "rollback-commit" | "acknowledge-commit") {
+            Phase::Uncancellable
+        } else if cancel.load(Ordering::Acquire) {
+            Phase::CancelRequested
+        } else {
+            Phase::Running
+        };
+        rows.push(Row::new(
+            "api-studio",
+            "api-studio.migration",
+            "requests",
+            id,
+            "API Studio 가져오기",
+            phase,
+            &work.stage,
+        )?);
+    }
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -833,35 +864,4 @@ mod tests {
         fs::write(&workflow_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
         assert!(native_sources(root.path(), &[LegacyApp::DeveloperToolbox], &None).is_err());
     }
-}
-
-pub(crate) fn operation_rows(
-    app: &tauri::AppHandle,
-) -> Result<Vec<product_contract::operations::Row>, &'static str> {
-    use product_contract::operations::{Phase, Row};
-    let Some(state) = app.try_state::<MigrationState>() else {
-        return Ok(vec![]);
-    };
-    let work = state.work.lock().map_err(|_| "migration_busy")?;
-    let mut rows = work.completed.iter().cloned().collect::<Vec<_>>();
-    if let Some((id, cancel)) = &work.current {
-        rows.retain(|row| row.id != *id);
-        let phase = if matches!(work.stage, "rollback-commit" | "acknowledge-commit") {
-            Phase::Uncancellable
-        } else if cancel.load(Ordering::Acquire) {
-            Phase::CancelRequested
-        } else {
-            Phase::Running
-        };
-        rows.push(Row::new(
-            "api-studio",
-            "api-studio.migration",
-            "requests",
-            id,
-            "API Studio 가져오기",
-            phase,
-            &work.stage,
-        )?);
-    }
-    Ok(rows)
 }

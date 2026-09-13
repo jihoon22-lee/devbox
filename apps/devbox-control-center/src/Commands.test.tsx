@@ -3,7 +3,7 @@ import {cleanup,fireEvent,render,screen,waitFor} from "@testing-library/react";
 import {fixtureDescription} from "@devbox/product-shell/api";
 import {searchCommands,searchCommandSource,previewCommand,type CommandSearch} from "@devbox/product-shell/commands";
 import Commands from "./Commands";
-vi.mock("@devbox/product-shell/commands",()=>({searchCommands:vi.fn(),searchCommandSource:vi.fn().mockRejectedValue(new Error("unavailable")),previewCommand:vi.fn(),openCommand:vi.fn(),commandStatus:vi.fn()}));
+vi.mock("@devbox/product-shell/commands",()=>({onConnectionChanged:vi.fn(async()=>()=>{}),searchCommands:vi.fn(),searchCommandSource:vi.fn().mockRejectedValue(new Error("unavailable")),previewCommand:vi.fn(),openCommand:vi.fn(),commandStatus:vi.fn()}));
 afterEach(()=>{cleanup();vi.clearAllMocks();});
 const description=fixtureDescription("control-center");
 const item={id:"control-center.open-tools",owner:"control-center",component:"control-center.shell",

@@ -2297,13 +2297,14 @@ pub(crate) async fn editor_selection_proof(
     let context_permit = runtime.context_activity.enter(false)?;
     let window = app.get_webview_window("main").ok_or("window_unavailable")?;
     let context = product_shell_tauri::workspace_context(&window)?;
+    let filesystem = runtime.filesystem_permit(false, deadline).await?;
     let worker = runtime
         .file_workers
         .clone()
         .try_acquire_owned()
         .map_err(|_| "file_busy")?;
     tokio::task::spawn_blocking(move || {
-        let _retained = (context_permit, worker);
+        let _retained = (context_permit, worker, filesystem);
         let host = runtime.host()?;
         let hash = runtime
             .files

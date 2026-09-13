@@ -10,6 +10,17 @@ pub(crate) fn handle(
     Box<dyn std::future::Future<Output = Result<serde_json::Value, &'static str>> + Send>,
 > {
     Box::pin(async move {
+        if matches!(
+            &call,
+            Call::ReadOperations {} | Call::ReviewOperation { .. }
+        ) {
+            return crate::suite::project_operations(
+                &app,
+                &call,
+                app.state::<crate::command_receipts::Owner>()
+                    .operation_rows()?,
+            );
+        }
         static WORKERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
             std::sync::OnceLock::new();
         let permit = WORKERS

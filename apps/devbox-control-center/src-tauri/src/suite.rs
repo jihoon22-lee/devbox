@@ -794,6 +794,7 @@ pub(crate) fn installed_products(app: &tauri::AppHandle) -> std::collections::BT
     let _ = app;
     products
 }
+#[allow(dead_code)] // Only the actual shortcut and project-provider consumers use this shared module entry.
 pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
     #[cfg(windows)]
     {

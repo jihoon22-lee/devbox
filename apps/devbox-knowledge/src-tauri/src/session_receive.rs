@@ -31,10 +31,16 @@ impl Default for Owner {
     }
 }
 #[derive(Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
+struct StoredHandoff {
+    id: String,
+    kind: String,
+}
+#[derive(Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Entry {
     revision: String,
-    descriptor: HandoffDescriptor,
+    descriptor: StoredHandoff,
     expires: u64,
 }
 #[derive(Deserialize, Serialize)]
@@ -205,7 +211,10 @@ pub(crate) fn publish(
             source_id.into(),
             Entry {
                 revision: revision.into(),
-                descriptor,
+                descriptor: StoredHandoff {
+                    id: descriptor.id,
+                    kind: descriptor.kind,
+                },
                 expires: timestamp.saturating_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS),
             },
         );
@@ -235,7 +244,11 @@ pub(crate) fn publish(
         knowledge_base_lib::component::offer_product_draft(
             app,
             &OpenRequest {
-                target: entry.descriptor.clone().into(),
+                target: HandoffDescriptor {
+                    id: entry.descriptor.id.clone(),
+                    kind: entry.descriptor.kind.clone(),
+                }
+                .into(),
                 from: Some(producer.into()),
             },
         )

@@ -332,28 +332,6 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
     }
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn scheduling_survives_restart_and_future_metadata_is_preserved() {
-        let root = tempfile::tempdir().unwrap();
-        assert!(!read_schedule(root.path()).unwrap());
-        save_schedule(root.path(), true).unwrap();
-        assert!(read_schedule(root.path()).unwrap());
-        save_schedule(root.path(), false).unwrap();
-        assert!(!read_schedule(root.path()).unwrap());
-        fs::write(
-            schedule_path(root.path()),
-            r#"{"schemaVersion":2,"requested":true}"#,
-        )
-        .unwrap();
-        let before = fs::read(schedule_path(root.path())).unwrap();
-        assert!(read_schedule(root.path()).is_err());
-        assert_eq!(fs::read(schedule_path(root.path())).unwrap(), before);
-    }
-}
-
 pub(crate) fn operation_rows(
     app: &tauri::AppHandle,
 ) -> Result<Vec<product_contract::operations::Row>, &'static str> {
@@ -417,4 +395,26 @@ pub(crate) fn operation_rows(
         }
     }
     Ok(rows)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn scheduling_survives_restart_and_future_metadata_is_preserved() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(!read_schedule(root.path()).unwrap());
+        save_schedule(root.path(), true).unwrap();
+        assert!(read_schedule(root.path()).unwrap());
+        save_schedule(root.path(), false).unwrap();
+        assert!(!read_schedule(root.path()).unwrap());
+        fs::write(
+            schedule_path(root.path()),
+            r#"{"schemaVersion":2,"requested":true}"#,
+        )
+        .unwrap();
+        let before = fs::read(schedule_path(root.path())).unwrap();
+        assert!(read_schedule(root.path()).is_err());
+        assert_eq!(fs::read(schedule_path(root.path())).unwrap(), before);
+    }
 }

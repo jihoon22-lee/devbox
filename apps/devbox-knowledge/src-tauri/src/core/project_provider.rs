@@ -1,6 +1,5 @@
 //! B04/B07 native registry projection. No renderer command installs this state.
 //! Registry aliases are metadata; search separately pins the actual root object.
-use product_contract::ProjectContext;
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc, Mutex,

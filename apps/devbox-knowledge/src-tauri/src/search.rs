@@ -618,6 +618,14 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
     .map_err(|_| "search_unavailable")?
 }
 
+pub(crate) fn current_generation(app: &tauri::AppHandle) -> Result<String, String> {
+    let host = app.try_state::<Host>().ok_or("setup_required")?;
+    if stores::read(&host.root)?.as_ref() != Some(&host.manifest) {
+        return Err("search_stale".into());
+    }
+    Ok(host.manifest.generation.clone())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -697,12 +705,4 @@ mod tests {
             Some(rusqlite::ErrorCode::OperationInterrupted)
         );
     }
-}
-
-pub(crate) fn current_generation(app: &tauri::AppHandle) -> Result<String, String> {
-    let host = app.try_state::<Host>().ok_or("setup_required")?;
-    if stores::read(&host.root)?.as_ref() != Some(&host.manifest) {
-        return Err("search_stale".into());
-    }
-    Ok(host.manifest.generation.clone())
 }
