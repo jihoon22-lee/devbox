@@ -129,3 +129,10 @@ export async function onShortcut(callback:(event:{command:string;wasFocused:bool
       &&["control-center.launcher","workspace.summon-terminal","knowledge.quick-capture","workspace.open-current-project"].includes(value.command))callback({command:value.command,wasFocused:value.wasFocused});
   });
 }
+
+export async function onConnectionChanged(callback:()=>void):Promise<()=>void>{
+  if(!nativeMode)return ()=>{};
+  const results=await Promise.allSettled([listen("suite-connected",callback),listen("suite-disconnected",callback)]);
+  const stops=results.flatMap(result=>result.status==="fulfilled"?[result.value]:[]);
+  return ()=>stops.forEach(stop=>stop());
+}

@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from "react";
 import type {ShellContentProps} from "@devbox/product-shell";
-import {searchCommands,searchCommandSource,previewCommand,openCommand,commandStatus,type CommandReceipt,type CommandSearch,type Command} from "@devbox/product-shell/commands";
+import {onConnectionChanged,searchCommands,searchCommandSource,previewCommand,openCommand,commandStatus,type CommandReceipt,type CommandSearch,type Command} from "@devbox/product-shell/commands";
 
 const providers=["workspace","api-studio","knowledge"] as const;
 const reasons:Record<string,string>={notInstalled:"제품 설치 필요",versionMismatch:"제품 버전 확인 필요",providerUnavailable:"제품 연결 확인 필요",contextRequired:"프로젝트 선택 필요",selectionRequired:"선택한 내용 필요",stale:"원본 새로 고침 필요",permissionDenied:"접근 권한 확인 필요"};
@@ -13,6 +13,12 @@ export default function Commands({description,route,navigate}:ShellContentProps)
   const [sources,setSources]=useState<Record<string,{result?:CommandSearch;issue?:boolean}>>({});
   const [delivery,setDelivery]=useState<{product:string;receipt:CommandReceipt|{operationId:string;phase:"unknown"}}|null>(null);
   const generation=useRef(0);
+  const [connectionRevision,setConnectionRevision]=useState(0);
+  useEffect(()=>{
+    let closed=false;let stop:(()=>void)|undefined;
+    void onConnectionChanged(()=>{if(!closed)setConnectionRevision(value=>value+1);}).then(value=>{if(closed)value();else stop=value;});
+    return()=>{closed=true;stop?.();};
+  },[]);
   useEffect(()=>{
     const ticket=++generation.current;const controller=new AbortController();setLoading(true);
     setSources({});
@@ -28,7 +34,7 @@ export default function Commands({description,route,navigate}:ShellContentProps)
       }
     },150);
     return()=>{clearTimeout(timer);controller.abort();generation.current++;};
-  },[description,route,query,source,mode,contentSource]);
+  },[description,route,query,source,mode,contentSource,connectionRevision]);
   const open=async(item:Command)=>{
     if(busy||item.disabledReason)return;
     const ticket=generation.current;setBusy(true);setIssue("");

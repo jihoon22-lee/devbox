@@ -8,6 +8,7 @@ interface Status {connected:boolean;generation:string|null}
 const labels:Record<string,string>=Object.fromEntries(catalog.products.map(product=>[product.id,product.label]));
 export default function SuiteConnection({description,route}:{description:Description;route:string}){
   const [review,setReview]=useState<Review|null>(null),[status,setStatus]=useState<Status|null>(null);
+  const [remember,setRemember]=useState(true);
   const [busy,setBusy]=useState(false),[issue,setIssue]=useState("");
   const call=async<T,>(method:object):Promise<T>=>{
     if(!nativeMode)throw new Error("브라우저 미리보기에서는 제품을 연결할 수 없습니다.");
@@ -25,7 +26,7 @@ export default function SuiteConnection({description,route}:{description:Descrip
   };
   return <section aria-label="제품 연결">
     <h2>제품 연결</h2>
-    <p>같은 설치 폴더의 제품끼리 명령과 선택한 작업을 전달합니다. 연결할 폴더와 제품을 먼저 확인해 주세요.</p>
+    <p>같은 설치 폴더의 제품끼리 명령과 선택한 작업을 전달합니다. 각 제품에서 연결할 폴더를 먼저 확인해 주세요. 기억한 연결은 제품 파일이나 설치가 바뀌면 다시 확인합니다.</p>
     {status?.connected?<><p role="status">이 설치의 제품 연결이 켜져 있습니다.</p><button disabled={busy} onClick={()=>void perform(async()=>{setStatus(await call<Status>({kind:"disconnect"}));setReview(null);})}>연결 끄기</button></>:
       <button disabled={busy||!nativeMode} onClick={()=>void perform(async()=>{
         const current=await call<Status>({kind:"status"});setStatus(current);
@@ -34,8 +35,9 @@ export default function SuiteConnection({description,route}:{description:Descrip
     {review&&!status?.connected&&<div>
       <p>Devbox {review.version}</p><p>{review.root}</p>
       <ul>{review.products.map(product=><li key={product.product}>{labels[product.product]??product.product} · {product.available?"연결 가능":"파일 확인 필요"}</li>)}</ul>
-      <p>이 앱이 실행되는 동안 연결을 허용합니다. 개별 작업의 실행·저장 검토는 해당 제품에서 진행합니다.</p>
-      <button disabled={busy} onClick={()=>void perform(async()=>{setStatus(await call<Status>({kind:"approve",token:review.token}));setReview(null);})}>확인한 제품 연결</button>
+      <p>확인한 설치의 연결을 허용합니다. 개별 작업의 실행·저장 검토는 해당 제품에서 진행합니다.</p>
+      <label><input type="checkbox" checked={remember} onChange={event=>setRemember(event.target.checked)}/>다음 실행에도 같은 설치 연결 유지</label>
+      <button disabled={busy} onClick={()=>void perform(async()=>{setStatus(await call<Status>({kind:"approve",token:review.token,remember}));setReview(null);})}>확인한 제품 연결</button>
       <button disabled={busy} onClick={()=>setReview(null)}>취소</button>
     </div>}
     {busy&&<p role="status">제품 연결을 확인하고 있습니다…</p>}{issue&&<p role="alert">{issue}</p>}

@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 const MANIFEST: &str = "devbox-installation.json";
 const MAX_EXECUTABLE_BYTES: u64 = 512 * 1024 * 1024;
 
-struct Directory {
+pub(super) struct Directory {
     path: PathBuf,
     identity: FilesystemIdentity,
     _file: File,
@@ -48,7 +48,7 @@ impl Directory {
         Ok(())
     }
 }
-fn pin_directories(path: &Path) -> Result<Vec<Directory>> {
+pub(super) fn pin_directories(path: &Path) -> Result<Vec<Directory>> {
     use std::path::{Component, Prefix};
     if !path.is_absolute()
         || !matches!(path.components().next(),Some(Component::Prefix(prefix))
