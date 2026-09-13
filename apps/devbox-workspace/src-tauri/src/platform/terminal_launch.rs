@@ -4,6 +4,25 @@ use product_contract::ProjectContext;
 use std::sync::Arc;
 use wsl_desktop_lib::component::{TerminalLaunchFactory, TerminalLaunchLease};
 
+/// Synchronous WSL leases own their own runtime. Terminal's retained blocking
+/// worker also drives an async PTY future, so lease calls and final destruction
+/// must leave that runtime context. Join before returning: no detached worker or
+/// request/cleanup permit is abandoned when the renderer goes away.
+#[cfg(any(windows, test))]
+fn outside_runtime<T: Send>(call: impl FnOnce() -> T + Send) -> Result<T, &'static str> {
+    if tokio::runtime::Handle::try_current().is_err() {
+        return Ok(call());
+    }
+    std::thread::scope(|scope| {
+        std::thread::Builder::new()
+            .name("workspace-terminal-native".into())
+            .spawn_scoped(scope, call)
+            .map_err(|_| "terminal_worker_unavailable")?
+            .join()
+            .map_err(|_| "terminal_worker_unavailable")
+    })
+}
+
 pub(crate) struct Factory<'a> {
     pub host: &'a Host,
     pub context: Option<&'a ProjectContext>,
@@ -13,7 +32,8 @@ impl TerminalLaunchFactory for Factory<'_> {
     fn capture(&self, distro: &str) -> Result<Arc<dyn TerminalLaunchLease>, String> {
         #[cfg(windows)]
         {
-            native::capture(self, distro, true)
+            outside_runtime(|| native::capture(self, distro, true))
+                .and_then(|result| result)
                 .map(|lease| Arc::new(lease) as Arc<dyn TerminalLaunchLease>)
                 .map_err(str::to_owned)
         }
@@ -33,14 +53,17 @@ pub(crate) fn capture_runtime(
     distro: &str,
     deadline: u64,
 ) -> Result<Arc<dyn run_manager_lib::platform::wsl::CommandBinding>, String> {
-    native::capture_runtime(
-        &Factory {
-            host,
-            context: None,
-            deadline,
-        },
-        distro,
-    )
+    outside_runtime(|| {
+        native::capture_runtime(
+            &Factory {
+                host,
+                context: None,
+                deadline,
+            },
+            distro,
+        )
+    })
+    .and_then(|result| result)
     .map_err(str::to_owned)
 }
 
@@ -55,7 +78,8 @@ pub(crate) fn capture_running(
         deadline,
     };
     #[cfg(windows)]
-    let inner = native::capture(&factory, distro, false)
+    let inner = outside_runtime(|| native::capture(&factory, distro, false))
+        .and_then(|result| result)
         .map(|lease| Arc::new(lease) as Arc<dyn TerminalLaunchLease>)
         .map_err(str::to_owned)?;
     #[cfg(not(windows))]
@@ -172,9 +196,8 @@ mod native {
             argv: Vec<String>,
         ) -> std::result::Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError>
         {
-            self.0
-                .distro
-                .require_running()
+            super::outside_runtime(|| self.0.distro.require_running())
+                .and_then(|result| result)
                 .map_err(|_| std::io::Error::other("runtime-target-unavailable"))?;
             self.0
                 .bind_argv(argv)
@@ -196,8 +219,18 @@ mod native {
     ) -> Result<Arc<dyn run_manager_lib::platform::wsl::CommandBinding>> {
         Ok(Arc::new(RuntimeAdmission(capture(factory, distro, true)?)))
     }
+    impl Drop for Admission {
+        fn drop(&mut self) {
+            if let Some(project) = self.project.take() {
+                let _ = super::outside_runtime(|| drop(project));
+            }
+        }
+    }
     impl Admission {
         fn check(&self) -> Result<()> {
+            super::outside_runtime(|| self.check_native())?
+        }
+        fn check_native(&self) -> Result<()> {
             if let Some(context) = &self.context {
                 if Some(self.projects.binding(context)?) != self.binding {
                     return Err("project_binding_changed");
@@ -222,33 +255,66 @@ mod native {
             self.check().map_err(str::to_owned)
         }
         fn bind_argv(&self, mut argv: Vec<String>) -> std::result::Result<Vec<String>, String> {
-            self.revalidate()?;
-            if !self.allow_start {
-                self.distro.require_running().map_err(str::to_owned)?;
-            }
-            if argv.len() < 3
-                || argv[0] != "wsl.exe"
-                || argv[1] != "-d"
-                || argv[2] != self.distro.name()
-            {
-                return Err("terminal_target_invalid".into());
-            }
-            argv[0] = self
-                .executable
-                .to_str()
-                .ok_or("wsl_executable_unavailable")?
-                .into();
-            argv[1] = "--distribution-id".into();
-            argv[2] = self.distro.id().into();
-            Ok(argv)
+            super::outside_runtime(|| {
+                self.revalidate()?;
+                if !self.allow_start {
+                    self.distro.require_running().map_err(str::to_owned)?;
+                }
+                if argv.len() < 3
+                    || argv[0] != "wsl.exe"
+                    || argv[1] != "-d"
+                    || argv[2] != self.distro.name()
+                {
+                    return Err("terminal_target_invalid".into());
+                }
+                argv[0] = self
+                    .executable
+                    .to_str()
+                    .ok_or("wsl_executable_unavailable")?
+                    .into();
+                argv[1] = "--distribution-id".into();
+                argv[2] = self.distro.id().into();
+                Ok(argv)
+            })
+            .map_err(str::to_owned)?
         }
         fn retire(&self) -> std::result::Result<(), String> {
-            if let Some(Project::Wsl(lease)) = &self.project {
-                if lease.is_open() {
-                    return lease.shutdown().map_err(str::to_owned);
+            super::outside_runtime(|| {
+                if let Some(Project::Wsl(lease)) = &self.project {
+                    if lease.is_open() {
+                        return lease.shutdown();
+                    }
                 }
-            }
-            Ok(())
+                Ok(())
+            })
+            .and_then(|result| result)
+            .map_err(str::to_owned)
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::outside_runtime;
+    #[test]
+    fn synchronous_lease_runtime_and_drop_complete_outside_the_pty_runtime() {
+        let outer = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .unwrap();
+        outer.block_on(async {
+            let value = outside_runtime(|| {
+                assert!(tokio::runtime::Handle::try_current().is_err());
+                let lease = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .unwrap();
+                let result = lease.block_on(async { 42 });
+                drop(lease);
+                result
+            })
+            .unwrap();
+            assert_eq!(value, 42);
+        });
     }
 }

@@ -59,17 +59,16 @@ try {
   if ($mode -ne $WslVersion) {throw 'Owned fixture mode differs from requested mode'}
   $owner=Join-Path $directory 'owner.json'
   @{schema=1;name=$name;distroId=$registered[0].PSChildName.Trim('{}');version=$mode}|ConvertTo-Json | Set-Content -Encoding UTF8 -LiteralPath $owner
-  $start=Run-OwnedWsl @('--distribution',$name,'--user','root','--cd','/','--exec','/usr/bin/mkdir','-p','/home/devbox-fixture')
+  $start=Run-OwnedWsl @('--distribution',$name,'--user','root','--cd','/','--exec','/usr/bin/mkdir','-p','/home/devbox-fixture') 90000
+  @{stage='owned-fixture-start';result=$start}|ConvertTo-Json -Compress
   if ($start.exit -ne 0) {throw 'Owned fixture did not start'}
-  # The digest-pinned Ubuntu fixture includes Git; service errors are not missing packages.
-  $git=Run-OwnedWsl @('--distribution',$name,'--user','root','--cd','/','--exec','/usr/bin/git','--version')
-  @{stage='owned-fixture-git';result=$git}|ConvertTo-Json -Compress
-  if ($git.exit -ne 0) {throw 'Owned fixture Git provisioning failed'}
   # Explicit test tooling only in this newly registered, digest-verified distro.
   $updated=Run-OwnedWsl @('--distribution',$name,'--user','root','--cd','/','--exec','/usr/bin/apt-get','update') 180000
   if ($updated.exit -ne 0) {throw 'Owned fixture package index failed'}
   $tools=Run-OwnedWsl @('--distribution',$name,'--user','root','--cd','/','--exec','/usr/bin/env','DEBIAN_FRONTEND=noninteractive','/usr/bin/apt-get','install','-y','--no-install-recommends','git','python3','tmux','docker.io','busybox-static','ca-certificates') 300000
   if ($tools.exit -ne 0) {throw 'Owned fixture tooling installation failed'}
+  $git=Run-OwnedWsl @('--distribution',$name,'--user','root','--cd','/','--exec','/usr/bin/git','--version')
+  if ($git.exit -ne 0) {throw 'Owned fixture Git provisioning failed'}
   $zellijArchive=Join-Path $directory 'zellij.tar.gz'
   Invoke-WebRequest -UseBasicParsing -TimeoutSec 120 -Uri 'https://github.com/zellij-org/zellij/releases/download/v0.43.1/zellij-x86_64-unknown-linux-musl.tar.gz' -OutFile $zellijArchive
   if ((Get-FileHash -LiteralPath $zellijArchive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '541d98efef5558293ef85ad9acd29e4d920b6e881513b9e77255d8207020d75a') {throw 'Zellij fixture digest mismatch'}

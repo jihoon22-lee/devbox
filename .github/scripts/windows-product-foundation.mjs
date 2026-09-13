@@ -100,6 +100,11 @@ async function waitForRenderer(cdp, expression, label) {
   throw new Error(`${label}: route=${snapshot.route}, dialogs=${snapshot.dialogs}`);
 }
 
+function retainNativeErrors(child,product,suffix){
+  let error="";
+  child.stderr?.setEncoding("utf8");
+  child.stderr?.on("data",value=>{error=(error+value).slice(-16000);writeFileSync(`product-foundation-evidence/native-errors-${product.id}-${suffix}.txt`,error);});
+}
 async function start(product, suffix) {
   const directory = path.join(root, `${product.id}-${suffix}`); mkdirSync(directory);
   // Elevated WebView2 reads per-image machine policy instead of the process
@@ -121,7 +126,8 @@ async function start(product, suffix) {
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
-    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: "ignore" });
+    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
+    retainNativeErrors(child,product,suffix);
     await once(child, "spawn");
     cdp = await connect(port, child);
     progress(product, suffix, "renderer-connected");
@@ -191,7 +197,8 @@ async function start(product, suffix) {
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
       copyClosedTerminalImport(terminalImport);
-      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:"ignore"});
+      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
+      retainNativeErrors(child,product,suffix);
       cdp=await connect(port,child,performance.now()+45000);
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
       componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);

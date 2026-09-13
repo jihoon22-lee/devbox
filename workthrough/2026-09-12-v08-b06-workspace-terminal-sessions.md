@@ -279,3 +279,31 @@ correlation, descendant/start-tick checks, redaction, group stop and backoff in
 correlation was explicitly unsupported. The final evidence/cleanup record is in
 the existing B05 workthrough, committed with this dependent bundle. Rebase did not
 trigger repeated validation or an extra docs-only PR. Host main remains untouched.
+
+## Remaining native companion failure
+
+Final-head CI 34723990415 passed for e75bf83. Foundation 34723990438 passed
+Windows authority/native tests and installer builds, then reached the new companion
+fixture after Runtime and shared/borrowed/two-worktree/partial-failure Sessions.
+Both panes failed before PTY admission. Its exact exported debug artifact
+26680aa9a726ec5e816b7c16d6508b089349f523 reproduced the same failure locally.
+The owned WSL2 Runtime correlation/group-stop/backoff checks passed; Sessions,
+Terminal, multiplexer and container acceptance are not yet complete.
+
+A minimal companion-only reproduction captured the native panic at
+wsl_distro.rs:399: a synchronous WSL lease attempted to start its own runtime while
+the retained Terminal worker was driving an async PTY future. The adapter now
+joins synchronous capture, validation, running-state checks and final lease/runtime
+retirement outside the caller's async context. Its existing request/cleanup permits
+remain held until the joined work completes. Pure regression passed (one test,
+0.521-second runner) after only the changed same-feature Workspace test artifact
+was rebuilt (35.148 seconds). No passing full audit was repeated.
+
+Synthetic Windows runners now retain bounded native stderr, so a panic no longer
+appears only as a later generic renderer timeout. The owned WSL2 runner installs
+Git before checking it, allows the first newly imported distro up to 90 seconds
+to boot, and preserves that start result. The Session fixture uses its own /home
+folder so distro idle shutdown cannot discard its /tmp owner/cwd. All disposable
+local app/data/distro/temp resources were removed. Diagnostic runs are not Terminal
+PASS evidence. JavaScript and PowerShell syntax checks passed; final Windows
+execution of this repair and the previously unreached cases remains required.

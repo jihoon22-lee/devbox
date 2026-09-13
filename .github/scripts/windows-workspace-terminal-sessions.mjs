@@ -23,7 +23,7 @@ export async function exerciseWorkspaceTerminalSessions({cdp,directory,call,succ
 export async function exerciseTerminalSessionFixture({cdp,directory,call,success,connectTerminal,distro,wsl,multiplexer="native"}) {
   const until=async(check,message)=>{const deadline=performance.now()+45000;do{const value=await check();if(value)return value;await delay(150);}while(performance.now()<deadline);assert.fail(message);};
   const original=(await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context;
-  const nonce=randomUUID(),root=path.join(directory,"b06-"+nonce),linux="/tmp/devbox-b06-"+nonce;
+  const nonce=randomUUID(),root=path.join(directory,"b06-"+nonce),linux="/home/devbox-b06-"+nonce;
   mkdirSync(root);writeFileSync(path.join(root,".fixture-owner"),nonce,{flag:"wx"});const rootIdentity=realpathSync.native(root);
   const runtime=(method,args={})=>call("workspace.runtime",method,args,29000);
   const terminal=(method,args={})=>call("workspace.terminal",method,args,29000);
@@ -164,7 +164,17 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     await assert.rejects(()=>invoke("write_initial_command",{sessionId:reconnected[0].id,data:"printf 'must-not-run'\r"}));
     const nativeTasks=await exerciseNativeWslTasks({cdp,call,success,distro,wsl,root:linux+"/project"});
     return {nativeTasks,multiplexer,stateOnlyReconnect:true,borrowedServicePreserved:true,twoGitWorktrees:true,cancelRetiresOwnedResources:true,partialFailureCleanup:true,sharedServiceLastHolderStop:true,summaryReceiptAndUnknownCounts:true,profileRevision:true,twoPanes:true,hiddenOutput:true,reloadKeepsPty:true,forcedWebglFallback:true,sigintPreservesPty:true};
-  } catch(error) { primary=error;throw error; }
+  } catch(error) {
+    primary=error;
+    if(companion) {
+      try {
+        const state=await companion.evaluate("({text:(document.body?.innerText??'').slice(0,12000),panes:document.querySelectorAll('.xterm').length})");
+        writeFileSync(path.join(directory,"b06-terminal-failure.json"),JSON.stringify({error:String(error),state},null,2));
+        console.error(JSON.stringify({stage:"terminal-companion-failure",state}));
+      }catch{/* Keep the original acceptance failure. */}
+    }
+    throw error;
+  }
   finally {
     const errors=[];
     const attempt=async(action)=>{try{await action();return true;}catch(error){errors.push(error);return false;}};
