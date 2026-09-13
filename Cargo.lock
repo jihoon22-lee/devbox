@@ -1345,6 +1345,7 @@ dependencies = [
 name = "devbox-knowledge"
 version = "0.8.0"
 dependencies = [
+ "applink",
  "catalog",
  "data-migration",
  "everything-plus",

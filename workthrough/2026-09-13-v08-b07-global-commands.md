@@ -138,3 +138,34 @@ Next: cold launch and durable approved installation selection; one shortcut owne
 federated metadata/content providers; source-owned artifact claim/restore/ack and
 Knowledge summary/capture; shared operation/review projections; legacy preference
 mapping; native end-to-end fixtures. B08 owns final installer/activation topology.
+
+## Federated owner queries
+
+Request UUIDs now identify native cancellation independently of display generation.
+A pre-arrival cancellation remains effective; Commands and Launcher cannot cancel
+one another through overlapping counters. Disconnect cancels outstanding queries,
+and a dropped Knowledge query retires its own search lease. Knowledge keeps the
+existing aggregate worker/object limits while separating product and federated
+job eviction/cancel rights; no new query can revoke the other consumer's references.
+
+Commands now offers Projects, Repositories/Worktrees, Tasks, Services, Recent Runs,
+Indexed Files, Notes and Saved Queries. Knowledge reuses its bounded filename/content
+reader and opaque references, exporting labels, availability/staleness and partial
+state without paths/snippets/body. Content search is explicitly selected. The receiver
+revalidates references before Notes/default-app opening; file-to-Workspace Editor
+handoff still remains below. Saved queries reuse the actual legacy validator, native
+store-generation revision and owner-side apply review; their text/filter remains
+inside Knowledge. No query/body is added to shared recent history.
+
+Runtime metadata uses a producer-owned read-only SQLite transaction with a 1.5-second
+progress deadline and row/label caps. It selects no command/cwd/environment and starts
+no scheduler, migration or legacy publication. Native root/database/sidecar handles
+and schema checks surround the read. Tasks/services use existing selection/dirty
+editor handling; a run opens its current owner record and existing Logs handoff.
+Fixtures cover source-consumer isolation, early cancellation, same-name targets and
+metadata exclusion. They are prepared for the completed B07 PR's detailed run.
+
+This slice passed Rust syntax/format parsing and the three changed product TypeScript
+checks (12.682 seconds). No Cargo tests, Clippy, frontend tests/builds or affected
+verification were run while B07 remains incomplete. B06's independent final failure
+repair is not a reason to repeat B07 checks.

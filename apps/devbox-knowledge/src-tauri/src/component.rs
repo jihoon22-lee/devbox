@@ -262,6 +262,9 @@ async fn execute(
                 .await
                 .map(|value| crate::search::associate_activity(app, &request.method, value))
         }
+        "knowledge.search" if request.method == "source_saved_reference" => {
+            crate::federation::saved_reference(app, request.args).await
+        }
         "knowledge.opener" if request.method == "open_targets" => Ok(json!([])),
         "knowledge.opener" if request.method == "open_in" => Err("provider_unavailable".into()),
         "knowledge.opener" => crate::search::open(app, &request.method, request.args).await,

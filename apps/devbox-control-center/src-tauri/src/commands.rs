@@ -30,6 +30,7 @@ struct SourceRequest {
     query: String,
     generation: u64,
     source: Option<product_contract::transport::Source>,
+    mode: Option<product_contract::transport::QueryMode>,
 }
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -74,6 +75,13 @@ fn preferences_path(app: &tauri::AppHandle) -> Result<std::path::PathBuf, &'stat
 struct ShortcutRequest {
     header: RouteRequest,
     config: Option<crate::shortcuts::Config>,
+}
+#[derive(Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct CancelRequest {
+    header: RouteRequest,
+    product: String,
+    query_id: String,
 }
 #[derive(Serialize)]
 struct Response<T> {
@@ -166,6 +174,8 @@ async fn command_source(
         window.app_handle(),
         &request.product,
         product_contract::transport::Call::Query {
+            query_id: request.header.request_id.clone(),
+            mode: request.mode.unwrap_or_default(),
             source: request
                 .source
                 .unwrap_or(product_contract::transport::Source::Commands),
@@ -390,12 +400,42 @@ async fn command_shortcut(
     })
 }
 
+#[tauri::command]
+async fn command_cancel(
+    window: WebviewWindow,
+    request: CancelRequest,
+) -> Result<Response<serde_json::Value>, Problem> {
+    let provenance =
+        product_shell_tauri::authorize(&window, &request.header, "control-center.commands")?;
+    let value = crate::suite::remote(
+        window.app_handle(),
+        &request.product,
+        product_contract::transport::Call::CancelQuery {
+            query_id: request.query_id,
+        },
+        request.header.deadline_ms,
+    )
+    .await
+    .map_err(|_| Problem {
+        code: ProblemCode::Unavailable,
+        provenance: provenance.clone(),
+    })?;
+    Ok(Response {
+        operation: Operation {
+            provenance,
+            outcome: OperationState::Succeeded {},
+        },
+        value,
+    })
+}
+
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("commands")
         .invoke_handler(tauri::generate_handler![
             command_search,
             command_preview,
             command_source,
+            command_cancel,
             command_open,
             command_status,
             command_preferences,

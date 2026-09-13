@@ -1,3 +1,4 @@
+import {useIncomingReview} from "@devbox/product-shell/incoming";
 import {lazy,Suspense,useCallback,useEffect,useRef,useState} from "react";
 import {listen} from "@tauri-apps/api/event";
 import type {Description} from "@devbox/product-shell/api";
@@ -9,10 +10,14 @@ const Tasks=lazy(()=>import("@devbox/workspace-features/tasks"));
 const Runtime=lazy(()=>import("@devbox/workspace-features/runtime"));
 const Logs=lazy(()=>import("@devbox/workspace-features/logs"));
 const RuntimeWsl=lazy(()=>import("./RuntimeWsl"));
+const IncomingRuntimeReview=lazy(()=>import("./IncomingRuntimeReview"));
 const RuntimeImport=lazy(()=>import("./RuntimeImport"));
 const RuntimeSettingsImport=lazy(()=>import("./RuntimeSettingsImport"));
 type Diagnostic={id:string;relativePath:string;line:number;column:number|null};
 export default function NativeRuntimeRoutes({route,description,navigate,tasksDirty,onDirtyChange,onDiagnostic,externalLogOpen,onExternalLogConsumed,focusRequest,onFocusConsumed}:{route:string;description:Description;navigate:(route:string)=>void;tasksDirty:boolean;onDirtyChange:(dirty:boolean)=>void;onDiagnostic:(request:Diagnostic)=>void;focusRequest?:RuntimeFocusRequest|null;onFocusConsumed?:(id:string)=>void;externalLogOpen?:RuntimeLogOpenRequest|null;onExternalLogConsumed?:(id:string)=>void}) {
+  const {review:incoming,clear:clearIncoming}=useIncomingReview();
+  const incomingTask=incoming?.route==="tasks"&&incoming.target.kind==="entity"&&["task","service"].includes(incoming.target.entity)?{id:incoming.operationId,jobId:incoming.target.id}:null;
+  const consumeTask=(id:string)=>{if(incomingTask?.id===id)clearIncoming();else onFocusConsumed?.(id);};
   const [taskSource,setTaskSource]=useState<{context:Description["context"];source:TaskSource}|null>(null);
   useEffect(()=>{
     if(route!=="tasks"||!description.context)return;
@@ -71,7 +76,7 @@ export default function NativeRuntimeRoutes({route,description,navigate,tasksDir
   return <>
     {runtimeNotice && <p role="status">{runtimeNotice}</p>}
     {(engineVisited.has("tasks") || route === "tasks") && <div className="workspace-feature-tasks" hidden={route !== "tasks"} inert={route !== "tasks"}>
-      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><RuntimeImport description={description} active={route === "tasks"} blocked={tasksDirty}/><Tasks importSource={currentTaskSource} openTask={focus?.target.kind==="task"?{id:focus.id,jobId:focus.target.jobId}:null} onTaskConsumed={onFocusConsumed} active={route === "tasks"} onDirtyChange={onDirtyChange}/></Suspense>
+      <Suspense fallback={<p role="status">작업과 서비스를 불러오고 있습니다…</p>}><IncomingRuntimeReview description={description}/><RuntimeImport description={description} active={route === "tasks"} blocked={tasksDirty}/><Tasks importSource={currentTaskSource} openTask={incomingTask??(focus?.target.kind==="task"?{id:focus.id,jobId:focus.target.jobId}:null)} onTaskConsumed={consumeTask} active={route === "tasks"} onDirtyChange={onDirtyChange}/></Suspense>
     </div>}
     {(engineVisited.has("runtime") || route === "runtime") && <div className="workspace-feature-runtime" hidden={route !== "runtime"} inert={route !== "runtime"}>
       <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "runtime"} kind="runtime" onImported={()=>setRuntimeSettingsRevision(value=>value+1)}/><Runtime openPort={focus?.target.kind==="port"?{id:focus.id,port:focus.target.port}:null} onPortConsumed={onFocusConsumed} active={route === "runtime"} settingsRevision={runtimeSettingsRevision}/><RuntimeWsl description={description} active={route === "runtime"}/></Suspense>

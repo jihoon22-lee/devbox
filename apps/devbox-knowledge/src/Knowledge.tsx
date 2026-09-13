@@ -1,3 +1,4 @@
+import type {SavedSearchInput} from "@devbox/knowledge-features/search";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 import { Startup } from "./Startup";
@@ -8,8 +9,10 @@ const MigrationSettings = lazy(() => import("./MigrationSettings"));
 const Daily = lazy(() => import("./Daily"));
 const Notes = lazy(() => import("@devbox/knowledge-features/notes"));
 const Activity = lazy(() => import("@devbox/knowledge-features/activity"));
+const IncomingSearchReview = lazy(() => import("./IncomingSearchReview"));
 const Search = lazy(() => import("@devbox/knowledge-features/search"));
 function Content({ route, navigate }: ShellContentProps) {
+  const [savedSearch,setSavedSearch]=useState<SavedSearchInput>();
   const [showSettings, setShowSettings] = useState<"import" | "vault" | null>(null);
   const activateNotes = useCallback(() => { setShowSettings(null); navigate("notes"); }, [navigate]);
   const activateDaily = useCallback(() => navigate("daily"), [navigate]);
@@ -45,7 +48,7 @@ function Content({ route, navigate }: ShellContentProps) {
       <Suspense fallback={<p role="status">활동을 불러오고 있습니다…</p>}><Activity projectRevision={projectRevision} active={group === "activity"} selectedDate={date} onDateChange={setDate} onDaily={activateDaily} onDraft={activateNotes} lifecycleSettings={<Suspense fallback={<p role="status">종료 설정을 불러오고 있습니다…</p>}><LifecycleSettings/></Suspense>}/></Suspense>
     </div>}
     {(visited.has("search") || group === "search") && <div className="knowledge-feature-search" hidden={group !== "search"}>
-      <Suspense fallback={<p role="status">검색을 불러오고 있습니다…</p>}><Search projectRevision={projectRevision} onNoteOpen={activateNotes}/></Suspense>
+      <Suspense fallback={<p role="status">검색을 불러오고 있습니다…</p>}><IncomingSearchReview onNoteOpen={activateNotes} onSaved={setSavedSearch}/><Search savedSearch={savedSearch} projectRevision={projectRevision} onNoteOpen={activateNotes}/></Suspense>
     </div>}
   </>;
 }
