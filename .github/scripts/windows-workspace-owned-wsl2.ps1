@@ -1,5 +1,10 @@
 param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets)
 $ErrorActionPreference='Stop'
+# WSL distributions can share host networking. No local/self-hosted opt-out:
+# daemon provisioning may change iptables even before a test container starts.
+if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows' -or $env:GITHUB_REPOSITORY -ne 'jihoon22-lee/devbox' -or $env:GITHUB_RUN_ID -notmatch '^\d+$' -or $RunId -ne $env:GITHUB_RUN_ID -or $SourceSha -ne $env:GITHUB_SHA) {
+  throw 'Network-changing fixtures are disabled on local and self-hosted machines. Use a disposable GitHub-hosted Windows runner; never spoof CI environment variables.'
+}
 $WslVersion=2
 if ($Digest -notmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Digest) {throw 'Owned fixture archive digest mismatch'}
 $name='DevboxWorkspaceFixture-'+[guid]::NewGuid().ToString('N')

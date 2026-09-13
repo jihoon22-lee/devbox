@@ -31,6 +31,29 @@
 - 최종 코드가 검사 후 바뀌면 영향을 받은 검증을 보충한다. resolver가 요구한 all 범위와
   최종 CI·Windows 수용 조건은 지킨다. 불필요한 반복을 줄이기 위해 gate 자체를 생략하지 않는다.
 
+## 기존 서비스와 공유 네트워크 보호
+
+로컬 테스트 때문에 기존 Docker 서비스, 방화벽 또는 네트워크 상태가 바뀌어서는 안 된다.
+2026-09-13 사용자는 전용 WSL2 테스트 배포판에서 Docker를 준비한 뒤 기존 서비스 영향과
+iptables 일부 손실을 보고했다. 배포판/파일/data-root 소유권과 네트워크 격리는 별개다.
+Docker는 bridge를 위해 **호스트 network namespace에 iptables 규칙을 만든다**
+([Docker 공식 설명](https://docs.docker.com/engine/network/firewall-iptables/)).
+따라서 고유 배포판·socket·container 이름을 만들고 나중에 제거했다는 사실로 안전을 판단하지 않는다.
+
+- 로컬 Windows/WSL 및 기존 서비스가 있는 self-hosted runner에서는 Docker 패키지 설치,
+  daemon 시작/중지, 실제 container/network/volume 조작, firewall/route/sysctl 변경을 하지 않는다.
+  패키지 설치 중의 service hook도 공유 네트워크를 바꿀 수 있으므로 테스트 본문 직전이 아니라
+  **provisioning 전에** 차단한다. 임시 WSL 배포판을 만드는 이 수용 runner도 로컬에서 차단한다.
+- `.github/scripts/windows-workspace-owned-wsl2.ps1`은 파일 복사·배포판 등록 전에 GitHub-hosted
+  Windows runner와 현재 저장소/run/source를 확인한다. Node 진입점과 container 함수도 별도로
+  차단한다. 로컬 허용 switch는 없고 CI 환경 변수를 꾸며내거나 과거 사설 복사본으로 우회하지 않는다.
+- Docker/WSL2 실기는 일회성 hosted runner로 옮긴다. 독립 VM을 사용할 경우에도 그 VM의
+  kernel/network와 대상 Docker endpoint가 기존 서비스와 분리된 별도 실행 경로가 필요하다.
+  현재 runner의 CI 차단 조건을 바꾸는 방식으로 VM을 승인하지 않는다.
+- 격리 환경을 확보하지 못한 수용 항목은 미실행으로 기록한다. 이미 통과한 순수 단위/타입
+  검사를 반복하지 않고 구현을 계속한다. 기존 서비스 재시작이나 iptables 복원은 증거 없이
+  자동으로 시도하지 않으며 별도의 명시적 복구 요청 범위에서 처리한다.
+
 ## 기본 자원 예산
 
 WSL/Linux의 두 verify 명령은 같은 supervisor를 사용한다. 직접 실행한 `cargo`/`pnpm test`,

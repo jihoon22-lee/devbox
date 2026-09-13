@@ -1,8 +1,11 @@
+import {requireHostedNetworkFixture} from "./fixture-network-safety.mjs";
 // Real container actions against the daemon in this runner's disposable WSL2 distro.
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {setTimeout as delay} from "node:timers/promises";
 export async function exerciseOwnedContainers({cdp,call,success,wsl,distro}){
+  requireHostedNetworkFixture();
+  assert.match(distro,/^DevboxWorkspaceFixture-[a-f0-9]{32}$/);
   const nonce=randomUUID(),root="/tmp/devbox-container-"+nonce,name="devbox-fixture-"+nonce;
   const terminal=(method,args={})=>call("workspace.terminal",method,args);
   const docker=args=>wsl(["/usr/bin/docker",...args]);

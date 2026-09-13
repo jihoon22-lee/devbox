@@ -307,3 +307,27 @@ folder so distro idle shutdown cannot discard its /tmp owner/cwd. All disposable
 local app/data/distro/temp resources were removed. Diagnostic runs are not Terminal
 PASS evidence. JavaScript and PowerShell syntax checks passed; final Windows
 execution of this repair and the previously unreached cases remains required.
+
+## Local Docker incident and execution boundary
+
+On 2026-09-13 the user reported that this work's local Docker testing affected
+existing services and removed some iptables state. The runner installed Docker
+and started dockerd in a new WSL2 distribution; unique distro/data ownership did
+not isolate shared host networking. Deleting the fixture therefore does not prove
+preservation of existing network state. Previous local cleanup evidence proves
+only removal of owned files/processes/distro registrations, not network safety.
+
+No local acceptance worker was running when this report was checked. Local Docker
+and this WSL2 provisioning runner are now blocked before setup, with independent
+PowerShell, Node entrypoint and container-function gates. Existing private local
+reproduction entrypoints were disabled. AGENTS, CONVENTIONS, verification operations
+and both development/review skills now require disposable hosted CI or a separately
+verified independent VM for network-changing tests and prohibit spoofed environment
+variables, private-copy bypasses and automatic host-service/firewall recovery.
+The Docker/WSL2 acceptance items remain unrun after the latest repair until a safe
+isolated environment executes them. This incident is not an application test PASS.
+
+The two pure execution-guard cases passed (0.272-second runner), and an actual
+local PowerShell invocation was rejected before provisioning. The guard cases
+are included in the existing Windows fixture-script test entry. No Docker or
+existing service command was run to verify this prevention change.

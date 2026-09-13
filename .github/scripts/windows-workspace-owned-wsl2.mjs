@@ -1,4 +1,5 @@
-// Exact-artifact acceptance in a disposable WSL2 distro owned by the paired runner.
+import {requireHostedNetworkFixture} from "./fixture-network-safety.mjs";
+// Exact-artifact acceptance only on a disposable GitHub-hosted Windows runner.
 import {exerciseTerminalSessionFixture} from "./windows-workspace-terminal-sessions.mjs";
 import {exerciseMultiplexerReconnect} from "./windows-workspace-multiplexer.mjs";
 import {exerciseOwnedContainers} from "./windows-workspace-containers.mjs";
@@ -83,8 +84,10 @@ async function waitForRenderer(cdp, expression, label) {
 
 
 
+const networkFixture=requireHostedNetworkFixture();
 assert.equal(process.platform,'win32');
 const [ownerFile,artifact,expectedSource,expectedRun]=process.argv.slice(2);
+assert.equal(expectedRun,networkFixture.runId);
 const json=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const owner=json(ownerFile),directory=path.dirname(ownerFile);
 assert.equal(owner.schema,1);assert.equal(owner.version,2);
