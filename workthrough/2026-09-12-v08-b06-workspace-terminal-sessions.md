@@ -396,3 +396,11 @@ five existing snapshot-control cases passed; the two new product cases passed af
 repairing their missing native-storage fixture setup (2.901 seconds). No unrelated
 passing test suite or Cargo audit was repeated. Changed feature/product type checks
 passed (18.180 seconds) and were the only other local verification before the final CI repair commit.
+
+
+The final 387b570 CI (34731955622) passed. Native run 34731955726 now
+restored both panes and received real PTY output, then failed the foreground-focus
+observation; isolated WSL2 remains unrun. Retained-artifact diagnosis captures
+native foreground/window state, Tauri focus and renderer focus before/after the
+native request and CDP foreground action. It makes no product change and does not
+count hosted diagnostics as acceptance. No local Windows/Docker fixture was run.

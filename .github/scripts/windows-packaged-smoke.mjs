@@ -322,7 +322,7 @@ function processState(pid) {
   return output ? JSON.parse(output) : null;
 }
 
-function nativeWindowState(pid, expectedTitle, minimize = false) {
+export function nativeWindowState(pid, expectedTitle, minimize = false) {
   const title = powershellUtf8(expectedTitle);
   const output = powershell(
     `Add-Type -Namespace DevboxAcceptance -Name NativeMethods -MemberDefinition '` +

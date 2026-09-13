@@ -7,7 +7,7 @@ import {createHash,randomUUID} from "node:crypto";
 import {readFileSync,writeFileSync,mkdirSync,lstatSync,existsSync,realpathSync,rmSync,copyFileSync} from "node:fs";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
-import {windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
+import {nativeWindowState,windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
 import {setTimeout as delay} from "node:timers/promises";
 import path from "node:path";
 const hosted=requireHostedNetworkFixture();assert.equal(process.platform,"win32");
@@ -58,6 +58,15 @@ try {
  }
  assert.equal(evidence.observations.sessions.length,2,"Companion did not restore both panes; diagnostic state retained");
  evidence.observations.twoPanesRestored=true;
+ const title=await companion.evaluate("document.title");
+ evidence.observations.focus=[];
+ for(const mode of ["native-request","cdp-bring-to-front","native-request-again"]){
+   if(mode==="cdp-bring-to-front")await companion.command("Page.bringToFront");
+   else success(await call("workspace.terminal","focus_terminal",{id:windowId}));
+   await delay(500);
+   evidence.observations.focus.push({mode,policy:await invoke("terminal_window_policy"),documentFocus:await companion.evaluate("document.hasFocus()"),native:nativeWindowState(child.pid,title)});
+ }
+
 } catch(error) { evidence.failure=String(error);process.exitCode=1; }
 finally {
  companion?.close();main?.close();
