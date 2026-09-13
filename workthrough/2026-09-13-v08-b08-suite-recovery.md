@@ -70,3 +70,21 @@ hash/version and active generation must match before selecting a generation's da
 namespace. Synthetic regression cases are prepared, not executed ahead of B08's
 complete PR audit. Installer startup/write barriers and health/commit integration
 still need implementation before this is an accepted activation path.
+
+
+The package contract now requires one setup, four product ZIPs, notices and a
+schema-2 release manifest. A deterministic assembly script binds the source SHA,
+exact file closures and standalone portable declarations; it does not build or
+publish anything. The stager validates archive and member hashes/limits, rejects
+unlisted paths, links, encrypted/directory entries and existing destinations, pins
+Windows stage directories, and suppresses the portable manifest that would shadow
+a suite root declaration. Synthetic escape/cancellation/preservation fixtures are
+prepared for the final B08 audit. No package staging has run on a user installation.
+
+A shared product/worker lifetime lock now excludes late v0.8 writers while the
+updater holds the exclusive gate. The API service and browser preservation workers
+retain the same lease. Generation installations fail closed if their gate is
+missing or an update owns it. Detailed bootstrap/legacy writer quiesce and controlled
+health/import worker admission remain to connect; this is not completed recovery
+acceptance. Minimal library type checks passed (34.755 seconds), with unused legacy
+Manager entrypoint warnings in embedded mode to resolve before final Clippy.

@@ -185,7 +185,7 @@ pub(crate) fn run_worker(
     stage_id: String,
     mut context: tauri::Context<tauri::Wry>,
 ) -> tauri::Result<()> {
-    product_shell_tauri::isolate_installation(&mut context)?;
+    let _installation = product_shell_tauri::isolate_installation(&mut context)?;
     context.config_mut().app.windows.clear();
     tauri::Builder::default()
         .plugin(tauri::plugin::Builder::<tauri::Wry, ()>::new("workspace").invoke_handler(tauri::generate_handler![terminal_export_message]).build())

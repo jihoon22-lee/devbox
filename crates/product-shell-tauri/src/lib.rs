@@ -2,6 +2,7 @@
 //! their command allowlists and reuse this native session authorization.
 mod installation;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
+pub use installation::WriterGuard;
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
     RouteRequest, RouteStatus, SessionGuard,
@@ -285,14 +286,17 @@ pub fn run_with(
             window.visible = false;
         }
     }
-    isolate_installation(&mut context)?;
+    let _installation = isolate_installation(&mut context)?;
     configure(builder(product)).run(context)
 }
 
 /// Shared by the product UI and its explicitly owned import worker. This only
 /// selects this executable installation's namespace; it grants no IPC authority.
-pub fn isolate_installation(context: &mut tauri::Context<tauri::Wry>) -> tauri::Result<()> {
+pub fn isolate_installation(
+    context: &mut tauri::Context<tauri::Wry>,
+) -> tauri::Result<WriterGuard> {
     let executable = std::env::current_exe()?.canonicalize()?;
+    let guard = WriterGuard::acquire(&executable).map_err(std::io::Error::other)?;
     let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
     let product = catalog
         .products
@@ -306,5 +310,5 @@ pub fn isolate_installation(context: &mut tauri::Context<tauri::Wry>) -> tauri::
     )
     .map_err(std::io::Error::other)?;
     context.config_mut().identifier = format!("{}.i{}", context.config().identifier, suffix);
-    Ok(())
+    Ok(guard)
 }

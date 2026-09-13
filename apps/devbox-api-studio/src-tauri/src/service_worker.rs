@@ -18,7 +18,7 @@ pub fn run(id: String, mut context: tauri::Context<tauri::Wry>) -> tauri::Result
     unsafe {
         let _ = windows::Win32::System::Console::FreeConsole();
     }
-    product_shell_tauri::isolate_installation(&mut context)?;
+    let _installation = product_shell_tauri::isolate_installation(&mut context)?;
     // Match Tauri's desktop app_local_data_dir without constructing an App.
     // The installation identifier is derived natively from this executable.
     let root = dirs::data_local_dir()
