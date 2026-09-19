@@ -635,8 +635,15 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
         "apply_migration" => {
             let input: ApplyInput = decode(args)?;
             let guard = state.begin(input.operation_id)?;
-            let repo = state.repository()?;
-            encode(repo.activate(&input.id, &input.browser, &guard.cancelled)?)
+            let root = state.root.clone();
+            let installation = state.installation.clone();
+            let legacy = state.legacy_root.clone();
+            let cancelled = guard.cancelled.clone();
+            guard.stage("source-revalidation");
+            let applied = tauri::async_runtime::spawn_blocking(move || {
+                Repository::open(&root, &installation)?.activate_from_sources(&input.id, &input.browser, &cancelled, &legacy)
+            }).await.map_err(|_| "migration_source_unavailable")??;
+            encode(applied)
         }
         "rollback_migration" => {
             #[derive(Deserialize)]
@@ -756,7 +763,9 @@ pub fn issue(error: &str) -> &'static str {
         }
         "migration_store_too_large"
         | "legacy_store_too_large"
-        | "migration_source_changed_or_large" => "source-large-or-changed",
+        | "migration_source_changed_or_large"
+        | "migration_source_changed"
+        | "legacy_store_changed" => "source-large-or-changed",
         "migration_schema_invalid"
         | "legacy_api_storage_invalid"
         | "migration_journal_future_schema"

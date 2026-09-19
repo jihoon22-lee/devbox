@@ -264,9 +264,132 @@ pub fn verify(root: &Path, expected: Option<&str>) -> Result<(String, u64)> {
     }
     Ok((revision, total))
 }
+/// Original JSON handles remain held until the native import intent is accepted.
+/// Missing files and profile inventory are rechecked; no absent file is created.
+#[cfg(any(windows, test))]
+pub struct SourceGuard {
+    base: PathBuf,
+    manifest: Manifest,
+    handles: Vec<(Entry, std::fs::File, devbox_filesystem::FilesystemIdentity)>,
+}
+#[cfg(any(windows, test))]
+impl SourceGuard {
+    #[cfg(windows)]
+    pub fn selected(&self, identifier: &str) -> bool {
+        self.manifest.selected.iter().any(|id| id == identifier)
+    }
+    pub fn revalidate(&mut self, cancelled: &AtomicBool) -> Result<()> {
+        use std::io::{Read, Seek, SeekFrom};
+        let started = Instant::now();
+        if inventory(&self.base, &self.manifest.selected, &self.manifest.profiles)?
+            != self
+                .manifest
+                .files
+                .iter()
+                .map(|entry| entry.relative.clone())
+                .collect::<Vec<_>>()
+        {
+            return Err("migration_source_changed".into());
+        }
+        for entry in self
+            .manifest
+            .files
+            .iter()
+            .filter(|entry| entry.sha256.is_none())
+        {
+            check(started, cancelled)?;
+            if read_file(&self.base.join(&entry.relative), MAX_FILE)?.is_some() {
+                return Err("migration_source_changed".into());
+            }
+        }
+        for (entry, handle, identity) in &mut self.handles {
+            check(started, cancelled)?;
+            handle
+                .seek(SeekFrom::Start(0))
+                .map_err(|_| "migration_source_unavailable")?;
+            let mut bytes = Vec::new();
+            (&mut *handle)
+                .take(MAX_FILE as u64 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "migration_source_unavailable")?;
+            if bytes.len() as u64 != entry.bytes
+                || Some(digest(&bytes)) != entry.sha256
+                || devbox_filesystem::filesystem_identity(self.base.join(&entry.relative), false)
+                    .map_err(|_| "migration_source_changed")?
+                    != *identity
+            {
+                return Err("migration_source_changed".into());
+            }
+        }
+        check(started, cancelled)
+    }
+}
+/// Production supplies Windows handles denying writers and retains directory
+/// ancestors separately. Tests may supply read handles to exercise drift checks.
+#[cfg(any(windows, test))]
+pub fn hold_source(
+    base: &Path,
+    retained: &Path,
+    revision: &str,
+    cancelled: &AtomicBool,
+    mut open_read: impl FnMut(&Path) -> std::io::Result<std::fs::File>,
+) -> Result<SourceGuard> {
+    verify(retained, Some(revision))?;
+    let raw = read_file(&retained.join("snapshot.json"), 512 * 1024)?
+        .ok_or("migration_backup_missing")?;
+    // Bind the exact metadata consumed here, not just a previous read.
+    if digest(raw.as_bytes()) != revision {
+        return Err("migration_backup_changed".into());
+    }
+    let manifest: Manifest = serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
+    let mut handles = Vec::new();
+    for entry in manifest.files.iter().filter(|entry| entry.sha256.is_some()) {
+        let path = base.join(&entry.relative);
+        devbox_filesystem::ensure_no_links(&path).map_err(|_| "migration_path_invalid")?;
+        let handle = open_read(&path).map_err(|_| "legacy_app_must_be_closed")?;
+        let identity = devbox_filesystem::opened_filesystem_identity(&handle, false)
+            .map_err(|_| "migration_source_unavailable")?;
+        handles.push((entry.clone(), handle, identity));
+    }
+    let mut guard = SourceGuard {
+        base: base.into(),
+        manifest,
+        handles,
+    };
+    guard.revalidate(cancelled)?;
+    Ok(guard)
+}
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn fresh_native_guard_preserves_absence_and_rejects_source_drift() {
+        let base = tempfile::tempdir().unwrap();
+        let stage = tempfile::tempdir().unwrap();
+        let directory = base.path().join(API).join("oauth");
+        fs::create_dir_all(&directory).unwrap();
+        let path = directory.join("mcp-grants.json");
+        fs::write(&path, b"{\"ciphertext\":\"original\"}").unwrap();
+        let token = AtomicBool::new(false);
+        let retained = capture(base.path(), stage.path(), &[API.into()], &None, &token).unwrap();
+        let revision = verify(&retained, None).unwrap().0;
+        let mut guard = hold_source(base.path(), &retained, &revision, &token, |p| {
+            std::fs::File::open(p)
+        })
+        .unwrap();
+        guard.revalidate(&token).unwrap();
+        fs::create_dir_all(base.path().join(API).join("grpc")).unwrap();
+        fs::write(
+            base.path().join(API).join("grpc/tls-credentials.json"),
+            b"{}",
+        )
+        .unwrap();
+        assert!(guard.revalidate(&token).is_err());
+        fs::remove_file(base.path().join(API).join("grpc/tls-credentials.json")).unwrap();
+        fs::write(&path, b"{\"ciphertext\":\"changed\"}").unwrap();
+        assert!(guard.revalidate(&token).is_err());
+        verify(&retained, Some(&revision)).unwrap();
+    }
     #[test]
     fn preserves_original_ciphertext_and_missing_files_without_following_references() {
         let base = tempfile::tempdir().unwrap();

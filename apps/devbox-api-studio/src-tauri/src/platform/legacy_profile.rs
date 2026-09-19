@@ -65,6 +65,24 @@ mod tests {
         std::fs::create_dir(&stage).unwrap();
         let (_, receipt) = snapshot(&source, &stage, &AtomicBool::new(false)).unwrap();
         assert_eq!(receipt.files.len(), 3);
+        let mut held = data_migration::core::source_snapshot::hold_closed_source(
+            &leveldb,
+            &receipt,
+            &AtomicBool::new(false),
+            exclusive_read,
+        )
+        .unwrap();
+        held.revalidate(&AtomicBool::new(false)).unwrap();
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .open(leveldb.join("000003.log"))
+            .is_err());
+        assert!(std::fs::File::open(leveldb.join("LOCK")).is_err());
+        drop(held);
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .open(leveldb.join("000003.log"))
+            .is_ok());
         assert_eq!(
             std::fs::read(leveldb.join("CURRENT")).unwrap(),
             b"MANIFEST-000001\n"

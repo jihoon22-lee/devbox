@@ -260,6 +260,75 @@ fn receipt_names(receipt: &ClosedStoreSnapshot) -> Result<Vec<String>, String> {
     }
     Ok(result)
 }
+/// Retains the platform's exclusive source handles through an owner's native
+/// acceptance boundary. This is not a persisted permit or a suite-wide lease.
+pub struct ClosedSourceGuard {
+    root: PathBuf,
+    identity: devbox_filesystem::FilesystemIdentity,
+    _lock: File,
+    handles: Vec<(CopiedFile, File, devbox_filesystem::FilesystemIdentity)>,
+}
+impl ClosedSourceGuard {
+    pub fn revalidate(&mut self, cancelled: &AtomicBool) -> Result<(), String> {
+        let started = Instant::now();
+        devbox_filesystem::ensure_no_links(&self.root).map_err(|_| "legacy_store_changed")?;
+        let mut expected = self
+            .handles
+            .iter()
+            .map(|(entry, _, _)| entry.name.clone())
+            .collect::<Vec<_>>();
+        expected.push("LOCK".into());
+        expected.sort();
+        if names(&self.root)? != expected
+            || devbox_filesystem::filesystem_identity(&self.root, true)
+                .map_err(|_| "legacy_store_changed")?
+                != self.identity
+        {
+            return Err("legacy_store_changed".into());
+        }
+        for (entry, handle, identity) in &mut self.handles {
+            check_cancel(cancelled, started)?;
+            if digest(handle)? != (entry.bytes, entry.sha256.clone())
+                || devbox_filesystem::filesystem_identity(self.root.join(&entry.name), false)
+                    .map_err(|_| "legacy_store_changed")?
+                    != *identity
+            {
+                return Err("legacy_store_changed".into());
+            }
+        }
+        check_cancel(cancelled, started)
+    }
+}
+/// The native caller pins ancestor directories and supplies exclusive read-only
+/// opens. LOCK is held first; no source path is ever created or repaired.
+pub fn hold_closed_source(
+    source: &Path,
+    expected: &ClosedStoreSnapshot,
+    cancelled: &AtomicBool,
+    mut open_read: impl FnMut(&Path) -> std::io::Result<File>,
+) -> Result<ClosedSourceGuard, String> {
+    receipt_names(expected)?;
+    devbox_filesystem::ensure_no_links(source).map_err(|_| "legacy_store_links_forbidden")?;
+    let identity = devbox_filesystem::filesystem_identity(source, true)
+        .map_err(|_| "legacy_store_unreadable")?;
+    let lock = open_read(&source.join("LOCK")).map_err(|_| "legacy_app_must_be_closed")?;
+    let mut handles = Vec::new();
+    for entry in &expected.files {
+        let handle =
+            open_read(&source.join(&entry.name)).map_err(|_| "legacy_app_must_be_closed")?;
+        let identity = devbox_filesystem::opened_filesystem_identity(&handle, false)
+            .map_err(|_| "legacy_store_unreadable")?;
+        handles.push((entry.clone(), handle, identity));
+    }
+    let mut guard = ClosedSourceGuard {
+        root: source.into(),
+        identity,
+        _lock: lock,
+        handles,
+    };
+    guard.revalidate(cancelled)?;
+    Ok(guard)
+}
 /// Validate a retained closed copy before using it as backup evidence. It has no
 /// LevelDB LOCK because no browser ever opens this backup as a writable profile.
 pub fn verify_closed_copy(
@@ -381,6 +450,25 @@ mod tests {
         fs::write(source.join("MANIFEST-000001"), b"synthetic manifest").unwrap();
         fs::write(source.join("000003.log"), b"synthetic wal bytes").unwrap();
         source
+    }
+    #[test]
+    fn fresh_source_guard_rejects_changed_bytes_and_new_inventory() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = fixture(dir.path());
+        let token = AtomicBool::new(false);
+        let receipt = copy_closed_store(&source, &dir.path().join("snapshot"), &token, |p| {
+            File::open(p)
+        })
+        .unwrap();
+        let mut guard = hold_closed_source(&source, &receipt, &token, |p| File::open(p)).unwrap();
+        guard.revalidate(&token).unwrap();
+        fs::write(source.join("000004.log"), b"new source data").unwrap();
+        assert!(guard.revalidate(&token).is_err());
+        fs::remove_file(source.join("000004.log")).unwrap();
+        fs::write(source.join("000003.log"), b"changed source").unwrap();
+        assert!(guard.revalidate(&token).is_err());
+        assert!(hold_closed_source(&source, &receipt, &token, |p| File::open(p)).is_err());
+        verify_closed_copy(&dir.path().join("snapshot"), &receipt, &token).unwrap();
     }
     #[test]
     fn retained_source_copy_survives_working_profile_changes_and_detects_tampering() {

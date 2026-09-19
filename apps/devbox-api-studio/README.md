@@ -148,3 +148,11 @@ is preserved without writing decrypted secrets. Fixed source paths and explicitl
 selected profile IDs bound the copy. Accepted activation bundles bind both native
 and browser backup metadata hashes, so later verification rejects changed backup
 bytes or metadata instead of trusting a rewritten backup list.
+
+Before accepting a new legacy import, API Studio rechecks its original JSON and
+closed LevelDB bytes against the reviewed backup bindings. Windows retains
+read-only handles denying competing writers across native intent/file acceptance.
+Source changes require a fresh review. Resume of an already accepted intent uses
+its durable snapshot, preserving recovery when a legacy source later changes.
+This owner import boundary does not certify later Suite cutover or prevent edits
+after the import finishes; Suite activation needs its own fresh source check.

@@ -783,6 +783,40 @@ impl Repository {
         }
         Ok(())
     }
+    /// Recheck the original sources only before the first accepted import intent.
+    /// Recovery of an already accepted intent preserves its reviewed snapshot,
+    /// even if a legacy source later changes or disappears.
+    pub fn activate_from_sources(
+        &self,
+        id: &str,
+        browser: &BrowserState,
+        cancelled: &AtomicBool,
+        legacy: &Path,
+    ) -> Result<BrowserPatch, String> {
+        if self.activation(id)?.is_some() {
+            return self.activate(id, browser, cancelled);
+        }
+        let stage = self.stage(id)?;
+        data_migration::core::migration::resume_snapshot(&stage.join("snapshot"))?;
+        let connection = sql(Connection::open_with_flags(
+            stage.join("snapshot/snapshot.db"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ))?;
+        let raw: Option<String> = sql(connection.query_row(
+            "SELECT CASE WHEN length(CAST(body AS BLOB)) <= ?2 THEN body ELSE NULL END FROM activation_bundle_v1 WHERE id=?1",
+            (id, MAX_BUNDLE as u64), |row| row.get(0)))?;
+        let bundle: Bundle = serde_json::from_str(&raw.ok_or("migration_store_too_large")?)
+            .map_err(|_| "migration_plan_invalid")?;
+        if bundle.id != id {
+            return Err("migration_plan_invalid".into());
+        }
+        let mut sources =
+            crate::platform::source_guard::acquire(legacy, &stage, &bundle, cancelled)?;
+        sources.revalidate(cancelled)?;
+        // Handles stay alive across the durable intent and native-file writes.
+        // Browser application/acknowledgement remains an explicit recovery step.
+        self.activate(id, browser, cancelled)
+    }
     pub fn activate(
         &self,
         id: &str,

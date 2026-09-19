@@ -391,3 +391,22 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Control Center Rust/test compilation and TypeScript passed in 10.24s. The
   Windows-only native coordinator is syntax formatted but awaits B08 Windows
   compilation/execution; no detailed verification ran during this implementation.
+
+### Revalidate API originals before first import acceptance (2026-09-19)
+
+- API apply previously accepted the reviewed destination plan without checking
+  whether its original native/LevelDB sources had changed since preview. New
+  native acceptance reads the verified normalized bundle, checks its retained
+  backup bindings, reacquires original source handles and checks bytes/inventory.
+- Windows pins source ancestors and denies competing file opens, including the
+  LevelDB LOCK, throughout native intent and destination-file acceptance. Missing
+  native files and selected profile inventory are rechecked without creating any
+  original files. New/ambiguous browser profiles reject a previously absent source.
+  Existing accepted intent resumes from its durable snapshot; later source edits
+  must not strand browser acknowledgement or rollback.
+- Added shared closed-source drift/inventory regressions, native JSON absence/
+  drift checks and Windows write/LOCK exclusion assertions. Scoped API/shared Rust
+  test compilation passed in 6.2s; platform-only unused warnings were addressed
+  with Windows/test cfg boundaries. Detailed tests and Windows guard execution
+  remain deferred to complete B08 verification. These owner-local guards do not
+  replace fresh Suite cutover checks or claim an OS-wide transaction.
