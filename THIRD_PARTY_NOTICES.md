@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `aa42bc69ce48f0410a0121ad64217088619f3f5192b90702ca1288f1cda2366d`
+- Cargo.lock SHA-256: `cc20df878fcc652c7888302a2c3a335dd519b3281ed958aaaa4c988b655429bb`
 - pnpm-lock.yaml SHA-256: `9dd6a7433c078d6d5d09e20e98d435df786aabf7ac8c03c7710c59abc6335374`
 
 ## Rust dependencies
@@ -459,12 +459,12 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | rustc-hash | 2.1.3 | Apache-2.0 OR MIT | https://github.com/rust-lang/rustc-hash | `sha256:6b1e7f9a428571be2dc5bc0505c13fb6bf936822b894ec87abf8a08a4e51742d` |
 | rustc_version | 0.4.1 | MIT OR Apache-2.0 | https://github.com/djc/rustc-version-rs | `sha256:cfcb3a22ef46e85b45de6ee7e79d063319ebb6594faafcf1c225ea92ab6e9b92` |
 | rustix | 1.1.4 | Apache-2.0 WITH LLVM-exception OR Apache-2.0 OR MIT | https://github.com/bytecodealliance/rustix | `sha256:b6fe4565b9518b83ef4f91bb47ce29620ca828bd32cb7e408f0062e9930ba190` |
-| rustls | 0.23.43 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls | `sha256:0283386ce02abc0151e1761d08802dfe86c173b0b494af5cbc086574e453da06` |
+| rustls | 0.23.45 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls | `sha256:0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634` |
 | rustls-native-certs | 0.8.4 | Apache-2.0 OR ISC OR MIT | https://github.com/rustls/rustls-native-certs | `sha256:dab5152771c58876a2146916e53e35057e1a4dfa2b9df0f0305b07f611fdea4d` |
 | rustls-pki-types | 1.15.1 | MIT OR Apache-2.0 | https://github.com/rustls/pki-types | `sha256:2f4925028c7eb5d1fcdaf196971378ed9d2c1c4efc7dc5d011256f76c99c0a96` |
 | rustls-platform-verifier | 0.7.0 | MIT OR Apache-2.0 | https://github.com/rustls/rustls-platform-verifier | `sha256:26d1e2536ce4f35f4846aa13bff16bd0ff40157cdb14cc056c7b14ba41233ba0` |
 | rustls-platform-verifier-android | 0.1.1 | MIT OR Apache-2.0 | https://github.com/rustls/rustls-platform-verifier | `sha256:f87165f0995f63a9fbeea62b64d10b4d9d8e78ec6d7d51fb2125fda7bb36788f` |
-| rustls-webpki | 0.103.13 | ISC | https://github.com/rustls/webpki | `sha256:61c429a8649f110dddef65e2a5ad240f747e85f7758a6bccc7e5777bd33f756e` |
+| rustls-webpki | 0.103.15 | ISC | https://github.com/rustls/webpki | `sha256:f3c3cf1d8b1e7d4927e2d154c3fcb02979afb9939629c62cd9048d4f07b60ac2` |
 | rustversion | 1.0.23 | MIT OR Apache-2.0 | https://github.com/dtolnay/rustversion | `sha256:cf54715a573b99ac80df0bc206da022bcd442c974952c7b9720069370852e21f` |
 | ryu | 1.0.23 | Apache-2.0 OR BSL-1.0 | https://github.com/dtolnay/ryu | `sha256:9774ba4a74de5f7b1c1451ed6cd5285a32eddb5cccb8cc655a4e50009e06477f` |
 | same-file | 1.0.6 | Unlicense/MIT | https://github.com/BurntSushi/same-file | `sha256:93fc1dc3aaa9bfed95e02e6eadabb4baf7e3078b0bd1b4d7b6b0b68378900502` |

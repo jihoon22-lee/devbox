@@ -468,3 +468,13 @@ boundary; normal user project selection already refreshes the UI explicitly.
   임시 설치 폴더 대신 업로드되는 evidence 디렉터리에 남긴다.
 - 변경 확인: JS syntax 및 diff 검사. Windows 실패 범위는 다음 hosted 실행에서 확인한다.
   로컬 Docker/WSL provisioning 또는 네트워크 변경은 수행하지 않았다.
+
+### 2026-09-19 신규 RustSec 권고 대응
+
+- 일반 CI `35431789434`의 dependency policy 실패는 9월 14일 공개된
+  [RUSTSEC-2026-0285](https://rustsec.org/advisories/RUSTSEC-2026-0285)였다.
+  `rustls 0.23.43`을 수정 버전 `0.23.45`로 올리고, 필요한 `rustls-webpki 0.103.15`를
+  함께 고정했다. 무관한 dependency 업데이트는 포함하지 않았다.
+- notices를 새 lock에 맞춰 생성했다. 실패했던 `cargo deny --locked check advisories`
+  집중 재검사 PASS (3.297s). 통과한 frontend/Linux 검사를 로컬에서 반복하지 않았다.
+  최종 소스의 GitHub CI 및 관련 Windows 수용은 계속 필요하다.
