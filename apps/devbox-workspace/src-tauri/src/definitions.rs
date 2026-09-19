@@ -43,6 +43,17 @@ pub struct DefinitionView {
     definitions_trusted: bool,
     has_approval: bool,
 }
+#[derive(Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub(crate) struct SessionDefinitions {
+    pub revision: String,
+    pub trusted: bool,
+    pub unavailable_sources: Vec<String>,
+    pub toolchains: BTreeMap<String, manifest::Toolchain>,
+    pub expected_ports: Vec<u16>,
+    pub secret_references: Vec<String>,
+    pub environment_reference: bool,
+}
 struct Snapshot {
     context: ProjectContext,
     registry_revision: u64,
@@ -297,6 +308,33 @@ impl Definitions {
         }
         Ok(snapshot)
     }
+    pub(crate) fn session_preflight(
+        &mut self,
+        host: &Host,
+        context: &ProjectContext,
+        deadline: u64,
+    ) -> Result<SessionDefinitions> {
+        let snapshot = self.snapshot(host, context, deadline)?;
+        let trusted = host
+            .projects()?
+            .snapshot()?
+            .trusted(context, &snapshot.digest)?;
+        Ok(SessionDefinitions {
+            revision: snapshot.edit_revision()?,
+            trusted,
+            unavailable_sources: snapshot.unavailable_sources,
+            toolchains: snapshot.effective.toolchains,
+            expected_ports: snapshot.effective.expected_ports.unwrap_or_default(),
+            secret_references: snapshot
+                .local
+                .secrets
+                .iter()
+                .map(|reference| reference.reference.name.clone())
+                .collect(),
+            environment_reference: snapshot.local.api_environment_id.is_some(),
+        })
+    }
+
     pub(crate) fn runtime_ports(
         &mut self,
         host: &Host,

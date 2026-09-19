@@ -1,6 +1,8 @@
+import "./fixture-network-safety.test.mjs";
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {runInNewContext} from "node:vm";
+import {terminalProbePresent} from "./windows-workspace-terminal-sessions.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
 
 test("native registration probe executes generated requests with the described context", async () => {
@@ -36,7 +38,7 @@ import {Script} from "node:vm";
 const ts=createRequire(new URL("../../apps/devbox-workspace/package.json",import.meta.url))("typescript");
 test("Workspace renderer probes contain valid decoded JavaScript expressions",()=>{
   let checked=0;
-  for(const name of ["registration","definitions","dependencies","source","files","session-import","template-import","window-import","lsp","performance","runtime","runtime-import","runtime-wsl","runtime-crash"]){
+  for(const name of ["registration","definitions","dependencies","source","files","session-import","template-import","window-import","lsp","performance","runtime","runtime-import","runtime-wsl","runtime-crash","terminal-sessions","terminal-import","tasks-wsl","multiplexer","containers","owned-wsl2"]){
     const filename=new URL(`./windows-workspace-${name}.mjs`,import.meta.url);
     const tree=ts.createSourceFile(filename.pathname,readFileSync(filename,"utf8"),ts.ScriptTarget.Latest,true,ts.ScriptKind.JS);
     const literal=node=>node&&(ts.isStringLiteral(node)||ts.isNoSubstitutionTemplateLiteral(node));
@@ -59,9 +61,9 @@ test("Workspace renderer probes contain valid decoded JavaScript expressions",()
 });
 
 test("long feature fixture requests select their own route inside the native deadline ceiling", async()=>{
-  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"],["workspace.lsp","files"]]) {
+  for (const [component,route] of [["workspace.dependencies","dependencies"],["workspace.source","source"],["workspace.lsp","files"],["workspace.terminal","terminal"],["workspace.problems","problems"]]) {
   let sent;
-  await runInNewContext(workspaceRequestExpression(component,"fixture_method",{request:{path:"C:\\fixture"}}),{
+  await runInNewContext(workspaceRequestExpression(component,"fixture_method",{request:{path:"C:\\fixture"}},["workspace.terminal","workspace.problems"].includes(component)?29000:undefined),{
     window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>command==="plugin:product-shell|describe"?{handshake:{installationId:"installation",sessionId:"session"},context:null}:(sent=input.request)}},
     crypto:{randomUUID:()=>"request"},Date:{now:()=>1000},
   });
@@ -174,4 +176,13 @@ test("bounded writer-wait fixtures retain their short original deadline", async 
   assert.equal(sent.header.deadlineMs,1500);
   assert.equal(sent.header.route,"files");
   for(const budget of [0,99,29001,Infinity,"500"]) assert.throws(()=>workspaceRequestExpression("workspace.files","save_file",{},budget));
+});
+
+
+test("terminal probe matches wrapped output without mistaking encoded command echo",()=>{
+  const marker="synthetic-b06-output";
+  const encoded=[...Buffer.from(marker)].map(byte=>"\\"+byte.toString(8).padStart(3,"0")).join("");
+  assert.equal(terminalProbePresent("printf '"+encoded+"\\n'\r\n",marker),false);
+  assert.equal(terminalProbePresent("\u001b[32msynthetic-\r\nb06-output\u001b[0m\r\n",marker),true);
+  assert.equal(terminalProbePresent("synthetic-b06-partial",marker),false);
 });

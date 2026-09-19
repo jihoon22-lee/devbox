@@ -5,6 +5,7 @@ export default defineConfig({
   plugins: [react()], clearScreen: false,
   build: {
     manifest: true,
+    rollupOptions: { input: ["index.html", "terminal-export.html"] },
   },
   server: { port: 1430, strictPort: true, watch: { ignored: ["**/src-tauri/**"] } },
   test: { environment: "jsdom" },

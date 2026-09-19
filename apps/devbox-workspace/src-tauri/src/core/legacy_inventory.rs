@@ -13,6 +13,7 @@ pub enum Source {
     RepoManager,
     PortManager,
     LogLens,
+    WslDesktop,
 }
 
 #[derive(Clone, Copy)]
@@ -34,6 +35,7 @@ impl Source {
             Self::RepoManager => "com.devbox.repomanager",
             Self::PortManager => "com.devbox.portmanager",
             Self::LogLens => "com.devbox.loglens",
+            Self::WslDesktop => "com.devbox.wsldesktop",
         }
     }
     /// Snapshot v1 predates window inventory. Keep its exact fixed file set so
@@ -79,7 +81,7 @@ impl Source {
             ],
             // v0.7 scan root, selected repository and panel preferences are
             // React state only. Dependency enrichment is a derived cache.
-            Self::RepoManager => &[WINDOW],
+            Self::RepoManager | Self::WslDesktop => &[WINDOW],
             Self::PortManager => &[
                 FileSpec {
                     name: "port-manager-preferences-v1.json",

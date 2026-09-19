@@ -16,6 +16,9 @@ fn main() {
     };
     use workspace_wsl::{control::Input, read_frame, write_frame, Response};
     let native_args = std::env::args_os().skip(1).collect::<Vec<_>>();
+    if native_args.first().is_some_and(|arg| arg == "--task-exec") {
+        std::process::exit(workspace_wsl::task_launch::run(&native_args[1..]));
+    }
     if native_args.first().is_some_and(|arg| arg == "--supervise") {
         std::process::exit(supervisor::run(&native_args[1..]));
     }

@@ -505,6 +505,19 @@ pub struct Job {
     pub updated_at: i64,
 }
 
+impl Job {
+    /// Execution review excludes scheduler bookkeeping, which changes on ticks
+    /// and queue allocation without changing the command the user reviewed.
+    pub(crate) fn execution_definition(&self) -> Self {
+        let mut definition = self.clone();
+        definition.last_evaluated_at = None;
+        definition.next_queue_sequence = 0;
+        definition.created_at = 0;
+        definition.updated_at = 0;
+        definition
+    }
+}
+
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct Run {

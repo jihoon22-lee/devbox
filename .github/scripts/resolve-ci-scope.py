@@ -52,6 +52,15 @@ CATALOG_RUST_CONSUMERS = {
     "log-lens",
 }
 
+# Native platform modules are compiled by both products without linking another
+# product's application crate. Keep their exact source edges visible to CI.
+RUST_SHARED_PLATFORM_CONSUMERS = {
+    "apps/api-playground/src-tauri/src/commands/process_tree.rs": {"devbox-workspace"},
+    "apps/devbox-api-studio/src-tauri/src/platform/browser_profile.rs": {"devbox-workspace"},
+    "apps/devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs": {"devbox-workspace"},
+    "apps/devbox-api-studio/src-tauri/src/platform/owned_copy.rs": {"devbox-workspace"},
+}
+
 
 class ScopeError(RuntimeError):
     """Raised when the workspace or Git diff cannot be resolved safely."""
@@ -353,6 +362,13 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             rust_seeds.add("catalog" if path == "apps/products.json" else "product-contract")
             reasons.append("product catalog or cross-language contract consumers selected")
             continue
+
+        for consumer in RUST_SHARED_PLATFORM_CONSUMERS.get(path, ()):
+            if consumer not in rust.nodes:
+                rust_all = True
+            else:
+                rust_seeds.add(consumer)
+                reasons.append(f"shared native source consumer selected: {consumer}")
 
         parts = PurePosixPath(path).parts
         if len(parts) >= 2 and parts[0] == "packages":

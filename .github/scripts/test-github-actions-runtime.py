@@ -13,6 +13,8 @@ EXPECTED_REFERENCES = {
     "actions/checkout": "v7",
     "actions/setup-node": "v7",
     "actions/cache": "v6",
+    "actions/cache/restore": "v6",
+    "actions/cache/save": "v6",
     "actions/upload-artifact": "v7",
     "actions/download-artifact": "v8",
     "dtolnay/rust-toolchain": "stable",

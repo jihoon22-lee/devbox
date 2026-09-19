@@ -105,11 +105,19 @@ fn direct_argv(distro: &str, program: &str, args: &[&str]) -> Result<Vec<String>
     Ok(argv)
 }
 
+struct Execution<'a> {
+    lease: Option<&'a dyn crate::component::TerminalLaunchLease>,
+}
+
 async fn run_exact(
-    argv: Vec<String>,
+    execution: &Execution<'_>,
+    mut argv: Vec<String>,
     stdin: Option<&[u8]>,
     max_stdout: usize,
 ) -> Result<ExecOutcome, String> {
+    if let Some(lease) = execution.lease {
+        argv = lease.bind_argv(argv)?;
+    }
     let (program, args) = argv.split_first().ok_or_else(|| SAFE_ERROR.to_owned())?;
     let mut command = Command::new(program);
     command
@@ -166,9 +174,13 @@ async fn run_exact(
     }
 }
 
-async fn user_environment(distro: &str) -> Result<(String, Option<String>), String> {
+async fn user_environment(
+    execution: &Execution<'_>,
+    distro: &str,
+) -> Result<(String, Option<String>), String> {
     for printenv in PRINTENV_EXECUTABLES {
         let home = run_exact(
+            execution,
             direct_argv(distro, printenv, &["HOME"])?,
             None,
             MAX_ENVIRONMENT_BYTES,
@@ -179,6 +191,7 @@ async fn user_environment(distro: &str) -> Result<(String, Option<String>), Stri
         }
         let home = normalize_home(&home.stdout)?;
         let shell = run_exact(
+            execution,
             direct_argv(distro, printenv, &["SHELL"])?,
             None,
             MAX_ENVIRONMENT_BYTES,
@@ -192,23 +205,35 @@ async fn user_environment(distro: &str) -> Result<(String, Option<String>), Stri
     Err(SAFE_ERROR.into())
 }
 
-async fn test_path(distro: &str, flag: &str, path: &str) -> Result<bool, String> {
-    Ok(
-        run_exact(direct_argv(distro, "/bin/test", &[flag, path])?, None, 0)
-            .await?
-            .success,
+async fn test_path(
+    execution: &Execution<'_>,
+    distro: &str,
+    flag: &str,
+    path: &str,
+) -> Result<bool, String> {
+    Ok(run_exact(
+        execution,
+        direct_argv(distro, "/bin/test", &[flag, path])?,
+        None,
+        0,
     )
+    .await?
+    .success)
 }
 
-async fn read_rc(distro: &str, path: &str) -> Result<RcSnapshot, String> {
-    if test_path(distro, "-L", path).await? {
+async fn read_rc(
+    execution: &Execution<'_>,
+    distro: &str,
+    path: &str,
+) -> Result<RcSnapshot, String> {
+    if test_path(execution, distro, "-L", path).await? {
         return Ok(RcSnapshot {
             exists: true,
             blocked: true,
             content: String::new(),
         });
     }
-    let exists = test_path(distro, "-e", path).await?;
+    let exists = test_path(execution, distro, "-e", path).await?;
     if !exists {
         return Ok(RcSnapshot {
             exists: false,
@@ -216,7 +241,7 @@ async fn read_rc(distro: &str, path: &str) -> Result<RcSnapshot, String> {
             content: String::new(),
         });
     }
-    if !test_path(distro, "-f", path).await? {
+    if !test_path(execution, distro, "-f", path).await? {
         return Ok(RcSnapshot {
             exists: true,
             blocked: true,
@@ -224,6 +249,7 @@ async fn read_rc(distro: &str, path: &str) -> Result<RcSnapshot, String> {
         });
     }
     let output = run_exact(
+        execution,
         direct_argv(distro, "/bin/cat", &["--", path])?,
         None,
         MAX_RC_FILE_BYTES,
@@ -264,30 +290,56 @@ fn integration_info(
 }
 
 async fn inspect_one(
+    execution: &Execution<'_>,
     distro: &str,
     home: &str,
     shell: ShellKind,
     default_shell: Option<&str>,
 ) -> Result<ShellIntegrationInfo, String> {
     let path = format!("{home}/{}", shell.rc_file());
-    let snapshot = read_rc(distro, &path).await?;
+    let snapshot = read_rc(execution, distro, &path).await?;
     Ok(integration_info(shell, &snapshot, default_shell))
 }
 
 #[tauri::command]
 pub async fn inspect_shell_integration(distro: String) -> Result<ShellIntegrationReport, String> {
+    inspect_bound(&Execution { lease: None }, distro).await
+}
+async fn inspect_bound(
+    execution: &Execution<'_>,
+    distro: String,
+) -> Result<ShellIntegrationReport, String> {
     let distro = validate_distro(&distro)?;
-    let (home, default_shell) = user_environment(&distro).await?;
-    let bash = inspect_one(&distro, &home, ShellKind::Bash, default_shell.as_deref()).await?;
-    let zsh = inspect_one(&distro, &home, ShellKind::Zsh, default_shell.as_deref()).await?;
+    let (home, default_shell) = user_environment(execution, &distro).await?;
+    let bash = inspect_one(
+        execution,
+        &distro,
+        &home,
+        ShellKind::Bash,
+        default_shell.as_deref(),
+    )
+    .await?;
+    let zsh = inspect_one(
+        execution,
+        &distro,
+        &home,
+        ShellKind::Zsh,
+        default_shell.as_deref(),
+    )
+    .await?;
     Ok(ShellIntegrationReport {
         distro,
         shells: vec![bash, zsh],
     })
 }
 
-async fn run_mutation_command(distro: &str, program: &str, args: &[&str]) -> Result<(), String> {
-    let outcome = run_exact(direct_argv(distro, program, args)?, None, 0).await?;
+async fn run_mutation_command(
+    execution: &Execution<'_>,
+    distro: &str,
+    program: &str,
+    args: &[&str],
+) -> Result<(), String> {
+    let outcome = run_exact(execution, direct_argv(distro, program, args)?, None, 0).await?;
     if outcome.success {
         Ok(())
     } else {
@@ -295,9 +347,15 @@ async fn run_mutation_command(distro: &str, program: &str, args: &[&str]) -> Res
     }
 }
 
-async fn write_temp(distro: &str, path: &str, content: &[u8]) -> Result<(), String> {
+async fn write_temp(
+    execution: &Execution<'_>,
+    distro: &str,
+    path: &str,
+    content: &[u8],
+) -> Result<(), String> {
     for program in ["/usr/bin/tee", "/bin/tee"] {
         let outcome = run_exact(
+            execution,
             direct_argv(distro, program, &["--", path])?,
             Some(content),
             0,
@@ -318,11 +376,29 @@ pub async fn update_shell_integration(
     action: ShellIntegrationAction,
     expected_revision: String,
 ) -> Result<ShellIntegrationMutation, String> {
+    update_bound(
+        &Execution { lease: None },
+        &state,
+        distro,
+        shell,
+        action,
+        expected_revision,
+    )
+    .await
+}
+async fn update_bound(
+    execution: &Execution<'_>,
+    state: &ShellIntegrationState,
+    distro: String,
+    shell: ShellKind,
+    action: ShellIntegrationAction,
+    expected_revision: String,
+) -> Result<ShellIntegrationMutation, String> {
     let _guard = state.mutation.lock().await;
     let distro = validate_distro(&distro)?;
-    let (home, default_shell) = user_environment(&distro).await?;
+    let (home, default_shell) = user_environment(execution, &distro).await?;
     let rc_path = format!("{home}/{}", shell.rc_file());
-    let snapshot = read_rc(&distro, &rc_path).await?;
+    let snapshot = read_rc(execution, &distro, &rc_path).await?;
     if snapshot.blocked
         || expected_revision.len() > 64
         || expected_revision != content_revision(snapshot.exists, &snapshot.content)
@@ -346,7 +422,13 @@ pub async fn update_shell_integration(
         .as_secs();
     let backup_path = format!("{rc_path}.devbox-backup-{timestamp}-{}", &nonce[..8]);
     let backup_file = if snapshot.exists {
-        run_mutation_command(&distro, "/bin/cp", &["-p", "--", &rc_path, &backup_path]).await?;
+        run_mutation_command(
+            execution,
+            &distro,
+            "/bin/cp",
+            &["-p", "--", &rc_path, &backup_path],
+        )
+        .await?;
         Some(format!(
             "~/{}.devbox-backup-{timestamp}-{}",
             shell.rc_file(),
@@ -357,32 +439,40 @@ pub async fn update_shell_integration(
     };
 
     let write_result = async {
-        write_temp(&distro, &temp_path, next.as_bytes()).await?;
+        write_temp(execution, &distro, &temp_path, next.as_bytes()).await?;
         if snapshot.exists {
             run_mutation_command(
+                execution,
                 &distro,
                 "/bin/chmod",
                 &[&format!("--reference={rc_path}"), "--", &temp_path],
             )
             .await?;
         } else {
-            run_mutation_command(&distro, "/bin/chmod", &["0644", "--", &temp_path]).await?;
+            run_mutation_command(
+                execution,
+                &distro,
+                "/bin/chmod",
+                &["0644", "--", &temp_path],
+            )
+            .await?;
         }
 
         // Refuse to replace a file edited externally after the user accepted the preview.
-        let latest = read_rc(&distro, &rc_path).await?;
+        let latest = read_rc(execution, &distro, &rc_path).await?;
         if latest.blocked
             || content_revision(latest.exists, &latest.content)
                 != content_revision(snapshot.exists, &snapshot.content)
         {
             return Err("셸 설정이 적용 중 변경되어 덮어쓰지 않았습니다.".into());
         }
-        run_mutation_command(&distro, "/bin/mv", &["--", &temp_path, &rc_path]).await
+        run_mutation_command(execution, &distro, "/bin/mv", &["--", &temp_path, &rc_path]).await
     }
     .await;
 
     if let Err(error) = write_result {
-        let _ = run_mutation_command(&distro, "/bin/rm", &["-f", "--", &temp_path]).await;
+        let _ =
+            run_mutation_command(execution, &distro, "/bin/rm", &["-f", "--", &temp_path]).await;
         return Err(error);
     }
 
@@ -398,9 +488,133 @@ pub async fn update_shell_integration(
     })
 }
 
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_inspect_shell_integration(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = inspect_shell_integration(input.distro).await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// Strict component adapter; caller/window/session admission belongs to Workspace.
+#[cfg(feature = "desktop")]
+pub(crate) async fn __component_update_shell_integration(
+    app: &tauri::AppHandle,
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase", deny_unknown_fields)]
+    struct Input {
+        distro: String,
+        shell: ShellKind,
+        action: ShellIntegrationAction,
+        expected_revision: String,
+    }
+    if !args.is_object() {
+        return Err("terminal_args_invalid".into());
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+    let _ = app;
+    let value = update_shell_integration(
+        app.try_state().ok_or("terminal_state_unavailable")?,
+        input.distro,
+        input.shell,
+        input.action,
+        input.expected_revision,
+    )
+    .await?;
+    serde_json::to_value(value).map_err(|_| "terminal_response_invalid".into())
+}
+
+/// The product supplies a retained native running-distro/executable binding.
+/// Existing marker, preview revision and backup rules remain the mutation owner.
+#[cfg(feature = "desktop")]
+pub async fn dispatch_owned(
+    app: &tauri::AppHandle,
+    method: &str,
+    args: serde_json::Value,
+    lease: &dyn crate::component::TerminalLaunchLease,
+) -> Result<serde_json::Value, String> {
+    use tauri::Manager;
+    let execution = Execution { lease: Some(lease) };
+    let value = if method == "inspect_shell_integration" {
+        #[derive(serde::Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Input {
+            distro: String,
+        }
+        let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+        serde_json::to_value(inspect_bound(&execution, input.distro).await?)
+    } else if method == "update_shell_integration" {
+        #[derive(serde::Deserialize)]
+        #[serde(rename_all = "camelCase", deny_unknown_fields)]
+        struct Input {
+            distro: String,
+            shell: ShellKind,
+            action: ShellIntegrationAction,
+            expected_revision: String,
+        }
+        let input: Input = serde_json::from_value(args).map_err(|_| "terminal_args_invalid")?;
+        serde_json::to_value(
+            update_bound(
+                &execution,
+                app.try_state::<ShellIntegrationState>()
+                    .ok_or("terminal_state_unavailable")?
+                    .inner(),
+                input.distro,
+                input.shell,
+                input.action,
+                input.expected_revision,
+            )
+            .await?,
+        )
+    } else {
+        return Err("terminal_method_invalid".into());
+    };
+    value.map_err(|_| "terminal_response_invalid".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn replaced_native_target_rejects_before_any_shell_command() {
+        struct Revoked;
+        impl crate::component::TerminalLaunchLease for Revoked {
+            fn revalidate(&self) -> Result<(), String> {
+                Err("fixture_target_replaced".into())
+            }
+            fn bind_argv(&self, _argv: Vec<String>) -> Result<Vec<String>, String> {
+                self.revalidate()?;
+                unreachable!()
+            }
+            fn retire(&self) -> Result<(), String> {
+                Ok(())
+            }
+        }
+        let result = inspect_bound(
+            &Execution {
+                lease: Some(&Revoked),
+            },
+            "SyntheticDistro".into(),
+        )
+        .await;
+        assert!(matches!(result, Err(error) if error == "fixture_target_replaced"));
+    }
 
     #[test]
     fn home_and_shell_output_are_bounded_and_normalized() {

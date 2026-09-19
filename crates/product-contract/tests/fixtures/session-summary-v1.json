@@ -1,0 +1,29 @@
+{
+  "schemaVersion": 1,
+  "binding": {
+    "context": {
+      "projectId": "fixture-project",
+      "worktreeId": "fixture-worktree",
+      "target": {
+        "kind": "windows"
+      },
+      "revision": 2
+    },
+    "sessionId": "fixture-session",
+    "revision": 3
+  },
+  "startedAt": "2026-09-07T23:00:00Z",
+  "throughAt": "2026-09-08T01:00:00Z",
+  "failedRuns": 2,
+  "gitCommits": null,
+  "selectedProblems": [
+    {
+      "category": "testFailed",
+      "count": 2
+    },
+    {
+      "category": "buildFailed",
+      "count": 1
+    }
+  ]
+}

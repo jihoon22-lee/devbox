@@ -5,4 +5,8 @@ pub mod parsers;
 pub mod resources;
 pub mod runtime_snapshot;
 pub mod shell_integration;
+pub mod terminal_output;
 pub mod workspace;
+
+#[cfg(any(windows, test))]
+pub(crate) mod startup_cursor;

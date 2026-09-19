@@ -23,8 +23,9 @@ pub(crate) const COMPONENTS: &[&str] = &[
     "runtime",
     "processes",
     "logs",
+    "terminal",
 ];
-const ADDITIONAL_COMPONENTS: &[&str] = &["runtime", "processes", "logs"];
+const ADDITIONAL_COMPONENTS: &[&str] = &["runtime", "processes", "logs", "terminal"];
 const MAX_GENERATIONS: usize = 32;
 #[derive(Clone, Debug, PartialEq, Eq, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]

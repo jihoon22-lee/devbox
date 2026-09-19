@@ -13,13 +13,17 @@
 | 시점 | 수행할 확인 |
 |---|---|
 | 구현·커밋 전 | diff와 수용 계획 대조, 문법·타입 오류를 찾는 최소 검사. 문서는 내용·링크·diff만 확인 |
-| 구현 중 구체적 결함 조사 | 재현 없이는 해결할 수 없는 문제의 최소 재현 또는 해당 검사만 실행 |
+| 구현 중 | 코드·기존 로그로 조사하고 테스트·fixture를 작성. test·Clippy·build·affected·실기 실행 금지 |
 | PR 전체 구현 완료 | 수용 기준과 검사 항목을 대응시키고 `pnpm verify:affected` 및 미포함 회귀·migration·Windows/WSL 실기 수행 |
-| 검증 실패 수정 후 | 실패한 검사와 수정으로 영향받은 범위를 다시 확인. 관련 없는 통과 검사는 유지 |
+| 완료 검증 실패 후 | 확인된 수정들을 모두 마친 뒤 실패·영향 범위만 모아 재실행. 수정 하나마다 실행 금지 |
 | 최종 머지·릴리스 | PR 최종 변경의 CI 통과 확인. 릴리스의 exact-main 후보 수용 조건은 release policy 적용 |
 
-- 커밋 전 검사에 test·Clippy·build·affected를 관행적으로 모두 붙이지 않는다. 변경을 이해하는
-  데 필요한 최소 진단을 고르고 구현을 계속한다. 재현·검증 fixture 작성은 구현 중에도 진행한다.
+- **하나 개발하고 검증하는 반복을 금지한다.** PR의 계획한 구현·importer·fixture·문서가
+  전부 끝나야 상세 검증을 시작한다. 구체적 결함·설계 불확실성도 조기 실행의 예외가 아니다.
+  커밋 전 허용 범위는 diff·계획 대조와 필요한 최소 문법·타입 확인뿐이다.
+- 로컬·수동 CI뿐 아니라 push 자동 실행에도 적용한다. 중간 커밋은 로컬에 모으고
+  PR 개발 완료 시 push한다. 이미 수행한 검사와 겹치는 추가 실행을 예약하지 않는다.
+  최종 CI와 필수 수용 조건은 유지하며, 선행 PR의 완료 전에 의존하는 후속 개발로 넘어가지 않는다.
 - PR 완료 검증 전에 `verify:affected`가 이미 실행하는 항목을 확인한다. 포함된 테스트·타입·
   빌드·lint를 별도 집중 검사로 먼저 실행한 뒤 같은 범위의 verify를 다시 실행하지 않는다.
 - 검증 기록에는 대상 변경, 결과, 아직 남은 수용 항목을 구분한다. 재실행은 실패·관련 변경·
@@ -30,6 +34,29 @@
   디렉터리·런타임 환경과 공통 자원 제한을 보존하고, 완료/실패/미실행 target을 기록한다.
 - 최종 코드가 검사 후 바뀌면 영향을 받은 검증을 보충한다. resolver가 요구한 all 범위와
   최종 CI·Windows 수용 조건은 지킨다. 불필요한 반복을 줄이기 위해 gate 자체를 생략하지 않는다.
+
+## 기존 서비스와 공유 네트워크 보호
+
+로컬 테스트 때문에 기존 Docker 서비스, 방화벽 또는 네트워크 상태가 바뀌어서는 안 된다.
+2026-09-13 사용자는 전용 WSL2 테스트 배포판에서 Docker를 준비한 뒤 기존 서비스 영향과
+iptables 일부 손실을 보고했다. 배포판/파일/data-root 소유권과 네트워크 격리는 별개다.
+Docker는 bridge를 위해 **호스트 network namespace에 iptables 규칙을 만든다**
+([Docker 공식 설명](https://docs.docker.com/engine/network/firewall-iptables/)).
+따라서 고유 배포판·socket·container 이름을 만들고 나중에 제거했다는 사실로 안전을 판단하지 않는다.
+
+- 로컬 Windows/WSL 및 기존 서비스가 있는 self-hosted runner에서는 Docker 패키지 설치,
+  daemon 시작/중지, 실제 container/network/volume 조작, firewall/route/sysctl 변경을 하지 않는다.
+  패키지 설치 중의 service hook도 공유 네트워크를 바꿀 수 있으므로 테스트 본문 직전이 아니라
+  **provisioning 전에** 차단한다. 임시 WSL 배포판을 만드는 이 수용 runner도 로컬에서 차단한다.
+- `.github/scripts/windows-workspace-owned-wsl2.ps1`은 파일 복사·배포판 등록 전에 GitHub-hosted
+  Windows runner와 현재 저장소/run/source를 확인한다. Node 진입점과 container 함수도 별도로
+  차단한다. 로컬 허용 switch는 없고 CI 환경 변수를 꾸며내거나 과거 사설 복사본으로 우회하지 않는다.
+- Docker/WSL2 실기는 일회성 hosted runner로 옮긴다. 독립 VM을 사용할 경우에도 그 VM의
+  kernel/network와 대상 Docker endpoint가 기존 서비스와 분리된 별도 실행 경로가 필요하다.
+  현재 runner의 CI 차단 조건을 바꾸는 방식으로 VM을 승인하지 않는다.
+- 격리 환경을 확보하지 못한 수용 항목은 미실행으로 기록한다. 이미 통과한 순수 단위/타입
+  검사를 반복하지 않고 구현을 계속한다. 기존 서비스 재시작이나 iptables 복원은 증거 없이
+  자동으로 시도하지 않으며 별도의 명시적 복구 요청 범위에서 처리한다.
 
 ## 기본 자원 예산
 
@@ -68,6 +95,12 @@ memory max 초과 시 OOM으로 검증이 실패할 수 있다. 실패를 성공
 자동 재실행하지 않는다. 측정과 현재 호스트 여유를 확인해 해당 실행의 예산을 조정한다.
 `CI=true`이면 `ci` profile로 기존 CI 실행을 유지한다. `DEVBOX_VERIFY_PROFILE=local`은
 명시적으로 로컬 제한을 선택한다. 로컬에서 `ci` profile로 제한을 우회하지 않는다.
+
+Windows compiler/native acceptance CI는 실패한 실행에서도 Rust 의존성 빌드 캐시를
+보존한다(`cache-on-failure: true`). 첫 테스트 실패 때문에 완료된 의존성을 다음
+실행에서 다시 컴파일하지 않도록 하기 위한 설정이다. compiler·Cargo manifest/lockfile·
+환경 해시 키와 기본 workspace crate 제외 정책은 유지하며, 캐시를 테스트 PASS 근거나
+이전 제품 실행 파일의 재사용 허가로 취급하지 않는다.
 
 Windows Rust CI의 Cargo build job은 1개다. 여러 Tauri build script가 같은
 target staging의 고지 파일을 동시에 복사하면 Windows sharing violation 32가

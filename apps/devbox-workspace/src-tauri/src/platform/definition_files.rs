@@ -45,6 +45,25 @@ impl DefinitionFiles {
         let files = super::project_files::ProjectFiles::new(projects.admit(context)?)?;
         Ok(Self::Native(Box::new(files)))
     }
+    #[cfg(windows)]
+    pub(crate) fn native_task_launch(
+        &self,
+        cwd: &str,
+        source_digest: String,
+    ) -> Result<workspace_wsl::task_contract::TaskLaunch> {
+        let Self::Wsl { lease, .. } = self else {
+            return Err("invalid_target");
+        };
+        let launch = workspace_wsl::task_contract::TaskLaunch {
+            schema_version: 1,
+            root: lease.binding().root.clone(),
+            cwd: cwd.into(),
+            root_object: lease.native_root_object(),
+            source_digest,
+        };
+        workspace_wsl::task_contract::validate(&launch)?;
+        Ok(launch)
+    }
     pub(crate) fn binding(&self) -> &Binding {
         match self {
             Self::Native(files) => files.lease().binding(),

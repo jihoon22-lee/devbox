@@ -233,7 +233,7 @@ fn persistent_object(
         _ => Err("wsl_identity_unavailable"),
     }
 }
-fn stamp(handle: &File) -> Result<ObjectStamp> {
+pub(crate) fn stamp(handle: &File) -> Result<ObjectStamp> {
     let metadata = handle
         .metadata()
         .map_err(|_| "project_object_unavailable")?;

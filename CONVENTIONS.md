@@ -224,15 +224,19 @@ src/
 - 검증은 커밋 횟수에 맞추지 않는다. 커밋 전에는 diff를 계획과 대조하고 문법·타입 오류를
   확인하는 데 필요한 최소 검사만 선택한다. 문서 변경은 내용·링크·diff 확인으로 충분하며,
   코드 변경은 편집기 진단이나 필요한 대상의 typecheck/`cargo check`를 활용한다.
-  작은 수정마다 test·Clippy·build·affected를 연속 실행하는 절차는 금지한다.
+  PR 개발 완료 전 test·Clippy·build·affected·실기 실행은 금지한다. 하나 구현하고 하나
+  검증하는 방식으로 진행하지 않는다. 테스트와 fixture는 작성만 하고 실행은 모아 둔다.
 - 상세 검증은 PR에 계획한 구현·importer·fixture가 모두 끝났을 때 수행한다. 먼저 수용 기준과
   검사 항목을 대응시키고, `verify:affected`에 포함된 테스트·타입·빌드·lint를 별도 명령으로
   선행 반복하지 않는다. 포함되지 않은 회귀·migration·Windows/WSL 실기 검사는 이때 함께
   수행한다. v0.8의 완료 시점은 B01~B09 각각의 PR 묶음 전체를 기준으로 한다.
-- 구현 도중 상세 검사는 재현 없이는 해결할 수 없는 구체적 결함·설계 불확실성에 한해
-  필요한 최소 범위로 실행한다. 이미 통과한 검사는 관련 변경·실패·새 위험이 없으면 반복하지
-  않는다. 실패 수정 후에는 해당 실패와 영향을 받은 범위부터 확인하며, 문서 정리나 커밋
-  생성만을 이유로 전체 검증을 다시 시작하지 않는다. 실행 시점·범위는 [검증 운영](./docs/verification.md)을 따른다.
+- 개발 완료 전에는 결함·설계 불확실성을 이유로 상세 검증을 앞당기지 않는다. 완료 검증에서
+  실패하면 확인된 결함들의 수정을 먼저 마치고, 실패 항목과 수정의 영향 범위만 모아
+  재실행한다. 수정 하나마다 실행하지 않으며 관련 없는 기존 PASS는 그대로 유지한다.
+- 로컬·수동 CI·push 자동 실행에 같은 시점 규칙을 적용한다. 중간 커밋은 로컬에 모으고
+  PR 개발 완료 후 push한다. 문서 정리·커밋 생성·작업 재개는 재검증 사유가 아니다.
+  최종 CI와 필수 수용 조건을 없애거나, 미완료 선행 PR을 후속 개발로 덮지 않는다.
+  실행 시점·범위는 [검증 운영](./docs/verification.md)을 따른다.
 - WSL 컴파일엔 Linux 시스템 라이브러리 필요:
   `libwebkit2gtk-4.1-dev libgtk-3-dev build-essential libssl-dev libxdo-dev libayatana-appindicator3-dev librsvg2-dev patchelf`
 - 프론트는 `src/lib/isTauri.ts` 분기로 Tauri 없이 mock 데이터 표시
@@ -242,6 +246,13 @@ src/
   dependency graph의 역의존 closure만 검사한다. 미분류 경로·lockfile 단독 변경은 fail-safe로
   전체 검증한다. 영향이 없는 CI job은 runner 할당 전에 skip하며, release와 주간 CI 감사는
   전체 검증을 유지한다.
+- 로컬 테스트는 기존 서비스의 실행 상태·Docker 데몬·방화벽·공유 네트워크를 변경하지 않는다.
+  전용 WSL 배포판, 별도 Docker socket/data-root, 고유 container 이름은 네트워크 격리 증거가
+  아니다. Docker 설치/데몬 시작·종료/container·network 조작, iptables/nftables/라우팅 변경,
+  WSL 전역 재시작처럼 공유 시스템에 영향을 줄 수 있는 검사는 일회성 hosted CI 또는 네트워크가
+  독립된 VM에서만 실행한다. 로컬 차단을 환경 변수·사설 스크립트·daemon 옵션으로 우회하지
+  않는다. 격리된 실행 환경이 없으면 해당 실기 항목을 미실행으로 남기고 구현은 계속한다.
+  기존 서비스 재시작·방화벽 복원은 별도의 명시적 복구 요청과 확인된 근거 없이 수행하지 않는다.
 - 로컬 `verify:affected/all`은 패키지 1개, Vitest worker 2개, Cargo job 2개, Rust test thread
   2개로 제한한다. CPU 4개·nice +10을 적용하고, 지원 호스트에서는 메모리 high 6GiB/max 8GiB,
   swap max 1GiB를 검증 process scope에 적용한다. worktree 간 검증은 한 번에 하나만 실행한다.
@@ -326,6 +337,9 @@ docs/<scope>           문서 작업   예: docs/roadmap
   commit으로 구분한다. 독립적인 데이터 손실·보안·복구 위험 또는 리뷰 불가능의 구조적 근거가
   있을 때만 묶음을 재조정하고 원장에 근거와 매핑을 남긴다.
 - B01 기반 확정 후 B02/B03/B04를 독립 진행할 수 있다. 공용 파일의 writer는 한 묶음이 소유한다.
+- 의존하는 후속 묶음은 선행 묶음의 구현·필수 수용 검증·머지를 마친 뒤 진행한다.
+  검증 대기 중이라는 이유로 미완료 선행 단계를 쌓아 둔 채 후속 개발을 확대하지 않는다.
+  반복 검증 축소는 선행 완료 조건의 생략을 뜻하지 않는다.
   병렬 에이전트는 사용자가 요청하거나 적용 지침에서 허용할 때만 사용한다.
 - review packet에는 semantic 변경, pure moves, 데이터·authority 변경, 요구사항/legacy parity 매핑,
   CI·실기 증거, 제한과 rollback을 담는다. PR 구현 중에는 문법·타입·계획 범위를 확인하고,
@@ -436,9 +450,9 @@ docs/<scope>           문서 작업   예: docs/roadmap
   [release evidence](./docs/release-evidence.md)에 보존한다.
 - 대상 디렉터리의 `AGENTS.md`/`AGENTS.override.md`를 변경 전에 확인한다. 루트 세션에서
   모든 하위 지침이 자동 로드된다고 가정하지 않는다. 명세의 planned 상태를 구현된 동작으로 읽지 않는다.
-- 저장소 스킬은 `.agents/skills/`에서 관리한다. `devbox-change`는 변경·검증·PR 절차,
-  `devbox-migration-review`는 실제 migration/권한/복구 변경 검토에 사용한다.
-  `devbox-release`는 명시적으로 호출할 때 사용한다. 스킬 호출 자체가 게시 권한을 추가하지 않는다.
+- 일반 개발·migration 검토는 별도 스킬 없이 이 규약과 해당 설계를 직접 따른다.
+  중복 절차를 만들던 `devbox-change`·`devbox-migration-review`는 제거했다.
+  릴리스 전용 `devbox-release`만 유지한다. 스킬 호출 자체가 게시 권한을 추가하지 않는다.
 - 스킬은 스택이나 승인 범위를 바꾸지 않는다. Next.js/ShadCN landing-page 절차를 devbox의
   Tauri/React/Vite/순수 CSS 제품 UI에 적용하지 않는다. 플러그인 cache의 스킬을 직접 수정하지 않는다.
 - 모델·추론·컨텍스트·계정별 실험은 개인 `~/.codex/config.toml`에서 설정한다.

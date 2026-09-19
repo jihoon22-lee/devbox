@@ -3,6 +3,10 @@
 앱 안에 내장된 임베디드 WSL 터미널. Windows Terminal처럼 탭·분할로 여러 WSL 세션을 관리한다.
 산출물: `WSLDesktop.exe` (`apps/wsl-desktop`).
 
+v0.8 B06에서는 기존 터미널 UI·API·테스트를 `packages/workspace-features/src/terminal`로
+옮기고 독립 앱도 같은 진입점을 사용한다. Workspace 보조 창·native PTY owner와
+세션·설정 가져오기는 이 묶음의 후속 구현이며, 추출만으로 이전 완료를 주장하지 않는다.
+
 ## 주요 기능
 
 - **임베디드 터미널** — xterm.js + PTY(ConPTY), WSL 배포판 선택·지정 경로로 열기
@@ -160,7 +164,7 @@
   트레이는 Tauri 내장 `tray-icon` feature로 필요할 때만 만들고, 제거하면 닫기 가로채기도 함께
   해제한다. 두 경로 모두 설치 뒤 외부 프로그램이나 network 없이 동작한다.
 - tmux/zellij 어댑터는 shell 문자열 조립 없이 exact argv만 사용한다. tmux UI option은 해당
-  session에만 적용하고 zellij는 내장 `disable-status` layout과 frame/mouse off option을
+  session에만 적용하고 zellij는 내장 `disable-status-bar` layout과 frame/mouse off option을
   사용해 앱의 탭·팬 UI와 xterm selection을 유지한다. 세션 시작 때마다 실행 파일을 다시
   해석하고 version probe, 기존 세션 조회, 실제 PTY launch에 같은 검증된 절대 경로를 사용한다.
 - 공용 크레이트 `crates/wsl` — 프로세스를 실행하지 않는 WSL 공용 프리미티브로, `wsl.exe` 실행

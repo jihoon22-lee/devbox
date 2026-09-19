@@ -49,8 +49,8 @@ CLI·IDE·앱이 다른 Windows/WSL 호스트를 사용하면 각각의 Codex ho
 
 - [AGENTS](../AGENTS.md)는 필수 제약과 탐색 경로,
   [CONVENTIONS §11](../CONVENTIONS.md#11-codex-지침스킬작업-기록)은 작업 도구 운영의 원장이다.
-- `.agents/skills/devbox-change`와 `devbox-migration-review`는 해당 작업에 자동 선택 가능하다.
-  `devbox-release`는 `$devbox-release`로 명시 호출한다. 새 세션의 skill 목록에서 확인한다.
+- 일반 개발·migration 검토 스킬은 중복 절차를 없애기 위해 제거했다. AGENTS와
+  CONVENTIONS를 직접 따른다. 릴리스 전용 `devbox-release`만 유지한다.
 - 개인 `workthrough` 스킬은 PR 묶음당 짧은 기록 하나를 생성·갱신하도록 정리한다.
   저장소에서도 동일한 기록 규칙을 유지하므로 해당 개인 스킬이 없어도 협업할 수 있다.
 - OpenAI Docs MCP와 GitHub 연결/`gh`, 로컬 셸을 우선 사용한다. 추가 MCP는 실제 기능 부족이

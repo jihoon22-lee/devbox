@@ -194,3 +194,15 @@ it("opens the imported WSL profile form and cancels its native binding review wi
   fireEvent.click(screen.getByRole("button",{name:"취소"}));
   await waitFor(()=>expect(call).toHaveBeenCalledWith("workspace.registry","cancel_registration",{previewId:preview.previewId}));
 });
+
+it("publishes startup readiness only after its registry snapshot resolves",async()=>{
+  let finish!:(value:unknown)=>void;
+  const pending=new Promise(resolve=>{finish=resolve;});
+  call.mockImplementation(async(_component,method)=>method==="status"?{phase:"selected"}:method==="snapshot"?pending:method==="legacy_snapshot_job"?null:{snapshots:[],unrecognized:0,items:[]});
+  const ready=vi.fn();render(<RegistryGate onReady={ready}/>);
+  await waitFor(()=>expect(call.mock.calls.some(([,method])=>method==="snapshot")).toBe(true));
+  expect(ready).not.toHaveBeenCalled();
+  expect(call.mock.calls.some(([,method])=>method==="list_legacy_snapshots")).toBe(false);
+  finish(emptyRegistry);
+  await waitFor(()=>expect(ready).toHaveBeenCalledOnce());
+});

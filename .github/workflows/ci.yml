@@ -3,6 +3,7 @@ name: CI
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
   # `main` requires this workflow's three compiler gates through GitHub branch
   # protection. Running the same change again after a reviewed PR is merged
   # only duplicates the verified work. Manual runs remain available for an
@@ -17,12 +18,15 @@ concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
 
+# Draft implementation/fix pushes do not start compiler suites. Ready-for-review
+# runs final CI; manual and scheduled audits retain their full scope. Cancellation
+# must stop superseded runs while scope-detection failures still fail closed.
 jobs:
   dependencies:
     name: Dependency policy
     runs-on: ubuntu-latest
     needs: scope
-    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.dependency_scope != 'none') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.dependency_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
@@ -89,6 +93,7 @@ jobs:
           command: check
 
   catalog:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     name: Catalog consistency
     runs-on: ubuntu-latest
     steps:
@@ -97,6 +102,7 @@ jobs:
       - run: node .github/scripts/check-frontend-accessibility.mjs
 
   scope:
+    if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
     name: Detect changed scope
     runs-on: ubuntu-latest
     outputs:
@@ -168,7 +174,7 @@ jobs:
     name: Frontend (pnpm)
     runs-on: ubuntu-latest
     needs: scope
-    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.frontend_scope != 'none') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.frontend_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
@@ -236,7 +242,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     needs: scope
-    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
@@ -312,7 +318,7 @@ jobs:
     env:
       CARGO_BUILD_JOBS: 1
     needs: scope
-    if: ${{ always() && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
+    if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
     steps:
       - name: Require successful scope detection
         if: ${{ needs.scope.result != 'success' }}
@@ -336,6 +342,8 @@ jobs:
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         with:
           shared-key: devbox-windows
+          # Preserve compiled dependencies after a fixture fails; results are never cached.
+          cache-on-failure: true
 
       - name: Check
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}

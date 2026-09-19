@@ -21,7 +21,7 @@ export function runtimeDestination(value: unknown, context: ProjectContext | nul
     || !sameRuntimeContext(value.context, context)) return null;
   return value.route === "tasks" || value.route === "overview" ? value.route : null;
 }
-export function runtimeLogRequest(value: unknown, context: ProjectContext | null, route: string): RuntimeLogOpenRequest | null {
+export function runtimeLogRequest(value: unknown, context: ProjectContext | null, route: string): (RuntimeLogOpenRequest & { source: Extract<RuntimeLogOpenRequest["source"], { kind: "runtimeRun" }> }) | null {
   if (!object(value) || !keys(value, ["id", "source", "context", "fromRoute"])
     || !["tasks", "runtime"].includes(String(value.fromRoute)) || route !== value.fromRoute
     || !sameRuntimeContext(value.context, context)
@@ -47,3 +47,21 @@ export function runtimeDiagnostic(value: unknown, context: ProjectContext | null
     || (value.column !== null && (!Number.isSafeInteger(value.column) || (value.column as number) < 1))) return null;
   return {id:value.id,relativePath:value.relativePath,line:value.line as number,column:value.column as number | null};
 }
+
+/** Native-only ephemeral Terminal source delivery; no path enters an argv or saved view. */
+export function terminalLogRequest(value: unknown, context: ProjectContext | null): RuntimeLogOpenRequest | null {
+  if (!object(value) || !keys(value,["id","source","context"]) || (value.context !== null && !sameRuntimeContext(value.context,context))
+    || typeof value.id !== "string" || !/^[a-f0-9]{32}$/.test(value.id) || !object(value.source)) return null;
+  const source=value.source;
+  if (typeof source.distro !== "string" || source.distro.length<1 || source.distro.length>128 || /[\x00-\x1f\x7f]/.test(source.distro)) return null;
+  if (source.kind === "wslFile" && keys(source,["kind","distro","path"]) && typeof source.path === "string"
+    && source.path.startsWith("/") && source.path.length<=4096 && !/[\x00-\x1f\x7f]/.test(source.path)
+    && !source.path.split("/").some(part=>part === "." || part === "..")) return {id:value.id,source:{kind:"wslFile",distro:source.distro,path:source.path}};
+  if (source.kind === "wslJournal" && keys(source,["kind","distro","unit"]) && (source.unit === null || typeof source.unit === "string" && !source.unit.startsWith("-") && /^[A-Za-z0-9_.@:-]{1,128}$/.test(source.unit)))
+    return {id:value.id,source:{kind:"wslJournal",distro:source.distro,...(typeof source.unit === "string" ? {unit:source.unit} : {})}};
+  return null;
+}
+
+/** A native-resolved selection; it contains no start/stop or process authority. */
+export type RuntimeFocusTarget = {kind:"task";jobId:string}|{kind:"port";port:number};
+export type RuntimeFocusRequest = {id:string;context:ProjectContext|null;target:RuntimeFocusTarget};

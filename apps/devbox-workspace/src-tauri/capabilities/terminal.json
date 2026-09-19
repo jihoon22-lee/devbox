@@ -1,0 +1,14 @@
+{
+  "identifier": "terminal",
+  "description": "Native-created Workspace Terminal companions; the host binds every caller to its exact context and PTYs.",
+  "windows": [
+    "terminal-*"
+  ],
+  "permissions": [
+    "core:default",
+    "workspace:allow-terminal-describe",
+    "workspace:allow-terminal-execute",
+    "clipboard-manager:allow-read-text",
+    "opener:allow-open-url"
+  ]
+}

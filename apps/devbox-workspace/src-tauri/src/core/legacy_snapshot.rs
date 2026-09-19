@@ -469,7 +469,12 @@ mod tests {
     }
     #[test]
     fn original_v1_snapshots_keep_their_ids_and_new_windows_use_versioned_inventory() {
-        for source in [Source::Workbench, Source::CodePad, Source::RepoManager] {
+        for source in [
+            Source::Workbench,
+            Source::CodePad,
+            Source::RepoManager,
+            Source::WslDesktop,
+        ] {
             let base = tempfile::tempdir().unwrap();
             let root = base.path().join(source.identifier());
             fs::create_dir(&root).unwrap();
@@ -478,7 +483,7 @@ mod tests {
             let original_file = match source {
                 Source::Workbench => Some(("project-profiles.json", br#"{"version":1,"profiles":[]}"#.as_slice())),
                 Source::CodePad | Source::CodePadLegacy => Some(("session.json", br#"{"version":1,"workspace_folder":null,"docs":[],"views":[[],[]],"active_view":0,"active_doc_by_view":[null,null],"recent_files":[]}"#.as_slice())),
-                Source::RepoManager | Source::PortManager | Source::LogLens => None,
+                Source::RepoManager | Source::PortManager | Source::LogLens | Source::WslDesktop => None,
             };
             if let Some((name, bytes)) = original_file {
                 fs::write(root.join(name), bytes).unwrap();

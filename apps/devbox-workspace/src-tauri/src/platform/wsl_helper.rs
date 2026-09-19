@@ -44,12 +44,12 @@ mod native {
             }
         }
     }
-    struct Artifact {
+    pub(crate) struct Artifact {
         _file: File,
         _directories: Vec<File>,
     }
     impl Artifact {
-        fn open(directory: &Path) -> Result<Self> {
+        pub(crate) fn open(directory: &Path) -> Result<Self> {
             let expected =
                 option_env!("DEVBOX_WSL_HELPER_SHA256").ok_or("wsl_helper_unavailable")?;
             let size: u64 = option_env!("DEVBOX_WSL_HELPER_BYTES")
@@ -852,3 +852,6 @@ mod native {
 }
 #[cfg(windows)]
 pub use native::Connection;
+
+#[cfg(windows)]
+pub(crate) use native::Artifact;

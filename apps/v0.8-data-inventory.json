@@ -47,7 +47,7 @@
     {
       "legacyApp": "wsl-desktop",
       "classification": "authoritative",
-      "sourcePath": "apps/wsl-desktop/src/lib/storage.ts",
+      "sourcePath": "packages/workspace-features/src/terminal/lib/storage.ts",
       "items": [
         "wsl-desktop:cwd-pinned",
         "wsl-desktop:cwd-value",
@@ -56,27 +56,51 @@
         "wsl-desktop:font-size"
       ],
       "treatment": "Acquire bounded WebView2 localStorage through an owner export; SQLite backup alone is insufficient.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "schemaMapping": "apps/devbox-workspace/README.md",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ]
     },
     {
       "legacyApp": "wsl-desktop",
       "classification": "authoritative",
-      "sourcePath": "apps/wsl-desktop/src/lib/settings.ts",
+      "sourcePath": "packages/workspace-features/src/terminal/lib/settings.ts",
       "items": [
         "wsl-desktop:settings"
       ],
       "treatment": "Preserve settings; importing shortcut choices must not register competing global owners.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "schemaMapping": "apps/devbox-workspace/README.md",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ]
     },
     {
       "legacyApp": "wsl-desktop",
       "classification": "authoritative",
-      "sourcePath": "apps/wsl-desktop/src/lib/workspace.ts",
+      "sourcePath": "packages/workspace-features/src/terminal/lib/workspace.ts",
       "items": [
         "wsl-desktop:last-layout"
       ],
       "treatment": "Preserve layout and explicit commands as inactive restoration metadata; never recreate PTYs or execute commands automatically.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "schemaMapping": "apps/devbox-workspace/README.md",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ]
     },
     {
       "legacyApp": "wsl-desktop",
@@ -86,7 +110,15 @@
         "terminal-profiles.json"
       ],
       "treatment": "Preserve named profiles and reference mappings.",
-      "importerStatus": "pending"
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
+      "schemaMapping": "apps/devbox-workspace/README.md",
+      "test": [
+        ".github/scripts/windows-workspace-terminal-import.mjs"
+      ],
+      "evidence": [
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
+      ]
     },
     {
       "legacyApp": "api-playground",

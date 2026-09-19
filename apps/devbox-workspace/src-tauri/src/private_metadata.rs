@@ -97,6 +97,13 @@ impl MetadataRoot {
                 Err("files_store_changed")
             };
         }
+        self.create_new(name, bytes)
+    }
+    /// Atomically claim a new record; equal existing bytes still reject replay.
+    pub(crate) fn create_new(&self, name: &str, bytes: &[u8]) -> Result<()> {
+        if bytes.len() as u64 > MAX_METADATA {
+            return Err("files_store_limit");
+        }
         self.revalidate()?;
         let temporary = self
             .path

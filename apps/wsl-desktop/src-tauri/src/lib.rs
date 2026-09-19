@@ -1,20 +1,33 @@
+#[cfg(feature = "standalone")]
 mod applink;
 mod commands;
-mod core;
+pub mod component;
+pub mod core;
 mod integration;
+#[cfg(feature = "standalone")]
 mod log_lens;
+#[cfg(feature = "standalone")]
 mod quick_summon;
 mod runtime_snapshot;
+#[cfg(feature = "desktop")]
+mod terminal_owner;
 
+#[cfg(feature = "standalone")]
 use commands::shell_integration::ShellIntegrationState;
+#[cfg(feature = "standalone")]
 use commands::terminal::SessionState;
+#[cfg(feature = "standalone")]
 use std::sync::Arc;
+#[cfg(feature = "standalone")]
 use tauri::{Emitter, Manager};
 
 // TODO(0.5.0): v0.4.x 이전 사용자를 위한 1회성 마이그레이션. 두 릴리스 뒤 제거한다.
+#[cfg(feature = "standalone")]
 const LEGACY_IDENTIFIER: &str = "com.workbench.wsldesktop";
+#[cfg(feature = "standalone")]
 const CURRENT_IDENTIFIER: &str = "com.devbox.wsldesktop";
 
+#[cfg(feature = "standalone")]
 fn migrate_local_data() {
     let Some(base_dir) = dirs::data_local_dir() else {
         eprintln!(
@@ -31,6 +44,7 @@ fn migrate_local_data() {
     }
 }
 
+#[cfg(feature = "standalone")]
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     migrate_local_data();

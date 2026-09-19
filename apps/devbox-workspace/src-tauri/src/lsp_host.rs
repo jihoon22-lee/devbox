@@ -412,12 +412,16 @@ impl LspHost {
                     if cancelled.load(Ordering::Acquire) || owner_shutdown.is_cancelled() {
                         return Err("lsp_operation_cancelled");
                     }
+                    let event_host = host_copy.clone();
                     let snapshot =
                         wsl_approval::Snapshot::capture(host_copy, &context_copy, deadline, true)?;
                     if cancelled.load(Ordering::Acquire) || owner_shutdown.is_cancelled() {
                         return Err("lsp_operation_cancelled");
                     }
+                    let problems = crate::problems_host::owner(&events_app)?;
+                    let epoch = problems.lsp_epoch(&context_copy)?;
                     let sink: actor::Events = Arc::new(move |name, value| {
+                        problems.lsp(&event_host, &epoch, name, &value);
                         let _ = events_app.emit_to("main", name, value);
                     });
                     wsl_actor::Actor::spawn(sink, snapshot, activities, files, owner_shutdown)
@@ -452,7 +456,11 @@ impl LspHost {
             }
             let event_app = app.clone();
             snapshot.bind_activities(self.activities.clone());
+            let problems = crate::problems_host::owner(&event_app)?;
+            let epoch = problems.lsp_epoch(context)?;
+            let event_host = host.clone();
             let sink: actor::Events = Arc::new(move |name, value| {
+                problems.lsp(&event_host, &epoch, name, &value);
                 let _ = event_app.emit_to("main", name, value);
             });
             let instance = Arc::new(Instance::Native(actor::Actor::spawn(

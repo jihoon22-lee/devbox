@@ -1,4 +1,4 @@
-//! Bounded ownership for one native MCP stdio process tree.
+//! Bounded ownership for one native child process tree.
 //!
 //! Windows starts the root suspended, assigns it to a kill-on-close Job
 //! Object, proves that the Job contains only that root, and resumes its sole

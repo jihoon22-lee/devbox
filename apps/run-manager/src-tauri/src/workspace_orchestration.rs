@@ -8,9 +8,6 @@ use crate::core::workspace_orchestration::{
     build_workspace_task_operation_plan, WorkspaceTaskOperationPlan,
     WorkspaceTaskOperationRunStatus, WorkspaceTaskOperationStatus, WorkspaceTaskOperationView,
 };
-use crate::core::workspace_tasks::{
-    revalidate_workspace_task_execution, verify_workspace_task_executions,
-};
 use crate::scheduler::{SchedulerCoordinator, WorkspaceOperationLease};
 use crate::storage::{current_epoch_millis, DatabaseState};
 use std::collections::BTreeMap;
@@ -33,6 +30,37 @@ pub fn start_workspace_task_operation(
     root_job_id: &str,
     fail_fast: bool,
 ) -> Result<WorkspaceTaskOperationView, String> {
+    start_workspace_task_operation_reviewed(database, coordinator, root_job_id, fail_fast, None)
+}
+
+pub(crate) fn start_workspace_task_operation_reviewed(
+    database: Arc<DatabaseState>,
+    coordinator: SchedulerCoordinator,
+    root_job_id: &str,
+    fail_fast: bool,
+    expected_revision: Option<&str>,
+) -> Result<WorkspaceTaskOperationView, String> {
+    start_workspace_task_operation_observed(
+        database,
+        coordinator,
+        root_job_id,
+        fail_fast,
+        expected_revision,
+        None,
+    )
+}
+
+type OperationClaimObserver<'a> =
+    dyn Fn(&WorkspaceTaskOperationView) -> Result<(), String> + Send + Sync + 'a;
+
+pub(crate) fn start_workspace_task_operation_observed(
+    database: Arc<DatabaseState>,
+    coordinator: SchedulerCoordinator,
+    root_job_id: &str,
+    fail_fast: bool,
+    expected_revision: Option<&str>,
+    observer: Option<&OperationClaimObserver<'_>>,
+) -> Result<WorkspaceTaskOperationView, String> {
     let lease = coordinator
         .retain_workspace_operation()
         .map_err(str::to_owned)?;
@@ -43,13 +71,16 @@ pub fn start_workspace_task_operation(
     let executions = database
         .list_workspace_task_executions_for_source(&root.source_id)
         .map_err(|_| "workspace-task-operation-storage".to_owned())?;
-    if verify_workspace_task_executions(&executions).is_err() {
+    if crate::workspace_sources::verify(&database, &executions, false).is_err() {
         let _ =
             database.invalidate_workspace_task_source_at(&root.source_id, current_epoch_millis());
         return Err("workspace-task-source-changed".to_owned());
     }
     let plan = build_workspace_task_operation_plan(root_job_id, &executions)
         .map_err(|error| error.to_string())?;
+    if expected_revision.is_some_and(|expected| expected != plan.revision) {
+        return Err("workspace-task-source-changed".into());
+    }
     let operation = database
         .create_workspace_task_operation_at(&plan, fail_fast, current_epoch_millis())
         .map_err(|error| match error {
@@ -63,6 +94,17 @@ pub fn start_workspace_task_operation(
             }
             _ => "workspace-task-operation-storage".to_owned(),
         })?;
+    if let Some(observer) = observer {
+        if let Err(error) = observer(&operation) {
+            let _ = database.finish_workspace_task_operation_at(
+                &operation.id,
+                WorkspaceTaskOperationStatus::Cancelled,
+                Some("workspace-task-publication-failed"),
+                current_epoch_millis(),
+            );
+            return Err(error);
+        }
+    }
     let _ = crate::integration::write_workspace_tasks(database.as_ref());
     spawn_workspace_task_operation(database, coordinator, operation.id.clone(), plan, lease);
     Ok(operation)
@@ -180,9 +222,21 @@ async fn execute_workspace_task_operation(
                     continue;
                 }
             };
+            let source_database = database.clone();
+            let source_execution = execution.clone();
+            let verified = tauri::async_runtime::spawn_blocking(move || {
+                crate::workspace_sources::verify(
+                    &source_database,
+                    std::slice::from_ref(&source_execution),
+                    true,
+                )
+                .map(|_| ())
+            })
+            .await
+            .is_ok_and(|result| result.is_ok());
             if execution.source_id != plan.source_id
                 || execution.revision != plan.revision
-                || revalidate_workspace_task_execution(&execution).is_err()
+                || !verified
             {
                 let _ = database.invalidate_workspace_task_source_at(
                     &execution.source_id,
@@ -199,27 +253,26 @@ async fn execute_workspace_task_operation(
                 continue;
             }
 
+            let observe_claim = |run: &crate::core::models::Run| {
+                if database.attach_workspace_task_operation_run(operation_id, job_id, &run.id)? {
+                    Ok(())
+                } else {
+                    Err(crate::storage::StorageError::ConcurrentChange(
+                        "workspace-task-operation-state".into(),
+                    ))
+                }
+            };
             match coordinator
-                .trigger_manual_at(job_id, current_epoch_millis())
+                .trigger_manual_observed_at(
+                    job_id,
+                    None,
+                    Some(&observe_claim),
+                    None,
+                    current_epoch_millis(),
+                )
                 .await
             {
                 Ok(run) => {
-                    if !database
-                        .attach_workspace_task_operation_run(operation_id, job_id, &run.id)
-                        .map_err(|_| "workspace-task-operation-storage")?
-                    {
-                        // This exact run was spawned after the durable launch
-                        // reservation but could not be attached. Stop it before
-                        // allowing the operation to settle.
-                        let stopped =
-                            stop_exact_run(&database, &coordinator, job_id, &run.id).await;
-                        let (status, code) = stopped.unwrap_or((
-                            WorkspaceTaskOperationRunStatus::Failed,
-                            Some("workspace-task-operation-stop-failed".to_owned()),
-                        ));
-                        complete_child(&database, operation_id, job_id, status, code.as_deref())?;
-                        return Err("workspace-task-operation-state-changed");
-                    }
                     if let Some((status, code)) = terminal_operation_status(&run) {
                         complete_child(&database, operation_id, job_id, status, code.as_deref())?;
                         layer_failed |= status != WorkspaceTaskOperationRunStatus::Succeeded;
@@ -423,7 +476,7 @@ async fn stop_exact_run(
     run_id: &str,
 ) -> Result<(WorkspaceTaskOperationRunStatus, Option<String>), &'static str> {
     if let Some(stopped) = coordinator
-        .stop_exact_active_at(job_id, run_id, current_epoch_millis())
+        .stop_session_run_at(job_id, run_id, current_epoch_millis())
         .await
         .map_err(|_| "workspace-task-operation-stop-failed")?
     {

@@ -1,0 +1,9 @@
+.workspace-problems { padding: 16px; }
+.problem-controls { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; }
+.problem-list { list-style: none; padding: 0; }
+.problem-list li { display: grid; grid-template-columns: auto 1fr; gap: 6px 12px; padding: 12px; border-bottom: 1px solid var(--border); }
+.problem-list p, .problem-list small, .problem-list li > div { grid-column: 1 / -1; margin: 0; overflow-wrap: anywhere; }
+.problem-list button { margin-right: 8px; }
+.problem-severity { font-weight: 600; }
+.problem-stale { opacity: .7; }
+.workspace-context-status { display: flex; flex-wrap: wrap; gap: 12px; padding: 8px 16px; border-bottom: 1px solid var(--border); font-size: 12px; }

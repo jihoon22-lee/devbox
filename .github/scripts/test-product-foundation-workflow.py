@@ -99,3 +99,29 @@ rejects_acceptance(unowned_provider)
 rejects_acceptance(lambda _, d: d["groups"][imported].update(evidence=[]))
 rejects_acceptance(lambda _, d: d["groups"][imported].update(importerStatus="assumed"))
 print("Unverified internal features, unowned provider handoffs and unevidenced imports are rejected: PASS")
+
+for source in ("packages/workspace-features/**", "apps/workbench/src-tauri/**",
+               "apps/repo-manager/src-tauri/**", "apps/code-pad/src-tauri/**",
+               "apps/run-manager/src-tauri/**", "apps/log-lens/src-tauri/**",
+               "apps/port-manager/src-tauri/**", "apps/wsl-desktop/src-tauri/**",
+               ".github/scripts/copy-owned-terminal-profile.ps1"):
+    assert source in workflow, "native Workspace consumers require acceptance on source changes"
+
+for filename, changed_fields in [
+    ("terminal.json", {"windows": ["*"]}),
+    ("terminal.json", {"permissions": ["core:default", "workspace:allow-execute"]}),
+    ("terminal-export.json", {"windows": ["main"]}),
+    ("terminal-export.json", {"remote": {"urls": ["https://example.invalid"]}}),
+]:
+    capability_path = root / "apps/devbox-workspace/src-tauri/capabilities" / filename
+    capability = json.loads(original_read(capability_path))
+    capability.update(changed_fields)
+    def read_capability(path, *args, **kwargs):
+        return json.dumps(capability) if path == capability_path else original_read(path, *args, **kwargs)
+    with patch.object(Path, "read_text", read_capability), redirect_stdout(io.StringIO()):
+        try:
+            check(root)
+        except AssertionError:
+            continue
+    raise AssertionError("broadened Terminal capability was accepted")
+print("Terminal companion/export capabilities remain separate and local: PASS")
