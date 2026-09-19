@@ -506,3 +506,40 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   implementation and pause further development until B06 and B07 have completed
   their actual acceptance gates and merged. Reducing repeated verification does
   not permit bypassing prerequisite completion.
+
+### Resume after prerequisite implementation/native acceptance (2026-09-19)
+
+- B06 source554d9fcd passed remaining container/stopped-query native acceptance;
+  B07 source/fixture59179e7f completed remaining foreign-installation/shared
+  surface acceptance using retained ee16bdae binaries. Their final CI/ordered
+  merges remain pending. Incorporate the fixed source and resume planned B08
+  delivery/recovery implementation while tracking those final CI results.
+- Clarify the sequencing rule: finish predecessor functionality and blocking
+  defects before dependent development; final CI/merge waiting alone must not
+  create another development stoppage. Keep merge order and final acceptance.
+  No B08 tests/builds until the full planned implementation/fixtures are complete.
+
+### Retain setup inputs after the installer exits
+
+- Preparation retains the exact four archives, bootstrap and payload under the
+  installation's payload-digest cache before generation staging. NSIS temporary
+  directory cleanup no longer removes the inputs needed for activation/recovery.
+- Copies are bounded and digest checked; publication cannot replace an existing
+  file. Repeated preparation reuses matching retained inputs, and interrupted
+  private temporary names cannot masquerade as complete archives. Original source
+  inputs and existing conflicting destination files remain unchanged.
+- Prepared preservation/repeat/tamper/conflict regressions for the final B08 run.
+  No tests or application build during this implementation.
+- The retained bootstrap can open each of the four exact manifest members via
+  closed product-specific modes. Before commit it supplies the existing native
+  setup entrypoint so owner import/health surfaces remain available while ordinary
+  writers stay blocked; after commit it launches the ordinary product. The legacy
+  Control Center setup mode remains compatible. No arbitrary executable argument
+  or fallback lookup is introduced.
+- Scoped Control Center production/test type compilation passed in 3.224s after
+  using the repository's dependency-free temporary fixture pattern. No regression
+  test or application build was executed.
+- Give skipped draft CI and ready CI separate concurrency groups: delayed draft
+  events otherwise cancel the actual ready-for-review run. The observed B07
+  ready run was restarted on the same head after the draft event finished. This
+  scheduling fix preserves required jobs and runs with the next completed B08 PR.

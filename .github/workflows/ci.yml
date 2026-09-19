@@ -15,7 +15,7 @@ on:
     - cron: "17 18 * * 0"
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'draft' || 'ready' }}
   cancel-in-progress: true
 
 # Draft implementation/fix pushes do not start compiler suites. Ready-for-review

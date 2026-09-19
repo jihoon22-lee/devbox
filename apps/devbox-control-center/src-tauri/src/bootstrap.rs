@@ -1,5 +1,5 @@
-//! Minimal package staging entrypoint. No Tauri app, service, registry mutation,
-//! active package replacement or user-data migration starts from this operation.
+//! Verified suite staging, setup and recovery entrypoints.
+//! Product launch resolves only a pinned member of the reviewed installation.
 use crate::core::{
     package_stage,
     suite_package::{Asset, Payload, MAX_RELEASE_BYTES},
@@ -157,6 +157,149 @@ fn verify_payload_owner(payload: &Payload, own_image: &Path) -> Result<()> {
     verified_file(own_image, helper)
 }
 
+/// Retain verified setup inputs independently of NSIS's temporary directory.
+/// Completed files are immutable; an interrupted copy never replaces another file.
+fn retain_input(source: &Path, destination: &Path, expected: &Asset) -> Result<()> {
+    let parent = destination.parent().ok_or("bootstrap_input_unsafe")?;
+    ensure_no_links(parent).map_err(|_| "bootstrap_input_unsafe")?;
+    match fs::symlink_metadata(destination) {
+        Ok(_) => return verified_file(destination, expected),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(_) => return Err("bootstrap_input_unavailable"),
+    }
+    ensure_no_links(source).map_err(|_| "bootstrap_input_unsafe")?;
+    let temporary = parent.join(format!(".copy-{}", uuid::Uuid::new_v4()));
+    let (mut input, source_identity) =
+        open_filesystem_object(source, false).map_err(|_| "bootstrap_input_unavailable")?;
+    let mut output = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&temporary)
+        .map_err(|_| "bootstrap_input_unavailable")?;
+    let temporary_identity = devbox_filesystem::opened_filesystem_identity(&output, false)
+        .map_err(|_| "bootstrap_input_unavailable")?;
+    let copied = (|| {
+        let started = std::time::Instant::now();
+        let mut total = 0_u64;
+        let mut hasher = Sha256::new();
+        let mut buffer = [0_u8; 65536];
+        loop {
+            if started.elapsed() > std::time::Duration::from_secs(120) {
+                return Err("bootstrap_input_copy_expired");
+            }
+            let size = input
+                .read(&mut buffer)
+                .map_err(|_| "bootstrap_input_unavailable")?;
+            if size == 0 {
+                break;
+            }
+            total = total
+                .checked_add(size as u64)
+                .ok_or("bootstrap_input_changed")?;
+            if total > expected.size {
+                return Err("bootstrap_input_changed");
+            }
+            hasher.update(&buffer[..size]);
+            output
+                .write_all(&buffer[..size])
+                .map_err(|_| "bootstrap_input_copy_failed")?;
+        }
+        let digest: String = hasher
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect();
+        if total != expected.size
+            || digest != expected.sha256
+            || filesystem_identity(source, false).map_err(|_| "bootstrap_input_changed")?
+                != source_identity
+        {
+            return Err("bootstrap_input_changed");
+        }
+        output
+            .sync_all()
+            .map_err(|_| "bootstrap_input_copy_failed")?;
+        Ok(())
+    })();
+    drop(output);
+    let result = copied.and_then(|()| {
+        if filesystem_identity(&temporary, false).map_err(|_| "bootstrap_input_changed")?
+            != temporary_identity
+        {
+            return Err("bootstrap_input_changed");
+        }
+        // Unlike rename on Windows, creating a hard link cannot overwrite a target
+        // that appeared after the initial check. Both names are in this cache.
+        match fs::hard_link(&temporary, destination) {
+            Ok(()) => verified_file(destination, expected),
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                verified_file(destination, expected)
+            }
+            Err(_) => Err("bootstrap_input_copy_failed"),
+        }
+    });
+    if filesystem_identity(&temporary, false).ok() == Some(temporary_identity) {
+        // Only our new temporary name is removed; completed inputs remain retained.
+        let _ = fs::remove_file(&temporary);
+    }
+    result
+}
+
+fn retain_setup_inputs(
+    root: &Path,
+    payload_path: &Path,
+    own_image: &Path,
+    payload: &Payload,
+    bytes: &[u8],
+) -> Result<PathBuf> {
+    let parent = root.join("setup");
+    create_directory(&parent)?;
+    let directory = parent.join(hash(bytes));
+    create_directory(&directory)?;
+    #[cfg(windows)]
+    let _directories = crate::suite::platform::component_scope::pin_directories(&directory)?;
+    let (_directory, identity) =
+        open_filesystem_object(&directory, true).map_err(|_| "bootstrap_input_unavailable")?;
+    let source = payload_path.parent().ok_or("bootstrap_input_unsafe")?;
+    for product in &payload.products {
+        retain_input(
+            &source.join(&product.portable.name),
+            &directory.join(&product.portable.name),
+            &product.portable,
+        )?;
+    }
+    let helper = payload
+        .products
+        .iter()
+        .find(|product| product.id == "control-center")
+        .and_then(|product| {
+            product
+                .files
+                .iter()
+                .find(|file| file.name == "resources/suite/devbox-suite-bootstrap.exe")
+        })
+        .ok_or("bootstrap_identity_missing")?;
+    retain_input(
+        own_image,
+        &directory.join("devbox-suite-bootstrap.exe"),
+        helper,
+    )?;
+    let retained = directory.join("suite-payload.json");
+    retain_input(
+        payload_path,
+        &retained,
+        &Asset {
+            name: "suite-payload.json".into(),
+            sha256: hash(bytes),
+            size: bytes.len() as u64,
+        },
+    )?;
+    if filesystem_identity(&directory, true).map_err(|_| "bootstrap_input_changed")? != identity {
+        return Err("bootstrap_input_changed");
+    }
+    Ok(retained)
+}
+
 fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
@@ -288,6 +431,10 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--recover-install",
             "--restart-install",
             "--open-install",
+            "--open-workspace",
+            "--open-api-studio",
+            "--open-knowledge",
+            "--open-control-center",
             "--snapshot-install",
             "--verify-checkpoints",
             "--activate-clean-install",
@@ -322,10 +469,20 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             &image,
             arguments[0] == "--verify-checkpoints",
         )
-    } else if arguments[0] == "--open-install" {
-        open_install(&root, &payload, &image)
+    } else if let Some(product) = setup_product(&arguments[0]) {
+        open_install(&root, &payload, &image, product)
     } else {
         stage_impl(&root, &payload, &image)
+    }
+}
+
+fn setup_product(mode: &std::ffi::OsStr) -> Option<&'static str> {
+    match mode.to_str()? {
+        "--open-install" | "--open-control-center" => Some("control-center"),
+        "--open-workspace" => Some("workspace"),
+        "--open-api-studio" => Some("api-studio"),
+        "--open-knowledge" => Some("knowledge"),
+        _ => None,
     }
 }
 
@@ -437,6 +594,8 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
         owner
     };
     let _gate = writer_gate(&root, true)?;
+    let retained_payload =
+        retain_setup_inputs(&root, payload_path, own_image, &payload, &payload_bytes)?;
     let key = hash(
         &serde_json::to_vec(&(root_identity.components(), &owner.installation_id))
             .map_err(|_| "bootstrap_owner_invalid")?,
@@ -522,7 +681,7 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     create_directory(&generations)?;
     let generation = generations.join(&owner.generation);
     create_directory(&generation)?;
-    let result = stage_impl(&generation, payload_path, own_image)?;
+    let result = stage_impl(&generation, &retained_payload, own_image)?;
     if journal.phase == Phase::Stage {
         advance(&mut journal)?;
     }
@@ -813,7 +972,12 @@ fn restart_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
 /// Open only this verified installation's Control Center. The helper does not
 /// route to a guessed executable, grant write authority, or start other owners.
 #[cfg(windows)]
-fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
+fn open_install(
+    root: &Path,
+    payload_path: &Path,
+    own_image: &Path,
+    product: &str,
+) -> Result<StageResult> {
     use std::os::windows::process::CommandExt;
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
@@ -872,20 +1036,24 @@ fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<St
         &manifest
             .members
             .iter()
-            .find(|member| member.product == "control-center")
+            .find(|member| member.product == product)
             .ok_or("bootstrap_payload_incomplete")?
             .executable,
     );
     let scope = crate::suite::platform::component_scope::CapturedScope::capture(
         &root,
-        "control-center",
+        product,
         &image,
         &payload.suite_version,
     )?;
-    let (_, image, _) = scope.member("control-center")?;
+    let (_, image, _) = scope.member(product)?;
     let mut command = std::process::Command::new(image);
+    if marker.phase != product_contract::activation::Phase::Committed {
+        // Every owner opens its own import/health surface while the native
+        // activation barrier still blocks ordinary writes and scheduled work.
+        command.arg("--suite-setup");
+    }
     command
-        .arg("--suite-setup")
         .current_dir(image.parent().ok_or("bootstrap_manifest_invalid")?)
         .creation_flags(0x08000000)
         .stdin(std::process::Stdio::null())
@@ -907,7 +1075,11 @@ fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<St
     #[allow(clippy::zombie_processes)]
     let _child = command.spawn().map_err(|_| "bootstrap_launch_failed")?;
     Ok(StageResult {
-        state: "controlCenterLaunched",
+        state: if product == "control-center" {
+            "controlCenterLaunched"
+        } else {
+            "productLaunched"
+        },
         checkpoint: None,
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
@@ -915,7 +1087,7 @@ fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<St
     })
 }
 #[cfg(not(windows))]
-fn open_install(_: &Path, _: &Path, _: &Path) -> Result<StageResult> {
+fn open_install(_: &Path, _: &Path, _: &Path, _: &str) -> Result<StageResult> {
     Err("bootstrap_windows_required")
 }
 
@@ -1295,4 +1467,61 @@ fn activate_clean_install(
         suite_version: payload.suite_version,
         payload_revision: revision,
     })
+}
+
+#[cfg(test)]
+mod setup_retention_tests {
+    use super::*;
+    struct Temp(PathBuf);
+    impl Temp {
+        fn path(&self) -> &Path {
+            &self.0
+        }
+    }
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn tempdir() -> std::io::Result<Temp> {
+        let path =
+            std::env::temp_dir().join(format!("devbox-setup-input-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&path)?;
+        Ok(Temp(path))
+    }
+    fn asset(bytes: &[u8]) -> Asset {
+        Asset {
+            name: "fixture.zip".into(),
+            sha256: hash(bytes),
+            size: bytes.len() as u64,
+        }
+    }
+    #[test]
+    fn retained_inputs_survive_installer_cleanup_and_repeated_preparation() {
+        let original = tempdir().unwrap();
+        let cache = tempdir().unwrap();
+        let source = original.path().join("fixture.zip");
+        let destination = cache.path().join("fixture.zip");
+        fs::write(&source, b"verified input").unwrap();
+        let expected = asset(b"verified input");
+        retain_input(&source, &destination, &expected).unwrap();
+        retain_input(&source, &destination, &expected).unwrap();
+        drop(original);
+        verified_file(&destination, &expected).unwrap();
+    }
+    #[test]
+    fn corrupt_input_is_not_published_and_existing_content_is_not_overwritten() {
+        let original = tempdir().unwrap();
+        let cache = tempdir().unwrap();
+        let source = original.path().join("fixture.zip");
+        let destination = cache.path().join("fixture.zip");
+        let expected = asset(b"verified input");
+        fs::write(&source, b"corrupt input").unwrap();
+        assert!(retain_input(&source, &destination, &expected).is_err());
+        assert!(!destination.exists());
+        fs::write(&source, b"verified input").unwrap();
+        fs::write(&destination, b"preserve existing file").unwrap();
+        assert!(retain_input(&source, &destination, &expected).is_err());
+        assert_eq!(fs::read(&destination).unwrap(), b"preserve existing file");
+    }
 }
