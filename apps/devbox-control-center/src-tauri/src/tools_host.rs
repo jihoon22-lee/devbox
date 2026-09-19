@@ -68,7 +68,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                         let recovery = journal.recovery()?;
                         Ok(serde_json::json!({"state":"recorded", "phase":journal.phase,
                             "committed":journal.committed,"recovery":recovery,
-                            "backupCount":journal.backup.len(),"importCount":journal.imports.len(),
+                            "backupCount":journal.backup.len(),"dataCheckpointCount":journal.data_checkpoints.len(),"importCount":journal.imports.len(),
                             "cleanupPending":journal.cleanup_pending.len(),"failure":journal.failure}))
                     }
                 }

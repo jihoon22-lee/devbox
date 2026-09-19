@@ -31,6 +31,7 @@ The private `devbox-suite-bootstrap` currently implements these Windows operatio
 | `--prepare-install ROOT PAYLOAD` | Prepare an isolated generation, retained journal and Import marker |
 | `--recover-install ROOT PAYLOAD` | Block and recover an uncommitted first installation while preserving all data and packages |
 | `--restart-install ROOT PAYLOAD` | Start a fresh package generation after that recovery; preserve the old journal and files |
+| `--snapshot-install ROOT PAYLOAD` | Preserve the four closed product namespaces, including DB/WAL and closed browser files, without changing activation |
 | `--open-install ROOT PAYLOAD` | Launch the pinned Control Center and derive its setup/recovery view from the native activation marker |
 
 `PAYLOAD` is the private `suite-payload.json` from `build-suite-package.py`, with its
@@ -38,6 +39,12 @@ four verified ZIPs beside it. The bootstrap verifies its own payload identity fi
 Recovery/restart require all product writers to have closed; they do not terminate
 processes by name. A committed installation or an update with a previous generation
 requires a separate data recovery plan and is rejected by the first-install commands.
+Product data checkpoints require the exclusive installation writer gate and retain
+all original files. They are stored in the installation's separate local backup
+namespace and recorded independently from legacy source backups. No external vault,
+Git directory, legacy namespace or source schema is copied through a referenced
+path. A checkpoint does not restore data or permit downgrade; that reviewed restore
+flow remains unfinished. Retention is bounded and never silently deletes old copies.
 The private `build-suite-installer.py` wraps preparation in a Windows NSIS entrypoint
 and offers opening Control Center. Its finish page reports preparation, not activation
 completion. This entrypoint is not yet wired into public release, ARP/shortcuts or

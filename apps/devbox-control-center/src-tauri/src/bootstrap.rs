@@ -73,6 +73,8 @@ fn verified_file(path: &Path, expected: &Asset) -> Result<()> {
 #[serde(rename_all = "camelCase")]
 pub struct StageResult {
     pub state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub checkpoint: Option<crate::core::data_checkpoint::Receipt>,
     pub source_sha: String,
     pub suite_version: String,
     pub payload_revision: String,
@@ -260,6 +262,7 @@ fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<Stag
         return Err("bootstrap_root_changed");
     }
     let result = StageResult {
+        checkpoint: None,
         state: "staged",
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
@@ -285,6 +288,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--recover-install",
             "--restart-install",
             "--open-install",
+            "--snapshot-install",
         ]
         .iter()
         .any(|mode| arguments[0] == *mode)
@@ -300,6 +304,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         recover_install(&root, &payload, &image)
     } else if arguments[0] == "--restart-install" {
         restart_install(&root, &payload, &image)
+    } else if arguments[0] == "--snapshot-install" {
+        snapshot_install(&root, &payload, &image)
     } else if arguments[0] == "--open-install" {
         open_install(&root, &payload, &image)
     } else {
@@ -708,6 +714,7 @@ fn recover_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     }
     Ok(StageResult {
         state: "uncommittedInstallRecovered",
+        checkpoint: None,
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
         payload_revision,
@@ -888,6 +895,7 @@ fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<St
     let _child = command.spawn().map_err(|_| "bootstrap_launch_failed")?;
     Ok(StageResult {
         state: "controlCenterLaunched",
+        checkpoint: None,
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
         payload_revision,
@@ -896,4 +904,101 @@ fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<St
 #[cfg(not(windows))]
 fn open_install(_: &Path, _: &Path, _: &Path) -> Result<StageResult> {
     Err("bootstrap_windows_required")
+}
+
+/// Preserve only this installation's four closed namespaces. External vaults,
+/// repository trees, legacy namespaces and activation markers are not changed.
+fn snapshot_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
+    use crate::core::{data_checkpoint, delivery_store::Store};
+    let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&bytes)?;
+    verify_payload_owner(&payload, own_image)?;
+    let revision = hash(&bytes);
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let (_root, identity) =
+        open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    #[cfg(windows)]
+    let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let _gate = writer_gate(&root, false)?;
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    if owner.schema_version != 1
+        || owner.root_identity != identity.components()
+        || owner.payload_revision != revision
+        || !uuid::Uuid::parse_str(&owner.installation_id)
+            .is_ok_and(|id| id.to_string() == owner.installation_id)
+        || owner.generation != format!("g-{}", owner.operation_id)
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let manifest = product_contract::installation::Manifest::parse(
+        &read(&root.join("devbox-installation.json"), 64 * 1024)?,
+        &payload.suite_version,
+    )?;
+    let marker: product_contract::activation::Activation =
+        serde_json::from_slice(&read(&root.join("devbox-activation.json"), 4096)?)
+            .map_err(|_| "bootstrap_marker_invalid")?;
+    marker.validate(&manifest)?;
+    if manifest.installation_id != owner.installation_id
+        || manifest.generation != owner.generation
+        || marker.operation_id != owner.operation_id
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let key = hash(
+        &serde_json::to_vec(&(identity.components(), &owner.installation_id))
+            .map_err(|_| "bootstrap_owner_invalid")?,
+    );
+    let parent = dirs::data_local_dir().ok_or("bootstrap_data_unavailable")?;
+    ensure_no_links(&parent).map_err(|_| "bootstrap_data_unsafe")?;
+    #[cfg(windows)]
+    let _data_directories = crate::suite::platform::component_scope::pin_directories(&parent)?;
+    let catalog =
+        devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE)?;
+    let sources = catalog
+        .products
+        .iter()
+        .map(|product| {
+            (
+                product.id.clone(),
+                parent.join(format!("{}.i{key}", product.identifier)),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let store = Store::open(
+        sources
+            .get("control-center")
+            .ok_or("bootstrap_data_unavailable")?,
+    )?;
+    let (mut journal, digest) = store.read()?.ok_or("bootstrap_journal_missing")?;
+    if journal.installation_key != key
+        || journal.operation_id != owner.operation_id
+        || journal.candidate != manifest
+    {
+        return Err("bootstrap_journal_changed");
+    }
+    if journal.data_checkpoints.len() >= 32 {
+        return Err("checkpoint_retention_review_required");
+    }
+    let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
+    create_directory(&backup)?;
+    let checkpoint = data_checkpoint::acquire_quiesced(
+        &sources,
+        &backup,
+        &key,
+        &manifest.generation,
+        &AtomicBool::new(false),
+    )?;
+    // The helper still holds the writer gate here. Keep a completed checkpoint
+    // even if journal persistence fails; never delete a possible recovery copy.
+    journal.record_checkpoint(journal.revision, checkpoint.clone())?;
+    store.write(Some(&digest), &journal)?;
+    Ok(StageResult {
+        state: "dataCheckpointPreserved",
+        checkpoint: Some(checkpoint),
+        source_sha: payload.source_sha,
+        suite_version: payload.suite_version,
+        payload_revision: revision,
+    })
 }

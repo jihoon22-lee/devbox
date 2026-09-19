@@ -66,6 +66,8 @@ pub struct Journal {
     pub previous: Option<Manifest>,
     pub candidate: Manifest,
     pub backup: Vec<Backup>,
+    #[serde(default)]
+    pub data_checkpoints: Vec<super::data_checkpoint::Receipt>,
     pub imports: Vec<ImportReceipt>,
     pub cleanup_pending: BTreeSet<String>,
     pub committed: bool,
@@ -115,6 +117,7 @@ impl Journal {
             previous,
             candidate,
             backup: Vec::new(),
+            data_checkpoints: Vec::new(),
             imports: Vec::new(),
             cleanup_pending: BTreeSet::new(),
             committed: false,
@@ -128,6 +131,7 @@ impl Journal {
             || self.revision == u64::MAX
             || !id(&self.operation_id)
             || !hash(&self.installation_key)
+            || self.data_checkpoints.len() > 32
             || self.backup.len() > MAX_ITEMS
             || self.imports.len() > 65536
             || self.cleanup_pending.len() > 15
@@ -147,6 +151,18 @@ impl Journal {
         }
         if self.committed != matches!(self.phase, Phase::Cleanup | Phase::Complete) {
             return Err("suite_commit_inconsistent");
+        }
+        let mut checkpoints = BTreeSet::new();
+        for checkpoint in &self.data_checkpoints {
+            if !uuid::Uuid::parse_str(&checkpoint.id)
+                .is_ok_and(|id| id.to_string() == checkpoint.id)
+                || !checkpoints.insert(&checkpoint.id)
+                || !hash(&checkpoint.revision)
+                || checkpoint.bytes > 2 * 1024 * 1024 * 1024
+                || checkpoint.files > 50_000
+            {
+                return Err("suite_checkpoint_invalid");
+            }
         }
         let mut snapshots = BTreeSet::new();
         for backup in &self.backup {
@@ -183,6 +199,32 @@ impl Journal {
                 return Err("suite_import_invalid");
             }
         }
+        Ok(())
+    }
+    /// A closed product-data checkpoint is separate from a legacy source backup.
+    /// Recording it never advances the installation or certifies an importer.
+    pub fn record_checkpoint(
+        &mut self,
+        expected: u64,
+        receipt: super::data_checkpoint::Receipt,
+    ) -> Result<()> {
+        self.require(expected, self.phase)?;
+        if let Some(old) = self
+            .data_checkpoints
+            .iter()
+            .find(|old| old.id == receipt.id)
+        {
+            return if old == &receipt {
+                Ok(())
+            } else {
+                Err("suite_checkpoint_conflict")
+            };
+        }
+        let mut next = self.clone();
+        next.data_checkpoints.push(receipt);
+        next.revision += 1;
+        next.validate()?;
+        *self = next;
         Ok(())
     }
     /// Called only with a newly acquired owner snapshot; repeating identical

@@ -249,3 +249,27 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   scheduled for the completed B08 bundle. Minimal Rust checks for the four owners
   and Control Center TypeScript passed in 33.722s under the shared resource budget;
   Windows-only adapter execution remains pending.
+
+### Closed product-data checkpoints (2026-09-19)
+
+- `--snapshot-install ROOT PAYLOAD` verifies the native helper/payload, physical
+  installation owner, manifest, activation marker and journal, then acquires the
+  exclusive suite writer gate. Any running product causes refusal; no process is
+  terminated. Native identifiers derive exactly four installation-specific local
+  data roots. No renderer supplies a source/destination path.
+- Copies complete closed namespaces, including SQLite DB/WAL and WebView files,
+  into a separate private backup namespace. Retained directory identities,
+  no-link admission, bounded sizes/time/file counts, stable source re-reads and
+  copied-file digests precede publication of the complete manifest. This is a
+  quiesced copy, not a live `.db` copy or global transaction with external stores.
+- External vaults/repos referenced by settings and all legacy namespaces remain
+  outside this operation. A failed copy is retained without a completion marker;
+  a complete copy survives journal-write failure. The journal separately records
+  product checkpoints and legacy source backups. At 32 recorded checkpoints the
+  helper requires retention review, never automatic deletion.
+- Added synthetic WAL-only row, closed browser bytes, absent-product, cancellation
+  and outside-link regression fixtures. They are prepared, not executed yet.
+  Initial typecheck found SHA formatting/test-helper errors; those were fixed.
+  Scoped Rust (including test compilation) and Control Center TypeScript passed
+  in 6.237s. No detailed test/build rerun. Windows acquisition and reviewed data
+  restoration remain pending; this does not complete update/downgrade acceptance.

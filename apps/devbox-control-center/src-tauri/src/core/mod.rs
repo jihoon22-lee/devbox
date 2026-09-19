@@ -11,3 +11,5 @@ pub mod suite_package;
 pub mod package_stage;
 pub mod legacy_binary;
 pub mod legacy_installation;
+
+pub mod data_checkpoint;
