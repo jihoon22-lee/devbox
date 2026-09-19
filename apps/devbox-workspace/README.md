@@ -529,3 +529,9 @@ The B06 acceptance packet is recorded in the
 The owned WSL2 runner uses exact packaged artifacts and an explicitly created
 disposable distro. It provisions tmux, Docker and a digest-pinned Zellij there only;
 these test tools are not product dependencies or automatically installed by Workspace.
+
+Suite migration status includes a bounded digest/count of the retained owner
+mapping ledgers. Runtime reads committed WAL rows without initializing its
+scheduler; Files, Registry and Terminal keep record IDs and paths private.
+Corrupt/unavailable records fail the observation. Counts are retained ledger
+entries, not a claim that every legacy source has been migrated or revalidated.

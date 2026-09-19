@@ -410,3 +410,21 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   with Windows/test cfg boundaries. Detailed tests and Windows guard execution
   remain deferred to complete B08 verification. These owner-local guards do not
   replace fresh Suite cutover checks or claim an OS-wide transaction.
+
+### Workspace retained mapping ledger summary (2026-09-19)
+
+- Workspace now reports a digest/count of retained Registry reference/profile/
+  template mappings, Runtime ID rows, Terminal import history and file session,
+  recovery, LSP and preference receipts. Counts describe ledger entries, not
+  complete transferred user-data coverage. Unselected/busy owners stay unknown;
+  corrupt or inaccessible records fail instead of becoming zero.
+- Runtime uses a read-only SQLite transaction including committed WAL rows, with
+  schema/row/string/time limits and database identity revalidation. Metadata
+  readers use native component roots and create no owner, scheduler or database.
+  Workspace bounds contexts/bytes/time and returns only the digest/count, never
+  source IDs, paths or content.
+- Prepared WAL/uncommitted-row/schema and empty/read-only/corrupt-ledger cases.
+  Initial compilation caught sha2 0.11 output formatting and a private re-export
+  path; fixed those, including the same Windows-only API digest expression.
+  Final Workspace/Runtime Rust/test compilation passed in 12.399s. Detailed
+  regressions and native IPC remain scheduled for complete B08 verification.

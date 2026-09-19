@@ -469,3 +469,117 @@ mod tests {
         );
     }
 }
+
+/// Read only the product-owned mapping ledger. No schema initialization or
+/// scheduler startup occurs; WAL participates in one bounded read transaction.
+pub fn mapping_summary(root: &Path) -> Result<(u64, String), String> {
+    use sha2::{Digest, Sha256};
+    let path = root.join("data.db");
+    devbox_filesystem::ensure_no_links(root).map_err(|_| "runtime_import_mapping_unavailable")?;
+    let mut hash = Sha256::new();
+    hash.update(b"workspace-runtime-mappings-v1");
+    match std::fs::symlink_metadata(&path) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+            return Ok((
+                0,
+                hash.finalize()
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect::<String>(),
+            ))
+        }
+        Err(_) => return Err("runtime_import_mapping_unavailable".into()),
+        Ok(_) => {}
+    }
+    devbox_filesystem::ensure_no_links(&path).map_err(|_| "runtime_import_mapping_unavailable")?;
+    let (handle, identity) = devbox_filesystem::open_filesystem_object(&path, false)
+        .map_err(|_| "runtime_import_mapping_unavailable")?;
+    let mut connection =
+        Connection::open_with_flags(&path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)
+            .map_err(|_| "runtime_import_mapping_unavailable")?;
+    connection
+        .busy_timeout(std::time::Duration::from_millis(100))
+        .map_err(|_| "runtime_import_mapping_unavailable")?;
+    let transaction = connection
+        .transaction()
+        .map_err(|_| "runtime_import_mapping_unavailable")?;
+    let version: String = transaction
+        .query_row(
+            "SELECT value FROM meta WHERE key='schema_version'",
+            [],
+            |r| r.get(0),
+        )
+        .map_err(|_| "runtime_import_mapping_unavailable")?;
+    if version != super::SCHEMA_VERSION.to_string() {
+        return Err("runtime_import_mapping_schema".into());
+    }
+    let mut statement = transaction.prepare("SELECT origin,entity,source_id,destination_id FROM workspace_runtime_import_ids ORDER BY origin,entity,source_id LIMIT 100001").map_err(|_| "runtime_import_mapping_unavailable")?;
+    let mut rows = statement
+        .query([])
+        .map_err(|_| "runtime_import_mapping_unavailable")?;
+    let mut count = 0;
+    let started = std::time::Instant::now();
+    while let Some(row) = rows
+        .next()
+        .map_err(|_| "runtime_import_mapping_unavailable")?
+    {
+        count += 1;
+        if count > 100_000 || started.elapsed() > std::time::Duration::from_secs(5) {
+            return Err("runtime_import_mapping_limit".into());
+        }
+        let mut values = Vec::new();
+        for index in 0..4 {
+            let raw = row
+                .get_ref(index)
+                .map_err(|_| "runtime_import_mapping_unavailable")?;
+            let value = raw.as_str().map_err(|_| "runtime_import_mapping_invalid")?;
+            if value.is_empty() || value.len() > 1024 {
+                return Err("runtime_import_mapping_invalid".into());
+            }
+            values.push(value);
+        }
+        hash.update(serde_json::to_vec(&values).map_err(|_| "runtime_import_mapping_invalid")?);
+    }
+    if devbox_filesystem::filesystem_identity(&path, false)
+        .map_err(|_| "runtime_import_mapping_unavailable")?
+        != identity
+    {
+        return Err("runtime_import_mapping_changed".into());
+    }
+    drop(handle);
+    Ok((
+        count,
+        hash.finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>(),
+    ))
+}
+
+#[cfg(test)]
+mod mapping_summary_tests {
+    use super::*;
+    #[test]
+    fn mapping_reader_includes_committed_wal_and_excludes_uncommitted_ids() {
+        let root = tempfile::tempdir().unwrap();
+        let path = root.path().join("data.db");
+        let initial = mapping_summary(root.path()).unwrap();
+        assert_eq!(initial.0, 0);
+        assert!(!path.exists());
+        drop(DatabaseState::open_product(&path).unwrap());
+        let writer = Connection::open(&path).unwrap();
+        writer.execute_batch("PRAGMA journal_mode=WAL; PRAGMA wal_autocheckpoint=0;
+            INSERT INTO workspace_runtime_import_ids VALUES('fixture','jobs','source-job','destination-job');
+            BEGIN IMMEDIATE;
+            INSERT INTO workspace_runtime_import_ids VALUES('fixture','runs','uncommitted','uncommitted');").unwrap();
+        let observed = mapping_summary(root.path()).unwrap();
+        assert_eq!(observed.0, 1);
+        assert_ne!(observed.1, initial.1);
+        writer.execute_batch("ROLLBACK; UPDATE workspace_runtime_import_ids SET destination_id='changed-destination';").unwrap();
+        assert_ne!(mapping_summary(root.path()).unwrap().1, observed.1);
+        writer
+            .execute_batch("UPDATE meta SET value='999' WHERE key='schema_version';")
+            .unwrap();
+        assert!(mapping_summary(root.path()).is_err());
+    }
+}

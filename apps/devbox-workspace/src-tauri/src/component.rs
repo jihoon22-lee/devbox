@@ -2450,15 +2450,13 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
     };
     let native =
         serde_json::to_vec(&(status, rows, registry)).map_err(|_| "migration_unavailable")?;
-    serde_json::to_value(product_contract::migration_status::Summary::new(
-        "workspace",
-        env!("CARGO_PKG_VERSION"),
-        busy,
-        selected,
-        !selected,
-        &native,
-    )?)
-    .map_err(|_| "migration_unavailable")
+    let mut summary = product_contract::migration_status::Summary::new(
+        "workspace", env!("CARGO_PKG_VERSION"), busy, selected, !selected, &native,
+    )?;
+    if selected && !busy {
+        summary = summary.with_mappings(crate::migration_ledger::summarize(&host)?)?;
+    }
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }
 
 #[cfg(test)]

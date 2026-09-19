@@ -265,7 +265,7 @@ CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
 /// A process-wide SQLite connection. Every connection is configured with the
 /// same foreign-key and busy-timeout policy before migrations run.
 mod controls;
-mod imports;
+pub(crate) mod imports;
 pub use imports::{ImportReceipt, ImportedJobReview};
 pub(crate) fn import_schema() -> Result<Connection, String> {
     let connection = Connection::open_in_memory().map_err(|_| "runtime_import_invalid")?;

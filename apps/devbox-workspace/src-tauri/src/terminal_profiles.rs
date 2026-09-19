@@ -596,3 +596,28 @@ mod tests {
         }
     }
 }
+
+/// Hash only committed import receipts; ordinary profile edits do not erase them.
+pub(crate) fn mapping_records(root: &MetadataRoot) -> Result<(u64, Value)> {
+    let (envelope, _, _) = load(root)?;
+    let mut rows = Vec::new();
+    let mut count = 0;
+    for (key, expected) in &envelope.receipts {
+        if !fingerprint(key) || uuid::Uuid::parse_str(expected).is_err() {
+            return Err("terminal_import_history_invalid");
+        }
+        let path = root.path().join("import-history");
+        let history = MetadataRoot::open(&path)?;
+        let bytes = history
+            .read(&format!("{key}.json"))?
+            .ok_or("terminal_import_history_missing")?;
+        // The receipt value identifies the accepted operation; history preserves its
+        // exact original/destination IDs and preimage for reviewed restoration.
+        let record: HistoryRecord =
+            serde_json::from_slice(&bytes).map_err(|_| "terminal_import_history_invalid")?;
+        previous(&history, key)?;
+        count += record.mapping.len() as u64;
+        rows.push(json!([key, expected, record.mapping]));
+    }
+    Ok((count, json!(rows)))
+}

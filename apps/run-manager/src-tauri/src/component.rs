@@ -757,3 +757,8 @@ pub async fn dispatch(
     }
     Ok(value)
 }
+
+/// Read-only product migration ledger; never initializes execution owners.
+pub fn migration_mapping_summary(root: &Path) -> Result<(u64, String), String> {
+    crate::storage::imports::mapping_summary(root)
+}
