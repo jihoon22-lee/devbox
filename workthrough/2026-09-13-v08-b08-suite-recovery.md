@@ -640,3 +640,9 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Native evidence explicitly names this narrower scope; it is not full B08 acceptance.
 - These fixtures/workflow additions are prepared source only. No new CI, test,
   application build, installation or uninstallation has been executed here.
+- Retain the executable uninstaller until ARP cleanup succeeds, so a failed
+  registry cleanup still has a working removal entrypoint. This ordering fix
+  was checked by diff only; it did not trigger another test/build/CI run.
+- Align B08 with accepted main `138c49fe`: the tested B07 tree differed from
+  accepted main only in the B06 workthrough, which B08 had not changed. Preserve
+  all B08 implementation and incorporate that accepted history/document update.

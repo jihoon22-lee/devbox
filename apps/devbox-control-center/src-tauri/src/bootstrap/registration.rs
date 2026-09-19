@@ -476,7 +476,6 @@ pub(super) fn remove(root: &Path, key: &str, apply: bool) -> Result<()> {
         if shortcuts_present {
             links.remove(&registration.shortcut_directory)?;
         }
-        uninstaller.remove(root)?;
         // Keep the owned shortcut directory as an empty resume anchor until the
         // NSIS owner has completed the package and registration transaction.
         if status == ERROR_SUCCESS
@@ -491,6 +490,9 @@ pub(super) fn remove(root: &Path, key: &str, apply: bool) -> Result<()> {
         {
             return Err("suite_registry_unavailable");
         }
+        // Keep an executable recovery entrypoint until ARP cleanup succeeds.
+        // A registry failure must not leave its entry pointing at a deleted file.
+        uninstaller.remove(root)?;
     }
     Ok(())
 }
