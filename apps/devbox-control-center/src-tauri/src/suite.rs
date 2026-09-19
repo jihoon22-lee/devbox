@@ -174,11 +174,7 @@ async fn connection(
         let _ = (suite.domain, suite.sources);
         match request.method {
             Method::ReadMigrationStatus { product } => {
-                if !product_contract::installation::PRODUCTS.contains(&product.as_str()) {
-                    Err("peer_product_invalid")
-                } else {
-                    Err("suite_windows_required")
-                }
+                let _ = product;
             }
 
             Method::ReadOperations { product } => {

@@ -10,3 +10,4 @@ pub mod delivery_store;
 pub mod suite_package;
 pub mod package_stage;
 pub mod legacy_binary;
+pub mod legacy_installation;

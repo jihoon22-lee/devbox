@@ -123,7 +123,21 @@ fn verified_binary(
     {
         return false;
     }
-    crate::core::legacy_binary::verify(app, version, &expected).is_ok()
+    let Ok(reference) = crate::core::legacy_installation::reference(app, version) else {
+        return false;
+    };
+    let mut resource_directories = Vec::new();
+    for file in reference.files {
+        let path = root.join(file.name);
+        let Some(parent) = path.parent() else {
+            return false;
+        };
+        let Ok(pins) = crate::suite::platform::component_scope::pin_directories(parent) else {
+            return false;
+        };
+        resource_directories.extend(pins);
+    }
+    crate::core::legacy_installation::verify(&root, app, version).is_ok()
 }
 
 fn scan(
@@ -190,6 +204,9 @@ fn scan(
         };
         // Repeat the bounded metadata observation before publishing its revision.
         if text(&key, "DisplayName")?.as_deref() != Some(display.as_str())
+            || text(&key, "DisplayVersion")?
+                .filter(|s| s.len() <= 64 && !s.chars().any(char::is_control))
+                != version
             || values
                 != (
                     text(&key, "InstallLocation")?,
@@ -212,7 +229,11 @@ fn scan(
             architecture,
             registration_id,
             binary,
-            cleanup: "requiresVerifiedInstaller",
+            cleanup: if binary == "verified" {
+                "requiresCommittedSuiteAndReview"
+            } else {
+                "requiresVerifiedInstaller"
+            },
         });
         if entries.len() > 60 {
             return Err("legacy_registry_limit");

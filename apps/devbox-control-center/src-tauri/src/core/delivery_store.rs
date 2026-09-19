@@ -8,7 +8,7 @@ use devbox_filesystem::{
 use sha2::{Digest, Sha256};
 use std::{
     fs::{self, File, OpenOptions},
-    io::Read,
+    io::{Read, Write},
     path::{Path, PathBuf},
 };
 const MAX_BYTES: u64 = 16 * 1024 * 1024;
@@ -121,6 +121,92 @@ impl Store {
             })
             .transpose()
     }
+    /// Start a later operation only after the previous operation has settled.
+    /// Archive first, then replace the current journal: an interrupted archive
+    /// is harmless and a retry must observe identical bytes, never overwrite it.
+    pub fn begin(&self, expected_digest: Option<&str>, journal: &Journal) -> Result<String> {
+        use super::delivery::Phase;
+        journal.validate()?;
+        if journal.revision != 0 || journal.phase != Phase::Inventory {
+            return Err("suite_journal_conflict");
+        }
+        let previous = self.read()?;
+        if previous.as_ref().map(|(_, hash)| hash.as_str()) != expected_digest {
+            return Err("suite_journal_stale");
+        }
+        let Some((old, _)) = previous else {
+            if journal.previous.is_some() {
+                return Err("suite_previous_journal_missing");
+            }
+            return self.write(None, journal);
+        };
+        if !matches!(old.phase, Phase::Complete | Phase::Recovered)
+            || old.operation_id == journal.operation_id
+            || old.installation_key != journal.installation_key
+            || old.candidate.installation_id != journal.candidate.installation_id
+            || old.candidate.generation == journal.candidate.generation
+        {
+            return Err("suite_previous_operation_unsettled");
+        }
+        let active = if old.committed {
+            Some(&old.candidate)
+        } else {
+            old.previous.as_ref()
+        };
+        if journal.previous.as_ref() != active {
+            return Err("suite_previous_generation_changed");
+        }
+        let bytes = self.bytes()?.ok_or("suite_journal_changed")?;
+        let archive = self
+            .root
+            .join(format!("completed-{}.json", old.operation_id));
+        match fs::symlink_metadata(&archive) {
+            Ok(_) => {
+                ensure_no_links(&archive).map_err(|_| "suite_archive_unsafe")?;
+                let (file, identity) = open_filesystem_object(&archive, false)
+                    .map_err(|_| "suite_archive_unavailable")?;
+                let mut saved = Vec::new();
+                file.take(MAX_BYTES + 1)
+                    .read_to_end(&mut saved)
+                    .map_err(|_| "suite_archive_unavailable")?;
+                if saved != bytes
+                    || filesystem_identity(&archive, false).map_err(|_| "suite_archive_changed")?
+                        != identity
+                {
+                    return Err("suite_archive_changed");
+                }
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                // Publish without replacing any existing record. A crash leaves
+                // either a private pending file or the complete linked archive.
+                let pending = self
+                    .root
+                    .join(format!("archive-{}.pending", uuid::Uuid::new_v4()));
+                let mut file = OpenOptions::new()
+                    .write(true)
+                    .create_new(true)
+                    .open(&pending)
+                    .map_err(|_| "suite_archive_write_failed")?;
+                file.write_all(&bytes)
+                    .and_then(|_| file.sync_all())
+                    .map_err(|_| "suite_archive_write_failed")?;
+                drop(file);
+                fs::hard_link(&pending, &archive).map_err(|_| "suite_archive_write_failed")?;
+                // This is only our private publication name, not backup data.
+                fs::remove_file(&pending).map_err(|_| "suite_archive_write_failed")?;
+            }
+            Err(_) => return Err("suite_archive_unavailable"),
+        }
+        self.revalidate()?;
+        let bytes = serde_json::to_vec(journal).map_err(|_| "suite_journal_invalid")?;
+        if bytes.len() as u64 > MAX_BYTES {
+            return Err("suite_journal_limit");
+        }
+        devbox_filesystem::atomic_write(self.root.join("journal.json"), &bytes)
+            .map_err(|_| "suite_journal_write_failed")?;
+        self.revalidate()?;
+        Ok(digest(&bytes))
+    }
     pub fn write(&self, expected_digest: Option<&str>, journal: &Journal) -> Result<String> {
         journal.validate()?;
         let previous = self.read()?;
@@ -159,4 +245,78 @@ fn digest(bytes: &[u8]) -> String {
         .iter()
         .map(|b| format!("{b:02x}"))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::delivery::{Phase, Proof};
+    use product_contract::installation::{Manifest, Member, PRODUCTS};
+    fn journal(generation: &str, previous: Option<Manifest>) -> Journal {
+        Journal::begin(
+            generation.into(),
+            "a".repeat(64),
+            previous,
+            Manifest {
+                schema_version: 1,
+                installation_id: "fixture".into(),
+                generation: generation.into(),
+                suite_version: "0.8.0".into(),
+                protocol_version: 1,
+                members: PRODUCTS
+                    .iter()
+                    .map(|product| Member {
+                        product: (*product).into(),
+                        sha256: "b".repeat(64),
+                        executable: format!(
+                            "generations/{generation}/products/{product}/devbox-{product}.exe"
+                        ),
+                    })
+                    .collect(),
+            },
+        )
+        .unwrap()
+    }
+    #[test]
+    fn new_operation_preserves_completed_journal_and_rejects_unsettled_or_wrong_previous() {
+        let root = std::env::temp_dir().join(format!("devbox-journal-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let store = Store::open(&root).unwrap();
+        let mut old = journal("first", None);
+        let mut hash = store.begin(None, &old).unwrap();
+        let next = journal("second", Some(old.candidate.clone()));
+        assert_eq!(
+            store.begin(Some(&hash), &next),
+            Err("suite_previous_operation_unsettled")
+        );
+        while old.phase != Phase::Complete {
+            old.advance(
+                old.revision,
+                Proof {
+                    phase: old.phase,
+                    generation: "first".into(),
+                    revision: "c".repeat(64),
+                },
+            )
+            .unwrap();
+            hash = store.write(Some(&hash), &old).unwrap();
+        }
+        assert_eq!(
+            store.begin(Some(&hash), &journal("second", None)),
+            Err("suite_previous_generation_changed")
+        );
+        // Simulate a crash after the archive was published but before rotation.
+        let archived = store.bytes().unwrap().unwrap();
+        fs::write(store.root.join("completed-first.json"), &archived).unwrap();
+        let current_hash = store.begin(Some(&hash), &next).unwrap();
+        assert_eq!(store.read().unwrap().unwrap().0, next);
+        assert_eq!(
+            fs::read(store.root.join("completed-first.json")).unwrap(),
+            archived
+        );
+        assert_eq!(store.begin(Some(&hash), &next), Err("suite_journal_stale"));
+        assert_eq!(store.read().unwrap().unwrap().1, current_hash);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
 }

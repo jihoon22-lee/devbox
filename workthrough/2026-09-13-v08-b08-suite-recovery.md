@@ -165,3 +165,23 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   수동 `legacy_reference_only` 모드로 분리했다. 일회성 hosted Windows VM에서만 실행하고
   제품 재빌드·Docker·로컬 설치는 하지 않는다. 실제 사용자 설치에는 legacy uninstaller를
   실행하지 않는다. 수집 결과가 확보된 뒤 exact-file cleanup을 구현한다.
+
+### 실제 legacy 설치 identity 및 첫 설치 취소
+
+- [hosted reference acquisition 35431855772](https://github.com/jihoon22-lee/devbox/actions/runs/35431855772)
+  PASS: pinned v0.7 installer 15개를 두 owned root에 각각 설치하고 완전한 파일 목록을 비교했다.
+  실행 파일·uninstaller·notices 및 Code Pad companion의 SHA/size가 두 경로에서 동일했다.
+  앱은 실행하지 않았고 fixture 소유 설치를 제거했다. 수집에 제품 build는 없었다.
+- 모든 앱의 installed executable은 public portable executable과 hash가 달랐다.
+  ARP inventory는 portable SHA 대신 검증된 installed reference를 사용하도록 수정했다.
+  reference 원본 provenance는 `resources/legacy-v0.7-installed-files.json`에 보존한다.
+  현재 검증은 소유 파일 확인이며 사용자 설치 제거/정리 실행은 아직 연결하지 않았다.
+- `--recover-install`은 미확정 첫 설치만 처리한다. native root/payload/journal identity를
+  대조하고 exclusive writer gate를 잡아 모든 제품이 종료됐음을 요구한다. Recover marker를
+  먼저 기록한 다음 journal을 종료하며 파일/legacy 원본/이전한 v0.8 데이터는 삭제하지 않는다.
+  committed 설치나 previous generation이 있으면 별도 데이터 복구 계획을 요구한다.
+- journal은 다음 작업을 시작할 때 완료된 기록을 보존한다. 미완료 작업 교체, 설치 identity
+  변경, 실제 이전 generation과 다른 연결을 거부하며 archive 이후 crash 재개 fixture를 준비했다.
+- 최소 Rust check: 설치 reference 4.998s, bootstrap recovery 2.131s PASS.
+  앞선 non-Windows branch의 unit/Result 혼합 타입 오류를 수정했다. 새 regression fixture는
+  PR 구현 완료 시 실행한다. B08 전체 검증/실제 Suite installer acceptance는 아직 미실행이다.

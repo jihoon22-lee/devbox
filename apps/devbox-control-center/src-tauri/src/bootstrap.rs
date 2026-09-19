@@ -279,7 +279,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         return Err("bootstrap_windows_required");
     }
     if arguments.len() != 3
-        || !["--stage", "--prepare-install"]
+        || !["--stage", "--prepare-install", "--recover-install"]
             .iter()
             .any(|mode| arguments[0] == *mode)
     {
@@ -290,6 +290,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
     if arguments[0] == "--prepare-install" {
         prepare_install(&root, &payload, &image)
+    } else if arguments[0] == "--recover-install" {
+        recover_install(&root, &payload, &image)
     } else {
         stage_impl(&root, &payload, &image)
     }
@@ -374,28 +376,7 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
             .map_err(|_| "bootstrap_owner_unavailable")?;
         owner
     };
-    let gate_path = root.join("suite-writers.lock");
-    let gate = match OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create_new(true)
-        .open(&gate_path)
-    {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
-            ensure_no_links(&gate_path).map_err(|_| "bootstrap_gate_unsafe")?;
-            OpenOptions::new()
-                .read(true)
-                .write(true)
-                .open(&gate_path)
-                .map_err(|_| "bootstrap_gate_unavailable")?
-        }
-        Err(_) => return Err("bootstrap_gate_unavailable"),
-    };
-    if !devbox_filesystem::try_lock_exclusive(&gate).map_err(|_| "bootstrap_gate_unavailable")? {
-        return Err("suite_writers_must_close");
-    }
-    let _gate = Lock(gate);
+    let _gate = writer_gate(&root, true)?;
     let key = hash(
         &serde_json::to_vec(&(root_identity.components(), &owner.installation_id))
             .map_err(|_| "bootstrap_owner_invalid")?,
@@ -444,7 +425,7 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
         }
         None => {
             let journal = Journal::begin(owner.operation_id.clone(), key, None, candidate.clone())?;
-            let digest = store.write(None, &journal)?;
+            let digest = store.begin(None, &journal)?;
             (journal, digest)
         }
     };
@@ -510,5 +491,154 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     Ok(StageResult {
         state: "migrationRequired",
         ..result
+    })
+}
+
+fn writer_gate(root: &Path, create: bool) -> Result<Lock> {
+    let path = root.join("suite-writers.lock");
+    let open = |new: bool| {
+        let mut options = OpenOptions::new();
+        options.read(true).write(true).create_new(new);
+        #[cfg(windows)]
+        {
+            use std::os::windows::fs::OpenOptionsExt;
+            options.share_mode(3).custom_flags(0x0020_0000);
+        }
+        options.open(&path)
+    };
+    let gate = if create {
+        match open(true) {
+            Ok(file) => file,
+            Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+                ensure_no_links(&path).map_err(|_| "bootstrap_gate_unsafe")?;
+                open(false).map_err(|_| "bootstrap_gate_unavailable")?
+            }
+            Err(_) => return Err("bootstrap_gate_unavailable"),
+        }
+    } else {
+        ensure_no_links(&path).map_err(|_| "bootstrap_gate_unsafe")?;
+        open(false).map_err(|_| "bootstrap_gate_unavailable")?
+    };
+    let identity = devbox_filesystem::opened_filesystem_identity(&gate, false)
+        .map_err(|_| "bootstrap_gate_unsafe")?;
+    if !devbox_filesystem::try_lock_exclusive(&gate).map_err(|_| "bootstrap_gate_unavailable")? {
+        return Err("suite_writers_must_close");
+    }
+    let gate = Lock(gate);
+    if filesystem_identity(path, false).map_err(|_| "bootstrap_gate_changed")? != identity {
+        return Err("bootstrap_gate_changed");
+    }
+    Ok(gate)
+}
+
+/// Abort an uncommitted first installation without deleting imported data,
+/// package bytes or legacy sources. This is not a postcommit downgrade path.
+fn recover_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
+    use crate::core::{
+        delivery::{Phase, Proof},
+        delivery_store::Store,
+    };
+    let payload_bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&payload_bytes)?;
+    verify_payload_owner(&payload, own_image)?;
+    let payload_revision = hash(&payload_bytes);
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let (_root, identity) =
+        open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    #[cfg(windows)]
+    let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let _gate = writer_gate(&root, false)?;
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    if owner.schema_version != 1
+        || owner.root_identity != identity.components()
+        || owner.payload_revision != payload_revision
+        || uuid::Uuid::parse_str(&owner.installation_id).is_err()
+        || uuid::Uuid::parse_str(&owner.operation_id).is_err()
+        || owner.generation != format!("g-{}", owner.operation_id)
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let key = hash(
+        &serde_json::to_vec(&(identity.components(), &owner.installation_id))
+            .map_err(|_| "bootstrap_owner_invalid")?,
+    );
+    let data = dirs::data_local_dir()
+        .ok_or("bootstrap_data_unavailable")?
+        .join(format!("com.devbox.v08.controlcenter.i{key}"));
+    let Some((observed, _)) = Store::inspect(&data)? else {
+        return Err("bootstrap_journal_missing");
+    };
+    if observed.committed || observed.previous.is_some() {
+        return Err("bootstrap_recovery_requires_data_plan");
+    }
+    let store = Store::open(&data)?;
+    let (mut journal, mut digest) = store.read()?.ok_or("bootstrap_journal_missing")?;
+    if journal != observed
+        || journal.operation_id != owner.operation_id
+        || journal.installation_key != key
+        || journal.candidate.generation != owner.generation
+        || journal.candidate.installation_id != owner.installation_id
+        || journal.candidate.suite_version != payload.suite_version
+    {
+        return Err("bootstrap_journal_changed");
+    }
+    let manifest_path = root.join("devbox-installation.json");
+    if manifest_path.exists() {
+        let manifest = product_contract::installation::Manifest::parse(
+            &read(&manifest_path, 64 * 1024)?,
+            &payload.suite_version,
+        )?;
+        if manifest != journal.candidate {
+            return Err("bootstrap_existing_installation_conflict");
+        }
+    }
+    let marker_path = root.join("devbox-activation.json");
+    if marker_path.exists() {
+        let marker: product_contract::activation::Activation =
+            serde_json::from_slice(&read(&marker_path, 4096)?)
+                .map_err(|_| "bootstrap_marker_invalid")?;
+        marker.validate(&journal.candidate)?;
+        if marker.operation_id != owner.operation_id
+            || marker.phase == product_contract::activation::Phase::Committed
+        {
+            return Err("bootstrap_recovery_requires_data_plan");
+        }
+    }
+    let marker = product_contract::activation::Activation {
+        schema_version: 1,
+        installation_id: owner.installation_id,
+        generation: owner.generation,
+        operation_id: owner.operation_id,
+        revision: journal.revision,
+        phase: product_contract::activation::Phase::Recover,
+    };
+    marker.validate(&journal.candidate)?;
+    devbox_filesystem::atomic_write(
+        marker_path,
+        &serde_json::to_vec(&marker).map_err(|_| "bootstrap_marker_invalid")?,
+    )
+    .map_err(|_| "bootstrap_marker_write_failed")?;
+    if journal.phase != Phase::Recovered {
+        if journal.phase != Phase::Recover {
+            journal.fail(journal.revision, "installation_cancelled")?;
+            digest = store.write(Some(&digest), &journal)?;
+        }
+        journal.advance(
+            journal.revision,
+            Proof {
+                phase: Phase::Recover,
+                generation: journal.candidate.generation.clone(),
+                revision: payload_revision.clone(),
+            },
+        )?;
+        store.write(Some(&digest), &journal)?;
+    }
+    Ok(StageResult {
+        state: "uncommittedInstallRecovered",
+        source_sha: payload.source_sha,
+        suite_version: payload.suite_version,
+        payload_revision,
     })
 }

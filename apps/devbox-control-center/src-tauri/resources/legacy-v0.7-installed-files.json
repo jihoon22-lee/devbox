@@ -1,0 +1,363 @@
+{
+  "schemaVersion": 1,
+  "baselineTag": "v0.7.0",
+  "baselineCommit": "3a23f49c85aa3c3d04b86f227e8aa184ef964085",
+  "manifestSha256": "e92dda897d40de1891d8a204d20f28524674c0b336f09923d52381fd764217ab",
+  "acquisitionRun": "35431855772",
+  "acquisitionSource": "e6f111c0a1473315e014bfbd0704591d74b6871e",
+  "environment": "github-hosted-windows",
+  "result": "passed",
+  "apps": [
+    {
+      "id": "port-manager",
+      "version": "0.4.0",
+      "installerSha256": "5a3698186f210b262aea7a5a8b32ac5b59cdd531b198b2ee526af0240ee79129",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "port-manager.exe",
+          "sha256": "1baf9a9effd9a73e1e2bd7a7dede1ac5b8fb04cb7b0ac2f951c1e8204e6bce1b",
+          "size": 9889280
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "64bd1c24efd09d4e659c5021ebe9d61716ef44ce901cc981c2a38b1ecb6ad0dc",
+          "size": 79214
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "developer-toolbox",
+      "version": "0.4.1",
+      "installerSha256": "cfb776f514d97cdc635610678d96ef65bee93105360f2aae0acfa96352b51a91",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "developer-toolbox.exe",
+          "sha256": "28166a0148d5f405aad92ba1e9e467b7626451a221cbb8e070de8f1ae48d1741",
+          "size": 11585536
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "a760a51fe7ec3c05b04b9030949586e17937026c999ae14844c95d9fd87572df",
+          "size": 79102
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "wsl-desktop",
+      "version": "0.6.0",
+      "installerSha256": "0fa033a0b0ea81cc067def1a879b391ff9a130088e2b80f2583dd00ab139238d",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "2dd2167e34805251b812d1279321011ebd6813c073eb393ed1ae3b10cd5528d0",
+          "size": 79168
+        },
+        {
+          "name": "wsl-desktop.exe",
+          "sha256": "8b7b487947bc4ce92ca2dbfd5db5317c29558d259c8b62498c0bbef0dffeba21",
+          "size": 11315200
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "api-playground",
+      "version": "0.5.1",
+      "installerSha256": "c9fdf18e91e7965cecb8d4e5b1f775367d8b27cf2d98dfd6f0fd09057b57d958",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "api-playground.exe",
+          "sha256": "58a23b72cc6cc3e2f4935073a6b5f6776c4696d94337247c4b70f37ddac24e7e",
+          "size": 21065216
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "12f065928fa25008c1e969958a8730a5ef48dca9e6784d0080246e5c010d337e",
+          "size": 79109
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "everything-plus",
+      "version": "0.5.0",
+      "installerSha256": "86cf4d123ebf92bf6e1bc962523f91f57519969178d61575cede0f90d3472ba4",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "everything-plus.exe",
+          "sha256": "c8672ab1b2e69886944b67c2d8f6c096a8d285a0e6a2a82bf3541e23feed6569",
+          "size": 13362688
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "ddf7cf3822f0c270ecf7e471b0a45e58f5fd3011fca696a4c42be446d2be47ad",
+          "size": 79152
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "knowledge-base",
+      "version": "0.5.1",
+      "installerSha256": "a1a9a85c4bb799afaabb4c38cf87209d500d4650cde9cb0fd8815a2889bcff95",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "knowledge-base.exe",
+          "sha256": "7245bd456388c5e3aa89f1202468e2a93e49ab45f3d5a5e1b51a999884778d5a",
+          "size": 14786560
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "c7c6fc623d1a0c315e02831e44adf0137c55362cbfa72cfa6106e173615496fb",
+          "size": 79198
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "life-log",
+      "version": "0.5.0",
+      "installerSha256": "d95fe92700e5e0d1ec19b7f49efb0b2764c3a24b594c1ee3c4ea383efa057d7d",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "life-log.exe",
+          "sha256": "93e81977791e8192f1ce925a92c7090fa0606cebc4d3a2eaeafbca9610b510ca",
+          "size": 13939200
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "bec8d4cf386e7c3534abd869f2b506beb9198d9263bf79656aa97164700fce1c",
+          "size": 79160
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "devbox-manager",
+      "version": "0.5.1",
+      "installerSha256": "89e90324d1d5f80ef0ed383b072feb535ddad67070a326fce01a5e00d94a434a",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "devbox-manager.exe",
+          "sha256": "4b07ef57c8cf3c1899d57dd34de34523765fbdf91a117539cdeffa31fda52c18",
+          "size": 16836608
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "cdf34757e1610a2d6aba70791850b15a235764c3a3c80b4a1bef4adc4de6c82b",
+          "size": 79111
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "code-pad",
+      "version": "0.5.1",
+      "installerSha256": "1519fddaa98168e06ec02d5457ff74280f33f515b4ebcaa1ab10000ed5f402f8",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "code-pad.exe",
+          "sha256": "7f7237f943326f263e221ceb6b78749d4017533bc8612aa27623244cac9c32b1",
+          "size": 20785152
+        },
+        {
+          "name": "fake-lsp-server.exe",
+          "sha256": "41bcdac733dcda281709809389286cb074f5274b80620a076a1ddd8085f139da",
+          "size": 976384
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "4541372be4a35b7fd3ac51c701c6462f6c7ea941dfae3151ef01bd921ebd4fa9",
+          "size": 79162
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "run-manager",
+      "version": "0.5.1",
+      "installerSha256": "c5086f35b30fcfb7a9b09a79bfe2e2ec217553e738fa73df4e85a3f1918205c9",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "run-manager.exe",
+          "sha256": "8f6bb1f6b2e4bc5bd843cb8685e34cff69391151e7db0d13c0024cda2193f4df",
+          "size": 16719872
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "c6adbd35ce044b270a48077bc1340240cb4637b9199b785d42c7cb98d000421f",
+          "size": 79181
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "workbench",
+      "version": "0.3.0",
+      "installerSha256": "ce60d5da03b9b576a49299f9d75999916ff3d7bc1ac1e2228ca9ae58674a25bb",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "69775fa2032d93c4105b9e94544d3d1f6afb6d92a1c8fb78c2cf5e6906b346b6",
+          "size": 79096
+        },
+        {
+          "name": "workbench.exe",
+          "sha256": "f949cf573eb95655d418ce95a5ca149f5e9a4f0fae79b850845b32f00fbfbf42",
+          "size": 10829312
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "webhook-lab",
+      "version": "0.3.0",
+      "installerSha256": "80847f2f895b42c9a4a0985822f619f938bfb9e28c2a8e57303fd150a3ca5593",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "850413991c0f769245c75fb4ff7197d7bc0bfb8106c32c4fbb3dd47bc44f197f",
+          "size": 79156
+        },
+        {
+          "name": "webhook-lab.exe",
+          "sha256": "3e3eedddde93122214440a8ec7d59d8bd0af9ae0940ca0f1ff8b2a6e6d179827",
+          "size": 9567232
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "repo-manager",
+      "version": "0.3.0",
+      "installerSha256": "20e710b638e192cce6116e50d0d45515e89f9655496fb8a8e053292687624bbf",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "repo-manager.exe",
+          "sha256": "2df69f810c5fbdf01d7df6dceeb3c115e6504e5ed161c1def14c67f1b6cc412a",
+          "size": 14526976
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "8b3d35d59df21ac17ac4ed6426e0bf05cca0788264f4236da012ff11540f2e75",
+          "size": 79131
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "devbox-launcher",
+      "version": "0.2.0",
+      "installerSha256": "0627892d3c9f427b2c17049d8ac394d2af316a8e8822e2b4f98d3a4803f74b8e",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "devbox-launcher.exe",
+          "sha256": "aab3cf144b299d5ff31106ae505c98ed9d173ccfb99893df38ae14819721703a",
+          "size": 9394688
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "6e14e6d4d9593e46a83e10ffceb153a436c98d69d17533506d52fc2608083d92",
+          "size": 79147
+        }
+      ],
+      "twoRootsIdentical": true
+    },
+    {
+      "id": "log-lens",
+      "version": "0.2.1",
+      "installerSha256": "faffd0f532e8b351f7d674939797d5bc219f7e4ef8c7c29eea7e5a086906b5e8",
+      "files": [
+        {
+          "name": "_up_/_up_/_up_/THIRD_PARTY_NOTICES.md",
+          "sha256": "e964b2b711a8b80e793a230d89e20581fe7874dcf841fa9c9d839297440f84a4",
+          "size": 146028
+        },
+        {
+          "name": "log-lens.exe",
+          "sha256": "8b6582c82688faacad1367d016f726d521d2563ce33091f0ee4bbcbc30628edb",
+          "size": 10898432
+        },
+        {
+          "name": "uninstall.exe",
+          "sha256": "d62d50ad0867aa7594e5c288aa788e2df790475bc2c59d2ee315987f7ab12a4c",
+          "size": 79185
+        }
+      ],
+      "twoRootsIdentical": true
+    }
+  ],
+  "failure": null
+}
