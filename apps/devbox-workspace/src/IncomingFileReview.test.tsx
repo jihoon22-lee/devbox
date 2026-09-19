@@ -1,3 +1,4 @@
+import type {ComponentProps} from "react";
 import {afterEach,beforeEach,expect,it,vi} from "vitest";
 import {cleanup,render,screen,waitFor} from "@testing-library/react";
 import {IncomingReviewContext,type IncomingReview} from "@devbox/product-shell/incoming";
@@ -9,7 +10,7 @@ afterEach(cleanup);
 beforeEach(()=>vi.mocked(openReceivedFile).mockReset());
 const context:ProjectContext={projectId:"project-1",worktreeId:"tree-1",target:{kind:"windows"},revision:1};
 const review:IncomingReview={operationId:"review-1",revision:"a".repeat(64),commandRevision:"b".repeat(64),label:"Selected file",route:"files",context:null,target:{kind:"entity",entity:"file",id:"reference-1"}};
-function mount(context:ProjectContext|null,onOpen:ReturnType<typeof vi.fn>){
+function mount(context:ProjectContext|null,onOpen:ComponentProps<typeof IncomingFileReview>["onOpen"]){
  return render(<IncomingReviewContext.Provider value={{review,clear:()=>{}}}><IncomingFileReview description={{context} as Description} onOpen={onOpen}/></IncomingReviewContext.Provider>);
 }
 it("accepts the same native context with reordered JSON keys and uses the editor's context key",async()=>{

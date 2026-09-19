@@ -580,3 +580,11 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   expectation to the implemented `stored` draft contract. The independent API
   workflow already used this contract. Preserve file-open UI alerts in native
   failure evidence. Script syntax/diff checked; final native acceptance pending.
+
+- CI35439348670 preserved passing Rust/Linux and Windows checks. Frontend stopped
+  on the new regression helper's generic Vitest mock type, which includes a
+  constructor signature in Vitest4. Type its callback from IncomingFileReview's
+  actual prop instead; Workspace tsc passed (10.005s), and the already-passing
+  three runtime regressions were not repeated. Native35439348703 could not reach
+  product execution because of that frontend compile error. The inherited cache
+  action allowlist failure is corrected by the accompanying B06 update.
