@@ -512,3 +512,15 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   초기 프로세스도 PID/creation/image identity를 보존해 정리하고 signal 종료를 미종료로
   오인하지 않는다. 다른 프로세스 이름을 대상으로 종료하지 않는다.
 - 두 변경 JS syntax와 diff PASS. hosted native 수용은 아직 미완료이며 PASS로 보고하지 않는다.
+
+### Windows native peer 경로와 진단 보강
+
+- native process image는 8.3 launch 경로일 수 있지만 승인된 root는 canonical 경로였다.
+  peer 검사에서 링크를 먼저 거부한 뒤 image도 canonicalize하고, 기존 파일/부모 identity와
+  root 경계를 대조한다. 외부 hardlink를 승인하지 않는 Windows 회귀 fixture를 추가했다.
+  이는 코드에서 확인한 경로 비교 결함이며, 기존 probe 실패의 확정 원인으로 단정하지 않는다.
+- suite fixture도 실행 파일을 canonical path로 시작해 PID/creation/image 정리가 같은 표기를
+  사용한다. JS syntax와 diff 확인을 수행했다. Windows 회귀 실행은 다음 변경 수용에 포함한다.
+- backend connection과 pipe 서버는 debug build에서만 닫힌 native 오류 코드를 stderr에 남긴다.
+  request body/secret/path는 기록하지 않는다. 현재 RPC의 generic Unavailable만으로
+  identity 실패와 handshake 실패를 구분할 수 없던 진단 한계를 해결한다.

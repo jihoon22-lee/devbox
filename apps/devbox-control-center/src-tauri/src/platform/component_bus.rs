@@ -84,11 +84,18 @@ impl Bus {
                 let handler = handler.clone();
                 clients.spawn(async move {
                     // Includes identity inspection, handshake, body and dispatch.
-                    let _ = tokio::time::timeout(
+                    let result = tokio::time::timeout(
                         Duration::from_secs(32),
                         serve(connection, scope, product, handler),
                     )
                     .await;
+                    #[cfg(debug_assertions)]
+                    match &result {
+                        Ok(Err(code)) => eprintln!("suite peer rejected: {code}"),
+                        Err(_) => eprintln!("suite peer rejected: peer_connection_timeout"),
+                        Ok(Ok(())) => {}
+                    }
+                    let _ = result;
                 });
             }
             clients.shutdown().await;

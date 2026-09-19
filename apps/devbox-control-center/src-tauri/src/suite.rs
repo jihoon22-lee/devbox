@@ -200,9 +200,15 @@ async fn connection(
         }
         Err("suite_windows_required")
     };
-    let value = result.map_err(|_| Problem {
-        code: ProblemCode::Unavailable,
-        provenance: provenance.clone(),
+    let value = result.map_err(|reason| {
+        // Closed native error codes only; no request bodies, paths or peer data.
+        #[cfg(debug_assertions)]
+        eprintln!("suite connection failed: {reason}");
+        let _ = reason;
+        Problem {
+            code: ProblemCode::Unavailable,
+            provenance: provenance.clone(),
+        }
     })?;
     Ok(Response {
         operation: Operation {

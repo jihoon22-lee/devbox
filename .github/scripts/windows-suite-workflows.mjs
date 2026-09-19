@@ -4,7 +4,7 @@ import {requireHostedNetworkFixture} from "./fixture-network-safety.mjs";
 import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 import {allWindowsProcesses,stopOwnedProcess,windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
 import assert from "node:assert/strict";
-import {mkdtempSync,mkdirSync,copyFileSync,cpSync,writeFileSync,readFileSync,existsSync} from "node:fs";
+import {mkdtempSync,mkdirSync,copyFileSync,cpSync,writeFileSync,readFileSync,existsSync,realpathSync} from "node:fs";
 import {tmpdir} from "node:os";
 import path from "node:path";
 import {spawn,spawnSync} from "node:child_process";
@@ -38,7 +38,7 @@ function assemble(directory,products=catalog.products){
   writeFileSync(path.join(directory,"devbox-installation.json"),JSON.stringify(manifest));return manifest;
 }
 async function start(product,directory){
-  const executable=path.join(directory,`products/${product}/devbox-${product}.exe`),port=await freePort();
+  const executable=realpathSync.native(path.join(directory,`products/${product}/devbox-${product}.exe`)),port=await freePort();
   const policy=windowsProcessIsElevated()?inspectElevatedCdpPolicy(path.basename(executable),port):null;
   if(policy)installElevatedCdpPolicy(policy);
   const item={product,executable,port,policy,child:null,cdp:null};live.push(item);

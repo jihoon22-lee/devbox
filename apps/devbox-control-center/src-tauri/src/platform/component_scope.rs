@@ -260,6 +260,11 @@ impl CapturedScope {
     }
     pub(crate) fn product_for_image(&self, image: &Path) -> Result<String> {
         self.revalidate()?;
+        // QueryFullProcessImageName may preserve an 8.3 launch path while the
+        // captured root is canonical. Reject links before resolving that alias;
+        // the retained file and parent identities still decide membership.
+        ensure_no_links(image).map_err(|_| "peer_image_unsafe")?;
+        let image = image.canonicalize().map_err(|_| "peer_image_unavailable")?;
         let normalize = |path: &Path| {
             path.to_string_lossy()
                 .replace('/', "\\")
@@ -267,11 +272,10 @@ impl CapturedScope {
                 .to_lowercase()
         };
         let prefix = normalize(&self.root).trim_end_matches('\\').to_owned() + "\\";
-        if !normalize(image).starts_with(&prefix) {
+        if !normalize(&image).starts_with(&prefix) {
             return Err("peer_foreign_installation");
         }
-        ensure_no_links(image).map_err(|_| "peer_image_unsafe")?;
-        let identity = filesystem_identity(image, false).map_err(|_| "peer_image_unavailable")?;
+        let identity = filesystem_identity(&image, false).map_err(|_| "peer_image_unavailable")?;
         let parent = filesystem_identity(image.parent().ok_or("peer_image_unsafe")?, true)
             .map_err(|_| "peer_image_unavailable")?;
         let mut found = None;
@@ -313,4 +317,51 @@ fn digest(bytes: &[u8]) -> String {
         .iter()
         .map(|byte| format!("{byte:02x}"))
         .collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::os::windows::ffi::{OsStrExt, OsStringExt};
+    #[test]
+    fn native_image_aliases_keep_physical_membership_and_reject_foreign_hardlinks() {
+        let base = std::env::temp_dir().join(format!("devbox-peer-alias-{}", uuid::Uuid::new_v4()));
+        let root = base.join("reviewed suite with long directory name");
+        let foreign = base.join("foreign");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::create_dir(&foreign).unwrap();
+        let image = root.join("devbox-control-center.exe");
+        std::fs::write(&image, b"synthetic image identity").unwrap();
+        let other = foreign.join("devbox-control-center.exe");
+        std::fs::hard_link(&image, &other).unwrap();
+        let manifest = Manifest {
+            schema_version: 1,
+            installation_id: "fixture-install".into(),
+            generation: "fixture-generation".into(),
+            suite_version: "0.8.0".into(),
+            protocol_version: 1,
+            members: vec![Member {
+                product: "control-center".into(),
+                executable: "devbox-control-center.exe".into(),
+                sha256: digest(b"synthetic image identity"),
+            }],
+        };
+        std::fs::write(root.join(MANIFEST), serde_json::to_vec(&manifest).unwrap()).unwrap();
+        let scope = CapturedScope::capture(&root, "control-center", &image, "0.8.0").unwrap();
+        assert_eq!(scope.product_for_image(&image).unwrap(), "control-center");
+        let wide: Vec<_> = image.as_os_str().encode_wide().chain(Some(0)).collect();
+        let mut short = vec![0_u16; 32768];
+        let count = unsafe {
+            windows::Win32::Storage::FileSystem::GetShortPathNameW(
+                windows::core::PCWSTR(wide.as_ptr()),
+                Some(&mut short),
+            )
+        } as usize;
+        assert!(count > 0 && count < short.len());
+        let alias = PathBuf::from(std::ffi::OsString::from_wide(&short[..count]));
+        assert_eq!(scope.product_for_image(&alias).unwrap(), "control-center");
+        assert!(scope.product_for_image(&other).is_err());
+        drop(scope);
+        std::fs::remove_dir_all(base).unwrap();
+    }
 }
