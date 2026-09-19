@@ -1,4 +1,4 @@
-param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets,[string]$ArtifactSourceSha,[string]$ArtifactRunId,[ValidateSet('all','remaining')][string]$Scope='all')
+param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets,[string]$ArtifactSourceSha,[string]$ArtifactRunId,[ValidateSet('all','remaining','containers')][string]$Scope='all')
 $ErrorActionPreference='Stop'
 # WSL distributions can share host networking. No local/self-hosted opt-out:
 # daemon provisioning may change iptables even before a test container starts.

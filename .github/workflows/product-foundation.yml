@@ -64,6 +64,11 @@ on:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
         default: false
+      wsl2_scope:
+        description: Remaining acceptance scope (full runs ignore this option)
+        type: choice
+        options: [remaining, containers]
+        default: remaining
       wsl2_build_only:
         description: Build only Workspace and run remaining Zellij/container/stopped-query acceptance
         type: boolean
@@ -469,7 +474,7 @@ jobs:
         shell: powershell
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs/ubuntu-rootfs.tar.gz'
-          $scope = if ('${{ inputs.wsl2_build_only }}' -eq 'true') { 'remaining' } else { 'all' }
+          $scope = if ('${{ inputs.wsl2_build_only }}' -eq 'true') { '${{ inputs.wsl2_scope }}' } else { 'all' }
           .github/scripts/windows-workspace-owned-wsl2.ps1 -Scope $scope -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID -ArtifactSourceSha $env:ARTIFACT_SOURCE -ArtifactRunId $env:ARTIFACT_RUN
       - name: Preserve isolated WSL2 acceptance evidence
         if: ${{ always() }}

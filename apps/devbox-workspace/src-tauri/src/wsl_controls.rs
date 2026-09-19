@@ -132,11 +132,16 @@ impl Controls {
             let lease =
                 crate::platform::terminal_launch::capture_running(host, &input.distro, deadline)
                     .map_err(|_| "wsl_target_unavailable")?;
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "wsl_target_unavailable")?
+                .as_millis() as u64;
             let action = wsl_desktop_lib::component::docker_action_owned(
                 &input.distro,
                 &input.container_id,
                 &input.action,
                 lease.as_ref(),
+                std::time::Duration::from_millis(deadline.saturating_sub(now)),
             )
             .await
             .map_err(|_| "wsl_container_action_failed");

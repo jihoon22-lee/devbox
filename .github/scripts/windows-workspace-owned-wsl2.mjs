@@ -16,7 +16,7 @@ import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 const networkFixture=requireHostedNetworkFixture();
 assert.equal(process.platform,'win32');
 const [ownerFile,artifact,expectedSource,expectedRun,_installedTargets,artifactSource=expectedSource,artifactRun=expectedRun,scope='all']=process.argv.slice(2);
-assert.ok(['all','remaining'].includes(scope));
+assert.ok(['all','remaining','containers'].includes(scope));
 assert.match(artifactSource,/^[a-f0-9]{40}$/);assert.match(artifactRun,/^[0-9]+$/);
 assert.equal(expectedRun,networkFixture.runId);
 const json=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
@@ -70,8 +70,12 @@ try{
  evidence.observations.sessions=await exerciseTerminalSessionFixture({cdp,directory,call,success,connectTerminal,distro:owner.name,wsl});
  }
  evidence.observations.multiplexers=[];
- for(const multiplexer of scope==='all'?["tmux","zellij"]:["zellij"])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
- evidence.observations.containers=await exerciseOwnedContainers({cdp,call,success,wsl,distro:owner.name});
+ for(const multiplexer of scope==='all'?["tmux","zellij"]:scope==='remaining'?["zellij"]:[])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
+ evidence.observations.containers=await exerciseOwnedContainers({cdp,call,success,wsl,distro:owner.name,nativeDockerProbe:()=>{
+   const args=['--distribution-id',owner.distroId,'--exec','docker','ps','-a','--no-trunc','--format','{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'];
+   const probe=spawnSync(wslExe,args,{encoding:'utf8',timeout:15000,maxBuffer:65536,windowsHide:true});
+   return {status:probe.status,error:probe.error?.code,stdout:probe.stdout?.slice(-6000),stderr:probe.stderr?.slice(-2000)};
+ }});
  const terminated=spawnSync(wslExe,["--terminate",owner.name],{encoding:"utf8",timeout:30000,windowsHide:true});assert.equal(terminated.status,0);
  const running=()=>{const value=spawnSync(wslExe,["--list","--running","--quiet"],{encoding:"utf16le",timeout:15000,windowsHide:true});assert.equal(value.status,0);return value.stdout.split(/\r?\n/).map(name=>name.trim()).includes(owner.name);};
  assert.equal(running(),false);
