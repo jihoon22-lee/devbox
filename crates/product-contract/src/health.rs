@@ -2,7 +2,7 @@
 //! services and activation commit require their separate acceptance evidence.
 use crate::migration_status::Summary;
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Report {
     pub schema_version: u32,

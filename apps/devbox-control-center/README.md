@@ -88,3 +88,12 @@ and record contents are not sent to Control Center. Original SQLite/browser/JSON
 backups and normalized import recovery snapshots are labelled separately. A
 verified retained backup does not prove that its legacy source has stayed unchanged
 or that all sources were imported; cutover revalidation remains a separate gate.
+
+For a clean first install with no legacy data namespaces or imported records,
+`--activate-clean-install ROOT PAYLOAD` requires the four recorded owner results,
+preserves closed product data and enters Health. Reopen the products and record
+fresh health in Control Center, close them, then use `--commit-clean-install`
+with the same arguments. Reports expire after five minutes. The helper rechecks
+package ownership and preserves another closed checkpoint before enabling writes.
+These development commands are not yet public installer acceptance. Existing
+legacy data and installed updates require the unfinished source-aware coordinator.

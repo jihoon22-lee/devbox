@@ -428,3 +428,27 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   path; fixed those, including the same Windows-only API digest expression.
   Final Workspace/Runtime Rust/test compilation passed in 12.399s. Detailed
   regressions and native IPC remain scheduled for complete B08 verification.
+
+### Clean first-install activation and fresh native health (2026-09-19)
+
+- Added helper-only clean-install transitions: `--activate-clean-install` moves
+  reviewed empty owners to Health; `--commit-clean-install` requires four fresh
+  native health reports, closes the writer gate, preserves product data and
+  durably commits before opening ordinary product writes. Package closures,
+  root/namespace ownership and all four executable hashes are rechecked.
+- This deliberately supports a clean first install only. Any legacy data
+  namespace, retained import backup/mapping, previous generation, failed journal
+  or incomplete owner review blocks this path with source-cutover-required. It
+  does not stand in for the still-unfinished legacy migration/update coordinator.
+- Each boundary retains a closed product-data checkpoint. Health reports carry
+  native generation/session/challenge evidence and expire after five minutes.
+  The UI records them sequentially to avoid concurrent journal CAS conflicts.
+  Interrupted Commit can refresh expired health; a durable committed intent with
+  an unwritten marker resumes coherently without pretending it rolled back.
+- Control Center can reopen Health via `--suite-setup` on Updates. The public
+  installer/shortcuts/update/restore flows are still unfinished; no release or
+  Windows installer acceptance is claimed by these development helper commands.
+- Prepared four-owner/future-time/expiry/wrong-generation/interrupted-commit
+  regression. Fixed the compile-time legacy catalog include path; final scoped
+  Rust/test compilation and Control Center TypeScript passed in 6.517s. Native
+  helper execution, crash fixtures and detailed B08 audit remain pending.

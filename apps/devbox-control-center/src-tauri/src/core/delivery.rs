@@ -55,6 +55,12 @@ pub struct Backup {
     // No source paths, credentials or raw user records in a shared journal.
     pub source_revision: String,
 }
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct HealthCheck {
+    pub observed_ms: u64,
+    pub report: product_contract::health::Report,
+}
 /// A retained owner observation, never fresh cutover or activation permission.
 /// Record mappings stay in the owner's journal; the suite pins their digest.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
@@ -95,6 +101,8 @@ pub struct Journal {
     pub imports: Vec<ImportReceipt>,
     #[serde(default)]
     pub owner_evidence: Vec<OwnerEvidence>,
+    #[serde(default)]
+    pub health_checks: Vec<HealthCheck>,
     pub cleanup_pending: BTreeSet<String>,
     pub committed: bool,
     pub failure: Option<String>,
@@ -146,6 +154,7 @@ impl Journal {
             data_checkpoints: Vec::new(),
             imports: Vec::new(),
             owner_evidence: Vec::new(),
+            health_checks: Vec::new(),
             cleanup_pending: BTreeSet::new(),
             committed: false,
             failure: None,
@@ -187,6 +196,26 @@ impl Journal {
             evidence.validate(&self.candidate.suite_version)?;
             if !owners.insert(&evidence.summary.owner) {
                 return Err("suite_owner_evidence_invalid");
+            }
+        }
+        if self.health_checks.len() > PRODUCTS.len() {
+            return Err("suite_health_invalid");
+        }
+        let mut checked = BTreeSet::new();
+        for health in &self.health_checks {
+            let report = &health.report;
+            report.validate(
+                &report.store.owner,
+                &self.candidate.suite_version,
+                &self.installation_key,
+                &self.candidate.generation,
+                &report.challenge,
+            )?;
+            if health.observed_ms == 0
+                || !report.store_ready()
+                || !checked.insert(&report.store.owner)
+            {
+                return Err("suite_health_invalid");
             }
         }
         let mut checkpoints = BTreeSet::new();
@@ -235,6 +264,35 @@ impl Journal {
             {
                 return Err("suite_import_invalid");
             }
+        }
+        Ok(())
+    }
+    pub fn record_health(&mut self, expected: u64, health: HealthCheck) -> Result<()> {
+        self.require(expected, self.phase)?;
+        if !matches!(self.phase, Phase::Health | Phase::Commit) {
+            return Err("suite_health_phase_invalid");
+        }
+        let mut next = self.clone();
+        next.health_checks
+            .retain(|old| old.report.store.owner != health.report.store.owner);
+        next.health_checks.push(health);
+        next.health_checks
+            .sort_by(|a, b| a.report.store.owner.cmp(&b.report.store.owner));
+        next.revision += 1;
+        next.validate()?;
+        *self = next;
+        Ok(())
+    }
+    /// A closed helper still must verify package/data and acquire writer gates.
+    pub fn require_recent_health(&self, now: u64) -> Result<()> {
+        self.validate()?;
+        if self.health_checks.len() != PRODUCTS.len()
+            || self
+                .health_checks
+                .iter()
+                .any(|health| health.observed_ms > now || now - health.observed_ms > 300_000)
+        {
+            return Err("suite_health_required");
         }
         Ok(())
     }
@@ -454,6 +512,50 @@ mod tests {
             },
         )
         .unwrap();
+    }
+    #[test]
+    fn health_requires_four_current_owners_and_can_refresh_an_interrupted_commit() {
+        let mut j = journal();
+        while j.phase != Phase::Health {
+            advance(&mut j);
+        }
+        let now = 1_000_000;
+        for owner in PRODUCTS {
+            assert!(j.require_recent_health(now).is_err());
+            let report = product_contract::health::Report {
+                schema_version: 1,
+                challenge: format!("probe-{owner}"),
+                installation_key: j.installation_key.clone(),
+                generation: j.candidate.generation.clone(),
+                session_id: format!("session-{owner}"),
+                catalog_revision: 1,
+                routes: vec!["overview".into()],
+                store: product_contract::migration_status::Summary::new(
+                    owner, "0.8.0", false, true, false, b"ready",
+                )
+                .unwrap(),
+            };
+            j.record_health(
+                j.revision,
+                HealthCheck {
+                    observed_ms: now,
+                    report,
+                },
+            )
+            .unwrap();
+        }
+        j.require_recent_health(now).unwrap();
+        assert!(j.require_recent_health(now - 1).is_err());
+        assert!(j.require_recent_health(now + 300_001).is_err());
+        advance(&mut j);
+        assert_eq!(j.phase, Phase::Commit);
+        let mut fresh = j.health_checks[0].clone();
+        fresh.observed_ms += 1;
+        j.record_health(j.revision, fresh.clone()).unwrap();
+        let saved = j.clone();
+        fresh.report.generation = "wrong-generation".into();
+        assert!(j.record_health(j.revision, fresh).is_err());
+        assert_eq!(j, saved);
     }
     #[test]
     fn recorded_owner_backups_remain_observations_and_preserve_unknown_mappings() {

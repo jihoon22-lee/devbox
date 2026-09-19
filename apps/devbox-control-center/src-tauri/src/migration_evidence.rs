@@ -41,6 +41,7 @@ pub(crate) async fn record(
     app: tauri::AppHandle,
     owner: String,
     deadline: u64,
+    health_only: bool,
 ) -> Result<serde_json::Value> {
     if !product_contract::installation::PRODUCTS.contains(&owner.as_str()) || now() >= deadline {
         return Err("suite_owner_invalid");
@@ -68,37 +69,53 @@ pub(crate) async fn record(
     {
         return Err("suite_owner_changed");
     }
-    let listed = catalog(&app, &owner, deadline).await?;
-    let mut backups = Vec::with_capacity(listed.len());
-    for descriptor in &listed {
-        let value = crate::suite::health::backups(
-            app.clone(),
-            &owner,
-            Some(crate::federation::handle),
-            Some(descriptor.id.clone()),
-            deadline,
-        )
-        .await?;
-        let verified: Verified =
-            serde_json::from_value(value).map_err(|_| "migration_backup_invalid")?;
-        if verified.acquisition != descriptor.acquisition {
+    let mut health_result = None;
+    if health_only {
+        if product_shell_tauri::suite_activation_phase(&app)? != Some(product_contract::activation::Phase::Health) {
+            return Err("suite_health_phase_invalid");
+        }
+        journal.record_health(
+            journal.revision,
+            crate::core::delivery::HealthCheck {
+                observed_ms: now(),
+                report: before.clone(),
+            },
+        )?;
+        health_result = Some(before);
+    } else {
+        let listed = catalog(&app, &owner, deadline).await?;
+        let mut backups = Vec::with_capacity(listed.len());
+        for descriptor in &listed {
+            let value = crate::suite::health::backups(
+                app.clone(),
+                &owner,
+                Some(crate::federation::handle),
+                Some(descriptor.id.clone()),
+                deadline,
+            )
+            .await?;
+            let verified: Verified =
+                serde_json::from_value(value).map_err(|_| "migration_backup_invalid")?;
+            if verified.acquisition != descriptor.acquisition {
+                return Err("suite_owner_changed");
+            }
+            backups.push(verified);
+        }
+        let after = health(&app, &owner, deadline).await?;
+        if before.session_id != after.session_id
+            || before.store != after.store
+            || listed != catalog(&app, &owner, deadline).await?
+        {
             return Err("suite_owner_changed");
         }
-        backups.push(verified);
+        let evidence = OwnerEvidence {
+            summary: after.store,
+            backups,
+        };
+        journal.record_owner(journal.revision, evidence)?;
     }
-    let after = health(&app, &owner, deadline).await?;
-    if before.session_id != after.session_id
-        || before.store != after.store
-        || listed != catalog(&app, &owner, deadline).await?
-    {
-        return Err("suite_owner_changed");
-    }
-    let evidence = OwnerEvidence {
-        summary: after.store,
-        backups,
-    };
-    journal.record_owner(journal.revision, evidence)?;
-    let result = serde_json::json!({"owner":owner,"recorded":true,"revision":journal.revision,"activationReady":false});
+    let result = serde_json::json!({"owner":owner,"recorded":true,"revision":journal.revision,
+        "activationReady":false,"nativeStoreReady":health_result.is_some(),"report":health_result});
     tauri::async_runtime::spawn_blocking(move || {
         scope.revalidate()?;
         if now() >= deadline {

@@ -17,7 +17,8 @@ struct Response {
 }
 #[tauri::command]
 async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Response, Problem> {
-    let record_owner = request.method == "record_migration_owner";
+    let record_health = request.method == "record_suite_health";
+    let record_owner = record_health || request.method == "record_migration_owner";
     let inventory = request.method == "suite_inventory";
     let recovery = request.method == "suite_recovery";
     let legacy = request.method == "legacy_inventory";
@@ -28,7 +29,8 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     };
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
     let allowed = if record_owner {
-        request.header.route == "migration"
+        (request.header.route == "migration"
+            || (record_health && matches!(request.header.route.as_str(), "updates" | "recovery")))
             && request.args.as_object().is_some_and(|args| {
                 args.len() == 1
                     && args
@@ -59,6 +61,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             window.app_handle().clone(),
             request.args["product"].as_str().unwrap_or_default().into(),
             request.header.deadline_ms,
+            record_health,
         )
         .await;
         #[cfg(not(windows))]
@@ -91,7 +94,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                         let recovery = journal.recovery()?;
                         Ok(serde_json::json!({"state":"recorded", "phase":journal.phase,
                             "committed":journal.committed,"recovery":recovery,
-                            "backupCount":journal.backup.len(),"dataCheckpointCount":journal.data_checkpoints.len(),"importCount":journal.imports.len(),"recordedOwnerCount":journal.owner_evidence.len(),
+                            "backupCount":journal.backup.len(),"dataCheckpointCount":journal.data_checkpoints.len(),"importCount":journal.imports.len(),"recordedOwnerCount":journal.owner_evidence.len(),"healthCheckCount":journal.health_checks.len(),
                             "cleanupPending":journal.cleanup_pending.len(),"failure":journal.failure}))
                     }
                 }

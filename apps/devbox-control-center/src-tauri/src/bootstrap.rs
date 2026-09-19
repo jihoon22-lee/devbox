@@ -290,6 +290,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--open-install",
             "--snapshot-install",
             "--verify-checkpoints",
+            "--activate-clean-install",
+            "--commit-clean-install",
         ]
         .iter()
         .any(|mode| arguments[0] == *mode)
@@ -301,6 +303,14 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
     if arguments[0] == "--prepare-install" {
         prepare_install(&root, &payload, &image)
+    } else if arguments[0] == "--activate-clean-install" || arguments[0] == "--commit-clean-install"
+    {
+        activate_clean_install(
+            &root,
+            &payload,
+            &image,
+            arguments[0] == "--commit-clean-install",
+        )
     } else if arguments[0] == "--recover-install" {
         recover_install(&root, &payload, &image)
     } else if arguments[0] == "--restart-install" {
@@ -858,9 +868,6 @@ fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<St
     if marker.operation_id != owner.operation_id {
         return Err("bootstrap_owner_changed");
     }
-    if marker.phase == product_contract::activation::Phase::Health {
-        return Err("bootstrap_health_pending");
-    }
     let image = root.join(
         &manifest
             .members
@@ -1029,6 +1036,254 @@ fn snapshot_install(
     Ok(StageResult {
         state: "dataCheckpointPreserved",
         checkpoint: Some(checkpoint),
+        source_sha: payload.source_sha,
+        suite_version: payload.suite_version,
+        payload_revision: revision,
+    })
+}
+
+/// Clean first-install activation only. Any legacy data namespace or imported
+/// backup keeps this path closed until a source-aware cutover plan is available.
+fn activate_clean_install(
+    root: &Path,
+    payload_path: &Path,
+    own_image: &Path,
+    commit: bool,
+) -> Result<StageResult> {
+    use crate::core::{
+        data_checkpoint,
+        delivery::{Phase, Proof},
+        delivery_store::Store,
+    };
+    use product_contract::activation::{Activation, Phase as ActivePhase};
+    let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&bytes)?;
+    verify_payload_owner(&payload, own_image)?;
+    let revision = hash(&bytes);
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let (_root, identity) =
+        open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    #[cfg(windows)]
+    let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let _gate = writer_gate(&root, false)?;
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    if owner.schema_version != 1
+        || owner.root_identity != identity.components()
+        || owner.payload_revision != revision
+        || !uuid::Uuid::parse_str(&owner.installation_id)
+            .is_ok_and(|id| id.to_string() == owner.installation_id)
+        || !uuid::Uuid::parse_str(&owner.operation_id)
+            .is_ok_and(|id| id.to_string() == owner.operation_id)
+        || owner.generation != format!("g-{}", owner.operation_id)
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let manifest = product_contract::installation::Manifest::parse(
+        &read(&root.join("devbox-installation.json"), 64 * 1024)?,
+        &payload.suite_version,
+    )?;
+    let marker_path = root.join("devbox-activation.json");
+    let mut marker: Activation = serde_json::from_slice(&read(&marker_path, 4096)?)
+        .map_err(|_| "bootstrap_marker_invalid")?;
+    marker.validate(&manifest)?;
+    if manifest.installation_id != owner.installation_id
+        || manifest.generation != owner.generation
+        || marker.operation_id != owner.operation_id
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    for package in &payload.products {
+        let product = root
+            .join("generations")
+            .join(&owner.generation)
+            .join("products")
+            .join(&package.id);
+        exact_closure(&product, package)?;
+        for file in package
+            .files
+            .iter()
+            .filter(|file| file.name != "devbox-installation.json")
+        {
+            verified_file(&product.join(&file.name), file)?;
+        }
+        let executable = format!("devbox-{}.exe", package.id);
+        let expected = package
+            .files
+            .iter()
+            .find(|file| file.name == executable)
+            .ok_or("bootstrap_payload_incomplete")?;
+        if !manifest.members.iter().any(|member| {
+            member.product == package.id
+                && member.sha256 == expected.sha256
+                && member.executable
+                    == format!(
+                        "generations/{}/products/{}/{executable}",
+                        owner.generation, package.id
+                    )
+        }) {
+            return Err("bootstrap_manifest_changed");
+        }
+    }
+    let key = hash(
+        &serde_json::to_vec(&(identity.components(), &owner.installation_id))
+            .map_err(|_| "bootstrap_owner_invalid")?,
+    );
+    let parent = dirs::data_local_dir().ok_or("bootstrap_data_unavailable")?;
+    ensure_no_links(&parent).map_err(|_| "bootstrap_data_unsafe")?;
+    #[cfg(windows)]
+    let _data_directories = crate::suite::platform::component_scope::pin_directories(&parent)?;
+    let catalog =
+        devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE)?;
+    let sources = catalog
+        .products
+        .iter()
+        .map(|product| {
+            (
+                product.id.clone(),
+                parent.join(format!("{}.i{key}", product.identifier)),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let store = Store::open(
+        sources
+            .get("control-center")
+            .ok_or("bootstrap_data_unavailable")?,
+    )?;
+    let (mut journal, mut digest) = store.read()?.ok_or("bootstrap_journal_missing")?;
+    if journal.candidate != manifest
+        || journal.installation_key != key
+        || journal.operation_id != owner.operation_id
+        || journal.previous.is_some()
+        || journal.failure.is_some()
+        || !journal.imports.is_empty()
+        || !journal.backup.is_empty()
+        || journal.owner_evidence.len() != 4
+        || journal.owner_evidence.iter().any(|evidence| {
+            !evidence.backups.is_empty()
+                || !evidence.summary.setup_selected
+                || evidence.summary.busy
+                || evidence.summary.review_required
+                || evidence
+                    .summary
+                    .mappings
+                    .as_ref()
+                    .is_some_and(|mapping| mapping.record_count != 0)
+        })
+    {
+        return Err("bootstrap_source_cutover_required");
+    }
+    if !journal.committed {
+        let legacy = devbox_catalog::parse_catalog(include_str!("../../../catalog.json"))
+            .map_err(|_| "bootstrap_catalog_invalid")?;
+        for app in legacy.apps {
+            match fs::symlink_metadata(parent.join(app.identifier)) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                _ => return Err("bootstrap_source_cutover_required"),
+            }
+        }
+    }
+    if commit {
+        if !matches!(
+            journal.phase,
+            Phase::Health | Phase::Commit | Phase::Cleanup | Phase::Complete
+        ) || !matches!(marker.phase, ActivePhase::Health | ActivePhase::Committed)
+        {
+            return Err("bootstrap_health_required");
+        }
+        if !journal.committed {
+            let now = std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map_err(|_| "bootstrap_clock_invalid")?
+                .as_millis() as u64;
+            journal.require_recent_health(now)?;
+        }
+    } else if !matches!(
+        journal.phase,
+        Phase::Snapshot
+            | Phase::Import
+            | Phase::Validate
+            | Phase::Quiesce
+            | Phase::Activate
+            | Phase::Health
+    ) || !matches!(marker.phase, ActivePhase::Import | ActivePhase::Health)
+    {
+        return Err("bootstrap_phase_requires_recovery");
+    }
+    let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
+    // Capture immediately before each activation/commit boundary while every
+    // product is closed. Existing complete snapshots are never overwritten.
+    if journal.phase == Phase::Snapshot
+        || (commit && matches!(journal.phase, Phase::Health | Phase::Commit))
+    {
+        if journal.data_checkpoints.len() >= 32 {
+            return Err("checkpoint_retention_review_required");
+        }
+        create_directory(&backup)?;
+        let receipt = data_checkpoint::acquire_quiesced(
+            &sources,
+            &backup,
+            &key,
+            &manifest.generation,
+            &AtomicBool::new(false),
+        )?;
+        journal.record_checkpoint(journal.revision, receipt)?;
+        digest = store.write(Some(&digest), &journal)?;
+    }
+    let checkpoint = journal
+        .data_checkpoints
+        .last()
+        .ok_or("checkpoint_missing")?;
+    data_checkpoint::verify(
+        &backup,
+        checkpoint,
+        &key,
+        &manifest.generation,
+        &AtomicBool::new(false),
+    )?;
+    let proof_revision = checkpoint.revision.clone();
+    let mut advance = |journal: &mut crate::core::delivery::Journal| -> Result<()> {
+        journal.advance(
+            journal.revision,
+            Proof {
+                phase: journal.phase,
+                generation: manifest.generation.clone(),
+                revision: proof_revision.clone(),
+            },
+        )?;
+        digest = store.write(Some(&digest), journal)?;
+        Ok(())
+    };
+    if commit {
+        while matches!(journal.phase, Phase::Health | Phase::Commit) {
+            advance(&mut journal)?;
+        }
+        // Durable commit intent precedes the marker. A crash between these
+        // writes stays blocked and resumes without undoing committed data.
+        marker.phase = ActivePhase::Committed;
+    } else {
+        while journal.phase != Phase::Health {
+            advance(&mut journal)?;
+        }
+        marker.phase = ActivePhase::Health;
+    }
+    marker.revision = journal.revision;
+    devbox_filesystem::atomic_write(
+        &marker_path,
+        &serde_json::to_vec(&marker).map_err(|_| "bootstrap_marker_invalid")?,
+    )
+    .map_err(|_| "bootstrap_marker_write_failed")?;
+    if commit && journal.phase == Phase::Cleanup && journal.cleanup_pending.is_empty() {
+        advance(&mut journal)?;
+    }
+    Ok(StageResult {
+        state: if commit {
+            "cleanInstallationCommitted"
+        } else {
+            "nativeHealthRequired"
+        },
+        checkpoint: None,
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
         payload_revision: revision,

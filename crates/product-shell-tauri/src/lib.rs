@@ -362,9 +362,7 @@ pub fn run_with(
                 product_contract::activation::Phase::Import => "migration",
                 product_contract::activation::Phase::Recover => "recovery",
                 product_contract::activation::Phase::Committed => "products",
-                product_contract::activation::Phase::Health => {
-                    return Err(std::io::Error::other("suite_health_pending").into())
-                }
+                product_contract::activation::Phase::Health => "updates",
             }
             .to_owned(),
         )
@@ -410,6 +408,14 @@ pub fn run_with(
 
 /// Owners call this before background initialization as well as route dispatch.
 /// Import-only authorization must not start activity collectors or schedulers.
+pub fn suite_activation_phase(
+    app: &tauri::AppHandle,
+) -> Result<Option<product_contract::activation::Phase>, &'static str> {
+    let executable = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
+    installation::activation(&executable, &app.package_info().version.to_string())
+        .map(|marker| marker.map(|marker| marker.phase))
+}
+
 pub fn suite_import_only(app: &tauri::AppHandle) -> Result<bool, &'static str> {
     let executable = std::env::current_exe()
         .and_then(|path| path.canonicalize())
