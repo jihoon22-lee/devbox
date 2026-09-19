@@ -5,7 +5,7 @@ import {exerciseTerminalSessionFixture} from "./windows-workspace-terminal-sessi
 import {exerciseMultiplexerReconnect} from "./windows-workspace-multiplexer.mjs";
 import {exerciseOwnedContainers} from "./windows-workspace-containers.mjs";
 import assert from 'node:assert/strict';
-import {mkdirSync,copyFileSync,readFileSync,writeFileSync,existsSync,lstatSync,realpathSync,rmSync} from 'node:fs';
+import {mkdirSync,copyFileSync,cpSync,readFileSync,writeFileSync,existsSync,lstatSync,realpathSync,rmSync} from 'node:fs';
 import {tmpdir} from 'node:os';import path from 'node:path';
 import {spawn,spawnSync} from 'node:child_process';import {once} from 'node:events';
 import {createServer} from 'node:net';import {createHash,randomUUID} from 'node:crypto';
@@ -18,7 +18,7 @@ assert.equal(process.platform,'win32');
 const [ownerFile,artifact,expectedSource,expectedRun]=process.argv.slice(2);
 assert.equal(expectedRun,networkFixture.runId);
 const json=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
-const owner=json(ownerFile),directory=path.dirname(ownerFile);
+const owner=json(ownerFile),directory=realpathSync.native(path.dirname(ownerFile));
 assert.equal(owner.schema,1);assert.equal(owner.version,2);
 assert.match(owner.name,/^DevboxWorkspaceFixture-[0-9a-f]{32}$/);
 assert.equal(path.basename(directory),owner.name);assert.equal(readFileSync(path.join(directory,'owner.txt'),'utf8'),owner.name);
@@ -64,7 +64,7 @@ try{
  for(const multiplexer of ["tmux","zellij"])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
  evidence.observations.containers=await exerciseOwnedContainers({cdp,call,success,wsl,distro:owner.name});
  const terminated=spawnSync(wslExe,["--terminate",owner.name],{encoding:"utf8",timeout:30000,windowsHide:true});assert.equal(terminated.status,0);
- const running=()=>{const value=spawnSync(wslExe,["--list","--running","--quiet"],{encoding:"utf16le",timeout:15000,windowsHide:true});assert.equal(value.status,0);return value.stdout.split(/\\r?\\n/).map(name=>name.trim()).includes(owner.name);};
+ const running=()=>{const value=spawnSync(wslExe,["--list","--running","--quiet"],{encoding:"utf16le",timeout:15000,windowsHide:true});assert.equal(value.status,0);return value.stdout.split(/\r?\n/).map(name=>name.trim()).includes(owner.name);};
  assert.equal(running(),false);
  const snapshot=success(await call("workspace.terminal","dashboard_snapshot"));
  const stopped=snapshot.distros.find(value=>value.name===owner.name);assert.ok(stopped);
@@ -75,6 +75,11 @@ try{
 finally{
  try{cdp?.close();if(child&&child.exitCode===null){child.kill();await Promise.race([once(child,'exit'),delay(10000)]);}appExited=!!child&&(child.exitCode!==null||child.signalCode!==null);
   if(confirmed&&appExited){rmSync(dataRoot,{recursive:true,force:true});ownedDataRemoved=!existsSync(dataRoot);}
- }finally{if(policy)restoreElevatedCdpPolicy(policy);writeFileSync(path.join(artifact,'hosted-wsl2-workspace-acceptance.json'),JSON.stringify({...evidence,appExited,ownedDataRemoved},null,2));}
+ }finally{
+  if(policy)restoreElevatedCdpPolicy(policy);
+  try{cpSync(path.join(directory,'product-foundation-evidence'),path.join(artifact,'wsl2-details'),{recursive:true});}
+  catch(error){evidence.evidenceCopyError=String(error).slice(0,1000);}
+  writeFileSync(path.join(artifact,'hosted-wsl2-workspace-acceptance.json'),JSON.stringify({...evidence,appExited,ownedDataRemoved},null,2));
+ }
 }
 console.log(JSON.stringify({result:'pass',appExited,ownedDataRemoved,acceptanceComplete:true}));

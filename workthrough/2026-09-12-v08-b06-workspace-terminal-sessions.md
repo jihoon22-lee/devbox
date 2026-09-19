@@ -499,3 +499,23 @@ boundary; normal user project selection already refreshes the UI explicitly.
   선택하는 salted identifier의 profile에서 실제 namespace/closed-source 이전을 확인한다.
 - JS syntax/diff 확인. Runtime domain 로직은 변경하지 않았고 기존 terminal/LSP/registry
   PASS를 보존한다. 이어지는 crash/import와 aggregate 수용, WSL2 gate는 미완료다.
+
+### 2026-09-19 isolated WSL2 continuation
+
+- General CI 35435437461 and the entire Windows native job in 35435437458 passed,
+  including packaged aggregate/crash/import, lifecycle, API workflow, Knowledge,
+  and installer coexistence. Preserve those passes. The independent WSL2 job
+  passed native Runtime/listener identity, secret redaction, group/backoff stop,
+  then failed the first Terminal output probe; containers remain unrun.
+- Raw Terminal diagnostic JSON was left in the fixture directory and omitted
+  from artifact upload. Copy it to retained evidence before cleanup. Fix cleanup
+  to verify the UUID-named owned executable against the artifact bytes and its
+  canonical path; the previous fixed-basename assumption rejected the receipt.
+- Normalize ConPTY CR/LF wrapping for the octal-encoded output probe. This cannot
+  accept echoed input as success. A focused synthetic regression passed (0.525s);
+  it does not establish the native failure's exact cause. Also correct WSL list
+  line splitting. Native WSL2/containers still need execution after these fixes.
+- Save the digest-verified root filesystem cache before executing the fixture;
+  a later failure previously discarded this reusable download. All provisioning
+  and cleanup remain restricted to disposable hosted VMs. Local work used only
+  JavaScript/YAML syntax, diff and the one output-parser regression.

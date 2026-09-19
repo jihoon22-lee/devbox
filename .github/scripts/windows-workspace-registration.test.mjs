@@ -2,6 +2,7 @@ import "./fixture-network-safety.test.mjs";
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {runInNewContext} from "node:vm";
+import {terminalProbePresent} from "./windows-workspace-terminal-sessions.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
 
 test("native registration probe executes generated requests with the described context", async () => {
@@ -175,4 +176,13 @@ test("bounded writer-wait fixtures retain their short original deadline", async 
   assert.equal(sent.header.deadlineMs,1500);
   assert.equal(sent.header.route,"files");
   for(const budget of [0,99,29001,Infinity,"500"]) assert.throws(()=>workspaceRequestExpression("workspace.files","save_file",{},budget));
+});
+
+
+test("terminal probe matches wrapped output without mistaking encoded command echo",()=>{
+  const marker="synthetic-b06-output";
+  const encoded=[...Buffer.from(marker)].map(byte=>"\\"+byte.toString(8).padStart(3,"0")).join("");
+  assert.equal(terminalProbePresent("printf '"+encoded+"\\n'\r\n",marker),false);
+  assert.equal(terminalProbePresent("\u001b[32msynthetic-\r\nb06-output\u001b[0m\r\n",marker),true);
+  assert.equal(terminalProbePresent("synthetic-b06-partial",marker),false);
 });

@@ -5,6 +5,7 @@ $ErrorActionPreference='Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows' -or $env:GITHUB_REPOSITORY -ne 'jihoon22-lee/devbox' -or $env:GITHUB_RUN_ID -notmatch '^\d+$' -or $RunId -ne $env:GITHUB_RUN_ID -or $SourceSha -ne $env:GITHUB_SHA) {
   throw 'Network-changing fixtures are disabled on local and self-hosted machines. Use a disposable GitHub-hosted Windows runner; never spoof CI environment variables.'
 }
+. (Join-Path $PSScriptRoot 'windows-installer-helpers.ps1')
 $WslVersion=2
 if ($Digest -notmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Digest) {throw 'Owned fixture archive digest mismatch'}
 $name='DevboxWorkspaceFixture-'+[guid]::NewGuid().ToString('N')
@@ -114,11 +115,21 @@ for command in [['/usr/bin/tmux','-V'],['/usr/local/bin/zellij','--version'],['/
   $result=$test.output|ConvertFrom-Json
   if ($result.result -ne 'pass' -or -not $result.appExited -or -not $result.ownedDataRemoved -or -not $result.acceptanceComplete) {throw 'Owned WSL Runtime result or cleanup missing'}
 } finally {
-  $appExecutable=Join-Path $directory 'app/devbox-workspace.exe'
   $appOwner=Join-Path $directory 'app-owner.json'
   if (Test-Path -LiteralPath $appOwner) {
     if ([IO.File]::ReadAllText($marker) -ne $name) {throw 'Fixture marker changed before app cleanup'}
     $record=Get-Content -LiteralPath $appOwner -Raw | ConvertFrom-Json
+    # Node deliberately uses a unique image name to isolate elevated WebView
+    # policy. Admit only that exact owned copy, not a guessed fixed basename.
+    $imageName=[IO.Path]::GetFileName([string]$record.executable)
+    if ($imageName -notmatch '^devbox-workspace-wsl2-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.exe$') {throw 'Unexpected owned fixture image name'}
+    $candidate=Join-Path (Join-Path $directory 'app') $imageName
+    Assert-Plain-Existing-Path $candidate 'Owned fixture image'
+    $node=(Get-Command node.exe -ErrorAction Stop).Source
+    $appExecutable=& $node -p "require('node:fs').realpathSync.native(process.argv[1])" $candidate
+    if ($LASTEXITCODE -ne 0 -or -not $appExecutable) {throw 'Owned fixture image identity unavailable'}
+    $reference=Join-Path $AppArtifact 'devbox-workspace.exe'
+    if ((Sha256 $appExecutable) -ne (Sha256 $reference)) {throw 'Owned fixture image bytes changed'}
     $hash=[Security.Cryptography.SHA256]::Create()
     try {$expectedId=([BitConverter]::ToString($hash.ComputeHash([Text.Encoding]::UTF8.GetBytes('\\?\'+[IO.Path]::GetFullPath($appExecutable))))).Replace('-','').ToLowerInvariant()} finally {$hash.Dispose()}
     $expectedData=Join-Path $env:LOCALAPPDATA ('com.devbox.v08.workspace.i'+$expectedId)

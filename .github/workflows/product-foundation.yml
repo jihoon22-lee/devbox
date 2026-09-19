@@ -367,11 +367,12 @@ jobs:
         with:
           name: workspace-webview-fixture-${{ github.run_id }}
           path: ${{ runner.temp }}/workspace-webview-fixture
-      - uses: actions/cache@v6
+      - uses: actions/cache/restore@v6
+        id: wsl2-rootfs-cache
         with:
           path: ${{ runner.temp }}/devbox-wsl-rootfs
           key: owned-wsl-rootfs-2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934
-      - name: Exercise the compiled artifact on an independent hosted WSL2 VM
+      - name: Prepare pinned WSL2 root filesystem
         shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
@@ -381,13 +382,26 @@ jobs:
           if (-not (Test-Path -LiteralPath $archive)) {
             Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri 'https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz' -OutFile $archive
           }
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934') { throw 'Owned root filesystem digest mismatch' }
+      # Preserve verified input before the fixture, even when a later test fails.
+      - uses: actions/cache/save@v6
+        if: steps.wsl2-rootfs-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/devbox-wsl-rootfs
+          key: owned-wsl-rootfs-2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934
+      - name: Exercise the compiled artifact on an independent hosted WSL2 VM
+        shell: powershell
+        run: |
+          $archive = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs/ubuntu-rootfs.tar.gz'
           .github/scripts/windows-workspace-owned-wsl2.ps1 -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID
       - name: Preserve isolated WSL2 acceptance evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
           name: workspace-wsl2-acceptance-${{ github.run_id }}
-          path: ${{ runner.temp }}/workspace-webview-fixture/*acceptance.json
+          path: |
+            ${{ runner.temp }}/workspace-webview-fixture/*acceptance.json
+            ${{ runner.temp }}/workspace-webview-fixture/wsl2-details
           if-no-files-found: warn
           retention-days: 7
 

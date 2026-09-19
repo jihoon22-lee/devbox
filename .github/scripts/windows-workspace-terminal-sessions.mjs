@@ -8,6 +8,10 @@ import {randomUUID} from "node:crypto";
 import path from "node:path";
 import {setTimeout as delay} from "node:timers/promises";
 
+// ConPTY may physically wrap a narrow pane between marker characters. The
+// octal-encoded input never contains the marker, even after removing wraps.
+export function terminalProbePresent(raw,marker){return stripVTControlCharacters(raw).replace(/[\r\n]/g,"").includes(marker);}
+
 export async function exerciseWorkspaceTerminalSessions({cdp,directory,call,success,connectTerminal}) {
   assert.equal(process.platform,"win32");
   assert.equal(process.env.GITHUB_ACTIONS,"true");assert.equal(process.env.RUNNER_ENVIRONMENT,"github-hosted");
@@ -149,7 +153,7 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
           cursor=batch.cursor;
           if(batch.truncated)raw="";
           raw=(raw+batch.frames.map(frame=>frame.data).join("")).slice(-512*1024);
-          return stripVTControlCharacters(raw).includes(marker);
+          return terminalProbePresent(raw,marker);
         },"PTY probe did not arrive: "+marker);
       } catch(error) {
         writeFileSync(path.join("product-foundation-evidence","terminal-output-failure.json"),JSON.stringify({marker,cursor,raw},null,2));
