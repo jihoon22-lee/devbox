@@ -527,3 +527,25 @@ boundary; normal user project selection already refreshes the UI explicitly.
   field-wise context comparison without weakening revision/target checks.
   Reordered-native-context controls and summary regressions passed (2 tests,
   2.078s); unrelated tests were intentionally not rerun.
+
+### Native cursor-query root cause (2026-09-19)
+
+- Native35438120337 retained the failed PTY stream: the shell received an extra
+  cursor-position response and then executed `Rprintf`, not the requested probe.
+  The native owner had already answered ConPTY's initial `ESC[6n`, while forwarding
+  the same query to xterm/replay caused another response after the shell started.
+- Suppress only that leading query, across pipe chunk boundaries, when the native
+  write/flush succeeded. Preserve unanswered queries, every later application
+  query, other controls, and partial EOF. Filter before both the bounded replay
+  buffer and legacy event publication. No user input is cleared or retried.
+- The exact production pure module's two regressions passed via `rustc --test`,
+  plus scoped WSL Desktop compilation (4.429s total). No PTY/WSL/Docker process was
+  started locally. Windows execution remains the final native gate.
+- Contract reference: [Microsoft CreatePseudoConsole](https://learn.microsoft.com/en-us/windows/console/createpseudoconsole)
+  assigns cursor-query reply handling to the host. This change keeps one owner.
+- CI also rejected the cache subaction references added earlier. Reviewed the
+  official [`restore`](https://github.com/actions/cache/blob/v6/restore/action.yml)
+  and [`save`](https://github.com/actions/cache/blob/v6/save/action.yml) manifests:
+  both use Node24 and the same audited cache repository. Add their exact v6 refs
+  to the existing allowlist; its focused policy check passed. Validator logic,
+  workflow permissions and host-safety guards are unchanged.

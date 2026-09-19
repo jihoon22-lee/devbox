@@ -93,6 +93,8 @@ pub struct SessionHandle {
     /// 리더 스레드가 이미 spawn 됐는지. `attach_session`을 두 번 호출해도
     /// 스레드가 두 번 spawn 되지 않도록 막는 가드.
     pub attached: bool,
+    #[cfg(windows)]
+    startup_cursor_answered: bool,
 }
 
 impl SessionHandle {
@@ -408,13 +410,15 @@ pub(crate) async fn start_owned_or_legacy(
     let master = pair.master;
 
     #[cfg(target_os = "windows")]
-    {
+    let startup_cursor_answered = {
         // ConPTY는 시작 시 커서 위치 조회(ESC[6n)를 보내고 응답이 올 때까지
         // 자식 프로세스를 정지시킨다 (PSEUDOCONSOLE_INHERIT_CURSOR 교착 상태).
         // 커서 위치 보고(ESC[1;1R)를 입력 파이프로 보내 차단을 해제한다.
-        let _ = writer.write_all(b"\x1b[1;1R");
-        let _ = writer.flush();
-    }
+        writer
+            .write_all(b"\x1b[1;1R")
+            .and_then(|()| writer.flush())
+            .is_ok()
+    };
 
     let session_id = next_session_id();
 
@@ -427,6 +431,8 @@ pub(crate) async fn start_owned_or_legacy(
         master: Some(master),
         reader: Some(reader),
         attached: false,
+        #[cfg(windows)]
+        startup_cursor_answered,
     }));
     state
         .sessions
@@ -488,25 +494,42 @@ pub(crate) fn attach_native(
     let sid = session_id.clone();
     let state_for_reader = Arc::clone(state);
     let owned_output = handle.lock().unwrap().output.clone();
+    #[cfg(windows)]
+    let native_answered = handle.lock().unwrap().startup_cursor_answered;
     std::thread::spawn(move || {
+        #[cfg(windows)]
+        let mut startup_cursor = crate::core::startup_cursor::StartupCursor::new(native_answered);
+        let publish = |data: String| {
+            if data.is_empty() {
+                return;
+            }
+            if let Some(output) = &owned_output {
+                output.buffer.lock().unwrap().append(&data);
+            } else if state_for_reader.legacy_publication {
+                let _ = app_out.emit(
+                    "terminal-output",
+                    TerminalOutput {
+                        session_id: sid.clone(),
+                        data,
+                    },
+                );
+            }
+        };
         let mut carry: Vec<u8> = Vec::new();
         let mut buf = [0u8; 4096];
         loop {
             match reader.read(&mut buf) {
-                Ok(0) => break,
+                Ok(0) => {
+                    #[cfg(windows)]
+                    publish(decode_chunk(&mut carry, &startup_cursor.finish()));
+                    break;
+                }
                 Ok(n) => {
-                    let data = decode_chunk(&mut carry, &buf[..n]);
-                    if let Some(output) = &owned_output {
-                        output.buffer.lock().unwrap().append(&data);
-                    } else if state_for_reader.legacy_publication {
-                        let _ = app_out.emit(
-                            "terminal-output",
-                            TerminalOutput {
-                                session_id: sid.clone(),
-                                data,
-                            },
-                        );
-                    }
+                    #[cfg(windows)]
+                    let chunk = startup_cursor.filter(&buf[..n]);
+                    #[cfg(not(windows))]
+                    let chunk = &buf[..n];
+                    publish(decode_chunk(&mut carry, &chunk));
                 }
                 // 일시 오류 — EOF가 아니다. 계속 읽는다.
                 Err(e)
@@ -1175,6 +1198,8 @@ mod tests {
             master: None,
             reader: None,
             attached: false,
+            #[cfg(windows)]
+            startup_cursor_answered: false,
         }))
     }
 
@@ -1242,6 +1267,8 @@ mod tests {
             master: None,
             reader: None,
             attached: true,
+            #[cfg(windows)]
+            startup_cursor_answered: false,
         }));
         let retained_handle = handle.clone();
         let state = SessionState {
@@ -1347,6 +1374,8 @@ mod tests {
             master: None,
             reader: None,
             attached: false,
+            #[cfg(windows)]
+            startup_cursor_answered: false,
         };
         assert!(handle.mark_attached(), "first attach should succeed");
         assert!(!handle.mark_attached(), "second attach must be a no-op");
