@@ -633,3 +633,17 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   artifact and fixture source separately. No compiler/installer/full native suite
   is started for this fixture correction. Original build source is checked against
   the source workflow and retained helper manifest before execution.
+
+### B07 native acceptance complete (2026-09-19)
+
+- Retained-artifact run35448284131 PASS: foreign shortcut registration remains
+  disabled with the expected ownership conflict, original owner stays registered,
+  foreign project-provider access fails, and all four actual product surfaces pass
+  contrast/DPI renderer emulation. All five fixture processes exited. Artifact
+  source ee16bdae/run35446742131; fixture source59179e7f are recorded separately.
+- Combined with run35444386766's native handoff/hotkey/composition passes and
+  earlier independent product/migration/lifecycle/installer passes, B07's planned
+  native scenarios are complete. Physical OS Korean IME/multimonitor remain B09;
+  renderer emulation is not claimed as that evidence.
+- Final required CI runs on ready-for-review after this evidence-only commit.
+  Merge remains conditional on B06 acceptance/merge and successful final CI.
