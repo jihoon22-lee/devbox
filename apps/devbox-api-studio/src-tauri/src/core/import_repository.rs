@@ -268,6 +268,38 @@ impl Repository {
             if ids.len() > 1 { return Err("migration_journal_invalid".into()); } Ok(ids.into_iter().next())
         })
     }
+    /// Read the retained, completed ID mappings without exporting their IDs or
+    /// source data. This observation is not an activation or source-backup proof.
+    pub fn mapping_summary(
+        &self,
+    ) -> Result<product_contract::migration_status::MappingSummary, String> {
+        use sha2::{Digest, Sha256};
+        self.workspace.inspect(|connection| {
+            let mut statement = sql(connection.prepare("SELECT r.activation_id,r.source_store,r.source_id,r.fingerprint,r.destination_id FROM studio_import_receipts_v1 r JOIN studio_imports_v1 i ON i.id=r.activation_id WHERE i.phase='complete' ORDER BY r.activation_id,r.source_store,r.source_id,r.fingerprint LIMIT 100001"))?;
+            let mut rows = sql(statement.query([]))?;
+            let started = std::time::Instant::now();
+            let mut count = 0_u64;
+            let mut hash = Sha256::new();
+            hash.update(b"api-studio/mappings/v1");
+            while let Some(row) = sql(rows.next())? {
+                count += 1;
+                if count > 100_000 || started.elapsed() > std::time::Duration::from_secs(5) {
+                    return Err("migration_journal_too_large".into());
+                }
+                for column in 0..5 {
+                    let rusqlite::types::ValueRef::Text(bytes) = sql(row.get_ref(column))? else {
+                        return Err("migration_journal_invalid".into());
+                    };
+                    if bytes.len() > 1024 { return Err("migration_journal_invalid".into()); }
+                    hash.update((bytes.len() as u64).to_be_bytes());
+                    hash.update(bytes);
+                }
+            }
+            product_contract::migration_status::MappingSummary::new(count,
+                hash.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
+                .map_err(str::to_owned)
+        })
+    }
     fn prior_receipts(&self) -> Result<Vec<Receipt>, String> {
         self.workspace.inspect(|connection| {
             let mut statement = sql(connection.prepare("SELECT r.source_store,r.source_id,r.fingerprint,r.destination_id FROM studio_import_receipts_v1 r JOIN studio_imports_v1 i ON i.id=r.activation_id WHERE i.phase='complete' LIMIT 100001"))?;
@@ -653,6 +685,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let before = browser();
         let repo = Repository::open(root.path(), "fixture-install").unwrap();
+        assert_eq!(repo.mapping_summary().unwrap().record_count, 0);
         let (id, _) = repo.new_stage().unwrap();
         let review = repo
             .prepare(
@@ -668,6 +701,8 @@ mod tests {
             .activate(&id, &before, &AtomicBool::new(false))
             .unwrap();
         assert!(root.path().join("webhooks/fixtures.json").exists());
+        // Native files alone do not mean browser activation was acknowledged.
+        assert_eq!(repo.mapping_summary().unwrap().record_count, 0);
         assert!(repo.acknowledge(&id, &before, false).is_err());
         drop(repo);
         let repo = Repository::open(root.path(), "fixture-install").unwrap();
@@ -676,6 +711,7 @@ mod tests {
             .activate(&id, &patch.after, &AtomicBool::new(false))
             .unwrap();
         repo.acknowledge(&id, &resumed.after, false).unwrap();
+        assert_eq!(repo.mapping_summary().unwrap().record_count, 2);
         assert!(repo.pending().unwrap().is_none());
         let mut edited = resumed.after;
         let mut collections = json_value(edited["apip-collections-v2"].as_ref().unwrap()).unwrap();

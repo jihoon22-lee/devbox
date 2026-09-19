@@ -216,3 +216,16 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Setup assembler의 tampered helper/ZIP, manifest 경로 이탈, mixed version,
   기존 candidate 보존 fixture를 준비하고 dependency policy CI에 등록했다.
   Python AST/diff만 확인했으며 전체 구현 완료 전 반복 실행하지 않았다.
+
+### Owner 이전 매핑 관측 연결
+
+- API Studio는 browser/native 적용을 모두 승인한 complete import의 retained mapping만
+  집계한다. Knowledge는 선택된 세 store의 실제 ID receipt를 읽는다. record ID·경로·본문은
+  공유하지 않고 bounded count와 deterministic revision만 Control Center에 반환한다.
+- Knowledge 각 DB는 독립 read transaction이며 global transaction으로 주장하지 않는다.
+  신규 source backup이나 활성화 완료 proof로도 취급하지 않는다. Workspace의 미연결 매핑
+  관측은 0으로 표시하지 않고 확인 필요로 남긴다.
+- blocking owner reader는 제품당 한 슬롯으로 제한하고 async pipe/event loop에서 분리했다.
+  UI의 명시적 상태 읽기에만 실행하며 background polling을 추가하지 않았다.
+- 최소 Rust/Control Center TypeScript check PASS 46.395s. 브라우저 미승인 행 제외,
+  opaque ID·destination 변경·잘못된 receipt 타입 회귀를 준비했으며 PR 완료 때 실행한다.

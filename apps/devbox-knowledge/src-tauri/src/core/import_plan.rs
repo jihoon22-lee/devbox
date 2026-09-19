@@ -22,6 +22,65 @@ const COMPONENTS: [&str; 3] = ["notes", "activity", "search"];
 const MAX_DATABASE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_JOURNAL_BYTES: u64 = 64 * 1024;
 const MAX_PLANS: usize = 8;
+/// Observe only retained ID receipts in the selected stores. Each SQLite reader
+/// supplies its own consistent view; this is not a cross-store commit proof.
+pub fn mapping_summary(
+    root: &Path,
+) -> Result<product_contract::migration_status::MappingSummary, String> {
+    let _lock = lock(root)?;
+    let manifest = stores::read(root)?.ok_or("store_unavailable")?;
+    let mut hash = Sha256::new();
+    hash.update(b"knowledge/mappings/v1");
+    hash.update(manifest.generation.as_bytes());
+    let mut count = 0_u64;
+    let started = std::time::Instant::now();
+    for source in [Source::Notes, Source::Activity, Source::Search] {
+        let path = stores::directory(root, &manifest, source.key())?.join("data.db");
+        let connection = sql(Connection::open_with_flags(
+            &path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ))?;
+        sql(connection.busy_timeout(std::time::Duration::from_millis(100)))?;
+        sql(connection.execute_batch("BEGIN"))?;
+        import_rows::validate_owned_store(&connection, source)?;
+        hash.update(source.key().as_bytes());
+        let exists: bool = sql(connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_import_rows_v1')", [], |row| row.get(0)))?;
+        if !exists {
+            continue;
+        }
+        let mut statement = sql(connection.prepare("SELECT source,source_table,source_id,fingerprint,destination_id FROM knowledge_import_rows_v1 ORDER BY source,source_table,source_id LIMIT 100001"))?;
+        let mut rows = sql(statement.query([]))?;
+        let mut store_count = 0_u64;
+        while let Some(row) = sql(rows.next())? {
+            store_count += 1;
+            count += 1;
+            if store_count > 100_000 || started.elapsed() > std::time::Duration::from_secs(5) {
+                return Err("import_limit_exceeded".into());
+            }
+            for column in 0..5 {
+                let rusqlite::types::ValueRef::Text(bytes) = sql(row.get_ref(column))? else {
+                    return Err("import_row_invalid".into());
+                };
+                if bytes.len() > 1024 {
+                    return Err("import_row_invalid".into());
+                }
+                hash.update((bytes.len() as u64).to_be_bytes());
+                hash.update(bytes);
+            }
+        }
+    }
+    if stores::read(root)? != Some(manifest) {
+        return Err("import_preview_stale".into());
+    }
+    product_contract::migration_status::MappingSummary::new(
+        count,
+        hash.finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
+    .map_err(str::to_owned)
+}
 pub fn list(root: &Path) -> Result<Vec<Plan>, String> {
     let imports = root.join("imports");
     match fs::symlink_metadata(&imports) {
@@ -731,6 +790,40 @@ mod tests {
     }
     fn token() -> Arc<AtomicBool> {
         Arc::new(AtomicBool::new(false))
+    }
+    #[test]
+    fn mapping_observations_are_bounded_opaque_and_track_destination_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = stores::create_empty(root.path()).unwrap();
+        let before = mapping_summary(root.path()).unwrap();
+        assert_eq!(before.record_count, 0);
+        let path = stores::directory(root.path(), &manifest, "notes")
+            .unwrap()
+            .join("data.db");
+        let connection = Connection::open(path).unwrap();
+        connection.execute_batch("CREATE TABLE knowledge_import_rows_v1(source TEXT NOT NULL,source_table TEXT NOT NULL,source_id TEXT NOT NULL,fingerprint TEXT NOT NULL,destination_id TEXT NOT NULL,PRIMARY KEY(source,source_table,source_id)); INSERT INTO knowledge_import_rows_v1 VALUES('notes','settings','synthetic-private-id','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','first-target');").unwrap();
+        let first = mapping_summary(root.path()).unwrap();
+        assert_eq!(first.record_count, 1);
+        assert_ne!(first.revision, before.revision);
+        assert!(!serde_json::to_string(&first)
+            .unwrap()
+            .contains("synthetic-private-id"));
+        connection
+            .execute(
+                "UPDATE knowledge_import_rows_v1 SET destination_id='second-target'",
+                [],
+            )
+            .unwrap();
+        let second = mapping_summary(root.path()).unwrap();
+        assert_eq!(second.record_count, 1);
+        assert_ne!(first.revision, second.revision);
+        connection
+            .execute(
+                "UPDATE knowledge_import_rows_v1 SET destination_id=x'01'",
+                [],
+            )
+            .unwrap();
+        assert!(mapping_summary(root.path()).is_err());
     }
     #[test]
     fn wal_snapshot_preparation_cancel_resume_and_atomic_pointer_preserve_originals() {

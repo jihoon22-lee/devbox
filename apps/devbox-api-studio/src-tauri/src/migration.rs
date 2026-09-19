@@ -801,23 +801,28 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str
         .ok_or("migration_unavailable")?;
     let work = state.work.lock().map_err(|_| "migration_busy")?;
     let config = flags(&state.root).map_err(|_| "migration_unavailable")?;
-    let pending = state
-        .repository()
-        .and_then(|repo| repo.pending())
-        .map_err(|_| "migration_unavailable")?;
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    let pending = repository.pending().map_err(|_| "migration_unavailable")?;
     let busy = work.current.is_some();
     let review = pending.is_some() || config.request_import || state.force_import;
     let native = serde_json::to_vec(&(busy, config.setup_done, review, pending, work.stage))
         .map_err(|_| "migration_unavailable")?;
-    serde_json::to_value(product_contract::migration_status::Summary::new(
+    let mut summary = product_contract::migration_status::Summary::new(
         "api-studio",
         env!("CARGO_PKG_VERSION"),
         busy,
         config.setup_done,
         review,
         &native,
-    )?)
-    .map_err(|_| "migration_unavailable")
+    )?;
+    if !busy {
+        summary = summary.with_mappings(
+            repository
+                .mapping_summary()
+                .map_err(|_| "migration_unavailable")?,
+        )?;
+    }
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }
 
 #[cfg(test)]

@@ -424,15 +424,20 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str
             .collect::<Vec<_>>(),
     ))
     .map_err(|_| "migration_unavailable")?;
-    serde_json::to_value(product_contract::migration_status::Summary::new(
+    let mut summary = product_contract::migration_status::Summary::new(
         "knowledge",
         env!("CARGO_PKG_VERSION"),
         busy,
         selected,
         review,
         &native,
-    )?)
-    .map_err(|_| "migration_unavailable")
+    )?;
+    if selected && !busy {
+        summary = summary.with_mappings(
+            import_plan::mapping_summary(&state.root).map_err(|_| "migration_unavailable")?,
+        )?;
+    }
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }
 
 #[cfg(test)]
