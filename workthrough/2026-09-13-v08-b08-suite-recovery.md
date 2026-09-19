@@ -212,3 +212,7 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   선택한다. 일반 `--route` 개발 경계나 command 권한은 확대하지 않는다.
 - Python AST/diff 및 최소 Rust check PASS (`b08-setup-final-types.log`). 실제 NSIS compile,
   helper launch, ARP/shortcuts/uninstall/update와 health/commit은 B08 전체 수용에 남아 있다.
+
+- Setup assembler의 tampered helper/ZIP, manifest 경로 이탈, mixed version,
+  기존 candidate 보존 fixture를 준비하고 dependency policy CI에 등록했다.
+  Python AST/diff만 확인했으며 전체 구현 완료 전 반복 실행하지 않았다.

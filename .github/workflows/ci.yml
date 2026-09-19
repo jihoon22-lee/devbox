@@ -70,6 +70,7 @@ jobs:
           python3 .github/scripts/check-dependencies.py check
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-build-manifest.py
+          python3 .github/scripts/test-build-suite-installer.py
           python3 .github/scripts/test-build-candidate-metadata.py
           python3 .github/scripts/test-validate-release-input.py
           python3 .github/scripts/test-windows-package-candidate-config.py
