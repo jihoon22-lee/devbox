@@ -9,10 +9,11 @@ vi.mock("./DevelopmentSessions",()=>({default:()=>null}));
 const call=vi.mocked(componentCall);
 const context={projectId:"project",worktreeId:"tree",target:{kind:"windows" as const},revision:1};
 const description={...fixtureDescription("workspace"),context};
+const nativeContext={projectId:context.projectId,revision:context.revision,target:context.target,worktreeId:context.worktreeId};
 beforeEach(()=>{
   sessionStorage.clear();
   call.mockReset().mockImplementation(async(_description,_component,method)=>{
-    if(method==="terminal_sessions")return[{id:"10000000-0000-4000-8000-000000000001",context,state:"active"}];
+    if(method==="terminal_sessions")return[{id:"10000000-0000-4000-8000-000000000001",context:nativeContext,state:"active"}];
     if(method==="terminal_commands")return{profiles:[{id:"profile",name:"Synthetic profile",revision:"a".repeat(64)}]};
     return{};
   });

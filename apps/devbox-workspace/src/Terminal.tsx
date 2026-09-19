@@ -2,6 +2,7 @@ import { useCallback, useEffect, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { componentCall } from "./native";
+import { sameRuntimeContext } from "./runtimeNavigation";
 import TerminalImport from "./TerminalImport";
 import DevelopmentSessions from "./DevelopmentSessions";
 
@@ -87,7 +88,7 @@ export default function Terminal({description,registry}:{description:Description
     <ul>{sessions.map(session=><li key={session.id}>
       <span>{session.context?`${registry?.projects.find(project=>project.id===session.context?.projectId)?.name??"연결되지 않은 프로젝트"} · ${registry?.worktrees.find(tree=>tree.id===session.context?.worktreeId)?.binding.root??"작업 폴더 확인 필요"}`:"프로젝트 없는 터미널"} · {labels[session.state]??"상태 확인 필요"}</span>{" "}
       {session.state==="active"&&<button disabled={busy} onClick={()=>void action("focus_terminal",{id:session.id})}>창 표시</button>}{" "}
-      {session.state==="active"&&JSON.stringify(session.context)===JSON.stringify(description.context)&&<button disabled={busy} onClick={()=>void summon(session)}>창 표시·숨김</button>}{" "}
+      {session.state==="active"&&sameRuntimeContext(session.context,description.context)&&<button disabled={busy} onClick={()=>void summon(session)}>창 표시·숨김</button>}{" "}
       {["active","stopping"].includes(session.state)&&<button disabled={busy} onClick={()=>void action("stop_terminal",{id:session.id})}>이 터미널 종료</button>}
       {["stopped","interrupted"].includes(session.state)&&<button disabled={busy} onClick={()=>void restore(session)}>상태만 다시 연결</button>}
       {session.state==="interrupted"&&<p>저장한 레이아웃으로 다시 연결할 수 있습니다. 시작 명령은 보내지 않으며 기존 tmux·zellij 세션은 유지합니다.</p>}

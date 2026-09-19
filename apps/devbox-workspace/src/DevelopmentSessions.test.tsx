@@ -102,3 +102,19 @@ it("previews native summary metadata and reuses the operation receipt",async()=>
   expect(requests[0].operationId).toBe(requests[1].operationId);
   expect(requests[0]).toEqual(expect.objectContaining({sessionId:session.id,revision:session.revision,includeProblems:false}));
 });
+
+
+it("keeps same-project controls and summary visible for reordered native context keys",async()=>{
+  const nativeContext={projectId:context.projectId,revision:context.revision,target:context.target,worktreeId:context.worktreeId};
+  const original=call.getMockImplementation()!;
+  call.mockImplementation(async(...args)=>{
+    if(args[2]==="development_sessions")return {sessions:[{...session,context:nativeContext,phase:"stopped"}],intents:{}};
+    if(args[2]==="prepare_session_summary")return {operationId:"summary",draft:{title:"Native summary",body:"retained report",metadata:{binding:{context:nativeContext,sessionId:session.id,revision:session.revision}}}};
+    return original(...args);
+  });
+  render(<DevelopmentSessions description={description} registry={null}/>);
+  await screen.findByRole("button",{name:"새 계획으로 이어가기"});
+  fireEvent.click(screen.getByRole("button",{name:"요약 미리보기"}));
+  await screen.findByRole("region",{name:"세션 요약 미리보기"});
+  expect(screen.getByText("retained report")).toBeTruthy();
+});

@@ -519,3 +519,11 @@ boundary; normal user project selection already refreshes the UI explicitly.
   a later failure previously discarded this reusable download. All provisioning
   and cleanup remain restricted to disposable hosted VMs. Local work used only
   JavaScript/YAML syntax, diff and the one output-parser regression.
+
+- B07's native file-open failure exposed a related UI comparison defect: typed
+  shell contexts and JSON-value responses serialize identical fields in different
+  orders. Terminal visibility and Development Session continuation/summary used
+  JSON text equality and could hide valid same-project controls. Reuse the existing
+  field-wise context comparison without weakening revision/target checks.
+  Reordered-native-context controls and summary regressions passed (2 tests,
+  2.078s); unrelated tests were intentionally not rerun.

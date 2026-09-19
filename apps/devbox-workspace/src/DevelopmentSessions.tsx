@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import type { Description, ProjectContext } from "@devbox/product-shell/api";
 import type { Registry } from "./RegistryGate";
 import { componentCall } from "./native";
+import { sameRuntimeContext } from "./runtimeNavigation";
 
 interface SummaryPreview {operationId:string;draft:{title:string;body:string;metadata:{binding:{context:ProjectContext;sessionId:string;revision:number}}}}
 interface Candidate { id: string; name: string; kind: string; targetKind: string; targetDistro: string | null }
@@ -130,7 +131,7 @@ export default function DevelopmentSessions({ description, registry }: { descrip
       <button disabled={busy} onClick={() => { if(plan.session)void stop(plan.session.id); setPlan(null); }}>취소</button>
     </section>}
     <label><input type="checkbox" checked={summaryProblems} onChange={event=>setSummaryProblems(event.target.checked)}/> 요약에 현재 세션의 문제 분류 포함</label>
-    {summary&&JSON.stringify(summary.draft.metadata.binding.context)===contextKey&&<section aria-label="세션 요약 미리보기">
+    {summary&&sameRuntimeContext(summary.draft.metadata.binding.context,description.context)&&<section aria-label="세션 요약 미리보기">
       <h3>{summary.draft.title}</h3><pre>{summary.draft.body}</pre>
       <p>전체 기간의 실행·커밋 수를 확인할 수 없으면 확인 불가로 표시합니다.</p>
       <button onClick={()=>setSummary(null)}>미리보기 닫기</button>
@@ -139,7 +140,7 @@ export default function DevelopmentSessions({ description, registry }: { descrip
     <ul>{snapshot.sessions.map(session => {
       const project = registry?.projects.find(project => project.id === session.context.projectId)?.name ?? "연결되지 않은 프로젝트";
       const root = registry?.worktrees.find(tree => tree.id === session.context.worktreeId)?.binding.root ?? "작업 폴더 확인 필요";
-      const sameContext = JSON.stringify(session.context) === contextKey;
+      const sameContext = sameRuntimeContext(session.context,description.context);
       return <li key={session.id}><strong>{project}</strong> · {root} · {phaseLabels[session.phase] ?? "상태 확인 필요"}{" "}
         {session.phase !== "stopped" && session.issue !== "session_native_owner_lost" && <button disabled={busy} onClick={() => void stop(session.id)}>{session.phase === "stopping" ? "정리 다시 확인" : "내가 시작한 자원 정리"}</button>}{" "}
         {["stopped", "degraded"].includes(session.phase) && sameContext && <button disabled={busy} onClick={() => void prepare(snapshot.intents[session.id]?.jobs ?? [], snapshot.intents[session.id]?.terminalProfile ?? null)}>새 계획으로 이어가기</button>}
