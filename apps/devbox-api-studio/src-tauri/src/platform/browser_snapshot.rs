@@ -19,7 +19,23 @@ pub fn snapshot(
     owned_stage: &Path,
     cancelled: &AtomicBool,
 ) -> Result<(PathBuf, ClosedStoreSnapshot), String> {
-    snapshot_owned(source_data, owned_stage, cancelled, |_| Ok(()))
+    let (data, receipt) = snapshot_owned(source_data, owned_stage, cancelled, |_| Ok(()))?;
+    let stores = [
+        "EBWebView/Default/Local Storage/leveldb",
+        "Default/Local Storage/leveldb",
+    ];
+    let source = stores
+        .iter()
+        .map(|relative| data.join(relative))
+        .find(|path| path.is_dir())
+        .ok_or("legacy_snapshot_target_invalid")?;
+    data_migration::core::source_snapshot::retain_closed_copy(
+        &source,
+        &owned_stage.join("retained-leveldb"),
+        &receipt,
+        cancelled,
+    )?;
+    Ok((data, receipt))
 }
 #[cfg(windows)]
 pub fn snapshot_owned(

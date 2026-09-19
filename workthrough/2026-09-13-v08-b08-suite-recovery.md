@@ -282,3 +282,19 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   checkpoint and opens a separate copy, leaving the accepted checkpoint untouched;
   it also covers wrong-owner/generation and changed browser bytes. Scoped Rust
   and test compilation passed in 1.568s; prepared tests still await B08 completion.
+
+### Retain API Studio source backups through later imports (2026-09-19)
+
+- Closed browser acquisition now creates a separately verified `retained-leveldb`
+  copy before the worker WebView can open/compact its `webview-copy`. The original
+  source remains read-only. The existing closed-source receipt describes retained
+  bytes; cleanup only removes the worker copy/ticket and never the retained copy.
+- The next import archives completed stages under `imports/retained/<id>` instead
+  of deleting them. Normalized snapshots, reviewed plans and source backup metadata
+  survive alongside the existing completed ID mapping journal. Unaccepted previews
+  retain their supersession behavior. At 32 retained operations, imports require
+  retention review; there is no automatic completed-backup deletion.
+- Prepared shared-copy tests for worker mutation, retained-byte tampering and bad
+  names, plus API regressions for completed-stage retention and worker cleanup.
+  API/shared migration Rust and test compilation passed in 12.935s. Detailed
+  tests and Windows acquisition remain scheduled for the completed B08 bundle.

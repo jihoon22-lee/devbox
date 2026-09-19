@@ -132,3 +132,12 @@ The build checks the complete static Requests import closure, including the shel
 against the preserved API Playground budget. OpenAPI/YAML parsing, Protocol Lab
 and Transforms remain deferred. Parser-independent limits live in a separate
 module so merely rendering Requests does not load the YAML engine.
+
+Suite migration retains the verified, closed legacy LevelDB bytes separately
+before the export WebView opens its working profile. Worker-profile cleanup does
+not remove that backup. A later preview archives completed import stages (source
+receipts, normalized snapshots and plans) under the same private product namespace;
+unaccepted previews can still be replaced. At the bounded retention limit, a new
+import requires backup retention review instead of deleting completed backups.
+These files are owner data, not diagnostics/support-bundle contents. This preserves
+recovery evidence; it does not grant Suite activation or legacy cleanup authority.

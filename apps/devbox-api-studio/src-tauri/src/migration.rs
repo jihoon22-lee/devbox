@@ -550,7 +550,8 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                         )
                         .await;
                         // The worker has closed its owned Job before returning.
-                        // Purge the raw copy even when export or cancellation failed.
+                        // Retire the worker copy even when export/cancellation failed.
+                        // The separately retained pre-WebView source backup remains.
                         guard.stage(match exported.as_ref().err().map(String::as_str) {
                             None => "api-export-copy-cleanup",
                             Some("legacy_worker_cleanup_failed") => "api-export-job-cleanup-failed",

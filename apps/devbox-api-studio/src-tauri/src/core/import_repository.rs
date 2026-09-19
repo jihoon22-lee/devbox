@@ -209,8 +209,8 @@ impl Repository {
             return Err("migration_recovery_required".into());
         }
         // The exclusive activation lock excludes another importer/worker.
-        // A new preview supersedes older previews. Accepted activations keep
-        // their recovery bundle and completed ID receipts in the journal.
+        // A new preview supersedes unaccepted previews. Completed activations
+        // retain their source bytes and plans as well as journal ID receipts.
         let entries = fs::read_dir(&directory)
             .map_err(|_| "migration_storage_unavailable")?
             .take(33)
@@ -219,11 +219,58 @@ impl Repository {
         if entries.len() > 32 {
             return Err("migration_store_too_large".into());
         }
-        for entry in entries {
-            if !entry.file_name().to_str().is_some_and(valid_id) {
+        let retained = self.root.join("imports/retained");
+        ensure_directory(&retained)?;
+        let mut retained_count = 0;
+        for entry in fs::read_dir(&retained)
+            .map_err(|_| "migration_storage_unavailable")?
+            .take(33)
+        {
+            let entry = entry.map_err(|_| "migration_storage_unavailable")?;
+            if !entry.file_name().to_str().is_some_and(valid_id)
+                || !entry
+                    .file_type()
+                    .map_err(|_| "migration_path_invalid")?
+                    .is_dir()
+            {
                 return Err("migration_path_invalid".into());
             }
-            remove_owned_directory(&entry.path())?;
+            devbox_filesystem::ensure_no_links(entry.path())
+                .map_err(|_| "migration_path_invalid")?;
+            retained_count += 1;
+        }
+        if retained_count >= 32 {
+            return Err("migration_backup_retention_review_required".into());
+        }
+        for entry in entries {
+            let id = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "migration_path_invalid")?;
+            if !valid_id(&id) {
+                return Err("migration_path_invalid".into());
+            }
+            if self
+                .activation(&id)?
+                .is_some_and(|(phase, _)| phase == Phase::Complete)
+            {
+                if retained_count >= 32 {
+                    return Err("migration_backup_retention_review_required".into());
+                }
+                self.clear_export_copy(&id)?;
+                devbox_filesystem::ensure_no_links(entry.path())
+                    .map_err(|_| "migration_path_invalid")?;
+                let archive = retained.join(&id);
+                match fs::symlink_metadata(&archive) {
+                    Ok(_) => return Err("migration_backup_conflict".into()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => return Err("migration_backup_unavailable".into()),
+                }
+                fs::rename(entry.path(), archive).map_err(|_| "migration_backup_unavailable")?;
+                retained_count += 1;
+            } else {
+                remove_owned_directory(&entry.path())?;
+            }
         }
         let id = uuid::Uuid::new_v4().to_string();
         let stage = directory.join(&id);
@@ -836,6 +883,12 @@ mod tests {
         repo.acknowledge(&id, &patch.after, false).unwrap();
         repo.new_stage().unwrap();
         assert!(!stage.exists());
+        assert!(root
+            .path()
+            .join("imports/retained")
+            .join(&id)
+            .join("snapshot/snapshot.db")
+            .is_file());
         assert!(repo.pending().unwrap().is_none());
     }
     #[test]
@@ -847,7 +900,13 @@ mod tests {
         fs::create_dir(&raw).unwrap();
         fs::write(raw.join("synthetic-raw"), "synthetic source only").unwrap();
         fs::write(stage.join("worker-ticket.json"), "synthetic nonce").unwrap();
+        fs::create_dir(stage.join("retained-leveldb")).unwrap();
+        fs::write(stage.join("retained-leveldb/CURRENT"), b"original marker").unwrap();
         repo.clear_export_copy(&id).unwrap();
+        assert_eq!(
+            fs::read(stage.join("retained-leveldb/CURRENT")).unwrap(),
+            b"original marker"
+        );
         assert!(!raw.exists());
         assert!(!stage.join("worker-ticket.json").exists());
         repo.prepare(
