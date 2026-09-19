@@ -588,3 +588,20 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   three runtime regressions were not repeated. Native35439348703 could not reach
   product execution because of that frontend compile error. The inherited cache
   action allowlist failure is corrected by the accompanying B06 update.
+
+### Final native suite workflow continuation (2026-09-19)
+
+- Run 35441349543 passed indexed-file opening, dirty-editor preservation, native
+  log selection, saved-result preview/cancel, session Daily/Notes preview and
+  native shortcut registration/forbidden binding. The prior context comparison
+  defects are resolved in actual Windows execution.
+- The remaining failure is the fixture's native key injection process. It passed
+  `{SPACE}` to WinForms SendKeys, which only accepts its listed special keywords
+  or literal characters. Changed Ctrl+Alt+Space to a literal space, made STA/error
+  handling explicit and retain bounded subprocess error evidence on any failure.
+  [Microsoft SendKeys contract](https://learn.microsoft.com/en-us/dotnet/api/system.windows.forms.sendkeys)
+  and [parser source](https://github.com/dotnet/winforms/blob/main/src/System.Windows.Forms/System/Windows/Forms/SendKeys/SendKeys.cs)
+  establish this format; no app shortcut behavior was changed.
+- Node syntax/diff check only for this fixture correction. Native hotkey delivery,
+  composition guard and foreign-installation checks remain pending after it.
+  Other independent Windows native checks passed in this run; keep that evidence.

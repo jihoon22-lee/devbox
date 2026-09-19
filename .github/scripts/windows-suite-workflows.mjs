@@ -22,10 +22,12 @@ const report=()=>writeFileSync("product-foundation-evidence/suite-workflows.json
 const stage=value=>{evidence.stage=value;report();};
 const live=[];
 const digest=file=>createHash("sha256").update(readFileSync(file)).digest("hex");
+// WinForms SendKeys uses a literal space; {SPACE} is not a supported keyword.
 function chord(keys){
-  assert.ok(["^%{SPACE}","^%n","^%p","^%t"].includes(keys));
-  const result=spawnSync("powershell.exe",["-NoProfile","-NonInteractive","-Command",`Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')`],{encoding:"utf8",timeout:10000,windowsHide:true});
-  assert.equal(result.status,0,"native shortcut input failed");
+  assert.ok(["^% ","^%n","^%p","^%t"].includes(keys));
+  const result=spawnSync("powershell.exe",["-NoProfile","-NonInteractive","-Sta","-Command",`$ErrorActionPreference='Stop'; Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('${keys}')`],{encoding:"utf8",timeout:10000,windowsHide:true});
+  if(result.status!==0)evidence.nativeInputFailure={status:result.status,error:result.error?.code??null,stderr:(result.stderr??"").slice(-1800)};
+  assert.equal(result.status,0,"native shortcut input failed (see nativeInputFailure)");
 }
 function assemble(directory,products=catalog.products){
   mkdirSync(directory,{recursive:true});
@@ -181,7 +183,7 @@ try {
   config.accelerator="Ctrl+Alt+Space";const shortcuts=await suite(center,{kind:"configureShortcuts",config});assert.equal(shortcuts.registration,"registered");
   await assert.rejects(()=>suite(center,{kind:"configureShortcuts",config:{...config,accelerator:"Ctrl+C"}}));
   evidence.checks.nativeShortcutRegistrationAndForbiddenBinding=true;
-  chord("^%{SPACE}");await waitForRenderer(center.cdp,"!!document.querySelector('#launcher-search')","native Launcher shortcut did not reach its owner");
+  chord("^% ");await waitForRenderer(center.cdp,"!!document.querySelector('#launcher-search')","native Launcher shortcut did not reach its owner");
   await center.cdp.evaluate("(()=>{const input=document.querySelector('#launcher-search');input.focus();input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true,data:'한'}));})()");
   const beforeCapture=(await suite(knowledge,{kind:"pending"})).length;chord("^%n");await delay(300);assert.equal((await suite(knowledge,{kind:"pending"})).length,beforeCapture);
   await center.cdp.evaluate("document.querySelector('#launcher-search').dispatchEvent(new CompositionEvent('compositionend',{bubbles:true,data:'한'}))");
