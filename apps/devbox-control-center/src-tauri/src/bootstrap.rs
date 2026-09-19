@@ -284,6 +284,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--prepare-install",
             "--recover-install",
             "--restart-install",
+            "--open-install",
         ]
         .iter()
         .any(|mode| arguments[0] == *mode)
@@ -299,6 +300,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         recover_install(&root, &payload, &image)
     } else if arguments[0] == "--restart-install" {
         restart_install(&root, &payload, &image)
+    } else if arguments[0] == "--open-install" {
+        open_install(&root, &payload, &image)
     } else {
         stage_impl(&root, &payload, &image)
     }
@@ -338,10 +341,35 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     let payload = Payload::parse(&payload_bytes)?;
     verify_payload_owner(&payload, own_image)?;
     let payload_revision = hash(&payload_bytes);
+    let mut created_root = None;
+    // NSIS delegates even the first directory creation to this native policy.
+    // In particular, it cannot create an unreviewed UNC/junction target first.
+    if fs::symlink_metadata(root).is_err_and(|error| error.kind() == std::io::ErrorKind::NotFound) {
+        let candidate = devbox_manager_lib::core::custom_root::preview_new_suite_directory(root)
+            .map_err(|_| "bootstrap_root_unsafe")?;
+        let parent = candidate.parent().ok_or("bootstrap_root_unsafe")?;
+        #[cfg(windows)]
+        let _parents = crate::suite::platform::component_scope::pin_directories(parent)?;
+        let (_parent, identity) =
+            open_filesystem_object(parent, true).map_err(|_| "bootstrap_root_unavailable")?;
+        fs::create_dir(&candidate).map_err(|_| "bootstrap_root_unavailable")?;
+        created_root = Some(
+            open_filesystem_object(&candidate, true).map_err(|_| "bootstrap_root_unavailable")?,
+        );
+        if filesystem_identity(parent, true).map_err(|_| "bootstrap_root_changed")? != identity {
+            return Err("bootstrap_root_changed");
+        }
+    }
     let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
         .map_err(|_| "bootstrap_root_unsafe")?;
     let (_root, root_identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    if created_root
+        .as_ref()
+        .is_some_and(|(_, identity)| *identity != root_identity)
+    {
+        return Err("bootstrap_root_changed");
+    }
     #[cfg(windows)]
     let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
     let owner_path = root.join("suite-owner.json");
@@ -757,4 +785,115 @@ fn restart_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     drop(store);
     drop(gate);
     prepare_install(&root, payload_path, own_image)
+}
+
+/// Open only this verified installation's Control Center. The helper does not
+/// route to a guessed executable, grant write authority, or start other owners.
+#[cfg(windows)]
+fn open_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
+    use std::os::windows::process::CommandExt;
+    let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&bytes)?;
+    verify_payload_owner(&payload, own_image)?;
+    let payload_revision = hash(&bytes);
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let (_root, identity) =
+        open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    if owner.schema_version != 1
+        || owner.root_identity != identity.components()
+        || owner.payload_revision != payload_revision
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let manifest = product_contract::installation::Manifest::parse(
+        &read(&root.join("devbox-installation.json"), 64 * 1024)?,
+        &payload.suite_version,
+    )?;
+    if manifest.installation_id != owner.installation_id
+        || manifest.generation != owner.generation
+        || manifest.members.len() != payload.products.len()
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    for package in &payload.products {
+        let name = format!("devbox-{}.exe", package.id);
+        let asset = package
+            .files
+            .iter()
+            .find(|file| file.name == name)
+            .ok_or("bootstrap_payload_incomplete")?;
+        if !manifest.members.iter().any(|member| {
+            member.product == package.id
+                && member.sha256 == asset.sha256
+                && member.executable
+                    == format!(
+                        "generations/{}/products/{}/{name}",
+                        owner.generation, package.id
+                    )
+        }) {
+            return Err("bootstrap_manifest_invalid");
+        }
+    }
+    let marker: product_contract::activation::Activation =
+        serde_json::from_slice(&read(&root.join("devbox-activation.json"), 4096)?)
+            .map_err(|_| "bootstrap_marker_invalid")?;
+    marker.validate(&manifest)?;
+    if marker.operation_id != owner.operation_id {
+        return Err("bootstrap_owner_changed");
+    }
+    if marker.phase == product_contract::activation::Phase::Health {
+        return Err("bootstrap_health_pending");
+    }
+    let image = root.join(
+        &manifest
+            .members
+            .iter()
+            .find(|member| member.product == "control-center")
+            .ok_or("bootstrap_payload_incomplete")?
+            .executable,
+    );
+    let scope = crate::suite::platform::component_scope::CapturedScope::capture(
+        &root,
+        "control-center",
+        &image,
+        &payload.suite_version,
+    )?;
+    let (_, image, _) = scope.member("control-center")?;
+    let mut command = std::process::Command::new(image);
+    command
+        .arg("--suite-setup")
+        .current_dir(image.parent().ok_or("bootstrap_manifest_invalid")?)
+        .creation_flags(0x08000000)
+        .stdin(std::process::Stdio::null())
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null());
+    for (name, _) in std::env::vars_os() {
+        if name
+            .to_string_lossy()
+            .to_ascii_uppercase()
+            .starts_with("WEBVIEW2_")
+        {
+            command.env_remove(name);
+        }
+    }
+    // All captured image/directory handles remain pinned through native spawn.
+    scope.revalidate()?;
+    // A Windows GUI process intentionally outlives setup. Null stdio prevents
+    // it retaining NSIS's helper-output pipe after this process returns.
+    #[allow(clippy::zombie_processes)]
+    let _child = command.spawn().map_err(|_| "bootstrap_launch_failed")?;
+    Ok(StageResult {
+        state: "controlCenterLaunched",
+        source_sha: payload.source_sha,
+        suite_version: payload.suite_version,
+        payload_revision,
+    })
+}
+#[cfg(not(windows))]
+fn open_install(_: &Path, _: &Path, _: &Path) -> Result<StageResult> {
+    Err("bootstrap_windows_required")
 }

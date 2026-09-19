@@ -306,28 +306,51 @@ pub fn run_with(
     mut context: tauri::Context<tauri::Wry>,
     configure: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>,
 ) -> tauri::Result<()> {
-    if cfg!(debug_assertions) {
+    let setup = product == "control-center"
+        && std::env::args_os().any(|argument| argument == "--suite-setup");
+    let initial_route = if setup {
+        // The installer supplies no route or data authority. Derive the review
+        // surface from this executable's verified generation marker instead.
+        let executable = std::env::current_exe()?.canonicalize()?;
+        let marker =
+            installation::activation(&executable, &context.package_info().version.to_string())
+                .map_err(std::io::Error::other)?
+                .ok_or_else(|| std::io::Error::other("suite_setup_requires_installation"))?;
+        Some(
+            match marker.phase {
+                product_contract::activation::Phase::Import => "migration",
+                product_contract::activation::Phase::Recover => "recovery",
+                product_contract::activation::Phase::Committed => "products",
+                product_contract::activation::Phase::Health => {
+                    return Err(std::io::Error::other("suite_health_pending").into())
+                }
+            }
+            .to_owned(),
+        )
+    } else if cfg!(debug_assertions) {
         let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
         let routes: Vec<&str> = catalog
             .features
             .iter()
-            .filter(|f| f.owner == product)
-            .map(|f| f.route.as_str())
+            .filter(|feature| feature.owner == product)
+            .map(|feature| feature.route.as_str())
             .collect();
-        if let Some(route) = product_contract::development_route(std::env::args().skip(1), &routes)
+        product_contract::development_route(std::env::args().skip(1), &routes)
             .map_err(std::io::Error::other)?
-        {
-            // Select the relative application URL before creating WebView2.
-            // Reading its current URL during setup can observe about:blank.
-            let window = context
-                .config_mut()
-                .app
-                .windows
-                .iter_mut()
-                .find(|window| window.label == "main")
-                .ok_or_else(|| std::io::Error::other("missing main window"))?;
-            window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
-        }
+    } else {
+        None
+    };
+    if let Some(route) = initial_route {
+        // Select the local URL before creating WebView2; about:blank during
+        // setup cannot supply navigation or command authorization.
+        let window = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|window| window.label == "main")
+            .ok_or_else(|| std::io::Error::other("missing main window"))?;
+        window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
     }
     if product == "workspace" && std::env::args_os().any(|arg| arg == "--background") {
         if let Some(window) = context

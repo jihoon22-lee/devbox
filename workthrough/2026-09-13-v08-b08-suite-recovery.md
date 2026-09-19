@@ -196,3 +196,19 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   archived Recovered journal과 Recover marker가 모두 일치할 때만 허용한다.
 - 최소 Rust check 1.829s PASS. archive read-back/동일 slot 거부/사용자 데이터 보존 회귀
   fixture를 준비했으며 PR 완료 시 실행한다. 실제 setup/업데이트/활성화 수용은 아직 남아 있다.
+
+### Suite setup 준비 진입점
+
+- `build-suite-installer.py`는 기존 네 ZIP/private payload와 일치하는 bootstrap을 확인하고
+  Windows NSIS 준비 진입점을 생성한다. `--emit-only`로 source를 검토할 수 있으며 실제
+  compile은 Windows의 명시적 NSIS 경로를 요구한다. 현재 public release에는 연결하지 않는다.
+  [NSIS Modern UI](https://nsis.sourceforge.io/Docs/Modern%20UI%202/Readme.html)의 finish-run
+  function으로 Control Center 열기를 선택한다. 화면은 활성화 완료가 아니라 준비 완료라고 표시한다.
+- 설치 폴더의 첫 생성도 helper가 수행한다. 기존 plain ancestor와 prospective root를 먼저
+  확인하고 native directory identity를 유지한다. NSIS가 검증 전 UNC/junction 폴더를 만들지 않는다.
+- `--open-install`은 root/payload/manifest/marker를 대조하고 pinned member만 실행한다.
+  WebView override와 stdio를 전달하지 않아 다른 제품의 프로필이나 NSIS pipe를 물려주지 않는다.
+  제품의 `--suite-setup`은 release에서도 native marker로 migration/recovery/products 화면을
+  선택한다. 일반 `--route` 개발 경계나 command 권한은 확대하지 않는다.
+- Python AST/diff 및 최소 Rust check PASS (`b08-setup-final-types.log`). 실제 NSIS compile,
+  helper launch, ARP/shortcuts/uninstall/update와 health/commit은 B08 전체 수용에 남아 있다.
