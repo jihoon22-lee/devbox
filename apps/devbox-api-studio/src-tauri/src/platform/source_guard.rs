@@ -83,7 +83,12 @@ pub fn acquire(
             512 * 1024,
         )?
         .ok_or("migration_backup_missing")?;
-        if format!("{:x}", Sha256::digest(raw.as_bytes())) != *revision {
+        if Sha256::digest(raw.as_bytes())
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+            != *revision
+        {
             return Err("migration_backup_changed".into());
         }
         let receipt = serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
