@@ -627,3 +627,17 @@ boundary; normal user project selection already refreshes the UI explicitly.
   full manual/non-draft acceptance remains available. Existing hosted-only guards,
   artifact provenance and fixture cleanup remain enforced. JS/YAML syntax and
   diff checks only before commit; all B06 code/fixture edits are now complete.
+
+- Focused run35446176521 built the corrected binary and reached an actual Zellij
+  shell, then failed during fixture output polling. Preserve native string errors
+  from CDP instead of reducing them to `Uncaught (in promise)`. The fresh distro
+  now disables Zellij's first-run about/tip overlay in its own synthetic home; no
+  product/user configuration is changed. Correct the outer fixture's result check
+  to require the declared scope rather than incorrectly rejecting partial scopes.
+- Draft pushes now skip general CI as well as full native acceptance. The final
+  ready-for-review event runs the existing required checks; manual/weekly audits
+  and fail-closed scope detection stay intact. Replacing job-level `always()` with
+  cancellation-aware conditions stops superseded compiler runs from continuing
+  after cancellation. Release verifier conditions are unchanged.
+- Only syntax/diff checks for these collected script/workflow fixes. The retained
+  run35446176521 Workspace binary is reused for remaining hosted execution.

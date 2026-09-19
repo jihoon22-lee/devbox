@@ -95,6 +95,10 @@ with tarfile.open(archive) as source:
     target=pathlib.Path('/usr/local/bin/zellij')
     with target.open('xb') as destination: destination.write(source.extractfile(member).read())
     target.chmod(0o755)
+# Fixture-owned home only: first-run about/tip overlays must not consume shell input.
+config=pathlib.Path('/root/.config/zellij/config.kdl')
+config.parent.mkdir(parents=True,exist_ok=True)
+with config.open('x') as output: output.write('show_startup_tips false\nshow_release_notes false\n')
 if subprocess.run(['/usr/bin/docker','info'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode:
     log=open('/tmp/devbox-fixture-dockerd.log','xb')
     subprocess.Popen(['/usr/sbin/dockerd','--host=unix:///var/run/docker.sock','--storage-driver=vfs'],stdout=log,stderr=log,start_new_session=True)
@@ -117,7 +121,7 @@ for command in [['/usr/bin/tmux','-V'],['/usr/local/bin/zellij','--version'],['/
   @{stage='actual-windows-wsl2-workspace';elapsedSeconds=$watch.Elapsed.TotalSeconds;result=$test}|ConvertTo-Json -Depth 5 -Compress
   if ($test.exit -ne 0 -or $test.timedOut) {throw 'Owned WSL Runtime fixture failed'}
   $result=$test.output|ConvertFrom-Json
-  if ($result.result -ne 'pass' -or -not $result.appExited -or -not $result.ownedDataRemoved -or -not $result.acceptanceComplete) {throw 'Owned WSL Runtime result or cleanup missing'}
+  if ($result.result -ne 'pass' -or -not $result.appExited -or -not $result.ownedDataRemoved -or $result.scope -ne $Scope -or ($Scope -eq 'all' -and -not $result.acceptanceComplete)) {throw 'Owned WSL Runtime result scope or cleanup missing'}
 } finally {
   $appOwner=Join-Path $directory 'app-owner.json'
   if (Test-Path -LiteralPath $appOwner) {
