@@ -618,3 +618,12 @@ boundary; normal user project selection already refreshes the UI explicitly.
   CONVENTIONS directly. Keep the release-specific skill and existing data/host
   protection and final acceptance requirements. Documentation-only diff review;
   no tests/builds or new CI run for this policy edit.
+
+- Replace repeated full native runs for the Zellij fix with an explicit focused
+  completion lane: build only Workspace (no installer), execute Zellij reconnect,
+  container actions/Logs and stopped-query no-start. Preserve already-passing
+  Runtime/Sessions/tmux/other-product evidence. Record partial scope explicitly.
+  Draft PR pushes no longer automatically start the full native acceptance suite;
+  full manual/non-draft acceptance remains available. Existing hosted-only guards,
+  artifact provenance and fixture cleanup remain enforced. JS/YAML syntax and
+  diff checks only before commit; all B06 code/fixture edits are now complete.

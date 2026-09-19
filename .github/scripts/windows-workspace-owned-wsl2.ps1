@@ -1,4 +1,4 @@
-param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets,[string]$ArtifactSourceSha,[string]$ArtifactRunId)
+param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets,[string]$ArtifactSourceSha,[string]$ArtifactRunId,[ValidateSet('all','remaining')][string]$Scope='all')
 $ErrorActionPreference='Stop'
 # WSL distributions can share host networking. No local/self-hosted opt-out:
 # daemon provisioning may change iptables even before a test container starts.
@@ -112,7 +112,7 @@ for command in [['/usr/bin/tmux','-V'],['/usr/local/bin/zellij','--version'],['/
   if ($provision.exit -ne 0) {throw 'Owned fixture tool setup failed'}
   $watch=[Diagnostics.Stopwatch]::StartNew()
   $node=(Get-Command node.exe -ErrorAction Stop).Source
-  $test=Run-Process $node @($NodeScript,$owner,$AppArtifact,$SourceSha,$RunId,$InstalledTargets,$ArtifactSourceSha,$ArtifactRunId) 600000
+  $test=Run-Process $node @($NodeScript,$owner,$AppArtifact,$SourceSha,$RunId,$InstalledTargets,$ArtifactSourceSha,$ArtifactRunId,$Scope) 600000
   $watch.Stop()
   @{stage='actual-windows-wsl2-workspace';elapsedSeconds=$watch.Elapsed.TotalSeconds;result=$test}|ConvertTo-Json -Depth 5 -Compress
   if ($test.exit -ne 0 -or $test.timedOut) {throw 'Owned WSL Runtime fixture failed'}
