@@ -563,3 +563,20 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   operation evidence. This correction still needs hosted native execution.
 - Commit checks: JavaScript syntax and diff only; preserved completed native and
   local acceptance evidence. No Docker/network/service operations run locally.
+
+### 2026-09-19 file receive continuation
+
+- General CI35436813484 passed. Native35436813480 passed all earlier suite
+  connection/review/cold-launch scenarios, Editor→Transforms Unicode selection,
+  cancellation/source preservation and stale selection denial. File→Editor then
+  failed after route navigation. These successful earlier checks are preserved.
+- The native receive response converts ProjectContext through a JSON value whose
+  key order differs from typed shell descriptions. JSON-string equality incorrectly
+  rejected the same context, and its contextKey would also differ from Files.
+  Compare identity fields with the existing context comparator and pass the live
+  editor context key. Three focused regressions passed (2.338s): reordered keys,
+  actual revision change rejection and standalone approved file open.
+- Update the aggregate API fixture's remaining old `delivery=unavailable`
+  expectation to the implemented `stored` draft contract. The independent API
+  workflow already used this contract. Preserve file-open UI alerts in native
+  failure evidence. Script syntax/diff checked; final native acceptance pending.

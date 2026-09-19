@@ -136,7 +136,8 @@ try {
   const found=await until(async()=>{const current=await domain(knowledge,"knowledge.search","source_poll",{generation:query.generation});return current.rows.find(row=>row.reference&&row.availability==="available");},"native indexed file reference missing");
   const fileReceipt=await domain(knowledge,"knowledge.opener","open_in",{appId:"devbox-workspace",reference:found.reference});
   await review(workspace,fileReceipt);
-  await waitForRenderer(workspace.cdp,"document.querySelector('.doc-host')?.textContent?.includes('synthetic suite selection')","Indexed file did not reach Editor");
+  try { await waitForRenderer(workspace.cdp,"document.querySelector('.doc-host')?.textContent?.includes('synthetic suite selection')","Indexed file did not reach Editor"); }
+  catch(error){evidence.fileOpenState=await workspace.cdp.evaluate("({alerts:[...document.querySelectorAll('[role=alert]')].map(node=>node.textContent),text:document.querySelector('.workspace-feature-files')?.textContent?.slice(0,4000)})");throw error;}
   const afterFile=(await workspace.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')")).context;
   assert.deepEqual(afterFile,projects[0].context);evidence.checks.indexedFileRevalidatedWithoutChangingProject=true;
   await workspace.cdp.evaluate("[...document.querySelectorAll('.cm-content')].find(node=>node.getBoundingClientRect().width>0).focus()");

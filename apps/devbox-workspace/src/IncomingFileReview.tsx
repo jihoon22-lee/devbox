@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from "react";
 import {useIncomingReview} from "@devbox/product-shell/incoming";
 import {openReceivedFile} from "@devbox/product-shell/commands";
+import {sameRuntimeContext} from "./runtimeNavigation";
 import type {Description,ProjectContext} from "@devbox/product-shell/api";
 interface Open {id:string;contextKey:string;path:string;line:null;receivedReference:string}
 export default function IncomingFileReview({description,onOpen}:{description:Description;onOpen:(request:Open)=>void}){
@@ -14,8 +15,8 @@ export default function IncomingFileReview({description,onOpen}:{description:Des
     let active=true;setBusy(true);setIssue("");
     void openReceivedFile(description,"files",reference).then(value=>{
       if(!active)return;
-      if(JSON.stringify(value.context)!==JSON.stringify(current.current.context??null))throw new Error("context changed");
-      onOpen({id:incoming.operationId,contextKey:JSON.stringify(value.context),path:value.path,line:null,receivedReference:reference});
+      if(!sameRuntimeContext(value.context,current.current.context??null))throw new Error("context changed");
+      onOpen({id:incoming.operationId,contextKey:JSON.stringify(current.current.context??null),path:value.path,line:null,receivedReference:reference});
     }).catch(()=>{if(active)setIssue("원본 파일·연결·현재 작업 폴더를 확인하지 못했습니다. WSL 파일은 해당 작업 폴더를 선택한 뒤 다시 확인해 주세요. 기존 편집 내용은 유지됩니다.");}).finally(()=>{if(active)setBusy(false);});
     return()=>{active=false;};
   },[description,incoming,reference,retry,onOpen]);
