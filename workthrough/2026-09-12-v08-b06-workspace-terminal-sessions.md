@@ -458,3 +458,13 @@ old WSL task context in the renderer although native fixture cleanup had restore
 the original Windows project. The captured renderer shows Native WSL task fixture
 and a disconnected LSP panel. Reload the closed editor's shell at that fixture
 boundary; normal user project selection already refreshes the UI explicitly.
+
+### 2026-09-19 재개: terminal fixture startup 경계
+
+- `2b1a442` 일반 CI 전체 PASS를 보존한다. Windows run `34743955794`는
+  초기 PTY 출력 probe에서 실패했고, 격리 WSL2 job은 선행 실패로 미실행이다.
+- 세션 등록만으로 WSL interactive shell 준비가 끝났다고 간주하던 fixture를 수정했다.
+  첫 명령은 소유한 bash fixture의 prompt 관찰 후 한 번 전송한다. 실패 raw output은
+  임시 설치 폴더 대신 업로드되는 evidence 디렉터리에 남긴다.
+- 변경 확인: JS syntax 및 diff 검사. Windows 실패 범위는 다음 hosted 실행에서 확인한다.
+  로컬 Docker/WSL provisioning 또는 네트워크 변경은 수행하지 않았다.

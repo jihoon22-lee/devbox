@@ -152,10 +152,25 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
           return stripVTControlCharacters(raw).includes(marker);
         },"PTY probe did not arrive: "+marker);
       } catch(error) {
-        writeFileSync(path.join(directory,"terminal-output-failure.json"),JSON.stringify({marker,cursor,raw},null,2));
+        writeFileSync(path.join("product-foundation-evidence","terminal-output-failure.json"),JSON.stringify({marker,cursor,raw},null,2));
         throw error;
       }
     };
+    // A registered PTY is not yet an interactive shell: wsl.exe may still be
+    // initializing its console and discard early input. Wait for the owned
+    // fixture's bash prompt before issuing the first (single) probe command.
+    let startupCursor=0,startupOutput="";
+    try {
+      await until(async()=>{
+        const batch=await invoke("terminal_output",{sessionId:nativeId,after:startupCursor});
+        startupCursor=batch.cursor;
+        startupOutput=(startupOutput+batch.frames.map(frame=>frame.data).join("")).slice(-512*1024);
+        return /[#$] /.test(stripVTControlCharacters(startupOutput));
+      },"Owned fixture shell did not become interactive");
+    } catch(error) {
+      writeFileSync(path.join("product-foundation-evidence","terminal-startup-failure.json"),JSON.stringify({cursor:startupCursor,raw:startupOutput},null,2));
+      throw error;
+    }
     await outputProbe("synthetic-b06-output");
     success(await terminal("focus_terminal",{id:windowId}));
     await until(async()=>(await invoke("terminal_window_policy")).focused,"Companion did not receive native focus");
