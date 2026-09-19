@@ -580,3 +580,14 @@ boundary; normal user project selection already refreshes the UI explicitly.
   conversion with an explicit slice type. A minimal metadata-only compile of the
   exact production filter and adapter passed; it runs no PTY or WSL process.
   The filtering algorithm/native passing evidence is unchanged.
+
+- Focused retained-artifact run35444297373 passed all native WSL tasks/Problems
+  routing, Session lifecycle/PTY/reload/SIGINT and tmux detach/reattach. The earlier
+  WSL exit4294967295 did not recur. The next failure was the first Zellij shell
+  command: this fixture sent input as soon as a PTY existed, without waiting for
+  the shell. Add the same prompt readiness gate used by the passing native case,
+  and retain raw multiplexer output on any failure. Never retry or clear input.
+- Continue fixture diagnosis on `chore/workspace/wsl2-acceptance`, using original
+  artifact35441341492 and focused hosted dispatch. This avoids triggering full
+  PR compilation/native jobs for each fixture-only diagnosis. Merge the proven
+  fixture changes back into B06 once the remaining WSL2 gates pass.
