@@ -54,6 +54,9 @@ def prepare(staging, bootstrap):
         (payload_path, "suite-payload.json"), (bootstrap, "devbox-suite-bootstrap.exe"),
         *[(path, asset["name"]) for path, asset in inputs[1:-1]],
     ])
+    uninstall_files = "\n".join(f"  File {literal('/oname=' + name)} {literal(path.resolve())}" for path, name in [
+        (payload_path, "suite-payload.json"), (bootstrap, "devbox-suite-bootstrap.exe"),
+    ])
     source = r'''; Generated from the exact private payload. No legacy uninstaller is invoked.
 Unicode true
 ManifestDPIAware true
@@ -75,6 +78,9 @@ SetCompressor /SOLID lzma
 !define MUI_FINISHPAGE_RUN_TEXT "Control Center에서 계속"
 !define MUI_FINISHPAGE_RUN_FUNCTION OpenControlCenter
 !insertmacro MUI_PAGE_FINISH
+!define MUI_UNCONFIRMPAGE_TEXT_TOP "Devbox Suite의 네 제품을 제거합니다. 사용자 데이터, 이전 원본과 보존본은 유지됩니다. 먼저 네 제품을 모두 닫아 주세요."
+!insertmacro MUI_UNPAGE_CONFIRM
+!insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "Korean"
 Section "Suite 준비"
   InitPluginsDir
@@ -88,6 +94,30 @@ __PAYLOAD_FILES__
     SetErrorLevel 1
     Abort "설치를 준비하지 못했습니다. 기존 파일과 데이터는 보존됩니다."
   ${EndIf}
+  IfFileExists "$INSTDIR\Uninstall.exe" registered_uninstaller
+  WriteUninstaller "$INSTDIR\Uninstall.exe"
+  registered_uninstaller:
+  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --register-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint $1
+    SetErrorLevel 1
+    Abort "설치 항목과 바로가기를 등록하지 못했습니다. 준비된 패키지와 데이터는 보존됩니다."
+  ${EndIf}
+SectionEnd
+Section "Uninstall"
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+__UNINSTALL_FILES__
+  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --uninstall-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
+  Pop $0
+  Pop $1
+  ${If} $0 != 0
+    DetailPrint $1
+    SetErrorLevel 1
+    Abort "제거를 완료하지 못했습니다. 네 제품을 모두 닫은 뒤 다시 시도하세요. 사용자 데이터는 보존됩니다."
+  ${EndIf}
 SectionEnd
 Function OpenControlCenter
   nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --open-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
@@ -97,7 +127,7 @@ Function OpenControlCenter
     MessageBox MB_OK|MB_ICONEXCLAMATION "Control Center를 열지 못했습니다. 준비한 설치 파일과 데이터는 보존됩니다."
   ${EndIf}
 FunctionEnd
-'''.replace("__VERSION__", version).replace("__OUTPUT__", literal(output.resolve())).replace("__PAYLOAD_FILES__", files)
+'''.replace("__VERSION__", version).replace("__OUTPUT__", literal(output.resolve())).replace("__PAYLOAD_FILES__", files).replace("__UNINSTALL_FILES__", uninstall_files)
     with script.open("x", encoding="utf-8-sig", newline="\n") as target:
         target.write(source)
     return script, output, inputs

@@ -14,3 +14,4 @@ pub mod legacy_installation;
 
 pub mod data_checkpoint;
 pub mod data_restore;
+pub mod suite_removal;

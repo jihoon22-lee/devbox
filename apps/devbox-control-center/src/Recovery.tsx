@@ -23,5 +23,5 @@ export default function Recovery({description,route}:ShellContentProps){
   <p>현재 단계: {phases[status.phase??""]??"확인되지 않음"}</p>
   <p>원본 백업 {status.backupCount}개 · 제품 데이터 보존본 {status.dataCheckpointCount??0}개 · 제품별 검증 기록 {status.recordedOwnerCount??0}/4 · 이전 기록 {status.importCount}개 · 구 설치 정리 대기 {status.cleanupPending}개</p>
   {status.failure&&<p role="alert">{status.committed?"새 Suite 활성화는 완료됐지만 구 설치 정리가 남아 있습니다.":"전환을 완료하지 못했습니다. 이전 패키지와 백업을 보존한 상태에서 복구해야 합니다."}</p>}
- </>:!error&&<p role="status">복구 기록을 확인하고 있습니다…</p>}{["products","updates","recovery"].includes(route)&&<Restore description={description} route={route}/>}</section>;
+ </>:!error&&<p role="status">복구 기록을 확인하고 있습니다…</p>}{["products","updates","recovery","migration"].includes(route)&&<Restore description={description} route={route}/>}</section>;
 }

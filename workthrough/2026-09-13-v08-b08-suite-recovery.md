@@ -598,3 +598,29 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   duplicate-action exclusion and pending-operation controls. Frontend typecheck
   passed in 2.838s. Windows-only helper UI/adapters and detailed tests are pending
   the completed B08 PR; no app build or native execution is claimed here.
+
+### New-install activation and Suite installation/removal
+
+- Connect clean first-install activation and explicit post-health commit to the
+  existing helper handoff. Native inventory distinguishes legacy sources/installer
+  entries and four owner observations; the helper still independently enforces
+  those conditions. The migration view now exposes installation progress/actions.
+- Serialize interactive helpers through a separate installation-owned lock so
+  repeated shortcut clicks cannot queue duplicate recovery actions. Retain exact
+  owner/payload/physical root binding before creating that lock.
+- Extend the private NSIS entrypoint with an owned uninstaller. Native registration
+  creates one current-user Suite ARP entry keyed by installation identity and four
+  Start Menu links; it checks existing link targets/arguments and pins the actual
+  generated uninstaller. No legacy registration or uninstaller is repurposed.
+- Add an immutable package-removal plan. Verify every complete package/cache and
+  every remaining file's digest/physical identity before deletion. Missing files
+  support resuming interrupted removal; replaced files stop removal. Keep unlisted
+  files, every data namespace and backup. Delegate only owned link/ARP cleanup to
+  native registration, and retain small ownership/removal records for recovery.
+- Prepared package-removal regressions for partial resume, unknown files, replaced
+  files and traversal. Scoped Linux Rust/test compilation plus frontend typecheck
+  passed together in 9.431s. Windows-only registration/COM/NSIS and detailed tests
+  have not run. The RegDeleteKeyExW flag uses the generated binding's raw u32 type.
+- Source-aware legacy activation/cleanup, installed update/self-update/downgrade,
+  final recovery edge cases, complete Windows fixtures and B08 PR acceptance remain
+  unfinished. This is implementation progress, not permission to close #550.

@@ -17,6 +17,9 @@ type Result<T> = std::result::Result<T, &'static str>;
 mod data_restore;
 #[cfg(windows)]
 pub(crate) mod interactive;
+#[cfg(windows)]
+mod registration;
+mod uninstall;
 fn hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -450,6 +453,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     if arguments.len() != if restore { 4 } else { 3 }
         || ![
             "--stage",
+            "--uninstall-install",
+            "--register-install",
             "--prepare-install",
             "--recover-install",
             "--restart-install",
@@ -487,6 +492,17 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
                 checkpoint,
                 arguments[0].to_str().ok_or("bootstrap_arguments_invalid")?,
             )
+        }
+    } else if arguments[0] == "--uninstall-install" {
+        uninstall::remove(&root, &payload, &image)
+    } else if arguments[0] == "--register-install" {
+        #[cfg(windows)]
+        {
+            registration::register(&root, &payload, &image)
+        }
+        #[cfg(not(windows))]
+        {
+            Err("bootstrap_windows_required")
         }
     } else if arguments[0] == "--prepare-install" {
         prepare_install(&root, &payload, &image)
@@ -789,6 +805,10 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
 
 fn writer_gate(root: &Path, create: bool) -> Result<Lock> {
     let guard = writer_gate_for_restore(root, create)?;
+    if !matches!(fs::symlink_metadata(root.join("uninstall-plan.json")), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Err("bootstrap_uninstall_pending");
+    }
     match fs::symlink_metadata(root.join("suite-data-restore.json")) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(guard),
         _ => Err("bootstrap_data_restore_pending"),

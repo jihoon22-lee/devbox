@@ -29,6 +29,8 @@ The private `devbox-suite-bootstrap` currently implements these Windows operatio
 |---|---|
 | `--stage ROOT PAYLOAD` | Verify exact archives and stage a newly owned product directory |
 | `--prepare-install ROOT PAYLOAD` | Prepare an isolated generation, retained journal and Import marker |
+| `--register-install ROOT PAYLOAD` | Register one current-user Suite entry and four owned Start Menu links after NSIS creates its uninstaller |
+| `--uninstall-install ROOT PAYLOAD` | Remove verified package files, shortcuts and the Suite registration; preserve user stores, backups and unknown files |
 | `--recover-install ROOT PAYLOAD` | Block and recover an uncommitted first installation while preserving all data and packages |
 | `--restart-install ROOT PAYLOAD` | Start a fresh package generation after that recovery; preserve the old journal and files |
 | `--verify-checkpoints ROOT PAYLOAD` | Verify journal-selected checkpoint identity, exact product file sets and all retained bytes without restoring them |
@@ -61,11 +63,15 @@ Control Center. Preparation and apply run together without reopening a browser
 between the captured preimage and its replacement. After an interrupted swap,
 Control Center's normal entrypoint resumes the helper before creating a WebView.
 Windows acceptance remains in the B08 bundle.
-The private `build-suite-installer.py` wraps preparation in a Windows NSIS entrypoint
-and offers opening Control Center. Its finish page reports preparation, not activation
-completion. This entrypoint is not yet wired into public release, ARP/shortcuts or
-uninstall/update acceptance. These are development operations, not a completed
-public installer or update flow.
+The private `build-suite-installer.py` wraps preparation in a Windows NSIS entrypoint,
+creates its uninstaller and delegates Suite registration and four product shortcuts
+to the verified helper. Its finish page reports preparation, not activation completion.
+Removal runs the embedded helper outside the package tree, checks every planned
+file's digest and physical identity, and can resume a partially removed package.
+Unknown files, user stores and backups remain intact; small removal/ownership records
+remain available for recovery. It never invokes a legacy uninstaller or recursively
+deletes a user-selected directory. Public release, installed update, and Windows
+installer/uninstall acceptance remain unfinished in B08.
 
 Product migration summaries report setup/review/busy state through authenticated
 native owners. They do not authorize activation. Import mode admits only the closed
@@ -110,5 +116,7 @@ preserves closed product data and enters Health. Reopen the products and record
 fresh health in Control Center, close them, then use `--commit-clean-install`
 with the same arguments. Reports expire after five minutes. The helper rechecks
 package ownership and preserves another closed checkpoint before enabling writes.
+The installation/recovery screen now exposes these explicitly reviewed clean-install
+actions and only offers them when native observations indicate no legacy sources.
 These development commands are not yet public installer acceptance. Existing
 legacy data and installed updates require the unfinished source-aware coordinator.

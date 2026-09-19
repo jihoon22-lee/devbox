@@ -34,7 +34,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     let allowed = if restore_inventory || restore_action {
         matches!(
             request.header.route.as_str(),
-            "updates" | "recovery" | "products"
+            "updates" | "recovery" | "products" | "migration"
         ) && request.args.as_object().is_some_and(|args| {
             if restore_inventory {
                 return args.is_empty();
@@ -49,7 +49,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                 return false;
             };
             match action {
-                "snapshot" => id.is_empty(),
+                "snapshot" | "activateClean" | "commitClean" => id.is_empty(),
                 "restore" | "resume" | "commit" | "rollback" => {
                     uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
                 }
