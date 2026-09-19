@@ -372,3 +372,22 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Initial UI typecheck hit the already-fixed B07 callback type; after inheriting
   that fix, four-product TypeScript passed (17.59s). No detailed tests were run.
   Activation coordination and Windows installation acceptance remain unfinished.
+
+### Persist native owner migration evidence (2026-09-19)
+
+- Migration now offers an explicit per-product record action for all four owners.
+  Control Center acquires authenticated native health/mapping summaries and
+  verifies every listed retained backup. Matching summaries, sessions and backup
+  catalogs bracket collection; changed owners, failed/missing backups, deadlines
+  and changed installation journals reject the observation. Renderer arguments
+  contain only the product ID, never a proof or filesystem path.
+- The suite journal stores bounded metadata and the owner's retained mapping
+  digest. Unknown mapping coverage remains unknown. Compare/write prevents a
+  concurrent installation operation from being overwritten; repeated identical
+  observations are idempotent. Recording is limited to Snapshot/Import/Validate
+  and never advances activation or claims fresh legacy-source quiescence.
+- Prepared a regression for phase preservation, unknown mappings, replay, stale
+  journal revisions, foreign backup ownership and rejected busy/recovery states.
+  Control Center Rust/test compilation and TypeScript passed in 10.24s. The
+  Windows-only native coordinator is syntax formatted but awaits B08 Windows
+  compilation/execution; no detailed verification ran during this implementation.

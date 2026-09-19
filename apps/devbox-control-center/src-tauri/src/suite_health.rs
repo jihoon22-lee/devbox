@@ -77,7 +77,7 @@ pub(super) async fn observe(
     }
     serde_json::to_value(report).map_err(|_| "suite_health_invalid")
 }
-pub(super) async fn read(
+pub(crate) async fn read(
     app: tauri::AppHandle,
     product: &str,
     domain: Option<DomainHandler>,
@@ -116,7 +116,7 @@ pub(super) async fn read(
     Ok(serde_json::json!({"nativeStoreReady":report.store_ready(),"report":report}))
 }
 
-pub(super) async fn backups(
+pub(crate) async fn backups(
     app: tauri::AppHandle,
     product: &str,
     domain: Option<DomainHandler>,

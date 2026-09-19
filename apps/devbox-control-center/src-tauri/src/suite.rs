@@ -13,7 +13,7 @@ use std::{
 use tauri::{Manager, State, WebviewWindow};
 #[cfg(windows)]
 #[path = "suite_health.rs"]
-mod health;
+pub(crate) mod health;
 
 pub(crate) type DomainHandler = fn(
     tauri::AppHandle,

@@ -55,6 +55,30 @@ pub struct Backup {
     // No source paths, credentials or raw user records in a shared journal.
     pub source_revision: String,
 }
+/// A retained owner observation, never fresh cutover or activation permission.
+/// Record mappings stay in the owner's journal; the suite pins their digest.
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OwnerEvidence {
+    pub summary: product_contract::migration_status::Summary,
+    pub backups: Vec<product_contract::migration_backup::Verified>,
+}
+impl OwnerEvidence {
+    fn validate(&self, version: &str) -> Result<()> {
+        self.summary.validate(&self.summary.owner, version)?;
+        if self.summary.busy || self.backups.len() > 128 {
+            return Err("suite_owner_busy");
+        }
+        let mut ids = BTreeSet::new();
+        for backup in &self.backups {
+            backup.validate(&self.summary.owner, &backup.id)?;
+            if !ids.insert(&backup.id) {
+                return Err("suite_owner_backup_duplicate");
+            }
+        }
+        Ok(())
+    }
+}
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Journal {
@@ -69,6 +93,8 @@ pub struct Journal {
     #[serde(default)]
     pub data_checkpoints: Vec<super::data_checkpoint::Receipt>,
     pub imports: Vec<ImportReceipt>,
+    #[serde(default)]
+    pub owner_evidence: Vec<OwnerEvidence>,
     pub cleanup_pending: BTreeSet<String>,
     pub committed: bool,
     pub failure: Option<String>,
@@ -119,6 +145,7 @@ impl Journal {
             backup: Vec::new(),
             data_checkpoints: Vec::new(),
             imports: Vec::new(),
+            owner_evidence: Vec::new(),
             cleanup_pending: BTreeSet::new(),
             committed: false,
             failure: None,
@@ -151,6 +178,16 @@ impl Journal {
         }
         if self.committed != matches!(self.phase, Phase::Cleanup | Phase::Complete) {
             return Err("suite_commit_inconsistent");
+        }
+        if self.owner_evidence.len() > PRODUCTS.len() {
+            return Err("suite_owner_evidence_invalid");
+        }
+        let mut owners = BTreeSet::new();
+        for evidence in &self.owner_evidence {
+            evidence.validate(&self.candidate.suite_version)?;
+            if !owners.insert(&evidence.summary.owner) {
+                return Err("suite_owner_evidence_invalid");
+            }
         }
         let mut checkpoints = BTreeSet::new();
         for checkpoint in &self.data_checkpoints {
@@ -199,6 +236,37 @@ impl Journal {
                 return Err("suite_import_invalid");
             }
         }
+        Ok(())
+    }
+    /// Native adapters collect every listed backup and bracket acquisition with
+    /// matching owner summaries. Recording does not advance the phase.
+    pub fn record_owner(&mut self, expected: u64, evidence: OwnerEvidence) -> Result<()> {
+        self.require(expected, self.phase)?;
+        if !matches!(
+            self.phase,
+            Phase::Snapshot | Phase::Import | Phase::Validate
+        ) {
+            return Err("suite_owner_phase_invalid");
+        }
+        evidence.validate(&self.candidate.suite_version)?;
+        let mut next = self.clone();
+        if let Some(old) = next
+            .owner_evidence
+            .iter_mut()
+            .find(|old| old.summary.owner == evidence.summary.owner)
+        {
+            if old == &evidence {
+                return Ok(());
+            }
+            *old = evidence;
+        } else {
+            next.owner_evidence.push(evidence);
+        }
+        next.owner_evidence
+            .sort_by(|a, b| a.summary.owner.cmp(&b.summary.owner));
+        next.revision += 1;
+        next.validate()?;
+        *self = next;
         Ok(())
     }
     /// A closed product-data checkpoint is separate from a legacy source backup.
@@ -386,6 +454,50 @@ mod tests {
             },
         )
         .unwrap();
+    }
+    #[test]
+    fn recorded_owner_backups_remain_observations_and_preserve_unknown_mappings() {
+        let mut j = journal();
+        for _ in 0..3 {
+            advance(&mut j);
+        }
+        let evidence = OwnerEvidence {
+            summary: product_contract::migration_status::Summary::new(
+                "workspace",
+                "0.8.0",
+                false,
+                true,
+                false,
+                b"retained owner state",
+            )
+            .unwrap(),
+            backups: vec![product_contract::migration_backup::Verified {
+                owner: "workspace".into(),
+                id: "source-1".into(),
+                acquisition: "stable-json-files/v1".into(),
+                bytes: 42,
+                schema: 1,
+                sha256: "a".repeat(64),
+            }],
+        };
+        j.record_owner(j.revision, evidence.clone()).unwrap();
+        assert_eq!(j.phase, Phase::Snapshot);
+        assert!(!j.committed);
+        assert!(j.owner_evidence[0].summary.mappings.is_none());
+        let revision = j.revision;
+        j.record_owner(j.revision, evidence.clone()).unwrap();
+        assert_eq!(j.revision, revision);
+        let saved = j.clone();
+        let mut changed = evidence.clone();
+        changed.summary.busy = true;
+        assert!(j.record_owner(j.revision, changed).is_err());
+        let mut foreign = evidence.clone();
+        foreign.backups[0].owner = "knowledge".into();
+        assert!(j.record_owner(j.revision, foreign).is_err());
+        assert!(j.record_owner(revision - 1, evidence.clone()).is_err());
+        assert_eq!(j, saved);
+        j.fail(j.revision, "fixture_failure").unwrap();
+        assert!(j.record_owner(j.revision, evidence).is_err());
     }
     #[test]
     fn crash_recovery_never_activates_uncommitted_writers_and_cleanup_failure_keeps_commit() {

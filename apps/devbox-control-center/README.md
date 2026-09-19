@@ -62,7 +62,10 @@ Updates and Recovery can read fresh native package/shell/store observations from
 all four approved product owners. The probe never launches products or user work;
 pending imports remain unready. Renderer parity, source backup and activation
 commit are separate gates.
-Owner backup/import coordination, activation health/commit, installed update/downgrade,
+Migration can record each owner’s authenticated summary and verified retained
+backups into the suite journal. A changing session/catalog or failed backup leaves
+the journal unchanged. These retained observations do not authorize cutover.
+Fresh source quiescence, activation health/commit, installed update/downgrade,
 shortcuts/ARP/uninstall and reviewed legacy cleanup remain part of B08's unfinished
 implementation. See the [B08 workthrough](../../workthrough/2026-09-13-v08-b08-suite-recovery.md)
 for actual evidence and remaining acceptance.

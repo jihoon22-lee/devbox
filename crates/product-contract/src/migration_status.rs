@@ -2,7 +2,7 @@
 //! permit to commit an installation or delete its sources/backups.
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Summary {
     pub schema_version: u32,
@@ -17,7 +17,7 @@ pub struct Summary {
 }
 /// A digest of the owner's retained mapping ledger. It contains no record IDs,
 /// paths or content, and does not certify source backup or activation readiness.
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct MappingSummary {
     pub record_count: u64,

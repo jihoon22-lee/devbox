@@ -31,3 +31,6 @@ pub mod bootstrap;
 #[cfg(windows)]
 #[path = "platform/legacy_installer.rs"]
 mod legacy_installer;
+
+#[cfg(windows)]
+mod migration_evidence;

@@ -17,16 +17,28 @@ struct Response {
 }
 #[tauri::command]
 async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Response, Problem> {
+    let record_owner = request.method == "record_migration_owner";
     let inventory = request.method == "suite_inventory";
     let recovery = request.method == "suite_recovery";
     let legacy = request.method == "legacy_inventory";
-    let component = if inventory || recovery || legacy {
+    let component = if inventory || recovery || legacy || record_owner {
         "control-center.delivery"
     } else {
         "control-center.tools"
     };
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
-    let allowed = if inventory || recovery || legacy {
+    let allowed = if record_owner {
+        request.header.route == "migration"
+            && request.args.as_object().is_some_and(|args| {
+                args.len() == 1
+                    && args
+                        .get("product")
+                        .and_then(Value::as_str)
+                        .is_some_and(|product| {
+                            product_contract::installation::PRODUCTS.contains(&product)
+                        })
+            })
+    } else if inventory || recovery || legacy {
         matches!(
             request.header.route.as_str(),
             "products" | "updates" | "components" | "migration" | "recovery"
@@ -41,7 +53,18 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             code: ProblemCode::Unauthorized,
         });
     }
-    let value = if legacy {
+    let value = if record_owner {
+        #[cfg(windows)]
+        let result = crate::migration_evidence::record(
+            window.app_handle().clone(),
+            request.args["product"].as_str().unwrap_or_default().into(),
+            request.header.deadline_ms,
+        )
+        .await;
+        #[cfg(not(windows))]
+        let result: Result<Value, &'static str> = Err("suite_windows_required");
+        result.map_err(str::to_owned)
+    } else if legacy {
         let app = window.app_handle().clone();
         tauri::async_runtime::spawn_blocking(move || {
             let manager = devbox_manager_lib::component::legacy_installations(&app).ok();
@@ -68,7 +91,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                         let recovery = journal.recovery()?;
                         Ok(serde_json::json!({"state":"recorded", "phase":journal.phase,
                             "committed":journal.committed,"recovery":recovery,
-                            "backupCount":journal.backup.len(),"dataCheckpointCount":journal.data_checkpoints.len(),"importCount":journal.imports.len(),
+                            "backupCount":journal.backup.len(),"dataCheckpointCount":journal.data_checkpoints.len(),"importCount":journal.imports.len(),"recordedOwnerCount":journal.owner_evidence.len(),
                             "cleanupPending":journal.cleanup_pending.len(),"failure":journal.failure}))
                     }
                 }

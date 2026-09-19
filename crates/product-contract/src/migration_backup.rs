@@ -1,13 +1,13 @@
 //! Owner-selected, path-free backup metadata. Verification proves retained bytes,
 //! not a fresh legacy cutover snapshot, complete migration coverage or activation.
 use serde::{Deserialize, Serialize};
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Descriptor {
     pub id: String,
     pub acquisition: String,
 }
-#[derive(Clone, Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Verified {
     pub owner: String,
