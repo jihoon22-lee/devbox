@@ -605,3 +605,15 @@ runtime repair and paged terminal fixture will be rebased into this PR.
 - Node syntax/diff check only for this fixture correction. Native hotkey delivery,
   composition guard and foreign-installation checks remain pending after it.
   Other independent Windows native checks passed in this run; keep that evidence.
+
+### Retain completed native checks and finish fixture isolation (2026-09-19)
+
+- Run35444386766 passed actual native hotkey delivery and WebView composition/
+  modal guards, in addition to all earlier cross-product workflows. The remaining
+  failure preceded the foreign-installation scenario: its identical image name
+  collided with this fixture's own existing WebView CDP startup policy.
+- Retire only the original Control Center's recorded policy after its WebView is
+  running; keep its process and shortcut registration alive for real contention.
+  Add a remaining-only entry that runs foreign-installation and shared surface
+  cases without repeating passed delivery/hotkey scenarios. Final execution is
+  pending; no product behavior changed and no local runtime tests were started.
