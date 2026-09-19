@@ -15,7 +15,8 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));let currentProbe={s
 import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 const networkFixture=requireHostedNetworkFixture();
 assert.equal(process.platform,'win32');
-const [ownerFile,artifact,expectedSource,expectedRun,_installedTargets,artifactSource=expectedSource,artifactRun=expectedRun]=process.argv.slice(2);
+const [ownerFile,artifact,expectedSource,expectedRun,_installedTargets,artifactSource=expectedSource,artifactRun=expectedRun,scope='all']=process.argv.slice(2);
+assert.ok(['all','remaining','containers'].includes(scope));
 assert.match(artifactSource,/^[a-f0-9]{40}$/);assert.match(artifactRun,/^[0-9]+$/);
 assert.equal(expectedRun,networkFixture.runId);
 const json=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
@@ -50,7 +51,7 @@ const wsl=(args,input)=>{
  return result.stdout.trim();
 };
 let child,cdp,policy,confirmed=false,appExited=false,ownedDataRemoved=false;
-const evidence={source:artifactSource,fixtureSource:expectedSource,artifactRun,environment:'github-hosted-windows-wsl2',result:'diagnostic',observations:{}};
+const evidence={source:artifactSource,fixtureSource:expectedSource,artifactRun,environment:'github-hosted-windows-wsl2',result:'diagnostic',scope,observations:{}};
 const success=result=>{if(result.operation.outcome.state!=='succeeded')throw new Error('Native operation failed: '+JSON.stringify(result.operation.outcome));return result.value;};
 try{
  const port=await freePort();policy=windowsProcessIsElevated()?inspectElevatedCdpPolicy(imageName,port):null;if(policy)installElevatedCdpPolicy(policy);
@@ -62,13 +63,19 @@ try{
  assert.ok(ready);const description=await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');assert.equal(description.handshake.installationId,installationId);confirmed=true;
  const call=(component,method,args={})=>cdp.evaluate(workspaceRequestExpression(component,method,args,29000),{timeoutMs:35000});
  success(await call('workspace.migration','start_empty'));
+ const connectTerminal=id=>connect(port,child,performance.now()+45000,id);
+ if(scope==='all'){
  evidence.observations.runtime=await exerciseRuntimeWslFixture({call,success,distro:owner.name,wsl,wslVersion:2});
  assert.equal(evidence.observations.runtime.listenerCorrelation.state,'passed');
- const connectTerminal=id=>connect(port,child,performance.now()+45000,id);
  evidence.observations.sessions=await exerciseTerminalSessionFixture({cdp,directory,call,success,connectTerminal,distro:owner.name,wsl});
+ }
  evidence.observations.multiplexers=[];
- for(const multiplexer of ["tmux","zellij"])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
- evidence.observations.containers=await exerciseOwnedContainers({cdp,call,success,wsl,distro:owner.name});
+ for(const multiplexer of scope==='all'?["tmux","zellij"]:scope==='remaining'?["zellij"]:[])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
+ evidence.observations.containers=await exerciseOwnedContainers({cdp,call,success,wsl,distro:owner.name,nativeDockerProbe:()=>{
+   const args=['--distribution-id',owner.distroId,'--exec','docker','ps','-a','--no-trunc','--format','{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'];
+   const probe=spawnSync(wslExe,args,{encoding:'utf8',timeout:15000,maxBuffer:65536,windowsHide:true});
+   return {status:probe.status,error:probe.error?.code,stdout:probe.stdout?.slice(-6000),stderr:probe.stderr?.slice(-2000)};
+ }});
  const terminated=spawnSync(wslExe,["--terminate",owner.name],{encoding:"utf8",timeout:30000,windowsHide:true});assert.equal(terminated.status,0);
  const running=()=>{const value=spawnSync(wslExe,["--list","--running","--quiet"],{encoding:"utf16le",timeout:15000,windowsHide:true});assert.equal(value.status,0);return value.stdout.split(/\r?\n/).map(name=>name.trim()).includes(owner.name);};
  assert.equal(running(),false);
@@ -91,4 +98,4 @@ finally{
   writeFileSync(path.join(artifact,'hosted-wsl2-workspace-acceptance.json'),JSON.stringify({...evidence,appExited,ownedDataRemoved},null,2));
  }
 }
-console.log(JSON.stringify({result:'pass',appExited,ownedDataRemoved,acceptanceComplete:true}));
+console.log(JSON.stringify({result:'pass',appExited,ownedDataRemoved,scope,acceptanceComplete:scope==='all'}));

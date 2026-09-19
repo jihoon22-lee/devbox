@@ -52,7 +52,7 @@ export async function connect(port, child, deadline = performance.now() + 30_000
               pending.set(next, { resolve, reject, timer });
               socket.send(JSON.stringify({ id: next, method: "Runtime.evaluate", params: { expression, awaitPromise: true, returnByValue: true } }));
             });
-            if (result.exceptionDetails) throw new Error(`renderer probe failed: ${String(result.exceptionDetails.exception?.description ?? result.exceptionDetails.text).slice(0, 2000)}`);
+            if (result.exceptionDetails) throw new Error(`renderer probe failed: ${String(result.exceptionDetails.exception?.description ?? result.exceptionDetails.exception?.value ?? result.exceptionDetails.text).slice(0, 2000)}`);
             return result.result.value;
           },
         };

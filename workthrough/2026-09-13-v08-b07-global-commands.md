@@ -605,3 +605,45 @@ runtime repair and paged terminal fixture will be rebased into this PR.
 - Node syntax/diff check only for this fixture correction. Native hotkey delivery,
   composition guard and foreign-installation checks remain pending after it.
   Other independent Windows native checks passed in this run; keep that evidence.
+
+### Retain completed native checks and finish fixture isolation (2026-09-19)
+
+- Run35444386766 passed actual native hotkey delivery and WebView composition/
+  modal guards, in addition to all earlier cross-product workflows. The remaining
+  failure preceded the foreign-installation scenario: its identical image name
+  collided with this fixture's own existing WebView CDP startup policy.
+- Retire only the original Control Center's recorded policy after its WebView is
+  running; keep its process and shortcut registration alive for real contention.
+  Add a remaining-only entry that runs foreign-installation and shared surface
+  cases without repeating passed delivery/hotkey scenarios. Final execution is
+  pending; no product behavior changed and no local runtime tests were started.
+- Remaining native execution uses four executable builds without NSIS packaging
+  and only the remaining fixture scope. The previous run did not retain all four
+  binaries, so this lane now preserves them before execution for any continuation.
+  Unrelated native suites and the already-passing hotkey/handoff cases are skipped
+  explicitly; no skipped case is counted as new PASS. All known B07 fixes and
+  fixture changes are complete; only YAML/JS syntax and diff checks before push.
+
+- Run35446742131 reached the foreign installation but the fixture expected an IPC
+  rejection for a shortcut conflict. The native contract intentionally returns a
+  disabled status with `shortcut_other_installation`, preserving the first owner.
+  Assert that exact result, disabled preference, and original owner's registered
+  status; keep the separate foreign project-provider rejection assertion.
+- Reuse this run's retained four binaries for the remaining checks, recording
+  artifact and fixture source separately. No compiler/installer/full native suite
+  is started for this fixture correction. Original build source is checked against
+  the source workflow and retained helper manifest before execution.
+
+### B07 native acceptance complete (2026-09-19)
+
+- Retained-artifact run35448284131 PASS: foreign shortcut registration remains
+  disabled with the expected ownership conflict, original owner stays registered,
+  foreign project-provider access fails, and all four actual product surfaces pass
+  contrast/DPI renderer emulation. All five fixture processes exited. Artifact
+  source ee16bdae/run35446742131; fixture source59179e7f are recorded separately.
+- Combined with run35444386766's native handoff/hotkey/composition passes and
+  earlier independent product/migration/lifecycle/installer passes, B07's planned
+  native scenarios are complete. Physical OS Korean IME/multimonitor remain B09;
+  renderer emulation is not claimed as that evidence.
+- Final required CI runs on ready-for-review after this evidence-only commit.
+  Merge remains conditional on B06 acceptance/merge and successful final CI.

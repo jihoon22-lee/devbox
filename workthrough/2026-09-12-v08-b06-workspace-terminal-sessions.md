@@ -580,3 +580,83 @@ boundary; normal user project selection already refreshes the UI explicitly.
   conversion with an explicit slice type. A minimal metadata-only compile of the
   exact production filter and adapter passed; it runs no PTY or WSL process.
   The filtering algorithm/native passing evidence is unchanged.
+
+- Focused retained-artifact run35444297373 passed all native WSL tasks/Problems
+  routing, Session lifecycle/PTY/reload/SIGINT and tmux detach/reattach. The earlier
+  WSL exit4294967295 did not recur. The next failure was the first Zellij shell
+  command: this fixture sent input as soon as a PTY existed, without waiting for
+  the shell. Add the same prompt readiness gate used by the passing native case,
+  and retain raw multiplexer output on any failure. Never retry or clear input.
+- Continue fixture diagnosis on `chore/workspace/wsl2-acceptance`, using original
+  artifact35441341492 and focused hosted dispatch. This avoids triggering full
+  PR compilation/native jobs for each fixture-only diagnosis. Merge the proven
+  fixture changes back into B06 once the remaining WSL2 gates pass.
+
+### Zellij launch failure and prerequisite completion (2026-09-19)
+
+- Hosted WSL2 run35445061755 captured the concrete failure: Zellij could not
+  find layout `disable-status`. The launch builtin is `disable-status-bar`;
+  `disable-status` is only the setup dump alias in pinned Zellij v0.43.1.
+  Correct the actual launch argv and its regression expectation/documentation.
+  Source: https://github.com/zellij-org/zellij/blob/v0.43.1/zellij-utils/src/input/layout.rs
+- Bring the temporary diagnostic branch's bounded output capture and shell-ready
+  wait into B06. B06 stays open until corrected native multiplexer and remaining
+  container/stopped-query acceptance pass. Prior unrelated passing evidence stands.
+- Finish and accept B06 before completing B07; keep B08 paused. No issue or PR
+  closes merely to reduce the open count. Existing local services remain untouched.
+- Focused Zellij argv regression passed (1 test, 20.388s including compilation).
+  Corrected Windows executable/WSL2 execution remains pending; no local WSL,
+  container, service or network operation was performed.
+
+### Enforce implementation before verification (2026-09-19)
+
+- PR implementation, importer, fixtures and docs must finish before tests, builds,
+  Clippy or native acceptance run. Remove the early defect/design exception.
+  Batch identified failure fixes before rerunning only failed/affected checks.
+  Accumulate intermediate commits locally to avoid repeated automatic CI.
+- Remove redundant general-change and migration-review skills; use AGENTS and
+  CONVENTIONS directly. Keep the release-specific skill and existing data/host
+  protection and final acceptance requirements. Documentation-only diff review;
+  no tests/builds or new CI run for this policy edit.
+
+- Replace repeated full native runs for the Zellij fix with an explicit focused
+  completion lane: build only Workspace (no installer), execute Zellij reconnect,
+  container actions/Logs and stopped-query no-start. Preserve already-passing
+  Runtime/Sessions/tmux/other-product evidence. Record partial scope explicitly.
+  Draft PR pushes no longer automatically start the full native acceptance suite;
+  full manual/non-draft acceptance remains available. Existing hosted-only guards,
+  artifact provenance and fixture cleanup remain enforced. JS/YAML syntax and
+  diff checks only before commit; all B06 code/fixture edits are now complete.
+
+- Focused run35446176521 built the corrected binary and reached an actual Zellij
+  shell, then failed during fixture output polling. Preserve native string errors
+  from CDP instead of reducing them to `Uncaught (in promise)`. The fresh distro
+  now disables Zellij's first-run about/tip overlay in its own synthetic home; no
+  product/user configuration is changed. Correct the outer fixture's result check
+  to require the declared scope rather than incorrectly rejecting partial scopes.
+- Draft pushes now skip general CI as well as full native acceptance. The final
+  ready-for-review event runs the existing required checks; manual/weekly audits
+  and fail-closed scope detection stay intact. Replacing job-level `always()` with
+  cancellation-aware conditions stops superseded compiler runs from continuing
+  after cancellation. Release verifier conditions are unchanged.
+- Only syntax/diff checks for these collected script/workflow fixes. The retained
+  run35446176521 Workspace binary is reused for remaining hosted execution.
+
+- Run35447454066 passed actual Zellij startup, detach/reconnect, fresh PTY and
+  no start-command replay. Preserve that pass. Containers then returned the native
+  unavailable result; capture the precise method/outcome and equivalent read-only
+  Docker listing in the owned VM. Continue only containers/stopped-query against
+  the retained corrected executable, without rerunning the completed multiplexers.
+
+- Run35447762270 identifies the actual remaining defect: container start/list/
+  duplicate receipts passed, but restart hit the ten-second WSL command timeout.
+  Docker's default Linux stop grace is also ten seconds, before restart overhead
+  (https://docs.docker.com/reference/cli/docker/container/restart/).
+- Keep observation commands bounded at ten seconds. Docker mutations receive up
+  to 25 seconds within the original request's remaining budget; deadline elapsed
+  during lease checks counts before spawn. Preserve Docker's stop signal/grace
+  and native target checks. Existing owned container restart/stop fixture is the
+  regression; no local Docker or extra test suite runs.
+- Scoped Workspace compilation passed in 27.984s. The remaining native container
+  fixture now requires a binary containing this timeout correction; unrelated
+  terminal/multiplexer/product passes remain valid.

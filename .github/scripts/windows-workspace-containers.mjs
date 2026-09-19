@@ -1,13 +1,15 @@
 import {requireHostedNetworkFixture} from "./fixture-network-safety.mjs";
 // Real container actions against the daemon in this runner's disposable WSL2 distro.
+import {writeFileSync} from "node:fs";
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
 import {setTimeout as delay} from "node:timers/promises";
-export async function exerciseOwnedContainers({cdp,call,success,wsl,distro}){
+export async function exerciseOwnedContainers({cdp,call,success,wsl,distro,nativeDockerProbe}){
   requireHostedNetworkFixture();
   assert.match(distro,/^DevboxWorkspaceFixture-[a-f0-9]{32}$/);
   const nonce=randomUUID(),root="/tmp/devbox-container-"+nonce,name="devbox-fixture-"+nonce;
-  const terminal=(method,args={})=>call("workspace.terminal",method,args);
+  let stage="prepare",lastOperation;
+  const terminal=async(method,args={})=>{stage=method;const result=await call("workspace.terminal",method,args);lastOperation={method,action:args.action,result};return result;};
   const docker=args=>wsl(["/usr/bin/docker",...args]);
   const until=async(check,message)=>{const end=performance.now()+45000;do{const value=await check();if(value)return value;await delay(200);}while(performance.now()<end);assert.fail(message);};
   let cid,replacement,primary;
@@ -47,7 +49,13 @@ export async function exerciseOwnedContainers({cdp,call,success,wsl,distro}){
     await until(async()=>cdp.evaluate("(document.body.innerText||'').includes('synthetic-container-log')"),"WSL file did not reach the Logs surface");
     await until(async()=>success(await terminal("read_terminal_log"))===null,"Consumed WSL file request remained queued");
     return {realDaemon:true,exactContainerId:true,publishedPorts:true,start:true,restart:true,stop:true,duplicateReceipt:true,replacedNameRejected:true,wslFileToLogsUi:true};
-  }catch(error){primary=error;throw error;}
+  }catch(error){
+    primary=error;
+    const failure={stage,error:String(error),lastOperation};
+    try{failure.nativeDockerProbe=nativeDockerProbe?.(cid);}catch(probeError){failure.probeError=String(probeError);}
+    writeFileSync("product-foundation-evidence/containers-failure.json",JSON.stringify(failure,null,2));
+    throw error;
+  }
   finally{
     const errors=[];
     for(const id of [replacement,cid].filter(Boolean))try{

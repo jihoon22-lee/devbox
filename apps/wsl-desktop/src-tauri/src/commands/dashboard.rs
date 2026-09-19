@@ -7,11 +7,13 @@ use std::sync::Arc;
 use tauri::State;
 use tokio::io::{AsyncRead, AsyncReadExt};
 use tokio::process::{Child, Command};
-use tokio::time::{timeout, Duration};
+use tokio::time::{timeout_at, Duration, Instant};
 
 const MAX_WSL_STDOUT_BYTES: usize = 4 * 1024 * 1024;
 const MAX_WSL_STDERR_BYTES: usize = 64 * 1024;
 const WSL_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
+// Docker normally waits ten seconds for a Linux container before killing it.
+const DOCKER_ACTION_TIMEOUT: Duration = Duration::from_secs(25);
 #[cfg(feature = "standalone")]
 const MAX_WSL_COMMAND_BYTES: usize = 4 * 1024;
 const MAX_DISTRO_BYTES: usize = 128;
@@ -98,9 +100,11 @@ pub async fn docker_action(
     }
     let distro = normalize_distro(&distro).map_err(|_| SAFE_DOCKER_ERROR.to_owned())?;
     let container_id = normalize_container_id(&container_id)?;
-    let output = run_wsl(
+    let output = run_wsl_bound(
         &["-d", &distro, "--", "docker", &action, "--", &container_id],
         None,
+        None,
+        DOCKER_ACTION_TIMEOUT,
     )
     .await?;
     let _ = output;
@@ -114,7 +118,9 @@ pub async fn docker_action_owned(
     container_id: &str,
     action: &str,
     lease: &dyn crate::component::TerminalLaunchLease,
+    request_budget: Duration,
 ) -> Result<(), String> {
+    let deadline = Instant::now() + request_budget.min(Duration::from_secs(29));
     let distro = normalize_distro(distro)?;
     if !matches!(action, "start" | "stop" | "restart")
         || container_id.len() != 64
@@ -138,6 +144,7 @@ pub async fn docker_action_owned(
         ],
         None,
         Some(lease),
+        WSL_COMMAND_TIMEOUT.min(deadline.saturating_duration_since(Instant::now())),
     )
     .await?;
     let containers = parse_docker_ps(&output).map_err(|_| SAFE_DOCKER_ERROR)?;
@@ -162,6 +169,7 @@ pub async fn docker_action_owned(
         ],
         None,
         Some(lease),
+        DOCKER_ACTION_TIMEOUT.min(deadline.saturating_duration_since(Instant::now())),
     )
     .await?;
     Ok(())
@@ -170,17 +178,22 @@ pub async fn docker_action_owned(
 /// `wsl.exe` 명령을 실행하고 bounded stdout만 반환한다. stderr, OS status, path와
 /// command line은 호출자에게 반향하지 않는다.
 async fn run_wsl(args: &[&str], cwd: Option<&str>) -> Result<String, String> {
-    run_wsl_bound(args, cwd, None).await
+    run_wsl_bound(args, cwd, None, WSL_COMMAND_TIMEOUT).await
 }
 async fn run_wsl_bound(
     args: &[&str],
     cwd: Option<&str>,
     lease: Option<&dyn crate::component::TerminalLaunchLease>,
+    command_timeout: Duration,
 ) -> Result<String, String> {
+    let deadline = Instant::now() + command_timeout;
     let mut argv = vec!["wsl.exe".to_owned()];
     argv.extend(args.iter().map(|arg| (*arg).to_owned()));
     if let Some(lease) = lease {
         argv = lease.bind_argv(argv)?;
+    }
+    if Instant::now() >= deadline {
+        return Err(SAFE_WSL_ERROR.into());
     }
     let (program, args) = argv.split_first().ok_or(SAFE_WSL_ERROR)?;
     let mut cmd = Command::new(program);
@@ -203,7 +216,7 @@ async fn run_wsl_bound(
         .stderr
         .take()
         .ok_or_else(|| SAFE_WSL_ERROR.to_owned())?;
-    let result = timeout(WSL_COMMAND_TIMEOUT, async {
+    let result = timeout_at(deadline, async {
         let (stdout, _) = tokio::try_join!(
             read_bounded(stdout, MAX_WSL_STDOUT_BYTES),
             drain_bounded(stderr, MAX_WSL_STDERR_BYTES),
