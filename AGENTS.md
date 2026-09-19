@@ -23,13 +23,20 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   두 번째 실제 소비자가 생길 때만 `crates/`·`packages/`로 추출한다. 앱/crate 추가 시 Cargo
   workspace members와 필요한 카탈로그·검증 등록을 함께 갱신한다.
 - WSL에서 Rust 사용 전 `source ~/.cargo/env`. 실제 앱 실행·배포 빌드는 Windows에서만 한다.
-- 커밋 전에는 해당 변경의 문법·타입 오류와 계획 범위 이탈을 최소한으로 확인한다.
-  작은 수정마다 test·Clippy·build·affected 검증을 묶어 반복하지 않는다.
+- **개발을 먼저 끝내고 검증한다.** PR 묶음의 계획한 구현·importer·fixture·문서가 모두
+  끝나기 전에는 test·Clippy·build·affected·실기 검증을 실행하지 않는다. 하나 구현하고
+  검증하는 반복은 금지한다. 결함·설계 불확실성을 이유로 이 시점을 앞당기지 않는다.
+- 커밋 전에는 diff·계획 범위와 필요한 최소 문법·타입 오류만 확인한다. 문서는 diff만
+  확인한다. 테스트·fixture는 개발 중 작성하되 실행은 PR 개발 완료 후에 모은다.
 - 상세 검증은 **PR에 계획한 구현·importer·fixture가 모두 끝난 시점**에 모아 수행한다.
   기본 완료 검증은 루트 `pnpm verify:affected`이며 commit·staged·unstaged·untracked와
   역의존 소비자를 포함한다. 포함된 검사와 별도 집중 검증을 중복 실행하지 않는다.
   resolver가 all을 선택하면 전체 검증한다. `pnpm verify:all`은 release 준비·CI 검증기 변경·
-  명시적 전체 감사에 사용한다. 재검증은 실패·관련 변경·새 위험이 생긴 범위에 한정한다.
+  명시적 전체 감사에 사용한다. 실패하면 확인된 수정들을 먼저 마친 뒤 실패·영향 범위만
+  모아 재검증한다. 수정 하나마다 재실행하거나 통과한 무관한 검사를 반복하지 않는다.
+- 이 규칙은 로컬·수동 CI·push로 발생하는 자동 실행에 모두 적용한다. 중간 커밋은 로컬에
+  모으고 PR 개발 완료 시 push하여 반복 CI를 피한다. 최종 CI·필수 수용 조건은 유지한다.
+  검증 대기를 이유로 미완료 선행 PR을 둔 채 의존하는 후속 개발을 시작하지 않는다.
 - 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
   제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
 - 로컬의 기존 서비스·Docker·방화벽·공유 네트워크를 테스트 때문에 변경하지 않는다.
@@ -54,7 +61,7 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 
 ## 작업 도구와 기록
 
-- 저장소 스킬은 `.agents/skills/`다. 일반 변경은 `devbox-change`, migration/권한/복구 검토는
-  `devbox-migration-review`, 명시적인 릴리스 작업은 `devbox-release`를 사용한다.
+- 일반 개발·migration 검토에 별도 스킬을 요구하지 않는다. 이 지침과 CONVENTIONS를
+  직접 따른다. `.agents/skills/`에는 릴리스 전용 `devbox-release`만 유지한다.
 - 작업 기록은 PR 묶음당 workthrough 하나를 갱신한다. 결정·영향·검증·남은 작업만 적는다.
   상세 운영과 컨텍스트 인계는 CONVENTIONS §11, 개인 설정은 [Codex setup](./docs/codex-setup.md)을 따른다.

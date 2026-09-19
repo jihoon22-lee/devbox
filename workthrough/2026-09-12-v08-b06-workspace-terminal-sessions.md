@@ -607,3 +607,14 @@ boundary; normal user project selection already refreshes the UI explicitly.
 - Focused Zellij argv regression passed (1 test, 20.388s including compilation).
   Corrected Windows executable/WSL2 execution remains pending; no local WSL,
   container, service or network operation was performed.
+
+### Enforce implementation before verification (2026-09-19)
+
+- PR implementation, importer, fixtures and docs must finish before tests, builds,
+  Clippy or native acceptance run. Remove the early defect/design exception.
+  Batch identified failure fixes before rerunning only failed/affected checks.
+  Accumulate intermediate commits locally to avoid repeated automatic CI.
+- Remove redundant general-change and migration-review skills; use AGENTS and
+  CONVENTIONS directly. Keep the release-specific skill and existing data/host
+  protection and final acceptance requirements. Documentation-only diff review;
+  no tests/builds or new CI run for this policy edit.
