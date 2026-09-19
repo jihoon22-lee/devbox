@@ -75,3 +75,10 @@ mappings. Resume checks the retained digest; an older journal may acquire the ne
 backup only from a still-identical legacy source. These private records are not
 included in diagnostics. Their bounded retention never silently deletes an older
 completed backup or plan.
+
+Migration lists each connected owner's retained backups and offers explicit content
+verification. Owners resolve opaque IDs inside their own namespaces; source paths
+and record contents are not sent to Control Center. Original SQLite/browser/JSON
+backups and normalized import recovery snapshots are labelled separately. A
+verified retained backup does not prove that its legacy source has stayed unchanged
+or that all sources were imported; cutover revalidation remains a separate gate.

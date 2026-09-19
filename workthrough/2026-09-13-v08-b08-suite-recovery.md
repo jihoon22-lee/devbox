@@ -315,3 +315,24 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Prepared idempotence, source tampering and path-rejection regression. Scoped
   Rust and test compilation passed in 2.363s; runtime tests remain deferred to
   the complete B08 bundle.
+
+### Four-owner retained backup observation (2026-09-19)
+
+- Added bounded Control Center-only listing/verification calls over the approved
+  native installation connection. Inputs are opaque IDs; each owner resolves its
+  own private paths. Foreign callers and path-shaped IDs are rejected. Responses
+  contain owner, acquisition type, schema, size and digest, never source paths or
+  record contents. Ordinary writers remain blocked during Import/Health.
+- API Studio verifies retained browser bytes against closed-source receipts and
+  normalized import SQLite bundles against the completed native activation
+  journal. Knowledge verifies source SQLite snapshots recorded by activated plans.
+  Workspace verifies its compiled-in JSON snapshot inventory. Control Center
+  verifies retained original Launcher byte pairs and their accepted schemas.
+- Migration UI distinguishes original backups from normalized import recovery
+  snapshots. Listing is separate from explicit per-backup verification; unknown
+  owners, unavailable bytes and failed checks stay visible. These observations
+  do not certify complete source coverage, fresh legacy source state or activation.
+- Added protocol-role/path regression and extended the existing API archive and
+  Knowledge activated-plan fixtures with backup verification/tamper checks.
+  Four-owner Rust/test compilation passed in 25.070s, UI types in 3.133s. Detailed
+  regressions/Windows IPC execution remain pending with the completed B08 bundle.

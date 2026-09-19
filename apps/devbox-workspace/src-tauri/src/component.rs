@@ -2867,3 +2867,54 @@ mod tests {
         drop(two);
     }
 }
+
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+    deadline: u64,
+) -> Result<Value, &'static str> {
+    use product_contract::migration_backup::{Descriptor, Verified};
+    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
+    let host = runtime.host()?;
+    let catalog = host.legacy.catalog()?;
+    if catalog.unrecognized != 0 {
+        return Err("migration_backup_invalid");
+    }
+    if let Some(id) = id {
+        if !catalog.snapshots.iter().any(|snapshot| snapshot.id == id) {
+            return Err("migration_backup_missing");
+        }
+        let snapshot = crate::core::legacy_snapshot::Snapshot::load_checked(
+            &host.storage_root().join("legacy-imports"),
+            id,
+            || crate::files_host::current_deadline(deadline),
+        )?;
+        let verified = Verified {
+            owner: "workspace".into(),
+            id: id.into(),
+            acquisition: "stable-json-files/v1".into(),
+            bytes: snapshot
+                .manifest
+                .files
+                .iter()
+                .map(|file| file.bytes as u64)
+                .sum(),
+            schema: snapshot.manifest.schema_version,
+            sha256: snapshot.id()?,
+        };
+        host.legacy.catalog()?;
+        serde_json::to_value(verified).map_err(|_| "migration_backup_invalid")
+    } else {
+        serde_json::to_value(
+            catalog
+                .snapshots
+                .into_iter()
+                .map(|snapshot| Descriptor {
+                    id: snapshot.id,
+                    acquisition: "stable-json-files/v1".into(),
+                })
+                .collect::<Vec<_>>(),
+        )
+        .map_err(|_| "migration_backup_invalid")
+    }
+}

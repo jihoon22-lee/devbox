@@ -88,6 +88,13 @@ struct Input {
     deny_unknown_fields
 )]
 enum Method {
+    ListMigrationBackups {
+        product: String,
+    },
+    VerifyMigrationBackup {
+        product: String,
+        id: String,
+    },
     ReadHealthStatus {
         product: String,
     },
@@ -156,6 +163,8 @@ async fn connection(
             | Method::Probe { .. }
             | Method::ReadOperations { .. }
             | Method::ReadMigrationStatus { .. }
+            | Method::ListMigrationBackups { .. }
+            | Method::VerifyMigrationBackup { .. }
             | Method::ReadHealthStatus { .. }
     ) {
         product_shell_tauri::authorize_installation_review(&window, &request.header)?
@@ -180,7 +189,12 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
-            Method::ReadHealthStatus { product } | Method::ReadMigrationStatus { product } => {
+            Method::VerifyMigrationBackup { product, id } => {
+                let _ = (product, id);
+            }
+            Method::ListMigrationBackups { product }
+            | Method::ReadHealthStatus { product }
+            | Method::ReadMigrationStatus { product } => {
                 let _ = product;
             }
 
@@ -341,6 +355,21 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::ListMigrationBackups { product: target } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            health::backups(app, &target, domain, None, deadline).await
+        }
+        Method::VerifyMigrationBackup {
+            product: target,
+            id,
+        } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            health::backups(app, &target, domain, Some(id), deadline).await
+        }
         Method::ReadHealthStatus { product: target } => {
             if product != "control-center" {
                 return Err("peer_method_denied");
@@ -641,6 +670,8 @@ fn handler(
                 &call,
                 Call::Describe {}
                     | Call::ReadMigrationStatus {}
+                    | Call::ListMigrationBackups {}
+                    | Call::VerifyMigrationBackup { .. }
                     | Call::ReadHealthStatus { .. }
                     | Call::ReadOperations {}
                     | Call::CommandStatus { .. }

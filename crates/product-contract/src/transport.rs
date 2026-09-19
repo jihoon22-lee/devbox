@@ -54,6 +54,10 @@ pub enum Call {
         challenge: String,
     },
     ReadMigrationStatus {},
+    ListMigrationBackups {},
+    VerifyMigrationBackup {
+        id: String,
+    },
     ReadOperations {},
     ReviewOperation {
         id: String,
@@ -262,6 +266,9 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::VerifyMigrationBackup { id } if !commands::opaque_id(id) => {
+            return Err("peer_request_invalid");
+        }
         Call::ReadHealthStatus { challenge } if !commands::opaque_id(challenge) => {
             return Err("peer_request_invalid");
         }
@@ -461,6 +468,33 @@ mod tests {
         }
         assert!(validate_call(&Call::ReadHealthStatus {
             challenge: "".into()
+        })
+        .is_err());
+    }
+    #[test]
+    fn backup_observation_is_control_center_only_and_paths_are_not_ids() {
+        for product in PRODUCTS {
+            for call in [
+                Call::ListMigrationBackups {},
+                Call::VerifyMigrationBackup {
+                    id: "owned-backup".into(),
+                },
+            ] {
+                let mut guard = Guard::new(
+                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                    "native-session",
+                )
+                .unwrap();
+                let mut input = request();
+                input.call = call;
+                assert_eq!(
+                    guard.authorize(&input, 1000).is_ok(),
+                    product == "control-center"
+                );
+            }
+        }
+        assert!(validate_call(&Call::VerifyMigrationBackup {
+            id: "../foreign".into()
         })
         .is_err());
     }

@@ -896,3 +896,30 @@ mod tests {
         assert!(native_sources(root.path(), &[LegacyApp::DeveloperToolbox], &None).is_err());
     }
 }
+
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
+    if work.current.is_some() {
+        return Err("migration_busy");
+    }
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    match id {
+        Some(id) => serde_json::to_value(
+            repository
+                .verify_backup(id)
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+        None => serde_json::to_value(
+            repository
+                .backup_catalog()
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+    }
+    .map_err(|_| "migration_backup_invalid")
+}

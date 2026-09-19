@@ -115,3 +115,49 @@ pub(super) async fn read(
     scope.revalidate()?;
     Ok(serde_json::json!({"nativeStoreReady":report.store_ready(),"report":report}))
 }
+
+pub(super) async fn backups(
+    app: tauri::AppHandle,
+    product: &str,
+    domain: Option<DomainHandler>,
+    id: Option<String>,
+    deadline: u64,
+) -> Result<serde_json::Value> {
+    let scope = approved(&app)?;
+    scope.member(product)?;
+    let call = match &id {
+        Some(id) => Call::VerifyMigrationBackup { id: id.clone() },
+        None => Call::ListMigrationBackups {},
+    };
+    product_contract::transport::validate_call(&call)?;
+    let value = if product == "control-center" {
+        domain.ok_or("migration_unavailable")?(app.clone(), call, deadline, None).await?
+    } else {
+        super::remote(&app, product, call, deadline).await?
+    };
+    let result = if let Some(id) = id {
+        let verified: product_contract::migration_backup::Verified =
+            serde_json::from_value(value).map_err(|_| "migration_backup_invalid")?;
+        verified.validate(product, &id)?;
+        serde_json::to_value(verified).map_err(|_| "migration_backup_invalid")?
+    } else {
+        let rows: Vec<product_contract::migration_backup::Descriptor> =
+            serde_json::from_value(value).map_err(|_| "migration_backup_invalid")?;
+        let mut ids = std::collections::BTreeSet::new();
+        if rows.len() > 128 {
+            return Err("migration_backup_limit");
+        }
+        for row in &rows {
+            row.validate()?;
+            if !ids.insert(&row.id) {
+                return Err("migration_backup_invalid");
+            }
+        }
+        serde_json::to_value(rows).map_err(|_| "migration_backup_invalid")?
+    };
+    scope.revalidate()?;
+    if super::now() >= deadline {
+        return Err("migration_backup_expired");
+    }
+    Ok(result)
+}

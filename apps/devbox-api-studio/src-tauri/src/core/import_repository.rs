@@ -347,6 +347,140 @@ impl Repository {
                 .map_err(str::to_owned)
         })
     }
+    fn completed_stage(&self, id: &str) -> Result<PathBuf, String> {
+        if !valid_id(id)
+            || !self
+                .activation(id)?
+                .is_some_and(|(phase, _)| phase == Phase::Complete)
+        {
+            return Err("migration_backup_invalid".into());
+        }
+        let candidates = [
+            self.root.join("imports/staging").join(id),
+            self.root.join("imports/retained").join(id),
+        ];
+        let mut found = None;
+        for path in candidates {
+            match fs::symlink_metadata(&path) {
+                Ok(_) => {
+                    devbox_filesystem::ensure_no_links(&path)
+                        .map_err(|_| "migration_path_invalid")?;
+                    if found.replace(path).is_some() {
+                        return Err("migration_backup_ambiguous".into());
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err("migration_backup_unavailable".into()),
+            }
+        }
+        found.ok_or_else(|| "migration_backup_missing".into())
+    }
+    pub fn backup_catalog(
+        &self,
+    ) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {
+        let ids = self.workspace.inspect(|connection| {
+            let mut statement = sql(connection.prepare(
+                "SELECT id FROM studio_imports_v1 WHERE phase='complete' ORDER BY id LIMIT 33",
+            ))?;
+            let rows = sql(statement.query_map([], |row| row.get::<_, String>(0)))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|_| "migration_journal_invalid".into())
+        })?;
+        if ids.len() > 32 {
+            return Err("migration_backup_limit".into());
+        }
+        let mut rows = Vec::new();
+        for id in ids {
+            if !valid_id(&id) {
+                return Err("migration_backup_invalid".into());
+            }
+            rows.push(product_contract::migration_backup::Descriptor {
+                id: format!("{id}_normalized"),
+                acquisition: "normalized-import-bundle/v1".into(),
+            });
+            if let Ok(stage) = self.completed_stage(&id) {
+                if read_file(&stage.join("closed-source.json"), 512 * 1024)?.is_some() {
+                    rows.push(product_contract::migration_backup::Descriptor {
+                        id: format!("{id}_browser"),
+                        acquisition: "closed-leveldb-exclusive-copy/v1".into(),
+                    });
+                }
+            }
+        }
+        Ok(rows)
+    }
+    pub fn verify_backup(
+        &self,
+        id: &str,
+    ) -> Result<product_contract::migration_backup::Verified, String> {
+        let (operation, kind) = id.rsplit_once('_').ok_or("migration_backup_invalid")?;
+        let stage = self.completed_stage(operation)?;
+        let (acquisition, bytes, schema, sha256) = match kind {
+            "browser" => {
+                let raw = read_file(&stage.join("closed-source.json"), 512 * 1024)?
+                    .ok_or("migration_backup_missing")?;
+                let receipt: data_migration::core::source_snapshot::ClosedStoreSnapshot =
+                    serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
+                data_migration::core::source_snapshot::verify_closed_copy(
+                    &stage.join("retained-leveldb"),
+                    &receipt,
+                    &AtomicBool::new(false),
+                )?;
+                let revision = {
+                    use sha2::{Digest, Sha256};
+                    Sha256::digest(raw.as_bytes())
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect()
+                };
+                (
+                    receipt.acquisition,
+                    receipt.files.iter().map(|file| file.bytes).sum(),
+                    receipt.schema_version,
+                    revision,
+                )
+            }
+            "normalized" => {
+                let snapshot =
+                    data_migration::core::migration::resume_snapshot(&stage.join("snapshot"))?;
+                // resume_snapshot already verified the complete snapshot bytes.
+                let path = stage.join("snapshot/snapshot.db");
+                let connection = sql(Connection::open_with_flags(
+                    path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                ))?;
+                let body: String = sql(connection.query_row(
+                    "SELECT body FROM activation_bundle_v1 WHERE id=?1",
+                    [operation],
+                    |row| row.get(0),
+                ))?;
+                let (_, bundle) = self
+                    .activation(operation)?
+                    .ok_or("migration_backup_missing")?;
+                if serde_json::from_str::<Value>(&body).map_err(|_| "migration_backup_invalid")?
+                    != serde_json::to_value(bundle).map_err(|_| "migration_backup_invalid")?
+                {
+                    return Err("migration_backup_changed".into());
+                }
+                (
+                    "normalized-import-bundle/v1".into(),
+                    snapshot.bytes,
+                    u32::try_from(snapshot.schema_version)
+                        .map_err(|_| "migration_backup_invalid")?,
+                    snapshot.sha256,
+                )
+            }
+            _ => return Err("migration_backup_invalid".into()),
+        };
+        Ok(product_contract::migration_backup::Verified {
+            owner: "api-studio".into(),
+            id: id.into(),
+            acquisition,
+            bytes,
+            schema,
+            sha256,
+        })
+    }
     fn prior_receipts(&self) -> Result<Vec<Receipt>, String> {
         self.workspace.inspect(|connection| {
             let mut statement = sql(connection.prepare("SELECT r.source_store,r.source_id,r.fingerprint,r.destination_id FROM studio_import_receipts_v1 r JOIN studio_imports_v1 i ON i.id=r.activation_id WHERE i.phase='complete' LIMIT 100001"))?;
@@ -890,6 +1024,20 @@ mod tests {
             .join("snapshot/snapshot.db")
             .is_file());
         assert!(repo.pending().unwrap().is_none());
+        let backups = repo.backup_catalog().unwrap();
+        assert_eq!(backups.len(), 1);
+        let proof = repo.verify_backup(&backups[0].id).unwrap();
+        assert_eq!(proof.acquisition, "normalized-import-bundle/v1");
+        assert!(proof.bytes > 0);
+        fs::write(
+            root.path()
+                .join("imports/retained")
+                .join(&id)
+                .join("snapshot/snapshot.db"),
+            b"changed",
+        )
+        .unwrap();
+        assert!(repo.verify_backup(&backups[0].id).is_err());
     }
     #[test]
     fn new_preview_purges_abandoned_raw_copies_and_invalidates_previous_plan() {

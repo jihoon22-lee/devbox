@@ -461,3 +461,26 @@ mod tests {
         assert_eq!(fs::read(schedule_path(root.path())).unwrap(), before);
     }
 }
+
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<Migration>()
+        .ok_or("migration_unavailable")?;
+    let job = state.job.try_lock().map_err(|_| "migration_busy")?;
+    if job.as_ref().is_some_and(|job| job.result.is_none()) {
+        return Err("migration_busy");
+    }
+    match id {
+        Some(id) => serde_json::to_value(
+            import_plan::verify_backup(&state.root, id)
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+        None => serde_json::to_value(
+            import_plan::backup_catalog(&state.root).map_err(|_| "migration_backup_unavailable")?,
+        ),
+    }
+    .map_err(|_| "migration_backup_invalid")
+}

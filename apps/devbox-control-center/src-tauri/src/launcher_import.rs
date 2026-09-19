@@ -500,3 +500,80 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<serde_json::Value> 
     )?)
     .map_err(|_| "migration_unavailable")
 }
+
+pub(crate) fn suite_backups(app: &tauri::AppHandle, id: Option<&str>) -> Result<serde_json::Value> {
+    use product_contract::migration_backup::{Descriptor, Verified};
+    let owner = app
+        .try_state::<Owner>()
+        .ok_or("launcher_import_unavailable")?;
+    let _pending = owner.0.try_lock().map_err(|_| "launcher_import_busy")?;
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "launcher_import_unavailable")?;
+    let directory = root.join("launcher-source-backups-v1");
+    if let Some(id) = id {
+        if !source_retained(&root, id)? {
+            return Err("launcher_import_backup_missing");
+        }
+        let bytes = read_bounded(&directory.join(format!("{id}.json")), 512 * 1024)?
+            .ok_or("launcher_import_backup_missing")?;
+        let (prefs, shortcut): (Option<Vec<u8>>, Option<Vec<u8>>) =
+            serde_json::from_slice(&bytes).map_err(|_| "launcher_import_backup_invalid")?;
+        preferences(prefs.as_deref())?;
+        if let Some(shortcut) = &shortcut {
+            serde_json::from_slice::<LegacyShortcut>(shortcut)
+                .map_err(|_| "launcher_import_backup_invalid")?
+                .validate()?;
+        }
+        let sha256 = digest(&bytes);
+        if sha256 != id {
+            return Err("launcher_import_backup_changed");
+        }
+        serde_json::to_value(Verified {
+            owner: "control-center".into(),
+            id: id.into(),
+            acquisition: "stable-json-pair/v1".into(),
+            bytes: bytes.len() as u64,
+            schema: 1,
+            sha256,
+        })
+        .map_err(|_| "launcher_import_backup_invalid")
+    } else {
+        match std::fs::symlink_metadata(&directory) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                return Ok(serde_json::json!([]))
+            }
+            Err(_) => return Err("launcher_import_backup_unavailable"),
+            Ok(_) => {}
+        }
+        devbox_filesystem::ensure_no_links(&directory).map_err(|_| "launcher_import_unsafe")?;
+        let mut rows = Vec::new();
+        for (index, entry) in std::fs::read_dir(&directory)
+            .map_err(|_| "launcher_import_backup_unavailable")?
+            .enumerate()
+        {
+            if index >= 64 {
+                return Err("launcher_import_backup_retention_review_required");
+            }
+            let entry = entry.map_err(|_| "launcher_import_backup_unavailable")?;
+            let name = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "launcher_import_backup_invalid")?;
+            if name.ends_with(".pending") {
+                continue;
+            }
+            let id = name
+                .strip_suffix(".json")
+                .filter(|id| product_contract::commands::revision(id))
+                .ok_or("launcher_import_backup_invalid")?;
+            rows.push(Descriptor {
+                id: id.into(),
+                acquisition: "stable-json-pair/v1".into(),
+            });
+        }
+        rows.sort_by(|a, b| a.id.cmp(&b.id));
+        serde_json::to_value(rows).map_err(|_| "launcher_import_backup_invalid")
+    }
+}
