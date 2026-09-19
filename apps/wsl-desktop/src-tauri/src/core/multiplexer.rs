@@ -200,7 +200,7 @@ pub fn build_session_argv(
                 "options".into(),
                 // Official built-in layout with no tab/status plugin panes.
                 "--default-layout".into(),
-                "disable-status".into(),
+                "disable-status-bar".into(),
                 "--pane-frames".into(),
                 "false".into(),
                 "--mouse-mode".into(),
@@ -469,7 +469,7 @@ mod tests {
                 &name,
                 "options",
                 "--default-layout",
-                "disable-status",
+                "disable-status-bar",
                 "--pane-frames",
                 "false",
                 "--mouse-mode",

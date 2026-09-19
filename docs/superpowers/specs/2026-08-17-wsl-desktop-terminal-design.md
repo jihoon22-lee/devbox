@@ -477,7 +477,7 @@ pub trait Multiplexer {
 > 완전하게 동작한다. tmux/zellij는 설치 여부를 exact argv로 읽기 전용 감지한 뒤 stable
 > `wsld-*` 세션에 opt-in attach/create할 뿐 설치·download하지 않으며, 없거나 감지가 실패하면
 > backend에서도 native로 내린다. tmux option은 해당 session에만 적용하고 zellij는 공식
-> `disable-status` layout과 frame/mouse off option을 사용한다. broadcast는 기본 off, 활성 탭의
+> `disable-status-bar` layout과 frame/mouse off option을 사용한다. broadcast는 기본 off, 활성 탭의
 > 팬을 사용자가 2개 이상 직접 선택해야 활성화되며 대상 수를 계속 표시한다. multiline paste와
 > 위험 명령 Enter는 raw command를 오류/확인문에 반향하지 않고 대상 수와 실행 위험을 다시
 > 확인한다. W1 packaged build 실기 checkpoint는 남아 있다.
