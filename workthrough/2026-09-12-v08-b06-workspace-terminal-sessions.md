@@ -3,7 +3,7 @@
 Refs #548, #541, #542; dependent consumers of #547 and #545. One B06 PR owns
 Terminal extraction, native ownership, worktree Sessions, Problems, importers and
 acceptance. Base is merged B05 main 41bb98b. No umbrella issue closes here.
-Implementation, fixtures and all-scope local checks are complete; final CI and native Windows/WSL acceptance are pending.
+Implementation, fixtures, all-scope local checks and native Windows/WSL acceptance are complete; final required CI and merge are pending.
 
 ## Scope and final behavior
 
@@ -660,3 +660,17 @@ boundary; normal user project selection already refreshes the UI explicitly.
 - Scoped Workspace compilation passed in 27.984s. The remaining native container
   fixture now requires a binary containing this timeout correction; unrelated
   terminal/multiplexer/product passes remain valid.
+
+### B06 native acceptance complete (2026-09-19)
+
+- Run35448156856 PASS on source554d9fcd: actual daemon/CID/published ports,
+  start/restart/stop, duplicate receipts, replaced-name rejection, WSL file→Logs
+  UI, and stopped-query no-start. App exit, isolated product data and the owned
+  distro/directory cleanup succeeded. Scope is containers, not a repeated full run.
+- Combine with run35447454066 Zellij reconnect/no-replay PASS, run35444297373
+  native Sessions/tasks/Problems/tmux PASS, and run35441341492 complete native
+  product/migration/installer PASS. The later Docker timeout correction only
+  invalidated container mutation evidence, now covered by the final run.
+- The single prior all-scope local audit remains valid with scoped corrections.
+  Ready-for-review triggers the final required CI after this evidence-only commit.
+  No unrelated full native or local verification is started.
