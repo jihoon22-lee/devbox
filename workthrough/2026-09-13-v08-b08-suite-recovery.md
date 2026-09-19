@@ -494,3 +494,15 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Prepared accepted-vs-unaccepted, tamper/missing and future-schema regression.
   Corrected the existing crate alias found by compilation; final Workspace/Runtime
   Rust/test compilation passed in 11.619s. Detailed regressions remain deferred.
+
+### Runtime retained-log binding and paused follow-on work (2026-09-19)
+
+- Accepted Runtime imports now bind the canonical database/log manifest in the
+  same transaction as the import receipt. Verification detects changed or missing
+  retained logs; older receipts retain their narrower SQLite-only description.
+- Prepared log-tampering regression; scoped Rust/test compilation passed in
+  10.538s. Detailed B08 regressions and native acceptance have not run.
+- B08 remains incomplete and has no acceptance claim. Preserve this existing
+  implementation and pause further development until B06 and B07 have completed
+  their actual acceptance gates and merged. Reducing repeated verification does
+  not permit bypassing prerequisite completion.

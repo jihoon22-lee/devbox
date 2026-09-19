@@ -21,6 +21,7 @@ pub fn acquisition(value: &str) -> bool {
     matches!(
         value,
         "sqlite-online-backup/v1"
+            | "sqlite-and-logs-copy/v1"
             | "normalized-import-bundle/v1"
             | "closed-leveldb-exclusive-copy/v1"
             | "stable-json-pair/v1"

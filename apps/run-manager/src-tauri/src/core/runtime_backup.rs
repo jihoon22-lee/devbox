@@ -8,6 +8,9 @@ use std::{
 };
 type Result<T> = std::result::Result<T, String>;
 pub fn accepted(root: &Path) -> Result<Option<String>> {
+    Ok(receipt(root)?.map(|(digest, _)| digest))
+}
+pub fn receipt(root: &Path) -> Result<Option<(String, Option<String>)>> {
     devbox_filesystem::ensure_no_links(root).map_err(|_| "runtime_backup_unavailable")?;
     let path = root.join("data.db");
     match std::fs::symlink_metadata(&path) {
@@ -47,7 +50,13 @@ pub fn accepted(root: &Path) -> Result<Option<String>> {
     {
         return Err("runtime_backup_changed".into());
     }
-    Ok(digest)
+    let binding = if digest.is_some() && transaction.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_schema WHERE type='table' AND name='workspace_runtime_import_backups')", [], |row| row.get::<_, bool>(0)).map_err(|_| "runtime_backup_unavailable")? {
+        transaction.query_row("SELECT CASE WHEN length(CAST(manifest_digest AS BLOB))=64 THEN manifest_digest ELSE '' END FROM workspace_runtime_import_backups WHERE origin='legacy-run-manager-v1'", [], |row| row.get::<_, String>(0)).optional().map_err(|_| "runtime_backup_unavailable")?
+    } else { None };
+    if binding.as_ref().is_some_and(|value| !valid_digest(value)) {
+        return Err("runtime_backup_invalid".into());
+    }
+    Ok(digest.map(|digest| (digest, binding)))
 }
 fn valid_digest(value: &str) -> bool {
     value.len() == 64
@@ -55,11 +64,9 @@ fn valid_digest(value: &str) -> bool {
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
 }
-pub fn verify(
-    root: &Path,
-    expected: &str,
-) -> Result<devbox_data_migration::core::migration::Snapshot> {
-    if !valid_digest(expected) || accepted(root)?.as_deref() != Some(expected) {
+pub fn verify(root: &Path, expected: &str) -> Result<(u64, u32, String, bool)> {
+    let accepted = receipt(root)?.ok_or("runtime_backup_missing")?;
+    if !valid_digest(expected) || accepted.0 != expected {
         return Err("runtime_backup_missing".into());
     }
     let stages = root.join("legacy-imports");
@@ -106,16 +113,38 @@ pub fn verify(
         if snapshot.sha256 != expected {
             continue;
         }
+        if let Some(binding) = &accepted.1 {
+            let prepared = super::runtime_import::PreparedImport::reopen(
+                &stage,
+                &std::sync::atomic::AtomicBool::new(false),
+            )?;
+            if prepared.backup_digest()? != *binding {
+                continue;
+            }
+            if receipt(root)?.as_ref() != Some(&accepted)
+                || devbox_filesystem::filesystem_identity(&stages, true)
+                    .map_err(|_| "runtime_backup_changed")?
+                    != identity
+            {
+                return Err("runtime_backup_changed".into());
+            }
+            return Ok((prepared.backup_bytes()?, 1, binding.clone(), true));
+        }
         let verified = devbox_data_migration::core::migration::resume_snapshot(&stage)?;
         if verified.sha256 != expected
-            || accepted(root)?.as_deref() != Some(expected)
+            || receipt(root)?.as_ref() != Some(&accepted)
             || devbox_filesystem::filesystem_identity(&stages, true)
                 .map_err(|_| "runtime_backup_changed")?
                 != identity
         {
             return Err("runtime_backup_changed".into());
         }
-        return Ok(verified);
+        return Ok((
+            verified.bytes,
+            u32::try_from(verified.schema_version).map_err(|_| "runtime_backup_invalid")?,
+            verified.sha256,
+            false,
+        ));
     }
     Err("runtime_backup_missing".into())
 }
@@ -155,10 +184,7 @@ mod tests {
             [&snapshot.sha256],
         )
         .unwrap();
-        assert_eq!(
-            verify(&root, &snapshot.sha256).unwrap().sha256,
-            snapshot.sha256
-        );
+        assert_eq!(verify(&root, &snapshot.sha256).unwrap().2, snapshot.sha256);
         std::fs::write(stage.join("snapshot.db"), b"changed backup").unwrap();
         assert_eq!(accepted(&root).unwrap(), Some(snapshot.sha256.clone()));
         assert!(verify(&root, &snapshot.sha256).is_err());

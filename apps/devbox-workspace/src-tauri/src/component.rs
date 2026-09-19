@@ -2917,11 +2917,11 @@ pub(crate) fn suite_backups(
     if let Some(id) = id.filter(|id| id.starts_with("runtime_")) {
         crate::files_host::current_deadline(deadline)?;
         let digest = id.strip_prefix("runtime_").ok_or("migration_backup_invalid")?;
-        let (bytes, schema, sha256) = run_manager_lib::component::verify_migration_backup(&host.component("runtime")?, digest)
+        let (bytes, schema, sha256, logs) = run_manager_lib::component::verify_migration_backup(&host.component("runtime")?, digest)
             .map_err(|_| "migration_backup_unavailable")?;
         crate::files_host::current_deadline(deadline)?;
         return serde_json::to_value(Verified { owner: "workspace".into(), id: id.into(),
-            acquisition: "sqlite-online-backup/v1".into(), bytes, schema, sha256 }).map_err(|_| "migration_backup_invalid");
+            acquisition: if logs { "sqlite-and-logs-copy/v1" } else { "sqlite-online-backup/v1" }.into(), bytes, schema, sha256 }).map_err(|_| "migration_backup_invalid");
     }
     if let Some(id) = id.filter(|id| id.starts_with("terminal_")) {
         crate::files_host::current_deadline(deadline)?;
@@ -2965,9 +2965,9 @@ pub(crate) fn suite_backups(
         if host.status()?.get("selected").and_then(Value::as_bool) == Some(true) {
             let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
             rows.extend(crate::terminal_profiles::backup_catalog(&terminal)?);
-            if let Some(digest) = run_manager_lib::component::migration_backup_digest(&host.component("runtime")?)
+            if let Some((digest, logs)) = run_manager_lib::component::migration_backup_digest(&host.component("runtime")?)
                 .map_err(|_| "migration_backup_unavailable")? {
-                rows.push(Descriptor { id: format!("runtime_{digest}"), acquisition: "sqlite-online-backup/v1".into() });
+                rows.push(Descriptor { id: format!("runtime_{digest}"), acquisition: if logs { "sqlite-and-logs-copy/v1" } else { "sqlite-online-backup/v1" }.into() });
             }
         }
         serde_json::to_value(rows).map_err(|_| "migration_backup_invalid")

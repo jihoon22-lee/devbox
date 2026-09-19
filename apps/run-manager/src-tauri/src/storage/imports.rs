@@ -17,6 +17,8 @@ pub(super) fn initialize(connection: &Connection) -> rusqlite::Result<()> {
         CREATE TABLE IF NOT EXISTS workspace_runtime_imports (
             origin TEXT PRIMARY KEY NOT NULL, digest TEXT NOT NULL, imported_at INTEGER NOT NULL,
             summary_json TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS workspace_runtime_import_backups (
+            origin TEXT PRIMARY KEY NOT NULL, manifest_digest TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS workspace_runtime_import_ids (
             origin TEXT NOT NULL, entity TEXT NOT NULL, source_id TEXT NOT NULL,
             destination_id TEXT NOT NULL, PRIMARY KEY(origin, entity, source_id));
@@ -275,6 +277,12 @@ impl DatabaseState {
             return Err("runtime_import_cancelled".into());
         }
         transaction.execute("INSERT INTO workspace_runtime_imports(origin,digest,imported_at,summary_json) VALUES('legacy-run-manager-v1',?,?,?)",params![prepared.digest(),now,serde_json::to_string(prepared.summary()).map_err(|_| "runtime_import_invalid")?]).map_err(|_| "runtime_import_invalid")?;
+        transaction
+            .execute(
+                "INSERT INTO workspace_runtime_import_backups VALUES('legacy-run-manager-v1',?1)",
+                [prepared.backup_digest()?],
+            )
+            .map_err(|_| "runtime_import_invalid")?;
         devbox_filesystem::ensure_no_links(destination)
             .map_err(|_| "runtime_import_destination_conflict")?;
         if devbox_filesystem::filesystem_identity(destination, true)
@@ -338,6 +346,39 @@ mod tests {
         .unwrap();
         source.lock().unwrap().execute("UPDATE runs SET log_dir=?,target_pid=42,owner_instance_id='synthetic-owner' WHERE id=?",params![relative,run.id]).unwrap();
         (root, source, job.id)
+    }
+    #[test]
+    fn accepted_backup_binds_original_logs_and_detects_their_tampering() {
+        let (source_root, _source, _job) = fixture();
+        let target = tempfile::tempdir().unwrap();
+        let stages = target.path().join("legacy-imports");
+        std::fs::create_dir(&stages).unwrap();
+        let stage = stages.join("a".repeat(32));
+        let flag = AtomicBool::new(false);
+        let prepared = PreparedImport::acquire(source_root.path(), &stage, &flag).unwrap();
+        let database = DatabaseState::open_product(&target.path().join("data.db")).unwrap();
+        database
+            .import_legacy_runtime(&prepared, target.path(), &flag)
+            .unwrap();
+        let (bytes, schema, digest, logs) =
+            crate::core::runtime_backup::verify(target.path(), prepared.digest()).unwrap();
+        assert!(logs);
+        assert_eq!(schema, 1);
+        assert_eq!(bytes, prepared.backup_bytes().unwrap());
+        assert_eq!(digest, prepared.backup_digest().unwrap());
+        let run = std::fs::read_dir(stage.join("logs/runs"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        std::fs::write(run.join("stdout.log"), b"tampered retained log").unwrap();
+        assert!(crate::core::runtime_backup::verify(target.path(), prepared.digest()).is_err());
+        assert!(crate::core::runtime_backup::receipt(target.path())
+            .unwrap()
+            .unwrap()
+            .1
+            .is_some());
     }
     #[test]
     fn wal_snapshot_import_is_inactive_preserves_ids_and_reopens_without_overwriting_edits() {
