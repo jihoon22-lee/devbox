@@ -62,6 +62,7 @@ pub(crate) async fn record(
     })
     .await
     .map_err(|_| "suite_store_unavailable")??;
+    let previous_revision = journal.revision;
     let before = health(&app, &owner, deadline).await?;
     if before.installation_key != journal.installation_key
         || before.generation != journal.candidate.generation
@@ -71,7 +72,9 @@ pub(crate) async fn record(
     }
     let mut health_result = None;
     if health_only {
-        if product_shell_tauri::suite_activation_phase(&app)? != Some(product_contract::activation::Phase::Health) {
+        if product_shell_tauri::suite_activation_phase(&app)?
+            != Some(product_contract::activation::Phase::Health)
+        {
             return Err("suite_health_phase_invalid");
         }
         journal.record_health(
@@ -121,7 +124,21 @@ pub(crate) async fn record(
         if now() >= deadline {
             return Err("suite_owner_expired");
         }
-        Store::open(&root)?.write(Some(&digest), &journal)?;
+        let store = Store::open(&root)?;
+        if journal.revision == previous_revision {
+            // Identical observation: check CAS without inventing a revision or
+            // asking Store::write to persist an invalid no-op transition.
+            if store
+                .read()?
+                .as_ref()
+                .map(|(_, revision)| revision.as_str())
+                != Some(digest.as_str())
+            {
+                return Err("suite_journal_stale");
+            }
+        } else {
+            store.write(Some(&digest), &journal)?;
+        }
         Ok::<_, &'static str>(())
     })
     .await

@@ -458,3 +458,8 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   legacy app must not disappear from cleanup accounting simply because it has no
   data namespace. Unknown/inaccessible registry views block this clean-only path.
   Other users' per-user registrations remain outside this user's operation.
+
+- Corrected native persistence of an identical owner observation: the journal
+  deliberately keeps its revision unchanged, so the adapter now checks the
+  expected stored digest without calling the store's revision-advancing write.
+  A repeated successful observation is idempotent; concurrent changes still fail.
