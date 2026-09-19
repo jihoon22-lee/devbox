@@ -59,12 +59,18 @@ async function approve(item){const review=await suite(item,{kind:"preview"});ass
 async function click(item,selector,text){await waitForRenderer(item.cdp,`[...document.querySelectorAll(${JSON.stringify(selector)})].some(node=>node.textContent.trim()===${JSON.stringify(text)}&&!node.disabled)`,"fixture button missing");await item.cdp.evaluate(`[...document.querySelectorAll(${JSON.stringify(selector)})].find(node=>node.textContent.trim()===${JSON.stringify(text)}&&!node.disabled).click()`);}
 async function review(item,receipt,accept=true){
   const pending=await suite(item,{kind:"pending"});const selected=pending.find(row=>row.operationId===receipt.operationId);assert.ok(selected,"native destination review missing");
-  if(!accept){await suite(item,{kind:"decide",id:selected.operationId,revision:selected.revision,accept:false});return selected;}
-  // The actual common Review sets the renderer hint and acknowledges navigation.
-  await click(item,'section[aria-label="다른 제품의 열기 요청"] button',"화면 열기");
+  // Use the actual review for both outcomes so its renderer queue is current.
+  await click(item,'section[aria-label="다른 제품의 열기 요청"] button',accept?"화면 열기":"거절");
+  await until(async()=>!(await suite(item,{kind:"pending"})).some(row=>row.operationId===selected.operationId),"native review decision did not settle");
   return selected;
 }
 async function until(check,label){const deadline=Date.now()+15000;do{const result=await check();if(result)return result;await delay(150);}while(Date.now()<deadline);throw new Error(label);}
+async function reload(item){
+  const previous=await item.cdp.evaluate("performance.timeOrigin");
+  await item.cdp.command("Page.reload");
+  await until(async()=>{try{return await item.cdp.evaluate(`performance.timeOrigin!==${previous}&&!!document.querySelector('nav[aria-label="제품 화면"]')`);}catch{return false;}},"product did not refresh its native setup/context");
+}
+
 try {
   const installation=path.join(root,"suite");assemble(installation);
   stage("start-four-products");
@@ -72,6 +78,7 @@ try {
   const workspace=apps.workspace,api=apps["api-studio"],knowledge=apps.knowledge,center=apps["control-center"];
   await domain(workspace,"workspace.migration","start_empty");
   await domain(knowledge,"knowledge.migration","start_empty");
+  await reload(workspace);await reload(knowledge);
   for(const item of Object.values(apps))await approve(item);
   evidence.checks.approvedExactFourProductInstallation=true;
   for(const product of ["workspace","api-studio","knowledge"]){stage("probe-"+product);const description=await suite(center,{kind:"probe",product});assert.ok(description);}
@@ -79,10 +86,10 @@ try {
   const projects=[];
   for(const suffix of ["one","two"]){const directory=path.join(root,suffix);mkdirSync(directory);writeFileSync(path.join(directory,"selected.txt"),"가😀나\nsynthetic suite selection\n");const preview=await domain(workspace,"workspace.registry","preview_windows",{root:directory});const registered=await domain(workspace,"workspace.registry","apply_registration",{previewId:preview.previewId,name:"같은 이름",action:"register"});projects.push({directory,context:registered.context});}
   const source=await commands(center,"command_source",{product:"workspace",source:"projects",query:"같은 이름",generation:1,mode:"name"});
-  const rows=source.result.items;assert.equal(rows.length,2);assert.notEqual(rows[0].id,rows[1].id);evidence.checks.sameNameDistinctProjects=true;
+  const rows=source.result.results;assert.equal(rows.length,2);assert.notEqual(rows[0].id,rows[1].id);evidence.checks.sameNameDistinctProjects=true;
   const search=await commands(center,"command_search",{query:""});
-  const capture=search.items.find(row=>row.id==="knowledge.quick-capture"||row.id==="knowledge.open-capture");
-  const target=capture??search.items.find(row=>row.owner==="knowledge"&&row.target.kind==="route");assert.ok(target);
+  const capture=search.results.find(row=>row.id==="knowledge.quick-capture"||row.id==="knowledge.open-capture");
+  const target=capture??search.results.find(row=>row.owner==="knowledge"&&row.target.kind==="route");assert.ok(target);
   const openRequest=()=>({operationId:randomUUID(),commandId:target.id,revision:target.revision,context:target.context,selectionId:null});
   const rejectedCommand=openRequest();const rejected=await commands(center,"command_open",{command:rejectedCommand});await review(knowledge,rejected,false);
   assert.equal((await commands(center,"command_status",{product:"knowledge",operationId:rejected.operationId})).phase,"rejected");
@@ -101,6 +108,7 @@ try {
   evidence.checks.coldActivationUsesExactRememberedMember=true;
   stage("editor-to-transform");
   await domain(workspace,"workspace.registry","select_project",{context:projects[0].context});
+  await reload(workspace);
   const file=await domain(workspace,"workspace.files","open_file",{request:{path:path.join(projects[0].directory,"selected.txt"),encoding:null}});
   await domain(workspace,"workspace.files","sync_editor_document",{path:file.path,nativeRevision:file.nativeRevision,text:file.text});
   const sent=await domain(workspace,"workspace.files","send_editor_selection",{path:file.path,nativeRevision:file.nativeRevision,text:file.text,from:1,to:3});
@@ -110,9 +118,14 @@ try {
   // Cancel the actual preview; original document bytes and buffer stay intact.
   await click(api,'[role=dialog] button,dialog button',"취소");
   assert.equal(readFileSync(path.join(projects[0].directory,"selected.txt"),"utf8"),file.text);
+  const staleSelection=await domain(workspace,"workspace.files","send_editor_selection",{path:file.path,nativeRevision:file.nativeRevision,text:file.text,from:1,to:3});
   await domain(workspace,"workspace.files","sync_editor_document",{path:file.path,nativeRevision:file.nativeRevision,text:"changed buffer"});
+  await review(api,staleSelection.receipt);
+  await waitForRenderer(api.cdp,"!!document.querySelector('section[aria-label=\"Workspace 선택 내용\"] [role=alert]')","changed source did not reject the fresh selection offer");
+  assert.equal(await api.cdp.evaluate("[...document.querySelectorAll('[role=dialog],dialog')].some(node=>node.textContent.includes('😀'))"),false);
   await assert.rejects(()=>domain(api,"api-studio.transforms","open_workspace_selection",{id:sent.handoffId,operationId:sent.receipt.operationId,revision:selectionReview.commandRevision}));
   evidence.checks.cancelPreservesSourceAndStaleSelectionDenied=true;
+  await domain(workspace,"workspace.files","sync_editor_document",{path:file.path,nativeRevision:file.nativeRevision,text:file.text});
   stage("indexed-file-to-editor");
   await domain(knowledge,"knowledge.search-settings","add_root",{path:projects[0].directory,indexContent:true});
   await until(async()=>!(await domain(knowledge,"knowledge.search","index_status")).indexing,"synthetic index did not settle");

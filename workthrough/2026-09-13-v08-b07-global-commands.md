@@ -524,3 +524,16 @@ runtime repair and paged terminal fixture will be rebased into this PR.
 - backend connection과 pipe 서버는 debug build에서만 닫힌 native 오류 코드를 stderr에 남긴다.
   request body/secret/path는 기록하지 않는다. 현재 RPC의 generic Unavailable만으로
   identity 실패와 handshake 실패를 구분할 수 없던 진단 한계를 해결한다.
+
+### Native fixture 계약 일괄 대조
+
+- 재실행 전에 suite fixture의 요청/응답을 native 타입과 UI consumer에 대조했다.
+  command search/source의 결과 키는 `items`가 아니라 `results`다.
+- 거절도 실제 Review UI로 처리하고 native pending에서 빠질 때까지 기다린다. 직접 native
+  거절만 호출해 renderer에 과거 Review가 남아 다음 클릭을 가로막는 문제를 제거했다.
+- fixture의 직접 저장소 초기화·프로젝트 선택 뒤에는 새 document timeOrigin을 확인해
+  shell 상태를 갱신한다. 단순 Page.reload 반환만으로 옛 화면을 준비 완료로 보지 않는다.
+- stale selection은 이미 소비한 receipt를 반복한 결과로 주장하지 않는다. 새 offer 후 원본
+  buffer를 변경하고 실제 수신 Review에서 오류·미리보기 부재를 확인한다. 이후 독립 file
+  opener 시나리오 전에 synthetic buffer를 원래 값으로 되돌린다.
+- JS syntax/diff PASS. 이 변경의 Windows 결과는 아직 미실행이다.
