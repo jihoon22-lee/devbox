@@ -278,6 +278,27 @@ fn migration_method(component: &str, method: &str) -> bool {
                 | "runtime_import_catalog"
                 | "runtime_import_reviews"
         ),
+        "workspace.files" => matches!(
+            method,
+            "preview_session_import"
+                | "apply_session_import"
+                | "cancel_session_import"
+                | "list_session_history"
+                | "preview_session_restore"
+                | "preview_recovery_import"
+                | "apply_recovery_import"
+                | "cancel_recovery_import"
+                | "list_recovery_history"
+                | "preview_recovery_restore"
+        ),
+        "workspace.lsp" => matches!(
+            method,
+            "preview_lsp_config_import"
+                | "apply_lsp_config_import"
+                | "cancel_lsp_config_import"
+                | "list_lsp_config_history"
+                | "preview_lsp_config_restore"
+        ),
         "workspace.terminal" => matches!(
             method,
             "start_terminal_import"
@@ -2449,6 +2470,25 @@ mod tests {
             .unwrap()
             .as_millis() as u64
             + milliseconds
+    }
+    #[test]
+    fn migration_allowlist_includes_metadata_imports_without_opening_files_or_servers() {
+        for (component, method) in [
+            ("workspace.files", "apply_session_import"),
+            ("workspace.files", "preview_recovery_restore"),
+            ("workspace.lsp", "apply_lsp_config_import"),
+        ] {
+            assert!(migration_method(component, method));
+        }
+        for (component, method) in [
+            ("workspace.files", "open_file"),
+            ("workspace.files", "save_file"),
+            ("workspace.lsp", "open_lsp_document"),
+            ("workspace.terminal", "open_terminal_profile"),
+            ("workspace.runtime", "start_service"),
+        ] {
+            assert!(!migration_method(component, method));
+        }
     }
     #[tokio::test]
     async fn a_file_write_waits_for_the_retained_reader_and_enters_only_once() {

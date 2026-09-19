@@ -239,7 +239,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
         }
         "schedule_import" | "cancel_scheduled_import" => {
             empty(&value)?;
-            crate::startup::require_active(app)?;
+            crate::startup::require_ready(app)?;
             let requested = method == "schedule_import";
             crate::startup::configure(app, || {
                 if requested && crate::vault_binding::pending(app) {
@@ -308,7 +308,8 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
                 crate::startup::activate_with_owner(&app, &plan.next, owner)?;
                 let plan = import_plan::commit(&state.root, &plan_id)?;
                 clear_schedule(&app)?;
-                Ok(json!({"plan":summary(&state.root,&plan)?,"active":true}))
+                let (active, prepared) = crate::startup::readiness(&app);
+                Ok(json!({"plan":summary(&state.root,&plan)?,"active":active,"prepared":prepared}))
             })
         }
         "discard_import" | "rollback_import" => {
@@ -407,7 +408,8 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str
     let selected = stores::read(&state.root)
         .map_err(|_| "migration_unavailable")?
         .is_some();
-    let review = state.scheduled.load(Ordering::Acquire)
+    let review = (selected && crate::startup::require_ready(app).is_err())
+        || state.scheduled.load(Ordering::Acquire)
         || plans.iter().any(|plan| {
             !matches!(
                 plan.phase,

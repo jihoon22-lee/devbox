@@ -112,17 +112,22 @@ pub fn authorize(
     request: &RouteRequest,
     component: &str,
 ) -> Result<Provenance, Problem> {
-    authorize_inner(window, request, component, false)
+    authorize_inner(window, request, component, Admission::Ordinary)
 }
 
-/// Only the native connection method allowlist may call this during import.
+/// Only the native connection method allowlist may call this during setup or recovery.
 /// It preserves explicit package review without admitting domain commands.
 pub fn authorize_installation_review(
     window: &WebviewWindow,
     request: &RouteRequest,
 ) -> Result<Provenance, Problem> {
     let product = window.state::<ShellState>().product.clone();
-    authorize_inner(window, request, &format!("{product}.commands"), true)
+    authorize_inner(
+        window,
+        request,
+        &format!("{product}.commands"),
+        Admission::InstallationReview,
+    )
 }
 /// Domain adapters use this only after matching their closed importer method
 /// allowlist. It never admits ordinary task, service, terminal or file commands.
@@ -131,13 +136,34 @@ pub fn authorize_owner_migration(
     request: &RouteRequest,
     component: &str,
 ) -> Result<Provenance, Problem> {
-    authorize_inner(window, request, component, true)
+    authorize_inner(window, request, component, Admission::OwnerMigration)
+}
+#[derive(Clone, Copy)]
+enum Admission {
+    Ordinary,
+    InstallationReview,
+    OwnerMigration,
+}
+fn activation_allows(
+    marker: &product_contract::activation::Activation,
+    product: &str,
+    component: &str,
+    admission: Admission,
+) -> bool {
+    marker.allows(product, component)
+        || match admission {
+            Admission::Ordinary => false,
+            Admission::InstallationReview => true,
+            Admission::OwnerMigration => {
+                marker.phase == product_contract::activation::Phase::Import
+            }
+        }
 }
 fn authorize_inner(
     window: &WebviewWindow,
     request: &RouteRequest,
     component: &str,
-    installation_review: bool,
+    admission: Admission,
 ) -> Result<Provenance, Problem> {
     let state = window.state::<ShellState>();
     let provenance = Provenance {
@@ -176,11 +202,7 @@ fn authorize_inner(
         .collect();
     if !installation::activation(&state.executable, &state.version)
         .map_err(|_| problem(ProblemCode::Unavailable))?
-        .is_none_or(|marker| {
-            marker.allows(&state.product, component)
-                || (installation_review
-                    && marker.phase == product_contract::activation::Phase::Import)
-        })
+        .is_none_or(|marker| activation_allows(&marker, &state.product, component, admission))
     {
         return Err(problem(ProblemCode::Unavailable));
     }
@@ -395,9 +417,11 @@ pub fn suite_import_only(app: &tauri::AppHandle) -> Result<bool, &'static str> {
     match installation::activation(&executable, &app.package_info().version.to_string())? {
         None => Ok(false),
         Some(marker) => match marker.phase {
-            product_contract::activation::Phase::Import => Ok(true),
             product_contract::activation::Phase::Committed => Ok(false),
-            _ => Err("suite_activation_pending"),
+            // Health/recovery still need the native shell and metadata readers,
+            // with no schedulers or domain writers. Migration admission itself
+            // remains restricted to Import by its separate native access kind.
+            _ => Ok(true),
         },
     }
 }
@@ -438,4 +462,44 @@ pub fn isolate_installation(
     .map_err(std::io::Error::other)?;
     context.config_mut().identifier = format!("{}.i{}", context.config().identifier, suffix);
     Ok(guard)
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    #[test]
+    fn health_review_never_grants_owner_migration_or_business_writes() {
+        use product_contract::activation::{Activation, Phase};
+        for phase in [Phase::Import, Phase::Health, Phase::Recover] {
+            let marker = Activation {
+                schema_version: 1,
+                installation_id: "installation".into(),
+                generation: "generation".into(),
+                operation_id: "operation".into(),
+                revision: 0,
+                phase,
+            };
+            assert!(activation_allows(
+                &marker,
+                "workspace",
+                "workspace.commands",
+                Admission::InstallationReview
+            ));
+            assert!(!activation_allows(
+                &marker,
+                "workspace",
+                "workspace.files",
+                Admission::Ordinary
+            ));
+            assert_eq!(
+                activation_allows(
+                    &marker,
+                    "workspace",
+                    "workspace.files",
+                    Admission::OwnerMigration
+                ),
+                phase == Phase::Import
+            );
+        }
+    }
 }

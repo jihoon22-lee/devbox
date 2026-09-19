@@ -33,13 +33,21 @@ export function isProjectContext(value: unknown): value is ProjectContext {
 export function fixtureDescription(product: ProductId): Description {
   const entry = catalog.products.find((p) => p.id === product);
   if (!entry) throw new Error("제품을 찾을 수 없습니다.");
-  return { handshake: { protocolVersion: 1, product, installationId: "browser-fixture", sessionId: "browser-fixture" }, product: entry, features: catalog.features.filter((f) => f.owner === product), context: null };
+  return { handshake: { protocolVersion: 1, product, installationId: "browser-fixture", sessionId: "browser-fixture" }, deliveryState: "direct", product: entry, features: catalog.features.filter((f) => f.owner === product), context: null };
+}
+
+/** Native business views may write browser storage without a Rust command.
+ * Keep them unmounted until the installation admits ordinary product work. */
+export function productDataAvailable(description: Description): boolean {
+  return description.deliveryState === "direct" || description.deliveryState === "committed"
+    || (!nativeMode && description.deliveryState === undefined);
 }
 
 export async function describe(product: ProductId): Promise<Description> {
   const result = nativeMode ? await invoke<Description>("plugin:product-shell|describe") : fixtureDescription(product);
   if (result.handshake.protocolVersion !== 1 || result.handshake.product !== product || result.product.id !== product
     || result.features.some((feature) => feature.owner !== product)
+    || (nativeMode && result.deliveryState === undefined)
     || (result.deliveryState !== undefined && !["direct","import","health","committed","recover","unavailable"].includes(result.deliveryState))
     || (result.context !== null && !isProjectContext(result.context))) throw new Error("제품 연결 정보를 확인할 수 없습니다.");
   return result;

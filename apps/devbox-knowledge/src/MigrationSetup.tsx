@@ -10,7 +10,7 @@ interface Plan {
   preparedAtMs: number; hasPrevious: boolean; vault: string | null;
   sources: { source: Source; bytes: number; report: { imported: number; repeated: number; conflicts: number; retired: number; reservedRootIds: number } }[];
 }
-interface Job { state: "running" | "succeeded" | "failed" | "cancelled"; cancellationRequested?: boolean; value?: { plan: Plan; active: boolean }; issue?: string }
+interface Job { state: "running" | "succeeded" | "failed" | "cancelled"; cancellationRequested?: boolean; value?: { plan: Plan; active: boolean; prepared?:boolean }; issue?: string }
 export default function MigrationSetup({ onActivated, onBack }: { onActivated: () => void; onBack: () => void }) {
   const [sources, setSources] = useState<SourceInfo[]>([]);
   const [selected, setSelected] = useState<Source[]>([]);
@@ -50,7 +50,7 @@ export default function MigrationSetup({ onActivated, onBack }: { onActivated: (
         if (job.state === "running") { setCancelling(job.cancellationRequested === true); timer = setTimeout(() => void poll(), 250); return; }
         jobRef.current = null; busyRef.current = false; setJobId(null); setCancelling(false);
         if (job.state === "succeeded" && job.value) {
-          if (job.value.active) { activatedRef.current(); return; }
+          if (job.value.active || job.value.prepared) { activatedRef.current(); return; }
           setPlan(job.value.plan.phase === "prepared" ? job.value.plan : null);
         } else {
           const error = issueError(job.issue); setError(error.message);

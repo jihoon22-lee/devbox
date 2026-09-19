@@ -55,6 +55,9 @@ public installer or update flow.
 Product migration summaries report setup/review/busy state through authenticated
 native owners. They do not authorize activation. Import mode admits only the closed
 owner importer/review methods and keeps schedules and ordinary business writes off.
+All four renderers defer business views until commit, including browser-storage
+writers. Knowledge can prepare stores without starting engines; Health/Recovery
+allow bounded native observations but cannot invoke owner importers.
 Updates and Recovery can read fresh native package/shell/store observations from
 all four approved product owners. The probe never launches products or user work;
 pending imports remain unready. Renderer parity, source backup and activation

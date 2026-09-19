@@ -353,3 +353,22 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   fixtures. Initial typecheck caught missing Bundle initializer fields; corrected
   scoped API Rust/test compilation passed in 4.948s. Prepared regressions/native
   importer execution stay scheduled for complete B08 verification.
+
+### Keep precommit products in migration/readiness mode (2026-09-19)
+
+- Separate native installation review from owner importer admission. Health and
+  recovery may read bounded metadata; only Import admits migration writes.
+  Ordinary commands and schedulers remain gated until Committed.
+- Knowledge now validates prepared destination stores and retains the vault lease
+  without starting Notes/Activity/Search engines. Import completion reports
+  prepared separately from active. Workspace admits its existing reviewed file
+  session/recovery/LSP import methods through a finite native allowlist.
+- Product renderers avoid mounting business views before commit, preventing
+  browser-storage effects from bypassing native writer guards. Workspace mounts
+  only reviewed migration views; Control Center exposes installation/recovery
+  metadata and importer panels without Launcher or Manager execution views.
+- Prepared regression cases cover native admission, future store schema and
+  renderer storage isolation. Scoped Rust/test compilation passed (57.68s).
+  Initial UI typecheck hit the already-fixed B07 callback type; after inheriting
+  that fix, four-product TypeScript passed (17.59s). No detailed tests were run.
+  Activation coordination and Windows installation acceptance remain unfinished.

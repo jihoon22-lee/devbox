@@ -627,8 +627,9 @@ pub fn activate(
     .map_err(|_| "import_storage_unavailable")?;
     Ok(plan)
 }
-/// Only after all three engines initialize successfully. A failed health check
-/// leaves Activating visible for an explicit restart/recovery choice.
+/// After the native owner validates all three selected stores and vault ownership.
+/// Direct startup also initializes engines; Suite preparation keeps them stopped
+/// until package activation commits. Failed validation leaves Activating visible.
 pub fn commit(root: &Path, id: &str) -> Result<Plan, String> {
     let _lock = lock(root)?;
     let mut plan = read(root, id)?;

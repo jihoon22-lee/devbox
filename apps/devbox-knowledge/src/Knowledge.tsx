@@ -2,6 +2,7 @@ import {useIncomingReview} from "@devbox/product-shell/incoming";
 import type {SavedSearchInput} from "@devbox/knowledge-features/search";
 import { lazy, Suspense, useCallback, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
+import {productDataAvailable} from "@devbox/product-shell/api";
 import { Startup } from "./Startup";
 import { localDateKey } from "./dates";
 const LifecycleSettings = lazy(() => import("./LifecycleSettings"));
@@ -58,5 +59,10 @@ function Content({ route, navigate }: ShellContentProps) {
   </>;
 }
 export default function Knowledge() {
-  return <ProductShell product="knowledge" renderContent={props => <Startup><Content {...props}/></Startup>}/>;
+  return <ProductShell product="knowledge" renderContent={props => {
+    const available=productDataAvailable(props.description);
+    const pending=<p role="status">저장소 준비를 마친 뒤 Control Center에서 Suite 활성화를 완료해 주세요.</p>;
+    if(!available&&props.description.deliveryState!=="import")return pending;
+    return <Startup>{available?<Content {...props}/>:<>{pending}<Suspense fallback={null}><MigrationSettings/></Suspense></>}</Startup>;
+  }}/>;
 }
