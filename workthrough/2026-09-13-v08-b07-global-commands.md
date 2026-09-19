@@ -617,3 +617,9 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   Add a remaining-only entry that runs foreign-installation and shared surface
   cases without repeating passed delivery/hotkey scenarios. Final execution is
   pending; no product behavior changed and no local runtime tests were started.
+- Remaining native execution uses four executable builds without NSIS packaging
+  and only the remaining fixture scope. The previous run did not retain all four
+  binaries, so this lane now preserves them before execution for any continuation.
+  Unrelated native suites and the already-passing hotkey/handoff cases are skipped
+  explicitly; no skipped case is counted as new PASS. All known B07 fixes and
+  fixture changes are complete; only YAML/JS syntax and diff checks before push.
