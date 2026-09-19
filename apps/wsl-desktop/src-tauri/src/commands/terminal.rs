@@ -528,7 +528,7 @@ pub(crate) fn attach_native(
                     #[cfg(windows)]
                     let filtered = startup_cursor.filter(&buf[..n]);
                     #[cfg(windows)]
-                    let chunk = filtered.as_slice();
+                    let chunk: &[u8] = filtered.as_ref();
                     #[cfg(not(windows))]
                     let chunk = &buf[..n];
                     publish(decode_chunk(&mut carry, chunk));

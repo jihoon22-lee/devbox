@@ -574,3 +574,9 @@ boundary; normal user project selection already refreshes the UI explicitly.
   artifact provenance is a separate parameter, never spoofed CI environment.
   Node/YAML syntax and diff checks passed. This allows diagnosing the failed WSL2
   path without rebuilding apps or repeating passing independent native checks.
+
+- B07 CI35443629035 exposed a Windows-only type mistake in the earlier lint fix:
+  the startup filter returns `Cow<[u8]>`, not Vec. Use its stable `as_ref()`
+  conversion with an explicit slice type. A minimal metadata-only compile of the
+  exact production filter and adapter passed; it runs no PTY or WSL process.
+  The filtering algorithm/native passing evidence is unchanged.
