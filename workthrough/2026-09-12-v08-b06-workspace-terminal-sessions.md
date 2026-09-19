@@ -641,3 +641,9 @@ boundary; normal user project selection already refreshes the UI explicitly.
   after cancellation. Release verifier conditions are unchanged.
 - Only syntax/diff checks for these collected script/workflow fixes. The retained
   run35446176521 Workspace binary is reused for remaining hosted execution.
+
+- Run35447454066 passed actual Zellij startup, detach/reconnect, fresh PTY and
+  no start-command replay. Preserve that pass. Containers then returned the native
+  unavailable result; capture the precise method/outcome and equivalent read-only
+  Docker listing in the owned VM. Continue only containers/stopped-query against
+  the retained corrected executable, without rerunning the completed multiplexers.
