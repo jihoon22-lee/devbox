@@ -591,3 +591,19 @@ boundary; normal user project selection already refreshes the UI explicitly.
   artifact35441341492 and focused hosted dispatch. This avoids triggering full
   PR compilation/native jobs for each fixture-only diagnosis. Merge the proven
   fixture changes back into B06 once the remaining WSL2 gates pass.
+
+### Zellij launch failure and prerequisite completion (2026-09-19)
+
+- Hosted WSL2 run35445061755 captured the concrete failure: Zellij could not
+  find layout `disable-status`. The launch builtin is `disable-status-bar`;
+  `disable-status` is only the setup dump alias in pinned Zellij v0.43.1.
+  Correct the actual launch argv and its regression expectation/documentation.
+  Source: https://github.com/zellij-org/zellij/blob/v0.43.1/zellij-utils/src/input/layout.rs
+- Bring the temporary diagnostic branch's bounded output capture and shell-ready
+  wait into B06. B06 stays open until corrected native multiplexer and remaining
+  container/stopped-query acceptance pass. Prior unrelated passing evidence stands.
+- Finish and accept B06 before completing B07; keep B08 paused. No issue or PR
+  closes merely to reduce the open count. Existing local services remain untouched.
+- Focused Zellij argv regression passed (1 test, 20.388s including compilation).
+  Corrected Windows executable/WSL2 execution remains pending; no local WSL,
+  container, service or network operation was performed.
