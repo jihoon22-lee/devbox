@@ -103,12 +103,14 @@ impl Registry {
     }
     /// Provider disconnect revokes current references. No filesystem work runs
     /// under this mutex, including when the disconnected root is remote.
-    pub fn disconnect(&self) {
+    pub fn disconnect(&self) -> bool {
         if let Ok(mut state) = self.0.lock() {
             if let Some(state) = state.take() {
                 state.valid.store(false, Ordering::Release);
+                return true;
             }
         }
+        false
     }
     pub fn current(&self) -> Option<Selection> {
         let state = self.0.lock().ok()?;
@@ -205,8 +207,9 @@ mod tests {
             .replace(&serde_json::to_vec(&snapshot).unwrap())
             .unwrap();
         assert_eq!(registry.association("C:/old/project")["state"], "ambiguous");
-        registry.disconnect();
+        assert!(registry.disconnect());
         assert!(registry.current().is_none());
+        assert!(!registry.disconnect());
     }
     #[test]
     fn unverified_associations_remain_metadata_and_cannot_advertise_available_roots() {

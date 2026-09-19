@@ -65,9 +65,10 @@ pub fn install_project_snapshot(app: &tauri::AppHandle, bytes: &[u8]) -> Result<
 pub fn disconnect_project_provider(app: &tauri::AppHandle) {
     use tauri::Emitter;
     if let Some(host) = app.try_state::<Host>() {
-        host.projects.disconnect();
-        host.jobs.cancel_project();
-        let _ = app.emit_to("main", "devbox://project-context", ());
+        if host.projects.disconnect() {
+            host.jobs.cancel_project();
+            let _ = app.emit_to("main", "devbox://project-context", ());
+        }
     }
 }
 /// Decorate the existing Activity projections without rewriting source IDs,

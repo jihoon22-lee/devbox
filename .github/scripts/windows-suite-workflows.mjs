@@ -44,12 +44,12 @@ async function start(product,directory){
   const item={product,executable,port,policy,child:null,cdp:null};live.push(item);
   item.child=spawn(executable,[],{cwd:path.dirname(executable),env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`},stdio:["ignore","ignore","pipe"]});
   item.child.stderr.setEncoding("utf8");item.child.stderr.on("data",value=>{item.nativeError=((item.nativeError??"")+value).slice(-2000);});
-  await once(item.child,"spawn");item.cdp=await connect(port,item.child);await waitForRenderer(item.cdp,"!!window.__TAURI_INTERNALS__","native product bridge missing");
+  await once(item.child,"spawn");item.identity=allWindowsProcesses().find(value=>value.Pid===item.child.pid&&path.resolve(value.Path).toLowerCase()===path.resolve(executable).toLowerCase());assert.ok(item.identity,"spawned product identity missing");item.cdp=await connect(port,item.child);await waitForRenderer(item.cdp,"!!window.__TAURI_INTERNALS__","native product bridge missing");
   return item;
 }
 function routeFor(component){return component==="workspace.terminal"?"terminal":component==="workspace.runtime"?"tasks":component==="workspace.logs"?"logs":component==="workspace.files"?"files":component.startsWith("workspace.")?"overview":component==="api-studio.transforms"?"transforms":component==="api-studio.webhooks"?"webhooks":component.startsWith("api-studio.")?"requests":(component.startsWith("knowledge.search")||component==="knowledge.opener")?"search":"notes";}
 async function request(item,command,body,route){
-  return item.cdp.evaluate(`(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route??catalog.products.find(product=>product.id===item.product).defaultRoute)},context:d.context};return invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});})()`,{timeoutMs:35000});
+  return item.cdp.evaluate(`(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route??catalog.products.find(product=>product.id===item.product).defaultRoute)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){throw new Error(JSON.stringify({command:${JSON.stringify(command)},method:${JSON.stringify(body.method??null)},problem}));}})()`,{timeoutMs:35000});
 }
 const value=result=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
 const domain=async(item,component,method,args={})=>value(await request(item,`plugin:${item.product}|execute`,{component,method,args},routeFor(component)));
@@ -74,7 +74,7 @@ try {
   await domain(knowledge,"knowledge.migration","start_empty");
   for(const item of Object.values(apps))await approve(item);
   evidence.checks.approvedExactFourProductInstallation=true;
-  for(const product of ["workspace","api-studio","knowledge"]){const description=await suite(center,{kind:"probe",product});assert.ok(description);}
+  for(const product of ["workspace","api-studio","knowledge"]){stage("probe-"+product);const description=await suite(center,{kind:"probe",product});assert.ok(description);}
   stage("project-identity-and-command-review");
   const projects=[];
   for(const suffix of ["one","two"]){const directory=path.join(root,suffix);mkdirSync(directory);writeFileSync(path.join(directory,"selected.txt"),"가😀나\nsynthetic suite selection\n");const preview=await domain(workspace,"workspace.registry","preview_windows",{root:directory});const registered=await domain(workspace,"workspace.registry","apply_registration",{previewId:preview.previewId,name:"같은 이름",action:"register"});projects.push({directory,context:registered.context});}
@@ -195,10 +195,15 @@ try {
 finally {
   evidence.cleanup=[];
   for(const item of live.reverse()){
-    item.cdp?.close();if(item.child?.exitCode===null){if(item.identity)await stopOwnedProcess(item.identity,item.executable,item.child);else{const exited=once(item.child,"exit");item.child.kill();await Promise.race([exited,delay(10000)]);}}
-    if(item.policy)restoreElevatedCdpPolicy(item.policy);
-    const exited=!item.child||item.child.exitCode!==null;evidence.cleanup.push({product:item.product,exited,nativeError:item.nativeError});
-    if(!exited){process.exitCode=1;evidence.result="failed";}
+    item.cdp?.close();
+    try {
+      if(item.identity)await stopOwnedProcess(item.identity,item.executable,item.child);
+      else if(item.child&&item.child.exitCode===null&&item.child.signalCode===null){const exited=once(item.child,"exit");item.child.kill();await Promise.race([exited,delay(10000)]);}
+      const exited=item.identity?!allWindowsProcesses().some(value=>value.Pid===item.identity.Pid&&value.Created===item.identity.Created&&value.Path===item.identity.Path):!item.child||item.child.exitCode!==null||item.child.signalCode!==null;
+      evidence.cleanup.push({product:item.product,exited,nativeError:item.nativeError});
+      if(!exited){process.exitCode=1;evidence.result="failed";}
+    } catch(error){evidence.cleanup.push({product:item.product,error:String(error)});process.exitCode=1;evidence.result="failed";}
+    finally {if(item.policy)restoreElevatedCdpPolicy(item.policy);}
   }
   report();
 }

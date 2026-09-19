@@ -124,7 +124,7 @@ try {
   progress("knowledge-draft"); await click("nav", "변환");
   await wait('!!document.querySelector(".api-feature-transforms:not([hidden]) .diff-view")', "comparison state was lost on navigation");
   await click('[aria-label="새 버전 차이 결과"]', "Knowledge 초안 보관"); await click(".studio-knowledge-dialog", "마스킹 사본 보관");
-  await wait('!document.querySelector(".studio-knowledge-dialog") && document.querySelector(".api-feature-transforms").textContent.includes("Knowledge 수신 연결을 사용할 수 없어")', "Knowledge fallback was not accurately reported");
+  await wait('!document.querySelector(".studio-knowledge-dialog") && document.querySelector(".api-feature-transforms").textContent.includes("API Studio에 마스킹한 초안을 보관했습니다")', "masked draft storage was not reported");
   const drafts = await success("api-studio.transforms", "list_knowledge_drafts"); assert.equal(drafts.length, 1);
   const draftId = drafts[0].artifact.id; const draft = await success("api-studio.transforms", "get_knowledge_draft", { id: draftId });
   assert.ok(draft.body.includes("s03-response")); assert.ok(!draft.body.includes(secret));
@@ -134,7 +134,7 @@ try {
   const reopened = await success("api-studio.transforms", "get_knowledge_draft", { id: draftId }); assert.equal(reopened.body, draft.body);
   assert.equal((await call("api-studio.api", "get_knowledge_draft", { id: draftId })).operation.outcome.state, "failed");
   await stop();
-  Object.assign(evidence, { result: "pass", captureMasked: true, explicitApply: true, nativeDpapiReconnect: true, oneExplicitSend: true, responseMasked: true, nativeComparison: true, mockEditorOnly: true, listenerStopped: true, knowledgeUnavailablePreserved: true, restartPreservesDraft: true, ownerIsolation: true }); progress("complete");
+  Object.assign(evidence, { result: "pass", captureMasked: true, explicitApply: true, nativeDpapiReconnect: true, oneExplicitSend: true, responseMasked: true, nativeComparison: true, mockEditorOnly: true, listenerStopped: true, maskedDraftStored: true, restartPreservesDraft: true, ownerIsolation: true }); progress("complete");
 } catch (error) { evidence.error = error.message; throw error; }
 finally {
   ui?.cdp.close(); for (const child of live) if (child.exitCode === null && child.signalCode === null) child.kill();

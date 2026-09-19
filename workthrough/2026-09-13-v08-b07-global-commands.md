@@ -498,3 +498,17 @@ Windows compile found one Arc<ProjectOwner> dereference in the WSL Editor select
 proof; the native call now passes its referenced owner explicitly. No local full
 verification repeats are needed for these changes. B06's joined WSL inventory
 runtime repair and paged terminal fixture will be rebased into this PR.
+
+### 2026-09-19 재개: native 실패 수정 묶음
+
+- B06 renderer context reload 수정 `2b1a442`를 반영했다. B07 `fe1cbf8`의 일반 CI
+  `34742051997` 전체 PASS와 기존 full local audit PASS는 보존한다.
+- Knowledge Activity의 무한 로딩 원인: 연결되지 않은 Workspace metadata 조회 실패마다
+  `disconnect_project_provider`가 같은 context event를 재발행하고 React가 digest를 재시작했다.
+  Registry disconnect가 실제 snapshot을 폐기한 경우에만 invalidation을 알린다.
+  관련 core provider 테스트 4개 PASS (shared resource wrapper, 90.113s).
+- API workflow fixture는 별도 전송을 기다리는 마스킹 초안 저장 문구를 확인하도록 갱신했다.
+- suite fixture는 native rejection의 Problem/command/method와 정확한 probe 단계를 기록한다.
+  초기 프로세스도 PID/creation/image identity를 보존해 정리하고 signal 종료를 미종료로
+  오인하지 않는다. 다른 프로세스 이름을 대상으로 종료하지 않는다.
+- 두 변경 JS syntax와 diff PASS. hosted native 수용은 아직 미완료이며 PASS로 보고하지 않는다.
