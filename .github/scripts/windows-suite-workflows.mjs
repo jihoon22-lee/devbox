@@ -13,7 +13,9 @@ import {createHash,randomUUID} from "node:crypto";
 import {setTimeout as delay} from "node:timers/promises";
 requireHostedNetworkFixture();assert.equal(process.platform,"win32");
 const catalog=JSON.parse(readFileSync("apps/products.json","utf8"));
-const root=mkdtempSync(path.join(tmpdir(),"devbox-suite-workflow-"));
+// Windows TEMP can contain an 8.3 user-directory alias. Registry grants use
+// canonical native roots, as do actual picker results. Use that same spelling.
+const root=realpathSync.native(mkdtempSync(path.join(tmpdir(),"devbox-suite-workflow-")));
 const evidence={source:process.env.GITHUB_SHA,environment:"github-hosted-windows",stage:"assembly",checks:{},result:"failed"};
 mkdirSync("product-foundation-evidence",{recursive:true});
 const report=()=>writeFileSync("product-foundation-evidence/suite-workflows.json",JSON.stringify(evidence,null,2));
@@ -51,8 +53,8 @@ function routeFor(component){return component==="workspace.terminal"?"terminal":
 async function request(item,command,body,route){
   return item.cdp.evaluate(`(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route??catalog.products.find(product=>product.id===item.product).defaultRoute)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){throw new Error(JSON.stringify({command:${JSON.stringify(command)},method:${JSON.stringify(body.method??null)},problem}));}})()`,{timeoutMs:35000});
 }
-const value=result=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
-const domain=async(item,component,method,args={})=>value(await request(item,`plugin:${item.product}|execute`,{component,method,args},routeFor(component)));
+const value=(result,call)=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify({call,...result}));return result.value;};
+const domain=async(item,component,method,args={})=>value(await request(item,`plugin:${item.product}|execute`,{component,method,args},routeFor(component)),`${component}.${method}`);
 const suite=async(item,method)=>value(await request(item,"plugin:suite|connection",{method}));
 const commands=async(item,method,args)=>value(await request(item,`plugin:commands|${method}`,args));
 async function approve(item){const review=await suite(item,{kind:"preview"});assert.equal(review.products.length,4);await suite(item,{kind:"approve",token:review.token,remember:true});assert.equal((await suite(item,{kind:"status"})).connected,true);}
@@ -109,6 +111,7 @@ try {
   stage("editor-to-transform");
   await domain(workspace,"workspace.registry","select_project",{context:projects[0].context});
   await reload(workspace);
+  assert.deepEqual((await workspace.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')")).context,projects[0].context);
   const file=await domain(workspace,"workspace.files","open_file",{request:{path:path.join(projects[0].directory,"selected.txt"),encoding:null}});
   await domain(workspace,"workspace.files","sync_editor_document",{path:file.path,nativeRevision:file.nativeRevision,text:file.text});
   const sent=await domain(workspace,"workspace.files","send_editor_selection",{path:file.path,nativeRevision:file.nativeRevision,text:file.text,from:1,to:3});

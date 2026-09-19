@@ -549,3 +549,17 @@ runtime repair and paged terminal fixture will be rebased into this PR.
 - 남은 실패: registry aggregate cleanup의 stale revision(B06 수정 반영), suite 첫
   Workspace probe의 generic Unavailable. 네 제품 정리는 모두 실제 종료로 확인됐다.
   정적 계약 대조/경로 canonicalization/native 코드 진단을 묶은 다음 head로 진행한다.
+
+### 2026-09-19 native artifact continuation
+
+- Native run 35434150817 passed exact four-product approval, distinct same-name
+  projects, review reject/accept/replay/stale command handling, and cold activation
+  of the remembered physical member. General CI 35434150814 passed.
+- Editor selection stopped with `file_context_changed`. Registry canonicalizes
+  its granted root; the fixture used the raw Windows TEMP spelling, which can
+  contain 8.3 aliases. Canonicalize the fixture root before registration and file
+  requests, matching native picker spelling, without weakening file authority.
+  Assert the selected context after reload and include method names in failed
+  operation evidence. This correction still needs hosted native execution.
+- Commit checks: JavaScript syntax and diff only; preserved completed native and
+  local acceptance evidence. No Docker/network/service operations run locally.
