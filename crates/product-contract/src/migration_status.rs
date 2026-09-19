@@ -40,6 +40,21 @@ impl MappingSummary {
     }
 }
 impl Summary {
+    pub fn validate(&self, owner: &str, version: &str) -> Result<(), &'static str> {
+        if self.schema_version != 1
+            || self.owner != owner
+            || self.suite_version != version
+            || !crate::installation::PRODUCTS.contains(&owner)
+        {
+            return Err("migration_summary_invalid");
+        }
+        MappingSummary::new(0, self.revision.clone())?;
+        if let Some(mapping) = &self.mappings {
+            MappingSummary::new(mapping.record_count, mapping.revision.clone())?;
+        }
+        Ok(())
+    }
+
     pub fn with_mappings(mut self, mappings: MappingSummary) -> Result<Self, &'static str> {
         let mappings = MappingSummary::new(mappings.record_count, mappings.revision)?;
         let bytes = serde_json::to_vec(&(&self.revision, &mappings))

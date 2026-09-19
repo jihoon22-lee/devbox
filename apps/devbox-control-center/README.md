@@ -47,7 +47,11 @@ public installer or update flow.
 Product migration summaries report setup/review/busy state through authenticated
 native owners. They do not authorize activation. Import mode admits only the closed
 owner importer/review methods and keeps schedules and ordinary business writes off.
-Owner backup/import coordination, health/commit, installed update/downgrade,
+Updates and Recovery can read fresh native package/shell/store observations from
+all four approved product owners. The probe never launches products or user work;
+pending imports remain unready. Renderer parity, source backup and activation
+commit are separate gates.
+Owner backup/import coordination, activation health/commit, installed update/downgrade,
 shortcuts/ARP/uninstall and reviewed legacy cleanup remain part of B08's unfinished
 implementation. See the [B08 workthrough](../../workthrough/2026-09-13-v08-b08-suite-recovery.md)
 for actual evidence and remaining acceptance.

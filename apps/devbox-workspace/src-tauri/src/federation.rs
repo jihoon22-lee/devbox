@@ -275,7 +275,15 @@ pub(crate) fn handle(
     cancellation: Option<product_contract::query::Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
-        if matches!(&call, Call::ReadMigrationStatus {}) { return crate::component::suite_migration_status(&app); }
+        if matches!(&call, Call::ReadMigrationStatus {}) {
+            static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> = std::sync::OnceLock::new();
+            let permit = READERS.get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
+                .clone().try_acquire_owned().map_err(|_| "migration_busy")?;
+            return tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                crate::component::suite_migration_status(&app)
+            }).await.map_err(|_| "migration_unavailable")?;
+        }
 
         if let Call::ReadTransformSelection { id } = &call {
             return crate::selection_send::read(&app, id, _deadline).await;

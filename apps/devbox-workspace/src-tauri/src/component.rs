@@ -2417,7 +2417,18 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
         .get("selected")
         .and_then(Value::as_bool)
         .unwrap_or(false);
-    let native = serde_json::to_vec(&(status, rows)).map_err(|_| "migration_unavailable")?;
+    // Read the selected Registry and revalidate every owned component directory.
+    // No repository, task, terminal or scheduler is started by this observation.
+    let registry = if selected {
+        for component in crate::core::stores::COMPONENTS {
+            host.component(component)?;
+        }
+        Some(host.projects()?.snapshot()?)
+    } else {
+        None
+    };
+    let native =
+        serde_json::to_vec(&(status, rows, registry)).map_err(|_| "migration_unavailable")?;
     serde_json::to_value(product_contract::migration_status::Summary::new(
         "workspace",
         env!("CARGO_PKG_VERSION"),

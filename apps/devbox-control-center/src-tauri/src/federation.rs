@@ -10,6 +10,22 @@ pub(crate) fn handle(
     Box<dyn std::future::Future<Output = Result<serde_json::Value, &'static str>> + Send>,
 > {
     Box::pin(async move {
+        if matches!(&call, Call::ReadMigrationStatus {}) {
+            static READERS: std::sync::OnceLock<std::sync::Arc<tokio::sync::Semaphore>> =
+                std::sync::OnceLock::new();
+            let permit = READERS
+                .get_or_init(|| std::sync::Arc::new(tokio::sync::Semaphore::new(1)))
+                .clone()
+                .try_acquire_owned()
+                .map_err(|_| "migration_busy")?;
+            return tokio::task::spawn_blocking(move || {
+                let _permit = permit;
+                crate::launcher_import::suite_status(&app)
+            })
+            .await
+            .map_err(|_| "migration_unavailable")?;
+        }
+
         if matches!(
             &call,
             Call::ReadOperations {} | Call::ReviewOperation { .. }

@@ -361,3 +361,5 @@ pub mod operations;
 pub mod activation;
 
 pub mod migration_status;
+
+pub mod health;

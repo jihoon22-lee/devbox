@@ -50,6 +50,9 @@ pub enum QueryMode {
     deny_unknown_fields
 )]
 pub enum Call {
+    ReadHealthStatus {
+        challenge: String,
+    },
     ReadMigrationStatus {},
     ReadOperations {},
     ReviewOperation {
@@ -259,6 +262,9 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::ReadHealthStatus { challenge } if !commands::opaque_id(challenge) => {
+            return Err("peer_request_invalid");
+        }
         Call::ReviewOperation {
             id,
             revision,
@@ -435,6 +441,28 @@ mod tests {
                 context: None,
             },
         }
+    }
+    #[test]
+    fn only_control_center_can_request_fresh_native_health() {
+        for product in PRODUCTS {
+            let mut guard = Guard::new(
+                Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                "native-session",
+            )
+            .unwrap();
+            let mut input = request();
+            input.call = Call::ReadHealthStatus {
+                challenge: "fresh-probe".into(),
+            };
+            assert_eq!(
+                guard.authorize(&input, 1000).is_ok(),
+                product == "control-center"
+            );
+        }
+        assert!(validate_call(&Call::ReadHealthStatus {
+            challenge: "".into()
+        })
+        .is_err());
     }
     #[test]
     fn observed_peer_role_scope_generation_deadline_and_replay_are_independent() {

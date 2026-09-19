@@ -8,6 +8,7 @@ const HostedLauncher=lazy(()=>import("./HostedLauncher"));
 const LauncherImport=lazy(()=>import("./LauncherImport"));
 const MigrationOwners=lazy(()=>import("./MigrationOwners"));
 const LegacyInventory=lazy(()=>import("./LegacyInventory"));
+const Health=lazy(()=>import("./Health"));
 const Recovery=lazy(()=>import("./Recovery"));
 const Inventory=lazy(()=>import("./Inventory"));
 const Tools=lazy(()=>import("./Tools"));
@@ -41,7 +42,7 @@ function Content(props:ShellContentProps) {
   },[]);
   const feature=props.description.features.find(feature=>feature.route===props.route);
   return <>{shortcutIssue&&<p role="alert">{shortcutIssue}</p>}<button onClick={()=>setLauncher(true)}>Launcher 열기</button>{launcher&&<Suspense fallback={<p role="status">Launcher를 불러오고 있습니다…</p>}><HostedLauncher {...props} close={close}/></Suspense>}<Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}>{
-    props.route==="recovery"?<><Recovery {...props}/><Tools route={props.route}/></>:["environment","diagnostics","tools"].includes(props.route)?<Tools route={props.route}/>:props.route==="products"?<><Inventory {...props}/><Commands {...props}/></>:props.route==="components"?<Inventory {...props}/>:props.route==="migration"?<><MigrationOwners {...props}/><LegacyInventory {...props}/><LauncherImport {...props}/></>:feature?<RouteView description={props.description} feature={feature}/>:null
+    props.route==="recovery"?<><Recovery {...props}/><Health {...props}/><Tools route={props.route}/></>:["environment","diagnostics","tools"].includes(props.route)?<Tools route={props.route}/>:props.route==="products"?<><Inventory {...props}/><Commands {...props}/></>:props.route==="updates"?<><Recovery {...props}/><Health {...props}/></>:props.route==="components"?<Inventory {...props}/>:props.route==="migration"?<><MigrationOwners {...props}/><LegacyInventory {...props}/><LauncherImport {...props}/></>:feature?<RouteView description={props.description} feature={feature}/>:null
   }</Suspense></>;
 }
 ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><ProductShell product="control-center" renderContent={Content}/></React.StrictMode>);

@@ -203,6 +203,25 @@ fn authorize_inner(
     Ok(provenance)
 }
 
+/// Observe a live local main shell without invoking a business command or
+/// changing navigation. The caller separately verifies package and data owners.
+pub fn health_session(app: &tauri::AppHandle, product: &str) -> Result<String, &'static str> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("health_window_unavailable")?;
+    if !local_main(&window) {
+        return Err("health_window_unavailable");
+    }
+    let state = app
+        .try_state::<ShellState>()
+        .ok_or("health_shell_unavailable")?;
+    if state.product != product {
+        return Err("health_owner_mismatch");
+    }
+    let session = state.session.lock().map_err(|_| "health_shell_busy")?;
+    Ok(session.handshake().session_id.clone())
+}
+
 /// Native context for Workspace-owned background notifications. The owner
 /// retains its context permit through observation and delivery.
 pub fn workspace_context(window: &WebviewWindow) -> Result<Option<ProjectContext>, &'static str> {

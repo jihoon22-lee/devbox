@@ -229,3 +229,23 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   UI의 명시적 상태 읽기에만 실행하며 background polling을 추가하지 않았다.
 - 최소 Rust/Control Center TypeScript check PASS 46.395s. 브라우저 미승인 행 제외,
   opaque ID·destination 변경·잘못된 receipt 타입 회귀를 준비했으며 PR 완료 때 실행한다.
+
+### Native product health observation (2026-09-19)
+
+- Added a Control Center-only health call over the already approved physical
+  installation bus. Native challenges, generation, installation key, live main
+  shell session, catalog revision and exact routes are checked at the receiver
+  and host. No cold launch, business operation, service or scheduler is invoked.
+- Owners read their existing migration/store state on bounded blocking workers.
+  Workspace additionally revalidates selected component directories and Registry;
+  Control Center reads Launcher preferences, shortcut config and import journal
+  without applying settings or registering shortcuts. Incomplete imports remain
+  unready. Responses contain digests/state, not raw preferences or user records.
+- Updates and Recovery show the four independent observations. These are native
+  package/shell/store observations, not renderer parity, a global data transaction,
+  source backup evidence or an activation commit permission.
+- Prepared contract regressions for stale challenge/generation/owner, repeated
+  routes, pending/busy import and non-Control-Center callers. Detailed tests stay
+  scheduled for the completed B08 bundle. Minimal Rust checks for the four owners
+  and Control Center TypeScript passed in 33.722s under the shared resource budget;
+  Windows-only adapter execution remains pending.

@@ -11,6 +11,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{Manager, State, WebviewWindow};
+#[cfg(windows)]
+#[path = "suite_health.rs"]
+mod health;
 
 pub(crate) type DomainHandler = fn(
     tauri::AppHandle,
@@ -85,6 +88,9 @@ struct Input {
     deny_unknown_fields
 )]
 enum Method {
+    ReadHealthStatus {
+        product: String,
+    },
     ReadMigrationStatus {
         product: String,
     },
@@ -150,6 +156,7 @@ async fn connection(
             | Method::Probe { .. }
             | Method::ReadOperations { .. }
             | Method::ReadMigrationStatus { .. }
+            | Method::ReadHealthStatus { .. }
     ) {
         product_shell_tauri::authorize_installation_review(&window, &request.header)?
     } else {
@@ -173,7 +180,7 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
-            Method::ReadMigrationStatus { product } => {
+            Method::ReadHealthStatus { product } | Method::ReadMigrationStatus { product } => {
                 let _ = product;
             }
 
@@ -334,6 +341,12 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::ReadHealthStatus { product: target } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            health::read(app, &target, domain, deadline).await
+        }
         Method::ReadMigrationStatus { product: target } => {
             if product != "control-center" {
                 return Err("peer_method_denied");
@@ -628,6 +641,7 @@ fn handler(
                 &call,
                 Call::Describe {}
                     | Call::ReadMigrationStatus {}
+                    | Call::ReadHealthStatus { .. }
                     | Call::ReadOperations {}
                     | Call::CommandStatus { .. }
                     | Call::ShortcutStatus {}
@@ -647,6 +661,9 @@ fn handler(
                 return Err("query_cancelled");
             }
             match call {
+                Call::ReadHealthStatus { challenge } => {
+                    health::observe(app, product, domain, challenge, deadline).await
+                }
                 Call::Describe {} => Ok(
                     serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
                 ),

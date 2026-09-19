@@ -323,3 +323,44 @@ mod tests {
         assert!(resume_state(Some(&before), None, b"planned preferences").is_err());
     }
 }
+
+/// Read current owned preferences and import journal without applying a plan or
+/// registering shortcuts. Pending imports remain visibly unready for activation.
+pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<serde_json::Value> {
+    let owner = app
+        .try_state::<Owner>()
+        .ok_or("launcher_import_unavailable")?;
+    let pending = owner.0.try_lock().map_err(|_| "launcher_import_busy")?;
+    let preferences_owner = app
+        .try_state::<crate::commands::PreferenceOwner>()
+        .ok_or("preferences_unavailable")?;
+    let _preferences = preferences_owner
+        .0
+        .try_lock()
+        .map_err(|_| "preferences_busy")?;
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "preferences_unavailable")?;
+    devbox_filesystem::ensure_no_links(&root).map_err(|_| "preferences_unavailable")?;
+    let prefs = preferences(read_bounded(&root.join(PREFERENCES_FILE), 65536)?.as_deref())?;
+    let journal = read_journal(&root)?;
+    let shortcuts = read_bounded(&root.join("suite-shortcuts.json"), 4096)?;
+    if let Some(bytes) = &shortcuts {
+        let config: product_contract::shortcuts::Config =
+            serde_json::from_slice(bytes).map_err(|_| "shortcut_invalid")?;
+        config.validate().map_err(|_| "shortcut_invalid")?;
+    }
+    let review = pending.is_some() || journal.as_ref().is_some_and(|value| !value.committed);
+    let native =
+        serde_json::to_vec(&(prefs, journal, shortcuts)).map_err(|_| "migration_unavailable")?;
+    serde_json::to_value(product_contract::migration_status::Summary::new(
+        "control-center",
+        env!("CARGO_PKG_VERSION"),
+        false,
+        true,
+        review,
+        &native,
+    )?)
+    .map_err(|_| "migration_unavailable")
+}
