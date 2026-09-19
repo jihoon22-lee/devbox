@@ -624,3 +624,19 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Source-aware legacy activation/cleanup, installed update/self-update/downgrade,
   final recovery edge cases, complete Windows fixtures and B08 PR acceptance remain
   unfinished. This is implementation progress, not permission to close #550.
+
+### Prepare hosted Suite acceptance without running it during development
+
+- Add a hosted-Windows-only fixture for the actual NSIS custom-root install,
+  one Suite ARP entry, four native shortcuts, uncommitted setup state, closed-data
+  checkpoint/restore, refusal to commit without fresh health, undo preserving newer
+  original data, and uninstall preserving both user namespaces and an unlisted file.
+- The fixture uses a random physical installation and synthetic namespaces only;
+  it never provisions WSL/Docker or changes host services/networking. Its cleanup
+  uses the captured installation key and owned registry location, not a global scan.
+- Wire private Suite assembly after the four existing product builds. Compile the
+  internal bootstrap, package those exact binaries and preserve the resulting
+  installer/payload/helper before execution so a failure can reuse the artifact.
+  Native evidence explicitly names this narrower scope; it is not full B08 acceptance.
+- These fixtures/workflow additions are prepared source only. No new CI, test,
+  application build, installation or uninstallation has been executed here.

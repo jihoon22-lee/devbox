@@ -379,6 +379,47 @@ jobs:
             }
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
+      - name: Assemble the private Suite installer from these four product binaries
+        id: suite-build
+        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          cargo build -p devbox-control-center --bin devbox-suite-bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'Suite bootstrap compilation failed' }
+          $payload = Join-Path $env:RUNNER_TEMP 'suite-native-payload'
+          $staging = Join-Path $env:RUNNER_TEMP 'suite-native-staging'
+          New-Item -ItemType Directory -Path $payload | Out-Null
+          foreach ($product in @('workspace','api-studio','knowledge','control-center')) {
+            New-Item -ItemType Directory -Path "$payload/$product" | Out-Null
+            Copy-Item "target/debug/devbox-$product.exe" "$payload/$product/"
+          }
+          New-Item -ItemType Directory -Path "$payload/workspace/resources/wsl" -Force | Out-Null
+          Copy-Item 'apps/devbox-workspace/src-tauri/resources/wsl/*' "$payload/workspace/resources/wsl/"
+          New-Item -ItemType Directory -Path "$payload/control-center/resources/suite" -Force | Out-Null
+          Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$payload/control-center/resources/suite/"
+          Copy-Item THIRD_PARTY_NOTICES.md "$payload/"
+          $version = (Get-Content -Raw apps/devbox-control-center/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $source = (git rev-parse HEAD).Trim()
+          python .github/scripts/build-suite-package.py portables $payload $staging $version $source
+          if ($LASTEXITCODE -ne 0) { throw 'Suite portable assembly failed' }
+          $nsis = @(Get-ChildItem "$env:LOCALAPPDATA/tauri" -Filter makensis.exe -Recurse -File -ErrorAction SilentlyContinue)
+          if ($nsis.Count -ne 1) { throw 'Expected the NSIS compiler already used by Tauri' }
+          python .github/scripts/build-suite-installer.py $staging "$payload/control-center/resources/suite/devbox-suite-bootstrap.exe" --makensis $nsis[0].FullName
+          if ($LASTEXITCODE -ne 0) { throw 'Suite installer assembly failed' }
+          Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$staging/devbox-suite-bootstrap.exe"
+      - name: Retain the Suite fixture before native execution
+        if: ${{ steps.suite-build.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-delivery-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/suite-native-staging
+          if-no-files-found: error
+          retention-days: 1
+      - name: Exercise Suite installation, data restore and data-preserving removal
+        if: ${{ !cancelled() && steps.suite-build.outcome == 'success' }}
+        shell: pwsh
+        run: .github/scripts/windows-suite-delivery.ps1 -Staging "$env:RUNNER_TEMP/suite-native-staging" -Bootstrap "$env:RUNNER_TEMP/suite-native-staging/devbox-suite-bootstrap.exe"
       - name: Exercise packaged shell and installation namespace isolation
         if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
