@@ -185,3 +185,14 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - 최소 Rust check: 설치 reference 4.998s, bootstrap recovery 2.131s PASS.
   앞선 non-Windows branch의 unit/Result 혼합 타입 오류를 수정했다. 새 regression fixture는
   PR 구현 완료 시 실행한다. B08 전체 검증/실제 Suite installer acceptance는 아직 미실행이다.
+
+### 중단한 첫 설치 재시작
+
+- `--restart-install`은 이전 작업이 Recovered이고 활성화된 이전 세대가 없는 경우에만
+  새 operation/generation을 할당한다. 기존 부분 파일과 가져온 데이터는 보존하며 새 package
+  slot을 준비한다. 다른 payload나 이미 committed인 설치에는 이 경로를 쓰지 않는다.
+- restart intent를 먼저 보존하고 completed journal을 archive한 뒤 새 journal을 시작한다.
+  intent 기록 직후 crash는 `--prepare-install`로 이어갈 수 있다. 이전 manifest 교체는
+  archived Recovered journal과 Recover marker가 모두 일치할 때만 허용한다.
+- 최소 Rust check 1.829s PASS. archive read-back/동일 slot 거부/사용자 데이터 보존 회귀
+  fixture를 준비했으며 PR 완료 시 실행한다. 실제 setup/업데이트/활성화 수용은 아직 남아 있다.

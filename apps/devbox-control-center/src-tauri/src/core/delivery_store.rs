@@ -121,6 +121,38 @@ impl Store {
             })
             .transpose()
     }
+    pub fn archived(&self, operation_id: &str) -> Result<Journal> {
+        if uuid::Uuid::parse_str(operation_id).is_err() {
+            return Err("suite_archive_invalid");
+        }
+        self.revalidate()?;
+        let path = self.root.join(format!("completed-{operation_id}.json"));
+        ensure_no_links(&path).map_err(|_| "suite_archive_unsafe")?;
+        let (file, identity) =
+            open_filesystem_object(&path, false).map_err(|_| "suite_archive_unavailable")?;
+        let mut bytes = Vec::new();
+        file.take(MAX_BYTES + 1)
+            .read_to_end(&mut bytes)
+            .map_err(|_| "suite_archive_unavailable")?;
+        if bytes.len() as u64 > MAX_BYTES
+            || filesystem_identity(&path, false).map_err(|_| "suite_archive_changed")? != identity
+        {
+            return Err("suite_archive_changed");
+        }
+        let journal: Journal =
+            serde_json::from_slice(&bytes).map_err(|_| "suite_archive_invalid")?;
+        journal.validate()?;
+        if journal.operation_id != operation_id
+            || !matches!(
+                journal.phase,
+                super::delivery::Phase::Complete | super::delivery::Phase::Recovered
+            )
+        {
+            return Err("suite_archive_invalid");
+        }
+        self.revalidate()?;
+        Ok(journal)
+    }
     /// Start a later operation only after the previous operation has settled.
     /// Archive first, then replace the current journal: an interrupted archive
     /// is harmless and a retry must observe identical bytes, never overwrite it.
@@ -316,6 +348,43 @@ mod tests {
         );
         assert_eq!(store.begin(Some(&hash), &next), Err("suite_journal_stale"));
         assert_eq!(store.read().unwrap().unwrap().1, current_hash);
+        drop(store);
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn recovered_first_install_can_restart_without_replacing_data_or_reusing_its_slot() {
+        let root = std::env::temp_dir().join(format!("devbox-restart-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        fs::write(
+            root.join("imported-user-data.json"),
+            b"retained fixture data",
+        )
+        .unwrap();
+        let store = Store::open(&root).unwrap();
+        let first = uuid::Uuid::new_v4().to_string();
+        let mut old = journal(&first, None);
+        let mut hash = store.begin(None, &old).unwrap();
+        old.fail(old.revision, "installation_cancelled").unwrap();
+        hash = store.write(Some(&hash), &old).unwrap();
+        old.advance(
+            old.revision,
+            Proof {
+                phase: Phase::Recover,
+                generation: first.clone(),
+                revision: "d".repeat(64),
+            },
+        )
+        .unwrap();
+        hash = store.write(Some(&hash), &old).unwrap();
+        assert!(store.begin(Some(&hash), &journal(&first, None)).is_err());
+        let next = journal(&uuid::Uuid::new_v4().to_string(), None);
+        store.begin(Some(&hash), &next).unwrap();
+        assert_eq!(store.archived(&first).unwrap(), old);
+        assert!(store.archived("../journal").is_err());
+        assert_eq!(
+            fs::read(root.join("imported-user-data.json")).unwrap(),
+            b"retained fixture data"
+        );
         drop(store);
         fs::remove_dir_all(root).unwrap();
     }

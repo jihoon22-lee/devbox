@@ -279,9 +279,14 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         return Err("bootstrap_windows_required");
     }
     if arguments.len() != 3
-        || !["--stage", "--prepare-install", "--recover-install"]
-            .iter()
-            .any(|mode| arguments[0] == *mode)
+        || ![
+            "--stage",
+            "--prepare-install",
+            "--recover-install",
+            "--restart-install",
+        ]
+        .iter()
+        .any(|mode| arguments[0] == *mode)
     {
         return Err("bootstrap_arguments_invalid");
     }
@@ -292,6 +297,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         prepare_install(&root, &payload, &image)
     } else if arguments[0] == "--recover-install" {
         recover_install(&root, &payload, &image)
+    } else if arguments[0] == "--restart-install" {
+        restart_install(&root, &payload, &image)
     } else {
         stage_impl(&root, &payload, &image)
     }
@@ -306,6 +313,8 @@ struct InstallOwner {
     generation: String,
     operation_id: String,
     payload_revision: String,
+    #[serde(default)]
+    restart_from: Option<product_contract::installation::Manifest>,
 }
 fn create_directory(path: &Path) -> Result<()> {
     match fs::create_dir(path) {
@@ -365,6 +374,7 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
             generation: format!("g-{operation_id}"),
             operation_id,
             payload_revision: payload_revision.clone(),
+            restart_from: None,
         };
         let mut file = OpenOptions::new()
             .write(true)
@@ -414,6 +424,16 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
             .collect::<Result<Vec<_>>>()?,
     };
     let (mut journal, mut digest) = match store.read()? {
+        Some((old, digest))
+            if old.phase == Phase::Recovered
+                && old.previous.is_none()
+                && owner.restart_from.as_ref() == Some(&old.candidate)
+                && old.installation_key == key =>
+        {
+            let journal = Journal::begin(owner.operation_id.clone(), key, None, candidate.clone())?;
+            let digest = store.begin(Some(&digest), &journal)?;
+            (journal, digest)
+        }
         Some((journal, digest)) => {
             if journal.operation_id != owner.operation_id
                 || journal.candidate != candidate
@@ -463,7 +483,30 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     let manifest_bytes =
         serde_json::to_vec(&candidate).map_err(|_| "bootstrap_manifest_invalid")?;
     if manifest_path.exists() && read(&manifest_path, 64 * 1024)? != manifest_bytes {
-        return Err("bootstrap_existing_installation_conflict");
+        let previous = owner
+            .restart_from
+            .as_ref()
+            .ok_or("bootstrap_existing_installation_conflict")?;
+        let operation = previous
+            .generation
+            .strip_prefix("g-")
+            .ok_or("bootstrap_owner_invalid")?;
+        let archived = store.archived(operation)?;
+        let marker: product_contract::activation::Activation =
+            serde_json::from_slice(&read(&root.join("devbox-activation.json"), 4096)?)
+                .map_err(|_| "bootstrap_marker_invalid")?;
+        marker.validate(previous)?;
+        if archived.phase != Phase::Recovered
+            || archived.previous.is_some()
+            || archived.candidate != *previous
+            || archived.installation_key != journal.installation_key
+            || marker.phase != product_contract::activation::Phase::Recover
+            || marker.operation_id != operation
+            || read(&manifest_path, 64 * 1024)?
+                != serde_json::to_vec(previous).map_err(|_| "bootstrap_manifest_invalid")?
+        {
+            return Err("bootstrap_existing_installation_conflict");
+        }
     }
     let marker = product_contract::activation::Activation {
         schema_version: 1,
@@ -641,4 +684,77 @@ fn recover_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
         suite_version: payload.suite_version,
         payload_revision,
     })
+}
+
+/// An explicit retry allocates a fresh package slot after recovery. Partial
+/// package files and imported data from the abandoned attempt remain intact.
+fn restart_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
+    use crate::core::{delivery::Phase, delivery_store::Store};
+    let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&bytes)?;
+    verify_payload_owner(&payload, own_image)?;
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let (_root, identity) =
+        open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    #[cfg(windows)]
+    let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let gate = writer_gate(&root, false)?;
+    let owner_path = root.join("suite-owner.json");
+    let mut owner: InstallOwner =
+        serde_json::from_slice(&read(&owner_path, 4096)?).map_err(|_| "bootstrap_owner_invalid")?;
+    if owner.schema_version != 1
+        || owner.root_identity != identity.components()
+        || owner.payload_revision != hash(&bytes)
+        || uuid::Uuid::parse_str(&owner.installation_id).is_err()
+        || uuid::Uuid::parse_str(&owner.operation_id).is_err()
+        || owner.generation != format!("g-{}", owner.operation_id)
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let key = hash(
+        &serde_json::to_vec(&(identity.components(), &owner.installation_id))
+            .map_err(|_| "bootstrap_owner_invalid")?,
+    );
+    let data = dirs::data_local_dir()
+        .ok_or("bootstrap_data_unavailable")?
+        .join(format!("com.devbox.v08.controlcenter.i{key}"));
+    if Store::inspect(&data)?.is_none() {
+        return Err("bootstrap_journal_missing");
+    }
+    let store = Store::open(&data)?;
+    let (journal, _) = store.read()?.ok_or("bootstrap_journal_missing")?;
+    if journal.phase != Phase::Recovered
+        || journal.previous.is_some()
+        || journal.installation_key != key
+        || journal.candidate.installation_id != owner.installation_id
+    {
+        return Err("bootstrap_restart_requires_recovery");
+    }
+    let marker: product_contract::activation::Activation =
+        serde_json::from_slice(&read(&root.join("devbox-activation.json"), 4096)?)
+            .map_err(|_| "bootstrap_marker_invalid")?;
+    marker.validate(&journal.candidate)?;
+    if marker.phase != product_contract::activation::Phase::Recover
+        || marker.operation_id != journal.operation_id
+    {
+        return Err("bootstrap_restart_requires_recovery");
+    }
+    if journal.operation_id == owner.operation_id {
+        owner.operation_id = uuid::Uuid::new_v4().to_string();
+        owner.generation = format!("g-{}", owner.operation_id);
+        owner.restart_from = Some(journal.candidate);
+        devbox_filesystem::atomic_write(
+            owner_path,
+            &serde_json::to_vec(&owner).map_err(|_| "bootstrap_owner_invalid")?,
+        )
+        .map_err(|_| "bootstrap_owner_unavailable")?;
+    } else if owner.restart_from.as_ref() != Some(&journal.candidate) {
+        return Err("bootstrap_journal_changed");
+    }
+    // A crash here resumes the retained restart intent with --prepare-install.
+    // An old generation remains blocked by its Recover marker throughout.
+    drop(store);
+    drop(gate);
+    prepare_install(&root, payload_path, own_image)
 }
