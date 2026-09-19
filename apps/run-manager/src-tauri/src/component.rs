@@ -762,3 +762,11 @@ pub async fn dispatch(
 pub fn migration_mapping_summary(root: &Path) -> Result<(u64, String), String> {
     crate::storage::imports::mapping_summary(root)
 }
+
+pub fn migration_backup_digest(root: &Path) -> Result<Option<String>, String> {
+    crate::core::runtime_backup::accepted(root)
+}
+pub fn verify_migration_backup(root: &Path, digest: &str) -> Result<(u64, u32, String), String> {
+    let snapshot = crate::core::runtime_backup::verify(root, digest)?;
+    Ok((snapshot.bytes, u32::try_from(snapshot.schema_version).map_err(|_| "runtime_backup_invalid")?, snapshot.sha256))
+}

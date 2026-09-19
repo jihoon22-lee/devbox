@@ -479,3 +479,18 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Workspace Rust/test compilation passed in 19.413s before the final added test/
   restore-binding assertion; those final additions were reviewed without another
   routine run. Detailed tests and Windows acquisition remain deferred to B08.
+
+### Expose accepted Runtime SQLite backup evidence (2026-09-19)
+
+- Workspace's backup catalog now includes the Runtime SQLite snapshot selected by
+  its accepted native import digest. The receipt remains visible when retained
+  bytes are missing/corrupt, so that failure cannot become an empty backup list.
+- Runtime reads its own destination receipt with a read-only transaction and
+  current schema/identity checks. Only bounded private stage metadata is searched;
+  matching snapshot bytes are checked against the accepted digest and source
+  acquisition schema. No Runtime owner, database initialization or scheduler starts.
+  This verifies original SQLite bytes, not a claim about log-file coverage or
+  fresh legacy state.
+- Prepared accepted-vs-unaccepted, tamper/missing and future-schema regression.
+  Corrected the existing crate alias found by compilation; final Workspace/Runtime
+  Rust/test compilation passed in 11.619s. Detailed regressions remain deferred.
