@@ -298,3 +298,20 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   names, plus API regressions for completed-stage retention and worker cleanup.
   API/shared migration Rust and test compilation passed in 12.935s. Detailed
   tests and Windows acquisition remain scheduled for the completed B08 bundle.
+
+### Launcher source and completed-plan retention (2026-09-19)
+
+- Preserve the exact legacy preference/shortcut bytes (including absent-file
+  state) in a content-addressed private record before any destination change.
+  Source acquisition now re-reads both files as a pair; this is a stable JSON
+  observation, not a global transaction. Apply still compares the fresh source
+  revision and native exact mappings against the review.
+- Resume verifies the retained source digest. For an older journal without the
+  new backup, only an exact hash match to the unchanged legacy source can create
+  it; changed originals block resume rather than fabricating backup provenance.
+- Starting another accepted import archives the prior committed plan, including
+  exact ID mappings. Existing backup/history bytes are never overwritten after
+  tampering; bounded retention requires review instead of silently deleting them.
+- Prepared idempotence, source tampering and path-rejection regression. Scoped
+  Rust and test compilation passed in 2.363s; runtime tests remain deferred to
+  the complete B08 bundle.

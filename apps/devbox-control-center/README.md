@@ -68,3 +68,10 @@ Local tests must preserve existing services and host networking. Provisioning an
 network-changing Windows/WSL/Docker fixtures run only on disposable hosted VMs under
 [verification operations](../../docs/verification.md). Per-commit checks remain
 minimal; detailed acceptance runs after the entire PR bundle is implemented.
+
+Launcher migration preserves exact original preference/shortcut bytes before
+changing its destination, and retains earlier completed plans with their exact ID
+mappings. Resume checks the retained digest; an older journal may acquire the new
+backup only from a still-identical legacy source. These private records are not
+included in diagnostics. Their bounded retention never silently deletes an older
+completed backup or plan.

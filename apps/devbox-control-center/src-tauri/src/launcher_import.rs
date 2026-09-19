@@ -29,6 +29,7 @@ struct Journal {
 }
 struct Pending {
     journal: Journal,
+    source_bytes: Vec<u8>,
     created: Instant,
 }
 #[derive(Default)]
@@ -91,7 +92,13 @@ fn preferences(bytes: Option<&[u8]>) -> Result<Preferences> {
     value.validate().map_err(|_| "launcher_import_invalid")?;
     Ok(value)
 }
-fn source(app: &tauri::AppHandle) -> Result<(Preferences, Option<LegacyShortcut>, String)> {
+struct CapturedSource {
+    preferences: Preferences,
+    shortcut: Option<LegacyShortcut>,
+    revision: String,
+    bytes: Vec<u8>,
+}
+fn source(app: &tauri::AppHandle) -> Result<CapturedSource> {
     let root = app
         .path()
         .local_data_dir()
@@ -104,17 +111,97 @@ fn source(app: &tauri::AppHandle) -> Result<(Preferences, Option<LegacyShortcut>
     if prefs.is_none() && shortcut.is_none() {
         return Err("launcher_import_source_missing");
     }
-    let revision =
-        digest(&serde_json::to_vec(&(&prefs, &shortcut)).map_err(|_| "launcher_import_invalid")?);
-    Ok((
-        preferences(prefs.as_deref())?,
-        shortcut
+    if read_bounded(&root.join(PREFERENCES_FILE), 65536)? != prefs
+        || read_bounded(&root.join("shortcut.json"), 4096)? != shortcut
+    {
+        return Err("launcher_import_source_changed");
+    }
+    // Preserve exact original bytes and absence separately for the two files.
+    // This stable pair observation is not a transaction across legacy writers.
+    let bytes = serde_json::to_vec(&(&prefs, &shortcut)).map_err(|_| "launcher_import_invalid")?;
+    Ok(CapturedSource {
+        preferences: preferences(prefs.as_deref())?,
+        shortcut: shortcut
             .as_deref()
             .map(serde_json::from_slice)
             .transpose()
             .map_err(|_| "launcher_import_invalid")?,
-        revision,
-    ))
+        revision: digest(&bytes),
+        bytes,
+    })
+}
+fn retain_record(root: &Path, kind: &str, id: &str, bytes: &[u8]) -> Result<()> {
+    use std::io::Write;
+    if !matches!(
+        kind,
+        "launcher-source-backups-v1" | "launcher-import-history-v1"
+    ) || !(product_contract::commands::revision(id)
+        || uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id))
+        || bytes.len() > 512 * 1024
+    {
+        return Err("launcher_import_backup_invalid");
+    }
+    devbox_filesystem::ensure_no_links(root).map_err(|_| "launcher_import_unsafe")?;
+    let directory = root.join(kind);
+    match std::fs::create_dir(&directory) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {}
+        Err(_) => return Err("launcher_import_backup_unavailable"),
+    }
+    devbox_filesystem::ensure_no_links(&directory).map_err(|_| "launcher_import_unsafe")?;
+    let path = directory.join(format!("{id}.json"));
+    if let Some(existing) = read_bounded(&path, 512 * 1024)? {
+        return if existing == bytes {
+            Ok(())
+        } else {
+            Err("launcher_import_backup_changed")
+        };
+    }
+    if std::fs::read_dir(&directory)
+        .map_err(|_| "launcher_import_backup_unavailable")?
+        .take(64)
+        .count()
+        >= 32
+    {
+        return Err("launcher_import_backup_retention_review_required");
+    }
+    let pending = directory.join(format!("{}.pending", uuid::Uuid::new_v4()));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&pending)
+        .map_err(|_| "launcher_import_backup_unavailable")?;
+    file.write_all(bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|_| "launcher_import_backup_unavailable")?;
+    drop(file);
+    std::fs::hard_link(&pending, &path).map_err(|_| "launcher_import_backup_unavailable")?;
+    let _ = std::fs::remove_file(pending);
+    Ok(())
+}
+fn source_retained(root: &Path, revision: &str) -> Result<bool> {
+    if !product_contract::commands::revision(revision) {
+        return Err("launcher_import_backup_invalid");
+    }
+    let Some(bytes) = read_bounded(
+        &root
+            .join("launcher-source-backups-v1")
+            .join(format!("{revision}.json")),
+        512 * 1024,
+    )?
+    else {
+        return Ok(false);
+    };
+    if digest(&bytes) != revision {
+        return Err("launcher_import_backup_changed");
+    }
+    Ok(true)
+}
+fn retain_source(root: &Path, revision: &str, bytes: &[u8]) -> Result<()> {
+    if digest(bytes) != revision {
+        return Err("launcher_import_source_changed");
+    }
+    retain_record(root, "launcher-source-backups-v1", revision, bytes)
 }
 fn read_journal(root: &Path) -> Result<Option<Journal>> {
     let Some(bytes) = read_bounded(&root.join(JOURNAL), 256 * 1024)? else {
@@ -140,6 +227,19 @@ fn read_journal(root: &Path) -> Result<Option<Journal>> {
     Ok(Some(value))
 }
 fn save_journal(root: &Path, journal: &Journal) -> Result<()> {
+    if let Some(prior) = read_journal(root)? {
+        if prior.id != journal.id {
+            if !prior.committed {
+                return Err("launcher_import_resume_required");
+            }
+            retain_record(
+                root,
+                "launcher-import-history-v1",
+                &prior.id,
+                &serde_json::to_vec(&prior).map_err(|_| "launcher_import_invalid")?,
+            )?;
+        }
+    }
     let bytes = serde_json::to_vec(journal).map_err(|_| "launcher_import_invalid")?;
     if bytes.len() > 256 * 1024 {
         return Err("launcher_import_limit");
@@ -189,7 +289,12 @@ pub(crate) fn dispatch(
                 if prior.as_ref().is_some_and(|journal| !journal.committed) {
                     return Err("launcher_import_resume_required");
                 }
-                let (source, shortcut, revision) = source(app)?;
+                let CapturedSource {
+                    preferences: source,
+                    shortcut,
+                    revision,
+                    bytes: source_bytes,
+                } = source(app)?;
                 let current = read_bounded(&path, 65536)?;
                 let proposed = plan::prepare(
                     &source,
@@ -213,6 +318,7 @@ pub(crate) fn dispatch(
                 let result = view(&journal);
                 *pending = Some(Pending {
                     journal,
+                    source_bytes,
                     created: Instant::now(),
                 });
                 result
@@ -230,11 +336,20 @@ pub(crate) fn dispatch(
                                 && pending.created.elapsed() < Duration::from_secs(180)
                         })
                         .ok_or("launcher_import_review_stale")?;
-                    if source(app)?.2 != value.journal.source || exact != value.journal.exact {
+                    if source(app)?.revision != value.journal.source || exact != value.journal.exact
+                    {
                         return Err("launcher_import_source_changed");
                     }
+                    retain_source(root, &value.journal.source, &value.source_bytes)?;
                     value.journal.clone()
                 };
+                if method == "resume" && !source_retained(root, &journal.source)? {
+                    let captured = source(app)?;
+                    if captured.revision != journal.source {
+                        return Err("launcher_import_backup_missing");
+                    }
+                    retain_source(root, &journal.source, &captured.bytes)?;
+                }
                 if journal.committed {
                     return serde_json::to_value(view(&journal))
                         .map_err(|_| "launcher_import_invalid");
@@ -271,7 +386,7 @@ pub(crate) fn dispatch(
 }
 
 pub(crate) fn mapping_ids(app: &tauri::AppHandle) -> Result<Vec<String>> {
-    let (preferences, _, _) = source(app)?;
+    let preferences = source(app)?.preferences;
     Ok(preferences
         .favorites
         .into_iter()
@@ -292,6 +407,27 @@ fn resume_state(before: Option<&str>, current: Option<&[u8]>, after: &[u8]) -> R
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retained_original_json_is_idempotent_and_never_overwritten_after_tampering() {
+        let root = std::env::temp_dir().join(format!("launcher-source-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let bytes =
+            serde_json::to_vec(&(Some(b"original settings".to_vec()), Option::<Vec<u8>>::None))
+                .unwrap();
+        let revision = digest(&bytes);
+        retain_source(&root, &revision, &bytes).unwrap();
+        retain_source(&root, &revision, &bytes).unwrap();
+        assert!(source_retained(&root, &revision).unwrap());
+        let path = root
+            .join("launcher-source-backups-v1")
+            .join(format!("{revision}.json"));
+        std::fs::write(&path, b"changed").unwrap();
+        assert!(source_retained(&root, &revision).is_err());
+        assert!(retain_source(&root, &revision, &bytes).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"changed");
+        assert!(source_retained(&root, "../foreign").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
     #[test]
     fn interrupted_apply_recognizes_exact_preimage_postimage_and_rejects_user_edits() {
         let before = digest(b"old preferences");
