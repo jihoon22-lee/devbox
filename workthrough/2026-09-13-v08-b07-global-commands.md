@@ -623,3 +623,13 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   Unrelated native suites and the already-passing hotkey/handoff cases are skipped
   explicitly; no skipped case is counted as new PASS. All known B07 fixes and
   fixture changes are complete; only YAML/JS syntax and diff checks before push.
+
+- Run35446742131 reached the foreign installation but the fixture expected an IPC
+  rejection for a shortcut conflict. The native contract intentionally returns a
+  disabled status with `shortcut_other_installation`, preserving the first owner.
+  Assert that exact result, disabled preference, and original owner's registered
+  status; keep the separate foreign project-provider rejection assertion.
+- Reuse this run's retained four binaries for the remaining checks, recording
+  artifact and fixture source separately. No compiler/installer/full native suite
+  is started for this fixture correction. Original build source is checked against
+  the source workflow and retained helper manifest before execution.

@@ -60,6 +60,10 @@ on:
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
     inputs:
+      suite_diagnostic_run:
+        description: Reuse retained four-product executables for remaining suite acceptance
+        type: string
+        default: ''
       suite_remaining_only:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
@@ -91,10 +95,55 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.wsl2_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
   cancel-in-progress: true
 
 jobs:
+  suite-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' }}
+    name: Remaining suite workflow with retained executables
+    runs-on: windows-2025
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Acquire original suite executables
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.suite_diagnostic_run }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_RUN -notmatch '^\d+$') { throw 'Invalid suite source run' }
+          $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected suite source workflow' }
+          gh run download $env:SOURCE_RUN --name "suite-workflow-fixture-$env:SOURCE_RUN" --dir "$env:RUNNER_TEMP/suite-retained"
+          if ($LASTEXITCODE -ne 0) { throw 'Original suite artifact unavailable' }
+          $helper = Get-Content -Raw "$env:RUNNER_TEMP/suite-retained/apps/devbox-workspace/src-tauri/resources/wsl/manifest.json" | ConvertFrom-Json
+          if ($helper.sourceSha -ne $record.head_sha) { throw 'Retained suite source mismatch' }
+          New-Item -ItemType Directory -Force target/debug,apps/devbox-workspace/src-tauri/resources/wsl | Out-Null
+          foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
+            Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/target/debug/devbox-$product.exe" -Destination "target/debug/devbox-$product.exe" -ErrorAction Stop
+          }
+          Copy-Item -Path "$env:RUNNER_TEMP/suite-retained/apps/devbox-workspace/src-tauri/resources/wsl/*" -Destination apps/devbox-workspace/src-tauri/resources/wsl -ErrorAction Stop
+          Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/THIRD_PARTY_NOTICES.md" -Destination THIRD_PARTY_NOTICES.md -ErrorAction Stop
+          "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+      - name: Finish only foreign-installation and shared-surface acceptance
+        run: node .github/scripts/windows-suite-workflows.mjs --remaining
+      - name: Preserve remaining suite evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-remaining-${{ github.run_id }}
+          path: product-foundation-evidence
+          retention-days: 7
+          if-no-files-found: error
+
   terminal-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '' }}
     name: Retained Workspace artifact companion diagnostic
@@ -141,7 +190,7 @@ jobs:
           if-no-files-found: error
 
   workspace-wsl-helper:
-    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '') }}
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '') }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -189,7 +238,7 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '') }}
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '') }}
     name: Hidden products (Windows native)
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
@@ -488,7 +537,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '')) }}
+    if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '')) }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -538,7 +587,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:

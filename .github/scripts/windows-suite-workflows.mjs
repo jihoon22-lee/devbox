@@ -18,7 +18,7 @@ const catalog=JSON.parse(readFileSync("apps/products.json","utf8"));
 // Windows TEMP can contain an 8.3 user-directory alias. Registry grants use
 // canonical native roots, as do actual picker results. Use that same spelling.
 const root=realpathSync.native(mkdtempSync(path.join(tmpdir(),"devbox-suite-workflow-")));
-const evidence={source:process.env.GITHUB_SHA,environment:"github-hosted-windows",stage:"assembly",scope:remainingOnly?"remaining":"all",checks:{},result:"failed"};
+const evidence={source:process.env.DEVBOX_SUITE_ARTIFACT_SOURCE??process.env.GITHUB_SHA,fixtureSource:process.env.GITHUB_SHA,artifactRun:process.env.DEVBOX_SUITE_ARTIFACT_RUN??process.env.GITHUB_RUN_ID,environment:"github-hosted-windows",stage:"assembly",scope:remainingOnly?"remaining":"all",checks:{},result:"failed"};
 mkdirSync("product-foundation-evidence",{recursive:true});
 const report=()=>writeFileSync("product-foundation-evidence/suite-workflows.json",JSON.stringify(evidence,null,2));
 const stage=value=>{evidence.stage=value;report();};
@@ -205,7 +205,10 @@ try {
   if(center.policy){restoreElevatedCdpPolicy(center.policy);center.policy=null;}
   stage("foreign-installation");
   const foreignDirectory=path.join(root,"other-installation");assemble(foreignDirectory);const foreign=await start("control-center",foreignDirectory);await approve(foreign);
-  await assert.rejects(()=>suite(foreign,{kind:"configureShortcuts",config}));
+  const conflict=await suite(foreign,{kind:"configureShortcuts",config});
+  assert.equal(conflict.registration,"disabled");assert.equal(conflict.enabled,false);
+  assert.equal(conflict.issue,"shortcut_other_installation");
+  assert.equal((await suite(center,{kind:"shortcutStatus"})).registration,"registered");
   await assert.rejects(()=>commands(foreign,"command_source",{product:"workspace",source:"projects",query:"같은 이름",generation:1,mode:"name"}));
   evidence.checks.foreignInstallationCannotUseExistingOwnerOrProjectProvider=true;
 
