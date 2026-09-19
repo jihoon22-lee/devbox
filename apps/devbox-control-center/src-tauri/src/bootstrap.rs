@@ -1175,6 +1175,13 @@ fn activate_clean_install(
         return Err("bootstrap_source_cutover_required");
     }
     if !journal.committed {
+        #[cfg(windows)]
+        {
+            let installed = crate::legacy_installer::inventory()?;
+            if !installed.complete || !installed.entries.is_empty() {
+                return Err("bootstrap_legacy_registration_review_required");
+            }
+        }
         let legacy = devbox_catalog::parse_catalog(include_str!("../../../catalog.json"))
             .map_err(|_| "bootstrap_catalog_invalid")?;
         for app in legacy.apps {

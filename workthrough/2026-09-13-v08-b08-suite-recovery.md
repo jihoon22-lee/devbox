@@ -452,3 +452,9 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   regression. Fixed the compile-time legacy catalog include path; final scoped
   Rust/test compilation and Control Center TypeScript passed in 6.517s. Native
   helper execution, crash fixtures and detailed B08 audit remain pending.
+
+- Clean activation also requires a complete current-user/machine ARP observation
+  with no recognized prior product registrations. An installed but never-opened
+  legacy app must not disappear from cleanup accounting simply because it has no
+  data namespace. Unknown/inaccessible registry views block this clean-only path.
+  Other users' per-user registrations remain outside this user's operation.
