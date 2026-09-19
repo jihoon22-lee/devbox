@@ -334,6 +334,9 @@ importers:
       '@devbox/a11y':
         specifier: workspace:*
         version: link:../../packages/a11y
+      '@devbox/product-shell':
+        specifier: workspace:*
+        version: link:../../packages/product-shell
       '@devbox/tokens':
         specifier: workspace:*
         version: link:../../packages/tokens

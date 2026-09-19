@@ -44,6 +44,13 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
             route == "requests" && crate::migration::COMMANDS.contains(&method)
         }
         "api-studio.api" => {
+            if route == "protocols"
+                && (crate::knowledge::is_command(component, method)
+                    || crate::handoff::is_send(component, method)
+                    || method == "send_selection_to_toolbox")
+            {
+                return false;
+            }
             matches!(route, "requests" | "protocols" | "history")
                 && (api_playground_lib::component::COMMANDS.contains(&method)
                     || crate::api_workspace::COMMANDS.contains(&method)
@@ -67,7 +74,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         "api-studio.transforms" => {
             route == "transforms"
-                && (developer_toolbox_lib::component::COMMANDS.contains(&method)
+                && ((method == "open_workspace_selection"
+                    || developer_toolbox_lib::component::COMMANDS.contains(&method))
                     || crate::knowledge::is_command(component, method)
                     || method == "read_clipboard_text"
                     || crate::handoff::is_send(component, method))
@@ -169,6 +177,7 @@ async fn execute(
             &request.method,
             request.args,
             provenance.clone(),
+            request.header.deadline_ms,
         )
         .await
     } else if request.component == "api-studio.webhooks"
@@ -195,6 +204,10 @@ async fn execute(
         && crate::lifecycle::COMMANDS.contains(&request.method.as_str())
     {
         crate::lifecycle::dispatch(app, &request.method, request.args)
+    } else if request.component == "api-studio.transforms"
+        && request.method == "open_workspace_selection"
+    {
+        crate::selection_receive::open(app, request.args, request.header.deadline_ms).await
     } else if request.component == "api-studio.api"
         && crate::handoff::is_navigation(&request.method)
     {

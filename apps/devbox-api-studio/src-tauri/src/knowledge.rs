@@ -6,6 +6,7 @@ use tauri::Manager;
 
 pub const COMMANDS: &[&str] = &[
     "save_knowledge_draft",
+    "send_knowledge_draft",
     "list_knowledge_drafts",
     "get_knowledge_draft",
     "delete_knowledge_draft",
@@ -19,7 +20,30 @@ pub async fn dispatch(
     method: &str,
     args: Value,
     provenance: Provenance,
+    deadline: u64,
 ) -> Result<Value, String> {
+    if method == "send_knowledge_draft" {
+        #[derive(Deserialize)]
+        #[serde(deny_unknown_fields)]
+        struct Input {
+            id: String,
+        }
+        let input: Input = serde_json::from_value(args).map_err(|_| "knowledge_draft_invalid")?;
+        let draft = crate::federation::read(app, component, &input.id).await?;
+        return crate::suite::remote(
+            app,
+            "knowledge",
+            product_contract::transport::Call::DeliverKnowledgeDraft {
+                component: component.into(),
+                id: input.id,
+                revision: draft.revision()?,
+                operation_id: provenance.request_id,
+            },
+            deadline,
+        )
+        .await
+        .map_err(str::to_owned);
+    }
     let root = app
         .path()
         .app_local_data_dir()
@@ -52,9 +76,8 @@ pub async fn dispatch(
                     .and_then(|v| u64::try_from(v.as_millis()).ok())
                     .ok_or("knowledge_storage_unavailable")?;
                 let draft = store.save(&output, provenance, now)?;
-                // WP07 will negotiate a verified receiver. No legacy launch or
-                // delivered claim is made while that receiver is unavailable.
-                Ok(json!({ "delivery": "unavailable", "draft": draft }))
+                // Source persistence and explicit receiver delivery are separate actions.
+                Ok(json!({ "delivery": "stored", "draft": draft }))
             }
             "list_knowledge_drafts" if args.as_object().is_some_and(|v| v.is_empty()) => {
                 serde_json::to_value(store.list()?)

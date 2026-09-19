@@ -2,6 +2,7 @@
 //! Calling these does not start the standalone application or select its stores.
 
 mod imports;
+pub mod search;
 use std::{
     fs::File,
     path::{Path, PathBuf},

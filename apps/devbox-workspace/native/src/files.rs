@@ -202,6 +202,7 @@ fn text_hash(text: &str) -> [u8; 32] {
 }
 
 pub struct EditorSnapshot {
+    pub buffer_text_hash: [u8; 32],
     pub path: PathBuf,
     pub revision: String,
     baseline_text_hash: [u8; 32],
@@ -927,6 +928,7 @@ impl FileOwner {
             document.grant.admit(scope)?;
         }
         Ok(EditorSnapshot {
+            buffer_text_hash: document.buffer_text_hash,
             path,
             revision: document.revision.clone(),
             baseline_text_hash: document.baseline_text_hash,
@@ -1107,6 +1109,13 @@ mod tests {
         assert!(owner
             .sync_editor_document(None, &opened.path, &revision, "draft\n")
             .unwrap());
+        assert_eq!(
+            owner
+                .editor_snapshot(None, &opened.path, &revision, true)
+                .unwrap()
+                .buffer_text_hash,
+            text_hash("draft\n")
+        );
         owner.open(None, open_request(&path)).unwrap();
         let current = &owner.documents[&key(&path).unwrap()];
         assert_eq!(current.revision, revision);

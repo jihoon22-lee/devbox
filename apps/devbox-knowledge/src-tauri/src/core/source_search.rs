@@ -15,7 +15,7 @@ pub struct VerifiedProject {
     pub reference: ProjectReference,
     pub object: Arc<std::fs::File>,
 }
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::{
     collections::HashMap,
@@ -45,6 +45,7 @@ pub struct Candidate {
 }
 #[derive(Clone)]
 pub struct Reference {
+    pub expires: Instant,
     pub candidate: Candidate,
     pub file_identity: FilesystemIdentity,
     pub root_identity: FilesystemIdentity,
@@ -55,7 +56,7 @@ pub struct Reference {
     // Its final close is deferred, including when a job expires under a lock.
     _objects: Lease<Objects>,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Row {
     pub source: String,
@@ -65,7 +66,7 @@ pub struct Row {
     pub index_stale: bool,
     pub value: Value,
 }
-#[derive(Clone, Serialize)]
+#[derive(Clone, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Snapshot {
     pub generation: String,
@@ -78,7 +79,13 @@ pub struct Snapshot {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_context: Option<product_contract::ProjectContext>,
 }
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum Consumer {
+    Product,
+    Federated,
+}
 struct Job {
+    consumer: Consumer,
     snapshot: Snapshot,
     started: Instant,
     cancelled: Arc<AtomicBool>,
@@ -131,7 +138,16 @@ impl SearchJobs {
             .map_err(|_| "search_unavailable".to_owned())?;
         Ok(())
     }
+    #[cfg(test)]
     pub fn begin(&self, source: &str, store_generation: &str) -> Result<Work, String> {
+        self.begin_for(source, store_generation, Consumer::Product)
+    }
+    pub fn begin_for(
+        &self,
+        source: &str,
+        store_generation: &str,
+        consumer: Consumer,
+    ) -> Result<Work, String> {
         let mut inner = self.0.lock().map_err(|_| "search_unavailable")?;
         inner.jobs.retain(|_, job| job.started.elapsed() < TTL);
         // Each consumer cancels its own opaque generation. Another consumer's
@@ -148,12 +164,17 @@ impl SearchJobs {
             let oldest = inner
                 .jobs
                 .iter()
+                .filter(|(_, job)| {
+                    job.consumer == consumer || job.cancelled.load(Ordering::Acquire)
+                })
                 .min_by_key(|(_, job)| job.started)
                 .map(|(key, _)| key.clone());
             if let Some(key) = oldest {
                 if let Some(job) = inner.jobs.remove(&key) {
                     job.cancelled.store(true, Ordering::Release);
                 }
+            } else {
+                return Err("search_busy".into());
             }
         }
         let pool = if matches!(worker_source, "files" | "notes") {
@@ -172,6 +193,7 @@ impl SearchJobs {
         inner.jobs.insert(
             generation.clone(),
             Job {
+                consumer,
                 snapshot: Snapshot {
                     generation: generation.clone(),
                     store_generation: store_generation.into(),
@@ -200,9 +222,16 @@ impl SearchJobs {
             project_valid: None,
         })
     }
+    #[cfg(test)]
     pub fn snapshot(&self, generation: &str) -> Result<Snapshot, String> {
+        self.snapshot_for(generation, Consumer::Product)
+    }
+    pub fn snapshot_for(&self, generation: &str, consumer: Consumer) -> Result<Snapshot, String> {
         let mut inner = self.0.lock().map_err(|_| "search_unavailable")?;
         let job = inner.jobs.get_mut(generation).ok_or("search_stale")?;
+        if job.consumer != consumer {
+            return Err("search_wrong_consumer".into());
+        }
         if job.started.elapsed() >= TTL {
             return Err("search_stale".into());
         }
@@ -225,9 +254,16 @@ impl SearchJobs {
             serde_json::json!(inner.workers.get(source).copied().unwrap_or(0));
         Ok(snapshot)
     }
+    #[cfg(test)]
     pub fn cancel(&self, generation: &str) -> Result<(), String> {
+        self.cancel_for(generation, Consumer::Product)
+    }
+    pub fn cancel_for(&self, generation: &str, consumer: Consumer) -> Result<(), String> {
         let mut inner = self.0.lock().map_err(|_| "search_unavailable")?;
         if let Some(job) = inner.jobs.get_mut(generation) {
+            if job.consumer != consumer {
+                return Err("search_wrong_consumer".into());
+            }
             job.cancelled.store(true, Ordering::Release);
             job.references.clear();
             job.snapshot.rows.clear();
@@ -250,11 +286,22 @@ impl SearchJobs {
         }
     }
     pub fn resolve(&self, reference: &str) -> Result<Reference, String> {
+        self.resolve_consumer(reference, None)
+    }
+    pub fn resolve_consumer(
+        &self,
+        reference: &str,
+        consumer: Option<Consumer>,
+    ) -> Result<Reference, String> {
         let inner = self.0.lock().map_err(|_| "search_unavailable")?;
         inner
             .jobs
             .values()
-            .filter(|job| job.started.elapsed() < TTL && !job.cancelled.load(Ordering::Acquire))
+            .filter(|job| {
+                job.started.elapsed() < TTL
+                    && !job.cancelled.load(Ordering::Acquire)
+                    && consumer.is_none_or(|consumer| job.consumer == consumer)
+            })
             .find_map(|job| job.references.get(reference).cloned())
             .ok_or_else(|| "search_stale".into())
     }
@@ -377,6 +424,7 @@ impl Work {
                         job.references.insert(
                             reference,
                             Reference {
+                                expires: job.started + TTL,
                                 candidate: candidate.clone(),
                                 project: project.map(|p| p.reference.clone()),
                                 root_identity,
@@ -734,5 +782,24 @@ mod tests {
         }
         assert_eq!(pool.usage(), 0);
         assert!(jobs.resolve(token).is_err());
+    }
+    #[test]
+    fn federated_queries_cannot_evict_or_cancel_the_product_query() {
+        let jobs = SearchJobs::default();
+        let product = jobs.begin("notes", "store").unwrap();
+        let generation = product.generation.clone();
+        product.finish("complete");
+        drop(product);
+        for _ in 0..8 {
+            let work = jobs
+                .begin_for("notes", "store", Consumer::Federated)
+                .unwrap();
+            work.finish("complete");
+            drop(work);
+        }
+        assert!(jobs.snapshot(&generation).is_ok());
+        assert!(jobs.snapshot_for(&generation, Consumer::Federated).is_err());
+        assert!(jobs.cancel_for(&generation, Consumer::Federated).is_err());
+        assert!(jobs.snapshot(&generation).is_ok());
     }
 }

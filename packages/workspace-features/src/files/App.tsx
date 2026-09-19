@@ -6,6 +6,7 @@ import { useEffect, useMemo, useReducer, useRef, useState } from "react";
 import type { CompletionSource } from "@codemirror/autocomplete";
 import type { HoverTooltipSource } from "@codemirror/view";
 import {
+  sendEditorSelection,
   deleteFileAction,
   listWorkspaceFiles,
   loadSession,
@@ -216,7 +217,7 @@ export interface NavEntry {
   cursor: number;
 }
 
-export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null; column?: number | null}
+export interface FileOpenRequest {id: string; contextKey: string; path: string; line: number | null; column?: number | null; receivedReference?:string}
 function isWslContext(context: string): boolean {
   try { return JSON.parse(context)?.target?.kind === "wsl"; }
   catch { return false; }
@@ -230,6 +231,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   const [state, dispatch] = useReducer(editorReducer, undefined, createInitialEditorState);
   const [pathInput, setPathInput] = useState("");
   const [error, setError] = useState<string | null>(null);
+  const [selectionNotice,setSelectionNotice]=useState("");
   const [busy, setBusy] = useState(false);
   const [watchPending, setWatchPending] = useState(0);
   const [zoom, setZoom] = useState(100);
@@ -515,12 +517,12 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
       }
     });
 
-  const openPath = async (path: string, metadata?: SessionState["docs"][number]) => {
+  const openPath = async (path: string, metadata?: SessionState["docs"][number], receivedReference?:string) => {
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
     }
     const openingContext = contextRef.current;
-    const opened = await openFile(path, null);
+    const opened = receivedReference ? await openFile(path, null, receivedReference) : await openFile(path, null);
     if (openingContext !== contextRef.current) throw new Error("프로젝트가 변경되어 파일 열기를 중단했습니다.");
     if (renameApplyGuard()) {
       throw new Error("이름 변경 적용이 끝난 뒤 파일을 열거나 이동할 수 있습니다.");
@@ -1310,8 +1312,8 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
   // line was given. line/column follow 1-based editor convention (not
   // specified by the applink contract itself); column defaults to the start
   // of the line when omitted.
-  const openApplinkPath = async (path: string, line: number | null, column: number | null) => {
-    const doc = await openPath(path);
+  const openApplinkPath = async (path: string, line: number | null, column: number | null, receivedReference?:string) => {
+    const doc = await openPath(path,undefined,receivedReference);
     if (line === null) return;
     const position = {
       line: Math.max(0, line - 1),
@@ -1483,7 +1485,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
     if (!openRequest || !active || !hydrated || !hydratedRef.current || busyRef.current || renameApplyBusyRef.current
       || openRequest.contextKey !== contextKey || handledOpenRequest.current === openRequest.id) return;
     handledOpenRequest.current = openRequest.id;
-    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null));
+    void runFileOperation(() => openApplinkPath(openRequest.path, openRequest.line, openRequest.column ?? null,openRequest.receivedReference));
     // The operation reads current document refs and retains an existing dirty buffer.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [openRequest, active, hydrated, busy, renameApplyBusy, contextKey]);
@@ -1982,6 +1984,16 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
               const latest = stateRef.current.docs.find((doc) => doc.id === docId);
               if (before && latest && latest.revision !== before.revision) void lspSync.change(latest);
             }}
+            onTransform={isProductHosted() ? async(docId,from,to,current)=>{
+              setSelectionNotice("");
+              const expectedContext=contextRef.current;
+              const selected=stateRef.current.docs.find(doc=>doc.id===docId);
+              if(!selected?.nativeRevision || selected.readOnly || renameApplyBusyRef.current)throw new Error("편집 가능한 문서를 다시 선택해 주세요.");
+              await editorMirror.flush(stateRef.current.docs);
+              if(contextRef.current!==expectedContext || !current() || !stateRef.current.docs.some(doc=>doc.id===docId && doc.revision===selected.revision))throw new Error("선택 내용이 변경되었습니다. 다시 선택해 주세요.");
+              await sendEditorSelection(selected.path,selected.nativeRevision,selected.text,from,to);
+              setSelectionNotice("API Studio에 검토를 요청했습니다. 기존 변환 입력은 미리보기에서 적용할 때 변경됩니다.");
+            } : undefined}
             onCursorChange={(docId, cursor) => dispatchAction({ type: "setCursor", docId, cursor })}
             onBookmarksChange={(docId, bookmarks) => dispatchAction({ type: "setBookmarks", docId, bookmarks })}
             onFocusDoc={(view, docId) => dispatchAction({ type: "activateDoc", view, docId })}
@@ -2003,6 +2015,7 @@ export default function App({contextKey = "standalone", active = true, onDirtyCh
         )}
       </section>
 
+      {selectionNotice && <p role="status">{selectionNotice}</p>}
       <StatusBar
         doc={activeDoc}
         zoom={zoom}

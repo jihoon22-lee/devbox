@@ -8,6 +8,7 @@
     "core:default",
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
-    "api-studio:allow-execute"
+    "api-studio:allow-execute",
+    "suite:allow-connection"
   ]
 }

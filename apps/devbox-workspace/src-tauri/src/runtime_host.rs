@@ -624,7 +624,19 @@ pub(crate) async fn dispatch(
             owners.initialize_logs(app, host)?;
             host.component("logs")?;
             match method {
-                "send_selection_to_toolbox" => Err("runtime_artifact_delivery_unavailable"),
+                "send_selection_to_toolbox" => {
+                    crate::selection_send::send_logs(app, value, context, deadline).await
+                }
+                "read_sources" => {
+                    crate::selection_logs::begin(
+                        value["generation"].as_u64().ok_or("invalid_request")?,
+                    );
+                    let result = log_lens_lib::component::dispatch(app, method, value.clone())
+                        .await
+                        .map_err(issue)?;
+                    crate::selection_logs::capture(value, &result, context);
+                    Ok(result)
+                }
                 "preview_log_source" | "accept_log_source" | "discard_log_source"
                 | "renew_log_source" => Err("runtime_handoff_review_required"),
                 _ => log_lens_lib::component::dispatch(app, method, value)

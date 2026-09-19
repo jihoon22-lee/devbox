@@ -147,7 +147,7 @@ async function start(product, suffix) {
             ? 'Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "빈 Workspace 시작" && !button.disabled)'
             : product.id === "knowledge"
             ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
-            : '(document.body?.innerText ?? "").includes("기능 이전을 준비하고 있습니다")');
+            : '!!document.querySelector(".command-browser")');
       } catch (error) {
         readinessError = error.message;
         // A startup document/renderer transition can invalidate this attachment.
@@ -274,11 +274,11 @@ async function start(product, suffix) {
         const list = await call("api-studio.transforms", "list_knowledge_drafts", {});
         const sent = await call("api-studio.transforms", "create_api_request_handoff", { source, output });
         return { hmacRequestDenied: hmac.operation.outcome.state === "failed", hmacDraftDenied: hmacDraft.operation.outcome.state === "failed",
-          unavailable: saved.value.delivery === "unavailable", masked: saved.value.draft.redacted && !read.value.body.includes("synthetic-output-secret"),
+          stored: saved.value.delivery === "stored", masked: saved.value.draft.redacted && !read.value.body.includes("synthetic-output-secret"),
           durable: list.value.some(value => value.artifact.id === id) && read.value.artifact.kind === "knowledge-draft/v1",
           foreignDenied: foreign.operation.outcome.state === "failed", requestPreview: sent.operation.outcome.state === "succeeded" };
       })()`);
-      assert.deepEqual(outputPolicy, { hmacRequestDenied: true, hmacDraftDenied: true, unavailable: true, masked: true, durable: true, foreignDenied: true, requestPreview: true });
+      assert.deepEqual(outputPolicy, { hmacRequestDenied: true, hmacDraftDenied: true, stored: true, masked: true, durable: true, foreignDenied: true, requestPreview: true });
       await waitForRenderer(cdp, '!!document.querySelector(".api-feature-requests:not([hidden]) [role=dialog]")', "transform request preview did not open");
       assert.equal(await cdp.evaluate('(document.querySelector(".api-feature-requests [role=dialog]")?.textContent ?? "").includes("synthetic-output-secret")'), false);
       componentProbe.outputPolicy = outputPolicy;

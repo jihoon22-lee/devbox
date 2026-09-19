@@ -655,3 +655,8 @@ export async function reconnectRuntimeSources(sources:SourceSpec[],filter:Filter
   if (!isProductHosted()) return {sources,filter,unavailableSources:0};
   return invoke("reconnect_runtime_sources",{sources,filter});
 }
+
+export async function sendNativeLogSelection(generation:number,records:LogRecord[]):Promise<ToolboxDispatch>{
+  const response=await invoke<unknown>("send_selection_to_toolbox",{generation,keys:records.map(record=>({sourceId:record.sourceId,sequence:record.sequence}))});
+  const dispatch=parseToolboxDispatch(response);if(!dispatch)throw new Error(TOOLBOX_TEXT_INVALID_ERROR);return dispatch;
+}

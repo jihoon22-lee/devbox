@@ -1,3 +1,12 @@
 @import "@devbox/tokens/tokens.css";
 @import "@devbox/a11y/styles.css";
 @import "@devbox/product-shell/styles.css";
+
+.command-browser input { min-width: 18rem; padding: .5rem; }
+.command-browser ul { padding: 0; list-style: none; }
+.command-browser li { display: flex; align-items: center; gap: 1rem; margin-block: .5rem; }
+.command-browser small { color: var(--db-color-text-muted); }
+
+.hosted-launcher { padding: 0; border: 1px solid var(--db-color-border); width: min(760px, 96vw); max-height: 94vh; }
+.hosted-launcher::backdrop { background: #0008; }
+.hosted-launcher .launcher-shell { min-height: 0; }

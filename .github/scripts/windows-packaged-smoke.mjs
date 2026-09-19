@@ -766,7 +766,7 @@ function secondProcessIdentityConfirmed(child, identity, exitedBeforeObservation
   );
 }
 
-async function stopOwnedProcess(identity, executable, child) {
+export async function stopOwnedProcess(identity, executable, child) {
   if (!identity) return { forced: false, alreadyExited: child.exitCode !== null, descendants: [] };
   const expected = path.resolve(executable).toLowerCase();
   if (path.resolve(identity.Path).toLowerCase() !== expected) fail("owned process path identity changed");

@@ -97,6 +97,7 @@ export interface QuickCaptureSaved {
 }
 
 export type QuickCaptureShortcutState =
+  | "managed"
   | "registering"
   | "registered"
   | "conflict"

@@ -57,7 +57,14 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                 && method != "daily_note"
                 && (knowledge_base_lib::component::COMMANDS.contains(&method)
                     || knowledge_base_lib::component::DAILY_METHODS.contains(&method)
-                    || matches!(method, "read_clipboard_text" | "open_external_url"))
+                    || matches!(
+                        method,
+                        "read_clipboard_text"
+                            | "open_external_url"
+                            | "preview_session_summary"
+                            | "open_session_summary"
+                            | "open_result_draft"
+                    ))
         }
         "knowledge.activity" => {
             route == "activity"
@@ -202,8 +209,37 @@ async fn execute(
     if request.component != "knowledge.migration" {
         crate::startup::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
     }
+    if (request.component == "knowledge.search"
+        && request.method == "source_query"
+        && request.args["source"] == "current_project")
+        || (request.component == "knowledge.activity"
+            && matches!(
+                request.method.as_str(),
+                "project_attribution" | "get_digest" | "get_day" | "get_range"
+            ))
+        || request.component == "knowledge.opener"
+    {
+        crate::project_provider::refresh(app, request.header.deadline_ms).await;
+    }
     let value = match request.component.as_str() {
         "knowledge.migration" => crate::startup::dispatch(app, &request.method, request.args),
+        "knowledge.notes" if request.method == "open_result_draft" => {
+            crate::result_receive::open(app, request.args, request.header.deadline_ms).await
+        }
+        "knowledge.notes"
+            if matches!(
+                request.method.as_str(),
+                "preview_session_summary" | "open_session_summary"
+            ) =>
+        {
+            crate::session_receive::dispatch(
+                app,
+                &request.method,
+                request.args,
+                request.header.deadline_ms,
+            )
+            .await
+        }
         "knowledge.notes"
             if knowledge_base_lib::component::DAILY_METHODS.contains(&request.method.as_str()) =>
         {
@@ -262,8 +298,25 @@ async fn execute(
                 .await
                 .map(|value| crate::search::associate_activity(app, &request.method, value))
         }
-        "knowledge.opener" if request.method == "open_targets" => Ok(json!([])),
-        "knowledge.opener" if request.method == "open_in" => Err("provider_unavailable".into()),
+        "knowledge.search" if request.method == "source_saved_reference" => {
+            crate::federation::saved_reference(app, request.args).await
+        }
+        "knowledge.opener" if request.method == "open_targets" => Ok(
+            if crate::suite::installed_products(app).contains("workspace") {
+                json!([{"id":"devbox-workspace","displayName":"Workspace Editor"}])
+            } else {
+                json!([{"id":"devbox-workspace","displayName":"Workspace Editor · 설치·제품 연결 필요"}])
+            },
+        ),
+        "knowledge.opener" if request.method == "open_in" => {
+            crate::file_send::send(
+                app,
+                request.args,
+                &request.header.request_id,
+                request.header.deadline_ms,
+            )
+            .await
+        }
         "knowledge.opener" => crate::search::open(app, &request.method, request.args).await,
         "knowledge.search" if crate::search::METHODS.contains(&request.method.as_str()) => {
             crate::search::dispatch(app, &request.method, request.args)

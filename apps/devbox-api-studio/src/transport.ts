@@ -14,6 +14,7 @@ configureProductTransport(async <T>(component: Component, method: string, args: 
   if (!nativeMode) throw new Error("데스크톱 앱에서 사용할 수 있습니다.");
   const description = await describe("api-studio");
   const header = makeRequest(description.handshake, routeFor[component], Date.now(), description.context);
+  if(method==="send_knowledge_draft" || method==="open_workspace_selection")header.deadlineMs=Date.now()+29000;
   const provenance = { product: "api-studio", component, requestId: header.requestId, revision: catalog.catalogRevision };
   let response: { operation: Operation; value: T };
   try {

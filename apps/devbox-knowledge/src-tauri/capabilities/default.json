@@ -8,6 +8,7 @@
     "core:default",
     "product-shell:allow-describe",
     "product-shell:allow-route-status",
-    "knowledge:allow-execute"
+    "knowledge:allow-execute",
+    "suite:allow-connection"
   ]
 }

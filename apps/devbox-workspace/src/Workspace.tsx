@@ -3,7 +3,8 @@ import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
 import { nativeMode, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
-import RegistryGate, { type Registry } from "./RegistryGate";
+import type { Registry } from "./RegistryGate";
+const RegistryGate=lazy(()=>import("./RegistryGate"));
 import { componentCall } from "./native";
 const ProjectDefinitions=lazy(()=>import("./ProjectDefinitions"));
 import {sourceFilePath} from "./sourceNavigation";
@@ -18,6 +19,7 @@ const Overview = lazy(() => import("@devbox/workspace-features/overview"));
 const Source = lazy(() => import("@devbox/workspace-features/source"));
 const NativeSource = lazy(() => import("./Source"));
 const Dependencies = lazy(() => import("@devbox/workspace-features/dependencies"));
+const IncomingFileReview=lazy(()=>import("./IncomingFileReview"));
 const Files = lazy(() => import("@devbox/workspace-features/files"));
 const NativeRuntimeRoutes = lazy(() => import("./NativeRuntimeRoutes"));
 const Tasks = lazy(() => import("@devbox/workspace-features/tasks"));
@@ -79,7 +81,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   const [definitionsEditing, setDefinitionsEditing] = useState(false);
   const [registrySignal, setRegistrySignal] = useState(0);
   const refreshRegistry = useCallback(() => setRegistrySignal(value => value + 1), []);
-  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null;column?:number|null}|null>(null);
+  const [fileRequest, setFileRequest] = useState<{id:string;contextKey:string;path:string;line:number|null;column?:number|null;receivedReference?:string}|null>(null);
   const reloadImportedSession=useCallback(()=>{setFileRequest(null);setSessionRevision(value=>value+1);},[]);
   const [sourceNavigationError, setSourceNavigationError] = useState("");
   const [registrationRequest,setRegistrationRequest]=useState<{id:string;path:string;name:string;target:NonNullable<Description["context"]>["target"]}|null>(null);
@@ -110,7 +112,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
   return <>
     <div hidden={ready && route === "files"}>
-      <RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={tasksDirty || editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/>
+      <Suspense fallback={<p role="status">프로젝트 정보를 불러오고 있습니다…</p>}><RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={tasksDirty || editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/></Suspense>
     </div>
     {ready && selectedTree && <Suspense fallback={null}><ContextStatus description={description} name={registry?.projects.find(project=>project.id===description.context?.projectId)?.name??"프로젝트"} root={selectedTree.binding.root} navigate={navigate}/></Suspense>}
     {ready && route==="problems" && <Suspense fallback={<p role="status">문제 목록을 불러오고 있습니다…</p>}><Problems description={description} onFile={openDiagnostic} onLog={acceptProblemLog} onRuntime={acceptRuntimeFocus} navigate={navigate}/></Suspense>}
@@ -141,6 +143,7 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
         <LegacyRecoveryImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy||lspImportBusy} onBusyChange={setRecoveryImportBusy} onApplied={reloadImportedSession}/>
         <LegacyLspImport key={JSON.stringify(description.context)} description={description} disabled={editing||sessionImportBusy||recoveryImportBusy} onBusyChange={setLspImportBusy} onApplied={reloadImportedSession}/>
         <div inert={sessionImportBusy||recoveryImportBusy||lspImportBusy}>
+          <IncomingFileReview description={description} onOpen={setFileRequest}/>
           <Files key={sessionRevision} contextKey={JSON.stringify(description.context)} active={route === "files"&&!sessionImportBusy&&!recoveryImportBusy&&!lspImportBusy} onDirtyChange={setEditing} openRequest={fileRequest}/>
         </div>
       </Suspense>

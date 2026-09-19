@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 10,
+  "catalogRevision": 11,
   "channel": "development",
   "products": [
     {
@@ -208,6 +208,34 @@
       "id": "workspace.terminal",
       "owner": "workspace",
       "authority": "terminal-session",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "control-center.commands",
+      "owner": "control-center",
+      "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "workspace.commands",
+      "owner": "workspace",
+      "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "api-studio.commands",
+      "owner": "api-studio",
+      "authority": "command-dispatch",
+      "lifecycle": "product",
+      "protocolVersion": 1
+    },
+    {
+      "id": "knowledge.commands",
+      "owner": "knowledge",
+      "authority": "command-dispatch",
       "lifecycle": "product",
       "protocolVersion": 1
     },

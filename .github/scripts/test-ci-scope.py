@@ -105,7 +105,7 @@ for app in ["knowledge-base", "life-log", "everything-plus"]:
 secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == [
     "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
-    "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
+    "devbox-launcher", "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
     "secrets", "workbench", "workspace-wsl",
 ]
 
@@ -211,7 +211,7 @@ for path in (".github/scripts/verify-resources.py", ".github/scripts/check-agent
 for path in ("apps/products.json", "packages/product-shell/fixtures/route-request.json"):
     products = resolve(path)
     assert products.frontend_scope == "apps"
-    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
+    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center", "devbox-launcher"}
     assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
 parity = resolve("apps/v0.8-feature-parity.json")
 assert parity.frontend_scope == parity.rust_scope == "all"
@@ -222,9 +222,18 @@ included_sources = {
     (native_module.parent / relative).resolve().relative_to(ROOT).as_posix()
     for relative in re.findall(r'#\[path = "([^"]+)"\]', native_module.read_text())
 }
-assert included_sources == set(module.RUST_SHARED_PLATFORM_CONSUMERS)
+assert included_sources <= set(module.RUST_SHARED_PLATFORM_CONSUMERS)
 for path in included_sources:
     shared = resolve(path)
     assert "devbox-workspace" in shared.rust_packages
     assert shared.frontend_scope == "none"
 print("CI scope regression tests passed")
+
+for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
+    if path.startswith("apps/devbox-control-center/src-tauri/src/"):
+        shared = resolve(path)
+        assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(shared.rust_packages)
+        assert shared.frontend_scope == "none"
+
+hotkey = resolve("apps/devbox-launcher/src-tauri/src/hotkey.rs")
+assert {"devbox-launcher", "devbox-control-center"} <= set(hotkey.rust_packages)
