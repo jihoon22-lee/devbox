@@ -647,3 +647,16 @@ boundary; normal user project selection already refreshes the UI explicitly.
   unavailable result; capture the precise method/outcome and equivalent read-only
   Docker listing in the owned VM. Continue only containers/stopped-query against
   the retained corrected executable, without rerunning the completed multiplexers.
+
+- Run35447762270 identifies the actual remaining defect: container start/list/
+  duplicate receipts passed, but restart hit the ten-second WSL command timeout.
+  Docker's default Linux stop grace is also ten seconds, before restart overhead
+  (https://docs.docker.com/reference/cli/docker/container/restart/).
+- Keep observation commands bounded at ten seconds. Docker mutations receive up
+  to 25 seconds within the original request's remaining budget; deadline elapsed
+  during lease checks counts before spawn. Preserve Docker's stop signal/grace
+  and native target checks. Existing owned container restart/stop fixture is the
+  regression; no local Docker or extra test suite runs.
+- Scoped Workspace compilation passed in 27.984s. The remaining native container
+  fixture now requires a binary containing this timeout correction; unrelated
+  terminal/multiplexer/product passes remain valid.
