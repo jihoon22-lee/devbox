@@ -537,3 +537,15 @@ runtime repair and paged terminal fixture will be rebased into this PR.
   buffer를 변경하고 실제 수신 Review에서 오류·미리보기 부재를 확인한다. 이후 독립 file
   opener 시나리오 전에 synthetic buffer를 원래 값으로 되돌린다.
 - JS syntax/diff PASS. 이 변경의 Windows 결과는 아직 미실행이다.
+
+### 2026-09-19 Windows 결과 보존
+
+- 일반 CI `35431862174`: frontend/Linux/Windows Rust/catalog PASS, dependency만 신규
+  rustls 권고로 실패했다. B06의 0.23.45 보안 수정을 현재 branch에 반영했다.
+- native `35431862178`: 실제 terminal/session/WSL task와 LSP installer PASS;
+  API migration/lifetime/end-to-end, Knowledge migration/vault/window lifetime,
+  anchor/product installer coexistence도 PASS다. Activity 무한 갱신 수정과 초안 문구 수정이
+  실제 Windows에서 확인됐다.
+- 남은 실패: registry aggregate cleanup의 stale revision(B06 수정 반영), suite 첫
+  Workspace probe의 generic Unavailable. 네 제품 정리는 모두 실제 종료로 확인됐다.
+  정적 계약 대조/경로 canonicalization/native 코드 진단을 묶은 다음 head로 진행한다.
