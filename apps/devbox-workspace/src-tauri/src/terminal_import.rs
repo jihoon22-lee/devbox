@@ -433,6 +433,49 @@ pub(crate) fn prepared(root: &Path, id: &str) -> Result<(Prepared, String)> {
     prepared.validate()?;
     Ok((prepared, crate::definitions::digest(&bytes)))
 }
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct BackupBytes {
+    pub sha256: String,
+    pub bytes: u64,
+}
+#[derive(Clone, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct SourceBackups {
+    pub profiles: Option<BackupBytes>,
+    pub browser: Option<BackupBytes>,
+}
+pub(crate) fn source_backups(root: &Path, id: &str) -> Result<SourceBackups> {
+    if !valid_id(id) {
+        return Err("terminal_import_invalid");
+    }
+    let stage = MetadataRoot::open(&root.join("terminal-imports").join(id))?;
+    let profiles = stage
+        .read("profiles-source.json")?
+        .map(|bytes| BackupBytes {
+            sha256: crate::definitions::digest(&bytes),
+            bytes: bytes.len() as u64,
+        });
+    let browser = stage
+        .read("browser-snapshot.json")?
+        .map(|bytes| {
+            let receipt: data_migration::core::source_snapshot::ClosedStoreSnapshot =
+                serde_json::from_slice(&bytes).map_err(|_| "terminal_import_backup_invalid")?;
+            data_migration::core::source_snapshot::verify_closed_copy(
+                &stage.path().join("retained-leveldb"),
+                &receipt,
+                &AtomicBool::new(false),
+            )
+            .map_err(|_| "terminal_import_backup_changed")?;
+            Ok::<_, &'static str>(BackupBytes {
+                sha256: crate::definitions::digest(&bytes),
+                bytes: receipt.files.iter().map(|file| file.bytes).sum(),
+            })
+        })
+        .transpose()?;
+    stage.revalidate()?;
+    Ok(SourceBackups { profiles, browser })
+}
 #[cfg(windows)]
 fn prepare(
     source: &Path,
@@ -495,7 +538,23 @@ fn prepare(
                 .map_err(str::to_owned)
         },
     ) {
-        Ok((_copy, receipt)) => {
+        Ok((copy, receipt)) => {
+            let stores = [
+                "EBWebView/Default/Local Storage/leveldb",
+                "Default/Local Storage/leveldb",
+            ];
+            let source = stores
+                .iter()
+                .map(|relative| copy.join(relative))
+                .find(|path| path.is_dir())
+                .ok_or("terminal_import_copy_identity_missing")?;
+            data_migration::core::source_snapshot::retain_closed_copy(
+                &source,
+                &stage.path().join("retained-leveldb"),
+                &receipt,
+                cancelled,
+            )
+            .map_err(|_| "terminal_import_backup_unavailable")?;
             stage.create_new(
                 "browser-snapshot.json",
                 &serde_json::to_vec(&receipt).map_err(|_| "terminal_import_invalid")?,

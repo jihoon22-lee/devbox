@@ -463,3 +463,19 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   deliberately keeps its revision unchanged, so the adapter now checks the
   expected stored digest without calling the store's revision-advancing write.
   A repeated successful observation is idempotent; concurrent changes still fail.
+
+### Preserve Terminal originals independently of the export worker (2026-09-19)
+
+- Workspace Terminal now retains the closed LevelDB bytes before its disposable
+  worker profile can be opened/compacted. Existing worker-copy cleanup leaves this
+  retained copy and the original native profile JSON untouched.
+- Accepted terminal receipts bind original profile and browser metadata digests
+  in the same owner document as profiles/preferences. Import restore keeps these
+  bindings with the repeat receipts; semantic source fingerprints and profile IDs
+  retain their existing behavior. Backup listing/verification now covers terminal
+  originals. Old accepted imports without bindings report a verification failure
+  rather than fabricating provenance from mutable staging files.
+- Prepared accepted-backup tampering and preservation-through-restore regression.
+  Workspace Rust/test compilation passed in 19.413s before the final added test/
+  restore-binding assertion; those final additions were reviewed without another
+  routine run. Detailed tests and Windows acquisition remain deferred to B08.

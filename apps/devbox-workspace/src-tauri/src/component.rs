@@ -2914,6 +2914,13 @@ pub(crate) fn suite_backups(
     use product_contract::migration_backup::{Descriptor, Verified};
     let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
     let host = runtime.host()?;
+    if let Some(id) = id.filter(|id| id.starts_with("terminal_")) {
+        crate::files_host::current_deadline(deadline)?;
+        let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+        let verified = crate::terminal_profiles::verify_backup(&terminal, host.storage_root(), id)?;
+        crate::files_host::current_deadline(deadline)?;
+        return serde_json::to_value(verified).map_err(|_| "migration_backup_invalid");
+    }
     let catalog = host.legacy.catalog()?;
     if catalog.unrecognized != 0 {
         return Err("migration_backup_invalid");
@@ -2943,16 +2950,13 @@ pub(crate) fn suite_backups(
         host.legacy.catalog()?;
         serde_json::to_value(verified).map_err(|_| "migration_backup_invalid")
     } else {
-        serde_json::to_value(
-            catalog
-                .snapshots
-                .into_iter()
-                .map(|snapshot| Descriptor {
-                    id: snapshot.id,
-                    acquisition: "stable-json-files/v1".into(),
-                })
-                .collect::<Vec<_>>(),
-        )
-        .map_err(|_| "migration_backup_invalid")
+        let mut rows = catalog.snapshots.into_iter().map(|snapshot| Descriptor {
+            id: snapshot.id, acquisition: "stable-json-files/v1".into(),
+        }).collect::<Vec<_>>();
+        if host.status()?.get("selected").and_then(Value::as_bool) == Some(true) {
+            let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+            rows.extend(crate::terminal_profiles::backup_catalog(&terminal)?);
+        }
+        serde_json::to_value(rows).map_err(|_| "migration_backup_invalid")
     }
 }
