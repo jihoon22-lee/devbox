@@ -59,6 +59,10 @@ on:
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
     inputs:
+      wsl2_diagnostic_run:
+        description: Reuse this original private Workspace artifact for isolated WSL2 acceptance without rebuilding
+        type: string
+        default: ''
       terminal_diagnostic_run:
         description: Reuse this prior foundation run's exact Workspace artifact for hosted companion diagnosis only
         type: string
@@ -73,7 +77,7 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.terminal_diagnostic_run || 'full' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.wsl2_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
   cancel-in-progress: true
 
 jobs:
@@ -123,7 +127,7 @@ jobs:
           if-no-files-found: error
 
   workspace-wsl-helper:
-    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '') }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -169,7 +173,7 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '') }}
     name: Hidden products (Windows native)
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
@@ -354,19 +358,42 @@ jobs:
 
   windows-wsl2:
     needs: windows
-    if: ${{ needs.windows.result == 'success' && needs.windows.outputs.workspace_fixture_exported == 'success' }}
+    if: ${{ always() && ((needs.windows.result == 'success' && needs.windows.outputs.workspace_fixture_exported == 'success') || (github.event_name == 'workflow_dispatch' && inputs.wsl2_diagnostic_run != '')) }}
     name: Workspace WSL2 and containers (isolated hosted VM)
     runs-on: windows-2025
     timeout-minutes: 20
+    env:
+      ARTIFACT_SOURCE: ${{ github.sha }}
+      ARTIFACT_RUN: ${{ github.run_id }}
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
           node-version: 22
       - uses: actions/download-artifact@v8
+        if: inputs.wsl2_diagnostic_run == ''
         with:
           name: workspace-webview-fixture-${{ github.run_id }}
           path: ${{ runner.temp }}/workspace-webview-fixture
+      - name: Acquire the original artifact for focused WSL2 acceptance
+        if: inputs.wsl2_diagnostic_run != ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.wsl2_diagnostic_run }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_RUN -notmatch '^\d+$') { throw 'Invalid source run' }
+          $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected source workflow' }
+          gh run download $env:SOURCE_RUN --name "workspace-webview-fixture-$env:SOURCE_RUN" --dir "$env:RUNNER_TEMP/workspace-webview-fixture"
+          if ($LASTEXITCODE -ne 0) { throw 'Exact source artifact unavailable' }
+          $fixture = Get-Content -Raw "$env:RUNNER_TEMP/workspace-webview-fixture/fixture.json" | ConvertFrom-Json
+          if ($fixture.runId -ne $env:SOURCE_RUN -or $fixture.sourceSha -notmatch '^[a-f0-9]{40}$') { throw 'Unexpected artifact metadata' }
+          $commit = gh api "repos/$env:GITHUB_REPOSITORY/commits/$($fixture.sourceSha)" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or ($commit.sha -ne $record.head_sha -and $record.head_sha -notin @($commit.parents.sha))) { throw 'Artifact source does not belong to this workflow run' }
+          "ARTIFACT_SOURCE=$($fixture.sourceSha)" >> $env:GITHUB_ENV
+          "ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
       - uses: actions/cache/restore@v6
         id: wsl2-rootfs-cache
         with:
@@ -393,7 +420,7 @@ jobs:
         shell: powershell
         run: |
           $archive = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs/ubuntu-rootfs.tar.gz'
-          .github/scripts/windows-workspace-owned-wsl2.ps1 -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID
+          .github/scripts/windows-workspace-owned-wsl2.ps1 -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID -ArtifactSourceSha $env:ARTIFACT_SOURCE -ArtifactRunId $env:ARTIFACT_RUN
       - name: Preserve isolated WSL2 acceptance evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -406,7 +433,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '') }}
+    if: ${{ github.event_name != 'workflow_dispatch' || (!inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '') }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -456,7 +483,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:

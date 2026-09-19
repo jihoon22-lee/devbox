@@ -1,10 +1,14 @@
-param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets)
+param([string]$Archive,[string]$Digest,[string]$AppArtifact,[string]$NodeScript,[string]$SourceSha,[string]$RunId,[string]$InstalledTargets,[string]$ArtifactSourceSha,[string]$ArtifactRunId)
 $ErrorActionPreference='Stop'
 # WSL distributions can share host networking. No local/self-hosted opt-out:
 # daemon provisioning may change iptables even before a test container starts.
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:RUNNER_OS -ne 'Windows' -or $env:GITHUB_REPOSITORY -ne 'jihoon22-lee/devbox' -or $env:GITHUB_RUN_ID -notmatch '^\d+$' -or $RunId -ne $env:GITHUB_RUN_ID -or $SourceSha -ne $env:GITHUB_SHA) {
   throw 'Network-changing fixtures are disabled on local and self-hosted machines. Use a disposable GitHub-hosted Windows runner; never spoof CI environment variables.'
 }
+if (-not $InstalledTargets) { $InstalledTargets = '-' }
+if (-not $ArtifactSourceSha) { $ArtifactSourceSha = $SourceSha }
+if (-not $ArtifactRunId) { $ArtifactRunId = $RunId }
+if ($ArtifactSourceSha -notmatch '^[a-f0-9]{40}$' -or $ArtifactRunId -notmatch '^\d+$') { throw 'Invalid retained artifact provenance' }
 . (Join-Path $PSScriptRoot 'windows-installer-helpers.ps1')
 $WslVersion=2
 if ($Digest -notmatch '^[a-f0-9]{64}$' -or (Get-FileHash -LiteralPath $Archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $Digest) {throw 'Owned fixture archive digest mismatch'}
@@ -108,7 +112,7 @@ for command in [['/usr/bin/tmux','-V'],['/usr/local/bin/zellij','--version'],['/
   if ($provision.exit -ne 0) {throw 'Owned fixture tool setup failed'}
   $watch=[Diagnostics.Stopwatch]::StartNew()
   $node=(Get-Command node.exe -ErrorAction Stop).Source
-  $test=Run-Process $node @($NodeScript,$owner,$AppArtifact,$SourceSha,$RunId,$InstalledTargets) 600000
+  $test=Run-Process $node @($NodeScript,$owner,$AppArtifact,$SourceSha,$RunId,$InstalledTargets,$ArtifactSourceSha,$ArtifactRunId) 600000
   $watch.Stop()
   @{stage='actual-windows-wsl2-workspace';elapsedSeconds=$watch.Elapsed.TotalSeconds;result=$test}|ConvertTo-Json -Depth 5 -Compress
   if ($test.exit -ne 0 -or $test.timedOut) {throw 'Owned WSL Runtime fixture failed'}

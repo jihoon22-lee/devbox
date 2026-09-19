@@ -15,7 +15,8 @@ const delay=ms=>new Promise(resolve=>setTimeout(resolve,ms));let currentProbe={s
 import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 const networkFixture=requireHostedNetworkFixture();
 assert.equal(process.platform,'win32');
-const [ownerFile,artifact,expectedSource,expectedRun]=process.argv.slice(2);
+const [ownerFile,artifact,expectedSource,expectedRun,_installedTargets,artifactSource=expectedSource,artifactRun=expectedRun]=process.argv.slice(2);
+assert.match(artifactSource,/^[a-f0-9]{40}$/);assert.match(artifactRun,/^[0-9]+$/);
 assert.equal(expectedRun,networkFixture.runId);
 const json=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
 const owner=json(ownerFile),directory=realpathSync.native(path.dirname(ownerFile));
@@ -23,7 +24,7 @@ assert.equal(owner.schema,1);assert.equal(owner.version,2);
 assert.match(owner.name,/^DevboxWorkspaceFixture-[0-9a-f]{32}$/);
 assert.equal(path.basename(directory),owner.name);assert.equal(readFileSync(path.join(directory,'owner.txt'),'utf8'),owner.name);
 assert.equal(realpathSync.native(path.dirname(directory)).toLowerCase(),realpathSync.native(tmpdir()).toLowerCase());
-const metadata=json(path.join(artifact,'fixture.json'));assert.equal(metadata.sourceSha,expectedSource);assert.equal(metadata.runId,expectedRun);
+const metadata=json(path.join(artifact,'fixture.json'));assert.equal(metadata.sourceSha,artifactSource);assert.equal(metadata.runId,artifactRun);
 assert.equal(metadata.purpose,'owned-workspace-webview-acceptance');
 const appDirectory=path.join(directory,'app');mkdirSync(appDirectory);mkdirSync(path.join(appDirectory,'resources/wsl'),{recursive:true});
 const digest=bytes=>createHash('sha256').update(bytes).digest('hex');
@@ -41,10 +42,15 @@ writeFileSync(path.join(directory,'app-owner.json'),JSON.stringify({executable,i
 const wslExe=path.join(process.env.SystemRoot,'System32','wsl.exe');
 const wsl=(args,input)=>{
  const result=spawnSync(wslExe,['--distribution-id',owner.distroId,'--user','root','--cd','/','--exec',...args],{input,encoding:'utf8',timeout:15000,maxBuffer:1024*1024,windowsHide:true});
- if(result.status!==0)throw new Error('Owned WSL command failed '+result.status+' '+String(result.stderr).slice(0,500));return result.stdout.trim();
+ if(result.status!==0){
+  const failure={status:result.status,signal:result.signal,error:result.error?.code??null,program:args[0],stdout:String(result.stdout??'').replace(/\0/g,'').slice(-3000),stderr:String(result.stderr??'').replace(/\0/g,'').slice(-1500)};
+  evidence.wslFailure??=failure;
+  throw new Error('Owned WSL command failed: '+JSON.stringify(failure));
+ }
+ return result.stdout.trim();
 };
 let child,cdp,policy,confirmed=false,appExited=false,ownedDataRemoved=false;
-const evidence={source:expectedSource,environment:'github-hosted-windows-wsl2',result:'diagnostic',observations:{}};
+const evidence={source:artifactSource,fixtureSource:expectedSource,artifactRun,environment:'github-hosted-windows-wsl2',result:'diagnostic',observations:{}};
 const success=result=>{if(result.operation.outcome.state!=='succeeded')throw new Error('Native operation failed: '+JSON.stringify(result.operation.outcome));return result.value;};
 try{
  const port=await freePort();policy=windowsProcessIsElevated()?inspectElevatedCdpPolicy(imageName,port):null;if(policy)installElevatedCdpPolicy(policy);
@@ -77,7 +83,10 @@ finally{
   if(confirmed&&appExited){rmSync(dataRoot,{recursive:true,force:true});ownedDataRemoved=!existsSync(dataRoot);}
  }finally{
   if(policy)restoreElevatedCdpPolicy(policy);
-  try{cpSync(path.join(directory,'product-foundation-evidence'),path.join(artifact,'wsl2-details'),{recursive:true});}
+  try{
+   const details=path.join(artifact,'wsl2-details');cpSync(path.join(directory,'product-foundation-evidence'),details,{recursive:true});
+   for(const name of ['b06-terminal-failure.json','b06-terminal-output-failure.json','terminal-output-failure.json'])if(existsSync(path.join(directory,name)))copyFileSync(path.join(directory,name),path.join(details,name));
+  }
   catch(error){evidence.evidenceCopyError=String(error).slice(0,1000);}
   writeFileSync(path.join(artifact,'hosted-wsl2-workspace-acceptance.json'),JSON.stringify({...evidence,appExited,ownedDataRemoved},null,2));
  }

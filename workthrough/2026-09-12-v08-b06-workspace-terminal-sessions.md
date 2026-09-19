@@ -555,3 +555,22 @@ boundary; normal user project selection already refreshes the UI explicitly.
   Normalize both branches to slices before decoding. This is a type/lint fix;
   cursor filtering behavior and passing pure regression evidence are unchanged.
   The in-flight Windows native gate is retained rather than cancelled.
+
+### Final native/WSL2 continuation and focused retained-artifact lane (2026-09-19)
+
+- Run35441341492 passed the complete Hidden products Windows job, including the
+  aggregate native PTY/replay/reload acceptance and all independent product and
+  installer checks. The duplicate startup cursor reply is resolved in execution.
+- Its isolated WSL2 job passed Runtime ownership/listener/secret/stop checks and
+  progressed past Terminal output, SIGINT and companion restore. A subsequent
+  owned Python task-fixture setup returned WSL exit4294967295. Container and
+  multiplexer-specific acceptance remain unrun. VM cleanup removed its own distro.
+- The wrapper discarded WSL stdout, concealing the actual host error. Preserve
+  bounded stdout/stderr/signal/error and first failure; collect root-level terminal
+  evidence alongside the existing detail directory. No speculative runtime fix.
+- Add a focused WSL2 workflow-dispatch lane that downloads the exact prior private
+  artifact and verifies its source commit belongs to the original workflow run.
+  Fixture run/SHA stay current and retain every hosted-only network safety check;
+  artifact provenance is a separate parameter, never spoofed CI environment.
+  Node/YAML syntax and diff checks passed. This allows diagnosing the failed WSL2
+  path without rebuilding apps or repeating passing independent native checks.
