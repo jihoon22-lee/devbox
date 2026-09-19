@@ -549,3 +549,9 @@ boundary; normal user project selection already refreshes the UI explicitly.
   both use Node24 and the same audited cache repository. Add their exact v6 refs
   to the existing allowlist; its focused policy check passed. Validator logic,
   workflow permissions and host-safety guards are unchanged.
+
+- Final CI found one Linux-only needless borrow in the new cursor adapter:
+  the Windows branch produces a Vec while Linux already produces a slice.
+  Normalize both branches to slices before decoding. This is a type/lint fix;
+  cursor filtering behavior and passing pure regression evidence are unchanged.
+  The in-flight Windows native gate is retained rather than cancelled.

@@ -526,10 +526,12 @@ pub(crate) fn attach_native(
                 }
                 Ok(n) => {
                     #[cfg(windows)]
-                    let chunk = startup_cursor.filter(&buf[..n]);
+                    let filtered = startup_cursor.filter(&buf[..n]);
+                    #[cfg(windows)]
+                    let chunk = filtered.as_slice();
                     #[cfg(not(windows))]
                     let chunk = &buf[..n];
-                    publish(decode_chunk(&mut carry, &chunk));
+                    publish(decode_chunk(&mut carry, chunk));
                 }
                 // 일시 오류 — EOF가 아니다. 계속 읽는다.
                 Err(e)
