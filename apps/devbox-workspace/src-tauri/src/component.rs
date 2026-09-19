@@ -252,6 +252,49 @@ struct Response {
     operation: Operation,
     value: Value,
 }
+fn migration_method(component: &str, method: &str) -> bool {
+    match component {
+        "workspace.migration" => true,
+        "workspace.registry" => matches!(
+            method,
+            "snapshot"
+                | "list_wsl_distros"
+                | "preview_wsl"
+                | "preview_legacy_workspace_windows"
+                | "preview_imported_profile_windows"
+                | "preview_imported_profile_wsl"
+                | "apply_registration"
+                | "cancel_registration"
+                | "select_project"
+                | "clear_project"
+        ),
+        "workspace.runtime" => matches!(
+            method,
+            "runtime_import_prepare"
+                | "runtime_import_resume"
+                | "runtime_import_apply"
+                | "runtime_import_cancel"
+                | "runtime_import_status"
+                | "runtime_import_catalog"
+                | "runtime_import_reviews"
+        ),
+        "workspace.terminal" => matches!(
+            method,
+            "start_terminal_import"
+                | "cancel_terminal_import"
+                | "cleanup_terminal_import"
+                | "terminal_imports"
+                | "preview_terminal_import"
+                | "apply_terminal_import"
+                | "terminal_import_history"
+                | "preview_terminal_import_restore"
+                | "restore_terminal_import"
+                | "list_workspace_profiles"
+        ),
+        _ => false,
+    }
+}
+
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     if component == "workspace.problems" {
         return matches!(
@@ -1540,7 +1583,15 @@ async fn execute(
     let context_change = changes_context(&request.method);
     // Authenticate/replay-check once before waiting. A single bounded waiter
     // holds no context permit, so active file/metadata workers can retire.
-    let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
+    let provenance = if migration_method(&request.component, &request.method) {
+        product_shell_tauri::authorize_owner_migration(
+            &window,
+            &request.header,
+            &request.component,
+        )?
+    } else {
+        product_shell_tauri::authorize(&window, &request.header, &request.component)?
+    };
     let problem = |code| Problem {
         code,
         provenance: provenance.clone(),
@@ -2347,6 +2398,35 @@ pub(crate) async fn approve_received_file(
     })
     .await
     .map_err(|_| "file_unavailable")?
+}
+
+pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
+    let host = runtime.host()?;
+    let status = host.status()?;
+    let rows = host.legacy.operation_rows()?;
+    let busy = rows.iter().any(|row| {
+        matches!(
+            row.phase,
+            product_contract::operations::Phase::Running
+                | product_contract::operations::Phase::CancelRequested
+                | product_contract::operations::Phase::Uncancellable
+        )
+    });
+    let selected = status
+        .get("selected")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    let native = serde_json::to_vec(&(status, rows)).map_err(|_| "migration_unavailable")?;
+    serde_json::to_value(product_contract::migration_status::Summary::new(
+        "workspace",
+        env!("CARGO_PKG_VERSION"),
+        busy,
+        selected,
+        !selected,
+        &native,
+    )?)
+    .map_err(|_| "migration_unavailable")
 }
 
 #[cfg(test)]

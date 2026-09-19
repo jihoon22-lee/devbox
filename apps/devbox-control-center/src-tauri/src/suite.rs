@@ -85,6 +85,9 @@ struct Input {
     deny_unknown_fields
 )]
 enum Method {
+    ReadMigrationStatus {
+        product: String,
+    },
     ReadOperations {
         product: String,
     },
@@ -138,11 +141,24 @@ async fn connection(
     suite: State<'_, Suite>,
     request: Input,
 ) -> Result<Response, Problem> {
-    let provenance = product_shell_tauri::authorize(
-        &window,
-        &request.header,
-        &format!("{}.commands", suite.product),
-    )?;
+    let provenance = if matches!(
+        &request.method,
+        Method::Status
+            | Method::Preview
+            | Method::Approve { .. }
+            | Method::Disconnect
+            | Method::Probe { .. }
+            | Method::ReadOperations { .. }
+            | Method::ReadMigrationStatus { .. }
+    ) {
+        product_shell_tauri::authorize_installation_review(&window, &request.header)?
+    } else {
+        product_shell_tauri::authorize(
+            &window,
+            &request.header,
+            &format!("{}.commands", suite.product),
+        )?
+    };
     #[cfg(windows)]
     let result = execute(
         suite.product,
@@ -157,6 +173,14 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
+            Method::ReadMigrationStatus { product } => {
+                if !product_contract::installation::PRODUCTS.contains(&product.as_str()) {
+                    Err("peer_product_invalid")
+                } else {
+                    Err("suite_windows_required")
+                }
+            }
+
             Method::ReadOperations { product } => {
                 let _ = product;
             }
@@ -314,6 +338,19 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::ReadMigrationStatus { product: target } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            remote(
+                &app,
+                &target,
+                product_contract::transport::Call::ReadMigrationStatus {},
+                deadline,
+            )
+            .await
+        }
+
         Method::ReadOperations { product: target } => {
             if target == product {
                 match domain {
@@ -594,6 +631,7 @@ fn handler(
             if !matches!(
                 &call,
                 Call::Describe {}
+                    | Call::ReadMigrationStatus {}
                     | Call::ReadOperations {}
                     | Call::CommandStatus { .. }
                     | Call::ShortcutStatus {}

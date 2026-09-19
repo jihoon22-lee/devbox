@@ -275,6 +275,8 @@ pub(crate) fn handle(
     cancellation: Option<product_contract::query::Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
+        if matches!(&call, Call::ReadMigrationStatus {}) { return crate::component::suite_migration_status(&app); }
+
         if let Call::ReadTransformSelection { id } = &call {
             return crate::selection_send::read(&app, id, _deadline).await;
         }

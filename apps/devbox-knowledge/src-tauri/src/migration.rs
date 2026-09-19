@@ -397,6 +397,44 @@ pub(crate) fn operation_rows(
     Ok(rows)
 }
 
+pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<Migration>()
+        .ok_or("migration_unavailable")?;
+    let job = state.job.lock().map_err(|_| "migration_busy")?;
+    let busy = job.as_ref().is_some_and(|job| job.result.is_none());
+    let plans = import_plan::list(&state.root).map_err(|_| "migration_unavailable")?;
+    let selected = stores::read(&state.root)
+        .map_err(|_| "migration_unavailable")?
+        .is_some();
+    let review = state.scheduled.load(Ordering::Acquire)
+        || plans.iter().any(|plan| {
+            !matches!(
+                plan.phase,
+                Phase::Activated | Phase::Cancelled | Phase::RolledBack
+            )
+        });
+    let native = serde_json::to_vec(&(
+        busy,
+        selected,
+        review,
+        plans
+            .iter()
+            .map(|plan| (&plan.id, &plan.phase))
+            .collect::<Vec<_>>(),
+    ))
+    .map_err(|_| "migration_unavailable")?;
+    serde_json::to_value(product_contract::migration_status::Summary::new(
+        "knowledge",
+        env!("CARGO_PKG_VERSION"),
+        busy,
+        selected,
+        review,
+        &native,
+    )?)
+    .map_err(|_| "migration_unavailable")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

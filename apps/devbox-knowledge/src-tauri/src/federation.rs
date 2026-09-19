@@ -212,6 +212,8 @@ pub(crate) fn handle(
     cancellation: Option<Cancellation>,
 ) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Value, &'static str>> + Send>> {
     Box::pin(async move {
+        if matches!(&call, Call::ReadMigrationStatus {}) { return crate::migration::suite_status(&app); }
+
         if matches!(
             &call,
             Call::ReadOperations {} | Call::ReviewOperation { .. }

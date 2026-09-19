@@ -339,6 +339,28 @@ pub fn initialize_with_sources(
     legacy_base: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
 ) -> Result<(), String> {
+    initialize_owner(app, data, common, legacy_base, sources, true)
+}
+
+/// Import-only Workspace initialization does not start cron, services or the
+/// maintenance worker. Commit requires a clean process restart with normal mode.
+pub fn initialize_import_only_with_sources(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    legacy_base: &Path,
+    sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
+) -> Result<(), String> {
+    initialize_owner(app, data, common, legacy_base, sources, false)
+}
+fn initialize_owner(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    legacy_base: &Path,
+    sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
+    background_work: bool,
+) -> Result<(), String> {
     use crate::{
         core::imports::ImportOperationRegistry, lifecycle::RuntimeState, storage::DatabaseState,
     };
@@ -438,8 +460,10 @@ pub fn initialize_with_sources(
     app.manage(crate::applink::PendingOpen::new());
     app.manage(crate::task_control::PendingTaskControl::new());
     app.manage(runtime.clone());
-    crate::lifecycle::spawn_scheduler(runtime.clone());
-    crate::lifecycle::spawn_maintenance(runtime, database, app.clone(), data.to_path_buf());
+    if background_work {
+        crate::lifecycle::spawn_scheduler(runtime.clone());
+        crate::lifecycle::spawn_maintenance(runtime, database, app.clone(), data.to_path_buf());
+    }
     Ok(())
 }
 

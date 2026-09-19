@@ -112,6 +112,33 @@ pub fn authorize(
     request: &RouteRequest,
     component: &str,
 ) -> Result<Provenance, Problem> {
+    authorize_inner(window, request, component, false)
+}
+
+/// Only the native connection method allowlist may call this during import.
+/// It preserves explicit package review without admitting domain commands.
+pub fn authorize_installation_review(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+) -> Result<Provenance, Problem> {
+    let product = window.state::<ShellState>().product.clone();
+    authorize_inner(window, request, &format!("{product}.commands"), true)
+}
+/// Domain adapters use this only after matching their closed importer method
+/// allowlist. It never admits ordinary task, service, terminal or file commands.
+pub fn authorize_owner_migration(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+    component: &str,
+) -> Result<Provenance, Problem> {
+    authorize_inner(window, request, component, true)
+}
+fn authorize_inner(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+    component: &str,
+    installation_review: bool,
+) -> Result<Provenance, Problem> {
     let state = window.state::<ShellState>();
     let provenance = Provenance {
         product: state.product.clone(),
@@ -149,7 +176,11 @@ pub fn authorize(
         .collect();
     if !installation::activation(&state.executable, &state.version)
         .map_err(|_| problem(ProblemCode::Unavailable))?
-        .is_none_or(|marker| marker.allows(&state.product, component))
+        .is_none_or(|marker| {
+            marker.allows(&state.product, component)
+                || (installation_review
+                    && marker.phase == product_contract::activation::Phase::Import)
+        })
     {
         return Err(problem(ProblemCode::Unavailable));
     }
@@ -315,6 +346,19 @@ pub fn run_with(
 
 /// Owners call this before background initialization as well as route dispatch.
 /// Import-only authorization must not start activity collectors or schedulers.
+pub fn suite_import_only(app: &tauri::AppHandle) -> Result<bool, &'static str> {
+    let executable = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|_| "suite_activation_unavailable")?;
+    match installation::activation(&executable, &app.package_info().version.to_string())? {
+        None => Ok(false),
+        Some(marker) => match marker.phase {
+            product_contract::activation::Phase::Import => Ok(true),
+            product_contract::activation::Phase::Committed => Ok(false),
+            _ => Err("suite_activation_pending"),
+        },
+    }
+}
 pub fn require_suite_writable(app: &tauri::AppHandle) -> Result<(), &'static str> {
     require_suite_committed(&app.package_info().version.to_string())
 }

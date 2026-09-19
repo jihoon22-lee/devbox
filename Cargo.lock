@@ -1328,6 +1328,7 @@ dependencies = [
  "catalog",
  "data-migration",
  "devbox-manager",
+ "dirs",
  "filesystem",
  "product-contract",
  "product-shell-tauri",

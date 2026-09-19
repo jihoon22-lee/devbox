@@ -50,6 +50,7 @@ pub enum QueryMode {
     deny_unknown_fields
 )]
 pub enum Call {
+    ReadMigrationStatus {},
     ReadOperations {},
     ReviewOperation {
         id: String,

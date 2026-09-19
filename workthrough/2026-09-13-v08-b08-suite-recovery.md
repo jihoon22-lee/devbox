@@ -136,3 +136,32 @@ Native ARP inspection validates the declared local root, exact display-icon targ
 version, executable size/hash and file identity. This confirms only the executable;
 uninstaller verification/cleanup remains separate. Minimum CC library/bin and UI
 types passed (8.071 seconds); no installed legacy app or uninstaller was run.
+
+
+The pinned v0.7 lock uses Tauri CLI 2.11.4. Its upstream NSIS template calls a
+basename-based process-kill helper during uninstall and removes a shared autostart
+value. Therefore B08 must not execute that uninstaller against live user installs;
+cleanup will instead delete only verified files/registrations/shortcut targets.
+Source: https://raw.githubusercontent.com/tauri-apps/tauri/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/utils.nsh
+and the adjacent installer.nsi uninstall section.
+
+A manual-only hosted reference acquisition is prepared to derive the immutable file
+closure (including uninstall.exe) from each pinned public installer at two owned
+roots. This resolves the concrete missing ownership reference for safe cleanup;
+it builds no product and starts no legacy app. No local execution is permitted.
+Detailed B08 fault/installer acceptance remains at PR completion.
+
+### 2026-09-19 재개: 첫 설치 준비와 owner 관측 계약
+
+- bootstrap `--prepare-install`은 root/실행 파일/payload identity를 확인하고 generation,
+  namespace, writer lock, journal과 Import marker를 준비한다. 일반 실행의 쓰기 권한은
+  여전히 닫혀 있으며 이전 완료나 활성화 성공으로 보고하지 않는다.
+- owner의 제한된 importer와 제품 연결 검토만 Import 단계에서 허용한다. Workspace는
+  importer 저장소만 열고 scheduler/maintenance를 시작하지 않는다. 세 owner의 native
+  migration summary를 Control Center에서 명시적으로 조회한다. 이는 commit proof가 아니다.
+- 이전 최소 확인 결과 보존: install preparation Rust check 2.831s, owner coordination
+  Rust/TypeScript check 25.806s PASS. full PR 검증은 아직 실행하지 않았다.
+- pinned legacy installer의 installed-file closure 수집은 기존 foundation workflow의
+  수동 `legacy_reference_only` 모드로 분리했다. 일회성 hosted Windows VM에서만 실행하고
+  제품 재빌드·Docker·로컬 설치는 하지 않는다. 실제 사용자 설치에는 legacy uninstaller를
+  실행하지 않는다. 수집 결과가 확보된 뒤 exact-file cleanup을 구현한다.

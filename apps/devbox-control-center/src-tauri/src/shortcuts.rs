@@ -241,6 +241,9 @@ impl Owner {
         Ok(())
     }
     pub(crate) fn resume(&self, app: &tauri::AppHandle) -> Result<(), String> {
+        if product_shell_tauri::require_suite_writable(app).is_err() {
+            return Ok(());
+        }
         if !crate::suite::connection_ready(app) {
             return Ok(());
         }
