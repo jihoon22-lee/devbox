@@ -15,6 +15,8 @@ use std::{
 };
 type Result<T> = std::result::Result<T, &'static str>;
 mod data_restore;
+#[cfg(windows)]
+pub(crate) mod interactive;
 fn hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -427,6 +429,13 @@ fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<Stag
 pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     if !cfg!(windows) {
         return Err("bootstrap_windows_required");
+    }
+    #[cfg(windows)]
+    if arguments
+        .first()
+        .is_some_and(|mode| mode == "--reviewed-data-action")
+    {
+        return interactive::run(&arguments);
     }
     let restore = arguments.first().is_some_and(|mode| {
         [

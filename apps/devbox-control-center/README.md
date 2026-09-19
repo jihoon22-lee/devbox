@@ -54,7 +54,13 @@ all four stores. Physical directory identities permit restart after each rename,
 and a durable startup gate excludes browser/window-state writers during partial
 swaps. Original directories and changes made during health review are retained when
 undoing an uncommitted restore. Retention is bounded and never silently deletes old
-copies. Windows acceptance and Recovery UI integration remain in the B08 bundle.
+copies. The Recovery screen selects recorded checkpoints and explicitly hands
+reviewed actions to the retained helper. Control Center closes after handoff;
+the helper waits for all product leases without killing processes, then reopens
+Control Center. Preparation and apply run together without reopening a browser
+between the captured preimage and its replacement. After an interrupted swap,
+Control Center's normal entrypoint resumes the helper before creating a WebView.
+Windows acceptance remains in the B08 bundle.
 The private `build-suite-installer.py` wraps preparation in a Windows NSIS entrypoint
 and offers opening Control Center. Its finish page reports preparation, not activation
 completion. This entrypoint is not yet wired into public release, ARP/shortcuts or

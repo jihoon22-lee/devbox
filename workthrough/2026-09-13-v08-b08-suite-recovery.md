@@ -581,3 +581,20 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   type compilation passed in 4.145s; tests/builds/native execution have not run.
   Recovery UI integration, source-aware legacy cutover, installed update,
   installer/ARP/shortcuts/uninstall/legacy cleanup and B08 acceptance remain open.
+
+### Connect Recovery actions to the retained helper
+
+- List this installation's recorded checkpoints and external restore operations.
+  Explicit review selects only a closed action and opaque ID, never a renderer
+  path or executable. The native owner resolves and verifies its retained helper.
+- After an accepted action, close Control Center and wait for every product lease.
+  No peer process is killed. Keep prepare/apply together so reopening WebView does
+  not invalidate a newly captured preimage. Reopen the pinned Control Center after
+  success; failed actions offer retry and preserve all recovery files.
+- A normal Control Center launch during partial restoration routes to the helper
+  before WebView or native store initialization. Resume the recorded apply/commit/
+  rollback direction, including an interruption between blocker and progress writes.
+- Prepared UI regressions for explicit confirmation, exact checkpoint selection,
+  duplicate-action exclusion and pending-operation controls. Frontend typecheck
+  passed in 2.838s. Windows-only helper UI/adapters and detailed tests are pending
+  the completed B08 PR; no app build or native execution is claimed here.

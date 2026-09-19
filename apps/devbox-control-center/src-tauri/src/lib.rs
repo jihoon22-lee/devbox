@@ -3,6 +3,12 @@ mod shortcuts;
 mod suite;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    #[cfg(windows)]
+    match bootstrap::interactive::resume_before_shell() {
+        Ok(true) => return,
+        Ok(false) => {}
+        Err(issue) => { eprintln!("{issue}"); return; }
+    }
     product_shell_tauri::run_with("control-center", tauri::generate_context!(), |builder| {
         builder
             .plugin(suite::plugin(

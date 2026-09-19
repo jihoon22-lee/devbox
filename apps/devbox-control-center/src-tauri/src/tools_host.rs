@@ -21,14 +21,42 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     let record_owner = record_health || request.method == "record_migration_owner";
     let inventory = request.method == "suite_inventory";
     let recovery = request.method == "suite_recovery";
+    let restore_inventory = request.method == "restore_inventory";
+    let restore_action = request.method == "restore_action";
     let legacy = request.method == "legacy_inventory";
-    let component = if inventory || recovery || legacy || record_owner {
-        "control-center.delivery"
-    } else {
-        "control-center.tools"
-    };
+    let component =
+        if inventory || recovery || legacy || record_owner || restore_inventory || restore_action {
+            "control-center.delivery"
+        } else {
+            "control-center.tools"
+        };
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
-    let allowed = if record_owner {
+    let allowed = if restore_inventory || restore_action {
+        matches!(
+            request.header.route.as_str(),
+            "updates" | "recovery" | "products"
+        ) && request.args.as_object().is_some_and(|args| {
+            if restore_inventory {
+                return args.is_empty();
+            }
+            if args.len() != 2 {
+                return false;
+            }
+            let Some(action) = args.get("action").and_then(Value::as_str) else {
+                return false;
+            };
+            let Some(id) = args.get("id").and_then(Value::as_str) else {
+                return false;
+            };
+            match action {
+                "snapshot" => id.is_empty(),
+                "restore" | "resume" | "commit" | "rollback" => {
+                    uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
+                }
+                _ => false,
+            }
+        })
+    } else if record_owner {
         (request.header.route == "migration"
             || (record_health && matches!(request.header.route.as_str(), "updates" | "recovery")))
             && request.args.as_object().is_some_and(|args| {
@@ -55,7 +83,27 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             code: ProblemCode::Unauthorized,
         });
     }
-    let value = if record_owner {
+    let value = if restore_inventory || restore_action {
+        #[cfg(windows)]
+        let result = {
+            let app = window.app_handle().clone();
+            tauri::async_runtime::spawn_blocking(move || {
+                if restore_inventory {
+                    crate::bootstrap::interactive::inventory()
+                } else {
+                    let args = serde_json::from_value(request.args)
+                        .map_err(|_| "restore_action_invalid")?;
+                    crate::bootstrap::interactive::launch(&app, args)
+                }
+            })
+            .await
+            .map_err(|_| "restore_worker_unavailable")
+            .and_then(|value| value)
+        };
+        #[cfg(not(windows))]
+        let result: Result<Value, &'static str> = Err("suite_windows_required");
+        result.map_err(str::to_owned)
+    } else if record_owner {
         #[cfg(windows)]
         let result = crate::migration_evidence::record(
             window.app_handle().clone(),
