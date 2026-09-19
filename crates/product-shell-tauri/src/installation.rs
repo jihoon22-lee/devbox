@@ -195,6 +195,12 @@ impl WriterGuard {
         {
             return Err("suite_writer_gate_changed");
         }
+        // The helper can exit between namespace renames. A durable gate keeps
+        // WebView/window-state writers out until all four stores are coherent.
+        match std::fs::symlink_metadata(root.join("suite-data-restore.block")) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            _ => return Err("suite_data_restore_in_progress"),
+        }
         Ok(Self(Some(file)))
     }
 }
@@ -284,6 +290,12 @@ mod tests {
         assert!(devbox_filesystem::try_lock_exclusive(&update).unwrap());
         assert!(WriterGuard::acquire(&executable).is_err());
         devbox_filesystem::unlock_exclusive(&update).unwrap();
+        assert!(WriterGuard::acquire(&executable).is_ok());
+        // A crashed helper has released its OS lock, but partial data swaps
+        // must still prevent even browser/window-state initialization.
+        fs::write(root.0.join("suite-data-restore.block"), b"owned restore").unwrap();
+        assert!(WriterGuard::acquire(&executable).is_err());
+        fs::remove_file(root.0.join("suite-data-restore.block")).unwrap();
         assert!(WriterGuard::acquire(&executable).is_ok());
     }
     #[test]

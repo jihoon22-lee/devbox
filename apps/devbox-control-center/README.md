@@ -33,6 +33,10 @@ The private `devbox-suite-bootstrap` currently implements these Windows operatio
 | `--restart-install ROOT PAYLOAD` | Start a fresh package generation after that recovery; preserve the old journal and files |
 | `--verify-checkpoints ROOT PAYLOAD` | Verify journal-selected checkpoint identity, exact product file sets and all retained bytes without restoring them |
 | `--snapshot-install ROOT PAYLOAD` | Preserve the four closed product namespaces, including DB/WAL and closed browser files, without changing activation |
+| `--prepare-data-restore ROOT PAYLOAD CHECKPOINT_ID` | Preserve current data and prepare an installation-bound restoration of a recorded checkpoint |
+| `--apply-data-restore ROOT PAYLOAD OPERATION_ID` | Apply or resume the reviewed directory swaps, then require fresh four-product health |
+| `--commit-data-restore ROOT PAYLOAD OPERATION_ID` | Commit the restored data after fresh native health; ordinary writers remain blocked until this step |
+| `--rollback-data-restore ROOT PAYLOAD OPERATION_ID` | Undo an uncommitted restore while retaining original and restored/reviewed data |
 | `--open-install ROOT PAYLOAD` | Launch the pinned Control Center and derive its setup/recovery view from the native activation marker |
 
 `PAYLOAD` is the private `suite-payload.json` from `build-suite-package.py`, with its
@@ -44,8 +48,13 @@ Product data checkpoints require the exclusive installation writer gate and reta
 all original files. They are stored in the installation's separate local backup
 namespace and recorded independently from legacy source backups. No external vault,
 Git directory, legacy namespace or source schema is copied through a referenced
-path. A checkpoint does not restore data or permit downgrade; that reviewed restore
-flow remains unfinished. Retention is bounded and never silently deletes old copies.
+path. Restoration is an explicit separate operation within the recorded package
+generation; it does not permit a package/schema downgrade. Its journal lives outside
+all four stores. Physical directory identities permit restart after each rename,
+and a durable startup gate excludes browser/window-state writers during partial
+swaps. Original directories and changes made during health review are retained when
+undoing an uncommitted restore. Retention is bounded and never silently deletes old
+copies. Windows acceptance and Recovery UI integration remain in the B08 bundle.
 The private `build-suite-installer.py` wraps preparation in a Windows NSIS entrypoint
 and offers opening Control Center. Its finish page reports preparation, not activation
 completion. This entrypoint is not yet wired into public release, ARP/shortcuts or

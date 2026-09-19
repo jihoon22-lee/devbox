@@ -14,6 +14,7 @@ use std::{
     sync::atomic::AtomicBool,
 };
 type Result<T> = std::result::Result<T, &'static str>;
+mod data_restore;
 fn hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -73,6 +74,8 @@ fn verified_file(path: &Path, expected: &Asset) -> Result<()> {
 #[serde(rename_all = "camelCase")]
 pub struct StageResult {
     pub state: &'static str,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub operation_id: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub checkpoint: Option<crate::core::data_checkpoint::Receipt>,
     pub source_sha: String,
@@ -405,6 +408,7 @@ fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<Stag
         return Err("bootstrap_root_changed");
     }
     let result = StageResult {
+        operation_id: None,
         checkpoint: None,
         state: "staged",
         source_sha: payload.source_sha,
@@ -424,7 +428,17 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     if !cfg!(windows) {
         return Err("bootstrap_windows_required");
     }
-    if arguments.len() != 3
+    let restore = arguments.first().is_some_and(|mode| {
+        [
+            "--prepare-data-restore",
+            "--apply-data-restore",
+            "--commit-data-restore",
+            "--rollback-data-restore",
+        ]
+        .iter()
+        .any(|value| mode == *value)
+    });
+    if arguments.len() != if restore { 4 } else { 3 }
         || ![
             "--stage",
             "--prepare-install",
@@ -437,6 +451,10 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--open-control-center",
             "--snapshot-install",
             "--verify-checkpoints",
+            "--prepare-data-restore",
+            "--apply-data-restore",
+            "--commit-data-restore",
+            "--rollback-data-restore",
             "--activate-clean-install",
             "--commit-clean-install",
         ]
@@ -448,7 +466,20 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     let root = PathBuf::from(&arguments[1]);
     let payload = PathBuf::from(&arguments[2]);
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
-    if arguments[0] == "--prepare-install" {
+    if restore {
+        let checkpoint = arguments[3].to_str().ok_or("checkpoint_manifest_invalid")?;
+        if arguments[0] == "--prepare-data-restore" {
+            prepare_data_restore(&root, &payload, &image, checkpoint)
+        } else {
+            data_restore::execute(
+                &root,
+                &payload,
+                &image,
+                checkpoint,
+                arguments[0].to_str().ok_or("bootstrap_arguments_invalid")?,
+            )
+        }
+    } else if arguments[0] == "--prepare-install" {
         prepare_install(&root, &payload, &image)
     } else if arguments[0] == "--activate-clean-install" || arguments[0] == "--commit-clean-install"
     {
@@ -741,12 +772,20 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
         return Err("bootstrap_root_changed");
     }
     Ok(StageResult {
+        operation_id: None,
         state: "migrationRequired",
         ..result
     })
 }
 
 fn writer_gate(root: &Path, create: bool) -> Result<Lock> {
+    let guard = writer_gate_for_restore(root, create)?;
+    match fs::symlink_metadata(root.join("suite-data-restore.json")) {
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(guard),
+        _ => Err("bootstrap_data_restore_pending"),
+    }
+}
+fn writer_gate_for_restore(root: &Path, create: bool) -> Result<Lock> {
     let path = root.join("suite-writers.lock");
     let open = |new: bool| {
         let mut options = OpenOptions::new();
@@ -888,6 +927,7 @@ fn recover_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
         store.write(Some(&digest), &journal)?;
     }
     Ok(StageResult {
+        operation_id: None,
         state: "uncommittedInstallRecovered",
         checkpoint: None,
         source_sha: payload.source_sha,
@@ -969,8 +1009,8 @@ fn restart_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
     prepare_install(&root, payload_path, own_image)
 }
 
-/// Open only this verified installation's Control Center. The helper does not
-/// route to a guessed executable, grant write authority, or start other owners.
+/// Open only the selected, verified member of this installation. Precommit
+/// setup entrypoints do not grant ordinary product write authority.
 #[cfg(windows)]
 fn open_install(
     root: &Path,
@@ -1075,6 +1115,7 @@ fn open_install(
     #[allow(clippy::zombie_processes)]
     let _child = command.spawn().map_err(|_| "bootstrap_launch_failed")?;
     Ok(StageResult {
+        operation_id: None,
         state: if product == "control-center" {
             "controlCenterLaunched"
         } else {
@@ -1183,6 +1224,7 @@ fn snapshot_install(
             )?;
         }
         return Ok(StageResult {
+            operation_id: None,
             state: "dataCheckpointsVerified",
             checkpoint: None,
             source_sha: payload.source_sha,
@@ -1206,6 +1248,7 @@ fn snapshot_install(
     journal.record_checkpoint(journal.revision, checkpoint.clone())?;
     store.write(Some(&digest), &journal)?;
     Ok(StageResult {
+        operation_id: None,
         state: "dataCheckpointPreserved",
         checkpoint: Some(checkpoint),
         source_sha: payload.source_sha,
@@ -1457,12 +1500,228 @@ fn activate_clean_install(
         advance(&mut journal)?;
     }
     Ok(StageResult {
+        operation_id: None,
         state: if commit {
             "cleanInstallationCommitted"
         } else {
             "nativeHealthRequired"
         },
         checkpoint: None,
+        source_sha: payload.source_sha,
+        suite_version: payload.suite_version,
+        payload_revision: revision,
+    })
+}
+
+#[derive(serde::Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+struct DataRestorePlan {
+    schema_version: u32,
+    operation_id: String,
+    installation_key: String,
+    root_identity: (u64, u64),
+    generation: String,
+    manifest_revision: String,
+    activation_revision: String,
+    original_activation: product_contract::activation::Activation,
+    namespaces: std::collections::BTreeMap<String, crate::core::data_restore::Namespace>,
+    health_journal: crate::core::delivery::Journal,
+    source: crate::core::data_checkpoint::Receipt,
+    preserved: crate::core::data_checkpoint::Receipt,
+    prepared_ms: u64,
+}
+
+fn prepare_data_restore(
+    root: &Path,
+    payload_path: &Path,
+    own_image: &Path,
+    checkpoint: &str,
+) -> Result<StageResult> {
+    use crate::core::{data_checkpoint, delivery_store::Store};
+    if !uuid::Uuid::parse_str(checkpoint).is_ok_and(|id| id.to_string() == checkpoint) {
+        return Err("checkpoint_manifest_invalid");
+    }
+    let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&bytes)?;
+    verify_payload_owner(&payload, own_image)?;
+    let revision = hash(&bytes);
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let (_root, identity) =
+        open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
+    #[cfg(windows)]
+    let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    let _gate = writer_gate(&root, false)?;
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    if owner.schema_version != 1
+        || owner.root_identity != identity.components()
+        || owner.payload_revision != revision
+        || owner.generation != format!("g-{}", owner.operation_id)
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let manifest_bytes = read(&root.join("devbox-installation.json"), 64 * 1024)?;
+    let manifest =
+        product_contract::installation::Manifest::parse(&manifest_bytes, &payload.suite_version)?;
+    let activation_bytes = read(&root.join("devbox-activation.json"), 4096)?;
+    let marker: product_contract::activation::Activation =
+        serde_json::from_slice(&activation_bytes).map_err(|_| "bootstrap_marker_invalid")?;
+    marker.validate(&manifest)?;
+    if manifest.installation_id != owner.installation_id
+        || manifest.generation != owner.generation
+        || marker.operation_id != owner.operation_id
+    {
+        return Err("bootstrap_owner_changed");
+    }
+    let key = hash(
+        &serde_json::to_vec(&(identity.components(), &owner.installation_id))
+            .map_err(|_| "bootstrap_owner_invalid")?,
+    );
+    let parent = dirs::data_local_dir().ok_or("bootstrap_data_unavailable")?;
+    ensure_no_links(&parent).map_err(|_| "bootstrap_data_unsafe")?;
+    #[cfg(windows)]
+    let _data_directories = crate::suite::platform::component_scope::pin_directories(&parent)?;
+    let catalog =
+        devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE)?;
+    let sources = catalog
+        .products
+        .iter()
+        .map(|product| {
+            (
+                product.id.clone(),
+                parent.join(format!("{}.i{key}", product.identifier)),
+            )
+        })
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let (journal, _) = Store::inspect(
+        sources
+            .get("control-center")
+            .ok_or("bootstrap_data_unavailable")?,
+    )?
+    .ok_or("bootstrap_journal_missing")?;
+    if journal.installation_key != key
+        || journal.candidate != manifest
+        || journal.operation_id != owner.operation_id
+    {
+        return Err("bootstrap_journal_changed");
+    }
+    let selected = journal
+        .data_checkpoints
+        .iter()
+        .find(|receipt| receipt.id == checkpoint)
+        .ok_or("checkpoint_missing")?
+        .clone();
+    let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
+    // Stage data beside live namespaces so later directory swaps stay on the
+    // same volume even when the package installation uses a custom drive.
+    let recovery = parent.join(format!("com.devbox.v08.suite-restore.i{key}"));
+    create_directory(&recovery)?;
+    if fs::read_dir(&recovery)
+        .map_err(|_| "bootstrap_recovery_unavailable")?
+        .take(32)
+        .count()
+        >= 32
+    {
+        return Err("bootstrap_restore_retention_review_required");
+    }
+    let operation_id = uuid::Uuid::new_v4().to_string();
+    let operation = recovery.join(&operation_id);
+    fs::create_dir(&operation).map_err(|_| "bootstrap_recovery_conflict")?;
+    #[cfg(windows)]
+    let _operation_directories =
+        crate::suite::platform::component_scope::pin_directories(&operation)?;
+    let prepared = operation.join("prepared");
+    create_directory(&prepared)?;
+    data_checkpoint::materialize(
+        &backup,
+        &selected,
+        &key,
+        &manifest.generation,
+        &prepared.join(&selected.id),
+        &AtomicBool::new(false),
+    )?;
+    // This receipt belongs to the external recovery plan. Do not write it into
+    // the live Control Center journal and invalidate the very preimage captured.
+    let preserved = data_checkpoint::acquire_quiesced(
+        &sources,
+        &backup,
+        &key,
+        &manifest.generation,
+        &AtomicBool::new(false),
+    )?;
+    let namespaces = sources
+        .iter()
+        .map(|(owner, path)| {
+            Ok((
+                owner.clone(),
+                crate::core::data_restore::Namespace {
+                    original: data_restore::directory_identity(path)?,
+                    prepared: data_restore::directory_identity(
+                        &prepared.join(&selected.id).join(owner),
+                    )?,
+                },
+            ))
+        })
+        .collect::<Result<std::collections::BTreeMap<_, _>>>()?;
+    let (mut health_journal, _) =
+        Store::inspect(&prepared.join(&selected.id).join("control-center"))?
+            .ok_or("bootstrap_restore_journal_missing")?;
+    if health_journal.installation_key != key
+        || health_journal.candidate != manifest
+        || health_journal.operation_id != owner.operation_id
+    {
+        return Err("bootstrap_restore_journal_changed");
+    }
+    health_journal.phase = crate::core::delivery::Phase::Health;
+    health_journal.committed = false;
+    health_journal.failure = None;
+    health_journal.health_checks.clear();
+    health_journal.revision = health_journal
+        .revision
+        .checked_add(1)
+        .ok_or("bootstrap_revision_exhausted")?;
+    for receipt in [&selected, &preserved] {
+        if !health_journal
+            .data_checkpoints
+            .iter()
+            .any(|old| old.id == receipt.id)
+        {
+            health_journal.data_checkpoints.push(receipt.clone());
+        }
+    }
+    health_journal.validate()?;
+    let plan = DataRestorePlan {
+        schema_version: 1,
+        operation_id: operation_id.clone(),
+        installation_key: key,
+        root_identity: identity.components(),
+        generation: manifest.generation,
+        manifest_revision: hash(&manifest_bytes),
+        activation_revision: hash(&activation_bytes),
+        original_activation: marker,
+        namespaces,
+        health_journal,
+        source: selected.clone(),
+        preserved,
+        prepared_ms: std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_err(|_| "bootstrap_clock_invalid")?
+            .as_millis() as u64,
+    };
+    let mut record = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(operation.join("restore-plan.json"))
+        .map_err(|_| "bootstrap_restore_plan_failed")?;
+    record
+        .write_all(&serde_json::to_vec(&plan).map_err(|_| "bootstrap_restore_plan_failed")?)
+        .and_then(|()| record.sync_all())
+        .map_err(|_| "bootstrap_restore_plan_failed")?;
+    Ok(StageResult {
+        operation_id: Some(operation_id),
+        state: "dataRestorePrepared",
+        checkpoint: Some(selected),
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
         payload_revision: revision,

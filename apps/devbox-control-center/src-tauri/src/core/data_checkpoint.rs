@@ -419,6 +419,16 @@ pub fn verify(
     generation: &str,
     cancelled: &AtomicBool,
 ) -> Result<()> {
+    verify_manifest(parent, expected, installation_key, generation, cancelled).map(|_| ())
+}
+
+fn verify_manifest(
+    parent: &Path,
+    expected: &Receipt,
+    installation_key: &str,
+    generation: &str,
+    cancelled: &AtomicBool,
+) -> Result<Manifest> {
     if !uuid::Uuid::parse_str(&expected.id).is_ok_and(|id| id.to_string() == expected.id)
         || !product_contract::commands::revision(&expected.revision)
     {
@@ -532,6 +542,164 @@ pub fn verify(
     parent_handle.check()?;
     target_handle.check()?;
     bounded(started, cancelled)?;
+    Ok(manifest)
+}
+
+/// Require that closed live namespaces still equal the preimage reviewed by the
+/// user. A later edit, added file, removed store or changed WAL requires review.
+pub fn matches_quiesced_sources(
+    sources: &BTreeMap<String, PathBuf>,
+    parent: &Path,
+    expected: &Receipt,
+    installation_key: &str,
+    generation: &str,
+    cancelled: &AtomicBool,
+) -> Result<()> {
+    let manifest = verify_manifest(parent, expected, installation_key, generation, cancelled)?;
+    if sources.len() != manifest.products.len() {
+        return Err("checkpoint_owner_invalid");
+    }
+    let started = Instant::now();
+    let mut retained = Vec::new();
+    for product in &manifest.products {
+        bounded(started, cancelled)?;
+        let source = sources
+            .get(&product.owner)
+            .ok_or("checkpoint_owner_invalid")?;
+        if !product.present {
+            if !matches!(fs::symlink_metadata(source), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+            {
+                return Err("checkpoint_source_changed");
+            }
+            continue;
+        }
+        retained.push(Directory::open(source)?);
+        let (directories, files) = listing(source)?;
+        if directories != product.directories
+            || files
+                != product
+                    .files
+                    .iter()
+                    .map(|entry| entry.relative.clone())
+                    .collect::<Vec<_>>()
+        {
+            return Err("checkpoint_source_changed");
+        }
+        for relative in &directories {
+            retained.push(Directory::open(&source.join(relative))?);
+        }
+        for entry in &product.files {
+            let (mut actual, _) =
+                copy_or_hash(&source.join(&entry.relative), None, started, cancelled)?;
+            actual.relative = entry.relative.clone();
+            if &actual != entry {
+                return Err("checkpoint_source_changed");
+            }
+        }
+    }
+    for directory in retained {
+        directory.check()?;
+    }
+    bounded(started, cancelled)
+}
+
+/// Materialize a reviewed checkpoint into a new private operation directory.
+/// This never writes the live namespaces; activation must separately preserve
+/// their current data and journal before swapping any namespace into place.
+pub fn materialize(
+    parent: &Path,
+    expected: &Receipt,
+    installation_key: &str,
+    generation: &str,
+    target: &Path,
+    cancelled: &AtomicBool,
+) -> Result<()> {
+    if target.file_name().and_then(|name| name.to_str()) != Some(expected.id.as_str()) {
+        return Err("checkpoint_destination_invalid");
+    }
+    let manifest = verify_manifest(parent, expected, installation_key, generation, cancelled)?;
+    let target_parent = Directory::open(target.parent().ok_or("checkpoint_path_unsafe")?)?;
+    fs::create_dir(target).map_err(|_| "checkpoint_destination_exists")?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        fs::set_permissions(target, fs::Permissions::from_mode(0o700))
+            .map_err(|_| "checkpoint_copy_failed")?;
+    }
+    let target_handle = Directory::open(target)?;
+    let started = Instant::now();
+    let source = parent.join(&expected.id);
+    let mut retained = Vec::new();
+    for product in &manifest.products {
+        bounded(started, cancelled)?;
+        if !product.present {
+            continue;
+        }
+        let destination = target.join(&product.owner);
+        fs::create_dir(&destination).map_err(|_| "checkpoint_copy_failed")?;
+        retained.push(Directory::open(&destination)?);
+        for relative in &product.directories {
+            let directory = destination.join(relative);
+            fs::create_dir(&directory).map_err(|_| "checkpoint_copy_failed")?;
+            retained.push(Directory::open(&directory)?);
+        }
+        for entry in &product.files {
+            let (mut actual, _) = copy_or_hash(
+                &source.join(&product.owner).join(&entry.relative),
+                Some(&destination.join(&entry.relative)),
+                started,
+                cancelled,
+            )?;
+            actual.relative = entry.relative.clone();
+            if &actual != entry {
+                return Err("checkpoint_copy_changed");
+            }
+        }
+        let (directories, files) = listing(&destination)?;
+        if directories != product.directories
+            || files
+                != product
+                    .files
+                    .iter()
+                    .map(|entry| entry.relative.clone())
+                    .collect::<Vec<_>>()
+        {
+            return Err("checkpoint_copy_changed");
+        }
+        for entry in &product.files {
+            let (mut actual, _) =
+                copy_or_hash(&destination.join(&entry.relative), None, started, cancelled)?;
+            actual.relative = entry.relative.clone();
+            if &actual != entry {
+                return Err("checkpoint_copy_changed");
+            }
+        }
+    }
+    // Publish readiness only after the selected immutable source and every copy
+    // still match. Incomplete directories remain private recovery evidence.
+    verify(parent, expected, installation_key, generation, cancelled)?;
+    for directory in retained {
+        directory.check()?;
+    }
+    target_parent.check()?;
+    target_handle.check()?;
+    bounded(started, cancelled)?;
+    let bytes = serde_json::to_vec(&manifest).map_err(|_| "checkpoint_manifest_invalid")?;
+    let pending = target.join("checkpoint.pending");
+    let mut marker = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&pending)
+        .map_err(|_| "checkpoint_publish_failed")?;
+    marker
+        .write_all(&bytes)
+        .and_then(|()| marker.sync_all())
+        .map_err(|_| "checkpoint_publish_failed")?;
+    drop(marker);
+    target_handle.check()?;
+    fs::hard_link(&pending, target.join("checkpoint.json"))
+        .map_err(|_| "checkpoint_publish_failed")?;
+    let _ = fs::remove_file(pending);
     Ok(())
 }
 
@@ -560,6 +728,104 @@ mod tests {
             .iter()
             .map(|owner| (owner.to_string(), root.join(owner)))
             .collect()
+    }
+    #[test]
+    fn restore_preparation_keeps_later_data_and_rejects_a_stale_preimage() {
+        let root = tempdir().unwrap();
+        let backup = tempdir().unwrap();
+        let stage = tempdir().unwrap();
+        let sources = sources(root.path());
+        fs::create_dir(&sources["knowledge"]).unwrap();
+        let note = sources["knowledge"].join("original.txt");
+        fs::write(&note, b"checkpoint version").unwrap();
+        let key = "a".repeat(64);
+        let cancelled = AtomicBool::new(false);
+        let receipt =
+            acquire_quiesced(&sources, backup.path(), &key, "generation", &cancelled).unwrap();
+        matches_quiesced_sources(
+            &sources,
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &cancelled,
+        )
+        .unwrap();
+        fs::write(&note, b"new user data after the checkpoint").unwrap();
+        let target = stage.path().join(&receipt.id);
+        materialize(
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &target,
+            &cancelled,
+        )
+        .unwrap();
+        verify(stage.path(), &receipt, &key, "generation", &cancelled).unwrap();
+        assert_eq!(
+            fs::read(target.join("knowledge/original.txt")).unwrap(),
+            b"checkpoint version"
+        );
+        assert_eq!(
+            fs::read(&note).unwrap(),
+            b"new user data after the checkpoint"
+        );
+        assert!(matches_quiesced_sources(
+            &sources,
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &cancelled
+        )
+        .is_err());
+        assert!(materialize(
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &target,
+            &cancelled
+        )
+        .is_err());
+        assert_eq!(
+            fs::read(&note).unwrap(),
+            b"new user data after the checkpoint"
+        );
+    }
+    #[test]
+    fn corrupt_restore_input_never_publishes_a_prepared_directory() {
+        let root = tempdir().unwrap();
+        let backup = tempdir().unwrap();
+        let stage = tempdir().unwrap();
+        let sources = sources(root.path());
+        fs::create_dir(&sources["workspace"]).unwrap();
+        fs::write(sources["workspace"].join("state.json"), b"original").unwrap();
+        let key = "b".repeat(64);
+        let cancelled = AtomicBool::new(false);
+        let receipt =
+            acquire_quiesced(&sources, backup.path(), &key, "generation", &cancelled).unwrap();
+        fs::write(
+            backup.path().join(&receipt.id).join("workspace/state.json"),
+            b"tampered",
+        )
+        .unwrap();
+        let target = stage.path().join(&receipt.id);
+        assert!(materialize(
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &target,
+            &cancelled
+        )
+        .is_err());
+        assert!(!target.exists());
+        assert_eq!(
+            fs::read(sources["workspace"].join("state.json")).unwrap(),
+            b"original"
+        );
     }
     #[test]
     fn closed_wal_and_browser_bytes_are_preserved_and_missing_products_are_explicit() {

@@ -543,3 +543,41 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   events otherwise cancel the actual ready-for-review run. The observed B07
   ready run was restarted on the same head after the draft event finished. This
   scheduling fix preserves required jobs and runs with the next completed B08 PR.
+
+### Prepare reviewed data restoration without changing live stores
+
+- `--prepare-data-restore` selects only a checkpoint recorded by this installation's
+  journal, verifies it and materializes its four namespaces in a private recovery
+  directory on the data volume. A custom package drive does not force cross-volume
+  namespace swaps. Missing stores remain explicit; existing targets are not replaced.
+- Before returning the review operation ID, preserve the current closed namespaces
+  as a separate checkpoint. Keep recovery plans outside the four product stores so
+  restoring Control Center cannot erase its own recovery record. Bind root, package,
+  activation revision and both checkpoints; limit outstanding private operations.
+- Prepared regressions for later user writes, stale preimages, corruption and
+  no-clobber publication. This phase deliberately changes no live data or activation
+  marker. Applying/resuming the restore and post-restore health/commit remain in
+  the ongoing B08 implementation. No detailed tests or builds yet.
+
+### Apply, resume and undo a reviewed data restoration (2026-09-20)
+
+- B06 #559 and B07 #560 are accepted and merged; main is `138c49fe`.
+  Their worktrees/branches are removed after clean/exact-tree confirmation. B05's
+  dependent consumer gates are complete and #547 is closed. #541 now reflects
+  seven merged bundles and the actual unfinished B08/B09 scope.
+- Add closed apply/commit/rollback helper operations. Bind the exact installation,
+  package manifest, activation preimage, checkpoint receipts and physical original/
+  prepared directory identities. Resume distinguishes each completed rename from
+  a foreign directory. Windows moves disallow replacement and cross-volume copies.
+- Preserve original directories outside every live store. A durable startup gate
+  prevents all four shells/workers, including WebView/window-state writers, from
+  starting after a helper crash during partial swaps. Other bootstrap mutations
+  cannot take over an outstanding restore. No product process is killed.
+- Reconstruct Control Center's health journal only after all namespaces are coherent.
+  Clear stale health; require fresh four-owner reports before explicit commit.
+  Before commit, rollback restores original directories and retains the restored
+  directories, including any changes made during review. No user data is deleted.
+- Prepared identity/rename-boundary and startup-gate regressions. Scoped Rust/test
+  type compilation passed in 4.145s; tests/builds/native execution have not run.
+  Recovery UI integration, source-aware legacy cutover, installed update,
+  installer/ARP/shortcuts/uninstall/legacy cleanup and B08 acceptance remain open.
