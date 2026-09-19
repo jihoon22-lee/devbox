@@ -488,3 +488,14 @@ boundary; normal user project selection already refreshes the UI explicitly.
   등록·해제 이후에도 Source 시나리오 직전 snapshot revision을 쓰고 있었다. rename/remove
   직전에 최신 snapshot을 읽도록 수정했다. stale revision 보호 자체는 유지한다.
 - JS syntax/diff PASS. aggregate Windows 수용과 격리 WSL2 gate는 아직 완료되지 않았다.
+
+### 실제 WebView profile 경로로 fixture 정렬
+
+- 일반 CI `35433620662` 전체 PASS(보안 권고 수정 포함). Native `35433620660`은 registry
+  rename/remove까지 PASS한 뒤 runtime crash와 연결된 terminal importer 준비에서 실패했다.
+  원인은 `copy-owned-terminal-profile.ps1`의 “Expected one owned localStorage store”였다.
+- harness가 `WEBVIEW2_USER_DATA_FOLDER`를 별도 임시 폴더로 강제했지만 seed/import fixture는
+  native AppLocalData의 설치별 profile을 사용했다. 환경 override를 제거해 Tauri가 원래
+  선택하는 salted identifier의 profile에서 실제 namespace/closed-source 이전을 확인한다.
+- JS syntax/diff 확인. Runtime domain 로직은 변경하지 않았고 기존 terminal/LSP/registry
+  PASS를 보존한다. 이어지는 crash/import와 aggregate 수용, WSL2 gate는 미완료다.

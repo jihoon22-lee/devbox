@@ -118,7 +118,11 @@ async function start(product, suffix) {
   }
   writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:"debug",executableBytes:statSync(built).size},null,2));
   const port = await freePort();
-  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}`, WEBVIEW2_USER_DATA_FOLDER: path.join(directory, "webview2") };
+  const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
+  // Exercise the product's actual installation-specific profile. Redirecting
+  // WebView storage elsewhere breaks the closed-profile migration fixture and
+  // would hide a browser-namespace isolation defect behind the harness override.
+  delete env.WEBVIEW2_USER_DATA_FOLDER;
   const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
   if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
   const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
