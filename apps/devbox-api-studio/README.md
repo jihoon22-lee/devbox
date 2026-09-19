@@ -141,3 +141,10 @@ unaccepted previews can still be replaced. At the bounded retention limit, a new
 import requires backup retention review instead of deleting completed backups.
 These files are owner data, not diagnostics/support-bundle contents. This preserves
 recovery evidence; it does not grant Suite activation or legacy cleanup authority.
+
+Native legacy JSON inputs are likewise captured before parsing or credential
+resealing. The importer reads that retained copy; original credential ciphertext
+is preserved without writing decrypted secrets. Fixed source paths and explicitly
+selected profile IDs bound the copy. Accepted activation bundles bind both native
+and browser backup metadata hashes, so later verification rejects changed backup
+bytes or metadata instead of trusting a rewritten backup list.

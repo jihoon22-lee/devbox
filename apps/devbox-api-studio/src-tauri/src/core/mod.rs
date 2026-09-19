@@ -5,3 +5,5 @@ pub mod knowledge;
 pub mod lifecycle;
 pub mod mock_draft;
 pub mod openapi_definitions;
+
+pub mod native_source_backup;

@@ -504,8 +504,12 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                 let source_root = state.legacy_root.clone();
                 let selected = input.sources.clone();
                 let profiles = input.profile_ids.clone();
+                let backup_stage = stage.clone();
+                let native_cancelled = Arc::clone(&guard.cancelled);
                 let (mut documents, mut issues) = tauri::async_runtime::spawn_blocking(move || {
-                    native_sources(&source_root, &selected, &profiles)
+                    let identifiers = selected.iter().map(|app| app.identifier().to_owned()).collect::<Vec<_>>();
+                    let copied = crate::core::native_source_backup::capture(&source_root, &backup_stage, &identifiers, &profiles, &native_cancelled)?;
+                    native_sources(&copied, &selected, &profiles)
                 })
                 .await
                 .map_err(|_| "migration_source_unavailable".to_string())??;

@@ -35,6 +35,10 @@ pub struct FileChange {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Bundle {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_backup_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_backup_revision: Option<String>,
     pub before_browser: BrowserState,
     pub after_browser: BrowserState,
     pub files: Vec<FileChange>,
@@ -380,9 +384,9 @@ impl Repository {
     ) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {
         let ids = self.workspace.inspect(|connection| {
             let mut statement = sql(connection.prepare(
-                "SELECT id FROM studio_imports_v1 WHERE phase='complete' ORDER BY id LIMIT 33",
+                "SELECT id, json_extract(bundle,'$.nativeBackupRevision') IS NOT NULL, json_extract(bundle,'$.browserBackupRevision') IS NOT NULL FROM studio_imports_v1 WHERE phase='complete' ORDER BY id LIMIT 33",
             ))?;
-            let rows = sql(statement.query_map([], |row| row.get::<_, String>(0)))?;
+            let rows = sql(statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))))?;
             rows.collect::<Result<Vec<_>, _>>()
                 .map_err(|_| "migration_journal_invalid".into())
         })?;
@@ -390,7 +394,7 @@ impl Repository {
             return Err("migration_backup_limit".into());
         }
         let mut rows = Vec::new();
-        for id in ids {
+        for (id, native, browser) in ids {
             if !valid_id(&id) {
                 return Err("migration_backup_invalid".into());
             }
@@ -398,13 +402,17 @@ impl Repository {
                 id: format!("{id}_normalized"),
                 acquisition: "normalized-import-bundle/v1".into(),
             });
-            if let Ok(stage) = self.completed_stage(&id) {
-                if read_file(&stage.join("closed-source.json"), 512 * 1024)?.is_some() {
-                    rows.push(product_contract::migration_backup::Descriptor {
-                        id: format!("{id}_browser"),
-                        acquisition: "closed-leveldb-exclusive-copy/v1".into(),
-                    });
-                }
+            if native {
+                rows.push(product_contract::migration_backup::Descriptor {
+                    id: format!("{id}_native"),
+                    acquisition: "stable-json-files/v1".into(),
+                });
+            }
+            if browser {
+                rows.push(product_contract::migration_backup::Descriptor {
+                    id: format!("{id}_browser"),
+                    acquisition: "closed-leveldb-exclusive-copy/v1".into(),
+                });
             }
         }
         Ok(rows)
@@ -415,10 +423,38 @@ impl Repository {
     ) -> Result<product_contract::migration_backup::Verified, String> {
         let (operation, kind) = id.rsplit_once('_').ok_or("migration_backup_invalid")?;
         let stage = self.completed_stage(operation)?;
+        let (_, accepted) = self
+            .activation(operation)?
+            .ok_or("migration_backup_missing")?;
         let (acquisition, bytes, schema, sha256) = match kind {
+            "native" => {
+                let expected = accepted
+                    .native_backup_revision
+                    .as_deref()
+                    .ok_or("migration_backup_binding_missing")?;
+                let (revision, bytes) = super::native_source_backup::verify(
+                    &stage.join("retained-native"),
+                    Some(expected),
+                )?;
+                ("stable-json-files/v1".into(), bytes, 1, revision)
+            }
             "browser" => {
                 let raw = read_file(&stage.join("closed-source.json"), 512 * 1024)?
                     .ok_or("migration_backup_missing")?;
+                let expected = accepted
+                    .browser_backup_revision
+                    .as_deref()
+                    .ok_or("migration_backup_binding_missing")?;
+                let actual: String = {
+                    use sha2::{Digest, Sha256};
+                    Sha256::digest(raw.as_bytes())
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect()
+                };
+                if actual != expected {
+                    return Err("migration_backup_changed".into());
+                }
                 let receipt: data_migration::core::source_snapshot::ClosedStoreSnapshot =
                     serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
                 data_migration::core::source_snapshot::verify_closed_copy(
@@ -616,8 +652,25 @@ impl Repository {
                 })
             })
             .collect();
+        let stage = self.stage(id)?;
+        let native_backup_revision =
+            if read_file(&stage.join("retained-native/snapshot.json"), 512 * 1024)?.is_some() {
+                Some(super::native_source_backup::verify(&stage.join("retained-native"), None)?.0)
+            } else {
+                None
+            };
+        let browser_backup_revision = read_file(&stage.join("closed-source.json"), 512 * 1024)?
+            .map(|raw| {
+                use sha2::{Digest, Sha256};
+                Sha256::digest(raw.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect()
+            });
         let bundle = Bundle {
             id: id.to_string(),
+            native_backup_revision,
+            browser_backup_revision,
             before_browser: browser,
             after_browser,
             files,
@@ -628,7 +681,6 @@ impl Repository {
         if encoded.len() > MAX_BUNDLE {
             return Err("migration_store_too_large".into());
         }
-        let stage = self.stage(id)?;
         let source = stage.join("normalized.db");
         fs::OpenOptions::new()
             .write(true)
@@ -1038,6 +1090,43 @@ mod tests {
         )
         .unwrap();
         assert!(repo.verify_backup(&backups[0].id).is_err());
+    }
+    #[test]
+    fn original_native_backup_metadata_is_bound_to_the_accepted_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = tempfile::tempdir().unwrap();
+        let repo = Repository::open(root.path(), "fixture-install").unwrap();
+        let (id, stage) = repo.new_stage().unwrap();
+        let original = legacy.path().join("com.devbox.webhooklab");
+        fs::create_dir(&original).unwrap();
+        let documents = sources();
+        let bytes = serde_json::to_vec(&documents[&StoreKind::Fixtures]).unwrap();
+        fs::write(original.join("fixtures.json"), &bytes).unwrap();
+        super::super::native_source_backup::capture(
+            legacy.path(),
+            &stage,
+            &["com.devbox.webhooklab".into()],
+            &None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        repo.prepare(
+            &id,
+            &documents,
+            browser(),
+            &AtomicBool::new(false),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        let patch = repo
+            .activate(&id, &browser(), &AtomicBool::new(false))
+            .unwrap();
+        repo.acknowledge(&id, &patch.after, false).unwrap();
+        let proof = repo.verify_backup(&format!("{id}_native")).unwrap();
+        assert_eq!(proof.bytes, bytes.len() as u64);
+        fs::write(stage.join("retained-native/snapshot.json"), b"{}").unwrap();
+        assert!(repo.verify_backup(&format!("{id}_native")).is_err());
+        assert_eq!(fs::read(original.join("fixtures.json")).unwrap(), bytes);
     }
     #[test]
     fn new_preview_purges_abandoned_raw_copies_and_invalidates_previous_plan() {

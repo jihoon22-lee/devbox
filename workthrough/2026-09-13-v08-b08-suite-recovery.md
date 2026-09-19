@@ -336,3 +336,20 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Knowledge activated-plan fixtures with backup verification/tamper checks.
   Four-owner Rust/test compilation passed in 25.070s, UI types in 3.133s. Detailed
   regressions/Windows IPC execution remain pending with the completed B08 bundle.
+
+### Bind retained native source bytes to API activation receipts (2026-09-19)
+
+- Native source acquisition now copies only compiled legacy JSON paths and
+  reviewed profile IDs into the import's private `retained-native` directory.
+  Missing files are explicit; profile-list/source-byte changes between passes
+  reject capture. File/count/aggregate/time/cancellation bounds apply. Parsing
+  and DPAPI resealing read the preserved bytes, never a second unbound source.
+- Completed activation bundles retain optional native/browser backup metadata
+  digests. Backup catalog uses those accepted fields, preserving missing expected
+  backups as verification failures. Verification binds the private metadata hash
+  to the accepted journal as well as checking retained file bytes. Older bundle
+  schema reads remain compatible; absent bindings are not invented.
+- Added opaque-ciphertext/original preservation and accepted-manifest tampering
+  fixtures. Initial typecheck caught missing Bundle initializer fields; corrected
+  scoped API Rust/test compilation passed in 4.948s. Prepared regressions/native
+  importer execution stay scheduled for complete B08 verification.

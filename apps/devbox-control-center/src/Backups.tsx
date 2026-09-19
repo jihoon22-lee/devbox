@@ -7,7 +7,7 @@ import catalog from "../../../apps/products.json";
 interface Backup {id:string;acquisition:string}
 interface Row {owner:string;backups:Backup[]|null}
 interface Verified {owner:string;id:string;bytes:number;sha256:string}
-const labels:Record<string,string>={"sqlite-online-backup/v1":"원본 데이터베이스","normalized-import-bundle/v1":"가져오기 복구 스냅샷","closed-leveldb-exclusive-copy/v1":"원본 브라우저 저장소","stable-json-pair/v1":"원본 Launcher 설정","stable-json-files/v1":"원본 Workspace 설정"};
+const labels:Record<string,string>={"sqlite-online-backup/v1":"원본 데이터베이스","normalized-import-bundle/v1":"가져오기 복구 스냅샷","closed-leveldb-exclusive-copy/v1":"원본 브라우저 저장소","stable-json-pair/v1":"원본 Launcher 설정","stable-json-files/v1":"원본 설정 파일"};
 export default function Backups({description,route}:ShellContentProps){
  const [rows,setRows]=useState<Row[]>([]),[busy,setBusy]=useState(false),[states,setStates]=useState<Record<string,string>>({});
  const generation=useRef(0);
