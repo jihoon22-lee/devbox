@@ -157,6 +157,9 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   const reviewed=success(await call("workspace.registry","preview_windows",{root}));
   success(await call("workspace.registry","cancel_registration",{previewId:reviewed.previewId}));
   assert.equal((await call("workspace.registry","apply_registration",{previewId:reviewed.previewId,name:"replayed",action:"register"})).operation.outcome.state,"failed");
+  // Session/WSL scenarios register and retire their own projects. Cleanup must
+  // use the resulting registry revision, not the earlier Source fixture snapshot.
+  registry=success(await call("workspace.registry","snapshot"));
   registry=success(await call("workspace.registry","rename",{revision:registry.revision,projectId:registry.projects[0].id,name:"Renamed fixture"}));
   assert.equal(registry.projects[0].name,"Renamed fixture");
   const worktree=registry.worktrees[0];

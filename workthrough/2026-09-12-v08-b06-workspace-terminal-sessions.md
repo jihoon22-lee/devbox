@@ -478,3 +478,13 @@ boundary; normal user project selection already refreshes the UI explicitly.
 - notices를 새 lock에 맞춰 생성했다. 실패했던 `cargo deny --locked check advisories`
   집중 재검사 PASS (3.297s). 통과한 frontend/Linux 검사를 로컬에서 반복하지 않았다.
   최종 소스의 GitHub CI 및 관련 Windows 수용은 계속 필요하다.
+
+### Windows Session PASS 이후 aggregate fixture 정리
+
+- native `35431789432`의 `workspace-terminal-sessions-a.json` PASS: 실제 WSL task,
+  matcher/log offsets/Problems→Files, 두 pane, hide/reload/SIGINT 수명, session 공유/취소/실패
+  및 요약 receipt 시나리오를 통과했다. LSP installer 시나리오도 PASS evidence가 생성됐다.
+- 다음 registry 정리에서 `stale_registry`가 발생했다. Session/WSL fixture의 임시 프로젝트
+  등록·해제 이후에도 Source 시나리오 직전 snapshot revision을 쓰고 있었다. rename/remove
+  직전에 최신 snapshot을 읽도록 수정했다. stale revision 보호 자체는 유지한다.
+- JS syntax/diff PASS. aggregate Windows 수용과 격리 WSL2 gate는 아직 완료되지 않았다.
