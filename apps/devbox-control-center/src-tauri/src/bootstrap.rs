@@ -289,6 +289,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--restart-install",
             "--open-install",
             "--snapshot-install",
+            "--verify-checkpoints",
         ]
         .iter()
         .any(|mode| arguments[0] == *mode)
@@ -304,8 +305,13 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         recover_install(&root, &payload, &image)
     } else if arguments[0] == "--restart-install" {
         restart_install(&root, &payload, &image)
-    } else if arguments[0] == "--snapshot-install" {
-        snapshot_install(&root, &payload, &image)
+    } else if arguments[0] == "--snapshot-install" || arguments[0] == "--verify-checkpoints" {
+        snapshot_install(
+            &root,
+            &payload,
+            &image,
+            arguments[0] == "--verify-checkpoints",
+        )
     } else if arguments[0] == "--open-install" {
         open_install(&root, &payload, &image)
     } else {
@@ -908,7 +914,12 @@ fn open_install(_: &Path, _: &Path, _: &Path) -> Result<StageResult> {
 
 /// Preserve only this installation's four closed namespaces. External vaults,
 /// repository trees, legacy namespaces and activation markers are not changed.
-fn snapshot_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result<StageResult> {
+fn snapshot_install(
+    root: &Path,
+    payload_path: &Path,
+    own_image: &Path,
+    verify_existing: bool,
+) -> Result<StageResult> {
     use crate::core::{data_checkpoint, delivery_store::Store};
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;
@@ -978,10 +989,31 @@ fn snapshot_install(root: &Path, payload_path: &Path, own_image: &Path) -> Resul
     {
         return Err("bootstrap_journal_changed");
     }
+    let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
+    if verify_existing {
+        if journal.data_checkpoints.is_empty() {
+            return Err("checkpoint_missing");
+        }
+        for checkpoint in &journal.data_checkpoints {
+            data_checkpoint::verify(
+                &backup,
+                checkpoint,
+                &key,
+                &manifest.generation,
+                &AtomicBool::new(false),
+            )?;
+        }
+        return Ok(StageResult {
+            state: "dataCheckpointsVerified",
+            checkpoint: None,
+            source_sha: payload.source_sha,
+            suite_version: payload.suite_version,
+            payload_revision: revision,
+        });
+    }
     if journal.data_checkpoints.len() >= 32 {
         return Err("checkpoint_retention_review_required");
     }
-    let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
     create_directory(&backup)?;
     let checkpoint = data_checkpoint::acquire_quiesced(
         &sources,

@@ -31,6 +31,7 @@ The private `devbox-suite-bootstrap` currently implements these Windows operatio
 | `--prepare-install ROOT PAYLOAD` | Prepare an isolated generation, retained journal and Import marker |
 | `--recover-install ROOT PAYLOAD` | Block and recover an uncommitted first installation while preserving all data and packages |
 | `--restart-install ROOT PAYLOAD` | Start a fresh package generation after that recovery; preserve the old journal and files |
+| `--verify-checkpoints ROOT PAYLOAD` | Verify journal-selected checkpoint identity, exact product file sets and all retained bytes without restoring them |
 | `--snapshot-install ROOT PAYLOAD` | Preserve the four closed product namespaces, including DB/WAL and closed browser files, without changing activation |
 | `--open-install ROOT PAYLOAD` | Launch the pinned Control Center and derive its setup/recovery view from the native activation marker |
 

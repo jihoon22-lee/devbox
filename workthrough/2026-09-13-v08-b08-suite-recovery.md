@@ -273,3 +273,12 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Scoped Rust (including test compilation) and Control Center TypeScript passed
   in 6.237s. No detailed test/build rerun. Windows acquisition and reviewed data
   restoration remain pending; this does not complete update/downgrade acceptance.
+
+- Checkpoint continuation: `--verify-checkpoints` reads only IDs/digests from the
+  native installation journal and verifies each complete private manifest, exact
+  per-product directories/files, absent owners, byte counts and file hashes.
+  Wrong installation/generation, added/missing/changed files or malformed records
+  fail closed. No restoration is performed. The WAL fixture now validates the
+  checkpoint and opens a separate copy, leaving the accepted checkpoint untouched;
+  it also covers wrong-owner/generation and changed browser bytes. Scoped Rust
+  and test compilation passed in 1.568s; prepared tests still await B08 completion.

@@ -410,6 +410,131 @@ pub fn acquire_quiesced(
     })
 }
 
+/// Verify a journal-selected checkpoint before any future restore review. Paths
+/// and contents stay private; only the native journal digest selects the record.
+pub fn verify(
+    parent: &Path,
+    expected: &Receipt,
+    installation_key: &str,
+    generation: &str,
+    cancelled: &AtomicBool,
+) -> Result<()> {
+    if !uuid::Uuid::parse_str(&expected.id).is_ok_and(|id| id.to_string() == expected.id)
+        || !product_contract::commands::revision(&expected.revision)
+    {
+        return Err("checkpoint_manifest_invalid");
+    }
+    let parent_handle = Directory::open(parent)?;
+    let target = parent.join(&expected.id);
+    let target_handle = Directory::open(&target)?;
+    let marker_path = target.join("checkpoint.json");
+    ensure_no_links(&marker_path).map_err(|_| "checkpoint_path_unsafe")?;
+    let (marker, identity) =
+        open_filesystem_object(&marker_path, false).map_err(|_| "checkpoint_manifest_missing")?;
+    let mut bytes = Vec::new();
+    marker
+        .take(MAX_MANIFEST + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "checkpoint_manifest_invalid")?;
+    if bytes.len() as u64 > MAX_MANIFEST
+        || hash(&bytes) != expected.revision
+        || filesystem_identity(&marker_path, false).map_err(|_| "checkpoint_manifest_changed")?
+            != identity
+    {
+        return Err("checkpoint_manifest_changed");
+    }
+    let manifest: Manifest =
+        serde_json::from_slice(&bytes).map_err(|_| "checkpoint_manifest_invalid")?;
+    if manifest.schema_version != 1
+        || manifest.id != expected.id
+        || manifest.installation_key != installation_key
+        || manifest.generation != generation
+        || manifest.acquisition != "quiesced-product-copy/v1"
+        || manifest.products.len() != 4
+    {
+        return Err("checkpoint_owner_invalid");
+    }
+    let mut owners = std::collections::BTreeSet::new();
+    let started = Instant::now();
+    let mut total = 0_u64;
+    let mut count = 0;
+    let mut retained = Vec::new();
+    for product in &manifest.products {
+        if !product_contract::installation::PRODUCTS.contains(&product.owner.as_str())
+            || !owners.insert(&product.owner)
+        {
+            return Err("checkpoint_owner_invalid");
+        }
+        let root = target.join(&product.owner);
+        if !product.present {
+            if !product.directories.is_empty()
+                || !product.files.is_empty()
+                || !matches!(fs::symlink_metadata(root), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+            {
+                return Err("checkpoint_copy_changed");
+            }
+            continue;
+        }
+        retained.push(Directory::open(&root)?);
+        let (directories, files) = listing(&root)?;
+        if directories != product.directories
+            || files
+                != product
+                    .files
+                    .iter()
+                    .map(|entry| entry.relative.clone())
+                    .collect::<Vec<_>>()
+        {
+            return Err("checkpoint_copy_changed");
+        }
+        for directory in &directories {
+            retained.push(Directory::open(&root.join(directory))?);
+        }
+        for entry in &product.files {
+            let (mut actual, _) =
+                copy_or_hash(&root.join(&entry.relative), None, started, cancelled)?;
+            actual.relative = entry.relative.clone();
+            if &actual != entry {
+                return Err("checkpoint_copy_changed");
+            }
+            total = total
+                .checked_add(entry.bytes)
+                .ok_or("checkpoint_size_limit")?;
+            count += 1;
+            if total > MAX_BYTES || count > MAX_FILES {
+                return Err("checkpoint_size_limit");
+            }
+        }
+    }
+    if total != expected.bytes || count != expected.files {
+        return Err("checkpoint_manifest_invalid");
+    }
+    for entry in fs::read_dir(&target).map_err(|_| "checkpoint_copy_changed")? {
+        let entry = entry.map_err(|_| "checkpoint_copy_changed")?;
+        let name = entry
+            .file_name()
+            .into_string()
+            .map_err(|_| "checkpoint_path_unsafe")?;
+        if name == "checkpoint.pending" {
+            let (pending, _) = copy_or_hash(&entry.path(), None, started, cancelled)?;
+            if pending.sha256 != expected.revision || pending.bytes != bytes.len() as u64 {
+                return Err("checkpoint_copy_changed");
+            }
+            continue;
+        }
+        if name != "checkpoint.json" && !owners.iter().any(|owner| owner.as_str() == name) {
+            return Err("checkpoint_copy_changed");
+        }
+    }
+    for directory in retained {
+        directory.check()?;
+    }
+    parent_handle.check()?;
+    target_handle.check()?;
+    bounded(started, cancelled)?;
+    Ok(())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -480,10 +605,45 @@ mod tests {
             &AtomicBool::new(false),
         )
         .unwrap();
+        verify(
+            backup.path(),
+            &receipt,
+            &"a".repeat(64),
+            "generation",
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        assert!(verify(
+            backup.path(),
+            &receipt,
+            &"b".repeat(64),
+            "generation",
+            &AtomicBool::new(false)
+        )
+        .is_err());
+        assert!(verify(
+            backup.path(),
+            &receipt,
+            &"a".repeat(64),
+            "other-generation",
+            &AtomicBool::new(false)
+        )
+        .is_err());
         let copied = backup.path().join(&receipt.id).join("knowledge");
         assert_eq!(fs::read(&db).unwrap(), before);
         assert_eq!(fs::read(knowledge.join("data.db-wal")).unwrap(), wal);
-        let restored = rusqlite::Connection::open(copied.join("data.db")).unwrap();
+        let restore_fixture = tempdir().unwrap();
+        fs::copy(
+            copied.join("data.db"),
+            restore_fixture.path().join("data.db"),
+        )
+        .unwrap();
+        fs::copy(
+            copied.join("data.db-wal"),
+            restore_fixture.path().join("data.db-wal"),
+        )
+        .unwrap();
+        let restored = rusqlite::Connection::open(restore_fixture.path().join("data.db")).unwrap();
         assert_eq!(
             restored
                 .query_row("SELECT value FROM retained", [], |row| row
@@ -509,6 +669,19 @@ mod tests {
             1
         );
         assert_eq!(manifest.products.len(), 4);
+        fs::write(
+            copied.join("EBWebView").join("closed-leveldb.log"),
+            b"changed",
+        )
+        .unwrap();
+        assert!(verify(
+            backup.path(),
+            &receipt,
+            &"a".repeat(64),
+            "generation",
+            &AtomicBool::new(false)
+        )
+        .is_err());
     }
     #[test]
     fn cancellation_publishes_no_accepted_checkpoint_and_keeps_originals() {
