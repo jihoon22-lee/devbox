@@ -247,3 +247,32 @@ Completion checks passed: verify:affected Runtime + Workspace check/Clippy/fmt
 and tests, including the actual owned process-group probe and strict witness
 regression. Changed JS syntax/diff passed. No unrelated frontend or other product
 checks ran locally. Final required CI and new packaged native acceptance remain.
+
+## Owned WSL stop delivery correction
+
+PR #567 passed CI 35528783610 and merged as f6e11970. Candidate 35529910490
+passed installer/API/Knowledge/cross-product and full WSL2 on its scoped retry,
+including moved-root owned stop. WSL1 now completed the short task with exit 3,
+logs and matcher navigation, proving the prior completion correction. Its next
+stop failed with the leader and Python child still alive: separate identity
+queries consumed the two-second termination grace before signal delivery.
+The first attempt's Zellij fallback and chooser outer timeout are preserved;
+no further blind retry is planned.
+
+Validate the NUL-delimited marker and current group/session, then signal within
+one retained-target WSL invocation. Start the unchanged grace after delivery;
+KILL repeats identity checks. Keep an already-exited stop safe only through an
+explicit absence witness. Add actual owned-process regressions for mismatched
+marker (including forged newline content), group and session, TERM-resistant
+process escalation and repeated stop. Existing native moved-root acceptance stays
+unchanged. Finish this implementation/test/documentation batch before checks.
+
+Artifact note: reruns can retain duplicate artifact names with non-monotonic IDs.
+Download reports by the artifact ID emitted by the exact job/attempt (or its
+created_at), not gh run download's first same-name match. The final candidate
+asset artifact is unique; never substitute old-attempt evidence for current results.
+
+Owned-stop completion: verify:affected passed Runtime/Workspace check, Clippy,
+format and tests, including the exact-marker/group/session refusal, TERM-resistant
+owned-process KILL and repeated-stop regression. Diff check passed. Final required
+CI and fresh exact-main native candidate remain; no unrelated local checks repeated.

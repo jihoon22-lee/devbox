@@ -732,6 +732,49 @@ pub fn build_wsl_group_probe_argv(distro: &str, pgid: u32) -> Result<Vec<String>
     ])
 }
 
+/// Validate the exact NUL-delimited marker and current PGID/SID before sending
+/// one group signal. Everything after the fixed program is structured argv.
+pub fn build_wsl_guarded_signal_argv(
+    distro: &str,
+    identity: &WslProcessIdentity,
+    signal: WslSignal,
+) -> Result<Vec<String>, ShellError> {
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
+    identity.validate()?;
+    const SCRIPT: &str = r#"
+matched=0;
+while IFS= read -r -d '' entry; do
+  if [ "$entry" = "DEVBOX_RUN_MARKER=$4" ]; then matched=1; fi;
+done < "/proc/$1/environ";
+[ "$matched" = 1 ] || exit 125;
+unset entry;
+stat=$(cat -- "/proc/$1/stat") || exit 125;
+fields=${stat##*) };
+[ "$fields" != "$stat" ] || exit 125;
+read -r state parent group session rest <<< "$fields";
+[ "$group" = "$2" ] && [ "$session" = "$3" ] || exit 125;
+kill "-$5" -- "-$2" || exit 126;
+printf 'signalled\n'
+"#;
+    Ok(vec![
+        "wsl.exe".into(),
+        "-d".into(),
+        distro.into(),
+        "--exec".into(),
+        "bash".into(),
+        "--noprofile".into(),
+        "--norc".into(),
+        "-c".into(),
+        SCRIPT.into(),
+        "devbox-run-signal".into(),
+        identity.pid.to_string(),
+        identity.pgid.to_string(),
+        identity.sid.to_string(),
+        identity.marker.clone(),
+        signal.as_str().into(),
+    ])
+}
+
 /// Read-only completion witness in one WSL invocation. CLI failure is never
 /// interpreted as absence, and both the leader and its group must be absent.
 pub fn build_wsl_completion_probe_argv(
