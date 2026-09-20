@@ -162,6 +162,9 @@ pub(crate) async fn backups(
     Ok(result)
 }
 
+// The shared health module is also compiled by products that only answer this
+// request; Control Center alone collects source evidence for suite cutover.
+#[allow(dead_code)]
 pub(crate) async fn sources(
     app: tauri::AppHandle,
     product: &str,

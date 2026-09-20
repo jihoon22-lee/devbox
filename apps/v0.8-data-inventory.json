@@ -452,8 +452,16 @@
       "items": [
         "install-roots/v1/registry.json"
       ],
-      "treatment": "Preserve verified registration provenance; do not equate an executable path with authorized install ownership.",
-      "importerStatus": "pending"
+      "treatment": "Read original Manager root locator/registry and retained manifest provenance in place; verified legacy cleanup uses that original namespace without publishing Control Center as a legacy Manager root. No registry-copy import or implicit ownership grant.",
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "schemaMapping": "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+      "test": [
+        ".github/scripts/windows-suite-legacy-cleanup.ps1"
+      ],
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+      ]
     },
     {
       "legacyApp": "devbox-manager",
@@ -462,8 +470,17 @@
       "items": [
         "current.json"
       ],
-      "treatment": "Preserve installation generation pointers and rollback provenance; do not activate staged destinations by copying a pointer.",
-      "importerStatus": "pending"
+      "treatment": "Retain legacy current.json and installation history in place; new Suite activation uses a separate namespace, verified payload journal and preserved package/data generations. Legacy pointers are never copied into the Suite; user explicitly keeps legacy provenance when reviewing sources.",
+      "importerStatus": "pending",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "schemaMapping": "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+      ]
     },
     {
       "legacyApp": "code-pad",

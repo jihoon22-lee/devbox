@@ -3,7 +3,8 @@
 Refs #550, #541, #542. B08 is one implementation/importer/installer/fixture PR.
 Accepted base is main `138c49fe` (B01–B07 merged). B08's implementation, importer
 bindings, delivery fixtures and documentation are now assembled for final PR
-validation. No final detailed run or B08 PR has completed yet; #550 remains open.
+validation in PR #561. Final checks are underway; #550 remains open until native
+delivery acceptance and required CI finish.
 B09 has not started. No production installation or migration is authorized by a test.
 
 ## Implementation boundary
@@ -862,3 +863,19 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   Resume only the failed/unexecuted frontend tests and remaining Rust checks; keep
   the completed scope/resource/build results. GLib's existing Linux-only advisory
   remains the already documented exception, not a new dependency change.
+
+## Final acceptance findings — 2026-09-20
+
+- Local frontend builds/bundle checks and all frontend tests passed. Rust check and
+  Clippy passed; the workspace test stage is still running. Preserve these completed
+  scopes rather than starting the affected driver again.
+- CI `35484488099` dependency policy passed. Its failures identified a missing
+  explicit accessibility import in the legacy Manager wrapper, a managed-LSP test
+  acting before its persisted configuration loaded, the newer CI rustfmt layout,
+  and the shared source-observation collector unused outside Control Center. Fixes
+  are grouped; hosted native run `35484488083` continues independently.
+- Manager's 40 legacy parity entries now name their actual tool adapters or Suite
+  replacement flows and tests. The two original registry/generation data groups
+  explicitly preserve legacy provenance in place rather than claiming a copied
+  importer. Their acceptance status remains pending until the delivery evidence
+  is available. No pending entry has been marked verified merely from code mapping.
