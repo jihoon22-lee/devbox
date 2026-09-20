@@ -9,8 +9,18 @@ interface Snapshot {installationKey:string|null;generation:string|null;suiteVers
 const label=(state:string)=>state==="verified"?"파일 확인됨":state==="notIncluded"?"이 패키지에 포함되지 않음":"확인되지 않음";
 export default function Inventory({description,route}:ShellContentProps){
  const [snapshot,setSnapshot]=useState<Snapshot|null>(null),[busy,setBusy]=useState(false),[error,setError]=useState("");
+ const [opening,setOpening]=useState(false);
  const [refresh,setRefresh]=useState(0);
  const reload=useCallback(()=>setRefresh(value=>value+1),[]);
+ const openFolder=async()=>{
+  setOpening(true);setError("");
+  try{
+   const header=makeRequest(description.handshake,route,Date.now(),description.context);
+   const response=await invoke<{operation:unknown;value:{opened:boolean}}>("plugin:control-center|execute",{request:{header,method:"open_installation_folder",args:{}}});
+   if(!isOperation(response.operation,{product:"control-center",component:"control-center.delivery",requestId:header.requestId,revision:catalog.catalogRevision})||response.operation.outcome.state!=="succeeded"||response.value?.opened!==true)throw new Error("folder_unavailable");
+  }catch{setError("설치 폴더를 열지 못했습니다. 설치 상태를 새로고침한 뒤 다시 시도해 주세요.");}
+  finally{setOpening(false);}
+ };
  useEffect(()=>{
   let active=true;setBusy(true);setError("");
   if(!nativeMode){setBusy(false);setError("설치 상태는 데스크톱 앱에서 확인할 수 있습니다.");return;}
@@ -25,6 +35,7 @@ export default function Inventory({description,route}:ShellContentProps){
  return <section aria-label={route==="components"?"구성 요소":"제품 설치 상태"}>
   <h2>{route==="components"?"구성 요소":"제품 설치 상태"}</h2>
   <button onClick={reload} disabled={busy}>{busy?"확인 중…":"설치 상태 새로고침"}</button>
+  {route==="products"&&<button onClick={()=>void openFolder()} disabled={!nativeMode||busy||opening||snapshot?.declaration!=="verified"}>{opening?"폴더 여는 중…":"설치 폴더 열기"}</button>}
   {error&&<p role="alert">{error}</p>}
   {snapshot&&<>
    <p>Suite {snapshot.suiteVersion??"버전 확인되지 않음"} · 패키지 {label(snapshot.declaration)}</p>

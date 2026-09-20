@@ -15,6 +15,7 @@ if ((Test-Path -LiteralPath $manager) -or (Test-Path -LiteralPath $userData) -or
 $assets = Join-Path $ScratchRoot 'legacy-assets'
 New-Item -ItemType Directory -Path $assets | Out-Null
 $claimed = $false
+$legacyRoot = $null
 $marker = [guid]::NewGuid().ToString()
 try {
   gh release download $baseline.tag --repo jihoon22-lee/devbox --pattern release-manifest.json --dir $assets

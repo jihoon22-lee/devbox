@@ -175,3 +175,5 @@ partial package tree; a completed generation with changed files still fails clos
 Space preflight counts package/copy requirements and checks Windows free space.
 Failures retain original data and show a specific space/closure recovery message.
 Postcommit cleanup does not republish a global legacy Manager root/catalog.
+
+Products includes an explicit installation-folder action. Native code captures and pins this executable’s package directory before opening Explorer; it accepts no renderer-provided path. Unknown installation state keeps the action disabled.

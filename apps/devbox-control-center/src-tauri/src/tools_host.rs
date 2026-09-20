@@ -28,6 +28,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     let record_health = request.method == "record_suite_health";
     let record_owner = record_health || request.method == "record_migration_owner";
     let inventory = request.method == "suite_inventory";
+    let open_directory = request.method == "open_installation_folder";
     let recovery = request.method == "suite_recovery";
     let restore_inventory = request.method == "restore_inventory";
     let restore_action = request.method == "restore_action";
@@ -43,6 +44,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     let component = if cleanup
         || cutover
         || inventory
+        || open_directory
         || recovery
         || legacy
         || record_owner
@@ -144,6 +146,9 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                             product_contract::installation::PRODUCTS.contains(&product)
                         })
             })
+    } else if open_directory {
+        request.header.route == "products"
+            && request.args.as_object().is_some_and(|args| args.is_empty())
     } else if inventory || recovery || legacy {
         matches!(
             request.header.route.as_str(),
@@ -267,6 +272,29 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             }).await.map_err(|_| "suite_store_unavailable".to_string())
                 .and_then(|result:Result<Value, &'static str>| result.map_err(str::to_owned))
         }
+    } else if open_directory {
+        let app = window.app_handle().clone();
+        tauri::async_runtime::spawn_blocking(move || {
+            #[cfg(windows)]
+            {
+                use tauri_plugin_opener::OpenerExt;
+                let scope = crate::suite::capture_own("control-center")?;
+                scope.revalidate()?;
+                app.opener()
+                    .open_path(scope.review_root(), None::<&str>)
+                    .map_err(|_| "installation_folder_unavailable")?;
+                scope.revalidate()?;
+                Ok(serde_json::json!({"opened":true}))
+            }
+            #[cfg(not(windows))]
+            {
+                let _ = app;
+                Err("suite_windows_required")
+            }
+        })
+        .await
+        .map_err(|_| "installation_folder_unavailable".to_string())
+        .and_then(|result: Result<Value, &'static str>| result.map_err(str::to_owned))
     } else if inventory {
         tauri::async_runtime::spawn_blocking(|| {
             #[cfg(windows)]

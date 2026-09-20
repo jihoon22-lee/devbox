@@ -80,6 +80,38 @@ fn save(directory: &Path, plan: &Cleanup) -> Result<()> {
     )
     .map_err(|_| "legacy_cleanup_unavailable")
 }
+fn acquire_lock(directory: &Path) -> Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    let path = directory.join("owner.lock");
+    let open = |create| {
+        fs::OpenOptions::new()
+            .read(true)
+            .write(true)
+            .create_new(create)
+            .share_mode(3)
+            .custom_flags(0x0020_0000)
+            .open(&path)
+    };
+    let lock = match open(true) {
+        Ok(file) => file,
+        Err(error) if error.kind() == std::io::ErrorKind::AlreadyExists => {
+            ensure_no_links(&path).map_err(|_| "legacy_cleanup_unsafe")?;
+            open(false).map_err(|_| "legacy_cleanup_busy")?
+        }
+        Err(_) => return Err("legacy_cleanup_busy"),
+    };
+    let identity = devbox_filesystem::opened_filesystem_identity(&lock, false)
+        .map_err(|_| "legacy_cleanup_unsafe")?;
+    if lock.metadata().map_err(|_| "legacy_cleanup_unsafe")?.len() != 0
+        || filesystem_identity(&path, false).map_err(|_| "legacy_cleanup_unsafe")? != identity
+    {
+        return Err("legacy_cleanup_unsafe");
+    }
+    if !devbox_filesystem::try_lock_exclusive(&lock).map_err(|_| "legacy_cleanup_busy")? {
+        return Err("legacy_cleanup_busy");
+    }
+    Ok(lock)
+}
 fn journal(
     app: &tauri::AppHandle,
 ) -> Result<(
@@ -171,6 +203,7 @@ fn shortcut_candidates(
 }
 pub(crate) fn execute(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value> {
     let (scope, data, _) = journal(app)?;
+    let _data_pins = crate::suite::platform::component_scope::pin_directories(&data)?;
     let directory = data.join("legacy-cleanup-v1");
     if method == "legacy_cleanup_list" {
         if !directory
@@ -206,18 +239,8 @@ pub(crate) fn execute(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
         Err(_) => return Err("legacy_cleanup_unavailable"),
     }
     ensure_no_links(&directory).map_err(|_| "legacy_cleanup_unsafe")?;
-    let lock = directory.join("owner.lock");
-    ensure_no_links(&lock).map_err(|_| "legacy_cleanup_unsafe")?;
-    let lock = fs::OpenOptions::new()
-        .read(true)
-        .write(true)
-        .create(true)
-        .truncate(false)
-        .open(lock)
-        .map_err(|_| "legacy_cleanup_busy")?;
-    if !devbox_filesystem::try_lock_exclusive(&lock).map_err(|_| "legacy_cleanup_busy")? {
-        return Err("legacy_cleanup_busy");
-    }
+    let _directory_pins = crate::suite::platform::component_scope::pin_directories(&directory)?;
+    let _lock = acquire_lock(&directory)?;
     if method == "legacy_cleanup_preview" {
         if fs::read_dir(&directory)
             .map_err(|_| "legacy_cleanup_unavailable")?
@@ -548,5 +571,35 @@ fn apply(app: &tauri::AppHandle, plan: &Cleanup) -> Result<()> {
             )
             .map_err(|_| "legacy_portable_cleanup_pending")
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Temp(PathBuf);
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[test]
+    fn first_cleanup_creates_its_lock_and_reopen_preserves_exclusivity_and_unknown_bytes() {
+        let root =
+            Temp(std::env::temp_dir().join(format!("devbox-cleanup-{}", uuid::Uuid::new_v4())));
+        fs::create_dir(&root.0).unwrap();
+        let _pins = crate::suite::platform::component_scope::pin_directories(&root.0).unwrap();
+        let first = acquire_lock(&root.0).unwrap();
+        assert!(matches!(acquire_lock(&root.0), Err("legacy_cleanup_busy")));
+        drop(first);
+        drop(acquire_lock(&root.0).unwrap());
+        let path = root.0.join("owner.lock");
+        fs::write(&path, b"preserve unexpected data").unwrap();
+        assert!(matches!(
+            acquire_lock(&root.0),
+            Err("legacy_cleanup_unsafe")
+        ));
+        assert_eq!(fs::read(path).unwrap(), b"preserve unexpected data");
     }
 }

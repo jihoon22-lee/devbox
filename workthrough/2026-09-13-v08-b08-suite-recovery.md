@@ -1000,3 +1000,18 @@ It requires an ancestral artifact and a closed changed-input allowlist, checks
 ZIP/file digests and fixed file names, records each product's actual source, and
 reassembles/runs the real Suite. This is private scoped acceptance, never an
 exact-main release candidate or a claim that all four binaries were newly built.
+
+The legacy `install_path` / `open_install_folder` mapping was incomplete: setup root selection alone did not expose folder opening in Products. Add the explicit Products action, native own-package capture with no path argument, provenance/unknown-state UI tests and actual installed-folder/refused-path acceptance. This remains B08 feature preservation, not a deferred B09 omission.
+
+The scoped rebuild `35491658438` correctly records three retained sources at
+83ad98d1 and Control Center at afe3b8e3. Shared HKCU enumeration now yields one
+entry; cleanup preview exposed a first-use bug: it checked the not-yet-created
+owner.lock with an existing-path-only validator. Create-new first, reopen only
+a verified empty regular file, deny replacement while held, and pin data/plan
+parents before mutation. Add first-use, competing lease and preserved unknown
+bytes cases. Move the separate postcommit cleanup case to the end of the delivery
+fixture so it cannot hide restore/update/reinstall and reviewed-cutover findings.
+
+The Products folder-action type check and its three focused UI tests passed in
+4.874s together with parity metadata validation. Native folder opening/refused
+renderer-path and the cleanup fixes run together in the next scoped package.

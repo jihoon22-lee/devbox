@@ -88,8 +88,6 @@ try {
   Native $install 'health'
   $committed = Helper @('--commit-clean-install',$install,$payloadPath)
   Require ($committed.state -eq 'cleanInstallationCommitted') 'cleanInstallCommittedAfterFourNativeOwners'
-  & "$PSScriptRoot/windows-suite-legacy-cleanup.ps1" -SuiteRoot $install
-  Require ($LASTEXITCODE -eq 0) 'postcommitVerifiedInstallerAndPortableCleanup'
   $snapshot = Helper @('--snapshot-install',$install,$payloadPath)
   Require ($snapshot.state -eq 'dataCheckpointPreserved') 'closedSnapshotRecorded'
   $workspace = Join-Path $env:LOCALAPPDATA "com.devbox.v08.workspace.i$key"
@@ -173,6 +171,10 @@ try {
   Native $migrationInstall 'health'
   Helper @('--commit-reviewed-install',$migrationInstall,$payloadPath) | Out-Null
   Require ([IO.File]::ReadAllText($legacyPreferences).EndsWith(' ')) 'explicitlySkippedChangedOriginalPreserved'
+  # Cleanup is a separate postcommit outcome. Exercise restore/update/reinstall
+  # first so a legacy cleanup defect does not hide their independent findings.
+  & "$PSScriptRoot/windows-suite-legacy-cleanup.ps1" -SuiteRoot $migrationInstall
+  Require ($LASTEXITCODE -eq 0) 'postcommitVerifiedInstallerAndPortableCleanup'
   Run-Installer (Join-Path $migrationInstall 'Uninstall.exe') '/S'
   Wait-Until { Test-Path -LiteralPath (Join-Path $migrationInstall 'uninstall-complete.json') }
   $evidence.result = 'passed'

@@ -146,7 +146,7 @@ jobs:
   delivery-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_diagnostic_run != '' }}
     runs-on: windows-2025
-    timeout-minutes: 30
+    timeout-minutes: ${{ inputs.delivery_rebuild_control_center && 60 || 30 }}
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       CARGO_BUILD_JOBS: 2

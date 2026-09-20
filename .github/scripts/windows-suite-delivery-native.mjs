@@ -90,6 +90,12 @@ try {
   evidence.checks[`connection_${item.product}`]=true;
  }
  const center=apps["control-center"];
+ if(mode==="import"){
+  const rejected=await call(center,"plugin:control-center|execute",{method:"open_installation_folder",args:{path:root}},"products").then(()=>false,()=>true);
+  assert.equal(rejected,true);
+  assert.equal(value(await call(center,"plugin:control-center|execute",{method:"open_installation_folder",args:{}},"products")).opened,true);
+  evidence.checks.verifiedInstallationFolderOnly=true;
+ }
  if(mode==="legacyImport") {
   const plan=value(await call(center,"plugin:commands|command_import_launcher",{method:"preview",id:null},"migration"));
   assert.equal(value(await call(center,"plugin:commands|command_import_launcher",{method:"apply",id:plan.id},"migration")).committed,true);

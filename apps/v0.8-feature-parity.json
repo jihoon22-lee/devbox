@@ -7673,14 +7673,14 @@
       "route": "products",
       "dataOwner": "installation",
       "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
-      "migration": "Suite setup explicitly selects and validates its custom root and retained physical installation identity; legacy roots are inventoried separately and never silently relocated.",
+      "migration": "Products opens the current verified Suite/portable installation directory after an explicit click. Native capture pins its own package root; renderer paths and foreign response provenance are rejected.",
       "test": [
-        ".github/scripts/test-build-suite-installer.py",
-        ".github/scripts/windows-suite-delivery.ps1"
+        "apps/devbox-control-center/src/Inventory.test.tsx",
+        ".github/scripts/windows-suite-delivery-native.mjs"
       ],
       "ownerIssue": 550,
       "status": "pending",
-      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
         "workthrough/2026-09-13-v08-b08-suite-recovery.md"
@@ -7812,14 +7812,14 @@
       "route": "products",
       "dataOwner": "installation",
       "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
-      "migration": "Suite setup explicitly selects and validates its custom root and retained physical installation identity; legacy roots are inventoried separately and never silently relocated.",
+      "migration": "Products opens the current verified Suite/portable installation directory after an explicit click. Native capture pins its own package root; renderer paths and foreign response provenance are rejected.",
       "test": [
-        ".github/scripts/test-build-suite-installer.py",
-        ".github/scripts/windows-suite-delivery.ps1"
+        "apps/devbox-control-center/src/Inventory.test.tsx",
+        ".github/scripts/windows-suite-delivery-native.mjs"
       ],
       "ownerIssue": 550,
       "status": "pending",
-      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
         "workthrough/2026-09-13-v08-b08-suite-recovery.md"
