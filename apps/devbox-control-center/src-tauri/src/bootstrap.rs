@@ -19,7 +19,8 @@ mod data_restore;
 #[cfg(windows)]
 pub(crate) mod interactive;
 #[cfg(windows)]
-mod registration;
+pub(crate) mod registration;
+mod reinstall;
 mod uninstall;
 mod update;
 fn hash(bytes: &[u8]) -> String {
@@ -460,6 +461,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     if arguments.len() != if restore || update_action { 4 } else { 3 }
         || ![
             "--stage",
+            "--reinstall-install",
+            "--commit-reinstall",
             "--prepare-update",
             "--prepare-and-apply-update",
             "--apply-update",
@@ -495,7 +498,14 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     let root = PathBuf::from(&arguments[1]);
     let payload = PathBuf::from(&arguments[2]);
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
-    if update_action {
+    if arguments[0] == "--reinstall-install" || arguments[0] == "--commit-reinstall" {
+        reinstall::execute(
+            &root,
+            &payload,
+            &image,
+            arguments[0] == "--commit-reinstall",
+        )
+    } else if update_action {
         update::execute(
             &root,
             &payload,

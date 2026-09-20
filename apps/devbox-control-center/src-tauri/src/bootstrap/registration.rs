@@ -432,7 +432,7 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
         payload_revision: revision,
     })
 }
-fn verify_link(path: &Path, expected: &Path, arguments: &str) -> Result<()> {
+pub(crate) fn verify_link(path: &Path, expected: &Path, arguments: &str) -> Result<()> {
     use windows::Win32::{System::Com::STGM_READ, UI::Shell::SLGP_RAWPATH};
     ensure_no_links(path).map_err(|_| "suite_shortcut_unsafe")?;
     let link: IShellLinkW = unsafe { CoCreateInstance(&ShellLink, None, CLSCTX_INPROC_SERVER) }
@@ -455,9 +455,16 @@ fn verify_link(path: &Path, expected: &Path, arguments: &str) -> Result<()> {
             .ok_or("suite_shortcut_invalid")?;
         String::from_utf16(&value[..length]).map_err(|_| "suite_shortcut_invalid")
     };
-    if !text(&target)?.eq_ignore_ascii_case(expected.to_str().ok_or("suite_shortcut_invalid")?)
-        || text(&args)? != arguments
-    {
+    let target = text(&target)?;
+    let expected = expected.to_str().ok_or("suite_shortcut_invalid")?;
+    let normalize = |value: &str| {
+        value
+            .strip_prefix(r"\\?\")
+            .unwrap_or(value)
+            .replace('/', "\\")
+            .to_ascii_lowercase()
+    };
+    if normalize(&target) != normalize(expected) || text(&args)? != arguments {
         return Err("suite_shortcut_foreign");
     }
     Ok(())
@@ -522,6 +529,55 @@ pub(super) fn remove(root: &Path, key: &str, apply: bool) -> Result<()> {
         // Keep an executable recovery entrypoint until ARP cleanup succeeds.
         // A registry failure must not leave its entry pointing at a deleted file.
         uninstaller.remove(root)?;
+    }
+    Ok(())
+}
+
+/// Reuse only the original empty shortcut directory after completed removal.
+/// The new NSIS uninstaller is written afterward and gets a fresh identity plan.
+pub(super) fn prepare_reinstall(root: &Path, key: &str, revision: &str) -> Result<()> {
+    if let Some(mut registration) = read_registration(root, key)? {
+        if let Some(plan) = &registration.shortcut_plan {
+            if plan.files.iter().any(|file| {
+                registration
+                    .shortcut_directory
+                    .join(&file.relative)
+                    .exists()
+            }) {
+                return Err("suite_reinstall_cleanup_required");
+            }
+        }
+        if let Some(plan) = &registration.uninstaller {
+            if plan
+                .files
+                .iter()
+                .any(|file| root.join(&file.relative).exists())
+            {
+                return Err("suite_reinstall_cleanup_required");
+            }
+        }
+        let path = wide(&format!(r"{ARP}\DevboxSuite.{key}"));
+        let mut handle = HKEY::default();
+        let status = unsafe {
+            RegOpenKeyExW(
+                HKEY_CURRENT_USER,
+                PCWSTR(path.as_ptr()),
+                None,
+                KEY_READ | KEY_WOW64_64KEY,
+                &mut handle,
+            )
+        };
+        if status == ERROR_SUCCESS {
+            drop(Key(handle));
+            return Err("suite_reinstall_cleanup_required");
+        }
+        if status != ERROR_FILE_NOT_FOUND {
+            return Err("suite_registry_unavailable");
+        }
+        registration.payload_revision = revision.into();
+        registration.shortcut_plan = None;
+        registration.uninstaller = None;
+        save(root, &registration)?;
     }
     Ok(())
 }

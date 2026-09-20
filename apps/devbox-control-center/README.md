@@ -75,8 +75,8 @@ Removal runs the embedded helper outside the package tree, checks every planned
 file's digest and physical identity, and can resume a partially removed package.
 Unknown files, user stores and backups remain intact; small removal/ownership records
 remain available for recovery. It never invokes a legacy uninstaller or recursively
-deletes a user-selected directory. Public release, installed update, and Windows
-installer/uninstall acceptance remain unfinished in B08. The update path keeps the
+deletes a user-selected directory. Windows installer/uninstall acceptance remains pending for the completed B08
+implementation. Public release remains B09. The update path keeps the
 original package generation and physical data directories, runs the new version on
 copied data, and blocks ordinary writes until native health and explicit commit.
 A durable startup blocker covers partial metadata publication. Existing shortcuts
@@ -98,9 +98,10 @@ commit are separate gates.
 Migration can record each owner’s authenticated summary and verified retained
 backups into the suite journal. A changing session/catalog or failed backup leaves
 the journal unchanged. These retained observations do not authorize cutover.
-Fresh source quiescence, activation health/commit, installed update/downgrade,
-shortcuts/ARP/uninstall and reviewed legacy cleanup remain part of B08's unfinished
-implementation. See the [B08 workthrough](../../workthrough/2026-09-13-v08-b08-suite-recovery.md)
+Source-aware cutover now binds fresh owner observations to an explicit review,
+then acquires closed-source handles before activation. Installed update/recovery,
+shortcuts/ARP/uninstall and reviewed legacy cleanup are implemented; final Windows
+acceptance remains pending. See the [B08 workthrough](../../workthrough/2026-09-13-v08-b08-suite-recovery.md)
 for actual evidence and remaining acceptance.
 
 Local tests must preserve existing services and host networking. Provisioning and
@@ -131,4 +132,39 @@ package ownership and preserves another closed checkpoint before enabling writes
 The installation/recovery screen now exposes these explicitly reviewed clean-install
 actions and only offers them when native observations indicate no legacy sources.
 These development commands are not yet public installer acceptance. Existing
-legacy data and installed updates require the unfinished source-aware coordinator.
+legacy data uses the source-aware review below; installed updates use the copied-data
+generation coordinator.
+
+The Updates screen checks the official stable release only on request. Native code
+validates the seven public assets, streams the reviewed setup into a bounded cache,
+checks its size/SHA-256, and supports cancellation. Opening the installer requires a
+separate confirmation. Existing data/package generations remain recoverable until
+fresh native health and commit; downgrade is blocked with a backup/export requirement.
+
+Source-aware first activation records fresh original-source comparisons with each
+owner observation. SQLite comparisons use consistent online snapshots; closed
+browser/native sources use their accepted retained bindings. Knowledge follows the
+selected generation ancestry. Raw namespace fingerprints bracket the observations
+and include WAL while excluding transient SQLite shared-memory files. External
+paths found in preferences are never followed. Each present source needs an explicit
+choice: use reviewed import results whose originals still match, or preserve the
+original as skipped. A retained backup is not a complete-coverage claim. The helper
+requires legacy/product processes closed, retains original source handles, and
+rechecks inventory before publishing Health/Committed. Changed sources can return
+to Import while preserving current product data and requiring new observations.
+
+After commit, legacy cleanup exposes separate preview/confirm/resume controls.
+Windows installer cleanup uses the pinned v0.7 installed-file reference, exact ARP
+metadata and verified shortcuts. It never executes registry uninstall strings.
+Manager-owned portable cleanup retains its reviewed file identities and Manager
+manifest/location CAS, including interruption after the manifest claim. Unknown,
+changed or inaccessible files remain preserved; cleanupPending stays separate from
+successful Suite activation. No privilege escalation is performed.
+
+A completed data-preserving uninstall retains ownership/removal records. Reinstall
+with the exact last package restores the same installation/data identity, preserves
+a checkpoint and requires fresh four-product health before restoring ordinary use.
+A different package is blocked: recover the original package first, then use the
+normal generation update path. Reinstalling an uncommitted first installation
+returns to Import review. Durable intents support interrupted package staging;
+old removal records are retained instead of reused to delete newly restored files.

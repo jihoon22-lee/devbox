@@ -716,3 +716,39 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   cutover/source and frontend scenarios remain source-only, and Windows-only code
   awaits the single final B08 acceptance phase. Legacy cleanup/reinstall and final
   installer/fault fixtures remain unfinished; this does not close #550.
+
+### Reviewed legacy cleanup, reinstall and complete delivery fixture source
+
+- Add postcommit preview/confirm/resume cleanup with private durable plans. Installer
+  removal requires the pinned v0.7 installed closure, unchanged registry declarations
+  and owned shortcut targets; no registry command execution or arbitrary root walk.
+  Manager portable removal binds its original manifest/location plus captured file
+  identities, and resumes a crash after the original manifest claim. Source stores
+  and unlisted/replaced files remain intact. Pending cleanup is recorded independently
+  from committed Suite usability, and native permission failures remain pending.
+- Publish a completion receipt only after package/ARP/shortcut removal succeeds.
+  Exact-package reinstall preserves root/data identity and a closed checkpoint,
+  rehydrates the old schema-compatible package, archives obsolete removal plans and
+  requires fresh native health. A different package must recover the original first,
+  then use the generation updater. Reinstall of an uncommitted setup returns to Import.
+- Minimal Linux Control Center/Rust and frontend typechecks passed together in
+  11.825s. Restrict a Windows-only inventory function to Windows after that check.
+  No detailed tests, app builds, CI or hosted fixtures have been run in this batch.
+- Extend the final disposable Windows fixture source with actual four-product
+  initialization/health, clean commit, restore rollback, uninstall/reinstall, same-
+  version generation update rollback/commit, original-uninstaller delegation, and
+  Launcher import/stale-source refusal/explicit skipped-original cutover. Preserve
+  failure evidence even when fixture cleanup fails. Fixture cleanup remains limited
+  to captured random installation identities and explicitly claimed synthetic data.
+- Remove duplicate Windows unit/authority/WAL execution from product-foundation;
+  the required Windows Rust CI job remains authoritative. Native packaged application
+  and isolated WSL/Docker acceptance remain in their dedicated workflow.
+- Remaining B08 work: complete legacy-cleanup/native fault acceptance coverage,
+  finish the PR acceptance mapping/docs, then run the single final validation phase
+  and CI. B09 remains dependent and has not started; no issue is closed by this batch.
+
+- Add source-only UI coverage for postcommit-only cleanup, separate removal
+  confirmation and visible partial failure. Add an artifact-only delivery diagnostic
+  path that verifies the original workflow/source receipt and reports binary source
+  separately from the current fixture source; fixture-only fixes can reuse the exact
+  original setup/products without rebuilding or repeating unrelated acceptance.

@@ -477,6 +477,7 @@ mod tests {
         for product in PRODUCTS {
             for call in [
                 Call::ListMigrationBackups {},
+                Call::VerifyMigrationSources {},
                 Call::VerifyMigrationBackup {
                     id: "owned-backup".into(),
                 },

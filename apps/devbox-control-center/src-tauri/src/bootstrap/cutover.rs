@@ -196,7 +196,7 @@ pub(super) fn hold(data: &Path, journal: &Journal) -> Result<legacy_sources::Gua
     Ok(guard)
 }
 #[cfg(windows)]
-pub(super) fn require_closed() -> Result<()> {
+pub(crate) fn require_closed() -> Result<()> {
     use windows::Win32::{
         Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_FILES},
         System::Diagnostics::ToolHelp::{
@@ -248,6 +248,6 @@ pub(super) fn require_closed() -> Result<()> {
     Err("legacy_process_inventory_limit")
 }
 #[cfg(not(windows))]
-pub(super) fn require_closed() -> Result<()> {
+pub(crate) fn require_closed() -> Result<()> {
     Err("suite_windows_required")
 }

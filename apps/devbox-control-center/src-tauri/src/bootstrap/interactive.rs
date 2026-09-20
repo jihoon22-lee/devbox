@@ -98,7 +98,7 @@ impl Request {
     pub(crate) fn validate(&self) -> bool {
         match self.action.as_str() {
             "snapshot" | "activateClean" | "commitClean" | "activateReviewed"
-            | "commitReviewed" | "reviewImportAgain" => self.id.is_empty(),
+            | "commitReviewed" | "reviewImportAgain" | "commitReinstall" => self.id.is_empty(),
             "restore" | "resume" | "commit" | "rollback" | "updateResume" | "updateCommit"
             | "updateRollback" => {
                 uuid::Uuid::parse_str(&self.id).is_ok_and(|id| id.to_string() == self.id)
@@ -183,7 +183,7 @@ pub(crate) fn inventory() -> Result<Value> {
         && no_legacy_data
         && no_legacy_installers;
     let installation = json!({"phase":journal.phase,"committed":journal.committed,"recordedOwners":journal.owner_evidence.len(),
-        "clean":clean,"reviewed":cutover::plan(&data,&journal).is_ok(),"freshHealth":fresh_health});
+        "clean":clean,"reinstall":reinstall::pending(&root)?,"reviewed":cutover::plan(&data,&journal).is_ok(),"freshHealth":fresh_health});
     let checkpoints = journal.data_checkpoints;
     let recovery = parent.join(format!("com.devbox.v08.suite-restore.i{key}"));
     let mut operations = Vec::new();
@@ -428,6 +428,7 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
     loop {
         let result = match request.action.as_str() {
             "snapshot" => snapshot_install(&root, &payload, &image, false),
+            "commitReinstall" => reinstall::execute(&root, &payload, &image, true),
             "reviewImportAgain" => cutover::return_to_import(&root, &payload, &image),
             "activateReviewed" => activate_install(&root, &payload, &image, false, true),
             "commitReviewed" => activate_install(&root, &payload, &image, true, true),

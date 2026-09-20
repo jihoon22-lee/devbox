@@ -88,7 +88,12 @@ Section "Suite 준비"
   SetOutPath "$PLUGINSDIR"
 __PAYLOAD_FILES__
   StrCpy $SuiteWasUpdate 0
+  IfFileExists "$INSTDIR\uninstall-complete.json" suite_reinstall
+  IfFileExists "$INSTDIR\suite-reinstall.json" suite_reinstall
   IfFileExists "$INSTDIR\suite-owner.json" suite_update suite_first_install
+  suite_reinstall:
+  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --reinstall-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
+  Goto suite_prepared
   suite_update:
   StrCpy $SuiteWasUpdate 1
   nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --prepare-and-apply-update "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
@@ -101,7 +106,7 @@ __PAYLOAD_FILES__
   ${If} $0 != 0
     DetailPrint $1
     SetErrorLevel 1
-    Abort "설치를 준비하지 못했습니다. 기존 파일과 데이터는 보존됩니다."
+    Abort "설치를 준비하지 못했습니다. 기존 파일과 데이터는 보존됩니다. 제거 후 재설치는 마지막으로 설치한 동일 패키지로 진행한 뒤 업데이트하세요."
   ${EndIf}
   ${If} $SuiteWasUpdate == 1
     Goto suite_registration_done

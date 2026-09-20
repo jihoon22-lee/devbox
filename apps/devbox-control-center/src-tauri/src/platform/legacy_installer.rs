@@ -1,6 +1,6 @@
 //! Bounded, read-only ARP discovery. Registry strings are declarations, never a
 //! command to execute or authority to remove a directory.
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use windows::{
     core::{PCWSTR, PWSTR},
@@ -85,6 +85,8 @@ pub(crate) struct Entry {
     pub registration_id: String,
     pub binary: &'static str,
     pub cleanup: &'static str,
+    #[serde(skip)]
+    pub registration: Registration,
 }
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -216,6 +218,16 @@ fn scan(
         {
             return Err("legacy_registry_changed");
         }
+        let registration = Registration {
+            name: name.clone(),
+            app: app.id.clone(),
+            version: version.clone(),
+            scope: scope.into(),
+            architecture: architecture.into(),
+            location: values.0.clone(),
+            uninstall: values.1.clone(),
+            icon: values.2.clone(),
+        };
         let bytes = serde_json::to_vec(&(scope, architecture, &name, &app.id, &version, values))
             .map_err(|_| "legacy_registry_invalid")?;
         let registration_id = Sha256::digest(bytes)
@@ -229,6 +241,7 @@ fn scan(
             architecture,
             registration_id,
             binary,
+            registration,
             cleanup: if binary == "verified" {
                 "requiresCommittedSuiteAndReview"
             } else {
@@ -261,4 +274,109 @@ pub(crate) fn inventory() -> Result<Inventory> {
         }
     }
     Ok(report)
+}
+
+/// Private native identity. No renderer receives registry keys, paths or commands.
+#[derive(Clone, Deserialize, Serialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub(crate) struct Registration {
+    name: String,
+    pub app: String,
+    pub version: Option<String>,
+    scope: String,
+    architecture: String,
+    pub location: Option<String>,
+    uninstall: Option<String>,
+    icon: Option<String>,
+}
+impl Registration {
+    pub fn machine(&self) -> bool {
+        self.scope == "machine"
+    }
+    pub fn revision(&self) -> Result<String> {
+        let values = (&self.location, &self.uninstall, &self.icon);
+        let bytes = serde_json::to_vec(&(
+            &self.scope,
+            &self.architecture,
+            &self.name,
+            &self.app,
+            &self.version,
+            values,
+        ))
+        .map_err(|_| "legacy_registry_invalid")?;
+        Ok(Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect())
+    }
+    fn target(&self) -> Result<(HKEY, REG_SAM_FLAGS, String)> {
+        if self.name.is_empty() || self.name.len() > 255 || self.name.contains(['\\', '/', '\0']) {
+            return Err("legacy_registry_invalid");
+        }
+        let hive = match self.scope.as_str() {
+            "currentUser" => HKEY_CURRENT_USER,
+            "machine" => HKEY_LOCAL_MACHINE,
+            _ => return Err("legacy_registry_invalid"),
+        };
+        let view = match self.architecture.as_str() {
+            "x64" => KEY_WOW64_64KEY,
+            "x86" => KEY_WOW64_32KEY,
+            _ => return Err("legacy_registry_invalid"),
+        };
+        Ok((hive, view, format!("{ROOT}\\{}", self.name)))
+    }
+    pub fn present(&self) -> Result<bool> {
+        let (hive, view, path) = self.target()?;
+        let Some(key) = open(hive, &path, view)? else {
+            return Ok(false);
+        };
+        let catalog = devbox_catalog::parse_catalog(include_str!("../../../../catalog.json"))
+            .map_err(|_| "legacy_catalog_invalid")?;
+        let app = catalog
+            .apps
+            .iter()
+            .find(|app| app.id == self.app && !app.identifier.starts_with("com.devbox.v08."))
+            .ok_or("legacy_registry_invalid")?;
+        let display = text(&key, "DisplayName")?.ok_or("legacy_registry_changed")?;
+        if !(display.eq_ignore_ascii_case(&app.product_name)
+            || display.eq_ignore_ascii_case(&app.id))
+            || text(&key, "DisplayVersion")? != self.version
+            || text(&key, "InstallLocation")? != self.location
+            || text(&key, "UninstallString")? != self.uninstall
+            || text(&key, "DisplayIcon")? != self.icon
+        {
+            return Err("legacy_registry_changed");
+        }
+        Ok(true)
+    }
+    pub fn remove(&self) -> Result<()> {
+        if !self.present()? {
+            return Ok(());
+        }
+        let (hive, view, path) = self.target()?;
+        let path = wide(&path);
+        let status = unsafe { RegDeleteKeyExW(hive, PCWSTR(path.as_ptr()), view.0, None) };
+        if status != ERROR_SUCCESS && status != ERROR_FILE_NOT_FOUND {
+            return Err("legacy_registry_cleanup_pending");
+        }
+        Ok(())
+    }
+}
+pub(crate) fn resolve(id: &str) -> Result<Registration> {
+    if !product_contract::commands::revision(id) {
+        return Err("legacy_registry_invalid");
+    }
+    let report = inventory()?;
+    let mut entries = report
+        .entries
+        .into_iter()
+        .filter(|entry| entry.registration_id == id);
+    let entry = entries.next().ok_or("legacy_registry_changed")?;
+    if entries.next().is_some() || entry.binary != "verified" {
+        return Err("legacy_installer_verification_required");
+    }
+    if entry.registration.revision()? != id {
+        return Err("legacy_registry_changed");
+    }
+    Ok(entry.registration)
 }

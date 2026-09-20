@@ -7,7 +7,10 @@ pub fn run() {
     match bootstrap::interactive::resume_before_shell() {
         Ok(true) => return,
         Ok(false) => {}
-        Err(issue) => { eprintln!("{issue}"); return; }
+        Err(issue) => {
+            eprintln!("{issue}");
+            return;
+        }
     }
     product_shell_tauri::run_with("control-center", tauri::generate_context!(), |builder| {
         builder
@@ -30,6 +33,8 @@ mod commands;
 
 mod launcher_import;
 
+#[cfg(windows)]
+mod legacy_cleanup;
 mod tools_host;
 #[cfg(windows)]
 mod updates;

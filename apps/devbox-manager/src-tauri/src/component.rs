@@ -207,3 +207,23 @@ pub fn legacy_installations(app: &tauri::AppHandle) -> Result<Value, String> {
 pub(crate) fn legacy_catalog_revision(app: &tauri::AppHandle) -> Option<u64> {
     app.try_state::<EmbeddedTools>().map(|_| 18)
 }
+
+/// Only the committed Suite cleanup coordinator calls this native adapter.
+/// It does not add Manager's removal commands to the embedded webview surface.
+pub fn cleanup_legacy_portable(
+    app: tauri::AppHandle,
+    request: Value,
+    version: &str,
+    target: &std::path::Path,
+) -> Result<(), String> {
+    let request = serde_json::from_value(request).map_err(|_| "legacy_portable_request_invalid")?;
+    crate::commands::manager::cleanup_legacy_portable(app, request, version, target)
+}
+
+pub use crate::commands::manager::RemovePreviewView as LegacyPortablePreview;
+pub fn preview_legacy_portable(
+    app: tauri::AppHandle,
+    id: String,
+) -> Result<LegacyPortablePreview, String> {
+    crate::commands::manager::preview_remove_app(app, id)
+}

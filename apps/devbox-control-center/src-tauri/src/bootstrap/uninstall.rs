@@ -5,10 +5,10 @@ use crate::core::suite_removal::Plan;
 
 #[derive(serde::Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Receipt {
-    schema_version: u32,
-    payload_revision: String,
-    plan: Plan,
+pub(super) struct Receipt {
+    pub schema_version: u32,
+    pub payload_revision: String,
+    pub plan: Plan,
 }
 pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
@@ -214,6 +214,17 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
     receipt.plan.remove(&root)?;
     #[cfg(windows)]
     super::registration::remove(&root, &key, true)?;
+    devbox_filesystem::atomic_write(
+        root.join("uninstall-complete.json"),
+        &serde_json::to_vec(&(
+            1_u32,
+            &key,
+            &revision,
+            hash(&read(&plan_path, 2 * 1024 * 1024)?),
+        ))
+        .map_err(|_| "suite_remove_plan_invalid")?,
+    )
+    .map_err(|_| "suite_remove_plan_unavailable")?;
     // Retain the small ownership/removal records for a failed shortcut or ARP
     // cleanup to resume. NSIS removes only its own remaining registration files.
     Ok(StageResult {

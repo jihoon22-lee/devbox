@@ -1823,3 +1823,59 @@ mod tests {
         assert!(version.join("port-manager.exe.partial").exists());
     }
 }
+
+/// Native Control Center resume after a crash between manifest claim and file
+/// removal. The saved plan is private; these paths are never command arguments
+/// accepted from a webview. Require the same Manager locator and derived layout.
+pub(crate) fn cleanup_legacy_portable(
+    app: tauri::AppHandle,
+    request: RemoveAppRequest,
+    version: &str,
+    target: &std::path::Path,
+) -> Result<(), String> {
+    ensure_catalog_target(&request.app_id)?;
+    let snapshot =
+        read_registry_snapshot(&app).or_else(|_| read_registry_snapshot_for_removal(&app))?;
+    let location = &snapshot.location;
+    if location.root_id != request.expected_root_id
+        || location.catalog_revision != request.expected_catalog_revision
+        || location.registry_revision != request.expected_registry_revision
+        || !same_path_identity(target, &location.root.join("apps").join(&request.app_id))
+    {
+        return Err("legacy_portable_location_changed".into());
+    }
+    if snapshot
+        .records
+        .iter()
+        .any(|record| record.app == request.app_id)
+    {
+        let result = remove_portable_app(app, request)?;
+        return if result.status == "removed" {
+            Ok(())
+        } else {
+            Err("legacy_portable_cleanup_pending".into())
+        };
+    }
+    // A durable Control Center pending intent still owns the captured layout
+    // after Manager's manifest CAS has removed its record. Do not invent a new
+    // record or overwrite other Manager registrations to finish this cleanup.
+    let executable = location
+        .root
+        .join("apps")
+        .join(&request.app_id)
+        .join("versions")
+        .join(version)
+        .join(format!("{}.exe", request.app_id));
+    let plan = inspect_portable_removal(
+        &location.root,
+        &request.app_id,
+        version,
+        executable.to_str().ok_or("legacy_portable_path_invalid")?,
+    )
+    .map_err(removal_error)?;
+    let result = remove_portable_tree(&plan).map_err(removal_error)?;
+    if !result.complete {
+        return Err("legacy_portable_cleanup_pending".into());
+    }
+    Ok(())
+}
