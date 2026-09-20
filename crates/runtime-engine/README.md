@@ -16,3 +16,8 @@ incorrect or timed-out acknowledgement prevents execution; task stdin remains
 closed. This also preserves status and logs for immediately exiting commands.
 
 [Historical feature documentation](https://github.com/jihoon22-lee/devbox/blob/005b942da8628ae19117505c903a127f41998192/apps/run-manager/README.md).
+
+Natural WSL completion requires an explicit leader-and-group absence witness from
+one bound query. Command failure or unexpected output never proves absence. The
+Workspace adapter retains distro/executable identity for observation and cleanup;
+launch still validates project and filesystem authority.

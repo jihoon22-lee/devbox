@@ -732,6 +732,22 @@ pub fn build_wsl_group_probe_argv(distro: &str, pgid: u32) -> Result<Vec<String>
     ])
 }
 
+/// Read-only completion witness in one WSL invocation. CLI failure is never
+/// interpreted as absence, and both the leader and its group must be absent.
+pub fn build_wsl_completion_probe_argv(
+    distro: &str,
+    identity: &WslProcessIdentity,
+) -> Result<Vec<String>, ShellError> {
+    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
+    identity.validate()?;
+    Ok(vec![
+        "wsl.exe".into(), "-d".into(), distro.into(), "--exec".into(),
+        "bash".into(), "--noprofile".into(), "--norc".into(), "-c".into(),
+        r#"if [ -d "/proc/$1" ]; then printf 'present\n'; exit 0; fi; groups=$(ps -eo pgid=) || exit 1; for group in $groups; do if [ "$group" = "$2" ]; then printf 'present\n'; exit 0; fi; done; printf 'gone\n'"#.into(),
+        "devbox-run-completion".into(), identity.pid.to_string(), identity.pgid.to_string(),
+    ])
+}
+
 /// A numeric-only `/proc` path used by the platform adapter for a fresh marker
 /// and process-group identity check.  It is returned as argv rather than a
 /// shell fragment so a PID can never become command syntax.
@@ -846,6 +862,75 @@ pub fn build_wsl_termination_plan(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(unix)]
+    #[test]
+    fn completion_probe_requires_both_leader_and_group_to_be_absent() {
+        struct Owned(std::process::Child);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        let mut child = Owned(
+            std::process::Command::new("setsid")
+                .args(["sleep", "30"])
+                .spawn()
+                .unwrap(),
+        );
+        let pid = child.0.id();
+        let identity = WslProcessIdentity {
+            pid,
+            pgid: pid,
+            sid: pid,
+            marker: run_id().into(),
+        };
+        let observe = |identity: &WslProcessIdentity| {
+            let argv = build_wsl_completion_probe_argv("Fixture", identity).unwrap();
+            let output = std::process::Command::new(&argv[4])
+                .args(&argv[5..])
+                .output()
+                .unwrap();
+            assert!(output.status.success());
+            output.stdout
+        };
+        // Wait for setsid by observing only this owned child's /proc identity.
+        for _ in 0..100 {
+            let stat = std::fs::read(format!("/proc/{pid}/stat")).unwrap();
+            if parse_proc_stat_identity(pid, &stat, &identity.marker)
+                .unwrap()
+                .pgid
+                == pid
+            {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(5));
+        }
+        assert_eq!(observe(&identity), b"present\n");
+        assert_eq!(
+            observe(&WslProcessIdentity {
+                pid: u32::MAX,
+                ..identity.clone()
+            }),
+            b"present\n"
+        );
+        assert_eq!(
+            observe(&WslProcessIdentity {
+                pgid: u32::MAX,
+                ..identity.clone()
+            }),
+            b"present\n"
+        );
+        child.0.kill().unwrap();
+        child.0.wait().unwrap();
+        assert_eq!(observe(&identity), b"gone\n");
+        assert!(build_wsl_completion_probe_argv(
+            "Fixture",
+            &WslProcessIdentity { pid: 0, ..identity }
+        )
+        .is_err());
+    }
 
     fn run_id() -> &'static str {
         "123e4567-e89b-12d3-a456-426614174000"
