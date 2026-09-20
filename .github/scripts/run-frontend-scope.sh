@@ -17,6 +17,12 @@ if [[ $scope == none ]]; then
 fi
 
 concurrency=()
+findings=()
+if [[ $action == test ]]; then
+  # Finish the selected tests and report all failures together, retaining a
+  # failing exit code without repeating successful packages after each fix.
+  findings=(--no-bail)
+fi
 if [[ -n ${DEVBOX_VERIFY_WORKSPACE_CONCURRENCY:-} ]]; then
   [[ $DEVBOX_VERIFY_WORKSPACE_CONCURRENCY =~ ^[1-9][0-9]*$ ]] || { echo "Invalid workspace concurrency" >&2; exit 2; }
   concurrency=(--workspace-concurrency "$DEVBOX_VERIFY_WORKSPACE_CONCURRENCY")
@@ -66,8 +72,8 @@ if [[ $action == typecheck ]]; then
   done
   echo "Additional TypeScript checks completed for $checked package(s)."
 elif [[ $scope == all ]]; then
-  pnpm -r "${concurrency[@]}" "$action"
+  pnpm -r "${findings[@]}" "${concurrency[@]}" "$action"
 else
-  pnpm -r "${concurrency[@]}" "${filters[@]}" "$action"
+  pnpm -r "${findings[@]}" "${concurrency[@]}" "${filters[@]}" "$action"
   echo "Frontend $action completed for ${#selected_directories[@]} selected package(s)."
 fi

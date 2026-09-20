@@ -214,10 +214,15 @@ fn copy_or_hash(
     let mut bytes = 0_u64;
     let mut digest = Sha256::new();
     let mut buffer = [0_u8; 65536];
-    loop {
+    // Empty coordinator lock files are part of the namespace, but Windows
+    // denies ReadFile across their live byte-range lease even at EOF. Preserve
+    // the empty file without reading beyond its observed length; the retained
+    // identity, length and modification checks below still reject changes.
+    while bytes < before.len() {
         bounded(started, cancelled)?;
+        let remaining = (before.len() - bytes).min(buffer.len() as u64) as usize;
         let count = input
-            .read(&mut buffer)
+            .read(&mut buffer[..remaining])
             .map_err(|_| "checkpoint_source_unavailable")?;
         if count == 0 {
             break;
@@ -757,6 +762,40 @@ mod tests {
             .iter()
             .map(|owner| (owner.to_string(), root.join(owner)))
             .collect()
+    }
+    #[test]
+    fn checkpoint_preserves_empty_coordinator_lock_without_releasing_its_lease() {
+        let root = tempdir().unwrap();
+        let backup = tempdir().unwrap();
+        let sources = sources(root.path());
+        let center = &sources["control-center"];
+        fs::create_dir(center).unwrap();
+        let store = crate::core::delivery_store::Store::open(center).unwrap();
+        let key = "a".repeat(64);
+        let cancelled = AtomicBool::new(false);
+        let receipt =
+            acquire_quiesced(&sources, backup.path(), &key, "generation", &cancelled).unwrap();
+        verify(backup.path(), &receipt, &key, "generation", &cancelled).unwrap();
+        matches_quiesced_sources(
+            &sources,
+            backup.path(),
+            &receipt,
+            &key,
+            "generation",
+            &cancelled,
+        )
+        .unwrap();
+        let copied = backup
+            .path()
+            .join(&receipt.id)
+            .join("control-center/suite-delivery-v1/owner.lock");
+        assert_eq!(fs::metadata(copied).unwrap().len(), 0);
+        assert!(matches!(
+            crate::core::delivery_store::Store::open(center),
+            Err("suite_update_busy")
+        ));
+        drop(store);
+        assert!(crate::core::delivery_store::Store::open(center).is_ok());
     }
     #[test]
     fn restore_preparation_keeps_later_data_and_rejects_a_stale_preimage() {

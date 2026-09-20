@@ -915,3 +915,31 @@ Suite assembly and the packaged-shell fixture failed; delivery and WSL2 did not 
   WSL unit/host cases, API/Knowledge and coexistence stages; it is not a new full
   acceptance claim. Only Control Center needs a temporary individual NSIS bundle
   to provision the compiler on the fresh hosted VM.
+
+### Windows-only findings after 0992e083
+
+CI `35486663516` passed catalog, dependency policy, frontend and Linux Rust. Windows
+compile/Clippy passed; its first failing unit was the byte-pinned legacy installed
+reference because checkout changed LF to CRLF. Add an exact `.gitattributes` rule;
+the published reference digest and integrity check are unchanged.
+
+Completion run `35486669148` assembled and retained the actual Suite setup, passed
+all four product native shells/isolated installations and completed native import
+with all four owner receipts. First clean activation stopped at
+`checkpoint_source_unavailable`. The coordinator holds its own zero-length
+`suite-delivery-v1/owner.lock` while checkpointing the namespace. Windows byte-range
+locking rejects even an EOF read through another handle. Read only the observed
+length, retain empty files, and retain identity/length/mtime checks and the lease.
+A regression checkpoints while the real delivery Store lease stays held.
+
+Collect all selected test-target failures in a final pass (`--no-fail-fast` /
+`--no-bail`) without turning failure into success. The runner regression passed.
+A local checkpoint-only Cargo invocation was stopped before tests: the prior
+formatting-only catalog change invalidated its shared build graph, while the
+regression needs Windows to exercise mandatory byte locks. It is not recorded as
+a test PASS; required final CI covers the actual corrected source on both OSes.
+
+Run `35488794839` reuses the unchanged Workspace executable from `35486669148` for
+previously unrun hosted WSL2 acceptance. Further Suite completion selects
+`delivery_scope=delivery`, retaining the successful shell/domain cases and their
+original source. Release assembly still requires all exact-main products.

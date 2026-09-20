@@ -67,6 +67,11 @@ on:
         description: Finish failed Suite assembly and product-shell acceptance; retain prior domain passes
         type: boolean
         default: false
+      delivery_scope:
+        description: Completion scope; delivery retains already accepted shell and WSL2 evidence
+        type: choice
+        options: [remaining, delivery]
+        default: remaining
       delivery_diagnostic_run:
         description: Reuse the original Suite setup and four products for delivery acceptance only
         type: string
@@ -467,11 +472,11 @@ jobs:
         shell: pwsh
         run: .github/scripts/windows-suite-delivery.ps1 -Staging "$env:RUNNER_TEMP/suite-native-staging" -Bootstrap "$env:RUNNER_TEMP/suite-native-staging/devbox-suite-bootstrap.exe"
       - name: Exercise packaged shell and installation namespace isolation
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ (!inputs.delivery_completion_only || inputs.delivery_scope != 'delivery') && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
       - name: Export Workspace build for isolated WSL2 WebView acceptance
         id: workspace-export
-        if: ${{ !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ (!inputs.delivery_completion_only || inputs.delivery_scope != 'delivery') && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'

@@ -69,6 +69,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         "cwd": str(ROOT),
         "argv": [
             "-r",
+            "--no-bail",
             "--filter",
             "./apps/run-manager",
             "--filter",
@@ -130,23 +131,23 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
     assert calls == [{"cwd": str(ROOT), "argv": ["fmt", "--all", "--check"]}]
 
     calls = run("bash", str(RUST_RUNNER), "test", "all")
-    assert calls == [{"cwd": str(ROOT), "argv": ["test", "--workspace", "--features", "workspace-wsl/test-fixtures"]}]
+    assert calls == [{"cwd": str(ROOT), "argv": ["test", "--no-fail-fast", "--workspace", "--features", "workspace-wsl/test-fixtures"]}]
 
     assert run("bash", str(RUST_RUNNER), "check", "none") == []
     assert run("bash", str(RUST_RUNNER), "check", "packages", "", succeeds=False) == []
 
     environment["DEVBOX_VERIFY_WORKSPACE_CONCURRENCY"] = "1"
     assert run("bash", str(FRONTEND_RUNNER), "test", "all")[0]["argv"] == [
-        "-r", "--workspace-concurrency", "1", "test"]
+        "-r", "--no-bail", "--workspace-concurrency", "1", "test"]
     assert run("bash", str(FRONTEND_RUNNER), "build", "apps", "apps/code-pad")[0]["argv"] == [
         "-r", "--workspace-concurrency", "1", "--filter", "./apps/code-pad", "build"]
     environment["DEVBOX_VERIFY_RUST_TEST_THREADS"] = "2"
     assert run("bash", str(RUST_RUNNER), "test", "all")[0]["argv"] == [
-        "test", "--workspace", "--features", "workspace-wsl/test-fixtures", "--", "--test-threads=2"]
+        "test", "--no-fail-fast", "--workspace", "--features", "workspace-wsl/test-fixtures", "--", "--test-threads=2"]
     assert run("bash", str(RUST_RUNNER), "test", "packages", "process")[0]["argv"] == [
-        "test", "-p", "process", "--", "--test-threads=2"]
+        "test", "--no-fail-fast", "-p", "process", "--", "--test-threads=2"]
     assert run("bash", str(RUST_RUNNER), "test", "packages", "workspace-wsl")[0]["argv"] == [
-        "test", "-p", "workspace-wsl", "--features", "workspace-wsl/test-fixtures", "--", "--test-threads=2"]
+        "test", "--no-fail-fast", "-p", "workspace-wsl", "--features", "workspace-wsl/test-fixtures", "--", "--test-threads=2"]
     assert run("bash", str(RUST_RUNNER), "check", "packages", "workspace-wsl,code-pad")[0]["argv"] == [
         "check", "-p", "workspace-wsl", "-p", "code-pad", "--features", "workspace-wsl/test-fixtures"]
     assert run("bash", str(RUST_RUNNER), "clippy", "packages", "workspace-wsl")[0]["argv"] == [
