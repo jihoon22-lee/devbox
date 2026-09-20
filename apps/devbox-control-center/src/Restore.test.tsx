@@ -4,7 +4,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {fixtureDescription} from "@devbox/product-shell/api";
 import catalog from "../../../apps/products.json";
 import Restore from "./Restore";
-vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
+vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn(),isTauri:()=>true}));
 vi.mock("@devbox/product-shell/api",async original=>({...await original<typeof import("@devbox/product-shell/api")>(),nativeMode:true}));
 afterEach(()=>{cleanup();vi.resetAllMocks();});
 const checkpoint="fa2c49ba-1368-4c79-aafb-d7a6c7ef6c14";

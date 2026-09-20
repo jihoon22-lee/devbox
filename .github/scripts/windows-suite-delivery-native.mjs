@@ -123,5 +123,5 @@ finally {
   finally{if(item.policy)restoreElevatedCdpPolicy(item.policy);}
   evidence.cleanup.push({product:item.product,nativeError:item.error,exited:!item.identity||!allWindowsProcesses().some(row=>row.Pid===item.identity.Pid&&row.Created===item.identity.Created)});
  }
- mkdirSync("product-foundation-evidence",{recursive:true});writeFileSync(`product-foundation-evidence/suite-delivery-${mode}.json`,JSON.stringify(evidence,null,2));
+ mkdirSync("product-foundation-evidence",{recursive:true});writeFileSync(`product-foundation-evidence/suite-delivery-${mode}-${Date.now()}.json`,JSON.stringify(evidence,null,2));
 }

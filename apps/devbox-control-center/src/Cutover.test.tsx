@@ -4,7 +4,7 @@ import {invoke} from "@tauri-apps/api/core";
 import {fixtureDescription} from "@devbox/product-shell/api";
 import catalog from "../../../apps/products.json";
 import Cutover from "./Cutover";
-vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn()}));
+vi.mock("@tauri-apps/api/core",()=>({invoke:vi.fn(),isTauri:()=>true}));
 vi.mock("@devbox/product-shell/api",async original=>({...await original<typeof import("@devbox/product-shell/api")>(),nativeMode:true}));
 afterEach(()=>{cleanup();vi.resetAllMocks();});
 it("requires an explicit skipped-source choice, then a separate activation confirmation",async()=>{

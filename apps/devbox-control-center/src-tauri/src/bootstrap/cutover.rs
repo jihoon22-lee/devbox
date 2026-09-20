@@ -168,7 +168,7 @@ pub(crate) fn review(request: Option<Request>) -> Result<serde_json::Value> {
         }
         scope.revalidate()?;
         devbox_filesystem::atomic_write(
-            &data.join(FILE),
+            data.join(FILE),
             &serde_json::to_vec(&plan).map_err(|_| "cutover_plan_invalid")?,
         )
         .map_err(|_| "cutover_plan_unavailable")?;

@@ -386,7 +386,7 @@ pub(super) fn dispatch(
         checkpoint: None,
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
-        payload_revision: next_revision.into(),
+        payload_revision: next_revision,
     }))
 }
 

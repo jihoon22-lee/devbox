@@ -846,3 +846,19 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   shared `suite_health.rs` include edge for the three other products together.
 - Resume the remaining original affected-driver steps under the same resource
   wrapper; do not repeat the unrelated passed resource/agent-metadata checks.
+
+- PR #561 opened at `dc663a1f`. Final CI 35483571537 compiled production Rust on
+  both Linux and Windows, then reported test-module ordering and two Windows Clippy
+  style errors. Move test modules together as a mechanical commit; fix both style
+  findings in the same correction batch. No native PASS is claimed.
+- Scope/runner regressions now pass. All frontend builds completed across the first
+  two attempts without rerunning the already completed packages. Shared-package and
+  first three app tests passed; four new Control Center suites lacked the isTauri
+  mock export. Complete those mocks and correct the cleanup test's apply-button typo.
+- Regenerate notices (lockfile header digests only). Update the workflow regression
+  to require the authoritative Windows CI test job instead of its intentionally
+  removed duplicate in native acceptance. Cancel native run 35483571529 before
+  application acceptance because the known frontend error would make it fail again.
+  Resume only the failed/unexecuted frontend tests and remaining Rust checks; keep
+  the completed scope/resource/build results. GLib's existing Linux-only advisory
+  remains the already documented exception, not a new dependency change.

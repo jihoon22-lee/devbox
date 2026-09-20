@@ -1489,8 +1489,13 @@ pub fn remove_portable_app(
         });
     }
 
-    if let Err(error) = sync_runtime_metadata(&app) {
-        eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
+    // Embedded cleanup mutates only the reviewed legacy manifest. Publishing
+    // Control Center's data directory as the legacy Manager root would redirect
+    // every remaining legacy installation and is outside this cleanup action.
+    if crate::component::legacy_default_root(&app)?.is_none() {
+        if let Err(error) = sync_runtime_metadata(&app) {
+            eprintln!("devbox: runtime metadata sync will retry next launch: {error}");
+        }
     }
     Ok(RemoveResultView {
         status: "removed".to_string(),
