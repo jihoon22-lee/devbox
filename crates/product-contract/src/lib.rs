@@ -193,6 +193,36 @@ impl SessionGuard {
     }
 }
 
+pub mod command_index;
+
+pub mod navigation;
+
+pub mod launcher_preferences;
+
+pub mod query;
+
+pub mod shortcuts;
+
+pub mod project_provider;
+
+pub mod file_reference;
+
+pub mod knowledge_draft;
+
+pub mod transform_selection;
+
+pub mod operations;
+
+pub mod activation;
+
+pub mod migration_status;
+
+pub mod health;
+
+pub mod migration_backup;
+
+pub mod migration_source;
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -337,33 +367,3 @@ mod tests {
         assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
     }
 }
-
-pub mod command_index;
-
-pub mod navigation;
-
-pub mod launcher_preferences;
-
-pub mod query;
-
-pub mod shortcuts;
-
-pub mod project_provider;
-
-pub mod file_reference;
-
-pub mod knowledge_draft;
-
-pub mod transform_selection;
-
-pub mod operations;
-
-pub mod activation;
-
-pub mod migration_status;
-
-pub mod health;
-
-pub mod migration_backup;
-
-pub mod migration_source;

@@ -12,88 +12,6 @@ fn exclusive_read(path: &Path) -> std::io::Result<std::fs::File> {
         .open(path)
 }
 
-#[cfg(all(test, windows))]
-mod tests {
-    use super::*;
-    #[test]
-    fn actual_windows_delete_lock_is_retried_only_for_the_owned_export_copy() {
-        use std::os::windows::fs::OpenOptionsExt;
-        let root = tempfile::tempdir().unwrap();
-        let repo =
-            crate::core::import_repository::Repository::open(root.path(), "fixture").unwrap();
-        let (id, stage) = repo.new_stage().unwrap();
-        let copy = stage.join("webview-copy");
-        std::fs::create_dir(&copy).unwrap();
-        let file = copy.join("fixture-data");
-        std::fs::write(&file, b"owned copy").unwrap();
-        let original = root.path().join("original");
-        std::fs::write(&original, b"unchanged").unwrap();
-        let guard = std::fs::OpenOptions::new()
-            .read(true)
-            .share_mode(1)
-            .open(file)
-            .unwrap();
-        let release = std::thread::spawn(move || {
-            std::thread::sleep(std::time::Duration::from_millis(150));
-            drop(guard);
-        });
-        repo.clear_export_copy(&id).unwrap();
-        release.join().unwrap();
-        assert!(!copy.exists());
-        assert_eq!(std::fs::read(original).unwrap(), b"unchanged");
-    }
-    #[test]
-    fn actual_exclusive_windows_handles_allow_identity_checks_and_preserve_source() {
-        let root = tempfile::tempdir().unwrap();
-        let source = root.path().join("source");
-        let leveldb = source.join("EBWebView/Default/Local Storage/leveldb");
-        std::fs::create_dir_all(&leveldb).unwrap();
-        std::fs::write(leveldb.join("LOCK"), []).unwrap();
-        std::fs::write(leveldb.join("CURRENT"), b"MANIFEST-000001\n").unwrap();
-        std::fs::write(leveldb.join("MANIFEST-000001"), b"synthetic manifest").unwrap();
-        std::fs::write(leveldb.join("000003.log"), b"synthetic store data").unwrap();
-        let before =
-            devbox_filesystem::filesystem_identity(leveldb.join("CURRENT"), false).unwrap();
-        let guard = exclusive_read(&leveldb.join("CURRENT")).unwrap();
-        assert!(std::fs::File::open(leveldb.join("CURRENT")).is_err());
-        assert_eq!(
-            devbox_filesystem::filesystem_identity(leveldb.join("CURRENT"), false).unwrap(),
-            before
-        );
-        drop(guard);
-        let stage = root.path().join("stage");
-        std::fs::create_dir(&stage).unwrap();
-        let (_, receipt) = snapshot(&source, &stage, &AtomicBool::new(false)).unwrap();
-        assert_eq!(receipt.files.len(), 3);
-        let mut held = data_migration::core::source_snapshot::hold_closed_source(
-            &leveldb,
-            &receipt,
-            &AtomicBool::new(false),
-            exclusive_read,
-        )
-        .unwrap();
-        held.revalidate(&AtomicBool::new(false)).unwrap();
-        assert!(std::fs::OpenOptions::new()
-            .write(true)
-            .open(leveldb.join("000003.log"))
-            .is_err());
-        assert!(std::fs::File::open(leveldb.join("LOCK")).is_err());
-        drop(held);
-        assert!(std::fs::OpenOptions::new()
-            .write(true)
-            .open(leveldb.join("000003.log"))
-            .is_ok());
-        assert_eq!(
-            std::fs::read(leveldb.join("CURRENT")).unwrap(),
-            b"MANIFEST-000001\n"
-        );
-        assert_eq!(
-            std::fs::read(leveldb.join("000003.log")).unwrap(),
-            b"synthetic store data"
-        );
-    }
-}
-
 pub use super::browser_profile::verify_profile;
 /// Returns the new owned WebView2 data directory plus a consistent-copy receipt.
 pub use super::browser_snapshot::snapshot;
@@ -190,4 +108,86 @@ pub async fn run_export_worker(
     _: impl Fn(&'static str),
 ) -> Result<crate::migration_export::LegacyApiExport, String> {
     Err("legacy_browser_export_requires_windows".into())
+}
+
+#[cfg(all(test, windows))]
+mod tests {
+    use super::*;
+    #[test]
+    fn actual_windows_delete_lock_is_retried_only_for_the_owned_export_copy() {
+        use std::os::windows::fs::OpenOptionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let repo =
+            crate::core::import_repository::Repository::open(root.path(), "fixture").unwrap();
+        let (id, stage) = repo.new_stage().unwrap();
+        let copy = stage.join("webview-copy");
+        std::fs::create_dir(&copy).unwrap();
+        let file = copy.join("fixture-data");
+        std::fs::write(&file, b"owned copy").unwrap();
+        let original = root.path().join("original");
+        std::fs::write(&original, b"unchanged").unwrap();
+        let guard = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(1)
+            .open(file)
+            .unwrap();
+        let release = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(150));
+            drop(guard);
+        });
+        repo.clear_export_copy(&id).unwrap();
+        release.join().unwrap();
+        assert!(!copy.exists());
+        assert_eq!(std::fs::read(original).unwrap(), b"unchanged");
+    }
+    #[test]
+    fn actual_exclusive_windows_handles_allow_identity_checks_and_preserve_source() {
+        let root = tempfile::tempdir().unwrap();
+        let source = root.path().join("source");
+        let leveldb = source.join("EBWebView/Default/Local Storage/leveldb");
+        std::fs::create_dir_all(&leveldb).unwrap();
+        std::fs::write(leveldb.join("LOCK"), []).unwrap();
+        std::fs::write(leveldb.join("CURRENT"), b"MANIFEST-000001\n").unwrap();
+        std::fs::write(leveldb.join("MANIFEST-000001"), b"synthetic manifest").unwrap();
+        std::fs::write(leveldb.join("000003.log"), b"synthetic store data").unwrap();
+        let before =
+            devbox_filesystem::filesystem_identity(leveldb.join("CURRENT"), false).unwrap();
+        let guard = exclusive_read(&leveldb.join("CURRENT")).unwrap();
+        assert!(std::fs::File::open(leveldb.join("CURRENT")).is_err());
+        assert_eq!(
+            devbox_filesystem::filesystem_identity(leveldb.join("CURRENT"), false).unwrap(),
+            before
+        );
+        drop(guard);
+        let stage = root.path().join("stage");
+        std::fs::create_dir(&stage).unwrap();
+        let (_, receipt) = snapshot(&source, &stage, &AtomicBool::new(false)).unwrap();
+        assert_eq!(receipt.files.len(), 3);
+        let mut held = data_migration::core::source_snapshot::hold_closed_source(
+            &leveldb,
+            &receipt,
+            &AtomicBool::new(false),
+            exclusive_read,
+        )
+        .unwrap();
+        held.revalidate(&AtomicBool::new(false)).unwrap();
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .open(leveldb.join("000003.log"))
+            .is_err());
+        assert!(std::fs::File::open(leveldb.join("LOCK")).is_err());
+        drop(held);
+        assert!(std::fs::OpenOptions::new()
+            .write(true)
+            .open(leveldb.join("000003.log"))
+            .is_ok());
+        assert_eq!(
+            std::fs::read(leveldb.join("CURRENT")).unwrap(),
+            b"MANIFEST-000001\n"
+        );
+        assert_eq!(
+            std::fs::read(leveldb.join("000003.log")).unwrap(),
+            b"synthetic store data"
+        );
+    }
 }

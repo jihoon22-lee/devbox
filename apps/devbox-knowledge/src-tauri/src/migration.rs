@@ -442,28 +442,6 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str
     serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn scheduling_survives_restart_and_future_metadata_is_preserved() {
-        let root = tempfile::tempdir().unwrap();
-        assert!(!read_schedule(root.path()).unwrap());
-        save_schedule(root.path(), true).unwrap();
-        assert!(read_schedule(root.path()).unwrap());
-        save_schedule(root.path(), false).unwrap();
-        assert!(!read_schedule(root.path()).unwrap());
-        fs::write(
-            schedule_path(root.path()),
-            r#"{"schemaVersion":2,"requested":true}"#,
-        )
-        .unwrap();
-        let before = fs::read(schedule_path(root.path())).unwrap();
-        assert!(read_schedule(root.path()).is_err());
-        assert_eq!(fs::read(schedule_path(root.path())).unwrap(), before);
-    }
-}
-
 pub(crate) fn suite_backups(
     app: &tauri::AppHandle,
     id: Option<&str>,
@@ -500,4 +478,26 @@ pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static st
             .map_err(|_| "migration_source_unavailable")?,
     )
     .map_err(|_| "migration_source_invalid")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn scheduling_survives_restart_and_future_metadata_is_preserved() {
+        let root = tempfile::tempdir().unwrap();
+        assert!(!read_schedule(root.path()).unwrap());
+        save_schedule(root.path(), true).unwrap();
+        assert!(read_schedule(root.path()).unwrap());
+        save_schedule(root.path(), false).unwrap();
+        assert!(!read_schedule(root.path()).unwrap());
+        fs::write(
+            schedule_path(root.path()),
+            r#"{"schemaVersion":2,"requested":true}"#,
+        )
+        .unwrap();
+        let before = fs::read(schedule_path(root.path())).unwrap();
+        assert!(read_schedule(root.path()).is_err());
+        assert_eq!(fs::read(schedule_path(root.path())).unwrap(), before);
+    }
 }

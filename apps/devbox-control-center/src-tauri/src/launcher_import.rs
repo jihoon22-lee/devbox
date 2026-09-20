@@ -404,61 +404,6 @@ fn resume_state(before: Option<&str>, current: Option<&[u8]>, after: &[u8]) -> R
     }
     Err("launcher_import_destination_changed")
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn retained_original_json_is_idempotent_and_never_overwritten_after_tampering() {
-        let root = std::env::temp_dir().join(format!("launcher-source-{}", uuid::Uuid::new_v4()));
-        std::fs::create_dir(&root).unwrap();
-        let bytes =
-            serde_json::to_vec(&(Some(b"original settings".to_vec()), Option::<Vec<u8>>::None))
-                .unwrap();
-        let revision = digest(&bytes);
-        retain_source(&root, &revision, &bytes).unwrap();
-        retain_source(&root, &revision, &bytes).unwrap();
-        assert!(source_retained(&root, &revision).unwrap());
-        let path = root
-            .join("launcher-source-backups-v1")
-            .join(format!("{revision}.json"));
-        std::fs::write(&path, b"changed").unwrap();
-        assert!(source_retained(&root, &revision).is_err());
-        assert!(retain_source(&root, &revision, &bytes).is_err());
-        assert_eq!(std::fs::read(path).unwrap(), b"changed");
-        assert!(source_retained(&root, "../foreign").is_err());
-        std::fs::remove_dir_all(root).unwrap();
-    }
-    #[test]
-    fn interrupted_apply_recognizes_exact_preimage_postimage_and_rejects_user_edits() {
-        let before = digest(b"old preferences");
-        assert_eq!(
-            resume_state(
-                Some(&before),
-                Some(b"old preferences"),
-                b"planned preferences"
-            ),
-            Ok(true)
-        );
-        assert_eq!(
-            resume_state(
-                Some(&before),
-                Some(b"planned preferences"),
-                b"planned preferences"
-            ),
-            Ok(false)
-        );
-        assert_eq!(
-            resume_state(
-                Some(&before),
-                Some(b"user changed preferences"),
-                b"planned preferences"
-            ),
-            Err("launcher_import_destination_changed")
-        );
-        assert_eq!(resume_state(None, None, b"planned preferences"), Ok(true));
-        assert!(resume_state(Some(&before), None, b"planned preferences").is_err());
-    }
-}
 
 /// Read current owned preferences and import journal without applying a plan or
 /// registering shortcuts. Pending imports remain visibly unready for activation.
@@ -600,4 +545,60 @@ pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<serde_json::Value>
     }
     // Manager installation metadata is reviewed separately; no importer claim.
     serde_json::to_value(rows).map_err(|_| "migration_source_invalid")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn retained_original_json_is_idempotent_and_never_overwritten_after_tampering() {
+        let root = std::env::temp_dir().join(format!("launcher-source-{}", uuid::Uuid::new_v4()));
+        std::fs::create_dir(&root).unwrap();
+        let bytes =
+            serde_json::to_vec(&(Some(b"original settings".to_vec()), Option::<Vec<u8>>::None))
+                .unwrap();
+        let revision = digest(&bytes);
+        retain_source(&root, &revision, &bytes).unwrap();
+        retain_source(&root, &revision, &bytes).unwrap();
+        assert!(source_retained(&root, &revision).unwrap());
+        let path = root
+            .join("launcher-source-backups-v1")
+            .join(format!("{revision}.json"));
+        std::fs::write(&path, b"changed").unwrap();
+        assert!(source_retained(&root, &revision).is_err());
+        assert!(retain_source(&root, &revision, &bytes).is_err());
+        assert_eq!(std::fs::read(path).unwrap(), b"changed");
+        assert!(source_retained(&root, "../foreign").is_err());
+        std::fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
+    fn interrupted_apply_recognizes_exact_preimage_postimage_and_rejects_user_edits() {
+        let before = digest(b"old preferences");
+        assert_eq!(
+            resume_state(
+                Some(&before),
+                Some(b"old preferences"),
+                b"planned preferences"
+            ),
+            Ok(true)
+        );
+        assert_eq!(
+            resume_state(
+                Some(&before),
+                Some(b"planned preferences"),
+                b"planned preferences"
+            ),
+            Ok(false)
+        );
+        assert_eq!(
+            resume_state(
+                Some(&before),
+                Some(b"user changed preferences"),
+                b"planned preferences"
+            ),
+            Err("launcher_import_destination_changed")
+        );
+        assert_eq!(resume_state(None, None, b"planned preferences"), Ok(true));
+        assert!(resume_state(Some(&before), None, b"planned preferences").is_err());
+    }
 }

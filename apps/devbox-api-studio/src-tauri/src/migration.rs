@@ -839,6 +839,57 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str
     serde_json::to_value(summary).map_err(|_| "migration_unavailable")
 }
 
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
+    if work.current.is_some() {
+        return Err("migration_busy");
+    }
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    match id {
+        Some(id) => serde_json::to_value(
+            repository
+                .verify_backup(id)
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+        None => serde_json::to_value(
+            repository
+                .backup_catalog()
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+    }
+    .map_err(|_| "migration_backup_invalid")
+}
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
+    if work.current.is_some() {
+        return Err("migration_busy");
+    }
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    if repository
+        .pending()
+        .map_err(|_| "migration_unavailable")?
+        .is_some()
+    {
+        return Err("migration_busy");
+    }
+    serde_json::to_value(
+        repository
+            .current_sources(&state.legacy_root)
+            .map_err(|_| "migration_source_unavailable")?,
+    )
+    .map_err(|_| "migration_source_invalid")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -908,55 +959,4 @@ mod tests {
         fs::write(&workflow_path, serde_json::to_vec(&invalid).unwrap()).unwrap();
         assert!(native_sources(root.path(), &[LegacyApp::DeveloperToolbox], &None).is_err());
     }
-}
-
-pub(crate) fn suite_backups(
-    app: &tauri::AppHandle,
-    id: Option<&str>,
-) -> Result<Value, &'static str> {
-    let state = app
-        .try_state::<MigrationState>()
-        .ok_or("migration_unavailable")?;
-    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
-    if work.current.is_some() {
-        return Err("migration_busy");
-    }
-    let repository = state.repository().map_err(|_| "migration_unavailable")?;
-    match id {
-        Some(id) => serde_json::to_value(
-            repository
-                .verify_backup(id)
-                .map_err(|_| "migration_backup_unavailable")?,
-        ),
-        None => serde_json::to_value(
-            repository
-                .backup_catalog()
-                .map_err(|_| "migration_backup_unavailable")?,
-        ),
-    }
-    .map_err(|_| "migration_backup_invalid")
-}
-
-pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
-    let state = app
-        .try_state::<MigrationState>()
-        .ok_or("migration_unavailable")?;
-    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
-    if work.current.is_some() {
-        return Err("migration_busy");
-    }
-    let repository = state.repository().map_err(|_| "migration_unavailable")?;
-    if repository
-        .pending()
-        .map_err(|_| "migration_unavailable")?
-        .is_some()
-    {
-        return Err("migration_busy");
-    }
-    serde_json::to_value(
-        repository
-            .current_sources(&state.legacy_root)
-            .map_err(|_| "migration_source_unavailable")?,
-    )
-    .map_err(|_| "migration_source_invalid")
 }

@@ -579,6 +579,31 @@ fn sync_parent(_target: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Move a legacy identifier directory into its current identifier directory.
+///
+/// The destination is never merged with or overwritten. If the destination
+/// already exists, or the legacy directory is absent, this is a no-op. A
+/// rename error is returned unchanged so callers can log it and retry on the
+/// next launch.
+pub fn migrate_legacy_identifier_dir(
+    base_dir: impl AsRef<Path>,
+    legacy_identifier: &str,
+    current_identifier: &str,
+) -> std::io::Result<()> {
+    let base_dir = base_dir.as_ref();
+    let current_dir = base_dir.join(current_identifier);
+    if current_dir.try_exists()? {
+        return Ok(());
+    }
+
+    let legacy_dir = base_dir.join(legacy_identifier);
+    if !legacy_dir.try_exists()? {
+        return Ok(());
+    }
+
+    std::fs::rename(legacy_dir, current_dir)
+}
+
 #[cfg(test)]
 mod identity_tests {
     use super::{filesystem_identity, open_filesystem_object};
@@ -724,31 +749,6 @@ mod identity_tests {
 
         let _ = fs::remove_dir_all(root);
     }
-}
-
-/// Move a legacy identifier directory into its current identifier directory.
-///
-/// The destination is never merged with or overwritten. If the destination
-/// already exists, or the legacy directory is absent, this is a no-op. A
-/// rename error is returned unchanged so callers can log it and retry on the
-/// next launch.
-pub fn migrate_legacy_identifier_dir(
-    base_dir: impl AsRef<Path>,
-    legacy_identifier: &str,
-    current_identifier: &str,
-) -> std::io::Result<()> {
-    let base_dir = base_dir.as_ref();
-    let current_dir = base_dir.join(current_identifier);
-    if current_dir.try_exists()? {
-        return Ok(());
-    }
-
-    let legacy_dir = base_dir.join(legacy_identifier);
-    if !legacy_dir.try_exists()? {
-        return Ok(());
-    }
-
-    std::fs::rename(legacy_dir, current_dir)
 }
 
 #[cfg(test)]

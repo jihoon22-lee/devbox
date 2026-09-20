@@ -836,6 +836,53 @@ pub fn cancel(root: &Path, id: &str) -> Result<Plan, String> {
     Ok(plan)
 }
 
+pub fn backup_catalog(
+    root: &Path,
+) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {
+    let _lock = lock(root)?;
+    Ok(list(root)?
+        .into_iter()
+        .filter(|plan| plan.phase == Phase::Activated)
+        .flat_map(|plan| {
+            plan.sources.into_iter().map(move |source| {
+                product_contract::migration_backup::Descriptor {
+                    id: format!("{}_{}", plan.id, source.source.key()),
+                    acquisition: "sqlite-online-backup/v1".into(),
+                }
+            })
+        })
+        .collect())
+}
+pub fn verify_backup(
+    root: &Path,
+    id: &str,
+) -> Result<product_contract::migration_backup::Verified, String> {
+    let _lock = lock(root)?;
+    let (operation, component) = id.rsplit_once('_').ok_or("migration_backup_invalid")?;
+    let plan = read(root, operation)?;
+    if plan.phase != Phase::Activated {
+        return Err("migration_backup_invalid".into());
+    }
+    let source = plan
+        .sources
+        .iter()
+        .find(|report| report.source.key() == component)
+        .ok_or("migration_backup_invalid")?;
+    verify_snapshot(
+        &plan_dir(root, operation)?.join(format!("source-{}", source.source.key())),
+        &source.snapshot,
+    )?;
+    Ok(product_contract::migration_backup::Verified {
+        owner: "knowledge".into(),
+        id: id.into(),
+        acquisition: source.snapshot.acquisition.clone(),
+        bytes: source.snapshot.bytes,
+        schema: u32::try_from(source.snapshot.schema_version)
+            .map_err(|_| "migration_backup_invalid")?,
+        sha256: source.snapshot.sha256.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1099,51 +1146,4 @@ mod tests {
             "keep it"
         );
     }
-}
-
-pub fn backup_catalog(
-    root: &Path,
-) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {
-    let _lock = lock(root)?;
-    Ok(list(root)?
-        .into_iter()
-        .filter(|plan| plan.phase == Phase::Activated)
-        .flat_map(|plan| {
-            plan.sources.into_iter().map(move |source| {
-                product_contract::migration_backup::Descriptor {
-                    id: format!("{}_{}", plan.id, source.source.key()),
-                    acquisition: "sqlite-online-backup/v1".into(),
-                }
-            })
-        })
-        .collect())
-}
-pub fn verify_backup(
-    root: &Path,
-    id: &str,
-) -> Result<product_contract::migration_backup::Verified, String> {
-    let _lock = lock(root)?;
-    let (operation, component) = id.rsplit_once('_').ok_or("migration_backup_invalid")?;
-    let plan = read(root, operation)?;
-    if plan.phase != Phase::Activated {
-        return Err("migration_backup_invalid".into());
-    }
-    let source = plan
-        .sources
-        .iter()
-        .find(|report| report.source.key() == component)
-        .ok_or("migration_backup_invalid")?;
-    verify_snapshot(
-        &plan_dir(root, operation)?.join(format!("source-{}", source.source.key())),
-        &source.snapshot,
-    )?;
-    Ok(product_contract::migration_backup::Verified {
-        owner: "knowledge".into(),
-        id: id.into(),
-        acquisition: source.snapshot.acquisition.clone(),
-        bytes: source.snapshot.bytes,
-        schema: u32::try_from(source.snapshot.schema_version)
-            .map_err(|_| "migration_backup_invalid")?,
-        sha256: source.snapshot.sha256.clone(),
-    })
 }

@@ -23,123 +23,6 @@ struct Records {
     payload: Vec<u8>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-    struct Temp(PathBuf);
-    impl Drop for Temp {
-        fn drop(&mut self) {
-            let _ = fs::remove_dir_all(&self.0);
-        }
-    }
-    fn fixture() -> (Temp, Plan) {
-        let root =
-            std::env::temp_dir().join(format!("devbox-update-records-{}", uuid::Uuid::new_v4()));
-        fs::create_dir(&root).unwrap();
-        let identity = filesystem_identity(&root, true).unwrap().components();
-        let records = |id: &str| {
-            let generation = format!("g-{id}");
-            let manifest = Manifest {
-                schema_version: 1,
-                installation_id: "fixture-installation".into(),
-                generation: generation.clone(),
-                suite_version: "0.8.0".into(),
-                protocol_version: 1,
-                members: product_contract::installation::PRODUCTS
-                    .iter()
-                    .map(|product| Member {
-                        product: (*product).into(),
-                        executable: format!(
-                            "generations/{generation}/products/{product}/devbox-{product}.exe"
-                        ),
-                        sha256: "a".repeat(64),
-                    })
-                    .collect(),
-            };
-            Records {
-                owner: InstallOwner {
-                    schema_version: 1,
-                    root_identity: identity,
-                    installation_id: manifest.installation_id.clone(),
-                    generation: generation.clone(),
-                    operation_id: id.into(),
-                    payload_revision: "b".repeat(64),
-                    restart_from: None,
-                },
-                activation: Activation {
-                    schema_version: 1,
-                    installation_id: manifest.installation_id.clone(),
-                    generation,
-                    operation_id: id.into(),
-                    revision: 10,
-                    phase: ActivePhase::Committed,
-                },
-                manifest,
-                payload: format!("{{\"fixture\":\"{id}\"}}").into_bytes(),
-            }
-        };
-        let plan = Plan {
-            schema_version: 1,
-            id: "next".into(),
-            key: "c".repeat(64),
-            root_identity: identity,
-            original: records("old"),
-            candidate: records("next"),
-            checkpoint: data_checkpoint::Receipt {
-                id: uuid::Uuid::new_v4().to_string(),
-                revision: "d".repeat(64),
-                bytes: 1,
-                files: 1,
-            },
-            namespaces: BTreeMap::new(),
-        };
-        write_records(&root, &plan.original, &plan.original.activation).unwrap();
-        (Temp(root), plan)
-    }
-    #[test]
-    fn interrupted_metadata_publication_accepts_only_the_two_pinned_generations() {
-        let (root, plan) = fixture();
-        check_records(&root.0, &plan, None).unwrap();
-        persist(&root.0.join("suite-owner.json"), &plan.candidate.owner).unwrap();
-        assert!(check_records(&root.0, &plan, Some(State::Applying)).is_err());
-        check_records(&root.0, &plan, Some(State::Health)).unwrap();
-        persist(
-            &root.0.join("devbox-installation.json"),
-            &plan.candidate.manifest,
-        )
-        .unwrap();
-        check_records(&root.0, &plan, Some(State::Health)).unwrap();
-        let mut foreign = plan.candidate.manifest.clone();
-        foreign.installation_id = "another-installation".into();
-        persist(&root.0.join("devbox-installation.json"), &foreign).unwrap();
-        assert!(check_records(&root.0, &plan, Some(State::Health)).is_err());
-        assert!(check_records(&root.0, &plan, Some(State::RollingBack)).is_err());
-    }
-    #[test]
-    fn completed_update_and_rollback_reject_stale_marker_replay() {
-        let (root, plan) = fixture();
-        let health = marker(&plan.candidate, ActivePhase::Health, 12).unwrap();
-        write_records(&root.0, &plan.candidate, &health).unwrap();
-        check_records(&root.0, &plan, Some(State::Health)).unwrap();
-        assert!(check_records(&root.0, &plan, Some(State::Committed)).is_err());
-        write_records(
-            &root.0,
-            &plan.candidate,
-            &marker(&plan.candidate, ActivePhase::Committed, 13).unwrap(),
-        )
-        .unwrap();
-        check_records(&root.0, &plan, Some(State::Committed)).unwrap();
-        assert!(check_records(&root.0, &plan, None).is_err());
-        write_records(
-            &root.0,
-            &plan.original,
-            &marker(&plan.original, ActivePhase::Committed, 14).unwrap(),
-        )
-        .unwrap();
-        check_records(&root.0, &plan, Some(State::RolledBack)).unwrap();
-        assert!(check_records(&root.0, &plan, Some(State::Committed)).is_err());
-    }
-}
 #[derive(serde::Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct Plan {
@@ -1172,4 +1055,122 @@ pub(super) fn execute(
     release(&block_path, &claim_bytes)?;
     release(&claim_path, &claim_bytes)?;
     Ok(result("updateCommitted"))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    struct Temp(PathBuf);
+    impl Drop for Temp {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    fn fixture() -> (Temp, Plan) {
+        let root =
+            std::env::temp_dir().join(format!("devbox-update-records-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        let identity = filesystem_identity(&root, true).unwrap().components();
+        let records = |id: &str| {
+            let generation = format!("g-{id}");
+            let manifest = Manifest {
+                schema_version: 1,
+                installation_id: "fixture-installation".into(),
+                generation: generation.clone(),
+                suite_version: "0.8.0".into(),
+                protocol_version: 1,
+                members: product_contract::installation::PRODUCTS
+                    .iter()
+                    .map(|product| Member {
+                        product: (*product).into(),
+                        executable: format!(
+                            "generations/{generation}/products/{product}/devbox-{product}.exe"
+                        ),
+                        sha256: "a".repeat(64),
+                    })
+                    .collect(),
+            };
+            Records {
+                owner: InstallOwner {
+                    schema_version: 1,
+                    root_identity: identity,
+                    installation_id: manifest.installation_id.clone(),
+                    generation: generation.clone(),
+                    operation_id: id.into(),
+                    payload_revision: "b".repeat(64),
+                    restart_from: None,
+                },
+                activation: Activation {
+                    schema_version: 1,
+                    installation_id: manifest.installation_id.clone(),
+                    generation,
+                    operation_id: id.into(),
+                    revision: 10,
+                    phase: ActivePhase::Committed,
+                },
+                manifest,
+                payload: format!("{{\"fixture\":\"{id}\"}}").into_bytes(),
+            }
+        };
+        let plan = Plan {
+            schema_version: 1,
+            id: "next".into(),
+            key: "c".repeat(64),
+            root_identity: identity,
+            original: records("old"),
+            candidate: records("next"),
+            checkpoint: data_checkpoint::Receipt {
+                id: uuid::Uuid::new_v4().to_string(),
+                revision: "d".repeat(64),
+                bytes: 1,
+                files: 1,
+            },
+            namespaces: BTreeMap::new(),
+        };
+        write_records(&root, &plan.original, &plan.original.activation).unwrap();
+        (Temp(root), plan)
+    }
+    #[test]
+    fn interrupted_metadata_publication_accepts_only_the_two_pinned_generations() {
+        let (root, plan) = fixture();
+        check_records(&root.0, &plan, None).unwrap();
+        persist(&root.0.join("suite-owner.json"), &plan.candidate.owner).unwrap();
+        assert!(check_records(&root.0, &plan, Some(State::Applying)).is_err());
+        check_records(&root.0, &plan, Some(State::Health)).unwrap();
+        persist(
+            &root.0.join("devbox-installation.json"),
+            &plan.candidate.manifest,
+        )
+        .unwrap();
+        check_records(&root.0, &plan, Some(State::Health)).unwrap();
+        let mut foreign = plan.candidate.manifest.clone();
+        foreign.installation_id = "another-installation".into();
+        persist(&root.0.join("devbox-installation.json"), &foreign).unwrap();
+        assert!(check_records(&root.0, &plan, Some(State::Health)).is_err());
+        assert!(check_records(&root.0, &plan, Some(State::RollingBack)).is_err());
+    }
+    #[test]
+    fn completed_update_and_rollback_reject_stale_marker_replay() {
+        let (root, plan) = fixture();
+        let health = marker(&plan.candidate, ActivePhase::Health, 12).unwrap();
+        write_records(&root.0, &plan.candidate, &health).unwrap();
+        check_records(&root.0, &plan, Some(State::Health)).unwrap();
+        assert!(check_records(&root.0, &plan, Some(State::Committed)).is_err());
+        write_records(
+            &root.0,
+            &plan.candidate,
+            &marker(&plan.candidate, ActivePhase::Committed, 13).unwrap(),
+        )
+        .unwrap();
+        check_records(&root.0, &plan, Some(State::Committed)).unwrap();
+        assert!(check_records(&root.0, &plan, None).is_err());
+        write_records(
+            &root.0,
+            &plan.original,
+            &marker(&plan.original, ActivePhase::Committed, 14).unwrap(),
+        )
+        .unwrap();
+        check_records(&root.0, &plan, Some(State::RolledBack)).unwrap();
+        assert!(check_records(&root.0, &plan, Some(State::Committed)).is_err());
+    }
 }

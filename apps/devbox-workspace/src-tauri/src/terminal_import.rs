@@ -581,6 +581,83 @@ fn prepare(_: &Path, _: &MetadataRoot, _: &str, _: &AtomicBool) -> Result<Prepar
     Err("terminal_export_windows_required")
 }
 
+#[cfg(windows)]
+pub(crate) fn source_current(root: &Path, id: &str, source: &Path) -> Result<()> {
+    use std::{io::Read, os::windows::fs::OpenOptionsExt};
+    if !valid_id(id) {
+        return Err("terminal_import_invalid");
+    }
+    let stage = MetadataRoot::open(&root.join("terminal-imports").join(id))?;
+    let _source = MetadataRoot::open(source)?;
+    let expected = stage.read("profiles-source.json")?;
+    let path = source.join("terminal-profiles.json");
+    devbox_filesystem::ensure_no_links(&path).map_err(|_| "terminal_import_source_unsafe")?;
+    let mut input = match std::fs::OpenOptions::new()
+        .read(true)
+        .share_mode(0)
+        .custom_flags(0x0020_0000)
+        .open(path)
+    {
+        Ok(file) => Some(file),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+        Err(_) => return Err("terminal_legacy_must_be_closed"),
+    };
+    let actual = input
+        .as_mut()
+        .map(|file| {
+            let mut bytes = Vec::new();
+            file.take(4 * 1024 * 1024 + 1)
+                .read_to_end(&mut bytes)
+                .map_err(|_| "terminal_import_source_unavailable")?;
+            if bytes.len() > 4 * 1024 * 1024 {
+                return Err("terminal_import_limit");
+            }
+            Ok(bytes)
+        })
+        .transpose()?;
+    if actual != expected {
+        return Err("terminal_import_source_changed");
+    }
+    let found = [
+        "EBWebView/Default/Local Storage/leveldb",
+        "Default/Local Storage/leveldb",
+    ]
+    .iter()
+    .map(|name| source.join(name))
+    .filter(|path| path.exists())
+    .collect::<Vec<_>>();
+    let receipt = stage.read("browser-snapshot.json")?;
+    if let Some(receipt) = receipt {
+        if found.len() != 1 {
+            return Err("terminal_import_source_changed");
+        }
+        let receipt = serde_json::from_slice(&receipt).map_err(|_| "terminal_import_invalid")?;
+        let mut open = |path: &Path| {
+            devbox_filesystem::ensure_no_links(path)?;
+            std::fs::OpenOptions::new()
+                .read(true)
+                .share_mode(0)
+                .custom_flags(0x0020_0000)
+                .open(path)
+        };
+        let token = AtomicBool::new(false);
+        let mut held = data_migration::core::source_snapshot::hold_closed_source(
+            &found[0], &receipt, &token, &mut open,
+        )
+        .map_err(|_| "terminal_import_source_changed")?;
+        held.revalidate(&token)
+            .map_err(|_| "terminal_import_source_changed")?;
+    } else if !found.is_empty() {
+        return Err("terminal_import_source_changed");
+    }
+    stage.revalidate()?;
+    Ok(())
+}
+#[cfg(not(windows))]
+pub(crate) fn source_current(_: &Path, _: &str, _: &Path) -> Result<()> {
+    Err("terminal_import_requires_windows")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -674,81 +751,4 @@ mod tests {
             2
         );
     }
-}
-
-#[cfg(windows)]
-pub(crate) fn source_current(root: &Path, id: &str, source: &Path) -> Result<()> {
-    use std::{io::Read, os::windows::fs::OpenOptionsExt};
-    if !valid_id(id) {
-        return Err("terminal_import_invalid");
-    }
-    let stage = MetadataRoot::open(&root.join("terminal-imports").join(id))?;
-    let _source = MetadataRoot::open(source)?;
-    let expected = stage.read("profiles-source.json")?;
-    let path = source.join("terminal-profiles.json");
-    devbox_filesystem::ensure_no_links(&path).map_err(|_| "terminal_import_source_unsafe")?;
-    let mut input = match std::fs::OpenOptions::new()
-        .read(true)
-        .share_mode(0)
-        .custom_flags(0x0020_0000)
-        .open(path)
-    {
-        Ok(file) => Some(file),
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-        Err(_) => return Err("terminal_legacy_must_be_closed"),
-    };
-    let actual = input
-        .as_mut()
-        .map(|file| {
-            let mut bytes = Vec::new();
-            file.take(4 * 1024 * 1024 + 1)
-                .read_to_end(&mut bytes)
-                .map_err(|_| "terminal_import_source_unavailable")?;
-            if bytes.len() > 4 * 1024 * 1024 {
-                return Err("terminal_import_limit");
-            }
-            Ok(bytes)
-        })
-        .transpose()?;
-    if actual != expected {
-        return Err("terminal_import_source_changed");
-    }
-    let found = [
-        "EBWebView/Default/Local Storage/leveldb",
-        "Default/Local Storage/leveldb",
-    ]
-    .iter()
-    .map(|name| source.join(name))
-    .filter(|path| path.exists())
-    .collect::<Vec<_>>();
-    let receipt = stage.read("browser-snapshot.json")?;
-    if let Some(receipt) = receipt {
-        if found.len() != 1 {
-            return Err("terminal_import_source_changed");
-        }
-        let receipt = serde_json::from_slice(&receipt).map_err(|_| "terminal_import_invalid")?;
-        let mut open = |path: &Path| {
-            devbox_filesystem::ensure_no_links(path)?;
-            std::fs::OpenOptions::new()
-                .read(true)
-                .share_mode(0)
-                .custom_flags(0x0020_0000)
-                .open(path)
-        };
-        let token = AtomicBool::new(false);
-        let mut held = data_migration::core::source_snapshot::hold_closed_source(
-            &found[0], &receipt, &token, &mut open,
-        )
-        .map_err(|_| "terminal_import_source_changed")?;
-        held.revalidate(&token)
-            .map_err(|_| "terminal_import_source_changed")?;
-    } else if !found.is_empty() {
-        return Err("terminal_import_source_changed");
-    }
-    stage.revalidate()?;
-    Ok(())
-}
-#[cfg(not(windows))]
-pub(crate) fn source_current(_: &Path, _: &str, _: &Path) -> Result<()> {
-    Err("terminal_import_requires_windows")
 }
