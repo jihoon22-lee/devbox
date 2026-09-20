@@ -67,7 +67,7 @@ the helper waits for all product leases without killing processes, then reopens
 Control Center. Preparation and apply run together without reopening a browser
 between the captured preimage and its replacement. After an interrupted swap,
 Control Center's normal entrypoint resumes the helper before creating a WebView.
-Windows acceptance remains in the B08 bundle.
+Windows restore/undo acceptance passed in the B08 installed fixture; see the workthrough for scoped sources.
 The private `build-suite-installer.py` wraps preparation in a Windows NSIS entrypoint,
 creates its uninstaller and delegates Suite registration and four product shortcuts
 to the verified helper. Its finish page reports preparation, not activation completion.
@@ -75,8 +75,7 @@ Removal runs the embedded helper outside the package tree, checks every planned
 file's digest and physical identity, and can resume a partially removed package.
 Unknown files, user stores and backups remain intact; small removal/ownership records
 remain available for recovery. It never invokes a legacy uninstaller or recursively
-deletes a user-selected directory. Windows installer/uninstall acceptance remains pending for the completed B08
-implementation. Public release remains B09. The update path keeps the
+deletes a user-selected directory. Windows installer/uninstall acceptance passed in the B08 installed fixtures. Public release remains B09. The update path keeps the
 original package generation and physical data directories, runs the new version on
 copied data, and blocks ordinary writes until native health and explicit commit.
 A durable startup blocker covers partial metadata publication. Existing shortcuts
@@ -100,9 +99,8 @@ backups into the suite journal. A changing session/catalog or failed backup leav
 the journal unchanged. These retained observations do not authorize cutover.
 Source-aware cutover now binds fresh owner observations to an explicit review,
 then acquires closed-source handles before activation. Installed update/recovery,
-shortcuts/ARP/uninstall and reviewed legacy cleanup are implemented; final Windows
-acceptance remains pending. See the [B08 workthrough](../../workthrough/2026-09-13-v08-b08-suite-recovery.md)
-for actual evidence and remaining acceptance.
+shortcuts/ARP/uninstall and reviewed legacy cleanup passed the B08 Windows fixtures. See the [B08 workthrough](../../workthrough/2026-09-13-v08-b08-suite-recovery.md)
+for actual evidence and the final CI merge gate.
 
 Local tests must preserve existing services and host networking. Provisioning and
 network-changing Windows/WSL/Docker fixtures run only on disposable hosted VMs under
@@ -131,7 +129,7 @@ with the same arguments. Reports expire after five minutes. The helper rechecks
 package ownership and preserves another closed checkpoint before enabling writes.
 The installation/recovery screen now exposes these explicitly reviewed clean-install
 actions and only offers them when native observations indicate no legacy sources.
-These development commands are not yet public installer acceptance. Existing
+These commands passed private installed acceptance; exact-main public release remains B09. Existing
 legacy data uses the source-aware review below; installed updates use the copied-data
 generation coordinator.
 

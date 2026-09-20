@@ -326,7 +326,7 @@
           "apps/devbox-manager/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 33,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -7427,13 +7427,18 @@
         ".github/scripts/windows-product-foundation.mjs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/suite.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:import_dev_setup_configuration",
@@ -7450,13 +7455,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:discard_dev_setup_configuration",
@@ -7473,13 +7483,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:export_dev_setup_configuration",
@@ -7496,13 +7511,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:apply_dev_setup_configuration",
@@ -7519,13 +7539,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:cancel_dev_setup_apply",
@@ -7542,13 +7567,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_install_root",
@@ -7565,13 +7595,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:apply_install_root",
@@ -7588,13 +7623,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:catalog",
@@ -7610,13 +7650,18 @@
         "apps/devbox-control-center/src-tauri/src/core/inventory.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/core/inventory.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:available",
@@ -7634,13 +7679,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:installed",
@@ -7656,13 +7706,18 @@
         "apps/devbox-control-center/src-tauri/src/core/inventory.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/core/inventory.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install_path",
@@ -7679,13 +7734,18 @@
         ".github/scripts/windows-suite-delivery-native.mjs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install",
@@ -7703,13 +7763,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install_many",
@@ -7727,13 +7792,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:current",
@@ -7750,13 +7820,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:rollback",
@@ -7773,13 +7848,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:launch",
@@ -7795,13 +7875,18 @@
         ".github/scripts/windows-product-foundation.mjs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/suite.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:open_install_folder",
@@ -7818,13 +7903,18 @@
         ".github/scripts/windows-suite-delivery-native.mjs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_remove_app",
@@ -7841,13 +7931,18 @@
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:remove_portable_app",
@@ -7864,13 +7959,18 @@
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:run_diagnosis",
@@ -7888,13 +7988,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:related_tools",
@@ -7911,13 +8016,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:dev_setup_audit",
@@ -7934,13 +8044,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install_related_tool",
@@ -7957,13 +8072,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:launch_related_tool",
@@ -7980,13 +8100,18 @@
         "packages/control-center-features/src/manager/api.test.ts"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:inspect_data_databases",
@@ -8004,13 +8129,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_data_query",
@@ -8028,13 +8158,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:cancel_data_diagnostics",
@@ -8052,13 +8187,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:export_data_preview",
@@ -8076,13 +8216,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_support_bundle",
@@ -8100,13 +8245,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:cancel_support_bundle",
@@ -8124,13 +8274,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:export_support_bundle",
@@ -8148,13 +8303,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:inspect_local_quality",
@@ -8172,13 +8332,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:surface:App.tsx",
@@ -8195,13 +8360,18 @@
         "packages/control-center-features/src/manager/App.test.tsx"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src/main.tsx",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/custom_root.rs",
@@ -8218,13 +8388,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/data_inspector.rs",
@@ -8242,13 +8417,18 @@
         "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/layout.rs",
@@ -8265,13 +8445,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/managed_install.rs",
@@ -8289,13 +8474,18 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/removal.rs",
@@ -8312,13 +8502,18 @@
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/runtime_metadata.rs",
@@ -8334,13 +8529,18 @@
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
       ],
       "ownerIssue": 550,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
       ],
-      "verificationScope": "Implementation mapped; B08 final CI and Windows delivery acceptance pending. No release acceptance claim."
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "code-pad:command:take_pending_open",

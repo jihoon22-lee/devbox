@@ -453,15 +453,21 @@
         "install-roots/v1/registry.json"
       ],
       "treatment": "Read original Manager root locator/registry and retained manifest provenance in place; verified legacy cleanup uses that original namespace without publishing Control Center as a legacy Manager root. No registry-copy import or implicit ownership grant.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
       "schemaMapping": "workthrough/2026-09-13-v08-b08-suite-recovery.md",
       "test": [
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
       ],
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
-      ]
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24",
+      "verificationScope": "Original Manager provenance remains in its original namespace; only separately reviewed cleanup may update owned installation records. This acceptance is preservation and authority separation, not a copied/transferred registry import."
     },
     {
       "legacyApp": "devbox-manager",
@@ -471,7 +477,7 @@
         "current.json"
       ],
       "treatment": "Retain legacy current.json and installation history in place; new Suite activation uses a separate namespace, verified payload journal and preserved package/data generations. Legacy pointers are never copied into the Suite; user explicitly keeps legacy provenance when reviewing sources.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
       "schemaMapping": "workthrough/2026-09-13-v08-b08-suite-recovery.md",
       "test": [
@@ -479,8 +485,14 @@
         ".github/scripts/windows-suite-delivery.ps1"
       ],
       "evidence": [
-        "workthrough/2026-09-13-v08-b08-suite-recovery.md"
-      ]
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24",
+      "verificationScope": "Original Manager provenance remains in its original namespace; only separately reviewed cleanup may update owned installation records. This acceptance is preservation and authority separation, not a copied/transferred registry import."
     },
     {
       "legacyApp": "code-pad",

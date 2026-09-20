@@ -3,8 +3,8 @@
 Refs #550, #541, #542. B08 is one implementation/importer/installer/fixture PR.
 Accepted base is main `138c49fe` (B01–B07 merged). B08's implementation, importer
 bindings, delivery fixtures and documentation are now assembled for final PR
-validation in PR #561. Final checks are underway; #550 remains open until native
-delivery acceptance and required CI finish.
+validation in PR #561. Native delivery acceptance is complete by the scoped evidence below; #550 remains
+open until final required CI finishes and the PR is merged.
 B09 has not started. No production installation or migration is authorized by a test.
 
 ## Implementation boundary
@@ -44,14 +44,14 @@ No public topology or stable release is changed by this PR.
 
 | Requirement / scenario | Implementation and acceptance source | Final result |
 |---|---|---|
-| R01/R02/R23, S05 | Products/Components inventory, deterministic four ZIPs + one Suite NSIS + manifest/notices; package/installer Python fixtures and Windows four-link/one-ARP fixture | Pending |
-| R14–R19 | Native route allowlists/provenance; verified component capture; product/worker writer leases; original helper dispatch and explicit download/install/cleanup reviews | Pending CI + native |
-| R20/R21, S06 | Existing owner importer fixtures; fresh source observation/accepted backup binding; WAL-aware Knowledge/Runtime checks; closed API/Terminal browser checks; explicit skipped source review | Pending CI + native |
-| R22, S07 | Durable journal reopen at every phase; directory-identity rename boundaries; two-generation metadata crash/replay fixtures; native stale-source, missing health, restore/update undo and cleanup-lock failures | Pending |
-| R22/R23, S07 | Closed product checkpoints, original directory preservation, exact-package reinstall, downgrade block, data-preserving uninstall and unknown-file retention | Pending native |
-| R15/R23, S07 | Pinned legacy installed files + exact registry/shortcut review, Manager manifest CAS/file identities, visible partial cleanup and resume | Pending native |
-| R24/R25 | Existing resource budgets, lazy route surfaces, bounded caches/retention, one affected run and authoritative CI; unchanged accepted domain evidence retained | Pending |
-| S08 | Recovery/diagnostic messages and unchanged accepted degraded-owner behavior; final OS IME/monitor qualification remains explicitly B09 | B08 portion pending |
+| R01/R02/R23, S05 | Products/Components inventory, deterministic four ZIPs + one Suite NSIS + manifest/notices; package/installer Python fixtures and Windows four-link/one-ARP fixture | Passed in retained scopes below; final-head CI required |
+| R14–R19 | Native route allowlists/provenance; verified component capture; product/worker writer leases; original helper dispatch and explicit download/install/cleanup reviews | Native + retained domain CI passed; final-head CI required |
+| R20/R21, S06 | Existing owner importer fixtures; fresh source observation/accepted backup binding; WAL-aware Knowledge/Runtime checks; closed API/Terminal browser checks; explicit skipped source review | Native + retained domain CI passed; final-head CI required |
+| R22, S07 | Durable journal reopen at every phase; directory-identity rename boundaries; two-generation metadata crash/replay fixtures; native stale-source, missing health, restore/update undo and cleanup-lock failures | Passed in retained scopes below; final-head CI required |
+| R22/R23, S07 | Closed product checkpoints, original directory preservation, exact-package reinstall, downgrade block, data-preserving uninstall and unknown-file retention | Passed: 35493753318 + 35495003866 |
+| R15/R23, S07 | Pinned legacy installed files + exact registry/shortcut review, Manager manifest CAS/file identities, visible partial cleanup and resume | Passed: 35493753318 + 35495003866 |
+| R24/R25 | Existing resource budgets, lazy route surfaces, bounded caches/retention, one affected run and authoritative CI; unchanged accepted domain evidence retained | Passed in retained scopes below; final-head CI required |
+| S08 | Recovery/diagnostic messages and unchanged accepted degraded-owner behavior; final OS IME/monitor qualification remains explicitly B09 | B08 degraded-owner/native portion passed; OS IME/monitor qualification remains B09 |
 
 The durable-record and rename crash cases are fixture/model tests, not claims of
 physical machine power-loss testing. Native acceptance launches the actual installed
@@ -86,6 +86,34 @@ CI (including Python asset fixtures and Windows unit tests); one hosted native
 foundation/delivery run. Failed scopes are fixed together and retried only where
 needed, using retained original artifacts for fixture-only corrections. No local
 Docker, WSL provisioning, networking or service mutation is part of these checks.
+
+## Accepted native scopes and remaining merge gate
+
+- Four product shells and two isolated installations: `35486669148`; unchanged
+  API/Knowledge/workflow domains: their successful cases in `35484488083`.
+- Installed folder action, original bytes on restore undo, real data-preserving
+  uninstall/reinstall and generation update undo/commit: successful checks in
+  `35493753318`. Its 60-second delegated removal wait failed; this was not a
+  complete-pass run.
+- `35495003866` passed all remaining cases: original NSIS uninstaller delegates
+  after update and preserves four data roots; stale legacy source blocks cutover,
+  explicit fresh skipped-source review preserves the changed original; locked
+  legacy removal stays pending, resumes without deleting unknown files, and
+  changed Manager-owned portable bytes are refused then removed after restoration.
+  Owned fixture cleanup completed without failures.
+- Installed evidence uses retained artifact `35493753318`: Control Center/helper
+  source `2f27e290`, other products `83ad98d1`; completion fixture is `3aaaa5e6`.
+  The continuation changed no native implementation and did not rebuild products.
+- Actual hosted WSL2 coverage combines `35488794839` Runtime/Session cases,
+  `35490692260` tmux and successful remaining run `35491659992` (Zellij, Docker,
+  stopped distro). All use unchanged Workspace artifact `35486669148`.
+- Local completed PR audit and CI `35490650401` passed; CI `35494067786` covers
+  final native changes. The final documentation/fixture head still needs required
+  CI before merge. Results are recorded in PR #561 / #550 without another code
+  change solely to record the completed CI URL.
+
+These native scope passes are not an exact-main stable candidate. B09 still owns
+legacy-shell/public topology removal, final R01–R26 mapping and exact-main release.
 
 ## Implementation history
 
