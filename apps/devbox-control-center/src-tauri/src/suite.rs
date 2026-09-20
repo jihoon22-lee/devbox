@@ -1042,12 +1042,19 @@ pub(crate) fn plugin(
                 #[cfg(windows)]
                 state: Arc::new(Mutex::new(Link::default())),
             });
+            Ok(())
+        })
+        .on_event(move |app, event| {
+            // Plugin setup precedes main-window creation and the shell's setup.
+            // A remembered listener must not advertise readiness before an
+            // incoming cold-start command can actually reach its review window.
             #[cfg(windows)]
-            {
+            if matches!(event, tauri::RunEvent::Ready) {
                 let state = app.state::<Suite>().state.clone();
                 tauri::async_runtime::spawn(resume(app.clone(), product, domain, sources, state));
             }
-            Ok(())
+            #[cfg(not(windows))]
+            let _ = (app, event);
         })
         .build()
 }

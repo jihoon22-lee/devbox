@@ -336,6 +336,12 @@ fn build_wsl_supervisor(
     validate_uuid("run ID", run_id)?;
     const SUPERVISOR: &str = r#"
 printf '%s\n' '__DEVBOX_RUN_HANDSHAKE_V1__' "$DEVBOX_RUN_MARKER" "$$" "$(ps -o pgid= -p $$)" "$(ps -o sid= -p $$)" '__DEVBOX_RUN_HANDSHAKE_END__';
+# Keep the supervisor alive while the host validates /proc identity. A short
+# command must not finish before that validation and lose its status/logs.
+IFS= read -r -t 30 __devbox_ack || exit 125;
+[ "$__devbox_ack" = "$DEVBOX_RUN_MARKER" ] || exit 125;
+unset __devbox_ack;
+exec </dev/null;
 set +e;
 __DEVBOX_RUN_INVOCATION__
 __devbox_status=$?;
@@ -999,13 +1005,14 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn supervisor_keeps_shell_syntax_out_of_fixed_cleanup_and_reaps_descendants() {
+        use std::io::Write;
         let directory = tempfile::tempdir().unwrap();
         let pid_file = directory.path().join("background.pid");
         let command = format!("sleep 30 & echo $! > {}", pid_file.to_string_lossy());
         let run = |command: &str| {
             let wrapper = build_wsl_wrapper(run_id(), command).unwrap();
             assert!(!wrapper.contains(command));
-            std::process::Command::new("setsid")
+            let mut child = std::process::Command::new("setsid")
                 .args([
                     "bash",
                     "--noprofile",
@@ -1016,8 +1023,13 @@ mod tests {
                     command,
                 ])
                 .env(DEVBOX_RUN_MARKER, run_id())
-                .output()
-                .expect("setsid/bash fixture must be available")
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .stderr(std::process::Stdio::piped())
+                .spawn()
+                .expect("setsid/bash fixture must be available");
+            writeln!(child.stdin.take().unwrap(), "{}", run_id()).unwrap();
+            child.wait_with_output().unwrap()
         };
         let syntax = run("printf '%s' 'literal # and )'");
         assert!(syntax.status.success(), "syntax output: {syntax:?}");
@@ -1044,6 +1056,89 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
         panic!("background group member {pid} survived supervisor exit");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn short_process_waits_for_identity_ack_and_preserves_exit_and_output() {
+        use std::io::{BufRead, BufReader, Read, Write};
+        use std::process::{Command, Stdio};
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("started");
+        let mut child = Command::new("setsid")
+            .args([
+                "bash",
+                "--noprofile",
+                "--norc",
+                "-c",
+                &build_wsl_process_wrapper(run_id()).unwrap(),
+                DEVBOX_WRAPPER_ARG0,
+                "bash",
+                "-c",
+                "touch \"$1\"; printf 'fixture.rs:1:1: error: synthetic task problem\\n'; exit 3",
+                "fixture",
+                marker.to_str().unwrap(),
+            ])
+            .env(DEVBOX_RUN_MARKER, run_id())
+            .stdin(Stdio::piped())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::piped())
+            .spawn()
+            .unwrap();
+        let mut stdout = BufReader::new(child.stdout.take().unwrap());
+        let mut frame = String::new();
+        for _ in 0..6 {
+            stdout.read_line(&mut frame).unwrap();
+        }
+        let handshake = parse_wsl_handshake(frame.as_bytes(), run_id()).unwrap();
+        assert_eq!(handshake.pid, child.id());
+        assert!(
+            !marker.exists(),
+            "User code ran before the identity acknowledgement"
+        );
+        assert!(child.try_wait().unwrap().is_none());
+        writeln!(child.stdin.take().unwrap(), "{}", run_id()).unwrap();
+        let mut output = String::new();
+        stdout.read_to_string(&mut output).unwrap();
+        assert_eq!(child.wait().unwrap().code(), Some(3));
+        assert!(marker.is_file());
+        assert_eq!(output, "fixture.rs:1:1: error: synthetic task problem\n");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn absent_or_wrong_identity_ack_never_executes_user_code() {
+        use std::io::Write;
+        use std::process::{Command, Stdio};
+        let directory = tempfile::tempdir().unwrap();
+        let marker = directory.path().join("must-not-exist");
+        for ack in ["", "wrong-run\n"] {
+            let mut child = Command::new("setsid")
+                .args([
+                    "bash",
+                    "--noprofile",
+                    "--norc",
+                    "-c",
+                    &build_wsl_process_wrapper(run_id()).unwrap(),
+                    DEVBOX_WRAPPER_ARG0,
+                    "touch",
+                    marker.to_str().unwrap(),
+                ])
+                .env(DEVBOX_RUN_MARKER, run_id())
+                .stdin(Stdio::piped())
+                .stdout(Stdio::null())
+                .stderr(Stdio::null())
+                .spawn()
+                .unwrap();
+            child
+                .stdin
+                .take()
+                .unwrap()
+                .write_all(ack.as_bytes())
+                .unwrap();
+            assert_eq!(child.wait().unwrap().code(), Some(125));
+            assert!(!marker.exists());
+        }
     }
 
     #[test]

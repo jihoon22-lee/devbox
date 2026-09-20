@@ -9,7 +9,7 @@ use std::fmt;
 use std::process::{Output, Stdio};
 use std::time::{Duration, Instant};
 
-use tokio::io::{AsyncBufReadExt, AsyncReadExt, BufReader};
+use tokio::io::{AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStderr, ChildStdout, Command};
 use tokio::time::sleep;
 use zeroize::{Zeroize, Zeroizing};
@@ -135,6 +135,17 @@ impl WslChild {
                         validate_wsl_handshake_identity(handshake, expected_run_id, &environ)?;
                     let observed = self.distro.read_process_identity(&identity).await?;
                     validate_wsl_identity(&identity, &observed)?;
+                    // The supervisor cannot execute user code until its exact
+                    // marker/PID/group/session has been validated. This removes
+                    // the short-command race without a timing-dependent sleep.
+                    let mut stdin = self
+                        .child
+                        .stdin
+                        .take()
+                        .ok_or(WslExecutionError::HandshakeEof)?;
+                    stdin.write_all(expected_run_id.as_bytes()).await?;
+                    stdin.write_all(b"\n").await?;
+                    stdin.shutdown().await?;
                     // Keep the buffered reader, not only its underlying pipe.
                     // `read_until` may have prefetched command output after
                     // the frame; returning this BufReader preserves every
@@ -292,7 +303,7 @@ pub fn spawn_spec_bound(
     command
         .args(argv)
         .envs(environment.iter())
-        .stdin(Stdio::null())
+        .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         // A monitor timeout must not leave the Windows-side wrapper alive

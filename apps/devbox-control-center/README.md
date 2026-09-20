@@ -18,6 +18,8 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 - 네 제품과 필수 components의 package identity·실행 상태·설치 상태를 구분해 표시한다.
 - Commands는 bounded federated source와 한 개의 shortcut owner를 사용한다. 충돌·missing product·
   stale source를 진단하며 typed context를 통해 승인된 Suite member만 실행한다.
+  기억한 Suite 연결은 제품의 창·shell 준비 완료 후 재개하여 cold start 요청이 준비되지 않은
+  Review 창에 전달되지 않도록 한다.
 - Tools는 Environment·Data Inspector·doctor·support bundle·Related Tools/package-only setup을 제공한다.
   경로를 읽을 수 있다는 이유로 삭제·설치·실행 권한을 부여하지 않는다.
 - Migration은 full/partial/mixed 원본을 검토하고 per-source apply/explicit skip 및 source 변경 재검토를 한다.

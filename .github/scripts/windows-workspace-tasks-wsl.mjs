@@ -32,8 +32,16 @@ export async function exerciseNativeWslTasks({cdp,call,success,distro,wsl,root})
     assert.equal(completed.status,"failed");
     assert.equal(wsl(["/usr/bin/python3","-c","import pathlib,sys; print((pathlib.Path(sys.argv[1])/'cwd').read_text())",root]),root);
     const runId=completed.runs[0].runId;assert.ok(runId);
+    const run=success(await runtime("get_run",{id:runId}));
+    // A failed handshake is not the requested process's nonzero exit. Keep
+    // this short task: adding a sleep would hide the startup identity race.
+    assert.equal(run.exitCode,3,JSON.stringify({run,completed}));
     const diagnostics=success(await runtime("list_workspace_task_diagnostics",{runId}));
-    assert.equal(diagnostics.items.length,1);assert.match(diagnostics.items[0].offset,/^[0-9]+$/);
+    if(diagnostics.items.length!==1){
+      const logs={};for(const stream of ["stdout","stderr"])logs[stream]=await runtime("tail_log",{input:{runId,stream,cursor:null,maxBytes:8192}});
+      assert.fail(JSON.stringify({message:"Native WSL task diagnostic missing",run,diagnostics,logs}));
+    }
+    assert.match(diagnostics.items[0].offset,/^[0-9]+$/);
     const problems=success(await call("workspace.problems","snapshot",{},29000));
     const problem=problems.problems.find(item=>item.source==="matcher"&&item.message==="synthetic task problem");assert.ok(problem);
     const target=success(await call("workspace.problems","resolve",{id:problem.id,revision:problem.revision,log:false},29000));
