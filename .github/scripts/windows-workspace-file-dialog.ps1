@@ -73,13 +73,14 @@ public static class WorkspaceFixturePath {
                 throw new InvalidOperationException("The owned chooser filename could not be set");
         } finally { Marshal.FreeHGlobal(text); }
     }
-    public static void ClickButton(int dialog, int button, int processId, int controlId) {
+    public static bool ClickButton(int dialog, int button, int processId, int controlId) {
         VerifyControl(dialog,button,processId,"Button");
         if(GetDlgCtrlID(new IntPtr(button))!=controlId)
             throw new InvalidOperationException("The owned chooser button changed");
         UIntPtr result;
-        if(SendMessageTimeoutW(new IntPtr(button),0x00F5,UIntPtr.Zero,IntPtr.Zero,0x03,1500,out result)==IntPtr.Zero)
-            throw new InvalidOperationException("The owned chooser button did not respond");
+        // A timeout does not cancel a message already being handled. Never click
+        // again: selection/validation may still be finishing inside the dialog.
+        return SendMessageTimeoutW(new IntPtr(button),0x00F5,UIntPtr.Zero,IntPtr.Zero,0x03,1500,out result)!=IntPtr.Zero;
     }
     public static string Canonical(string path) {
         using (var handle = CreateFileW(path, 0, 7, IntPtr.Zero, 3, 0x02000000, IntPtr.Zero)) {
@@ -180,5 +181,18 @@ $buttonMatch = [System.Windows.Automation.AndCondition]::new($buttonClass, $butt
 $button = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, $buttonMatch)
 if ($null -eq $button -or -not $button.Current.IsEnabled) { throw 'The owned chooser action is unavailable.' }
 Assert-OwnedProcess
-[WorkspaceFixturePath]::ClickButton($dialog.Current.NativeWindowHandle, $button.Current.NativeWindowHandle, $TargetProcessId, [int]$buttonId)
-@{ action = $Action; ownedProcessMatched = $true } | ConvertTo-Json -Compress
+$dialogHandle = $dialog.Current.NativeWindowHandle
+$acknowledged = [WorkspaceFixturePath]::ClickButton($dialogHandle, $button.Current.NativeWindowHandle, $TargetProcessId, [int]$buttonId)
+# Observe completion within the original chooser deadline, including when a
+# synchronous message times out. The caller separately checks the native result
+# and exact selected files; disappearance alone never grants file authority.
+$closed = $false
+while ([DateTime]::UtcNow -lt $deadline) {
+    if (@([WorkspaceFixturePath]::FindDialogs($TargetProcessId)) -notcontains [IntPtr]$dialogHandle) {
+        $closed = $true
+        break
+    }
+    Start-Sleep -Milliseconds 100
+}
+if (-not $closed) { throw 'The owned chooser did not close after its single button action.' }
+@{ action = $Action; ownedProcessMatched = $true; dispatchAcknowledged = $acknowledged; chooserClosed = $closed } | ConvertTo-Json -Compress

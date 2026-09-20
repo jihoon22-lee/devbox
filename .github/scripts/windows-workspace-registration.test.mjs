@@ -2,7 +2,7 @@ import "./fixture-network-safety.test.mjs";
 import assert from "node:assert/strict";
 import {test} from "node:test";
 import {runInNewContext} from "node:vm";
-import {terminalProbePresent} from "./windows-workspace-terminal-sessions.mjs";
+import {terminalProbePresent,summonHiddenFixture} from "./windows-workspace-terminal-sessions.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
 import {multiplexerPromptVisible,multiplexerRequestExpression} from "./windows-workspace-multiplexer.mjs";
 
@@ -236,4 +236,20 @@ test("read-only registry busy observations are bounded and bind each fresh reque
     assert.equal(new Set(requests).size,calls);
     assert.equal(result.operation.outcome.state,mode==="transient"?"succeeded":"failed");
   }
+});
+
+test("Quick Summon preserves receipt replay and permits one show before hide after focus changes",async()=>{
+  for(const states of [[false],[true,false]]){
+    const receipts=new Map();let focuses=0;
+    const observed=await summonHiddenFixture(async id=>{
+      if(!receipts.has(id))receipts.set(id,{visible:states[receipts.size]});
+      return receipts.get(id);
+    },async()=>{focuses++;});
+    assert.deepEqual(observed,states);assert.equal(receipts.size,states.length);assert.equal(focuses,states.length-1);
+  }
+  const ids=new Set();
+  await assert.rejects(summonHiddenFixture(async id=>{ids.add(id);return {visible:true};},async()=>{}),/did not hide/);
+  assert.equal(ids.size,2);
+  let replay=false;
+  await assert.rejects(summonHiddenFixture(async()=>({visible:replay=!replay}),async()=>{}),/deep-equal/);
 });
