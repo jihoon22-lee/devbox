@@ -17,11 +17,13 @@ using System.Windows.Forms;
 public static class NativeDialogProbe {
     [STAThread]
     public static int Main(string[] args) {
-        if(args.Length!=2) return 3;
+        if(args.Length!=3) return 3;
         Application.EnableVisualStyles();
         using(var dialog=new OpenFileDialog()) {
             dialog.InitialDirectory=args[0];
             dialog.Multiselect=true;
+            // Native validation can outlive the driver's message acknowledgement.
+            if(args[2]=="Slow") dialog.FileOk += (sender, eventArgs) => System.Threading.Thread.Sleep(2500);
             if(dialog.ShowDialog()!=DialogResult.OK) return 2;
             File.WriteAllLines(args[1],dialog.FileNames);
             return 0;
@@ -32,14 +34,15 @@ public static class NativeDialogProbe {
 $process=$null
 try {
     Add-Type -TypeDefinition $code -ReferencedAssemblies System.Windows.Forms,System.Drawing -OutputAssembly $exe -OutputType WindowsApplication
-    foreach($action in @('Cancel','Open','Multi')) {
+    foreach($action in @('Cancel','Open','Multi','Slow')) {
         $result=Join-Path $fixtureRoot ('result-'+$action+'.txt')
-        $process=Start-Process -FilePath $exe -ArgumentList ('"'+$fixtureRoot+'" "'+$result+'"') -PassThru
+        $process=Start-Process -FilePath $exe -ArgumentList ('"'+$fixtureRoot+'" "'+$result+'" '+$action) -PassThru
         $null=$process.Handle
         $process.Refresh()
-        $driverAction=if($action -eq 'Multi'){'Open'}else{$action}
+        $driverAction=if($action -eq 'Cancel'){'Cancel'}else{'Open'}
         $selectionJson=if($action -eq 'Multi'){@($chosen,$secondChosen)|ConvertTo-Json -Compress}else{@($chosen)|ConvertTo-Json -Compress}
-        & $Driver -TargetProcessId $process.Id -ExpectedExecutable $exe -FixtureRoot $fixtureRoot -Action $driverAction -SelectedFilesJson $selectionJson
+        $receipt = (& $Driver -TargetProcessId $process.Id -ExpectedExecutable $exe -FixtureRoot $fixtureRoot -Action $driverAction -SelectedFilesJson $selectionJson) | ConvertFrom-Json
+        if(-not $receipt.chooserClosed){throw 'The driver did not observe chooser completion'}
         if(-not $process.WaitForExit(5000)){throw 'Fixture chooser did not close'}
         $expectedExit=if($action -eq 'Cancel'){2}else{0}
         if($process.ExitCode -ne $expectedExit){throw 'Fixture chooser returned an unexpected exit code'}

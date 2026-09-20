@@ -12,6 +12,23 @@ import {setTimeout as delay} from "node:timers/promises";
 // octal-encoded input never contains the marker, even after removing wraps.
 export function terminalProbePresent(raw,marker){return stripVTControlCharacters(raw).replace(/[\r\n]/g,"").includes(marker);}
 
+// Focus is an OS snapshot, not a lease across two IPC calls. A summon may
+// correctly show after another window takes focus; the next distinct summon must
+// hide. Both effects retain their own idempotent receipt, with at most two actions.
+export async function summonHiddenFixture(summon,waitFocused) {
+  const visibility=[];
+  for(let action=0;action<2;action++){
+    const operationId=randomUUID();
+    const result=await summon(operationId);
+    assert.equal(typeof result.visible,"boolean");
+    assert.deepEqual(await summon(operationId),result);
+    visibility.push(result.visible);
+    if(!result.visible)return visibility;
+    if(action===0)await waitFocused();
+  }
+  assert.fail("Two distinct Quick Summon actions did not hide the focused companion");
+}
+
 export async function exerciseWorkspaceTerminalSessions({cdp,directory,call,success,connectTerminal}) {
   assert.equal(process.platform,"win32");
   assert.equal(process.env.GITHUB_ACTIONS,"true");assert.equal(process.env.RUNNER_ENVIRONMENT,"github-hosted");
@@ -36,6 +53,7 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
   const control=(method,args)=>runtime("runtime_control",{operationId:randomUUID(),method,args});
   const sessions=async()=>success(await terminal("development_sessions"));
   const sessionIds=[],extraServices=[];let service,windowId,profileId,companion,context,linkedContext,primary;
+  const invoke=async(method,args={})=>companion.evaluate("(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:workspace|terminal_describe');return invoke('plugin:workspace|terminal_execute',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:'terminal',context:d.context},method:"+JSON.stringify(method)+",args:"+JSON.stringify(args)+"}});})()",{timeoutMs:35000});
   wsl(["/usr/bin/python3","-c","import os,sys; os.mkdir(sys.argv[1]); os.mkdir(sys.argv[1]+'/work'); open(sys.argv[1]+'/.fixture-owner','w').write(sys.argv[2])",linux,nonce]);
   try {
     const git=(args)=>{const result=spawnSync("git",["-c","core.hooksPath="+path.join(root,"no-hooks"),"-C",root,...args],{encoding:"utf8",timeout:15000,windowsHide:true});assert.equal(result.status,0,result.stderr);};
@@ -139,7 +157,6 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     windowId=randomUUID();
     success(await terminal("open_terminal_profile",{operationId:windowId,profileId,revision:command.revision}));
     companion=await connectTerminal(windowId);
-    const invoke=async(method,args={})=>companion.evaluate("(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:workspace|terminal_describe');return invoke('plugin:workspace|terminal_execute',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:'terminal',context:d.context},method:"+JSON.stringify(method)+",args:"+JSON.stringify(args)+"}});})()",{timeoutMs:35000});
     let panes;
     try { panes=await until(async()=>{const value=await invoke("list_sessions");return value.length===2&&value;},"Companion did not restore both panes"); }
     catch(error) {
@@ -187,9 +204,11 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     await outputProbe("synthetic-b06-output");
     success(await terminal("focus_terminal",{id:windowId}));
     await until(async()=>(await invoke("terminal_window_policy")).focused,"Companion did not receive native focus");
-    const hide={operationId:randomUUID(),terminalId:windowId,deadlineMs:Date.now()+29000};
-    const hidden=success(await terminal("summon_terminal",hide));assert.equal(hidden.visible,false);
-    assert.deepEqual(success(await terminal("summon_terminal",hide)),hidden);
+    const summonDeadline=Date.now()+29000;
+    const summonVisibility=await summonHiddenFixture(
+      async operationId=>success(await terminal("summon_terminal",{operationId,terminalId:windowId,deadlineMs:summonDeadline})),
+      ()=>until(async()=>(await invoke("terminal_window_policy")).focused,"Shown companion did not receive native focus"),
+    );
     assert.equal((await invoke("terminal_window_policy")).visible,false);
     await outputProbe("synthetic-hidden-output");
     success(await terminal("focus_terminal",{id:windowId}));
@@ -216,7 +235,7 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     if(multiplexer!=="native")assert.ok(reconnected.every(value=>value.resumed));
     await assert.rejects(()=>invoke("write_initial_command",{sessionId:reconnected[0].id,data:"printf 'must-not-run'\r"}));
     const nativeTasks=await exerciseNativeWslTasks({cdp,call,success,distro,wsl,root:linux+"/project"});
-    return {nativeTasks,multiplexer,stateOnlyReconnect:true,borrowedServicePreserved:true,twoGitWorktrees:true,cancelRetiresOwnedResources:true,partialFailureCleanup:true,sharedServiceLastHolderStop:true,summaryReceiptAndUnknownCounts:true,profileRevision:true,twoPanes:true,hiddenOutput:true,reloadKeepsPty:true,forcedWebglFallback:true,sigintPreservesPty:true};
+    return {nativeTasks,multiplexer,summonVisibility,stateOnlyReconnect:true,borrowedServicePreserved:true,twoGitWorktrees:true,cancelRetiresOwnedResources:true,partialFailureCleanup:true,sharedServiceLastHolderStop:true,summaryReceiptAndUnknownCounts:true,profileRevision:true,twoPanes:true,hiddenOutput:true,reloadKeepsPty:true,forcedWebglFallback:true,sigintPreservesPty:true};
   } catch(error) {
     primary=error;
     if(companion) {

@@ -189,3 +189,37 @@ format/check/Clippy/tests (182 tests), including the real metadata retirement
 regression. Changed JavaScript syntax and diff checks passed. Frontend code was
 unchanged and not rerun; authoritative dependency audit runs in required CI.
 Final required PR CI and the new release-byte candidate remain.
+
+## Native fixture completion correction
+
+PR #565 passed CI 35519517468 and merged as 791af3b7. Candidate 35520628333
+passed assembly, installer, API, Knowledge, cross-product and full WSL2/Docker.
+The first product-shell installation passed two-pane retirement/restore. The second
+failed a stale focus expectation: Quick Summon returned show after a separate
+foreground observation. One scoped retry preserved all other passes and failed
+earlier when the chooser driver's 1.5-second synchronous button acknowledgement
+timed out. No third blind rerun; preserve both failure reports.
+
+Fix these fixture completion boundaries together. Observe the original chooser's
+disappearance within its existing 15-second deadline after exactly one button
+action; a SendMessageTimeout timeout cannot establish that an already delivered
+action failed. Keep ownership/path checks and the caller's exact native result
+assertions. Add a delayed native FileOk regression. Quick Summon may first show
+when OS focus changes between requests; allow that documented state transition
+then require hide on the next distinct operation, at most two actions, checking
+each receipt replay and actual hidden output. Always-show and changed-receipt
+regressions must fail. Move the companion IPC helper outside try scope so failure
+diagnostics actually retain native state. No production behavior, deadline,
+authority or acceptance scope changes.
+
+API reference: https://learn.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-sendmessagetimeoutw
+and https://devblogs.microsoft.com/oldnewthing/20110915-00/?p=9643 .
+Finish implementation and fixtures before completion checks. Required CI and a
+fresh exact-main candidate remain; never promote the failed candidate.
+
+Fixture correction completion: verify:affected passed and selected no product
+compiler/test work. The separate fixture contract suite passed 17 tests, including
+show→hide, bounded always-show rejection and receipt mismatch rejection. Both
+PowerShell files parsed successfully. The delayed real native chooser regression
+will run in the existing hosted Product foundation pre-build step; cancel duplicate
+debug product work after that result and retain required CI.
