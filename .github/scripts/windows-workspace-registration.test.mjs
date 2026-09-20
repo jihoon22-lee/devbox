@@ -186,3 +186,21 @@ test("terminal probe matches wrapped output without mistaking encoded command ec
   assert.equal(terminalProbePresent("\u001b[32msynthetic-\r\nb06-output\u001b[0m\r\n",marker),true);
   assert.equal(terminalProbePresent("synthetic-b06-partial",marker),false);
 });
+
+test("read-only registry busy observations are bounded and bind each fresh request",async()=>{
+  for(const mode of ["transient","persistent","foreign"]){
+    let calls=0,ids=0;
+    const requests=[];
+    const result=await runInNewContext(workspaceRequestExpression("workspace.registry","snapshot"),{
+      window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>{
+        if(command==="plugin:product-shell|describe")return {handshake:{installationId:"i",sessionId:"s"},context:null};
+        calls++;requests.push(input.request.header.requestId);
+        if(mode==="transient"&&calls===3)return {operation:{outcome:{state:"succeeded"}},value:{projects:[]}};
+        return {operation:{provenance:{product:"workspace",component:"workspace.registry",requestId:mode==="foreign"?"other":input.request.header.requestId},outcome:{state:"failed",code:"unavailable"}},value:{issue:"busy"}};
+      }}},crypto:{randomUUID:()=>String(++ids)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    });
+    assert.equal(calls,mode==="transient"?3:mode==="persistent"?20:1);
+    assert.equal(new Set(requests).size,calls);
+    assert.equal(result.operation.outcome.state,mode==="transient"?"succeeded":"failed");
+  }
+});

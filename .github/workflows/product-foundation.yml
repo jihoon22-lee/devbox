@@ -63,6 +63,10 @@ on:
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
     inputs:
+      delivery_completion_only:
+        description: Finish failed Suite assembly and product-shell acceptance; retain prior domain passes
+        type: boolean
+        default: false
       delivery_diagnostic_run:
         description: Reuse the original Suite setup and four products for delivery acceptance only
         type: string
@@ -336,10 +340,10 @@ jobs:
           cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Check generated Workspace fixture requests
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         run: node --test .github/scripts/windows-workspace-registration.test.mjs
       - name: Check native Workspace chooser driver
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         shell: powershell
         run: .github/scripts/windows-workspace-file-dialog.test.ps1
       - uses: actions/download-artifact@v8
@@ -378,7 +382,7 @@ jobs:
         shell: pwsh
         run: .github/scripts/windows-workspace-wsl-git.ps1
       - name: Exercise packaged Workspace helper on owned WSL
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
         shell: pwsh
         run: |
           cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-native.log
@@ -388,7 +392,7 @@ jobs:
           cargo test -p devbox-workspace --lib source_host::wsl_execution_tests::owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source-execution.log
           exit $LASTEXITCODE
       - name: Preserve native WSL results before independent acceptance
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: workspace-wsl-runtime-${{ github.run_id }}
@@ -408,7 +412,7 @@ jobs:
             exit 0
           }
           foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
-            if ('${{ inputs.suite_remaining_only }}' -eq 'true') {
+            if ('${{ inputs.suite_remaining_only }}' -eq 'true' -or ('${{ inputs.delivery_completion_only }}' -eq 'true' -and $product -ne 'control-center')) {
               pnpm --filter "devbox-$product" tauri build --debug --no-bundle
             } else {
               pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
@@ -421,6 +425,7 @@ jobs:
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
+          Start-Transcript -LiteralPath product-foundation-evidence/suite-assembly.log
           cargo build -p devbox-control-center --bin devbox-suite-bootstrap
           if ($LASTEXITCODE -ne 0) { throw 'Suite bootstrap compilation failed' }
           $payload = Join-Path $env:RUNNER_TEMP 'suite-native-payload'
@@ -439,12 +444,14 @@ jobs:
           $source = (git rev-parse HEAD).Trim()
           python .github/scripts/build-suite-package.py portables $payload $staging $version $source
           if ($LASTEXITCODE -ne 0) { throw 'Suite portable assembly failed' }
-          $nsis = @(Get-ChildItem "$env:LOCALAPPDATA/tauri" -Filter makensis.exe -Recurse -File -ErrorAction SilentlyContinue)
-          if ($nsis.Count -ne 1) { throw 'Expected the NSIS compiler already used by Tauri' }
-          python .github/scripts/build-suite-installer.py $staging "$payload/control-center/resources/suite/devbox-suite-bootstrap.exe" --makensis $nsis[0].FullName
+          # NSIS also ships Bin/makensis.exe; Tauri invokes the toolset-root exe.
+          $nsis = Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'
+          if (-not (Test-Path -LiteralPath $nsis -PathType Leaf)) { throw 'Expected the NSIS compiler already used by Tauri' }
+          python .github/scripts/build-suite-installer.py $staging "$payload/control-center/resources/suite/devbox-suite-bootstrap.exe" --makensis $nsis
           if ($LASTEXITCODE -ne 0) { throw 'Suite installer assembly failed' }
           Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$staging/devbox-suite-bootstrap.exe"
           @{ sourceSha=$source; runHeadSha='${{ github.event.pull_request.head.sha || github.sha }}'; repository=$env:GITHUB_REPOSITORY; runId=$env:GITHUB_RUN_ID } | ConvertTo-Json | Set-Content -Encoding utf8 "$staging/suite-fixture-source.json"
+          Stop-Transcript
       - name: Retain the Suite fixture before native execution
         if: ${{ steps.suite-build.outcome == 'success' }}
         uses: actions/upload-artifact@v7
@@ -502,7 +509,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Preserve focused suite executables for failure continuation
-        if: ${{ inputs.suite_remaining_only && steps.product-build.outcome == 'success' }}
+        if: ${{ !cancelled() && !inputs.wsl2_build_only && steps.product-build.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: suite-workflow-fixture-${{ github.run_id }}
@@ -516,7 +523,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Verify four-product commands and artifact workflows
-        if: ${{ !inputs.wsl2_build_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !cancelled() && steps.product-build.outcome == 'success' }}
         timeout-minutes: 15
         shell: pwsh
         run: |
@@ -527,18 +534,18 @@ jobs:
           }
           exit $LASTEXITCODE
       - name: Verify API Studio migration from pinned legacy storage
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-api-migration.mjs
       - name: Verify temporary listener and service worker lifetimes
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-lifecycle.mjs
       - name: Verify API Studio end-to-end local workflow
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-workflow.mjs
       - name: Verify Knowledge migration, vault ownership and window lifetime
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-knowledge-migration.mjs
@@ -548,7 +555,7 @@ jobs:
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
       - name: Verify anchor and product installer coexistence
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -641,7 +648,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
+    if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60

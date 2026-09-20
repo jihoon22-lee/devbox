@@ -867,11 +867,13 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 ## Final acceptance findings — 2026-09-20
 
 - Local frontend builds/bundle checks and all frontend tests passed. Rust check and
-  Clippy passed; the workspace test stage is still running. Preserve these completed
-  scopes rather than starting the affected driver again.
+  Clippy passed. Workspace Rust tests completed: 2,684 passed, 0 failed, 3
+  environment-specific tests ignored (not counted as native acceptance). Formatting
+  passed after its single corrected expression. Preserve these completed scopes
+  rather than starting the affected driver again.
 - CI `35484488099` dependency policy passed. Its failures identified a missing
   explicit accessibility import in the legacy Manager wrapper, a managed-LSP test
-  acting before its persisted configuration loaded, the newer CI rustfmt layout,
+  acting before its persisted configuration loaded, one rustfmt layout,
   and the shared source-observation collector unused outside Control Center. Fixes
   are grouped; hosted native run `35484488083` continues independently.
 - Manager's 40 legacy parity entries now name their actual tool adapters or Suite
@@ -879,3 +881,37 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   explicitly preserve legacy provenance in place rather than claiming a copied
   importer. Their acceptance status remains pending until the delivery evidence
   is available. No pending entry has been marked verified merely from code mapping.
+
+The failed-scope follow-up passed in 5.932s: accessibility for all 19 current app
+wrappers, foundation metadata, and the 32 managed-LSP panel tests. Formatting then
+passed in 3.1s. The original resumed verification took 993.958s, including Rust test
+compilation; its nonzero exit came only from the now-corrected formatting check,
+not test failure. Resource caps remained 4 CPUs / 2 jobs / 8 GiB throughout.
+Logs: `/tmp/devbox-b08-final-unrun.log`, `/tmp/devbox-b08-failed-scopes.log`,
+`/tmp/devbox-b08-format-final.log`. Windows suite delivery is still pending.
+
+### Hosted completion findings and bounded continuation
+
+Run `35484488083` on merge source `30c63993765dd1676aba704d1f125199e6bb7688`
+(head `ef742c9ab50bbc43a2806a552f5afbcb4d4865a6`) passed the baseline, three actual
+WSL fixtures, all four product builds, four-product commands/artifacts, API migration,
+API lifecycle/workflow, Knowledge migration/lifetime and installer coexistence.
+Suite assembly and the packaged-shell fixture failed; delivery and WSL2 did not run.
+
+- Assembly searched recursively for exactly one `makensis.exe`, but the Tauri-pinned
+  NSIS 3.11 archive contains root and Bin copies. Select `tauri/NSIS/makensis.exe`,
+  the same entry used by Tauri CLI 2.11.4, without changing the toolchain.
+- The second Workspace probe received authenticated `workspace.registry` /
+  `snapshot` / `busy` after Source released a context. Retry only this read-only
+  observation within its original deadline, with fresh request IDs and a maximum
+  of 20 attempts. Accepted mutations, transport failures and foreign responses
+  remain non-retryable. Add persistent/foreign-response regression cases.
+- Retain assembly transcripts, actual exception stacks and successful product
+  binaries even when assembly or a later fixture fails. The first failed assembly
+  predates this retention fix, so its four-product package cannot be reused.
+- `delivery_completion_only` defaults off and finishes only failed Suite assembly,
+  delivery and packaged-shell acceptance plus previously unrun WSL2. Prior domain
+  passes remain attached to their original source/run. It skips repeated baseline,
+  WSL unit/host cases, API/Knowledge and coexistence stages; it is not a new full
+  acceptance claim. Only Control Center needs a temporary individual NSIS bundle
+  to provision the compiler on the fresh hosted VM.

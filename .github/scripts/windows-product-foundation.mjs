@@ -471,6 +471,9 @@ try {
     } finally { try { stop(second); } finally { stop(first); } }
   }
   evidence.result = "pass";
+} catch (error) {
+  evidence.failure = String(error?.stack ?? error).slice(0,8000);
+  throw error;
 } finally {
   writeFileSync("product-foundation-evidence/native.json", JSON.stringify(evidence, null, 2) + "\n");
 }
