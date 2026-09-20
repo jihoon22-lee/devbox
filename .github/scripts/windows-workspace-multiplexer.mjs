@@ -9,6 +9,21 @@ export function multiplexerPromptVisible(output){
   // separately. Actual command execution is still proved by the owned file.
   return /[#$](?:\s|$)/.test(stripVTControlCharacters(output));
 }
+export function multiplexerRequestExpression(method,args={}){
+  const readOnly=["terminal_output","list_sessions","terminal_layout"].includes(method);
+  return `(async()=>{
+    const invoke=window.__TAURI_INTERNALS__.invoke,deadline=Date.now()+29000;
+    for(let attempt=0;;attempt++){
+      try{
+        const d=await invoke('plugin:workspace|terminal_describe');
+        return await invoke('plugin:workspace|terminal_execute',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:deadline,route:'terminal',context:d.context},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}});
+      }catch(problem){
+        if(${readOnly}&&problem==='busy'&&attempt<19&&Date.now()+50<deadline){await new Promise(resolve=>setTimeout(resolve,50));continue;}
+        throw new Error(JSON.stringify(problem));
+      }
+    }
+  })()`;
+}
 export async function exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro,multiplexer}){
   assert.ok(["tmux","zellij"].includes(multiplexer));
   const id=randomUUID(),root="/tmp/devbox-mux-"+id;
@@ -16,7 +31,7 @@ export async function exerciseMultiplexerReconnect({call,success,connectTerminal
   const until=async(check,message)=>{const end=performance.now()+45000;do{const value=await check();if(value)return value;await delay(150);}while(performance.now()<end);assert.fail(message);};
   wsl(["/usr/bin/python3","-c","import pathlib,sys;p=pathlib.Path(sys.argv[1]);p.mkdir();(p/'owner').write_text(sys.argv[2])",root,id]);
   let companion,opened=false,primary,sessionId,stage="open",startupOutput="";
-  const peer=async(method,args={})=>companion.evaluate("(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:workspace|terminal_describe');return invoke('plugin:workspace|terminal_execute',{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:'terminal',context:d.context},method:"+JSON.stringify(method)+",args:"+JSON.stringify(args)+"}});})()",{timeoutMs:35000});
+  const peer=(method,args={})=>companion.evaluate(multiplexerRequestExpression(method,args),{timeoutMs:35000});
   const shellReady=async(session)=>{
     let cursor=0;startupOutput="";
     await until(async()=>{

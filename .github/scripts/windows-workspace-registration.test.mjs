@@ -4,13 +4,38 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {terminalProbePresent} from "./windows-workspace-terminal-sessions.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
-import {multiplexerPromptVisible} from "./windows-workspace-multiplexer.mjs";
+import {multiplexerPromptVisible,multiplexerRequestExpression} from "./windows-workspace-multiplexer.mjs";
 
 test("ConPTY prompt readiness accepts erased trailing blanks while still requiring a prompt",()=>{
   assert.equal(multiplexerPromptVisible("root@fixture:/tmp/owned#\x1b[K\r\n\x1b[38;1H[tmux status]"),true);
   assert.equal(multiplexerPromptVisible("user@fixture:~$ "),true);
   assert.equal(multiplexerPromptVisible("root@fixture:/tmp/owned#\x1b[1;74H"),true);
   assert.equal(multiplexerPromptVisible("\x1b[?25h\x1b[2Jstarting shell"),false);
+});
+
+test("multiplexer busy polling repeats only bounded read-only requests with fresh IDs",async()=>{
+  for(const method of ["terminal_output","list_sessions","terminal_layout","write_session","save_terminal_layout"]){
+    let calls=0,id=0;const requests=[];
+    const result=runInNewContext(multiplexerRequestExpression(method,{sessionId:"owned"}),{
+      window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>{
+        if(command==='plugin:workspace|terminal_describe')return {handshake:{installationId:"i",sessionId:"s"},context:null};
+        calls++;requests.push(JSON.parse(JSON.stringify(input.request)));
+        if(calls<3)throw 'busy';return 'observed';
+      }}},crypto:{randomUUID:()=>String(++id)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    });
+    if(["write_session","save_terminal_layout"].includes(method)){await assert.rejects(result,/busy/);assert.equal(calls,1);}
+    else{assert.equal(await result,'observed');assert.equal(calls,3);assert.equal(new Set(requests.map(r=>r.header.requestId)).size,3);assert.ok(requests.every(r=>r.header.deadlineMs===30000));}
+  }
+  for(const problem of ['busy','unauthorized']){
+    let calls=0;
+    await assert.rejects(runInNewContext(multiplexerRequestExpression('terminal_output'),{
+      window:{__TAURI_INTERNALS__:{invoke:async command=>{
+        if(command==='plugin:workspace|terminal_describe')return {handshake:{installationId:'i',sessionId:'s'},context:null};
+        if(++calls>20)throw 'unbounded';throw problem;
+      }}},crypto:{randomUUID:()=>String(calls)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    }),new RegExp(problem));
+    assert.equal(calls,problem==='busy'?20:1);
+  }
 });
 
 test("native registration probe executes generated requests with the described context", async () => {

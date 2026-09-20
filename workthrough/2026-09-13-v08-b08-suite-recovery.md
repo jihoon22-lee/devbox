@@ -970,3 +970,33 @@ source/compiler/environment fingerprints, workspace-crate exclusion and actual
 check/test execution. This changes no acceptance gate and caches no test results.
 
 CI `35488911946` passed every required job on `83ad98d18be918d6940cf48d770e6761f7f08212`, including the Windows pinned-reference and retained-coordinator-lock regressions. Subsequent pending changes are fixture continuation and the dependency-cache namespace, not product logic.
+
+### Remaining cleanup and multiplexer findings
+
+Retained Suite run `35490690623` passed fresh four-owner health and actual commit.
+The mixed legacy fixture found two entries for its one HKCU registration: the
+scanner incorrectly enumerated both WOW64 views of shared HKCU Software. Scan
+that shared branch once; retain both redirected HKLM views. The private registration
+reader still accepts old x64/x86 plans and permits the new shared view only for
+currentUser. Native mixed cleanup remains the real registry acceptance test.
+Reference: https://learn.microsoft.com/en-us/windows/win32/winprog64/shared-registry-keys.
+The fixture removes only its synthetic unknown-file marker before fallback legacy
+uninstall, so expected preserved content does not mask the original failure.
+
+WSL2 run `35490692260` passed actual tmux start, detach/reconnect and no start-command
+replay. Zellij's concurrent output query returned `busy`; retry only read-only
+terminal_output/list_sessions/terminal_layout with fresh IDs, original deadline
+and 20-attempt cap. Never retry input, layout writes or other errors. Continue
+with the existing `remaining` scope (Zellij/containers/stopped-query), retaining
+tmux plus the earlier Runtime/Session passes.
+
+PR #561 is temporarily draft while these discovered acceptance fixes are completed.
+That avoids automatic compiler suites on each fixture push; the already-running
+CI finishes and final ready-for-review still runs all required checks.
+
+For the Control Center-only registry fix, the private delivery diagnostic can
+rebuild Control Center/helper while retaining three unchanged product binaries.
+It requires an ancestral artifact and a closed changed-input allowlist, checks
+ZIP/file digests and fixed file names, records each product's actual source, and
+reassembles/runs the real Suite. This is private scoped acceptance, never an
+exact-main release candidate or a claim that all four binaries were newly built.

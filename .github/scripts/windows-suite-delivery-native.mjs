@@ -13,7 +13,7 @@ requireHostedNetworkFixture();assert.equal(process.platform,"win32");
 const [directory,mode,legacyDirectory,portableExecutable,legacyMarker]=process.argv.slice(2);assert.ok(["import","legacyImport","legacyReview","health","committed","cleanup"].includes(mode));
 const root=realpathSync.native(directory);assert.ok(path.basename(path.dirname(root)).startsWith("devbox-suite-delivery-"));
 const manifest=JSON.parse(readFileSync(path.join(root,"devbox-installation.json"),"utf8"));
-const evidence={source:JSON.parse(readFileSync(path.join(root,"suite-payload.json"),"utf8")).sourceSha,fixtureSource:process.env.GITHUB_SHA,mode,installationId:manifest.installationId,generation:manifest.generation,checks:{},result:"failed",cleanup:[]};
+const evidence={source:JSON.parse(readFileSync(path.join(root,"suite-payload.json"),"utf8")).sourceSha,productSources:JSON.parse(process.env.DEVBOX_SUITE_PRODUCT_SOURCES??"null"),fixtureSource:process.env.GITHUB_SHA,mode,installationId:manifest.installationId,generation:manifest.generation,checks:{},result:"failed",cleanup:[]};
 const live=[];
 const value=(result)=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
 async function call(item,command,body,route){

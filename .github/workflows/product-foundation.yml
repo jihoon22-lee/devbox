@@ -76,6 +76,10 @@ on:
         description: Reuse the original Suite setup and four products for delivery acceptance only
         type: string
         default: ''
+      delivery_rebuild_control_center:
+        description: Rebuild only Control Center and its helper after proving the other retained product inputs unchanged
+        type: boolean
+        default: false
       suite_diagnostic_run:
         description: Reuse retained four-product executables for remaining suite acceptance
         type: string
@@ -143,10 +147,14 @@ jobs:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_diagnostic_run != '' }}
     runs-on: windows-2025
     timeout-minutes: 30
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
+          fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
           node-version: 22
@@ -167,11 +175,44 @@ jobs:
           if ($source.runHeadSha -ne $record.head_sha -or $source.sourceSha -ne $payload.sourceSha -or $source.repository -ne $env:GITHUB_REPOSITORY -or $source.runId -ne $env:SOURCE_RUN) { throw 'Retained delivery source mismatch' }
           "DEVBOX_SUITE_ARTIFACT_SOURCE=$($source.sourceSha)" >> $env:GITHUB_ENV
           "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_TEST_STAGING=$env:RUNNER_TEMP/suite-retained" >> $env:GITHUB_ENV
+      - name: Prepare Control Center build dependencies only when rebuilding
+        if: inputs.delivery_rebuild_control_center
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        if: inputs.delivery_rebuild_control_center
+      - uses: Swatinem/rust-cache@v2
+        if: inputs.delivery_rebuild_control_center
+        with:
+          shared-key: devbox-product-foundation
+          cache-on-failure: true
+      - name: Rebuild only changed Control Center inputs and reassemble private delivery
+        if: inputs.delivery_rebuild_control_center
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
+          Start-Transcript -LiteralPath product-foundation-evidence/control-center-rebuild.log
+          $destination = Join-Path $env:RUNNER_TEMP 'suite-rebuilt'
+          .github/scripts/rebuild-suite-control-center.ps1 -Retained "$env:RUNNER_TEMP/suite-retained" -Output $destination
+          "DEVBOX_SUITE_TEST_STAGING=$destination" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_SOURCE=$env:GITHUB_SHA" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_RUN=$env:GITHUB_RUN_ID" >> $env:GITHUB_ENV
+          Stop-Transcript
+      - name: Retain rebuilt private Suite before delivery execution
+        if: inputs.delivery_rebuild_control_center
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-delivery-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/suite-rebuilt
+          if-no-files-found: error
+          retention-days: 1
       - name: Exercise retained installed Suite delivery
         env:
           GH_TOKEN: ${{ github.token }}
         shell: pwsh
-        run: .github/scripts/windows-suite-delivery.ps1 -Staging "$env:RUNNER_TEMP/suite-retained" -Bootstrap "$env:RUNNER_TEMP/suite-retained/devbox-suite-bootstrap.exe"
+        run: .github/scripts/windows-suite-delivery.ps1 -Staging $env:DEVBOX_SUITE_TEST_STAGING -Bootstrap "$env:DEVBOX_SUITE_TEST_STAGING/devbox-suite-bootstrap.exe"
       - name: Preserve focused delivery evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

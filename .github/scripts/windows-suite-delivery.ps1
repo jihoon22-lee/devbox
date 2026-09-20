@@ -11,10 +11,13 @@ $source = (git rev-parse HEAD).Trim()
 if ($LASTEXITCODE -ne 0) { throw 'Fixture source unavailable.' }
 $artifactSource = if ($env:DEVBOX_SUITE_ARTIFACT_SOURCE) { $env:DEVBOX_SUITE_ARTIFACT_SOURCE } else { $source }
 if ($artifactSource -notmatch '^[0-9a-f]{40}$' -or $payload.sourceSha -ne $artifactSource) { throw 'Suite payload does not match its original artifact source.' }
+$fixtureSource = Get-Content -Raw -LiteralPath (Join-Path $Staging 'suite-fixture-source.json') | ConvertFrom-Json
+$productSources = if ($fixtureSource.productSources) { $fixtureSource.productSources } else { [ordered]@{workspace=$artifactSource;'api-studio'=$artifactSource;knowledge=$artifactSource;'control-center'=$artifactSource} }
+$env:DEVBOX_SUITE_PRODUCT_SOURCES = $productSources | ConvertTo-Json -Compress
 $scratch = Join-Path $env:RUNNER_TEMP ('devbox-suite-delivery-' + [guid]::NewGuid().ToString('N'))
 $install = Join-Path $scratch 'Suite Custom Directory'
 New-Item -ItemType Directory -Path $scratch | Out-Null
-$evidence = [ordered]@{ sourceSha=$artifactSource; fixtureSourceSha=$source; artifactRun=$env:DEVBOX_SUITE_ARTIFACT_RUN; scope='installed-activation-source-cutover-generation-update-reinstall-data-restore-removal'; result='failed'; checks=[ordered]@{} }
+$evidence = [ordered]@{ sourceSha=$artifactSource; productSources=$productSources; fixtureSourceSha=$source; artifactRun=$env:DEVBOX_SUITE_ARTIFACT_RUN; scope='installed-activation-source-cutover-generation-update-reinstall-data-restore-removal'; result='failed'; checks=[ordered]@{} }
 $key = $null
 $registration = $null
 $dataRoots = @()

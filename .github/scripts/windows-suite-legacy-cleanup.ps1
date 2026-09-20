@@ -54,6 +54,13 @@ try {
   if (Test-Path -LiteralPath $locator) { throw 'Embedded cleanup published a foreign default root' }
   [void]$script:ownedInstalls.Remove('port-manager')
 } finally {
+  # The legacy uninstaller's fixture helper expects its directory to disappear.
+  # Retire only our own synthetic preservation marker before fallback cleanup;
+  # otherwise it masks the original failure with an expected retained-directory error.
+  if ($legacyRoot) {
+    $unknown = Join-Path $legacyRoot 'fixture-user-file.txt'
+    if ((Test-Path -LiteralPath $unknown) -and [IO.File]::ReadAllText($unknown) -ceq 'preserve unlisted data') { Remove-Item -LiteralPath $unknown }
+  }
   foreach ($id in @($script:ownedInstalls.Keys)) { Uninstall-App $definition $script:ownedInstalls[$id] | Out-Null }
   if ($claimed) {
     foreach ($directory in @($manager,$userData)) {

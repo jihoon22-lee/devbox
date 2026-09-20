@@ -262,15 +262,17 @@ pub(crate) fn inventory() -> Result<Inventory> {
         complete: true,
         other_users: "notInspected",
     };
-    for (hive, scope) in [
-        (HKEY_CURRENT_USER, "currentUser"),
-        (HKEY_LOCAL_MACHINE, "machine"),
+    // HKCU\Software\...\Uninstall is shared by WOW64 views. HKLM\Software
+    // is redirected, so its two physical views must remain separate.
+    // https://learn.microsoft.com/windows/win32/winprog64/shared-registry-keys
+    for (hive, scope, view, architecture) in [
+        (HKEY_CURRENT_USER, "currentUser", KEY_WOW64_64KEY, "shared"),
+        (HKEY_LOCAL_MACHINE, "machine", KEY_WOW64_64KEY, "x64"),
+        (HKEY_LOCAL_MACHINE, "machine", KEY_WOW64_32KEY, "x86"),
     ] {
-        for (view, architecture) in [(KEY_WOW64_64KEY, "x64"), (KEY_WOW64_32KEY, "x86")] {
-            match scan(hive, scope, view, architecture, &catalog) {
-                Ok(entries) => report.entries.extend(entries),
-                Err(_) => report.complete = false,
-            }
+        match scan(hive, scope, view, architecture, &catalog) {
+            Ok(entries) => report.entries.extend(entries),
+            Err(_) => report.complete = false,
         }
     }
     Ok(report)
@@ -319,6 +321,7 @@ impl Registration {
             _ => return Err("legacy_registry_invalid"),
         };
         let view = match self.architecture.as_str() {
+            "shared" if self.scope == "currentUser" => KEY_WOW64_64KEY,
             "x64" => KEY_WOW64_64KEY,
             "x86" => KEY_WOW64_32KEY,
             _ => return Err("legacy_registry_invalid"),
@@ -379,4 +382,34 @@ pub(crate) fn resolve(id: &str) -> Result<Registration> {
         return Err("legacy_registry_changed");
     }
     Ok(entry.registration)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn shared_registration_view_is_current_user_only_and_old_reviews_remain_readable() {
+        let mut registration = Registration {
+            name: "owned-fixture".into(),
+            app: "port-manager".into(),
+            version: Some("0.4.0".into()),
+            scope: "currentUser".into(),
+            architecture: "shared".into(),
+            location: None,
+            uninstall: None,
+            icon: None,
+        };
+        let (hive, _, _) = registration.target().unwrap();
+        assert_eq!(hive.0, HKEY_CURRENT_USER.0);
+        registration.scope = "machine".into();
+        assert!(registration.target().is_err());
+        for scope in ["currentUser", "machine"] {
+            registration.scope = scope.into();
+            for architecture in ["x64", "x86"] {
+                registration.architecture = architecture.into();
+                assert!(registration.target().is_ok());
+            }
+        }
+    }
 }
