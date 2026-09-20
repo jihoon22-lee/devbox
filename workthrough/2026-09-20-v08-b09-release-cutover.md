@@ -2,7 +2,8 @@
 
 Refs #551, #541, #542. Accepted base: B08 main `005b942d` / PR #561;
 final CI `35496405510`, installed completion `35495003866` and scoped predecessors.
-B01–B08 are complete. B09 implementation is underway; no detailed B09 checks run.
+B01–B08 are complete. The initial plan below preceded implementation; final B09
+source audit and CI findings are recorded at the end.
 
 ## Planned implementation
 
@@ -81,3 +82,15 @@ native/package acceptance are still pending, not claimed PASS.
 Successful unrelated scopes are retained instead of rerunning the full suite. Candidate
 assembly/native/installer/WSL2 gates run only on exact current main after B09 source merge.
 Final outcomes belong in #541/#542/#551 and Actions, without a result-only source PR.
+
+
+## Windows CI finding and correction
+
+CI 35503063755 / source ecb82069 passed Catalog, Dependency, Frontend and Linux
+Rust, and Windows check/Clippy. Windows tests collected ten failures, all from the
+same embedded Node lock digest: its LF .gitattributes rule still referenced the
+removed Code Pad path. Move the rule to crates/editor-engine/src/lsp/node-lock.json;
+keep the reviewed digest/data unchanged. Add a metadata assertion for the attribute
+and pinned digest so future relocation cannot wait until native tests to reveal this.
+No product logic changes and no repeat local frontend/Rust suite are needed for this
+checkout-byte correction. Final-source required CI remains mandatory.

@@ -3,6 +3,9 @@
 from pathlib import Path
 import json
 import tomllib
+import subprocess
+import hashlib
+import re
 ROOT=Path(__file__).resolve().parents[2]
 products={'devbox-workspace','devbox-api-studio','devbox-knowledge','devbox-control-center'}
 legacy=json.loads((ROOT/'apps/legacy-v0.7-catalog.json').read_text())
@@ -26,4 +29,10 @@ for product in products:
 launch=(ROOT/'crates/launch/src/lib.rs').read_text()
 assert launch.count('refuse_retired_product(app_id)?;')==3
 for app in legacy['apps']: assert '"'+app['id']+'"' in launch
+# Embedded reviewed bytes must survive Windows autocrlf checkout unchanged.
+lock_path = 'crates/editor-engine/src/lsp/node-lock.json'
+attribute = subprocess.check_output(['git', 'check-attr', 'eol', '--', lock_path], cwd=ROOT, text=True).strip()
+assert attribute == f'{lock_path}: eol: lf', 'reviewed Node lock requires checkout LF identity'
+expected = re.search(r'REVIEWED_NODE_LOCK_SHA256: &str =\s*"([a-f0-9]{64})"', (ROOT/'crates/editor-engine/src/lsp/node_lock.rs').read_text()).group(1)
+assert hashlib.sha256((ROOT/lock_path).read_bytes()).hexdigest() == expected
 print('Source cutover: four products, 14 library engines, no legacy route fallback')

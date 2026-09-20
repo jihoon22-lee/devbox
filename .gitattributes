@@ -1,6 +1,6 @@
 # Reviewed npm lock bytes are hashed as an embedded artifact. Keep the blob
 # and every checkout LF-normalized on all platforms.
-apps/code-pad/src-tauri/src/lsp/node-lock.json text eol=lf
+crates/editor-engine/src/lsp/node-lock.json text eol=lf
 
 # The release manifest and every NSIS bundle bind to these exact generated
 # bytes, so Windows package jobs must not rewrite them to CRLF.
