@@ -4,13 +4,13 @@ import {requireHostedNetworkFixture} from "./fixture-network-safety.mjs";
 import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 import {allWindowsProcesses,stopOwnedProcess,windowsProcessIsElevated,inspectElevatedCdpPolicy,installElevatedCdpPolicy,restoreElevatedCdpPolicy} from "./windows-packaged-smoke.mjs";
 import assert from "node:assert/strict";
-import {readFileSync,writeFileSync,mkdirSync,realpathSync} from "node:fs";
+import {readFileSync,writeFileSync,mkdirSync,realpathSync,existsSync,appendFileSync} from "node:fs";
 import path from "node:path";
 import {spawn} from "node:child_process";
 import {once} from "node:events";
 import {setTimeout as delay} from "node:timers/promises";
 requireHostedNetworkFixture();assert.equal(process.platform,"win32");
-const [directory,mode]=process.argv.slice(2);assert.ok(["import","legacyImport","legacyReview","health","committed"].includes(mode));
+const [directory,mode,legacyDirectory,portableExecutable,legacyMarker]=process.argv.slice(2);assert.ok(["import","legacyImport","legacyReview","health","committed","cleanup"].includes(mode));
 const root=realpathSync.native(directory);assert.ok(path.basename(path.dirname(root)).startsWith("devbox-suite-delivery-"));
 const manifest=JSON.parse(readFileSync(path.join(root,"devbox-installation.json"),"utf8"));
 const evidence={source:JSON.parse(readFileSync(path.join(root,"suite-payload.json"),"utf8")).sourceSha,fixtureSource:process.env.GITHUB_SHA,mode,installationId:manifest.installationId,generation:manifest.generation,checks:{},result:"failed",cleanup:[]};
@@ -29,11 +29,49 @@ async function start(member){
  item.identity=allWindowsProcesses().find(row=>row.Pid===item.child.pid&&path.resolve(row.Path).toLowerCase()===path.resolve(executable).toLowerCase());assert.ok(item.identity);
  item.cdp=await connect(port,item.child);await waitForRenderer(item.cdp,"!!window.__TAURI_INTERNALS__","installed product bridge missing");
  await waitForRenderer(item.cdp,"!!document.querySelector('nav[aria-label=\"제품 화면\"]')","installed shell missing");
- assert.equal((await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')")).deliveryState,mode.startsWith("legacy")?"import":mode);
+ assert.equal((await item.cdp.evaluate("window.__TAURI_INTERNALS__.invoke('plugin:product-shell|describe')")).deliveryState,mode.startsWith("legacy")?"import":mode==="cleanup"?"committed":mode);
  return item;
 }
+async function exerciseCleanup(center) {
+ assert.match(legacyMarker,/^[0-9a-f-]{36}$/);
+ const original=realpathSync.native(legacyDirectory),portable=realpathSync.native(portableExecutable);
+ assert.ok(original.toLowerCase().startsWith(path.dirname(root).toLowerCase()+path.sep));
+ const manager=path.resolve(portable,"../../../../..");
+ assert.equal(path.basename(manager),"com.devbox.devboxmanager");
+ assert.equal(readFileSync(path.join(manager,"suite-fixture-owner"),"utf8"),legacyMarker);
+ const tools=async(method,args={})=>value(await call(center,"plugin:control-center|execute",{method,args},"migration"));
+ const inventory=await tools("legacy_inventory");
+ const installed=inventory.installers.entries.filter(row=>row.app==="port-manager"&&row.binary==="verified");assert.equal(installed.length,1);
+ const installer=await tools("legacy_cleanup_preview",{kind:"installer",id:installed[0].registrationId});assert.equal(installer.state,"reviewed");
+ const executable=path.join(original,"port-manager.exe");assert.ok(existsSync(executable));
+ const script=path.join(path.dirname(root),"hold-legacy-image.ps1");
+ writeFileSync(script,`param([string]$File)
+$ErrorActionPreference='Stop'
+$stream=[IO.File]::Open($File,[IO.FileMode]::Open,[IO.FileAccess]::Read,[IO.FileShare]::Read)
+try { [Console]::Out.WriteLine('held'); [Console]::Out.Flush(); [Console]::ReadLine() | Out-Null } finally { $stream.Dispose() }
+`);
+ const holder=spawn("powershell.exe",["-NoProfile","-NonInteractive","-File",script,"-File",executable],{stdio:["pipe","pipe","pipe"],windowsHide:true});
+ try {
+  let output="",errors="";holder.stdout.setEncoding("utf8");holder.stdout.on("data",value=>{output+=value;});holder.stderr.setEncoding("utf8");holder.stderr.on("data",value=>{errors+=value;});
+  const deadline=Date.now()+10000;while(!output.includes("held")&&Date.now()<deadline&&holder.exitCode===null)await delay(100);assert.ok(output.includes("held"),errors);
+  const partial=await tools("legacy_cleanup_apply",{id:installer.id});assert.equal(partial.state,"cleanupPending");assert.ok(existsSync(executable));
+  evidence.checks.lockedLegacyCleanupRemainsPending=true;
+ } finally {if(holder.exitCode===null){holder.stdin.end("release\n");await Promise.race([once(holder,"exit"),delay(10000)]);}if(holder.exitCode===null){holder.kill();throw new Error("Owned file holder did not stop");}}
+ assert.equal((await tools("legacy_cleanup_apply",{id:installer.id})).state,"complete");
+ assert.equal(existsSync(executable),false);assert.equal(readFileSync(path.join(original,"fixture-user-file.txt"),"utf8"),"preserve unlisted data");
+ evidence.checks.verifiedInstallerResumePreservesUnknownFiles=true;
+ const reviewed=await tools("legacy_cleanup_preview",{kind:"portable",id:"port-manager"});assert.equal(reviewed.state,"reviewed");
+ const before=readFileSync(portable),registry=readFileSync(path.join(manager,"registry.json"));
+ appendFileSync(portable,"changed fixture bytes");
+ try {assert.equal((await tools("legacy_cleanup_apply",{id:reviewed.id})).state,"cleanupPending");assert.deepEqual(readFileSync(path.join(manager,"registry.json")),registry);}
+ finally {writeFileSync(portable,before);}
+ assert.equal((await tools("legacy_cleanup_apply",{id:reviewed.id})).state,"complete");assert.equal(existsSync(portable),false);
+ assert.equal(readFileSync(path.join(manager,"suite-fixture-owner"),"utf8"),legacyMarker);
+ evidence.checks.changedManagedPortableRefusedThenResumed=true;
+ const recovery=await tools("suite_recovery");assert.equal(recovery.committed,true);assert.equal(recovery.cleanupPending,0);
+}
 try {
- const apps={};for(const member of manifest.members)apps[member.product]=await start(member);
+ const apps={};for(const member of manifest.members.filter(member=>mode!=="cleanup"||member.product==="control-center"))apps[member.product]=await start(member);
  if(mode==="import"||mode==="legacyImport") {
   for(const product of ["workspace","knowledge"]){const component=`${product}.migration`,route=product==="workspace"?"overview":"notes";value(await call(apps[product],`plugin:${product}|execute`,{component,method:"start_empty",args:{}},route));}
   value(await call(apps["api-studio"],"plugin:api-studio|execute",{component:"api-studio.migration",method:"finish_startup",args:{}},"requests"));
@@ -50,7 +88,9 @@ try {
   evidence.checks.actualLauncherImporter=true;
  }
 
- if(mode!=="committed") {
+ if(mode==="cleanup") {
+  await exerciseCleanup(center);
+ } else if(mode!=="committed") {
   for(const member of manifest.members) {
    const method=mode==="health"?"record_suite_health":"record_migration_owner";
    const result=value(await call(center,"plugin:control-center|execute",{method,args:{product:member.product}},mode==="health"?"recovery":"migration"));

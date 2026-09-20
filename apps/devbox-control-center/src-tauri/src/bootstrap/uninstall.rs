@@ -114,6 +114,14 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
                 }
                 let path = entry.path();
                 ensure_no_links(&path).map_err(|_| "bootstrap_stage_unsafe")?;
+                if generation != owner.generation
+                    && matches!(fs::symlink_metadata(path.join("stage-receipt.json")),Err(error) if error.kind()==std::io::ErrorKind::NotFound)
+                {
+                    // An unfinished, never-activated candidate is preserved like
+                    // unlisted content. It cannot prevent removal of the active
+                    // verified package. Never guess ownership of partial bytes.
+                    continue;
+                }
                 let stage_owner: serde_json::Value =
                     serde_json::from_slice(&read(&path.join("stage-owner.json"), 4096)?)
                         .map_err(|_| "bootstrap_owner_invalid")?;
@@ -148,6 +156,10 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
                         files.push(format!("{prefix}/{}", file.name));
                     }
                 }
+                if !read(&path.join("stage.lock"), 0)?.is_empty() {
+                    return Err("bootstrap_stage_unsafe");
+                }
+                files.push(format!("generations/{generation}/stage.lock"));
                 files.push(format!("generations/{generation}/stage-owner.json"));
                 files.push(format!("generations/{generation}/stage-receipt.json"));
                 if revisions.insert(stage_revision.to_owned()) {

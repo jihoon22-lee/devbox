@@ -1,9 +1,10 @@
 # B08 — Control Center and recoverable suite delivery
 
 Refs #550, #541, #542. B08 is one implementation/importer/installer/fixture PR.
-Base is the in-progress B07 integration (f902759); rebase onto its accepted main
-before final PR verification. B07 and B06 verification evidence is tracked in their
-own workthroughs. No production installation or migration is authorized by a test.
+Accepted base is main `138c49fe` (B01–B07 merged). B08's implementation, importer
+bindings, delivery fixtures and documentation are now assembled for final PR
+validation. No final detailed run or B08 PR has completed yet; #550 remains open.
+B09 has not started. No production installation or migration is authorized by a test.
 
 ## Implementation boundary
 
@@ -31,6 +32,64 @@ missing native installer and fault-injection acceptance, retain unrelated passes
 All network/service-changing fixtures run on disposable hosted Windows VMs. Never
 provision local Docker/WSL or mutate existing services, firewall rules or routes.
 
+
+## Final B08 review packet and acceptance map
+
+Semantic changes: installed physical identity/write admission, owner source/backup
+bindings, generation/data recovery, update download authority and reviewed package
+removal. Mechanical moves: Manager frontend consumers moved into
+`packages/control-center-features` with existing legacy wrappers retained until B09.
+No public topology or stable release is changed by this PR.
+
+| Requirement / scenario | Implementation and acceptance source | Final result |
+|---|---|---|
+| R01/R02/R23, S05 | Products/Components inventory, deterministic four ZIPs + one Suite NSIS + manifest/notices; package/installer Python fixtures and Windows four-link/one-ARP fixture | Pending |
+| R14–R19 | Native route allowlists/provenance; verified component capture; product/worker writer leases; original helper dispatch and explicit download/install/cleanup reviews | Pending CI + native |
+| R20/R21, S06 | Existing owner importer fixtures; fresh source observation/accepted backup binding; WAL-aware Knowledge/Runtime checks; closed API/Terminal browser checks; explicit skipped source review | Pending CI + native |
+| R22, S07 | Durable journal reopen at every phase; directory-identity rename boundaries; two-generation metadata crash/replay fixtures; native stale-source, missing health, restore/update undo and cleanup-lock failures | Pending |
+| R22/R23, S07 | Closed product checkpoints, original directory preservation, exact-package reinstall, downgrade block, data-preserving uninstall and unknown-file retention | Pending native |
+| R15/R23, S07 | Pinned legacy installed files + exact registry/shortcut review, Manager manifest CAS/file identities, visible partial cleanup and resume | Pending native |
+| R24/R25 | Existing resource budgets, lazy route surfaces, bounded caches/retention, one affected run and authoritative CI; unchanged accepted domain evidence retained | Pending |
+| S08 | Recovery/diagnostic messages and unchanged accepted degraded-owner behavior; final OS IME/monitor qualification remains explicitly B09 | B08 portion pending |
+
+The durable-record and rename crash cases are fixture/model tests, not claims of
+physical machine power-loss testing. Native acceptance launches the actual installed
+products, records authenticated four-owner health, and runs the real NSIS install,
+uninstall and original-helper update delegation. The update fixture uses a distinct
+same-version payload with the same binaries and records that scope explicitly.
+Source/fixture SHA and original artifact run are kept separate when reusing binaries.
+
+```mermaid
+stateDiagram-v2
+    [*] --> Import: verified packages and private namespaces
+    Import --> Health: explicit source review and closed source/data checks
+    Health --> Committed: four fresh native owner reports
+    Health --> Import: preserve data and review again
+    Committed --> UpdateHealth: preserve original data; run candidate copies
+    UpdateHealth --> Committed: fresh health and explicit commit
+    UpdateHealth --> Committed: restore original directories and packages
+    Committed --> CleanupPending: explicitly reviewed legacy cleanup fails
+    CleanupPending --> Committed: resume exact remaining identities
+```
+
+Partial package extraction is retained before retry; completed changed packages are
+never silently repaired. Space preflight reads actual Windows free space and counts
+package/copy requirements, while actual I/O failures remain recoverable. Uninstall
+preserves unknown content and never-activated incomplete candidates. Reinstall keeps
+the data identity and requires the exact last package before a later normal update.
+Backup/partial retention caps require review instead of silent deletion. There is no
+transaction spanning filesystem, registry, four databases and external vaults.
+
+Validation sequence: `pnpm verify:affected` once after this completed bundle; required
+CI (including Python asset fixtures and Windows unit tests); one hosted native
+foundation/delivery run. Failed scopes are fixed together and retried only where
+needed, using retained original artifacts for fixture-only corrections. No local
+Docker, WSL provisioning, networking or service mutation is part of these checks.
+
+## Implementation history
+
+Earlier “pending implementation” notes below describe their commit-time state;
+the current boundary and acceptance map above take precedence.
 
 ## Existing Manager tools as an actual second consumer
 
@@ -752,3 +811,28 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   path that verifies the original workflow/source receipt and reports binary source
   separately from the current fixture source; fixture-only fixes can reuse the exact
   original setup/products without rebuilding or repeating unrelated acceptance.
+
+### Finish interrupted setup and native cleanup acceptance source
+
+- Add a pinned v0.7 partial/mixed installer + Manager-owned portable cleanup fixture.
+  It holds the exact legacy executable to force partial removal, resumes the same
+  durable operation, rejects a changed portable before registry mutation, then
+  resumes after the synthetic original is restored. Unknown files and original
+  user-data markers must remain. This hosted fixture has not run yet.
+- Embedded portable cleanup no longer publishes Control Center's namespace as the
+  global Manager root. It changes only the reviewed original install manifest.
+- Repeated NSIS setup distinguishes unfinished first install from installed update.
+  Incomplete staged package trees are retained before re-extraction; completed
+  generations with changed bytes still fail closed. Capture/remove the empty owned
+  stage lock during uninstall so exact-package reinstall can recreate its stage.
+  Never-activated incomplete candidates remain preserved when removing the active
+  verified installation. Existing update dispatchers are retained across registration
+  retries rather than being replaced before health/commit.
+- Add metadata-only package/data-copy space estimates and a Windows available-space
+  preflight, with a specific recovery explanation. Actual writes still handle space
+  changes/failure without replacing source data. Prepared Windows unit cases cover
+  space refusal and preservation of interrupted package bytes; durable-journal tests
+  reopen every persisted phase and reject stale replay while checking user data.
+- Remove the stale predecessor exception from verification.md to match the current
+  user instruction. Detailed tests/builds/CI remain deferred until this PR's complete
+  implementation and fixture/document mapping are ready.

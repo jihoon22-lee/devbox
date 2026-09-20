@@ -162,6 +162,7 @@ pub(super) fn execute(
         }
         let backup = parent.join(format!("com.devbox.v08.suite-backups.i{key}"));
         create_directory(&backup)?;
+        require_space(&parent, data_checkpoint::required_space(&sources)?)?;
         let checkpoint = data_checkpoint::acquire_quiesced(
             &sources,
             &backup,

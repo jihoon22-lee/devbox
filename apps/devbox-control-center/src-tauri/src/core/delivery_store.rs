@@ -310,6 +310,54 @@ mod tests {
         .unwrap()
     }
     #[test]
+    fn every_durable_phase_reopens_without_replaying_a_stale_write_or_changing_user_data() {
+        let root =
+            std::env::temp_dir().join(format!("devbox-phase-crash-{}", uuid::Uuid::new_v4()));
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("user-data.json"), b"original data").unwrap();
+        let mut expected = journal("phases", None);
+        let mut digest = Store::open(&root).unwrap().begin(None, &expected).unwrap();
+        loop {
+            // End the storage owner after each persisted phase, before any
+            // caller acknowledgment. Reopen the real journal and reject replay.
+            let store = Store::open(&root).unwrap();
+            let (restored, current) = store.read().unwrap().unwrap();
+            assert_eq!(restored, expected);
+            assert_eq!(current, digest);
+            assert_eq!(
+                restored.committed,
+                matches!(restored.phase, Phase::Cleanup | Phase::Complete)
+            );
+            assert_eq!(
+                fs::read(root.join("user-data.json")).unwrap(),
+                b"original data"
+            );
+            if expected.phase == Phase::Complete {
+                break;
+            }
+            let stale = digest.clone();
+            expected
+                .advance(
+                    expected.revision,
+                    Proof {
+                        phase: expected.phase,
+                        generation: "phases".into(),
+                        revision: "c".repeat(64),
+                    },
+                )
+                .unwrap();
+            digest = store.write(Some(&digest), &expected).unwrap();
+            drop(store);
+            let store = Store::open(&root).unwrap();
+            assert_eq!(
+                store.write(Some(&stale), &expected),
+                Err("suite_journal_stale")
+            );
+            drop(store);
+        }
+        fs::remove_dir_all(root).unwrap();
+    }
+    #[test]
     fn new_operation_preserves_completed_journal_and_rejects_unsettled_or_wrong_previous() {
         let root = std::env::temp_dir().join(format!("devbox-journal-{}", uuid::Uuid::new_v4()));
         fs::create_dir(&root).unwrap();

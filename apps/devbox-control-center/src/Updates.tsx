@@ -37,6 +37,7 @@ export default function Updates({description,route}:Pick<ShellContentProps,"desc
  };
  return <section aria-label="Suite 업데이트"><h2>Suite 업데이트</h2>
   <p>공식 정식 릴리스의 네 제품을 함께 업데이트합니다. 다운로드만으로 설치를 시작하지 않습니다.</p>
+  <p>이전 버전으로 되돌리기 전에는 데이터 보존·복원 화면에서 현재 데이터를 보존하고 필요한 자료를 내보내세요. 새로 작성한 데이터를 구 버전 형식으로 자동 역변환하거나 덮어쓰지 않습니다.</p>
   <button disabled={!nativeMode||busy||review?.state==="downloading"||launching} onClick={()=>void run("check_suite_update")}>업데이트 확인</button>
   {issue&&<p role="alert">{issue}</p>}
   {review&&!review.available&&<p>설치된 버전보다 새로운 정식 릴리스가 없습니다. 공개 버전: {review.version}</p>}

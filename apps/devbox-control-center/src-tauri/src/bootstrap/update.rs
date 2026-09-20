@@ -619,6 +619,13 @@ pub(super) fn prepare(root: &Path, payload_path: &Path, image: &Path) -> Result<
     {
         return Err("update_previous_operation_incomplete");
     }
+    require_space(
+        &parent,
+        data_checkpoint::required_space(&live)?
+            .checked_mul(2)
+            .ok_or("suite_space_insufficient")?,
+    )?;
+    require_space(&root, package_space(&payload)?)?;
     let updates = parent.join(format!("com.devbox.v08.suite-updates.i{key}"));
     create_directory(&updates)?;
     if fs::read_dir(&updates)

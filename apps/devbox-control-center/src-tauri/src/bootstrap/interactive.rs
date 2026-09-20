@@ -486,7 +486,12 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
             }
             Err(issue) => {
                 let title = "Devbox 데이터 복구\0".encode_utf16().collect::<Vec<_>>();
-                let message = format!("작업을 완료하지 못했습니다 ({issue}).\n네 제품을 모두 닫은 뒤 다시 시도하세요. 실행 중인 사용자 작업은 자동 종료하지 않습니다.\n취소해도 원본과 복원 데이터는 보존되며, 부분 복원이 있으면 제품 실행이 계속 차단됩니다.\n복구 작업: {}\0", request.id).encode_utf16().collect::<Vec<_>>();
+                let storage = if issue == "suite_space_insufficient" {
+                    "저장 공간이 부족합니다. 패키지·보존본·복원 복사본을 위한 공간을 확보한 뒤 같은 작업을 다시 시도하세요.\n"
+                } else {
+                    ""
+                };
+                let message = format!("{storage}작업을 완료하지 못했습니다 ({issue}).\n네 제품을 모두 닫은 뒤 다시 시도하세요. 실행 중인 사용자 작업은 자동 종료하지 않습니다.\n취소해도 원본과 복원 데이터는 보존되며, 부분 복원이 있으면 제품 실행이 계속 차단됩니다.\n복구 작업: {}\0", request.id).encode_utf16().collect::<Vec<_>>();
                 let answer = unsafe {
                     MessageBoxW(
                         None,

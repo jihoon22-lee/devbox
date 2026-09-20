@@ -37,6 +37,7 @@ on:
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
       - '.github/scripts/windows-suite-delivery*'
+      - '.github/scripts/windows-suite-legacy-cleanup.ps1'
       - '.github/scripts/build-suite-*'
       - '.github/scripts/windows-workspace-*'
       - '.github/scripts/copy-owned-terminal-profile.ps1'
@@ -158,6 +159,8 @@ jobs:
           "DEVBOX_SUITE_ARTIFACT_SOURCE=$($source.sourceSha)" >> $env:GITHUB_ENV
           "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
       - name: Exercise retained installed Suite delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: .github/scripts/windows-suite-delivery.ps1 -Staging "$env:RUNNER_TEMP/suite-retained" -Bootstrap "$env:RUNNER_TEMP/suite-retained/devbox-suite-bootstrap.exe"
       - name: Preserve focused delivery evidence
@@ -452,6 +455,8 @@ jobs:
           retention-days: 1
       - name: Exercise Suite installation, data restore and data-preserving removal
         if: ${{ !cancelled() && steps.suite-build.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: pwsh
         run: .github/scripts/windows-suite-delivery.ps1 -Staging "$env:RUNNER_TEMP/suite-native-staging" -Bootstrap "$env:RUNNER_TEMP/suite-native-staging/devbox-suite-bootstrap.exe"
       - name: Exercise packaged shell and installation namespace isolation

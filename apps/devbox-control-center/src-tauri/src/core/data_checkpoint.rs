@@ -19,6 +19,35 @@ type Result<T> = std::result::Result<T, &'static str>;
 const MAX_FILES: usize = 50_000;
 const MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
 const MAX_MANIFEST: u64 = 16 * 1024 * 1024;
+/// Metadata-only room estimate under the same closed namespace boundary used
+/// for capture. The actual copy still detects concurrent changes and I/O errors.
+pub fn required_space(sources: &BTreeMap<String, PathBuf>) -> Result<u64> {
+    let mut total = 0u64;
+    let mut entries = 0usize;
+    for root in sources.values() {
+        match fs::symlink_metadata(root) {
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(_) => return Err("checkpoint_source_unavailable"),
+            Ok(_) => {}
+        }
+        let (directories, files) = listing(root)?;
+        entries += directories.len() + files.len();
+        if entries > MAX_FILES {
+            return Err("checkpoint_file_limit");
+        }
+        for name in files {
+            total = total
+                .checked_add(
+                    fs::metadata(root.join(name))
+                        .map_err(|_| "checkpoint_source_unavailable")?
+                        .len(),
+                )
+                .filter(|value| *value <= MAX_BYTES)
+                .ok_or("checkpoint_size_limit")?;
+        }
+    }
+    Ok(total)
+}
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Entry {

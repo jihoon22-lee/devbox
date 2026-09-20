@@ -271,7 +271,43 @@ pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result
     );
     let mut registration = match read_registration(&root, &key)? {
         Some(value) if value.payload_revision == revision => value,
-        Some(_) => return Err("suite_registration_changed"),
+        Some(value) => {
+            // The original installed dispatcher remains authoritative during an
+            // update. A repeated NSIS invocation must neither replace it nor
+            // advertise the candidate version before health/commit.
+            let links = value
+                .shortcut_plan
+                .as_ref()
+                .ok_or("suite_registration_incomplete")?;
+            let uninstaller = value
+                .uninstaller
+                .as_ref()
+                .ok_or("suite_registration_incomplete")?;
+            if links
+                .files
+                .iter()
+                .any(|file| !value.shortcut_directory.join(&file.relative).is_file())
+                || uninstaller
+                    .files
+                    .iter()
+                    .any(|file| !root.join(&file.relative).is_file())
+            {
+                return Err("suite_registration_incomplete");
+            }
+            links.verify_remaining(&value.shortcut_directory)?;
+            uninstaller.verify_remaining(&root)?;
+            if !trusts_dispatcher(&root, &value.payload_revision)? {
+                return Err("suite_registration_changed");
+            }
+            return Ok(StageResult {
+                state: "existingSuiteDispatcherPreserved",
+                operation_id: None,
+                checkpoint: None,
+                source_sha: payload.source_sha,
+                suite_version: payload.suite_version,
+                payload_revision: revision,
+            });
+        }
         None => {
             let programs =
                 unsafe { SHGetKnownFolderPath(&FOLDERID_Programs, KF_FLAG_DEFAULT, None) }

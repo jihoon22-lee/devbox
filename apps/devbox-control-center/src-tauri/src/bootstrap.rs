@@ -45,6 +45,48 @@ fn read(path: &Path, limit: u64) -> Result<Vec<u8>> {
     }
     Ok(bytes)
 }
+fn require_space(path: &Path, bytes: u64) -> Result<()> {
+    #[cfg(windows)]
+    {
+        use std::os::windows::ffi::OsStrExt;
+        use windows::{core::PCWSTR, Win32::Storage::FileSystem::GetDiskFreeSpaceExW};
+        ensure_no_links(path).map_err(|_| "suite_space_unavailable")?;
+        let path = path
+            .as_os_str()
+            .encode_wide()
+            .chain(Some(0))
+            .collect::<Vec<_>>();
+        let mut available = 0u64;
+        unsafe { GetDiskFreeSpaceExW(PCWSTR(path.as_ptr()), Some(&mut available), None, None) }
+            .map_err(|_| "suite_space_unavailable")?;
+        let needed = bytes
+            .checked_add(128 * 1024 * 1024)
+            .ok_or("suite_space_insufficient")?;
+        if available < needed {
+            return Err("suite_space_insufficient");
+        }
+        Ok(())
+    }
+    #[cfg(not(windows))]
+    {
+        let _ = (path, bytes);
+        Err("bootstrap_windows_required")
+    }
+}
+fn package_space(payload: &Payload) -> Result<u64> {
+    payload.products.iter().try_fold(0u64, |total, product| {
+        product.files.iter().try_fold(
+            total
+                .checked_add(product.portable.size)
+                .ok_or("suite_space_insufficient")?,
+            |total, file| {
+                total
+                    .checked_add(file.size)
+                    .ok_or("suite_space_insufficient")
+            },
+        )
+    })
+}
 fn verified_file(path: &Path, expected: &Asset) -> Result<()> {
     ensure_no_links(path).map_err(|_| "bootstrap_file_unsafe")?;
     let (mut file, identity) =
@@ -263,6 +305,7 @@ fn retain_setup_inputs(
     payload: &Payload,
     bytes: &[u8],
 ) -> Result<PathBuf> {
+    require_space(root, package_space(payload)?)?;
     let parent = root.join("setup");
     create_directory(&parent)?;
     let directory = parent.join(hash(bytes));
@@ -384,31 +427,40 @@ fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<Stag
     for package in &payload.products {
         let product = products.join(&package.id);
         if product.exists() {
-            #[cfg(windows)]
-            let _product_directories =
-                crate::suite::platform::component_scope::pin_directories(&product)?;
-            exact_closure(&product, package)?;
-            // A crash after the last verified file can be resumed without rewriting it.
-            // Partial/unrecognized content remains preserved for reviewed recovery.
-            for file in package
-                .files
-                .iter()
-                .filter(|f| f.name != "devbox-installation.json")
-            {
-                verified_file(&product.join(&file.name), file)
-                    .map_err(|_| "bootstrap_stage_recovery_required")?;
+            let complete = (|| {
+                #[cfg(windows)]
+                let _product_directories =
+                    crate::suite::platform::component_scope::pin_directories(&product)?;
+                exact_closure(&product, package)?;
+                for file in package
+                    .files
+                    .iter()
+                    .filter(|file| file.name != "devbox-installation.json")
+                {
+                    verified_file(&product.join(&file.name), file)?;
+                }
+                if product.join("devbox-installation.json").exists() {
+                    return Err("bootstrap_stage_recovery_required");
+                }
+                Ok::<_, &'static str>(())
+            })();
+            if complete.is_ok() {
+                continue;
             }
-            if product.join("devbox-installation.json").exists() {
+            // Only unfinished staging can preserve its partial tree and retry.
+            // A completed generation's changed content is never repaired silently.
+            if !matches!(fs::symlink_metadata(root.join("stage-receipt.json")), Err(error) if error.kind()==std::io::ErrorKind::NotFound)
+            {
                 return Err("bootstrap_stage_recovery_required");
             }
-        } else {
-            package_stage::stage(
-                &source.join(&package.portable.name),
-                &products,
-                package,
-                &AtomicBool::new(false),
-            )?;
+            preserve_incomplete_package(&root, &product, &package.id)?;
         }
+        package_stage::stage(
+            &source.join(&package.portable.name),
+            &products,
+            package,
+            &AtomicBool::new(false),
+        )?;
     }
     if filesystem_identity(&root, true).map_err(|_| "bootstrap_root_changed")? != identity
         || read(&owner_path, 4096)? != owner
@@ -429,6 +481,101 @@ fn stage_impl(root: &Path, payload_path: &Path, own_image: &Path) -> Result<Stag
     )
     .map_err(|_| "bootstrap_receipt_unavailable")?;
     Ok(result)
+}
+fn preserve_incomplete_package(root: &Path, product: &Path, id: &str) -> Result<()> {
+    if !product_contract::installation::PRODUCTS.contains(&id)
+        || product != root.join("products").join(id)
+    {
+        return Err("bootstrap_stage_unsafe");
+    }
+    let preserved = root.join("interrupted");
+    create_directory(&preserved)?;
+    if fs::read_dir(&preserved)
+        .map_err(|_| "bootstrap_stage_unavailable")?
+        .take(32)
+        .count()
+        >= 32
+    {
+        return Err("bootstrap_stage_retention_review_required");
+    }
+    let identity = filesystem_identity(product, true)
+        .map_err(|_| "bootstrap_stage_unsafe")?
+        .components();
+    let destination = preserved.join(format!("{id}.{}", uuid::Uuid::new_v4()));
+    data_restore::move_directory(product, &destination, identity)
+}
+
+fn resume_or_update_install(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
+    use crate::core::{delivery::Phase, delivery_store::Store};
+    let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
+    let payload = Payload::parse(&bytes)?;
+    verify_payload_owner(&payload, image)?;
+    let root = devbox_manager_lib::core::custom_root::verify_suite_directory(root)
+        .map_err(|_| "bootstrap_root_unsafe")?;
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    let identity = filesystem_identity(&root, true)
+        .map_err(|_| "bootstrap_root_changed")?
+        .components();
+    if owner.root_identity != identity {
+        return Err("bootstrap_owner_changed");
+    }
+    let revision = hash(&bytes);
+    if owner.payload_revision == revision {
+        let key = hash(
+            &serde_json::to_vec(&(identity, &owner.installation_id))
+                .map_err(|_| "bootstrap_owner_invalid")?,
+        );
+        let data = dirs::data_local_dir()
+            .ok_or("bootstrap_data_unavailable")?
+            .join(format!("com.devbox.v08.controlcenter.i{key}"));
+        let observed = Store::inspect(&data)?;
+        if observed.is_none() {
+            return prepare_install(&root, payload_path, image);
+        }
+        if observed.as_ref().is_some_and(|(journal, _)| {
+            journal.phase == Phase::Recovered
+                && journal.previous.is_none()
+                && owner.restart_from.as_ref() == Some(&journal.candidate)
+        }) {
+            return prepare_install(&root, payload_path, image);
+        }
+        if let Some((journal, _)) = observed.filter(|(journal, _)| {
+            journal.candidate.installation_id == owner.installation_id
+                && journal.candidate.generation == owner.generation
+        }) {
+            if journal.previous.is_none() && !journal.committed {
+                if matches!(
+                    journal.phase,
+                    Phase::Inventory | Phase::Stage | Phase::Verify | Phase::Snapshot
+                ) {
+                    return prepare_install(&root, payload_path, image);
+                }
+                if journal.phase == Phase::Recovered {
+                    return restart_install(&root, payload_path, image);
+                }
+                return Ok(StageResult {
+                    state: "existingSetupReviewRequired",
+                    operation_id: None,
+                    checkpoint: None,
+                    source_sha: payload.source_sha,
+                    suite_version: payload.suite_version,
+                    payload_revision: revision,
+                });
+            }
+            if journal.committed && !root.join("suite-update.json").exists() {
+                return Ok(StageResult {
+                    state: "samePackageAlreadyInstalled",
+                    operation_id: None,
+                    checkpoint: None,
+                    source_sha: payload.source_sha,
+                    suite_version: payload.suite_version,
+                    payload_revision: revision,
+                });
+            }
+        }
+    }
+    update::install(&root, payload_path, image)
 }
 /// The installer/update owner passes its newly prepared generation directory.
 /// An existing generation is usable only with the exact retained stage receipt.
@@ -470,6 +617,7 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
             "--rollback-update",
             "--uninstall-install",
             "--register-install",
+            "--resume-or-update-install",
             "--prepare-install",
             "--recover-install",
             "--restart-install",
@@ -543,6 +691,8 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         {
             Err("bootstrap_windows_required")
         }
+    } else if arguments[0] == "--resume-or-update-install" {
+        resume_or_update_install(&root, &payload, &image)
     } else if arguments[0] == "--prepare-install" {
         prepare_install(&root, &payload, &image)
     } else if arguments[0] == "--review-import-again" {
@@ -1323,6 +1473,7 @@ fn snapshot_install(
         return Err("checkpoint_retention_review_required");
     }
     create_directory(&backup)?;
+    require_space(&parent, data_checkpoint::required_space(&sources)?)?;
     let checkpoint = data_checkpoint::acquire_quiesced(
         &sources,
         &backup,
@@ -1556,6 +1707,7 @@ fn activate_install(
             return Err("checkpoint_retention_review_required");
         }
         create_directory(&backup)?;
+        require_space(&parent, data_checkpoint::required_space(&sources)?)?;
         let receipt = data_checkpoint::acquire_quiesced(
             &sources,
             &backup,
@@ -1765,6 +1917,12 @@ fn prepare_data_restore(
         crate::suite::platform::component_scope::pin_directories(&operation)?;
     let prepared = operation.join("prepared");
     create_directory(&prepared)?;
+    require_space(
+        &parent,
+        data_checkpoint::required_space(&sources)?
+            .checked_add(selected.bytes)
+            .ok_or("suite_space_insufficient")?,
+    )?;
     data_checkpoint::materialize(
         &backup,
         &selected,
@@ -1886,6 +2044,48 @@ mod setup_retention_tests {
             sha256: hash(bytes),
             size: bytes.len() as u64,
         }
+    }
+    #[cfg(windows)]
+    #[test]
+    fn insufficient_space_is_refused_without_creating_a_stage_or_mutating_data() {
+        let root = tempdir().unwrap();
+        fs::write(root.path().join("user.json"), b"unchanged").unwrap();
+        assert_eq!(
+            require_space(root.path(), u64::MAX - 128 * 1024 * 1024),
+            Err("suite_space_insufficient")
+        );
+        assert_eq!(
+            fs::read(root.path().join("user.json")).unwrap(),
+            b"unchanged"
+        );
+        assert_eq!(fs::read_dir(root.path()).unwrap().count(), 1);
+    }
+    #[cfg(windows)]
+    #[test]
+    fn interrupted_package_tree_is_preserved_without_replacing_unknown_files() {
+        let root = tempdir().unwrap();
+        fs::create_dir(root.path().join("products")).unwrap();
+        let package = root.path().join("products/workspace");
+        fs::create_dir(&package).unwrap();
+        fs::write(package.join("devbox-workspace.exe"), b"incomplete bytes").unwrap();
+        fs::write(package.join("user-file.txt"), b"preserve unknown").unwrap();
+        preserve_incomplete_package(root.path(), &package, "workspace").unwrap();
+        assert!(!package.exists());
+        let archived = fs::read_dir(root.path().join("interrupted"))
+            .unwrap()
+            .next()
+            .unwrap()
+            .unwrap()
+            .path();
+        assert_eq!(
+            fs::read(archived.join("devbox-workspace.exe")).unwrap(),
+            b"incomplete bytes"
+        );
+        assert_eq!(
+            fs::read(archived.join("user-file.txt")).unwrap(),
+            b"preserve unknown"
+        );
+        assert!(preserve_incomplete_package(root.path(), root.path(), "workspace").is_err());
     }
     #[test]
     fn retained_inputs_survive_installer_cleanup_and_repeated_preparation() {

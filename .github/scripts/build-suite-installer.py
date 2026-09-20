@@ -67,7 +67,6 @@ Name "Devbox __VERSION__"
 OutFile __OUTPUT__
 InstallDir "$LOCALAPPDATA\DevboxSuite"
 SetCompressor /SOLID lzma
-Var SuiteWasUpdate
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TEXT "Workspace, API Studio, Knowledge, Control Center를 준비합니다. 기존 앱 데이터는 Control Center에서 검토한 뒤 이전합니다."
 !insertmacro MUI_PAGE_WELCOME
@@ -87,7 +86,6 @@ Section "Suite 준비"
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
 __PAYLOAD_FILES__
-  StrCpy $SuiteWasUpdate 0
   IfFileExists "$INSTDIR\uninstall-complete.json" suite_reinstall
   IfFileExists "$INSTDIR\suite-reinstall.json" suite_reinstall
   IfFileExists "$INSTDIR\suite-owner.json" suite_update suite_first_install
@@ -95,8 +93,7 @@ __PAYLOAD_FILES__
   nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --reinstall-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
   Goto suite_prepared
   suite_update:
-  StrCpy $SuiteWasUpdate 1
-  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --prepare-and-apply-update "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
+  nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --resume-or-update-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
   Goto suite_prepared
   suite_first_install:
   nsExec::ExecToStack '"$PLUGINSDIR\devbox-suite-bootstrap.exe" --prepare-install "$INSTDIR" "$PLUGINSDIR\suite-payload.json"'
@@ -106,10 +103,7 @@ __PAYLOAD_FILES__
   ${If} $0 != 0
     DetailPrint $1
     SetErrorLevel 1
-    Abort "설치를 준비하지 못했습니다. 기존 파일과 데이터는 보존됩니다. 제거 후 재설치는 마지막으로 설치한 동일 패키지로 진행한 뒤 업데이트하세요."
-  ${EndIf}
-  ${If} $SuiteWasUpdate == 1
-    Goto suite_registration_done
+    Abort "설치를 준비하지 못했습니다. 기존 파일과 데이터는 보존됩니다. 디스크 공간과 제품 종료 상태를 확인하세요. 제거 후 재설치는 마지막으로 설치한 동일 패키지로 진행한 뒤 업데이트하세요."
   ${EndIf}
   IfFileExists "$INSTDIR\Uninstall.exe" registered_uninstaller
   WriteUninstaller "$INSTDIR\Uninstall.exe"
@@ -122,7 +116,6 @@ __PAYLOAD_FILES__
     SetErrorLevel 1
     Abort "설치 항목과 바로가기를 등록하지 못했습니다. 준비된 패키지와 데이터는 보존됩니다."
   ${EndIf}
-  suite_registration_done:
 SectionEnd
 Section "Uninstall"
   InitPluginsDir

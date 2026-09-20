@@ -85,6 +85,8 @@ try {
   Native $install 'health'
   $committed = Helper @('--commit-clean-install',$install,$payloadPath)
   Require ($committed.state -eq 'cleanInstallationCommitted') 'cleanInstallCommittedAfterFourNativeOwners'
+  & "$PSScriptRoot/windows-suite-legacy-cleanup.ps1" -SuiteRoot $install
+  Require ($LASTEXITCODE -eq 0) 'postcommitVerifiedInstallerAndPortableCleanup'
   $snapshot = Helper @('--snapshot-install',$install,$payloadPath)
   Require ($snapshot.state -eq 'dataCheckpointPreserved') 'closedSnapshotRecorded'
   $workspace = Join-Path $env:LOCALAPPDATA "com.devbox.v08.workspace.i$key"

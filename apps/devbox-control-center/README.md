@@ -168,3 +168,10 @@ A different package is blocked: recover the original package first, then use the
 normal generation update path. Reinstalling an uncommitted first installation
 returns to Import review. Durable intents support interrupted package staging;
 old removal records are retained instead of reused to delete newly restored files.
+
+Interrupted first setup now resumes as setup, rather than being misclassified as an
+installed update. Before retrying incomplete extraction the helper retains its
+partial package tree; a completed generation with changed files still fails closed.
+Space preflight counts package/copy requirements and checks Windows free space.
+Failures retain original data and show a specific space/closure recovery message.
+Postcommit cleanup does not republish a global legacy Manager root/catalog.
