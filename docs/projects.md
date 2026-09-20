@@ -1,114 +1,22 @@
-# Projects
+# 제품과 모듈
 
-15개 구현 앱의 요약. 공개 v0.7.0 stable은 WSL Desktop 사용성·복원과 delivery 효율화를 포함한
-15개 앱 bundle이다. 상세 소개는 각
-`apps/<AppName>/README.md`, 설계는 `docs/superpowers/specs/`를 참조한다.
+현재 소스의 사용자 제품은 `apps/devbox-workspace`, `apps/devbox-api-studio`,
+`apps/devbox-knowledge`, `apps/devbox-control-center` 네 개다. 공개 제품 목록은
+`apps/catalog.json`, typed route/component/authority 목록은 `apps/products.json`이 원장이다.
+모든 제품과 Suite version은 0.8.0이다. 공개 여부는 [Release](https://github.com/jihoon22-lee/devbox/releases)와 [#541](https://github.com/jihoon22-lee/devbox/issues/541)를 따른다.
 
-## v0.8 development products
+| 소유 제품 | 프런트엔드 | 보존한 native engine |
+|---|---|---|
+| Workspace | workspace-features | projects-engine, editor-engine, repositories-engine, runtime-engine, ports-engine, logs-engine, terminal-engine |
+| API Studio | api-studio-features | http-client-engine, webhook-host, toolbox-engine |
+| Knowledge | knowledge-features | knowledge-vault-engine, content-index-engine, activity-engine |
+| Control Center | control-center-features, product-shell/launcher | installation-tools, 제품 내부 platform/hotkey |
 
-The four B01 shells in `apps/devbox-workspace`, `apps/devbox-api-studio`,
-`apps/devbox-knowledge` and `apps/devbox-control-center` are hidden development
-targets. They do not replace the public apps listed below or claim completed
-feature migration. Their shared UI/native adapters are `packages/product-shell`,
-`crates/product-shell-tauri` and `crates/product-contract`; product metadata lives
-in `apps/products.json`. See the [foundation contract](architecture/v0.8-foundation.md)
-for authority, data isolation, verification and outstanding acceptance.
+engine은 독립 실행 앱이 아니며 Tauri bootstrap·installer·공개 카드를 갖지 않는다.
+순수 로직은 engine의 `core/`, Windows 처리와 command adapter는 host 계층에 남는다.
+공유 계약은 product-contract·product-shell-tauri·suite-runtime·data-migration에 있다.
+실제 workspace member와 의존성은 루트 Cargo.toml 및 각 package.json이 원장이다.
 
-B02 additionally shares Requests/Protocols, Webhooks and Transforms through
-`packages/api-studio-features` and pure domain engines through `crates/api-protocols`,
-`crates/webhook-core` and `crates/transforms-core`. API Studio and Control Center
-share consistent SQLite snapshots and destination transactions in `crates/data-migration`.
-API Studio consumes native adapters in the three legacy apps without starting their
-legacy entry points. Migration and integrated handoff acceptance remain in progress.
-
-## W08 PR2 (#489) 문서 계약
-
-W08 PR2는 v0.6.0 stable에 포함된 integration 작업이다. Log Lens 0.2.0은
-source 설정과 filter만 담는 strict app-local saved view(schema v1, 최대 20개)를 제공한다.
-저장소는 revision CAS, atomic/no-link write를 사용하고 corrupt/oversized/unknown-field
-내용을 보존한 채 fail-closed한다. WSL file source와 ephemeral Webhook capture는 저장하지
-않으며, saved view를 불러오면 읽기를 끊고 사용자가 명시적으로 `source 재연결`해야 한다.
-
-Webhook Lab 0.3.0은 catalog revision 17의 `webhook-log/v1` one-time producer다. Log Lens에는
-method, redacted origin-form target, timestamp, header names, 최대 4 KiB redacted body
-preview와 flags만 전달한다. Header values, raw body, filesystem path, command, environment,
-credential, archive는 handoff와 argv에 포함하지 않으며 launch 실패 시 정확한 pending entry만
-정리한다. Canonical wire `displayName`은 영어(`Webhook capture`)로 유지하고 UI는 한국어로
-제공한다. v0.7.0 exact-main candidate의 15-app packaged runtime·installer 검증과 stable
-publication은 완료됐다.
-#518의 설치 사용자 환경 zellij/terminal reconnect도 2026-09-03 PASS해 completed로 닫혔다.
-
-## v0.7.0 release scope
-
-- WSL Desktop은 in-app dialog와 terminal 설정, 화면 topology 기반 navigation, pane resize/WebGL,
-  multiplexer 재검색, Bash/Zsh cwd integration, progressive exact restore와 Quick Summon을 포함한다.
-- API Playground·Run Manager의 독립 editor draft와 7개 frontend 앱의 listener cleanup race를
-  보완한다. 앱별 세부 계약은 각 README와 2026-09-03 workthrough에 기록한다.
-- 개발 검증은 영향 package와 역의존 소비자만 선택하고, stable package는 5개 앱씩 3개 shard로
-  한 번 생성한 candidate를 검증 후 그대로 release로 승격한다. 전체 audit와 exact-main candidate는
-  release blocker이며 v0.7.0에서 모두 통과했다.
-
-| # | 앱 | Version | 디렉터리 | 핵심 목적 | Phase | 연계 |
-|---|---|---:|---|---|---|---|
-| 1 | port-manager | 0.4.0 | `apps/port-manager` | 포트·프로세스 조회/종료/실행 | 1 | process crate, run-manager |
-| 2 | developer-toolbox | 0.4.1 | `apps/developer-toolbox` | 개발 소형 도구 모음 | 1 | packages/tokens |
-| 3 | wsl-desktop | 0.6.0 | `apps/wsl-desktop` | exact 분할 복원·Bash/Zsh cwd·tmux/zellij·Quick Summon WSL 터미널 | 추가 | wsl crate, workbench |
-| 4 | api-playground | 0.5.1 | `apps/api-playground` | REST/WebSocket/Protocol Lab | 2 | packages/tokens, secrets crate |
-| 5 | everything-plus | 0.5.0 | `apps/everything-plus` | 로컬 파일 초고속 검색 | 2 | filesystem/search crate, code-pad |
-| 6 | knowledge-base | 0.5.1 | `apps/knowledge-base` | 마크다운 지식 저장소 | 3 | filesystem/search crate, packages/editor |
-| 7 | life-log | 0.5.0 | `apps/life-log` | 자동 일일 로그 (집계 허브, activity-timeline 흡수) | 3 | integration snapshot, workbench |
-| 8 | devbox-manager | 0.5.1 | `apps/devbox-manager` | devbox 앱 설치·업데이트·실행 (+ 환경 진단) | 추가 | 전 앱 |
-| 9 | code-pad | 0.5.1 | `apps/code-pad` | CodeMirror 6 경량 코드 에디터 (LSP) | 추가 | filesystem/markdown crate |
-| 10 | run-manager | 0.5.1 | `apps/run-manager` | 예약 실행·서비스 관리 (cron + service) | 추가 | process crate, workbench |
-| 11 | workbench | 0.3.0 | `apps/workbench` | 프로젝트 기반 orchestration 셸 | Stage 4 | wsl·integration crate, 전 앱 |
-| 12 | webhook-lab | 0.3.0 | `apps/webhook-lab` | 로컬 웹훅/콜백 서버 (`webhook-log/v1` producer) | Stage 5 | api-playground, port-manager, log-lens |
-| 13 | repo-manager | 0.3.0 | `apps/repo-manager` | git 저장소·worktree 관리 | Stage 5 | wsl crate, code-pad/workbench |
-| 14 | devbox-launcher | 0.2.0 | `apps/devbox-launcher` | catalog·검증된 snapshot 검색과 AppLink 실행 | P3-01 | catalog, integration, applink, launch |
-| 15 | log-lens | 0.2.1 | `apps/log-lens` | local/WSL/container/Webhook log와 Run/Webhook handoff | P3-02 | `log-source/v1`, `webhook-log/v1`, bounded ring |
-
-## 공유 후보 매트릭스
-
-| 프로젝트 | 공유할 가능성이 높은 것 |
-|---|---|
-| port-manager | process, Windows API |
-| wsl-desktop | wsl, pty |
-| developer-toolbox | tokens, settings, clipboard |
-| everything-plus | filesystem, search |
-| knowledge-base | filesystem, search, editor |
-| api-playground | tokens, settings, http |
-| life-log | database, filesystem, git, integration |
-| devbox-manager | http, update, catalog |
-| code-pad | filesystem, markdown, editor, (lsp — 두 번째 소비자 시 `crates/lsp`) |
-| run-manager | process, database, wsl |
-| workbench | wsl, integration, catalog |
-| webhook-lab | http, rules, masking, `webhook-log/v1` producer |
-| repo-manager | wsl, git |
-| devbox-launcher | catalog, integration, applink, launch |
-| log-lens | WSL/container fixed adapters, app-local parser, `log-source/v1`/`webhook-log/v1` claim/preview, fixed Run rotation reader, app-local saved views (#473; v0.5.0 binary 제외) |
-
-## 산출물 (각각 독립 .exe)
-`PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
-`EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe` `DevboxManager.exe` `Code Pad.exe` `Run Manager.exe`
-`Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
-
-## v0.5.0 신규 앱 구현 및 v0.5.1 stable 보강
-
-Devbox Launcher와 Log Lens bootstrap은 공개 v0.5.0 stable에 포함됐다. #366/#367의
-Run Manager·WSL Desktop producer와 Log Lens bounded claim/preview lifecycle도 유지한다.
-완료 감사에서 발견한 Run source read 누락은 #472/#473에서 고정 app-data root·logical offset
-기반 read-only adapter로 보완됐고, 이 보완은 v0.5.1 stable에 포함된다.
-#479 merge로 닫힌 #474 계약도 v0.5.1에 포함된다. 기존 flat
-`run-manager/v1/summary.json`은 유지하고, named `run-manager/v1/jobs-services.json` sidecar가
-Launcher의 전체 job/service action을 제공한다. 정확한 v0.5.1 package evidence는 GitHub Release에서
-확인한다. producer path나 Run Manager DB를 전달·직접 읽지 않으며,
-기존 ancestor TOCTOU와 local-adapter FIFO/UNC reader 위험은 이 보완 범위에 포함하지 않는다.
-기존 앱의 P1·P2·선택 P3 강화, 앱별 목표 version, 신규 앱의 안전 경계와 acceptance는
-[v0.5.0 네이티브 우선 계획](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을 따른다.
-
-`apps/devbox-workspace/native` is Workspace's private Linux helper, not another
-catalog application. Its protocol-only library is consumed by the Windows host;
-the static executable currently shares root/Git observation with `crates/filesystem`.
-Product CI builds and verifies the helper resource from the same source commit.
-Files/Git/LSP delegation remains under B04 acceptance.
-
-- `packages/control-center-features`: 기존 Manager와 Control Center가 사용하는 진단·환경·관련 도구 UI. 설치 세대 전환은 Control Center 소유 native 경계에서 별도로 처리한다.
+이전 사용자 데이터·Manager 설치 provenance를 읽는 `apps/legacy-v0.7-catalog.json`은
+고정된 15개 원본 목록이다. 공개 제품 선택·새 실행 권한으로 사용하지 않는다.
+[572개 기능 및 데이터 추적](v0.8-acceptance.md), [v0.7 역사적 목록](history/v0.7/projects.md).

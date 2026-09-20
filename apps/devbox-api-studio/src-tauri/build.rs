@@ -1,4 +1,6 @@
+include!("../../../crates/product-shell-tauri/build_support.rs");
 fn main() {
+    let _bundle_staging = lock_bundle_staging();
     tauri_build::try_build(
         tauri_build::Attributes::new()
             .plugin(

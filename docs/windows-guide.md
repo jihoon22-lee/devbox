@@ -1,367 +1,41 @@
-# Windows 11에서 devbox 앱 사용 가이드
+# Windows 설치·이전·복구
 
-이 가이드는 **Windows 11 PC(예: 회사 PC)에서 공개 v0.7.0 stable의 15개 앱을 설치하거나,
-현재 source를 빌드하고 실행**하는 방법을 설명한다.
-개발은 WSL에서 했지만, 앱 자체는 Windows 데스크톱 앱(Tauri)이므로 Windows PC에서 `.exe`로 빌드하면 그대로 쓸 수 있다.
+[GitHub Releases](https://github.com/jihoon22-lee/devbox/releases)에 실제 공개된 버전을 선택한다.
+v0.8 소스/후보/공개 상태는 [#541](https://github.com/jihoon22-lee/devbox/issues/541)에 구분해 기록한다.
+Windows 11과 WebView2가 필요하다. 일반 사용자는 Rust·Node·MSVC를 설치할 필요가 없다.
 
-> 저장소: `https://github.com/jihoon22-lee/devbox` (공개 저장소)
-> 앱별 산출물(제품명/설치 패키지 기준 표기 — 실제 빌드 실행 파일명은 `<package>.exe`, 7.3 참고):
-> `PortManager.exe` `DevToolbox.exe` `WSLDesktop.exe` `ApiPlayground.exe`
-> `EverythingPlus.exe` `Knowledge.exe` `LifeLog.exe`
-> `DevboxManager.exe` `Code Pad.exe` `Run Manager.exe`
-> `Workbench.exe` `WebhookLab.exe` `RepoManager.exe` `DevboxLauncher.exe` `LogLens.exe`
+## 설치와 portable
 
-> 현재 v0.7.0 stable에는 `DevboxLauncher.exe`와 `LogLens.exe`를 포함한 15개 앱, milestone
-> #2의 W01~W11, WSL Desktop cwd 복원·Quick Summon과 검증/릴리스 효율화가 들어 있다. 정확한
-> binary·workflow·asset digest·Latest metadata는
-> [GitHub Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.7.0)에서 확인한다.
-> 설치된 WSL Desktop의 zellij/terminal reconnect는 #518에서 2026-09-03 사용자 실기 PASS로
-> 완료했다. v0.7.0 candidate는 packaged runtime·installer lifecycle을 각각 15/15로 통과했다.
+Suite 설치 파일 `Devbox_0.8.0_x64-setup.exe`는 Workspace·API Studio·Knowledge·Control Center를
+함께 설치한다. 독립 실행이 필요하면 해당 제품 ZIP 전체를 별도 폴더에 푼다. 실행 파일만
+옮기면 필수 component와 installation identity가 빠진다. 서로 다른 portable과 설치본은
+각자의 namespace/identity로 취급하며 임의 경로를 Suite 구성원으로 자동 등록하지 않는다.
 
----
+## v0.7에서 이전
 
-## 0. (권장) 빌드 환경 없이 Releases에서 바로 받아 쓰기
+기존 앱을 종료하고 Control Center의 이전 검토에서 발견된 원본과 destination을 확인한다.
+원본 DB와 WAL을 consistent snapshot으로 읽으며 원본을 덮어쓰거나 이동하지 않는다.
+full/partial/mixed 설치 모두 발견된 source별로 적용/명시적 제외를 검토한다. 오래된 검토,
+미래 schema·손상·missing source·동시 변경은 진단을 확인하고 새로 검토한다.
 
-**한 번 빌드해 두면, 이후에는 회사 PC에 아무것도 설치하지 않고 실행 파일만 내려받아 쓸 수 있다.**
+Git repository·vault 파일과 assets는 원래 경로에 유지한다. Notes templates와 검색 root·saved query·
+exclusion 같은 사용자 설정은 파생 index와 별도로 이전한다. LSP/runtime cache와 살아 있는
+process는 복사한 사용자 데이터라고 취급하지 않는다. 보호된 secret은 UI 안내에 따라 재연결한다.
 
-1. GitHub 저장소의 **Releases** 페이지로 이동:
-   `https://github.com/jihoon22-lee/devbox/releases`
-2. 최신 릴리스에서 원하는 앱의 **`*-setup.exe`** (또는 실행 파일 `*.exe`)를 다운로드.
-3. 더블클릭해 실행. **WebView2 런타임(Windows 11 기본 포함)만 있으면 동작**한다.
-   - Rust·Node·MSVC 같은 빌드 도구는 **필요 없다** (이미 빌드된 실행 파일이기 때문).
+## 업데이트와 복구
 
-> 빌드를 새로 하고 싶을 때(GitHub Actions가 대신 빌드):
-> 1. 루트 `CHANGELOG.md`에 새 버전 섹션(`## [vX.Y.Z] - 날짜`)으로 변경점 기록
-> 2. 현재 `main`의 40자리 commit SHA를 확인하고 GitHub → Actions → **Windows package
->    candidate**에서 예정 tag와 SHA를 입력한다. 15개 앱은 3개 Windows shard(각 5개)에서 병렬로
->    build되고 하나의 후보로 조립된다. 조립과 두 acceptance job이 모두 성공할 때까지 기다린다.
->    중간 shard는 1일, 최종 private 후보는 14일 동안 보존된다.
-> 3. 같은 commit에 annotated tag를 만들고 push한다
->    (예: `git tag -a vX.Y.Z <SHA> -m "devbox vX.Y.Z"` 후 `git push origin refs/tags/vX.Y.Z`).
->    release가 아직 생성되지 않은 채 tag workflow만 실패했다면 GitHub → Actions → **Release** →
->    **Run workflow**에서 이미 존재하는 동일 tag를 입력해 재시도할 수 있다.
-> 4. Release workflow는 성공한 후보의 tag·commit·workflow·32개 digest를 다시 검증하고,
->    바이너리를 재빌드하지 않은 채 draft를 만든다. 최종 job은 draft 32개 파일을 다시 내려받아
->    검증한 뒤에만 공개하며, stable에서 prerelease build가 skip돼도 명시적 success 조건으로 실행된다.
->    **릴리스 노트는 CHANGELOG의 해당 버전 내용으로** 만든다.
->    버전(tag)은 **매번 새로** 써야 한다(기존 tag 재사용 불가).
+Control Center의 review에 표시된 generation과 변경 내용을 확인한 뒤 적용한다. commit 전 undo는
+이전 활성 generation으로 돌아가며, data restore는 검토한 경계를 따른다. commit 후 생성한 새
+데이터를 과거 backup으로 조용히 덮어쓰지 않는다. 잠긴 파일·권한·공간 부족·중단은 실패 상태와
+journal을 남기며 재개/복구 UI에서 처리한다. 복구가 끝나기 전에 설치 폴더를 수동으로 지우지 않는다.
 
-> 릴리스 보호 정책: `vX.Y.Z` 안정판은 위 두 경로를 사용한다. `vX.Y.Z-...` prerelease/RC
-> tag push는 build 전에 거부되어 릴리스를 만들지 않는다. prerelease가 명시적으로 필요할
-> 때만 **수동 dispatch**에서 정확한 전체 버전을 입력하고 `allow_prerelease`를 `true`로
-> 선택한다. 이 gate의 기본값은 `false`다.
+제거는 설치가 소유한 파일·등록만 대상으로 하고 네 제품 사용자 데이터를 보존한다. 기존 앱 정리는
+별도 검토한 설치 provenance와 file identity에만 적용한다. 소유권이 바뀐 portable이나 잠긴 원본은
+삭제하지 않고 pending/changed 상태를 안내한다. 외부 사용자가 만든 구 exe 절대경로 shortcut이나
+script는 자동 리다이렉트되지 않으므로 새 제품 경로로 직접 수정해야 한다.
 
-> v0.7.0 stable의 exact annotated tag, workflow·32 public assets·31 manifest-declared assets,
-> hash와 Latest 상태는 GitHub Release가 권위 있는 source다. RC1~RC3 tag/release는 삭제된
-> historical evidence이며, 향후 RC는 사용자가 명시적으로 요청한 경우에만 만든다.
+## 개발·문제 해결
 
-> 참고: 개인 빌드라 코드 서명이 없어 SmartScreen 경고가 뜨면 `추가 정보 → 실행`을 누르면 된다.
-
-아래부터는 **직접 빌드하고 싶을 때**의 상세 절차다.
-
----
-
-## 0. 준비물 요약
-
-| 항목 | 필요 이유 | 확인 방법 |
-|---|---|---|
-| Windows 11 (x64) | 대상 OS | `설정 → 시스템 → 정보` |
-| WebView2 런타임 | Tauri 앱의 웹엔진 (Win11 기본 포함) | 보통 설치돼 있음 (아래 3.4 참고) |
-| Git | 소스 내려받기 | `git --version` |
-| Node.js LTS | 프론트 빌드 | `node --version` |
-| pnpm | 워크스페이스 패키지 매니저 | `pnpm --version` |
-| Rust (MSVC) | Rust 백엔드 컴파일 | `rustc --version`, `cargo --version` |
-| MSVC C++ Build Tools | Rust 링커(link.exe) | `winget list` 또는 VS Installer |
-
----
-
-## 1. 터미널 준비
-
-- **PowerShell**을 엽니다 (Win+X → Windows Terminal(PowerShell) 또는 시작 메뉴에서 PowerShell).
-- 이후의 모든 명령은 PowerShell에서 실행합니다.
-- **관리자 권한은 권장 사항**: `winget install`은 관리자 권한이 편합니다.
-  - 시작 메뉴에서 "PowerShell" 우클릭 → **관리자 권한으로 실행**
-
----
-
-## 2. Git 설치
-
-```powershell
-winget install --id Git.Git -e --source winget
-```
-
-설치 후 **새 터미널**을 열어 확인:
-
-```powershell
-git --version
-```
-
----
-
-## 3. Rust + MSVC 빌드 도구 설치 (가장 중요)
-
-Tauri는 Rust 코드를 MSVC 컴파일러로 빌드한다. **빌드 도구 먼저, Rust 그다음** 순서로 설치한다.
-
-### 3.1 MSVC C++ Build Tools (link.exe 포함)
-
-```powershell
-winget install --id Microsoft.VisualStudio.2022.BuildTools -e --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-```
-
-- 수 GB 다운로드 + 몇 분 소요. 콘솔이 끝날 때까지 기다립니다.
-- 완료 확인 (새 터미널):
-  ```powershell
-  Get-ChildItem "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Tools\MSVC" | Select-Object Name
-  ```
-  버전 폴더가 보이면 성공.
-
-### 3.2 Rust 툴체인 (MSVC 기본 툴체인)
-
-```powershell
-winget install --id Rustlang.Rustup -e --source winget
-```
-
-설치 후 **새 터미널**에서 확인 (PATH 반영을 위해 새 창 필요):
-
-```powershell
-rustc --version   # 예: rustc 1.8x.x
-cargo --version
-rustup show       # default host: x86_64-pc-windows-msvc 확인
-```
-
-> `rustc`가 안 보이면: `C:\Users\<you>\.cargo\bin`을 PATH에 추가하거나 재부팅.
-
----
-
-## 4. Node.js + pnpm 설치
-
-### 4.1 Node.js LTS
-
-```powershell
-winget install --id OpenJS.NodeJS.LTS -e --source winget
-```
-
-새 터미널에서:
-
-```powershell
-node --version
-npm --version
-```
-
-### 4.2 pnpm (corepack 권장)
-
-Node 16.13+ 에 포함된 corepack으로 활성화:
-
-```powershell
-corepack enable pnpm
-pnpm --version   # 예: 9.15.9 (저장소 packageManager: pnpm@9.0.0)
-```
-
-> corepack이 안 되면 대안: `npm install -g pnpm`
-
----
-
-## 5. WebView2 런타임 확인
-
-Windows 11에는 기본 포함되어 있지만, 확인:
-
-```powershell
-Get-ChildItem "C:\Program Files (x86)\Microsoft\EdgeWebView\Application" -ErrorAction SilentlyContinue | Select-Object Name
-```
-
-버전 폴더가 보이면 OK. 없으면:
-
-```powershell
-winget install --id Microsoft.EdgeWebView2Runtime -e
-```
-
----
-
-## 6. 소스 받기
-
-```powershell
-cd C:\   # 원하는 위치
-git clone https://github.com/jihoon22-lee/devbox.git
-cd devbox
-pnpm install
-```
-
-- `pnpm install`은 15개 앱의 의존성을 한 번에 설치한다 (몇 분).
-- `node_modules`는 워크스페이스 루트에 통합 관리된다.
-
----
-
-## 7. 앱 빌드 (`.exe` 만들기)
-
-각 앱 디렉터리에서 `pnpm tauri build`를 실행한다. **첫 빌드는 의존성 컴파일 때문에 5~10분** 걸리고, 이후에는 빠르다.
-
-### 7.1 한 앱만 빌드
-
-```powershell
-cd C:\devbox\apps\port-manager
-pnpm tauri build
-```
-
-### 7.2 전부 한 번에 빌드 (권장)
-
-```powershell
-cd C:\devbox
-$apps = "port-manager","developer-toolbox","api-playground","everything-plus","knowledge-base","life-log","wsl-desktop","devbox-manager","code-pad","run-manager","workbench","webhook-lab","repo-manager","devbox-launcher","log-lens"
-foreach ($a in $apps) {
-  Write-Host "===== BUILDING $a =====" -ForegroundColor Cyan
-  Push-Location "apps\$a"
-  pnpm tauri build
-  Pop-Location
-}
-```
-
-### 7.3 산출물 위치
-
-devbox는 **Cargo workspace**이므로, 어떤 앱에서 빌드하든 산출물이 **저장소 루트의 `target\`** 아래에 모인다:
-```
-C:\devbox\target\release\<package>.exe                                          ← 실행 파일 (단일)
-C:\devbox\target\release\bundle\nsis\<ProductName>_<version>_x64-setup.exe      ← 설치 패키지
-```
-
-- 실행 파일 이름은 productName이 아니라 **Cargo 패키지명**(앱 디렉터리명, 예: `port-manager.exe`)이다.
-- 설치 패키지 이름은 **productName**(예: `PortManager_0.4.0_x64-setup.exe`)이다.
-- 단, GitHub Releases 산출물은 휴대용 `<app-id>.exe` / 설치 `<app-id>_<version>_x64-setup.exe` 형태로 게시된다.
-
-ProductName 매핑:
-
-| 앱 디렉터리 | ProductName |
-|---|---|
-| port-manager | PortManager |
-| developer-toolbox | DevToolbox |
-| api-playground | ApiPlayground |
-| everything-plus | EverythingPlus |
-| knowledge-base | Knowledge |
-| life-log | LifeLog |
-| wsl-desktop | WSLDesktop |
-| devbox-manager | DevboxManager |
-| code-pad | Code Pad |
-| run-manager | Run Manager |
-| workbench | Workbench |
-| webhook-lab | WebhookLab |
-| repo-manager | RepoManager |
-| devbox-launcher | DevboxLauncher |
-| log-lens | LogLens |
-
-Log Lens의 v0.5.0 bootstrap, v0.5.1 #473 Run reader와 v0.6.0 W08 보강은 current stable에
-포함됐다. 마지막 post-release WSL 사용자 환경 관찰은 #518에서 PASS로 완료됐다.
-
----
-
-## 8. 실행
-
-- **방법 A (권장)**: `bundle\nsis`의 `*-setup.exe`로 설치 → 시작 메뉴에서 실행
-- **방법 B**: `target\release\<package>.exe`(예: `port-manager.exe`)를 바로 더블클릭 (설치 없이 실행)
-
-SmartScreen 경고("인식할 수 없는 앱")가 뜨면:
-1. `추가 정보` 클릭 → `실행` 클릭
-   (코드 서명이 없어서 나오는 정상 경고. 개인 빌드이므로 안전)
-
----
-
-## 9. 앱별 사용 메모
-
-| 앱 | 사용 팁 |
-|---|---|
-| **PortManager** | 포트/Kill/열기. 시스템 프로세스 Kill이 실패하면 **관리자 권한으로 실행**. |
-| **DevToolbox** | 좌측 메뉴에서 도구 선택. Hash/UUID/Regex/Diff는 Rust 연동. |
-| **ApiPlayground** | URL 입력 → Send. Rust가 직접 요청하므로 CORS 없음. History는 자동 저장. |
-| **EverythingPlus** | 첫 실행 시 `+`로 검색 루트 추가(예: `C:\`, `D:\`) → 자동 인덱싱. |
-| **Knowledge** | 기본 저장 위치: `Documents\Knowledge`. 우측에서 작성, Ctrl+S 저장. Daily note 버튼으로 오늘 메모. |
-| **LifeLog** | 설정 탭에서 **git 프로젝트 경로**를 등록해야 값이 채워짐 (활동 추적은 앱에 통합됨). |
-| **WSLDesktop** | 분할 WSL 터미널 + distro/Docker 패널. v0.7 source는 Bash/Zsh cwd 연동, 정확한 workspace 복원, tmux/zellij 다시 검색과 Quick Summon을 제공한다. WSL2 필요: `wsl --install` 후 재부팅. |
-| **DevboxManager** | devbox 앱 설치·업데이트·실행을 한 곳에서 관리. |
-| **CodePad** | CodeMirror 6 기반 코드 에디터. `언어 서버` 패널에서 LSP 서버 설치·활성화 후 진단·이름 변경·포맷 사용. |
-| **RunManager** | 작업(cron)·서비스 정의, 실행 이력·로그 tail. 서비스는 시작/정지/재시작과 헬스체크·재시작 정책 지원. |
-| **Workbench** | 프로젝트 등록 후 `Start Workspace`로 사전 점검(Git/WSL/포트/서비스)과 Run Manager·WSL Desktop·Code Pad 시작을 한 번에. `Stop What I Started`는 Workbench가 시작한 자원만 정리. |
-| **WebhookLab** | 포트 선택 후 서버 시작 → 외부 서비스의 웹훅/콜백을 로컬에서 수신해 검사. 응답 rule·지연·오류 재현, 수신 요청을 API Playground 요청으로 변환. |
-| **RepoManager** | 검색 root를 등록하면 그 아래 Git 저장소를 목록화. 브랜치/dirty/ahead-behind/worktree 상태 확인, worktree 생성, Code Pad·WSL Desktop·Workbench로 열기. |
-| **DevboxLauncher** | `Ctrl+Alt+Space`로 transient 검색창을 열고 앱·사용 가능한 snapshot을 실행한다. source가 없거나 손상되어도 다른 검색은 계속되며, 설정에서 선택한 대체 단축키는 즉시 적용된다. |
-
-### WSL Desktop의 zellij·경로 복원
-
-- Cargo로 설치한 zellij가 `~/.cargo/bin/zellij`에 있어도 WSL Desktop은 선택 distro 사용자의
-  `HOME`·`PATH`와 고정 user-bin 후보를 함께 검사한다. 앱을 켠 뒤 설치했다면 WSL 새로고침 또는
-  `설정 → 세션 유지 방식 → 다시 검색`을 누른다. 일시적 probe 오류는 저장한 zellij 선호를
-  지우지 않으며 해당 terminal만 native로 fallback한다.
-- terminal별 현재 경로를 재시작 뒤 정확히 복원하려면 `설정 → Bash/Zsh cwd 연동`에서 표시된
-  marker block을 확인하고 설치한다. 연동 전에는 앱이 terminal 시작 경로만 알 수 있고, 연동 뒤
-  OSC 7을 받은 팬은 `cwd 추적`으로 표시된다. 기존 prompt hook을 보존하며 제거도 같은 설정에서
-  앱 소유 block만 대상으로 한다.
-- Quick Summon은 기본 `Ctrl+Alt+Space`로 실행 중인 같은 창을 숨기거나 다시 focus한다. `닫을 때
-  트레이에 유지`를 켰다면 X는 terminal을 종료하지 않고 숨기므로, 완전히 끝내려면 tray의
-  `완전히 종료`를 사용한다.
-
----
-
-## 10. 데이터 위치 (앱들이 저장하는 곳)
-
-Tauri의 `app_local_data_dir()`은 번들 identifier 기준 폴더를 사용한다.
-
-```
-%LOCALAPPDATA%\com.devbox.lifelog\data.db              ← 활동 세션 + life-log 설정
-%LOCALAPPDATA%\com.devbox.everythingplus\data.db       ← 파일 인덱스
-%LOCALAPPDATA%\com.devbox.knowledgebase\data.db        ← 문서 인덱스
-%LOCALAPPDATA%\com.devbox.workbench\project-profiles.json  ← Workbench 프로젝트 프로필
-%LOCALAPPDATA%\com.devbox.webhooklab\fixtures.json     ← 웹훅 masked fixture (웹훅 Lab)
-```
-
-- **집 ↔ 회사 데이터 공유**: 위 폴더를 통째로 복사하면 기록/인덱스가 이전된다.
-- Knowledge 문서 파일 자체는 `Documents\Knowledge`에 있으므로, 이 폴더만 복사해도 됨.
-- Life Log는 활동 추적이 앱에 통합되어 별도 데이터 소스 설정이 필요 없다.
-
----
-
-## 11. 자주 겪는 문제
-
-| 증상 | 해결 |
-|---|---|
-| `link.exe` 또는 `LINK : fatal error` | MSVC Build Tools의 "C++를 사용한 데스크톱 개발" 워크로드가 빠짐 → 3.1 재실행 |
-| `'pnpm' is not recognized` | corepack/npm -g 설치 후 새 터미널. `corepack enable pnpm` |
-| `rustc` 없음 | 새 터미널 열기. 안 되면 `C:\Users\<you>\.cargo\bin` PATH 추가 후 재시작 |
-| `WebView2` 관련 런타임 오류 | 5번 참고해 런타임 설치 |
-| 빌드가 `tauri.conf.json` 못 찾음 | `apps\<앱>` 디렉터리에서 실행했는지 확인 (`pwd`) |
-| SmartScreen 경고 | `추가 정보 → 실행` (서명 없는 개인 빌드) |
-| 회사 네트워크가 GitHub 차단 | IT에 `github.com` 접근 허용 요청 (HTTPS 443) |
-| 빌드가 느림 | 첫 빌드만 그럼. 이후 증분 빌드는 빠름 |
-
----
-
-## 12. (선택) 개발 모드로 수정하며 쓰기
-
-```powershell
-cd C:\devbox\apps\port-manager
-pnpm tauri dev
-```
-
-코드 수정 → 저장하면 자동 새로고침되는 개발 창이 뜬다. 원상태로 되돌리려면 `git restore` 후 다시 빌드.
-
----
-
-## 한눈에 보는 빠른 시작 (모든 명령 순서)
-
-```powershell
-# 1. 도구 설치 (관리자 PowerShell)
-winget install Git.Git
-winget install Microsoft.VisualStudio.2022.BuildTools --override "--quiet --wait --add Microsoft.VisualStudio.Workload.VCTools --includeRecommended"
-winget install Rustlang.Rustup
-winget install OpenJS.NodeJS.LTS
-corepack enable pnpm
-
-# 2. 새 터미널에서
-rustc --version && cargo --version && node --version && pnpm --version
-
-# 3. 소스 & 빌드
-git clone https://github.com/jihoon22-lee/devbox.git
-cd devbox
-pnpm install
-cd apps\port-manager
-pnpm tauri build
-
-# 4. 실행
-.\target\release\bundle\nsis\PortManager_0.4.0_x64-setup.exe
-```
+[개발자 가이드](development.md), [v0.8 수용 범위](v0.8-acceptance.md)를 참조한다.
+운영 중 Docker·iptables·공유 네트워크를 테스트 준비 목적으로 변경하지 않는다.
+과거 설치 방식은 [v0.7 가이드](history/v0.7/windows-guide.md)에 보존한다.

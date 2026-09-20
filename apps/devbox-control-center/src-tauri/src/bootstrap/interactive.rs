@@ -159,8 +159,9 @@ pub(crate) fn inventory() -> Result<Value> {
         .map_err(|_| "bootstrap_clock_invalid")?
         .as_millis() as u64;
     let fresh_health = journal.require_recent_health(now).is_ok();
-    let legacy = devbox_catalog::parse_catalog(include_str!("../../../../catalog.json"))
-        .map_err(|_| "bootstrap_catalog_invalid")?;
+    let legacy =
+        devbox_catalog::parse_catalog(include_str!("../../../../legacy-v0.7-catalog.json"))
+            .map_err(|_| "bootstrap_catalog_invalid")?;
     let no_legacy_data = legacy.apps.iter().all(|app| matches!(fs::symlink_metadata(parent.join(&app.identifier)), Err(error) if error.kind() == std::io::ErrorKind::NotFound));
     let no_legacy_installers = crate::legacy_installer::inventory()
         .is_ok_and(|value| value.complete && value.entries.is_empty());

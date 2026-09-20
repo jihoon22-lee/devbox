@@ -63,7 +63,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         str(FRONTEND_RUNNER),
         "test",
         "apps",
-        "apps/run-manager,packages/diff-view",
+        "apps/devbox-workspace,packages/diff-view",
     )
     assert calls == [{
         "cwd": str(ROOT),
@@ -71,7 +71,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
             "-r",
             "--no-bail",
             "--filter",
-            "./apps/run-manager",
+            "./apps/devbox-workspace",
             "--filter",
             "./packages/diff-view",
             "test",
@@ -83,7 +83,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         str(FRONTEND_RUNNER),
         "typecheck",
         "apps",
-        "apps/code-pad,packages/editor",
+        "apps/devbox-workspace,packages/editor",
     )
     assert calls == [{
         "cwd": str(ROOT / "packages" / "editor"),
@@ -98,11 +98,11 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         str(RUST_RUNNER),
         "check",
         "packages",
-        "process,port-manager",
+        "process,devbox-ports-engine",
     )
     assert calls == [{
         "cwd": str(ROOT),
-        "argv": ["check", "-p", "process", "-p", "port-manager"],
+        "argv": ["check", "-p", "process", "-p", "devbox-ports-engine"],
     }]
 
     calls = run(
@@ -110,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
         str(RUST_RUNNER),
         "clippy",
         "packages",
-        "process,port-manager",
+        "process,devbox-ports-engine",
     )
     assert calls == [{
         "cwd": str(ROOT),
@@ -119,7 +119,7 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
             "-p",
             "process",
             "-p",
-            "port-manager",
+            "devbox-ports-engine",
             "--all-targets",
             "--",
             "-D",
@@ -139,8 +139,8 @@ with tempfile.TemporaryDirectory(prefix="devbox-ci-runner-") as temporary:
     environment["DEVBOX_VERIFY_WORKSPACE_CONCURRENCY"] = "1"
     assert run("bash", str(FRONTEND_RUNNER), "test", "all")[0]["argv"] == [
         "-r", "--no-bail", "--workspace-concurrency", "1", "test"]
-    assert run("bash", str(FRONTEND_RUNNER), "build", "apps", "apps/code-pad")[0]["argv"] == [
-        "-r", "--workspace-concurrency", "1", "--filter", "./apps/code-pad", "build"]
+    assert run("bash", str(FRONTEND_RUNNER), "build", "apps", "apps/devbox-workspace")[0]["argv"] == [
+        "-r", "--workspace-concurrency", "1", "--filter", "./apps/devbox-workspace", "build"]
     environment["DEVBOX_VERIFY_RUST_TEST_THREADS"] = "2"
     assert run("bash", str(RUST_RUNNER), "test", "all")[0]["argv"] == [
         "test", "--no-fail-fast", "--workspace", "--features", "workspace-wsl/test-fixtures", "--", "--test-threads=2"]

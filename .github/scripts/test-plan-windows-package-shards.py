@@ -20,16 +20,16 @@ SPEC.loader.exec_module(MODULE)
 
 
 class PlanWindowsPackageShardsTests(unittest.TestCase):
-    def test_current_catalog_is_covered_once_by_three_balanced_shards(self) -> None:
+    def test_current_catalog_is_covered_once_by_two_balanced_shards(self) -> None:
         catalog = json.loads((ROOT / "apps/catalog.json").read_text(encoding="utf-8"))
         app_ids = MODULE.release_app_ids(catalog)
 
-        matrix = MODULE.build_matrix(app_ids, 3)
+        matrix = MODULE.build_matrix(app_ids, 2)
         shards = matrix["include"]
         planned = [app_id for shard in shards for app_id in shard["apps"].split(",")]
 
-        self.assertEqual([shard["shard"] for shard in shards], ["01", "02", "03"])
-        self.assertEqual([shard["app_count"] for shard in shards], [5, 5, 5])
+        self.assertEqual([shard["shard"] for shard in shards], ["01", "02"])
+        self.assertEqual([shard["app_count"] for shard in shards], [2, 2])
         self.assertCountEqual(planned, app_ids)
         self.assertEqual(len(planned), len(set(planned)))
 
@@ -51,8 +51,8 @@ class PlanWindowsPackageShardsTests(unittest.TestCase):
 
     def test_catalog_rejects_wrong_count_duplicates_and_unsafe_ids(self) -> None:
         valid_entries = [
-            {"id": f"app-{index:02d}", "release": True}
-            for index in range(MODULE.EXPECTED_RELEASE_APPS)
+            {"id": app_id, "release": True}
+            for app_id in sorted(MODULE.PRODUCT_IDS)
         ]
         variants = (
             {"apps": valid_entries[:-1]},
@@ -91,7 +91,7 @@ class PlanWindowsPackageShardsTests(unittest.TestCase):
                 json.loads(lines[0].removeprefix("matrix="))["include"][0]["shard"],
                 "01",
             )
-            self.assertEqual(lines[1:], ["shard_count=3", "app_count=15"])
+            self.assertEqual(lines[1:], ["shard_count=3", "app_count=4"])
 
 
 if __name__ == "__main__":

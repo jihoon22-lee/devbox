@@ -113,10 +113,10 @@ Windows CI는 `shared-key: devbox-windows-unit-tests-v1`로 test codegen 의존�
 `shared-key`가 있으면 별도 `key` 입력은 무시되므로 namespace를 shared-key 자체에 둔다. 이전 check/Clippy 전용
 불변 캐시가 적중한 채 테스트 의존성을 매번 다시 빌드하는 상황을 반복하지 않는다.
 
-Windows Rust CI의 Cargo build job은 1개다. 여러 Tauri build script가 같은
-target staging의 고지 파일을 동시에 복사하면 Windows sharing violation 32가
-발생하므로 직렬화한다. 전체/scoped check·Clippy·test 범위와 test harness 동시성은
-유지하며, Linux CI와 로컬 검증의 별도 예산은 바꾸지 않는다.
+Windows Rust CI의 Cargo build job은 2개다. 네 제품 build.rs는
+`crates/product-shell-tauri/build_support.rs`의 OS file lock을 보유한 동안만
+Tauri 공유 staging을 복사한다. Windows sharing violation 32를 일으키던 복사 구간을
+직렬화하고 독립 crate 컴파일은 병렬로 유지한다. Linux/로컬 예산은 그대로다.
 
 ## 실행 잠금과 측정
 

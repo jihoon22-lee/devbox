@@ -255,8 +255,9 @@ fn scan(
     Err("legacy_registry_limit")
 }
 pub(crate) fn inventory() -> Result<Inventory> {
-    let catalog = devbox_catalog::parse_catalog(include_str!("../../../../catalog.json"))
-        .map_err(|_| "legacy_catalog_invalid")?;
+    let catalog =
+        devbox_catalog::parse_catalog(include_str!("../../../../legacy-v0.7-catalog.json"))
+            .map_err(|_| "legacy_catalog_invalid")?;
     let mut report = Inventory {
         entries: Vec::new(),
         complete: true,
@@ -333,8 +334,9 @@ impl Registration {
         let Some(key) = open(hive, &path, view)? else {
             return Ok(false);
         };
-        let catalog = devbox_catalog::parse_catalog(include_str!("../../../../catalog.json"))
-            .map_err(|_| "legacy_catalog_invalid")?;
+        let catalog =
+            devbox_catalog::parse_catalog(include_str!("../../../../legacy-v0.7-catalog.json"))
+                .map_err(|_| "legacy_catalog_invalid")?;
         let app = catalog
             .apps
             .iter()

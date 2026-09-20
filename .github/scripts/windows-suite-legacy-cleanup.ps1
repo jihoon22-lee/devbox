@@ -5,7 +5,7 @@ if (-not $IsWindows -or $env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONME
 $ScratchRoot = Split-Path -Parent (Resolve-Path -LiteralPath $SuiteRoot).Path
 if ([IO.Path]::GetFileName($ScratchRoot) -notlike 'devbox-suite-delivery-*') { throw 'Unexpected fixture root' }
 $baseline = Read-Json "$PSScriptRoot/product-foundation-baseline.json"
-$configuration = Read-Json "$PSScriptRoot/windows-installer-acceptance-config.json"
+$configuration = Read-Json "$PSScriptRoot/legacy-v0.7-windows-installer-acceptance-config.json"
 $definition = $configuration.apps | Where-Object id -eq 'port-manager'
 if ($null -ne (Find-App-Entry $definition)) { throw 'Legacy fixture requires absent installation' }
 $manager = Join-Path $env:LOCALAPPDATA 'com.devbox.devboxmanager'

@@ -1,6 +1,6 @@
 import { componentInvoke, isProductHosted } from "../transport";
 const invoke = componentInvoke(method => method.startsWith("dependency_") ? "workspace.dependencies" : "workspace.source");
-import catalogJson from "../../../../apps/catalog.json";
+import catalogJson from "../../../../apps/legacy-v0.7-catalog.json";
 import { isTauri } from "./lib/isTauri";
 
 export interface RepoEntry {

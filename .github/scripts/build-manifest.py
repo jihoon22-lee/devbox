@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Historical v0.7 15-app format only. Current release uses build-suite-package.py.
 """release-manifest.json 생성.
 
 staging/ 디렉터리를 훑어 §5.4 스키마의 manifest를 만든다.

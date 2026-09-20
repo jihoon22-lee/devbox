@@ -39,7 +39,6 @@ FRONTEND_DRIVER_PATHS = {
 # these virtual build edges complement the dependency graph. The regression
 # test deliberately locks the current consumers to this set.
 CATALOG_FRONTEND_CONSUMERS = {
-    "apps/devbox-launcher",
     "apps/devbox-control-center",
     "packages/workspace-features",
     "packages/control-center-features",
@@ -47,18 +46,17 @@ CATALOG_FRONTEND_CONSUMERS = {
 }
 CATALOG_RUST_CONSUMERS = {
     "catalog",
-    "devbox-launcher",
-    "devbox-manager",
+    "devbox-installation-tools",
     "devbox-control-center",
     "launch",
-    "log-lens",
+    "devbox-logs-engine",
 }
 
 # Native platform modules are compiled by both products without linking another
 # product's application crate. Keep their exact source edges visible to CI.
 RUST_SHARED_PLATFORM_CONSUMERS = {
-    "apps/devbox-launcher/src-tauri/src/hotkey.rs": {"devbox-control-center"},
-    "apps/api-playground/src-tauri/src/commands/process_tree.rs": {"devbox-workspace"},
+    "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs": {"devbox-control-center"},
+    "crates/http-client-engine/src/commands/process_tree.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/browser_profile.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/owned_copy.rs": {"devbox-workspace"},
@@ -350,7 +348,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             reasons.append(f"Rust workspace configuration changed: {path}")
             continue
 
-        if path == "apps/catalog.json":
+        if path in {"apps/catalog.json", "apps/legacy-v0.7-catalog.json"}:
             for directory in CATALOG_FRONTEND_CONSUMERS:
                 node_name = frontend.by_directory.get(directory)
                 if node_name is None:

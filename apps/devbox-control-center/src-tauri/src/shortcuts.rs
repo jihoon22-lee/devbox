@@ -1,6 +1,6 @@
 //! Control Center owns the native shortcut registration. No startup entry is
 //! added, and other installation namespaces cannot become simultaneous owners.
-#[path = "../../../devbox-launcher/src-tauri/src/hotkey.rs"]
+#[path = "platform/hotkey.rs"]
 #[allow(dead_code)] // The product uses the common multi-binding worker, not legacy window toggling.
 mod native;
 use serde::Serialize;

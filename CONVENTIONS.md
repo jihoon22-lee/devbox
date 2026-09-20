@@ -1,12 +1,10 @@
 # devbox — 공통 개발 규약
 
-**현재 공개 v0.7.0 기준:** 15개 앱(port-manager, developer-toolbox, wsl-desktop, api-playground, everything-plus, knowledge-base,
-life-log, devbox-manager, code-pad, run-manager, workbench, webhook-lab, repo-manager, devbox-launcher, log-lens)을 하나의 저장소에서 관리하되,
-각각은 **독립적으로 실행되고 독립적으로 .exe가 만들어지는 Tauri 앱**이다. 소스 저장소와 공통 코드만 공유한다.
-
-v0.8.0은 Workspace / API Studio / Knowledge / Control Center 네 제품으로 전환한다.
-전환 중에는 v0.7 공개 topology를 유지하며, 신규 topology는 별도 검증한다.
-구현 상태와 목표를 혼동하지 않는다. v0.8 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
+**현재 소스는 v0.8.0 네 제품** Workspace / API Studio / Knowledge / Control Center다.
+각 제품은 독립 Windows 실행 파일이며 Suite의 typed route·authority·installation identity를 공유한다.
+공개 완료 여부는 [#541](https://github.com/jihoon22-lee/devbox/issues/541)과 Release가 원장이다.
+v0.7의 15개 앱·32개 자산은 역사적 계약이며 frozen catalog는 migration/reference에만 사용한다.
+v0.8 PR 정책은 §8, 작업 도구 운영은 §11을 따른다.
 
 ```
 devbox/
@@ -47,74 +45,22 @@ devbox/
 
 ## 2. 저장소 구조
 
-```
-devbox/
-├─ apps/
-│  ├─ port-manager/        # Port & Process Manager (최초)
-│  ├─ developer-toolbox/   # 개발 도구 모음
-│  ├─ wsl-desktop/         # 임베디드 WSL 터미널 (wsl-dashboard 흡수)
-│  ├─ api-playground/      # REST API 테스트
-│  ├─ everything-plus/     # 로컬 파일 검색
-│  ├─ knowledge-base/      # 마크다운 지식 저장소
-│  ├─ life-log/            # 자동 일일 로그 (집계 허브, activity-timeline 흡수)
-│  ├─ devbox-manager/      # devbox 앱 설치·업데이트·실행 (+ 환경 진단)
-│  ├─ code-pad/            # CodeMirror 6 경량 코드 에디터 (LSP)
-│  ├─ run-manager/         # 예약 실행·서비스 관리
-│  ├─ workbench/           # 프로젝트 기반 orchestration 셸
-│  ├─ webhook-lab/         # 로컬 웹훅/콜백 서버
-│  ├─ repo-manager/        # git 저장소·worktree 관리
-│  ├─ devbox-launcher/     # catalog·snapshot 기반 빠른 실행
-│  └─ log-lens/            # bounded local/WSL/container 로그 검사
-│
-├─ packages/               # React 공용
-│  ├─ tokens/              # 15개 release 앱의 공용 CSS 커스텀 프로퍼티
-│  ├─ a11y/                # keyboard·IME·dialog·axe 공통 계약
-│  ├─ editor/              # CodeMirror 공용 설정      (knowledge-base, code-pad)
-│  ├─ diff-view/           # diff 렌더 공용            (code-pad, run-manager)
-│  ├─ context-menu/        # 위치·keyboard·focus·submenu 동작
-│  ├─ openapi/             # bounded OpenAPI JSON/YAML parsing
-│  ├─ api-studio-features/ # API·Webhook·Transforms UI (legacy 앱, API Studio)
-│  ├─ control-center-features/ # Manager·Control Center 진단·환경·관련 도구 UI
-│  ├─ workspace-features/  # Overview·Source·Files UI (legacy 앱, Workspace)
-│  └─ mermaid-renderer/    # 필요할 때만 불러오는 Markdown diagram renderer
-│
-├─ crates/                 # Rust 공용
-│  ├─ applink/             # 앱 간 one-time typed handoff와 single-instance 수신 계약
-│  ├─ api-protocols/       # API 프로토콜 validation/codec (API Playground, API Studio)
-│  ├─ webhook-core/        # Webhook fixture/rule/replay (Webhook Lab, API Studio)
-│  ├─ transforms-core/     # Transform codec/workflow (Toolbox, API Studio)
-│  ├─ data-migration/      # consistent snapshot/transaction (Control Center, API Studio)
-│  ├─ catalog/             # build/runtime app catalog
-│  ├─ filesystem/          # 파일 walk/검색 순회  (everything-plus, code-pad)
-│  ├─ git/                 # Windows/WSL Git argv·identity 경계
-│  ├─ launch/              # catalog 기반 설치 앱 실행
-│  ├─ markdown/            # 마크다운 렌더          (knowledge-base, code-pad)
-│  ├─ process/             # 프로세스/포트 조회·kill  (port-manager, run-manager)
-│  ├─ wsl/                 # WSL argv·경로 정규화    (wsl-desktop, run-manager, workbench, repo-manager)
-│  ├─ search/              # FTS5 쿼리 빌더          (everything-plus, knowledge-base)
-│  ├─ integration/         # 앱 간 snapshot 계약      (run-manager, workbench, knowledge-base)
-│  ├─ secrets/             # DPAPI 비밀 보호          (api-playground, run-manager)
-│  ├─ window-state/        # monitor/DPI-safe 순수 geometry
-│  └─ window-state-tauri/  # persistent Tauri window adapter
-│
-├─ docs/
-│  ├─ architecture.md
-│  ├─ roadmap.md
-│  └─ projects.md
-│
-├─ Cargo.toml
-├─ package.json
-├─ pnpm-workspace.yaml
-├─ README.md
-└─ .gitignore
+```text
+apps/devbox-workspace/       # 프로젝트·파일·Git·세션·Runtime·터미널
+apps/devbox-api-studio/      # Requests·Protocols·Webhooks·Transforms
+apps/devbox-knowledge/       # Notes·Daily·Activity·Search
+apps/devbox-control-center/  # 제품·명령·도구·이전·설치 복구
+packages/                   # product-shell와 domain feature UI, tokens 및 실제 공유 UI
+crates/                     # 14개 소비 engine 및 계약·migration·runtime 공용 모듈
+docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 ```
 
-- 앱 이름은 **kebab-case** (`port-manager`) — 디렉터리·git 브랜치·crate 의존에 사용
-- 앱별 Rust 크레이트 이름은 `_` → `-` 변환 후 사용: `port-manager` → `port_manager`
-- 각 앱의 product 산출물: `PortManager.exe`, `DevToolbox.exe`, `WSLDesktop.exe`,
-  `ApiPlayground.exe`, `EverythingPlus.exe`, `Knowledge.exe`, `LifeLog.exe`,
-  `DevboxManager.exe`, `Code Pad.exe`, `Run Manager.exe`, `Workbench.exe`, `WebhookLab.exe`,
-  `RepoManager.exe`, `DevboxLauncher.exe`, `LogLens.exe`
+- 앱 ID와 실행 파일은 `devbox-<product>`, `devbox-<product>.exe`다.
+- 현재 모듈 소유권은 [projects](docs/projects.md), workspace members는 Cargo.toml이 원장이다.
+- `apps/catalog.json`은 네 공개 제품, `apps/products.json`은 typed route·component 계약이다.
+- `apps/legacy-v0.7-catalog.json`은 원본 발견·설치 provenance·역사적 fixture 전용이다.
+- engine에는 standalone bootstrap·installer를 두지 않는다. 순수 로직은 core/, OS 처리는
+  command/platform 계층으로 분리한다. B09 추출은 이미 사용 중인 엔진의 소유 위치 변경이다.
 
 ## 3. 공통 기술 스택
 
@@ -176,7 +122,7 @@ error.rs          # AppError
 - **core → crates/ 추출 기준**: 같은 도메인 코드가 두 번째 앱에서 필요해지면
   `apps/<app>/src-tauri/src/core/<domain>.rs`를 `crates/<domain>/`로 옮기고
   Cargo workspace `members`에 추가, 해당 앱들은 `path` 의존으로 연결
-- crates 안에 Windows 전용 코드(`windows` crate 등)를 넣지 않는다 (WSL에서 테스트 유지)
+- 순수 core는 WSL에서 테스트할 수 있게 유지하고, engine/host의 Windows 전용 처리는 cfg 경계로 분리한다.
 - `#[tauri::command]`는 얇게, 도메인 로직은 core/crates로
 
 ### 프론트엔드 구조 (apps/<app>/src/)
@@ -204,7 +150,7 @@ src/
 
 ### 릴리스 검증 경계
 
-- 현재 v0.7은 15개 앱·32개 public asset 계약을 유지한다. v0.8 목표는 구현 완료와 구분한다.
+- v0.8 공개 계약은 Suite setup + 네 portable ZIP + manifest + notices의 7개 파일이다. 필수 WSL/Suite helper를 ZIP에 포함한다. 소스 전환과 실제 게시 완료는 구분한다.
 - 안정판은 exact-main Windows candidate의 assembly·packaged runtime·installer acceptance 통과 후,
   동일 commit의 annotated tag로 검증된 후보만 승격한다. 후보 부재·만료 시 새 build로 대체하지 않는다.
 - Stable verifier의 `always()` 및 preflight/draft-stage 명시적 success 조건을 유지한다.
@@ -281,20 +227,10 @@ pnpm create tauri-app@latest --name <app-name> --template react-ts --manager pnp
 3. 두 번째 앱에서 중복 코드 발생 시 → `crates/`·`packages/`로 추출
 4. 최종: Windows에서 `pnpm tauri dev/build`
 
-## 7. 개발 순서 (현재 15개)
-```
-Phase 1: port-manager → developer-toolbox     # Tauri 기본기 (IPC, Rust 기초, 설정)
-Phase 2: api-playground → everything-plus      # 자식 프로세스, async, HTTP, 상태관리
-Phase 3: knowledge-base → life-log             # 개인 데이터 플랫폼 통합
-추가:    wsl-desktop, devbox-manager           # PTY 터미널, 앱 설치·업데이트
-추가:    code-pad, run-manager                 # 경량 코드 에디터(LSP), 예약 실행·서비스
-Stage4:  workbench                             # 프로젝트 기반 orchestration 셸
-Stage5:  webhook-lab, repo-manager             # 로컬 웹훅 서버, git worktree 관리
-P3:      devbox-launcher, log-lens             # devbox 전용 진입점, bounded 로그 검사
-```
-- 현재 15개 앱 구현 완료. 진행 상황은 [docs/roadmap.md](./docs/roadmap.md) 참조
-- 공통 코드 발견 시점에 `crates/process`, `crates/wsl`, `packages/tokens` 등을 하나씩 추출
-- 각 프로젝트 상세는 `apps/<AppName>/README.md` 또는 설계 문서(`docs/superpowers/specs/`) 참조
+## 7. 현재 개발 범위
+
+B01~B08의 제품·통합·delivery 구현 이후 B09에서 source/CI/배포 전환을 마무리한다.
+선행 PR이 완료되기 전에 의존 후속 작업을 시작하지 않는다. 실제 상태와 근거는 #541에 기록한다.
 
 ## 8. Git 규약 (모노레포: `devbox/` 루트 1개 저장소)
 
@@ -422,27 +358,12 @@ docs/<scope>           문서 작업   예: docs/roadmap
 [`docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md`](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
 기준으로 한다.
 
-## 10. 통합 전략 (Workbench)
-- `apps/workbench`를 프로젝트 기반 orchestration 셸로 구현했다 (구현 완료)
-- workbench는 기존 `crates/`·`packages/`를 그대로 재사용 → 공통화가 통합을 쉽게 만든다
-- Workbench까지 원래 13개 구조를 완성했고, Devbox Launcher와 Log Lens 추가 후 현재 독립 앱은 15개다.
-- Workbench project environment는 native-first/offline 경계를 따른다. 사용자가 고른
-  프로젝트 상대 `.env`/`.env.<name>`만 읽고, profile·IPC·snapshot·로그에는 원문 값을
-  넣지 않는다. 저장되는 것은 source, 변수 이름, 충돌 상태, opaque revision과
-  `crates/secrets`의 secret reference뿐이며, masked preview와 실행 직전 재검증을 거친
-  ephemeral child-process overlay만 허용한다. 파일·변수·이름·값 상한, UTF-8/strict dotenv
-  parser, canonical root·symlink/reparse 거부를 native와 UI 양쪽에서 적용한다.
-- 이 경계는 global/system environment editor, cloud secret store, 다른 앱 DB 직접 수정,
-  자동 `.env` 생성·수정·업로드를 포함하지 않는다. disabled configuration은 실행 시
-  파일을 읽지 않으며, 빈 파일은 성공적인 no-op으로 표현한다. 중복·예약 이름·stale
-  revision·secret backend 불가 상태는 fail-closed한다. project environment의 app/WSL/
-  cwd/port/service preflight는 별도 #313 계약이며 이 규칙에 섞지 않는다.
-- #312와 #313은 사용자에게는 하나의 `Start Workspace` review→continue 흐름으로 보이는
-  grouped PR 후보지만 acceptance/rollback 경계는 독립이다. #313 preflight는 required app,
-  distro/cwd, TCP port와 service snapshot을 read-only로 확인하고, warning/existing와
-  Workbench-started provenance를 구분한다. preflight 실패는 environment read/child spawn을
-  허용하지 않으며, service lifecycle/자동 복구는 여전히 Workbench 범위 밖이다.
-- 상세: `docs/product-opportunities.md` §15.2, `docs/superpowers/specs/2026-08-14-workbench-design.md`
+## 10. 제품 통합
+
+제품은 owner가 검증한 typed context와 source-owned ArtifactRef/SecretRef를 교환한다.
+경로 문자열이나 UI route만으로 다른 제품 권한을 얻지 않는다. legacy exe fallback은 금지한다.
+기존 engine의 command adapter는 제품 host가 명시적으로 허용한 메서드만 등록한다.
+상세 계약과 기능/데이터 수용은 [v0.8 acceptance](docs/v0.8-acceptance.md)를 따른다.
 
 ## 11. Codex 지침·스킬·작업 기록
 

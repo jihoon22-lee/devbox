@@ -125,6 +125,15 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     profileId=randomUUID();
     const profile={id:profileId,name:"B06 native companion",tabs:[{id:"main",title:"Fixture",layout:"grid",paneKeys:["one","two"],sizing:{columns:[0.5,0.5],rows:[1]}}],panes:[{key:"one",distro,cwd:linux+"/work",multiplexer},{key:"two",distro,cwd:linux+"/work",multiplexer}],activeTabId:"main",activePaneKey:"two"};
     success(await terminal("save_workspace_profile",{expectedRevision:store.revision,profile}));
+    if (process.env.DEVBOX_FIXTURE_PROFILE === "release") {
+      const started = performance.now();
+      const readback = success(await terminal("list_workspace_profiles"));
+      const profileReadbackMs = Math.round(performance.now() - started);
+      assert.deepEqual(readback.profiles.find(value => value.id === profileId), {...profile, tabs:profile.tabs.map(tab=>({...tab,customTitle:false})), panes:profile.panes.map(pane=>({...pane,startCommand:null}))});
+      const budgets = JSON.parse(readFileSync(new URL("./product-foundation-performance.json", import.meta.url), "utf8")).budgets;
+      writeFileSync("product-foundation-evidence/terminal-profile-performance.json", JSON.stringify({source:process.env.GITHUB_SHA,profileReadbackMs,budget:budgets.profileReadbackMs,result:profileReadbackMs<=budgets.profileReadbackMs?"passed":"failed",scope:"one persisted profile readback before any PTY execution"},null,2));
+      assert.ok(profileReadbackMs <= budgets.profileReadbackMs);
+    }
     const command=success(await terminal("terminal_commands")).profiles.find(value=>value.id===profileId);
     assert.ok(command);assert.ok(!JSON.stringify(command).includes(linux));
     windowId=randomUUID();

@@ -67,7 +67,7 @@ let ui;
 try {
   ui = await startUi();
   evidence.performance = {
-    host: performanceHost(), build: "hidden Windows debug executable; not a packaged release comparison",
+    host: performanceHost(), build: process.env.DEVBOX_FIXTURE_PROFILE === "release" ? "exact candidate release executable" : "hidden Windows debug executable",
     conditions: {
       cold: "new process and empty isolated profile; OS cache not flushed",
       input: "same inert F24 event acknowledgement as the v0.7 baseline",

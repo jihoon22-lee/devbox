@@ -1,0 +1,37 @@
+[package]
+name = "devbox-webhook-host"
+version = "0.8.0"
+publish = false
+description = "Local Mock/Webhook Server"
+authors = ["jihoon22.lee"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "webhook_lab_lib"
+crate-type = ["rlib"]
+
+# A product component links the native implementation without embedding the
+# legacy executable's frontend bundle or invoking its bootstrap.
+[features]
+default = []
+
+
+
+[dependencies]
+webhook-core = { path = "../webhook-core" }
+tauri = { version = "2", features = [] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+uuid = { version = "1", features = ["v4"] }
+devbox-filesystem = { package = "filesystem", path = "../filesystem" }
+devbox-applink = { package = "applink", path = "../applink" }
+devbox-integration = { package = "integration", path = "../integration" }
+devbox-launch = { package = "launch", path = "../launch" }
+
+[dev-dependencies]
+tempfile = "3"

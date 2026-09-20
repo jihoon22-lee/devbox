@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "nsis": {
+    "version": "3.11",
+    "url": "https://github.com/tauri-apps/binary-releases/releases/download/nsis-3.11/nsis-3.11.zip",
+    "sha256": "c7d27f780ddb6cffb4730138cd1591e841f4b7edb155856901cdf5f214394fa1",
+    "size": 2361546,
+    "upstreamReference": "https://github.com/tauri-apps/tauri/blob/tauri-cli-v2.11.4/crates/tauri-bundler/src/bundle/windows/nsis/mod.rs"
+  }
+}

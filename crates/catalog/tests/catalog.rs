@@ -60,12 +60,13 @@ fn v2_parses_revision_capabilities_actions_and_fake_sixteenth_app() {
 }
 
 #[test]
-fn repository_catalog_tracks_current_shipped_capabilities() {
-    let catalog = parse_catalog(REPOSITORY_CATALOG).expect("repository catalog should parse");
+fn legacy_catalog_preserves_import_and_alias_capabilities() {
+    let catalog = parse_catalog(include_str!("../../../apps/legacy-v0.7-catalog.json"))
+        .expect("legacy catalog should parse");
 
     assert_eq!(catalog.schema_version, SCHEMA_V2);
     assert_eq!(catalog.catalog_revision, Some(18));
-    assert_eq!(catalog.apps.len(), 19);
+    assert_eq!(catalog.apps.len(), 15);
     assert_eq!(catalog.apps.iter().filter(|app| app.release).count(), 15);
     assert!(catalog
         .apps
@@ -639,4 +640,33 @@ fn parse_errors_do_not_echo_untrusted_catalog_values() {
         parse_catalog(RUNTIME_CORRUPT),
         Err(CatalogError::InvalidJson)
     );
+}
+
+#[test]
+fn public_catalog_contains_only_the_four_versioned_product_hosts() {
+    let catalog = parse_catalog(REPOSITORY_CATALOG).unwrap();
+    assert_eq!(catalog.catalog_revision, Some(19));
+    assert_eq!(catalog.apps.len(), 4);
+    assert!(catalog
+        .apps
+        .iter()
+        .all(|app| app.release && app.manager_visible));
+    let ids: std::collections::BTreeSet<_> =
+        catalog.apps.iter().map(|app| app.id.as_str()).collect();
+    assert_eq!(
+        ids,
+        [
+            "devbox-workspace",
+            "devbox-api-studio",
+            "devbox-knowledge",
+            "devbox-control-center"
+        ]
+        .into_iter()
+        .collect()
+    );
+    // Unverified legacy argv capabilities are not advertised by new hosts.
+    assert!(catalog
+        .apps
+        .iter()
+        .all(|app| app.accepts.is_empty() && app.actions.is_empty()));
 }

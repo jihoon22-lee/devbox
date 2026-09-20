@@ -23,7 +23,7 @@ assert "--artifact-kind candidate" in WORKFLOW
 assert '--repository "$GITHUB_REPOSITORY"' in WORKFLOW
 assert '--workflow-run "$CANDIDATE_RUN"' in WORKFLOW
 assert "assets=(candidate/assets/*)" in WORKFLOW
-assert "draft release requires exactly 32 staged assets" in WORKFLOW
+assert "draft release requires exactly 7 staged assets" in WORKFLOW
 assert WORKFLOW.index(
     "Independently verify candidate assets and provenance"
 ) < WORKFLOW.index("Atomically create a new draft release")
@@ -45,4 +45,7 @@ assert (
 )
 assert "retention-days: 14" in CANDIDATE_WORKFLOW
 
+assert "published-runtime:" in WORKFLOW
+assert "mode: smoke" in WORKFLOW
+assert "./.github/workflows/windows-installer-acceptance.yml" in WORKFLOW
 print("Stable candidate promotion workflow contract: PASS")

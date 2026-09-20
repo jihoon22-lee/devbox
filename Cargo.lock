@@ -83,47 +83,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "330a5ed07fa54e4702c9d6c4174f74427fc0ef6e214bbd677ae50a5099946470"
 
 [[package]]
-name = "api-playground"
-version = "0.5.1"
-dependencies = [
- "api-protocols",
- "applink",
- "base64 0.22.1",
- "bytes",
- "dirs",
- "filesystem",
- "futures-util",
- "getrandom 0.4.3",
- "integration",
- "launch",
- "libc",
- "prost",
- "prost-reflect",
- "prost-types",
- "reqwest",
- "rustls-pki-types",
- "secrets",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "tokio-stream",
- "tokio-tungstenite",
- "tonic",
- "tonic-prost",
- "tonic-reflection",
- "url",
- "window-state-tauri",
- "windows 0.61.3",
- "zeroize",
-]
-
-[[package]]
 name = "api-protocols"
 version = "0.1.0"
 dependencies = [
@@ -798,43 +757,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0c9ea0ac24bc397ab3c98583a3c9ba74fa56b09a4449bbe172b9b1ddb016027a"
 
 [[package]]
-name = "code-pad"
-version = "0.5.1"
-dependencies = [
- "applink",
- "base64 0.22.1",
- "chardetng",
- "dirs",
- "encoding_rs",
- "filesystem",
- "flate2",
- "libc",
- "lsp-types",
- "markdown",
- "notify",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "subtle",
- "tar",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "url",
- "uuid",
- "window-state-tauri",
- "windows 0.58.0",
- "wsl",
- "zip",
-]
-
-[[package]]
 name = "codepage"
 version = "0.1.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1289,14 +1211,37 @@ dependencies = [
 ]
 
 [[package]]
+name = "devbox-activity-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "dirs",
+ "filesystem",
+ "git",
+ "integration",
+ "launch",
+ "regex",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tempfile",
+ "tokio",
+ "windows 0.58.0",
+ "winreg 0.52.0",
+]
+
+[[package]]
 name = "devbox-api-studio"
 version = "0.8.0"
 dependencies = [
- "api-playground",
  "applink",
  "catalog",
  "data-migration",
- "developer-toolbox",
+ "devbox-http-client-engine",
+ "devbox-toolbox-engine",
+ "devbox-webhook-host",
  "dirs",
  "filesystem",
  "product-contract",
@@ -1315,10 +1260,33 @@ dependencies = [
  "transforms-core",
  "uuid",
  "webhook-core",
- "webhook-lab",
  "webview2-com",
  "windows 0.61.3",
  "zeroize",
+]
+
+[[package]]
+name = "devbox-content-index-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "calamine",
+ "cfb",
+ "dirs",
+ "filesystem",
+ "integration",
+ "launch",
+ "lopdf",
+ "notify",
+ "quick-xml",
+ "rusqlite",
+ "search",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tauri-plugin-opener",
+ "wsl",
+ "zip",
 ]
 
 [[package]]
@@ -1327,7 +1295,7 @@ version = "0.8.0"
 dependencies = [
  "catalog",
  "data-migration",
- "devbox-manager",
+ "devbox-installation-tools",
  "dirs",
  "filesystem",
  "product-contract",
@@ -1348,57 +1316,78 @@ dependencies = [
 ]
 
 [[package]]
-name = "devbox-knowledge"
+name = "devbox-editor-engine"
 version = "0.8.0"
 dependencies = [
  "applink",
- "catalog",
- "data-migration",
- "everything-plus",
+ "base64 0.22.1",
+ "chardetng",
+ "dirs",
+ "encoding_rs",
  "filesystem",
- "knowledge-base",
+ "flate2",
  "libc",
- "life-log",
- "product-contract",
- "product-shell-tauri",
- "rusqlite",
+ "lsp-types",
+ "markdown",
+ "notify",
+ "reqwest",
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "subtle",
+ "tar",
  "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
  "tauri-plugin-opener",
  "tempfile",
  "tokio",
+ "url",
  "uuid",
- "windows 0.61.3",
+ "windows 0.58.0",
  "wsl",
+ "zip",
 ]
 
 [[package]]
-name = "devbox-launcher"
-version = "0.2.0"
+name = "devbox-http-client-engine"
+version = "0.8.0"
 dependencies = [
+ "api-protocols",
  "applink",
- "catalog",
+ "base64 0.22.1",
+ "bytes",
+ "dirs",
  "filesystem",
+ "futures-util",
+ "getrandom 0.4.3",
  "integration",
  "launch",
- "product-contract",
+ "libc",
+ "prost",
+ "prost-reflect",
+ "prost-types",
+ "reqwest",
+ "rustls-pki-types",
+ "secrets",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-single-instance",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
+ "tempfile",
+ "tokio",
+ "tokio-stream",
+ "tokio-tungstenite",
+ "tonic",
+ "tonic-prost",
+ "tonic-reflection",
+ "url",
  "windows 0.61.3",
+ "zeroize",
 ]
 
 [[package]]
-name = "devbox-manager"
-version = "0.5.1"
+name = "devbox-installation-tools"
+version = "0.8.0"
 dependencies = [
  "applink",
  "catalog",
@@ -1418,10 +1407,178 @@ dependencies = [
  "serde_yaml_ng",
  "sha2 0.10.9",
  "tauri",
- "tauri-build",
  "tauri-plugin-dialog",
  "tauri-plugin-opener",
- "tauri-plugin-single-instance",
+ "windows 0.61.3",
+ "wsl",
+ "zeroize",
+]
+
+[[package]]
+name = "devbox-knowledge"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "catalog",
+ "data-migration",
+ "devbox-activity-engine",
+ "devbox-content-index-engine",
+ "devbox-knowledge-vault-engine",
+ "filesystem",
+ "libc",
+ "product-contract",
+ "product-shell-tauri",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-opener",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "windows 0.61.3",
+ "wsl",
+]
+
+[[package]]
+name = "devbox-knowledge-vault-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "base64 0.22.1",
+ "dirs",
+ "filesystem",
+ "integration",
+ "launch",
+ "markdown",
+ "notify",
+ "product-contract",
+ "rusqlite",
+ "search",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-plugin-opener",
+ "tempfile",
+ "windows 0.61.3",
+ "wsl",
+]
+
+[[package]]
+name = "devbox-logs-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "chrono",
+ "dirs",
+ "filesystem",
+ "integration",
+ "launch",
+ "libc",
+ "regex",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tempfile",
+ "tokio",
+ "windows 0.61.3",
+ "wsl",
+ "zeroize",
+]
+
+[[package]]
+name = "devbox-ports-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "dirs",
+ "filesystem",
+ "integration",
+ "launch",
+ "process",
+ "serde",
+ "serde_json",
+ "sysinfo",
+ "tauri",
+ "tauri-plugin-opener",
+ "tempfile",
+ "windows 0.61.3",
+ "wsl",
+]
+
+[[package]]
+name = "devbox-projects-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "filesystem",
+ "git",
+ "integration",
+ "launch",
+ "libc",
+ "secrets",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tokio",
+ "uuid",
+ "windows 0.61.3",
+ "wsl",
+ "zeroize",
+]
+
+[[package]]
+name = "devbox-repositories-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "filesystem",
+ "futures-util",
+ "git",
+ "integration",
+ "launch",
+ "reqwest",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-plugin-opener",
+ "tempfile",
+ "tokio",
+ "toml 1.1.4+spec-1.1.0",
+ "wsl",
+]
+
+[[package]]
+name = "devbox-runtime-engine"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "chrono",
+ "chrono-tz",
+ "croner",
+ "data-migration",
+ "dirs",
+ "filesystem",
+ "integration",
+ "launch",
+ "regex",
+ "rusqlite",
+ "secrets",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-plugin-notification",
+ "tempfile",
+ "tokio",
+ "toml 0.8.2",
+ "uuid",
  "window-state-tauri",
  "windows 0.61.3",
  "wsl",
@@ -1429,48 +1586,28 @@ dependencies = [
 ]
 
 [[package]]
-name = "devbox-workspace"
+name = "devbox-terminal-engine"
 version = "0.8.0"
 dependencies = [
  "applink",
- "catalog",
- "chrono",
- "code-pad",
- "data-migration",
+ "dirs",
  "filesystem",
- "git",
  "integration",
- "log-lens",
- "port-manager",
- "product-contract",
- "product-shell-tauri",
- "repo-manager",
- "run-manager",
+ "launch",
+ "portable-pty",
  "serde",
  "serde_json",
- "sha2 0.11.0",
  "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-dialog",
- "tauri-plugin-notification",
- "tauri-plugin-opener",
  "tempfile",
  "tokio",
  "uuid",
- "webview2-com",
- "window-state",
- "window-state-tauri",
- "windows 0.61.3",
- "workbench",
- "workspace-wsl",
+ "windows-version",
  "wsl",
- "wsl-desktop",
 ]
 
 [[package]]
-name = "developer-toolbox"
-version = "0.4.1"
+name = "devbox-toolbox-engine"
+version = "0.8.0"
 dependencies = [
  "applink",
  "base64 0.22.1",
@@ -1490,15 +1627,66 @@ dependencies = [
  "sha2 0.11.0",
  "similar",
  "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
  "tempfile",
  "transforms-core",
  "uuid",
- "window-state-tauri",
  "zeroize",
+]
+
+[[package]]
+name = "devbox-webhook-host"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "filesystem",
+ "integration",
+ "launch",
+ "serde",
+ "serde_json",
+ "tauri",
+ "tempfile",
+ "uuid",
+ "webhook-core",
+]
+
+[[package]]
+name = "devbox-workspace"
+version = "0.8.0"
+dependencies = [
+ "applink",
+ "catalog",
+ "chrono",
+ "data-migration",
+ "devbox-editor-engine",
+ "devbox-logs-engine",
+ "devbox-ports-engine",
+ "devbox-projects-engine",
+ "devbox-repositories-engine",
+ "devbox-runtime-engine",
+ "devbox-terminal-engine",
+ "filesystem",
+ "git",
+ "integration",
+ "product-contract",
+ "product-shell-tauri",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tauri-build",
+ "tauri-plugin-clipboard-manager",
+ "tauri-plugin-dialog",
+ "tauri-plugin-notification",
+ "tauri-plugin-opener",
+ "tempfile",
+ "tokio",
+ "uuid",
+ "webview2-com",
+ "window-state",
+ "window-state-tauri",
+ "windows 0.61.3",
+ "workspace-wsl",
+ "wsl",
 ]
 
 [[package]]
@@ -1784,33 +1972,6 @@ checksum = "8be9f3dfaaffdae2972880079a491a1a8bb7cbed0b8dd7a347f668b4150a3b93"
 dependencies = [
  "event-listener",
  "pin-project-lite",
-]
-
-[[package]]
-name = "everything-plus"
-version = "0.5.0"
-dependencies = [
- "applink",
- "calamine",
- "cfb",
- "dirs",
- "filesystem",
- "integration",
- "launch",
- "lopdf",
- "notify",
- "quick-xml",
- "rusqlite",
- "search",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "window-state-tauri",
- "wsl",
- "zip",
 ]
 
 [[package]]
@@ -2587,24 +2748,6 @@ name = "glob"
 version = "0.3.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "e4eba85ea1d0a966a983acd07deee566e67395d2d96b6fb39e62b5a833f1eb0b"
-
-[[package]]
-name = "global-hotkey"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "8c386b0a4a70cb2d39fffd74480f985b6f0bfbcb934b6a6b6b7e630e448f242e"
-dependencies = [
- "crossbeam-channel",
- "keyboard-types",
- "objc2",
- "objc2-app-kit",
- "once_cell",
- "serde",
- "thiserror 2.0.20",
- "windows-sys 0.59.0",
- "x11rb",
- "xkeysym",
-]
 
 [[package]]
 name = "gobject-sys"
@@ -3415,35 +3558,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "knowledge-base"
-version = "0.5.1"
-dependencies = [
- "applink",
- "base64 0.22.1",
- "dirs",
- "filesystem",
- "integration",
- "launch",
- "markdown",
- "notify",
- "product-contract",
- "rusqlite",
- "search",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "window-state-tauri",
- "windows 0.61.3",
- "wsl",
-]
-
-[[package]]
 name = "kqueue"
 version = "1.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3551,32 +3665,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "life-log"
-version = "0.5.0"
-dependencies = [
- "applink",
- "dirs",
- "filesystem",
- "git",
- "integration",
- "launch",
- "regex",
- "rusqlite",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "window-state-tauri",
- "windows 0.58.0",
- "winreg 0.52.0",
-]
-
-[[package]]
 name = "linux-raw-sys"
 version = "0.12.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3602,31 +3690,6 @@ name = "log"
 version = "0.4.33"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0ceec5bc11778974d1bcb055b18002eba7f4b3518b6a0081b3af5f21666da9ad"
-
-[[package]]
-name = "log-lens"
-version = "0.2.1"
-dependencies = [
- "applink",
- "chrono",
- "dirs",
- "filesystem",
- "integration",
- "launch",
- "libc",
- "regex",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "window-state-tauri",
- "windows 0.61.3",
- "wsl",
- "zeroize",
-]
 
 [[package]]
 name = "logos"
@@ -4567,29 +4630,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "port-manager"
-version = "0.4.0"
-dependencies = [
- "applink",
- "dirs",
- "filesystem",
- "integration",
- "launch",
- "process",
- "serde",
- "serde_json",
- "sysinfo",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "window-state-tauri",
- "windows 0.61.3",
- "wsl",
-]
-
-[[package]]
 name = "portable-atomic"
 version = "1.15.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5101,31 +5141,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d6f6ff9a378485b298a5286656da665ba74413d36db0979633275d2e708145d4"
 
 [[package]]
-name = "repo-manager"
-version = "0.3.0"
-dependencies = [
- "applink",
- "filesystem",
- "futures-util",
- "git",
- "integration",
- "launch",
- "reqwest",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "toml 1.1.4+spec-1.1.0",
- "window-state-tauri",
- "wsl",
-]
-
-[[package]]
 name = "reqwest"
 version = "0.13.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5206,39 +5221,6 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
-]
-
-[[package]]
-name = "run-manager"
-version = "0.5.1"
-dependencies = [
- "applink",
- "chrono",
- "chrono-tz",
- "croner",
- "data-migration",
- "dirs",
- "filesystem",
- "integration",
- "launch",
- "regex",
- "rusqlite",
- "secrets",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tauri",
- "tauri-build",
- "tauri-plugin-notification",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "toml 0.8.2",
- "uuid",
- "window-state-tauri",
- "windows 0.61.3",
- "wsl",
- "zeroize",
 ]
 
 [[package]]
@@ -6345,21 +6327,6 @@ dependencies = [
  "thiserror 2.0.20",
  "toml 1.1.4+spec-1.1.0",
  "url",
-]
-
-[[package]]
-name = "tauri-plugin-global-shortcut"
-version = "2.3.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b4dd9f4c5136c09cd962da0c86dc4accd4666db2ea591cf16e6597435843bd2b"
-dependencies = [
- "global-hotkey",
- "log",
- "serde",
- "serde_json",
- "tauri",
- "tauri-plugin",
- "thiserror 2.0.20",
 ]
 
 [[package]]
@@ -7510,26 +7477,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "webhook-lab"
-version = "0.3.0"
-dependencies = [
- "applink",
- "filesystem",
- "integration",
- "launch",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "uuid",
- "webhook-core",
- "window-state-tauri",
-]
-
-[[package]]
 name = "webkit2gtk"
 version = "2.0.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8351,42 +8298,16 @@ dependencies = [
 ]
 
 [[package]]
-name = "workbench"
-version = "0.3.0"
-dependencies = [
- "applink",
- "filesystem",
- "git",
- "integration",
- "launch",
- "libc",
- "secrets",
- "serde",
- "serde_json",
- "sha2 0.11.0",
- "tauri",
- "tauri-build",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tokio",
- "uuid",
- "window-state-tauri",
- "windows 0.61.3",
- "wsl",
- "zeroize",
-]
-
-[[package]]
 name = "workspace-wsl"
 version = "0.1.0"
 dependencies = [
- "code-pad",
+ "devbox-editor-engine",
+ "devbox-repositories-engine",
  "filesystem",
  "git",
  "gix-config",
  "libc",
  "product-contract",
- "repo-manager",
  "serde",
  "serde_json",
  "sha2 0.11.0",
@@ -8452,32 +8373,6 @@ name = "wsl"
 version = "0.1.0"
 
 [[package]]
-name = "wsl-desktop"
-version = "0.6.0"
-dependencies = [
- "applink",
- "dirs",
- "filesystem",
- "integration",
- "launch",
- "portable-pty",
- "serde",
- "serde_json",
- "tauri",
- "tauri-build",
- "tauri-plugin-clipboard-manager",
- "tauri-plugin-global-shortcut",
- "tauri-plugin-opener",
- "tauri-plugin-single-instance",
- "tempfile",
- "tokio",
- "uuid",
- "window-state-tauri",
- "windows-version",
- "wsl",
-]
-
-[[package]]
 name = "x11"
 version = "2.21.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -8514,12 +8409,6 @@ name = "x11rb-protocol"
 version = "0.13.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "ea6fc2961e4ef194dcbfe56bb845534d0dc8098940c7e5c012a258bfec6701bd"
-
-[[package]]
-name = "xkeysym"
-version = "0.2.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b9cc00251562a284751c9973bace760d86c0276c471b4be569fe6b068ee97a56"
 
 [[package]]
 name = "yoke"

@@ -18,10 +18,12 @@ import { windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpP
 assert.equal(process.platform, "win32");
 assert.equal(process.env.GITHUB_ACTIONS, "true");
 assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+const smokeOnly = process.argv.includes("--smoke-only");
+assert.ok(process.argv.slice(2).every(value => value === "--smoke-only"));
 const elevated = windowsProcessIsElevated();
 const products = JSON.parse(readFileSync("apps/products.json", "utf8")).products;
 const root = mkdtempSync(path.join(tmpdir(), "devbox-product-fixture-"));
-const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", fixtureVersion: 1, products: [], result: "failed" };
+const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", fixtureVersion: 1, scope: smokeOnly ? "fresh-portable-startup" : "full-product-native", products: [], result: "failed" };
 mkdirSync("product-foundation-evidence", { recursive: true });
 let currentProbe = null;
 function progress(product, suffix, stage) {
@@ -109,14 +111,17 @@ async function start(product, suffix) {
   const directory = path.join(root, `${product.id}-${suffix}`); mkdirSync(directory);
   // Elevated WebView2 reads per-image machine policy instead of the process
   // override. Each fixture copy owns a unique value while both copies run.
-  const imageName = `devbox-${product.id}-${suffix}-${randomUUID()}.exe`;
+  const portableRoot = process.env.DEVBOX_PORTABLE_FIXTURES;
+  const imageName = portableRoot ? `devbox-${product.id}.exe` : `devbox-${product.id}-${suffix}-${randomUUID()}.exe`;
   const executable = path.join(directory, imageName);
   const built = path.resolve("target/debug", `devbox-${product.id}.exe`);
-  assert.ok(existsSync(built), "packaged executable is missing"); copyFileSync(built, executable);
+  assert.ok(existsSync(built), "packaged executable is missing");
+  if (portableRoot) cpSync(path.resolve(portableRoot,product.id),directory,{recursive:true});
+  else copyFileSync(built, executable);
   if (product.id === "workspace") {
     cpSync(path.resolve("apps/devbox-workspace/src-tauri/resources/wsl"), path.join(directory, "resources/wsl"), { recursive: true });
   }
-  writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:"debug",executableBytes:statSync(built).size},null,2));
+  writeFileSync(`product-foundation-evidence/assembly-${product.id}-${suffix}.json`, JSON.stringify({source:process.env.GITHUB_SHA,product:product.id,profile:process.env.DEVBOX_FIXTURE_PROFILE??"debug",executableBytes:statSync(built).size},null,2));
   const port = await freePort();
   const env = { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` };
   // Exercise the product's actual installation-specific profile. Redirecting
@@ -125,12 +130,12 @@ async function start(product, suffix) {
   delete env.WEBVIEW2_USER_DATA_FOLDER;
   const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
   if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
-  const policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
+  let policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
   let cdp, child, terminalImport;
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
-    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
+    child = spawn(executable, process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
     retainNativeErrors(child,product,suffix);
     await once(child, "spawn");
     cdp = await connect(port, child);
@@ -171,11 +176,11 @@ async function start(product, suffix) {
     // The second isolated installation starts while the first remains alive.
     // Only the first can satisfy the one-app baseline measurement condition.
     let performanceProbe;
-    if (product.id === "workspace" && suffix === "a") {
+    if (!smokeOnly && ["workspace", "control-center"].includes(product.id) && suffix === "a") {
       progress(product, suffix, "workspace-performance");
-      performanceProbe = await measureWorkspaceStartup({cdp, child, executable, env, started, startupMs});
+      performanceProbe = await measureWorkspaceStartup({cdp, child, executable, env, started, startupMs, product});
     }
-    assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);
+    assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), process.env.DEVBOX_FIXTURE_PROFILE === "release" ? null : product.defaultRoute);
     progress(product, suffix, "description");
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
     assert.equal(description.product.id, product.id);
@@ -192,6 +197,7 @@ async function start(product, suffix) {
     })()`);
     assert.deepEqual(probe, { replayRejected: true, ownerRejected: true, availability: "foundation", state: "succeeded" });
     let componentProbe;
+    if (!smokeOnly) {
     if (product.id === "workspace") {
       progress(product, suffix, "workspace-registration");
       componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
@@ -201,7 +207,7 @@ async function start(product, suffix) {
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
       copyClosedTerminalImport(terminalImport);
-      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
+      child=spawn(executable,process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
       retainNativeErrors(child,product,suffix);
       cdp=await connect(port,child,performance.now()+45000);
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
@@ -438,9 +444,13 @@ async function start(product, suffix) {
       })()`);
       assert.deepEqual(componentProbe.closePolicy, { defaultQuits: true, trayAvailable: true, preferenceRoundtrip: true, doesNotEnableCollection: true });
     }
+    }
     const second = spawn(executable, [], { env, stdio: "ignore" });
     await Promise.race([once(second, "exit"), delay(10_000).then(() => { if (second.exitCode === null) { second.kill(); throw new Error("second instance did not exit"); } })]);
     assert.equal(second.exitCode, 0); assert.equal(child.exitCode, null);
+    // The public portable executable keeps its real name in both installations.
+    // Retire only the consumed startup policy before the second copy starts.
+    if (portableRoot && policy) { restoreElevatedCdpPolicy(policy); policy = null; }
     return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
   } catch (error) {
     stop({ child, cdp, policy, network });

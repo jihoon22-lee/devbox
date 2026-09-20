@@ -115,7 +115,7 @@ impl ProductCatalog {
         let catalog: Self = serde_json::from_str(source).map_err(|_| "invalid product catalog")?;
         if catalog.schema_version != 3
             || catalog.catalog_revision == 0
-            || catalog.channel != "development"
+            || catalog.channel != "stable"
         {
             return Err("unsupported product catalog revision or channel");
         }

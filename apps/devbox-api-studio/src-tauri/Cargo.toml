@@ -27,9 +27,9 @@ transforms-core = { path = "../../../crates/transforms-core" }
 tauri = { version = "2", features = [] }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 product-contract = { path = "../../../crates/product-contract" }
-api-playground = { path = "../../api-playground/src-tauri", default-features = false }
-webhook-lab = { path = "../../webhook-lab/src-tauri", default-features = false }
-developer-toolbox = { path = "../../developer-toolbox/src-tauri", default-features = false }
+api_playground_lib = { package = "devbox-http-client-engine", path = "../../../crates/http-client-engine", default-features = false }
+webhook_lab_lib = { package = "devbox-webhook-host", path = "../../../crates/webhook-host", default-features = false }
+developer_toolbox_lib = { package = "devbox-toolbox-engine", path = "../../../crates/toolbox-engine", default-features = false }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tauri-plugin-clipboard-manager = "2"

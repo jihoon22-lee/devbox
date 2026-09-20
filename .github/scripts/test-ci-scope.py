@@ -23,26 +23,26 @@ def resolve(*paths: str):
     return module.resolve_paths(paths, ROOT)
 
 
-frontend_only = resolve("apps/run-manager/src/App.tsx")
+frontend_only = resolve("apps/devbox-workspace/src/App.tsx")
 assert frontend_only.frontend_scope == "apps"
-assert frontend_only.frontend_packages == ["apps/run-manager"]
-assert frontend_only.frontend_apps == ["run-manager"]
+assert frontend_only.frontend_packages == ["apps/devbox-workspace"]
+assert frontend_only.frontend_apps == ["devbox-workspace"]
 assert frontend_only.rust_scope == "none"
 assert frontend_only.dependency_scope == "none"
 
-rust_only = resolve("apps/run-manager/src-tauri/src/lib.rs")
+rust_only = resolve("crates/runtime-engine/src/lib.rs")
 assert rust_only.frontend_scope == "none"
 assert rust_only.rust_scope == "packages"
-assert rust_only.rust_packages == ["devbox-workspace", "run-manager"]
+assert rust_only.rust_packages == ["devbox-runtime-engine", "devbox-workspace"]
 
-frontend_manifest_lock = resolve("apps/wsl-desktop/package.json", "pnpm-lock.yaml")
+frontend_manifest_lock = resolve("apps/devbox-workspace/package.json", "pnpm-lock.yaml")
 assert frontend_manifest_lock.frontend_scope == "apps"
-assert frontend_manifest_lock.frontend_packages == ["apps/wsl-desktop"]
+assert frontend_manifest_lock.frontend_packages == ["apps/devbox-workspace"]
 assert frontend_manifest_lock.dependency_scope == "all"
 
-rust_manifest_lock = resolve("apps/devbox-manager/src-tauri/Cargo.toml", "Cargo.lock")
+rust_manifest_lock = resolve("crates/installation-tools/Cargo.toml", "Cargo.lock")
 assert rust_manifest_lock.rust_scope == "packages"
-assert rust_manifest_lock.rust_packages == ["devbox-control-center", "devbox-manager"]
+assert rust_manifest_lock.rust_packages == ["devbox-control-center", "devbox-installation-tools"]
 assert rust_manifest_lock.dependency_scope == "all"
 
 lock_only = resolve("Cargo.lock")
@@ -54,60 +54,33 @@ assert pnpm_lock_only.frontend_scope == "all"
 assert pnpm_lock_only.dependency_scope == "all"
 
 editor = resolve("packages/editor/src/index.ts")
-assert editor.frontend_packages == [
-    "apps/code-pad", "apps/devbox-knowledge", "apps/devbox-workspace", "apps/everything-plus", "apps/knowledge-base", "apps/life-log", "apps/log-lens", "apps/port-manager", "apps/repo-manager", "apps/run-manager",
-    "apps/workbench", "apps/wsl-desktop", "packages/editor", "packages/knowledge-features", "packages/workspace-features",
-]
-assert editor.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench", "wsl-desktop"]
+assert editor.frontend_packages == ["apps/devbox-knowledge", "apps/devbox-workspace", "packages/editor", "packages/knowledge-features", "packages/workspace-features"]
+assert editor.frontend_apps == ["devbox-knowledge", "devbox-workspace"]
 for feature in ["tasks", "runtime", "logs", "terminal"]:
     workspace_feature = resolve(f"packages/workspace-features/src/{feature}/api.ts")
-    assert workspace_feature.frontend_apps == [
-        "code-pad", "devbox-workspace", "log-lens", "port-manager", "repo-manager",
-        "run-manager", "workbench", "wsl-desktop",
-    ]
+    assert workspace_feature.frontend_apps == ["devbox-workspace"]
     assert workspace_feature.rust_scope == "none"
 knowledge_features = resolve("packages/knowledge-features/src/notes/api.ts")
-assert knowledge_features.frontend_apps == ["devbox-knowledge", "everything-plus", "knowledge-base", "life-log"]
-
+assert knowledge_features.frontend_apps == ["devbox-knowledge"]
 openapi = resolve("packages/openapi/src/index.ts")
-assert openapi.frontend_packages == [
-    "apps/api-playground", "apps/devbox-api-studio", "apps/developer-toolbox",
-    "apps/webhook-lab", "packages/api-studio-features", "packages/openapi",
-]
-api_features = resolve("packages/api-studio-features/src/requests/api.ts")
-assert api_features.frontend_apps == ["api-playground", "devbox-api-studio", "developer-toolbox", "webhook-lab"]
-api_protocols = resolve("crates/api-protocols/src/core/grpc.rs")
-assert api_protocols.rust_packages == ["api-playground", "api-protocols", "devbox-api-studio"]
-for crate, legacy in [("webhook-core", "webhook-lab"), ("transforms-core", "developer-toolbox")]:
-    shared_domain = resolve(f"crates/{crate}/src/lib.rs")
-    assert shared_domain.rust_packages == sorted([crate, legacy, "devbox-api-studio"])
-migration = resolve("crates/data-migration/src/lib.rs")
-assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "run-manager"]
-for app in ["run-manager", "port-manager", "log-lens"]:
-    native_runtime = resolve(f"apps/{app}/src-tauri/src/component.rs")
-    assert native_runtime.rust_packages == sorted([app, "devbox-workspace"])
-api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
-assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
-
+assert openapi.frontend_packages == ["apps/devbox-api-studio", "packages/api-studio-features", "packages/openapi"]
+assert resolve("packages/api-studio-features/src/requests/api.ts").frontend_apps == ["devbox-api-studio"]
+assert resolve("crates/api-protocols/src/core/grpc.rs").rust_packages == ["api-protocols", "devbox-api-studio", "devbox-http-client-engine"]
+for crate, engine in [("webhook-core", "devbox-webhook-host"), ("transforms-core", "devbox-toolbox-engine")]:
+    assert resolve(f"crates/{crate}/src/lib.rs").rust_packages == sorted([crate, engine, "devbox-api-studio"])
+assert resolve("crates/data-migration/src/lib.rs").rust_packages == ["data-migration", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-runtime-engine", "devbox-workspace"]
+for engine in ["runtime-engine", "ports-engine", "logs-engine"]:
+    assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-workspace"])
+assert resolve("crates/http-client-engine/src/component.rs").rust_packages == ["devbox-api-studio", "devbox-http-client-engine"]
 a11y = resolve("packages/a11y/src/index.ts")
-assert len(a11y.frontend_apps) == 19
+assert len(a11y.frontend_apps) == 4
 assert "packages/a11y" in a11y.frontend_packages
-
-process = resolve("crates/process/src/lib.rs")
-assert process.rust_packages == ["devbox-workspace", "port-manager", "process"]
-
-search = resolve("crates/search/src/lib.rs")
-assert search.rust_packages == ["devbox-knowledge", "everything-plus", "knowledge-base", "search"]
-for app in ["knowledge-base", "life-log", "everything-plus"]:
-    native_component = resolve(f"apps/{app}/src-tauri/src/component.rs")
-    assert native_component.rust_packages == sorted([app, "devbox-knowledge"])
-
+assert resolve("crates/process/src/lib.rs").rust_packages == ["devbox-ports-engine", "devbox-workspace", "process"]
+assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-content-index-engine", "devbox-knowledge", "devbox-knowledge-vault-engine", "search"]
+for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engine"]:
+    assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge"])
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == [
-    "api-playground", "devbox-api-studio", "devbox-control-center", "devbox-knowledge",
-    "devbox-launcher", "devbox-workspace", "knowledge-base", "product-contract", "product-shell-tauri", "run-manager",
-    "secrets", "workbench", "workspace-wsl",
-]
+assert secrets.rust_packages == sorted(["devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl"])
 
 native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
 assert native_helper.frontend_scope == "none"
@@ -118,15 +91,15 @@ assert helper_manifest.rust_packages == native_helper.rust_packages
 rust_graph = module.load_rust_graph(ROOT)
 assert rust_graph.nodes["workspace-wsl"].kind == "crate"
 wsl = resolve("crates/wsl/src/lib.rs")
-assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
+assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 4
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["code-pad", "devbox-control-center", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench", "wsl-desktop"]
+assert catalog.frontend_apps == ["devbox-control-center", "devbox-knowledge", "devbox-workspace"]
 assert "packages/workspace-features" in catalog.frontend_packages
 assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages
 assert "launch" in catalog.rust_packages
-assert "code-pad" not in catalog.rust_packages
+assert "devbox-editor-engine" not in catalog.rust_packages
 
 catalog_frontend_importers = {
     "/".join(source.relative_to(ROOT).parts[:2])
@@ -188,7 +161,7 @@ assert local_clean.frontend_scope == "none"
 assert local_clean.rust_scope == "none"
 assert local_clean.dependency_scope == "none"
 
-for unsafe_path in (" apps/run-manager/src/App.tsx", "apps\\run-manager\\src\\App.tsx"):
+for unsafe_path in (" apps/devbox-workspace/src/App.tsx", "apps\\run-manager\\src\\App.tsx"):
     try:
         resolve(unsafe_path)
     except module.ScopeError:
@@ -211,7 +184,7 @@ for path in (".github/scripts/verify-resources.py", ".github/scripts/check-agent
 for path in ("apps/products.json", "packages/product-shell/fixtures/route-request.json"):
     products = resolve(path)
     assert products.frontend_scope == "apps"
-    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center", "devbox-launcher"}
+    assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
     assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
 parity = resolve("apps/v0.8-feature-parity.json")
 assert parity.frontend_scope == parity.rust_scope == "all"
@@ -230,10 +203,15 @@ for path in included_sources:
 print("CI scope regression tests passed")
 
 for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
-    if path.startswith("apps/devbox-control-center/src-tauri/src/"):
+    if path.startswith("apps/devbox-control-center/src-tauri/src/") and len(module.RUST_SHARED_PLATFORM_CONSUMERS[path]) > 1:
         shared = resolve(path)
         assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(shared.rust_packages)
         assert shared.frontend_scope == "none"
 
-hotkey = resolve("apps/devbox-launcher/src-tauri/src/hotkey.rs")
-assert {"devbox-launcher", "devbox-control-center"} <= set(hotkey.rust_packages)
+hotkey = resolve("apps/devbox-control-center/src-tauri/src/platform/hotkey.rs")
+assert hotkey.rust_packages == ["devbox-control-center"]
+
+# The frozen migration catalog must still reach native readers and browser fixtures.
+legacy_catalog = resolve("apps/legacy-v0.7-catalog.json")
+assert legacy_catalog.rust_packages == catalog.rust_packages
+assert legacy_catalog.frontend_packages == catalog.frontend_packages

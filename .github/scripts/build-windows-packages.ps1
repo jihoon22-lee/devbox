@@ -1,162 +1,53 @@
 [CmdletBinding()]
-param(
-  [Parameter(Mandatory = $true)]
-  [ValidateNotNullOrEmpty()]
-  [string]$StagingRoot,
-
-  [string[]]$AppIds = @()
-)
-
+param([Parameter(Mandatory=$true)][string]$StagingRoot, [string[]]$AppIds = @())
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
-
-function Resolve-RepositoryChild([string]$RepositoryRoot, [string]$RelativePath, [string]$Label) {
-  if ([IO.Path]::IsPathRooted($RelativePath)) {
-    throw "$Label must be relative to the repository root"
-  }
-  $resolved = [IO.Path]::GetFullPath((Join-Path $RepositoryRoot $RelativePath))
-  $prefix = $RepositoryRoot.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
-  if (-not $resolved.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)) {
-    throw "$Label must remain inside the repository root"
-  }
-  return $resolved
-}
-
-function Reset-Bundle-Staging([string]$RepositoryRoot) {
-  $bundlePath = Resolve-RepositoryChild $RepositoryRoot 'target/release/bundle' 'bundle staging root'
-  if (-not (Test-Path -LiteralPath $bundlePath)) { return }
-
-  $bundle = Get-Item -LiteralPath $bundlePath -Force -ErrorAction Stop
-  if (-not $bundle.PSIsContainer -or ($bundle.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) {
-    throw 'bundle staging root must be a plain directory'
-  }
-  $reparsePoints = @(Get-ChildItem -LiteralPath $bundlePath -Recurse -Force | Where-Object {
-    ($_.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0
-  })
-  if ($reparsePoints.Count -ne 0) {
-    throw 'bundle staging root contains a reparse point'
-  }
-
-  Remove-Item -LiteralPath $bundlePath -Recurse -Force
-  if (Test-Path -LiteralPath $bundlePath) {
-    throw 'bundle staging root cleanup did not converge'
-  }
-}
-
-$repositoryRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
-$stagingPath = Resolve-RepositoryChild $repositoryRoot $StagingRoot 'staging root'
-
-if (Test-Path -LiteralPath $stagingPath) {
-  $existing = @(Get-ChildItem -LiteralPath $stagingPath -Force)
-  if ($existing.Count -ne 0) {
-    throw 'staging root must be absent or empty'
-  }
-} else {
-  New-Item -ItemType Directory -Path $stagingPath | Out-Null
-}
-
-Push-Location $repositoryRoot
+if (-not $IsWindows) { throw 'Product packages require Windows.' }
+$repository = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../..'))
+if ([IO.Path]::IsPathRooted($StagingRoot)) { throw 'Staging must be repository-relative.' }
+$staging = [IO.Path]::GetFullPath((Join-Path $repository $StagingRoot))
+if (-not $staging.StartsWith($repository + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or (Test-Path -LiteralPath $staging)) { throw 'New private repository staging required.' }
+$catalog = Get-Content -Raw (Join-Path $repository 'apps/catalog.json') | ConvertFrom-Json
+$products = @('devbox-workspace','devbox-api-studio','devbox-knowledge','devbox-control-center')
+$actual = @($catalog.apps | Where-Object release | ForEach-Object id)
+if ($actual.Count -ne 4 -or @($actual | Where-Object { $_ -notin $products }).Count -ne 0 -or @($actual | Sort-Object -Unique).Count -ne 4) { throw 'Four-product catalog required.' }
+if ($AppIds.Count -eq 0) { $AppIds = $products }
+if (@($AppIds | Sort-Object -Unique).Count -ne $AppIds.Count -or @($AppIds | Where-Object { $_ -notin $products }).Count -ne 0) { throw 'Invalid product shard.' }
+$source = (git -C $repository rev-parse HEAD).Trim()
+if ($LASTEXITCODE -ne 0 -or $source -notmatch '^[a-f0-9]{40}$') { throw 'Exact source required.' }
+New-Item -ItemType Directory -Path $staging | Out-Null
+$receipt = [ordered]@{schemaVersion=1;sourceSha=$source;profile='release';products=@();files=@()}
+Push-Location $repository
 try {
-  $catalog = Get-Content -LiteralPath 'apps/catalog.json' -Raw -Encoding UTF8 | ConvertFrom-Json
-  $releaseApps = @($catalog.apps | Where-Object { $_.release -eq $true })
-  if ($releaseApps.Count -ne 15) {
-    throw "release catalog must contain exactly 15 apps (found $($releaseApps.Count))"
+  foreach ($id in $AppIds) {
+    $definition = $catalog.apps | Where-Object id -CEQ $id
+    if ($definition.appDir -cne "apps/$id" -or $definition.cargoPackage -cne $id) { throw 'Noncanonical product location.' }
+    pnpm --filter "${id}^..." --if-present build
+    if ($LASTEXITCODE -ne 0) { throw "Shared frontend build failed: $id" }
+    pnpm --filter $id tauri build --no-bundle
+    if ($LASTEXITCODE -ne 0) { throw "Product build failed: $id" }
+    $product = $id.Substring(7)
+    $destination = Join-Path $staging $product
+    New-Item -ItemType Directory -Path $destination | Out-Null
+    Copy-Item -LiteralPath "target/release/$id.exe" -Destination $destination
+    if ($product -eq 'workspace') {
+      New-Item -ItemType Directory -Path "$destination/resources/wsl" -Force | Out-Null
+      Copy-Item -LiteralPath 'apps/devbox-workspace/src-tauri/resources/wsl/manifest.json','apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl' -Destination "$destination/resources/wsl"
+      # A private test executable is never part of the product archive.
+      cargo build --locked --release -p devbox-editor-engine --bin fake-lsp-server
+      if ($LASTEXITCODE -ne 0) { throw 'Private LSP fixture build failed.' }
+    }
+    if ($product -eq 'control-center') {
+      cargo build --locked --release -p devbox-control-center --bin devbox-suite-bootstrap
+      if ($LASTEXITCODE -ne 0) { throw 'Suite helper build failed.' }
+      New-Item -ItemType Directory -Path "$destination/resources/suite" -Force | Out-Null
+      Copy-Item -LiteralPath 'target/release/devbox-suite-bootstrap.exe' -Destination "$destination/resources/suite/"
+    }
+    $receipt.products += $product
+    foreach ($file in Get-ChildItem -LiteralPath $destination -File -Recurse) {
+      if (($file.Attributes -band [IO.FileAttributes]::ReparsePoint) -ne 0) { throw 'Linked build output.' }
+      $receipt.files += @{name=[IO.Path]::GetRelativePath($staging,$file.FullName).Replace('\','/');size=$file.Length;sha256=(Get-FileHash -LiteralPath $file.FullName -Algorithm SHA256).Hash.ToLowerInvariant()}
+    }
   }
-
-  $releaseById = @{}
-  foreach ($entry in $releaseApps) {
-    $appId = [string]$entry.id
-    if ($appId -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
-      throw 'release catalog contains an unsafe app id'
-    }
-    $cargoPackage = [string]$entry.cargoPackage
-    if ($cargoPackage -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
-      throw "release catalog contains an unsafe Cargo package: $appId"
-    }
-    $expectedAppDir = "apps/$appId"
-    if ([string]$entry.appDir -cne $expectedAppDir) {
-      throw "release catalog appDir mismatch: $appId"
-    }
-    if ($releaseById.ContainsKey($appId)) {
-      throw "release catalog contains a duplicate app id: $appId"
-    }
-    $releaseById[$appId] = $entry
-  }
-
-  if ($AppIds.Count -eq 0) {
-    $apps = $releaseApps
-    $includeNotices = $true
-  } else {
-    if ($AppIds.Count -gt $releaseApps.Count) {
-      throw 'requested app count exceeds the release catalog'
-    }
-    $requested = @{}
-    $apps = @()
-    foreach ($appId in $AppIds) {
-      if ($appId -notmatch '^[a-z0-9]+(?:-[a-z0-9]+)*$') {
-        throw 'requested app list contains an unsafe app id'
-      }
-      if ($requested.ContainsKey($appId)) {
-        throw "requested app list contains a duplicate: $appId"
-      }
-      if (-not $releaseById.ContainsKey($appId)) {
-        throw "requested app is not in the release catalog: $appId"
-      }
-      $requested[$appId] = $true
-      $apps += $releaseById[$appId]
-    }
-    $includeNotices = $false
-  }
-
-  foreach ($entry in $apps) {
-    $appId = [string]$entry.id
-    $cargoPackage = [string]$entry.cargoPackage
-    $expectedAppDir = "apps/$appId"
-    Write-Host "Building $appId" -ForegroundColor Cyan
-    Reset-Bundle-Staging $repositoryRoot
-    Push-Location $expectedAppDir
-    try {
-      & pnpm tauri build --bundles nsis
-      if ($LASTEXITCODE -ne 0) {
-        throw "build failed: $appId"
-      }
-    } finally {
-      Pop-Location
-    }
-
-    $config = Get-Content -LiteralPath "$expectedAppDir/src-tauri/tauri.conf.json" -Raw -Encoding UTF8 | ConvertFrom-Json
-    $productName = [string]$config.productName
-    $version = [string]$config.version
-    if (
-      [string]::IsNullOrWhiteSpace($productName) -or
-      $productName -ne [IO.Path]::GetFileName($productName) -or
-      $productName -in @('.', '..') -or
-      $version -notmatch '^\d+\.\d+\.\d+$'
-    ) {
-      throw "Tauri package identity is unsafe: $appId"
-    }
-    $portable = Join-Path $repositoryRoot "target/release/$cargoPackage.exe"
-    $installer = Join-Path $repositoryRoot "target/release/bundle/nsis/${productName}_${version}_x64-setup.exe"
-    if (-not (Test-Path -LiteralPath $portable -PathType Leaf)) {
-      throw "portable output is missing: $appId"
-    }
-    if (-not (Test-Path -LiteralPath $installer -PathType Leaf)) {
-      throw "installer output is missing: $appId"
-    }
-
-    $portableOutput = Join-Path $stagingPath "$appId/portable"
-    $installerOutput = Join-Path $stagingPath "$appId/installer"
-    New-Item -ItemType Directory -Path $portableOutput, $installerOutput | Out-Null
-    Move-Item -LiteralPath $portable -Destination (Join-Path $portableOutput "$appId.exe")
-    Move-Item -LiteralPath $installer -Destination (Join-Path $installerOutput "${appId}_${version}_x64-setup.exe")
-  }
-
-  if ($includeNotices) {
-    Copy-Item -LiteralPath 'THIRD_PARTY_NOTICES.md' -Destination (Join-Path $stagingPath 'THIRD_PARTY_NOTICES.md')
-  }
-} finally {
-  Pop-Location
-}
-
-$noticeDescription = if ($includeNotices) { ' with notices' } else { '' }
-Write-Host "Staged $($apps.Count) Windows app pairs$noticeDescription in $stagingPath" -ForegroundColor Green
+  $receipt | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 (Join-Path $staging 'shard-source.json')
+} finally { Pop-Location }

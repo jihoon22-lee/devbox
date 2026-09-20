@@ -420,7 +420,7 @@ try {
   await stop(item); item = await product(executable, profile);
   await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "configured Notes did not become ready");
   evidence.performance = {
-    host: performanceHost(), build: "hidden Windows debug executable; not a packaged release comparison",
+    host: performanceHost(), build: process.env.DEVBOX_FIXTURE_PROFILE === "release" ? "exact candidate release executable" : "hidden Windows debug executable",
     conditions: {
       cold: "new process with the configured synthetic import/vault profile; OS cache not flushed",
       input: "inert F24 event acknowledgement, using the baseline harness",

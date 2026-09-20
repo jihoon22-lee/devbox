@@ -15,8 +15,8 @@ $output = Join-Path (Get-Location) 'product-foundation-evidence/installation.jso
 if (Test-Path -LiteralPath $output) { Fail 'refusing to overwrite installation evidence' }
 [IO.Directory]::CreateDirectory((Split-Path -Parent $output)) | Out-Null
 $baseline = Read-Json "$PSScriptRoot/product-foundation-baseline.json"
-$configuration = Read-Json "$PSScriptRoot/windows-installer-acceptance-config.json"
-$smokeConfiguration = Read-Json "$PSScriptRoot/windows-packaged-smoke-config.json"
+$configuration = Read-Json "$PSScriptRoot/legacy-v0.7-windows-installer-acceptance-config.json"
+$smokeConfiguration = Read-Json "$PSScriptRoot/legacy-v0.7-windows-packaged-smoke-config.json"
 $report = [ordered]@{ schemaVersion = 1; source = $env:GITHUB_SHA; baseline = $baseline.tag; baselineCommit = $baseline.commit; environment = 'github-hosted-windows'; result = 'failed'; products = @(); failure = $null }
 $allMarkers = @()
 $appDefinitions = @{}

@@ -1,5 +1,17 @@
 # Changelog
 
+## [v0.8.0] - 2026-09-20
+
+- Workspace, API Studio, Knowledge, Control Center 네 제품으로 기존 15개 앱 기능 통합.
+- Worktree-aware session, Windows/WSL Files·LSP·Git, Runtime topology·Problems·터미널 복원.
+- API artifact 흐름과 Knowledge Daily·Activity·검색, source-owned 공유와 전역 Command/Shortcut.
+- 원본 보존 consistent migration, source별 review, Suite generation update·undo·commit·복구·데이터 보존 제거.
+- standalone legacy source shell 제거, 소비 engine/fixture 보존, 네 제품·필수 component로 CI와 배포 전환.
+- exact-main 후보의 네 portable와 Suite setup을 재빌드 없이 stable 승격하고 fresh-download 확인.
+
+게시 여부와 실제 수용 결과는 Release 및 #541을 따른다.
+
+
 이 프로젝트의 모든 주요 변경사항은 이 파일에 기록한다.
 형식은 [Keep a Changelog](https://keepachangelog.com/ko/1.1.0/)를 따르며, 버전은 `vX.Y.Z` 태그와 함께 릴리스된다.
 

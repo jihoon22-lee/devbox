@@ -4,7 +4,7 @@ import type {ShellContentProps} from "@devbox/product-shell";
 import {makeRequest,nativeMode} from "@devbox/product-shell/api";
 import {isOperation} from "@devbox/product-shell/operation";
 import catalog from "../../../apps/products.json";
-import legacy from "../../../apps/catalog.json";
+import legacy from "../../../apps/legacy-v0.7-catalog.json";
 interface Source {identifier:string;owner:string;currentImport:boolean;backupCount:number}
 interface Review {revision:string;sources:Source[];prepared:boolean;choices?:{identifier:string;disposition:Choice}[]}
 type Choice="acceptedImport"|"keepLegacy";

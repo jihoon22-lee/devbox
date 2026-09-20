@@ -14,7 +14,7 @@ export function performanceHost() {
     runnerImageVersion: process.env.ImageVersion ?? null };
 }
 
-export function loadPerformanceConfig(file, tag, commit, hosted) {
+export function loadPerformanceConfig(file, tag, commit, hosted, allowSubset = false) {
   assert.equal(hosted, true, "performance mutation fixtures require disposable hosted Windows");
   const config = JSON.parse(readFileSync(file, "utf8"));
   assert.equal(config.schemaVersion, 1);
@@ -22,7 +22,9 @@ export function loadPerformanceConfig(file, tag, commit, hosted) {
   assert.equal(config.baselineCommit, commit);
   assert.equal(config.idleSampleMs, 5000);
   assert.deepEqual(config.knownBaselineFailures, [{ app: "run-manager", command: "run_job_now", code: "run-execution-failed", runFailureCode: "spawn-failed", evidenceRun: 34099044832, trackingIssue: 547 }]);
-  assert.deepEqual([...config.apps].sort(), ["workbench", "api-playground", "knowledge-base", "devbox-manager", "everything-plus", "run-manager", "wsl-desktop"].sort());
+  const anchors = ["workbench", "api-playground", "knowledge-base", "devbox-manager", "everything-plus", "run-manager", "wsl-desktop"];
+  if (allowSubset) assert.ok(config.apps.length > 0 && new Set(config.apps).size === config.apps.length && config.apps.every(app => anchors.includes(app)));
+  else assert.deepEqual([...config.apps].sort(), anchors.sort());
   for (const value of Object.values(config.budgets)) assert.ok(Number.isSafeInteger(value) && value > 0);
   assert.ok(Array.isArray(config.unmeasured) && config.unmeasured.length > 0);
   return config;

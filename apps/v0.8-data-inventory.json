@@ -7,18 +7,26 @@
     {
       "legacyApp": "port-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/port-manager/src-tauri/src/core/preferences.rs",
+      "sourcePath": "crates/ports-engine/src/core/preferences.rs",
       "items": [
         "port-manager-preferences-v1.json"
       ],
       "treatment": "Preserve interval and opaque endpoint/process favorites; do not infer process ownership from favorites. B05 implementation is prepared; complete PR validation is pending. Prior settings and importer receipt share the same atomic product record; repeated import preserves edits.",
-      "importerStatus": "pending",
-      "implementationPath": "apps/port-manager/src-tauri/src/core/product_preferences.rs",
+      "importerStatus": "verified",
+      "implementationPath": "crates/ports-engine/src/core/product_preferences.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/port-manager/src-tauri/src/core/product_preferences.rs",
+        "crates/ports-engine/src/core/product_preferences.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
-      ]
+      ],
+      "verifiedSourceCommit": "1fe9e305c5e782f6dc083f7075840311211fa391",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656787",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656794",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448156856"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "developer-toolbox",
@@ -29,7 +37,7 @@
       ],
       "treatment": "Preserve workflow metadata. Do not persist transient HMAC/JWT input or non-exportable results.",
       "importerStatus": "verified",
-      "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
+      "baselineSourcePath": "crates/toolbox-engine/src/core/workflows.rs",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
       "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
       "test": [
@@ -56,15 +64,22 @@
         "wsl-desktop:font-size"
       ],
       "treatment": "Acquire bounded WebView2 localStorage through an owner export; SQLite backup alone is insufficient.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
       "schemaMapping": "apps/devbox-workspace/README.md",
       "test": [
         ".github/scripts/windows-workspace-terminal-import.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
-      ]
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md",
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448901134",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35441341492",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35444297373",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35447454066"
+      ],
+      "verifiedSourceCommit": "cc306022cb5da34564fd8d50235f341c435cca75",
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "wsl-desktop",
@@ -74,15 +89,22 @@
         "wsl-desktop:settings"
       ],
       "treatment": "Preserve settings; importing shortcut choices must not register competing global owners.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
       "schemaMapping": "apps/devbox-workspace/README.md",
       "test": [
         ".github/scripts/windows-workspace-terminal-import.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
-      ]
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md",
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448901134",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35441341492",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35444297373",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35447454066"
+      ],
+      "verifiedSourceCommit": "cc306022cb5da34564fd8d50235f341c435cca75",
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "wsl-desktop",
@@ -92,33 +114,47 @@
         "wsl-desktop:last-layout"
       ],
       "treatment": "Preserve layout and explicit commands as inactive restoration metadata; never recreate PTYs or execute commands automatically.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
       "schemaMapping": "apps/devbox-workspace/README.md",
       "test": [
         ".github/scripts/windows-workspace-terminal-import.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
-      ]
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md",
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448901134",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35441341492",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35444297373",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35447454066"
+      ],
+      "verifiedSourceCommit": "cc306022cb5da34564fd8d50235f341c435cca75",
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "wsl-desktop",
       "classification": "authoritative",
-      "sourcePath": "apps/wsl-desktop/src-tauri/src/commands/workspace.rs",
+      "sourcePath": "crates/terminal-engine/src/commands/workspace.rs",
       "items": [
         "terminal-profiles.json"
       ],
       "treatment": "Preserve named profiles and reference mappings.",
-      "importerStatus": "pending",
+      "importerStatus": "verified",
       "implementationPath": "apps/devbox-workspace/src-tauri/src/terminal_profiles.rs",
       "schemaMapping": "apps/devbox-workspace/README.md",
       "test": [
         ".github/scripts/windows-workspace-terminal-import.mjs"
       ],
       "evidence": [
-        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md"
-      ]
+        "workthrough/2026-09-12-v08-b06-workspace-terminal-sessions.md",
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448901134",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35441341492",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35444297373",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35447454066"
+      ],
+      "verifiedSourceCommit": "cc306022cb5da34564fd8d50235f341c435cca75",
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "api-playground",
@@ -223,7 +259,7 @@
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src-tauri/src/commands/grpc_credentials.rs",
+      "sourcePath": "crates/http-client-engine/src/commands/grpc_credentials.rs",
       "items": [
         "tls-credentials.json"
       ],
@@ -246,7 +282,7 @@
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src-tauri/src/commands/mcp_oauth.rs",
+      "sourcePath": "crates/http-client-engine/src/commands/mcp_oauth.rs",
       "items": [
         "mcp-grants.json"
       ],
@@ -269,7 +305,7 @@
     {
       "legacyApp": "everything-plus",
       "classification": "authoritative",
-      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/content-index-engine/src/core/db.rs",
       "items": [
         "roots",
         "saved_queries"
@@ -294,7 +330,7 @@
     {
       "legacyApp": "everything-plus",
       "classification": "mixed",
-      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/content-index-engine/src/core/db.rs",
       "items": [
         "meta"
       ],
@@ -318,7 +354,7 @@
     {
       "legacyApp": "everything-plus",
       "classification": "derived",
-      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/content-index-engine/src/core/db.rs",
       "items": [
         "files",
         "files_fts",
@@ -345,7 +381,7 @@
     {
       "legacyApp": "knowledge-base",
       "classification": "authoritative",
-      "sourcePath": "apps/knowledge-base/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/knowledge-vault-engine/src/core/db.rs",
       "items": [
         "settings",
         "note_templates"
@@ -370,7 +406,7 @@
     {
       "legacyApp": "knowledge-base",
       "classification": "authoritative",
-      "sourcePath": "apps/knowledge-base/README.md",
+      "sourcePath": "apps/devbox-control-center/src-tauri/src/launcher_import.rs",
       "items": [
         "user-selected vault Markdown files",
         "vault assets"
@@ -390,12 +426,13 @@
       ],
       "verifiedSourceCommit": "df8568b5b05e58afb9fca9c757ed0de0a8656f3c",
       "verifiedMergeCommit": "eadaa39d3604a33000fcae52c957b366e63195e1",
-      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned"
+      "verificationScope": "B03 owned source/group treatment, WAL import/repeat/conflict/recovery and original-byte preservation verified; suite orchestration and unclassified older/browser inputs remain B08-owned",
+      "baselineSourcePath": "apps/knowledge-base/README.md"
     },
     {
       "legacyApp": "knowledge-base",
       "classification": "derived",
-      "sourcePath": "apps/knowledge-base/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/knowledge-vault-engine/src/core/db.rs",
       "items": [
         "docs",
         "docs_fts",
@@ -422,7 +459,7 @@
     {
       "legacyApp": "life-log",
       "classification": "authoritative",
-      "sourcePath": "apps/life-log/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/activity-engine/src/core/db.rs",
       "items": [
         "sessions",
         "settings",
@@ -448,13 +485,13 @@
     {
       "legacyApp": "devbox-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-manager/src-tauri/src/core/runtime_metadata.rs",
+      "sourcePath": "crates/installation-tools/src/core/runtime_metadata.rs",
       "items": [
         "install-roots/v1/registry.json"
       ],
       "treatment": "Read original Manager root locator/registry and retained manifest provenance in place; verified legacy cleanup uses that original namespace without publishing Control Center as a legacy Manager root. No registry-copy import or implicit ownership grant.",
       "importerStatus": "verified",
-      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "implementationPath": "crates/installation-tools/src/component.rs",
       "schemaMapping": "workthrough/2026-09-13-v08-b08-suite-recovery.md",
       "test": [
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
@@ -472,7 +509,7 @@
     {
       "legacyApp": "devbox-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-manager/src-tauri/src/core/layout.rs",
+      "sourcePath": "crates/installation-tools/src/core/layout.rs",
       "items": [
         "current.json"
       ],
@@ -497,48 +534,106 @@
     {
       "legacyApp": "code-pad",
       "classification": "authoritative",
-      "sourcePath": "apps/code-pad/src-tauri/src/commands/session.rs",
+      "sourcePath": "crates/editor-engine/src/commands/session.rs",
       "items": [
         "session.json"
       ],
       "treatment": "Preserve tabs/splits/workspace context without starting LSP or executing tasks.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+        ".github/scripts/windows-workspace-registration.mjs",
+        ".github/scripts/windows-workspace-files.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "code-pad",
       "classification": "authoritative",
-      "sourcePath": "apps/code-pad/src-tauri/src/commands/recovery.rs",
+      "sourcePath": "crates/editor-engine/src/commands/recovery.rs",
       "items": [
         "recovery.json"
       ],
       "treatment": "Preserve dirty-buffer recovery independently of on-disk source files and session metadata.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+        ".github/scripts/windows-workspace-registration.mjs",
+        ".github/scripts/windows-workspace-files.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "code-pad",
       "classification": "authoritative",
-      "sourcePath": "apps/code-pad/src-tauri/src/lsp/config.rs",
+      "sourcePath": "crates/editor-engine/src/lsp/config.rs",
       "items": [
         "config.json"
       ],
       "treatment": "Preserve configured LSP commands/trust metadata; imported configuration does not authorize execution.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+        ".github/scripts/windows-workspace-registration.mjs",
+        ".github/scripts/windows-workspace-files.mjs",
+        "apps/devbox-workspace/src-tauri/src/lsp_host/settings_import.rs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "code-pad",
       "classification": "mixed",
-      "sourcePath": "apps/code-pad/src-tauri/src/lsp/manager.rs",
+      "sourcePath": "crates/editor-engine/src/lsp/manager.rs",
       "items": [
         "journal.json",
         "managed runtime state"
       ],
       "treatment": "Keep interrupted runtime-install recovery separate from disposable verified archive caches.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+        ".github/scripts/windows-workspace-registration.mjs",
+        ".github/scripts/windows-workspace-files.mjs",
+        "apps/devbox-workspace/src-tauri/src/lsp_host/settings_import.rs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "run-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/run-manager/src-tauri/src/storage.rs",
+      "sourcePath": "crates/runtime-engine/src/storage.rs",
       "items": [
         "jobs",
         "runs",
@@ -552,49 +647,93 @@
         "workspace_task_control_receipts"
       ],
       "treatment": "Preserve schedules, sealed environments, occurrence/ownership history, task-source links and receipts. Imported jobs/services remain disabled; PID and old writer leases are not revived. B05 implementation is prepared; complete PR validation is pending. Original schema/logical metadata and ciphertext remain in a private WAL snapshot; destination ciphertext requires explicit reconnect/clear. Ephemeral notification delivery is not replayed.",
-      "importerStatus": "pending",
-      "implementationPath": "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+      "importerStatus": "verified",
+      "implementationPath": "crates/runtime-engine/src/core/runtime_import.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+        "crates/runtime-engine/src/core/runtime_import.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
-      ]
+      ],
+      "verifiedSourceCommit": "1fe9e305c5e782f6dc083f7075840311211fa391",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656787",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656794",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448156856"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "run-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/run-manager/src-tauri/src/logs.rs",
+      "sourcePath": "crates/runtime-engine/src/logs.rs",
       "items": [
         "run-owned stdout/stderr rotation segments and manifests"
       ],
       "treatment": "Preserve retained log history with run-ID mapping; do not invent paths from renderer input. B05 implementation is prepared; complete PR validation is pending. Original schema/logical metadata and ciphertext remain in a private WAL snapshot; destination ciphertext requires explicit reconnect/clear. Ephemeral notification delivery is not replayed.",
-      "importerStatus": "pending",
-      "implementationPath": "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+      "importerStatus": "verified",
+      "implementationPath": "crates/runtime-engine/src/core/runtime_import.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+        "crates/runtime-engine/src/core/runtime_import.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
-      ]
+      ],
+      "verifiedSourceCommit": "1fe9e305c5e782f6dc083f7075840311211fa391",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656787",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656794",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448156856"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "workbench",
       "classification": "authoritative",
-      "sourcePath": "apps/workbench/src-tauri/src/commands/workspace.rs",
+      "sourcePath": "crates/projects-engine/src/commands/workspace.rs",
       "items": [
         "project-profiles.json"
       ],
       "treatment": "Preserve project/target/profile identity and references; resolve aliases through the native project owner.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+        ".github/scripts/windows-workspace-registration.mjs",
+        ".github/scripts/windows-workspace-files.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "workbench",
       "classification": "authoritative",
-      "sourcePath": "apps/workbench/src-tauri/src/commands/templates.rs",
+      "sourcePath": "crates/projects-engine/src/commands/templates.rs",
       "items": [
         "profile-templates.json"
       ],
       "treatment": "Preserve user-authored profile templates independently from derived integration snapshots.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/legacy_imports.rs",
+        ".github/scripts/windows-workspace-registration.mjs",
+        ".github/scripts/windows-workspace-files.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "webhook-lab",
@@ -605,7 +744,7 @@
       ],
       "treatment": "Preserve masked fixtures and their ID mapping; no raw request-header vault import.",
       "importerStatus": "verified",
-      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
+      "baselineSourcePath": "crates/webhook-host/src/core/fixtures.rs",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
       "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
       "test": [
@@ -629,7 +768,7 @@
       ],
       "treatment": "Preserve exported listener profiles as inactive definitions; do not start a listener during import.",
       "importerStatus": "verified",
-      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
+      "baselineSourcePath": "crates/webhook-host/src/core/service_profile.rs",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
       "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
       "test": [
@@ -647,7 +786,7 @@
     {
       "legacyApp": "webhook-lab",
       "classification": "ephemeral",
-      "sourcePath": "apps/webhook-lab/src-tauri/src/commands.rs",
+      "sourcePath": "crates/webhook-host/src/commands.rs",
       "items": [
         "live listener",
         "in-memory request history",
@@ -673,58 +812,121 @@
     {
       "legacyApp": "repo-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/repo-manager/src-tauri/src/core/git.rs",
+      "sourcePath": "crates/repositories-engine/src/core/git.rs",
       "items": [
         "user repository/worktree files and Git metadata"
       ],
       "treatment": "Leave repositories/worktrees in place. Native Git identity and trust revalidation are required before any later mutation.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/source_host.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/source_host.rs",
+        ".github/scripts/windows-workspace-source.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "repo-manager",
       "classification": "derived",
-      "sourcePath": "apps/repo-manager/src-tauri/src/commands/dependency_enrichment.rs",
+      "sourcePath": "crates/repositories-engine/src/commands/dependency_enrichment.rs",
       "items": [
         "dependency-enrichment-v1.json"
       ],
       "treatment": "Treat opt-in enrichment cache separately from original lockfiles and repository registration.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-workspace/src-tauri/src/source_host.rs",
+      "test": [
+        "apps/devbox-workspace/src-tauri/src/source_host.rs",
+        ".github/scripts/windows-workspace-source.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4d26d5c06b22fbe5752c4bc4fe162f9c19411b2f",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956133",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34496956346"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "devbox-launcher",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-launcher/src-tauri/src/core/preferences.rs",
+      "sourcePath": "apps/devbox-control-center/src-tauri/src/launcher_import.rs",
       "items": [
         "launcher-preferences.json"
       ],
       "treatment": "Preserve opaque favorites/recent IDs through explicit target mappings; unknown targets remain unresolved.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "baselineSourcePath": "apps/devbox-launcher/src-tauri/src/core/preferences.rs",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/launcher_import.rs",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/launcher_import.rs",
+        ".github/scripts/windows-product-foundation.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4ea48c5967c49a740ef2b77fa4f93dfa5afd41c5",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35450355975",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35444386766",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448284131"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "devbox-launcher",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-launcher/src-tauri/src/hotkey.rs",
+      "sourcePath": "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs",
       "items": [
         "shortcut.json"
       ],
       "treatment": "Preserve the chosen accelerator; registration is a separate installation-scope lease, including WSL quick-summon collisions.",
-      "importerStatus": "pending"
+      "importerStatus": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/launcher_import.rs",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/launcher_import.rs",
+        ".github/scripts/windows-product-foundation.mjs"
+      ],
+      "schemaMapping": "workthrough/2026-09-20-v08-b09-release-cutover.md",
+      "verifiedSourceCommit": "4ea48c5967c49a740ef2b77fa4f93dfa5afd41c5",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35450355975",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35444386766",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448284131"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     },
     {
       "legacyApp": "log-lens",
       "classification": "authoritative",
-      "sourcePath": "apps/log-lens/src-tauri/src/core/saved_views.rs",
+      "sourcePath": "crates/logs-engine/src/core/saved_views.rs",
       "items": [
         "saved-views.json"
       ],
       "treatment": "Preserve validated saved source/query definitions; do not archive the transient ring or persist webhook capture sources. B05 implementation is prepared; complete PR validation is pending. Runtime run IDs require owner mappings, missing sources remain disconnected, and filter identities never widen during rebasing.",
-      "importerStatus": "pending",
-      "implementationPath": "apps/log-lens/src-tauri/src/core/product_saved_views.rs",
+      "importerStatus": "verified",
+      "implementationPath": "crates/logs-engine/src/core/product_saved_views.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/log-lens/src-tauri/src/core/product_saved_views.rs",
+        "crates/logs-engine/src/core/product_saved_views.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
-      ]
+      ],
+      "verifiedSourceCommit": "1fe9e305c5e782f6dc083f7075840311211fa391",
+      "evidence": [
+        "workthrough/2026-09-20-v08-b09-release-cutover.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656787",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/34702656794",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35448156856"
+      ],
+      "verificationScope": "Owner backup/import/preservation treatment accepted in the recorded scopes. External Git/vault files remain in place; derived runtime/cache state is not claimed as transferred."
     }
   ]
 }

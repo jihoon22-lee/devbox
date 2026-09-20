@@ -40,7 +40,7 @@ describe("Browser release fallback", () => {
       .filter((app) => app.managerVisible && !app.selfManaged)
       .map((app) => app.id);
 
-    expect(catalogApps).toHaveLength(19);
+    expect(catalogApps).toHaveLength(15);
     expect(catalogApps.filter((app) => app.release)).toHaveLength(15);
     expect(catalogApps.filter((app) => !app.release).every((app) => !app.managerVisible)).toBe(true);
     expect(manifest.releaseTag).toBe("v0.5.0");

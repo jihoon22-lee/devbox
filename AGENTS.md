@@ -1,7 +1,8 @@
 # AGENTS.md
 
 Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
-현재 공개 v0.7.0의 15개 앱을 유지하며 v0.8.0의 네 제품 통합을 준비한다.
+현재 소스는 v0.8.0의 네 제품이며, 공개 완료 여부와 정확한 배포 근거는 #541과 Release에서 확인한다.
+기존 v0.7의 15개 앱 목록은 migration/reference 입력으로만 보존한다.
 원격은 `https://github.com/jihoon22-lee/devbox`다.
 
 ## 먼저 읽을 규약과 작업 범위

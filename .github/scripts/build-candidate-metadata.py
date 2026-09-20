@@ -9,6 +9,7 @@ import json
 import pathlib
 import re
 from datetime import datetime, timezone
+from suite_release_contract import manifest_assets
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -42,16 +43,23 @@ def main() -> int:
     output = arguments.output.resolve(strict=False)
     if output.parent == assets or assets in output.parents:
         raise SystemExit("candidate metadata must remain outside the flat asset directory")
+    manifest = json.loads((assets / "release-manifest.json").read_text(encoding="utf-8"))
+    suite = manifest.get("schemaVersion") == 2
+    required = set(manifest_assets(manifest, arguments.tag, arguments.commit)) | {"release-manifest.json"} if suite else None
+    count = 7 if suite else 32
     entries = list(assets.iterdir())
     files = sorted(entries, key=lambda item: item.name)
     if (
-        len(files) != 32
-        or len({item.name for item in files}) != 32
+        len(files) != count
+        or len({item.name for item in files}) != count
         or any(not item.is_file() or item.is_symlink() for item in files)
     ):
-        raise SystemExit("candidate assets must contain exactly 32 unique regular files")
+        raise SystemExit(f"candidate assets must contain exactly {count} unique regular files")
     if "release-manifest.json" not in {item.name for item in files}:
         raise SystemExit("candidate release manifest is missing")
+
+    if required is not None and {item.name for item in files} != required:
+        raise SystemExit("candidate Suite asset names mismatch")
 
     metadata = {
         "artifactKind": "candidate",

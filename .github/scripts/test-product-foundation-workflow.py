@@ -63,7 +63,7 @@ assert 'RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}' in windows_job
 assert "product-native-authority-" not in workflow, "do not duplicate CI's Windows unit suite"
 assert "windows-knowledge-migration.mjs" in workflow
 assert workflow.index("- name: Verify Knowledge migration") < workflow.index("- name: Verify anchor and product installer coexistence"), "migration claims absent legacy profiles before installer coexistence creates them"
-for source in ("packages/knowledge-features/**", "apps/knowledge-base/src-tauri/**", "apps/life-log/src-tauri/**", "apps/everything-plus/src-tauri/**"):
+for source in ("packages/knowledge-features/**", "crates/knowledge-vault-engine/**", "crates/activity-engine/**", "crates/content-index-engine/**"):
     assert source in workflow, "native Knowledge consumers require acceptance on source changes"
 
 import subprocess
@@ -106,10 +106,10 @@ rejects_acceptance(lambda _, d: d["groups"][imported].update(evidence=[]))
 rejects_acceptance(lambda _, d: d["groups"][imported].update(importerStatus="assumed"))
 print("Unverified internal features, unowned provider handoffs and unevidenced imports are rejected: PASS")
 
-for source in ("packages/workspace-features/**", "apps/workbench/src-tauri/**",
-               "apps/repo-manager/src-tauri/**", "apps/code-pad/src-tauri/**",
-               "apps/run-manager/src-tauri/**", "apps/log-lens/src-tauri/**",
-               "apps/port-manager/src-tauri/**", "apps/wsl-desktop/src-tauri/**",
+for source in ("packages/workspace-features/**", "crates/projects-engine/**",
+               "crates/repositories-engine/**", "crates/editor-engine/**",
+               "crates/runtime-engine/**", "crates/logs-engine/**",
+               "crates/ports-engine/**", "crates/terminal-engine/**",
                ".github/scripts/copy-owned-terminal-profile.ps1"):
     assert source in workflow, "native Workspace consumers require acceptance on source changes"
 

@@ -17,7 +17,7 @@ TAG = "v0.6.0"
 COMMIT = "a" * 40
 
 
-def invoke(assets: pathlib.Path, output: pathlib.Path) -> subprocess.CompletedProcess[str]:
+def invoke(assets: pathlib.Path, output: pathlib.Path, tag: str = TAG) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         [
             sys.executable,
@@ -25,7 +25,7 @@ def invoke(assets: pathlib.Path, output: pathlib.Path) -> subprocess.CompletedPr
             "--assets",
             str(assets),
             "--tag",
-            TAG,
+            tag,
             "--commit",
             COMMIT,
             "--repository",
@@ -73,4 +73,16 @@ with tempfile.TemporaryDirectory() as directory:
     assert failed.returncode != 0
     assert "exactly 32 unique regular files" in failed.stderr
 
+import runpy
+fixture = runpy.run_path(str(ROOT / ".github/scripts/test-suite-release-contract.py"))["fixture"]
+with tempfile.TemporaryDirectory() as directory:
+    root = pathlib.Path(directory)
+    assets, _ = fixture(root)
+    output = root / "candidate.json"
+    result = invoke(assets, output, "v0.8.0")
+    assert result.returncode == 0, result.stderr
+    metadata = json.loads(output.read_text())
+    assert len(metadata["assets"]) == 7 and metadata["targetCommit"] == COMMIT
+    result = invoke(assets, root / "wrong.json", "v0.8.1")
+    assert result.returncode != 0
 print("candidate metadata tests: PASS")

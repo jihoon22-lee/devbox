@@ -13,7 +13,7 @@ $assets = Join-Path $ScratchRoot 'assets'
 $output = Join-Path $env:GITHUB_WORKSPACE 'legacy-installer-reference.json'
 if (Test-Path -LiteralPath $output) { Fail 'reference output already exists' }
 $baseline = Read-Json "$PSScriptRoot/product-foundation-baseline.json"
-$config = Read-Json "$PSScriptRoot/windows-installer-acceptance-config.json"
+$config = Read-Json "$PSScriptRoot/legacy-v0.7-windows-installer-acceptance-config.json"
 $report = [ordered]@{schemaVersion=1; baselineTag=$baseline.tag; baselineCommit=$baseline.commit; manifestSha256=$baseline.manifestSha256; acquisitionRun=$env:GITHUB_RUN_ID; acquisitionSource=$env:GITHUB_SHA; environment='github-hosted-windows'; result='failed'; apps=@(); failure=$null}
 $definitions = @{}
 try {

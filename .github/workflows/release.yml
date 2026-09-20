@@ -76,66 +76,71 @@ jobs:
             exit 1
           fi
 
-  build-prerelease-windows:
-    name: Build prerelease Windows installers
+  prerelease-wsl-helper:
+    name: Build explicit preview Workspace component
     needs: preflight
     if: ${{ needs.preflight.outputs.prerelease == 'true' }}
-    runs-on: windows-latest
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:
       - uses: actions/checkout@v7
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
-      - name: Enable repository-pinned pnpm
-        run: corepack enable pnpm
-
-      - id: pnpm-store
-        name: Resolve pnpm store
-        shell: bash
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@v6
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
-
       - uses: dtolnay/rust-toolchain@stable
-
-      - uses: Swatinem/rust-cache@v2
-
-      - name: Install frontend deps
-        run: pnpm install --frozen-lockfile
-
-      - name: Build all apps (NSIS installers) with per-app staging
-        shell: pwsh
-        run: '& ./.github/scripts/build-windows-packages.ps1 -StagingRoot ''staging'''
-
-      - name: Upload installers
-        uses: actions/upload-artifact@v7
         with:
-          name: windows-installers
-          path: staging/**
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-wsl-musl
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - run: |
+          cargo build --locked --release -p workspace-wsl --target x86_64-unknown-linux-musl
+          node .github/scripts/workspace-wsl-artifact.mjs prepare target/x86_64-unknown-linux-musl/release/devbox-workspace-wsl "$GITHUB_SHA"
+      - uses: actions/upload-artifact@v7
+        with:
+          name: explicit-preview-workspace-component
+          path: apps/devbox-workspace/src-tauri/resources/wsl/
           if-no-files-found: error
 
-      - name: Generate release manifest
-        id: manifest
-        shell: bash
+  build-prerelease-windows:
+    name: Build explicitly authorized preview Suite
+    needs: [preflight, prerelease-wsl-helper]
+    if: ${{ needs.preflight.outputs.prerelease == 'true' }}
+    runs-on: windows-2025
+    permissions:
+      contents: read
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: devbox-windows-package
+          cache-on-failure: true
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: explicit-preview-workspace-component
+          path: apps/devbox-workspace/src-tauri/resources/wsl
+      - name: Build the four-product preview only behind the explicit gate
+        shell: pwsh
         env:
           TAG: ${{ needs.preflight.outputs.tag }}
         run: |
-          python3 .github/scripts/build-manifest.py staging "$TAG" apps/catalog.json staging/release-manifest.json
-          echo "path=staging/release-manifest.json" >> "$GITHUB_OUTPUT"
-
-      - name: Upload release manifest
-        uses: actions/upload-artifact@v7
+          .github/scripts/build-windows-packages.ps1 -StagingRoot prerelease/shards/all
+          .github/scripts/assemble-suite-candidate.ps1 -Shards prerelease/shards -Output prerelease/output -Tag $env:TAG -Source $env:GITHUB_SHA -AllowPrerelease
+      - uses: actions/upload-artifact@v7
         with:
-          name: release-manifest
-          path: staging/release-manifest.json
+          name: explicit-preview-suite
+          path: prerelease/output/assets
           if-no-files-found: error
 
   publish:
@@ -206,14 +211,8 @@ jobs:
       - uses: actions/download-artifact@v8
         if: ${{ needs.preflight.outputs.prerelease == 'true' }}
         with:
-          name: windows-installers
-          path: artifacts/staging
-
-      - uses: actions/download-artifact@v8
-        if: ${{ needs.preflight.outputs.prerelease == 'true' }}
-        with:
-          name: release-manifest
-          path: artifacts/staging
+          name: explicit-preview-suite
+          path: artifacts/assets
 
       - name: Extract changelog section
         id: notes
@@ -245,15 +244,10 @@ jobs:
           if [[ "$PRERELEASE" == "false" ]]; then
             assets=(candidate/assets/*)
           else
-            assets=(
-              artifacts/staging/*/portable/*.exe
-              artifacts/staging/*/installer/*.exe
-              artifacts/staging/THIRD_PARTY_NOTICES.md
-              artifacts/staging/release-manifest.json
-            )
+            assets=(artifacts/assets/*)
           fi
-          if [[ ${#assets[@]} -ne 32 ]]; then
-            echo "draft release requires exactly 32 staged assets"
+          if [[ ${#assets[@]} -ne 7 ]]; then
+            echo "draft release requires exactly 7 staged assets"
             exit 1
           fi
           command=(
@@ -272,7 +266,7 @@ jobs:
             {
               echo "### Promoted Windows package candidate"
               echo "- candidate run: $CANDIDATE_RUN_URL"
-              echo "- contract: 15 apps / 32 files / 31 manifest-declared / mismatch 0"
+              echo "- contract: 4 products / 7 files / 6 manifest-declared / mismatch 0"
             } >> "$GITHUB_STEP_SUMMARY"
           fi
 
@@ -352,3 +346,15 @@ jobs:
                 --arg tag "$TAG" \
                 --argjson latest "$MAKE_LATEST" \
                 'any(.[]; .tagName == $tag and .isLatest == $latest)'
+
+  published-runtime:
+    name: Fresh public download and four-product startup
+    needs: [preflight, verify]
+    if: ${{ always() && needs.preflight.result == 'success' && needs.preflight.outputs.prerelease == 'false' && needs.verify.result == 'success' }}
+    permissions:
+      contents: read
+    uses: ./.github/workflows/windows-installer-acceptance.yml
+    with:
+      release_tag: ${{ needs.preflight.outputs.tag }}
+      source_commit: ${{ github.sha }}
+      mode: smoke

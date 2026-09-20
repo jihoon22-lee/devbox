@@ -13,6 +13,7 @@ import json
 import sys
 import urllib.error
 import urllib.request
+from suite_release_contract import manifest_assets
 
 API = "https://api.github.com"
 
@@ -40,12 +41,15 @@ def main() -> None:
     repo, tag, manifest_path, token = sys.argv[1:]
 
     manifest = json.load(open(manifest_path))
-    expected = {}
-    for a in manifest["apps"]:
-        for kind in ("portable", "installer"):
-            expected[a["id"] + "/" + kind] = a[kind]
-    if manifest.get("notices"):
-        expected["notices"] = manifest["notices"]
+    if manifest.get("schemaVersion") == 2:
+        expected = manifest_assets(manifest, tag)
+    else:
+        expected = {}
+        for a in manifest["apps"]:
+            for kind in ("portable", "installer"):
+                expected[a["id"] + "/" + kind] = a[kind]
+        if manifest.get("notices"):
+            expected["notices"] = manifest["notices"]
 
     # release asset 목록 조회
     release = gh_get(f"{API}/repos/{repo}/releases/tags/{tag}", token)

@@ -152,7 +152,7 @@ export async function exerciseWorkspaceRegistration({cdp, directory, waitForRend
   record("files", files);
   const sessionImport=await exerciseWorkspaceSessionImport({cdp,root:canonicalRoot,call,success,waitForRenderer});
   record("session-import",sessionImport);
-  const runtime=await exerciseWorkspaceRuntime({cdp,directory,call,success,waitForRenderer});
+  const runtime=await exerciseWorkspaceRuntime({cdp,directory,call,success,waitForRenderer,measurePerformance:suffix==="a"&&process.env.DEVBOX_FIXTURE_PROFILE==="release"});
   record("runtime",runtime);
   const runtimeWsl=await exerciseWorkspaceRuntimeWsl({call,success});
   record("runtime-wsl",runtimeWsl);

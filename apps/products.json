@@ -1,7 +1,7 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 12,
-  "channel": "development",
+  "catalogRevision": 13,
+  "channel": "stable",
   "products": [
     {
       "id": "workspace",

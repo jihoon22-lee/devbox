@@ -12,6 +12,31 @@ import { DatabaseSync } from "node:sqlite";
 import { Cdp, unusedPort, waitForCdp, windowsLocalAppData, windowsProcessIsElevated, inspectElevatedCdpPolicy, installElevatedCdpPolicy, restoreElevatedCdpPolicy } from "./windows-packaged-smoke.mjs";
 assert.equal(process.platform, "win32"); assert.equal(process.env.GITHUB_ACTIONS, "true"); assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
 const directory = mkdtempSync(path.join(tmpdir(), "devbox-api-migration-fixture-"));
+const sourceBase = process.env.DEVBOX_FIXTURE_PROFILE === "release" ? windowsLocalAppData() : directory;
+const extraNativeSources = [];
+function claimExtraNativeSources() {
+  if (sourceBase === directory) return;
+  for (const name of ["com.devbox.webhooklab", "com.devbox.developertoolbox"]) {
+    const root = path.join(sourceBase, name);
+    assert.equal(existsSync(root), false, "release migration fixture requires absent native source");
+  }
+  for (const name of ["com.devbox.webhooklab", "com.devbox.developertoolbox"]) {
+    const root = path.join(sourceBase, name); mkdirSync(root);
+    const owner = randomUUID(), marker = path.join(root, ".suite-fixture-owner");
+    writeFileSync(marker, owner, {flag:"wx"});
+    const identity = lstatSync(root, {bigint:true});
+    extraNativeSources.push({root, owner, marker, identity});
+  }
+}
+function cleanExtraNativeSources() {
+  for (const item of extraNativeSources) {
+    const actual = lstatSync(item.root, {bigint:true});
+    assert.ok(actual.isDirectory() && !actual.isSymbolicLink() && actual.dev === item.identity.dev && actual.ino === item.identity.ino);
+    assert.equal(readFileSync(item.marker,"utf8"), item.owner);
+    rmSync(item.root,{recursive:true});
+  }
+}
+
 const evidence = { source: process.env.GITHUB_SHA, environment: "github-hosted-windows", step: "baseline", result: "failed" };
 const report = "product-foundation-evidence/api-migration.json"; mkdirSync(path.dirname(report), { recursive: true });
 const baseline = JSON.parse(readFileSync(".github/scripts/product-foundation-baseline.json", "utf8"));
@@ -94,12 +119,12 @@ async function command(cdp, component, method, args = {}) {
   return cdp.evaluate(`(async () => { const invoke=window.__TAURI_INTERNALS__.invoke; const d=await invoke("plugin:product-shell|describe"); const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}}; return invoke("plugin:api-studio|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
 }
 function sourceHashes() {
-  const api = path.join(directory, "com.devbox.apiplayground");
+  const api = path.join(sourceBase, "com.devbox.apiplayground");
   const candidates = ["EBWebView/Default/Local Storage/leveldb", "Default/Local Storage/leveldb"].map(relative => path.join(api, relative)).filter(existsSync);
   assert.equal(candidates.length, 1, "one actual WebView2 LevelDB layout is required");
   const hashes = {};
   for (const name of readdirSync(candidates[0]).sort()) { const file = path.join(candidates[0], name); assert.ok(lstatSync(file).isFile()); hashes[`api/${name}`] = digest(file); }
-  for (const relative of ["com.devbox.webhooklab/fixtures.json", "com.devbox.developertoolbox/smart-workflows.json", `com.devbox.webhooklab/service-profiles/${profileId}.json`]) hashes[relative] = digest(path.join(directory, relative));
+  for (const relative of ["com.devbox.webhooklab/fixtures.json", "com.devbox.developertoolbox/smart-workflows.json", `com.devbox.webhooklab/service-profiles/${profileId}.json`]) hashes[relative] = digest(path.join(sourceBase, relative));
   return hashes;
 }
 // Metadata only, inside this run's newly created product root. Never read copy
@@ -146,7 +171,7 @@ try {
   evidence.baseline = { commit: baseline.commit, binarySha256: entry.sha256 };
   const oldExe = path.join(directory, `legacy-api-${randomUUID()}.exe`); copyFileSync(binary, oldExe);
   claimLegacyNativeProfile();
-  const old = await start(oldExe, "API Playground", path.join(directory, "com.devbox.apiplayground"));
+  const old = await start(oldExe, "API Playground", path.join(sourceBase, "com.devbox.apiplayground"));
   await wait(old.cdp, 'localStorage.getItem("apip-collections-v1-migrated") === "2" && localStorage.getItem("apip-history-v1-migrated") === "2"', "legacy bootstrap did not finish");
   assert.equal(await old.cdp.evaluate(`(async () => {
     const sealed = await window.__TAURI_INTERNALS__.invoke("seal_secret", {value:"migration-fixture-secret"});
@@ -159,10 +184,11 @@ try {
     return JSON.parse(localStorage.getItem("apip-collections-v2")).collections.length;
   })()`), 1);
   await delay(500); await stop(old); await delay(500);
-  mkdirSync(path.join(directory, "com.devbox.webhooklab/service-profiles"), { recursive: true }); mkdirSync(path.join(directory, "com.devbox.developertoolbox"));
-  writeFileSync(path.join(directory, "com.devbox.webhooklab/fixtures.json"), JSON.stringify(nativeFixture.fixtures), {flag:"wx"});
-  writeFileSync(path.join(directory, `com.devbox.webhooklab/service-profiles/${profileId}.json`), JSON.stringify(nativeFixture.profile), {flag:"wx"});
-  writeFileSync(path.join(directory, "com.devbox.developertoolbox/smart-workflows.json"), JSON.stringify(nativeFixture.workflows), {flag:"wx"});
+  claimExtraNativeSources();
+  mkdirSync(path.join(sourceBase, "com.devbox.webhooklab/service-profiles"), { recursive: true }); mkdirSync(path.join(sourceBase, "com.devbox.developertoolbox"), {recursive:true});
+  writeFileSync(path.join(sourceBase, "com.devbox.webhooklab/fixtures.json"), JSON.stringify(nativeFixture.fixtures), {flag:"wx"});
+  writeFileSync(path.join(sourceBase, `com.devbox.webhooklab/service-profiles/${profileId}.json`), JSON.stringify(nativeFixture.profile), {flag:"wx"});
+  writeFileSync(path.join(sourceBase, "com.devbox.developertoolbox/smart-workflows.json"), JSON.stringify(nativeFixture.workflows), {flag:"wx"});
   const frozen = sourceHashes(); progress("legacy-seeded");
   const productExe = path.join(directory, `api-product-${randomUUID()}.exe`); copyFileSync(path.resolve("target/debug/devbox-api-studio.exe"), productExe);
   const beforeRoots = new Set(readdirSync(process.env.LOCALAPPDATA).filter(name => name.startsWith("com.devbox.v08.apistudio.i")));
@@ -214,7 +240,7 @@ try {
 finally {
   for (const item of live) { try { await stop(item); } catch { item.child?.kill(); if(item.policy)restoreElevatedCdpPolicy(item.policy); } }
   let cleanupFailure = false;
-  try { cleanLegacyNativeProfile(); } catch { cleanupFailure = true; evidence.nativeProfileCleaned = false; evidence.result = "failed"; evidence.cleanupError = "owned legacy native profile cleanup failed"; }
+  try { cleanExtraNativeSources(); cleanLegacyNativeProfile(); } catch { cleanupFailure = true; evidence.nativeProfileCleaned = false; evidence.result = "failed"; evidence.cleanupError = "owned legacy native profile cleanup failed"; }
   await new Promise(resolve=>server.close(resolve)); writeFileSync(report, JSON.stringify(evidence,null,2));
   if (cleanupFailure) throw new Error("owned legacy native profile cleanup failed");
 }
