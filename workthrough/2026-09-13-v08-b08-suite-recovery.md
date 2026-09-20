@@ -836,3 +836,13 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Remove the stale predecessor exception from verification.md to match the current
   user instruction. Detailed tests/builds/CI remain deferred until this PR's complete
   implementation and fixture/document mapping are ready.
+
+### Final validation started
+
+- `pnpm verify:affected` on `19ce9f1f` stopped after 2.843s at scope regressions,
+  before any compiler/build/domain test ran. Resource/agent-metadata checks passed.
+  The stale test expected Manager to have no Control Center consumer. Update that
+  expectation, catalog direct-consumer metadata after the frontend move, and the
+  shared `suite_health.rs` include edge for the three other products together.
+- Resume the remaining original affected-driver steps under the same resource
+  wrapper; do not repeat the unrelated passed resource/agent-metadata checks.
