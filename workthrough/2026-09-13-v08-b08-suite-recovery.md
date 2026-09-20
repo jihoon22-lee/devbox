@@ -646,3 +646,30 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Align B08 with accepted main `138c49fe`: the tested B07 tree differed from
   accepted main only in the B06 workthrough, which B08 had not changed. Preserve
   all B08 implementation and incorporate that accepted history/document update.
+
+### Implement installed generation updates and self-update recovery
+
+- Stage all four candidate products and the new helper under a fresh generation.
+  Preserve a closed-data checkpoint and materialize a new physical copy for the
+  candidate. The old executable generation and original directories remain intact.
+- Apply/resume exact directory identities, then publish owner/manifest/payload/
+  activation records under a durable startup blocker. A partial record switch can
+  resume only when every record belongs to one of the two pinned generations.
+  This does not claim a transaction spanning filesystem, registry and data stores.
+- Start a new suite journal with the prior committed journal archived. Require
+  four fresh native health reports before commit. Before commit, rollback retains
+  candidate data and restores both the original package records and data directories.
+  Older versions fail with `downgrade_requires_backup_export`; no reverse schema
+  conversion or silent loss of newer data is attempted.
+- Connect recovery/commit/rollback controls and NSIS update detection. The existing
+  four shortcuts remain pinned dispatchers; they resolve the current helper after
+  update. The original NSIS uninstaller delegates to a verified current helper in
+  a new temporary directory, outside the package tree being removed.
+- Other restore/uninstall operations cannot interleave with a pending update.
+  Prepare/resume never kills product processes; the shared writer leases require
+  them to close. Committing preserves ARP's original uninstaller and updates version.
+- Prepared metadata crash-boundary/stale-marker regressions. Minimal Linux Rust
+  typecheck and frontend typecheck passed together in 11.45s before the added test
+  source; no tests, Clippy, app build, CI or Windows acceptance have been executed.
+  Official update discovery/download, legacy source cutover/cleanup, reinstall and
+  final fixture/acceptance completion remain in this B08 bundle.

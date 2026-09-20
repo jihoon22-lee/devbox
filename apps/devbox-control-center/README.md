@@ -39,6 +39,11 @@ The private `devbox-suite-bootstrap` currently implements these Windows operatio
 | `--apply-data-restore ROOT PAYLOAD OPERATION_ID` | Apply or resume the reviewed directory swaps, then require fresh four-product health |
 | `--commit-data-restore ROOT PAYLOAD OPERATION_ID` | Commit the restored data after fresh native health; ordinary writers remain blocked until this step |
 | `--rollback-data-restore ROOT PAYLOAD OPERATION_ID` | Undo an uncommitted restore while retaining original and restored/reviewed data |
+| `--prepare-update ROOT NEW_PAYLOAD` | Stage a complete new generation and preserve the closed current data |
+| `--prepare-and-apply-update ROOT NEW_PAYLOAD` | Prepare/apply an update, or resume its existing recorded operation |
+| `--apply-update ROOT NEW_PAYLOAD OPERATION_ID` | Resume owned data-directory swaps and publish the new generation in Health mode |
+| `--commit-update ROOT NEW_PAYLOAD OPERATION_ID` | Commit after four fresh product health reports and update Suite registration |
+| `--rollback-update ROOT NEW_PAYLOAD OPERATION_ID` | Restore the previous package records and original data directories before commit |
 | `--open-install ROOT PAYLOAD` | Launch the pinned Control Center and derive its setup/recovery view from the native activation marker |
 
 `PAYLOAD` is the private `suite-payload.json` from `build-suite-package.py`, with its
@@ -71,7 +76,14 @@ file's digest and physical identity, and can resume a partially removed package.
 Unknown files, user stores and backups remain intact; small removal/ownership records
 remain available for recovery. It never invokes a legacy uninstaller or recursively
 deletes a user-selected directory. Public release, installed update, and Windows
-installer/uninstall acceptance remain unfinished in B08.
+installer/uninstall acceptance remain unfinished in B08. The update path keeps the
+original package generation and physical data directories, runs the new version on
+copied data, and blocks ordinary writes until native health and explicit commit.
+A durable startup blocker covers partial metadata publication. Existing shortcuts
+remain pinned dispatchers that resolve the current verified helper; the original
+NSIS uninstaller delegates to a verified temporary copy of the current helper.
+An older suite version is rejected with a backup/export requirement, rather than
+opening newer stores in an older executable.
 
 Product migration summaries report setup/review/busy state through authenticated
 native owners. They do not authorize activation. Import mode admits only the closed

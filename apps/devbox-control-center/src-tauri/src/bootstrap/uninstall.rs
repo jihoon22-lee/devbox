@@ -30,11 +30,27 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
     {
         return Err("bootstrap_uninstall_external_helper_required");
     }
+    #[cfg(windows)]
+    {
+        let current: InstallOwner =
+            serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+                .map_err(|_| "bootstrap_owner_invalid")?;
+        if current.payload_revision != revision {
+            if !super::registration::trusts_dispatcher(&root, &revision)? {
+                return Err("bootstrap_dispatcher_untrusted");
+            }
+            return remove_current(&root, &current.payload_revision);
+        }
+    }
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
     #[cfg(windows)]
     let _root_pins = crate::suite::platform::component_scope::pin_directories(&root)?;
     let _gate = writer_gate_for_restore(&root, false)?;
+    if !matches!(fs::symlink_metadata(root.join("suite-update.json")),Err(error) if error.kind()==std::io::ErrorKind::NotFound)
+    {
+        return Err("bootstrap_update_pending");
+    }
     if !matches!(fs::symlink_metadata(root.join("suite-data-restore.json")), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
     {
         return Err("bootstrap_data_restore_pending");
@@ -207,5 +223,74 @@ pub(super) fn remove(root: &Path, payload_path: &Path, image: &Path) -> Result<S
         source_sha: payload.source_sha,
         suite_version: payload.suite_version,
         payload_revision: revision,
+    })
+}
+
+#[cfg(windows)]
+fn remove_current(root: &Path, revision: &str) -> Result<StageResult> {
+    use std::os::windows::process::CommandExt;
+    if !product_contract::commands::revision(revision) {
+        return Err("bootstrap_owner_invalid");
+    }
+    let cached = root.join("setup").join(revision);
+    let bytes = read(&cached.join("suite-payload.json"), MAX_RELEASE_BYTES as u64)?;
+    if hash(&bytes) != revision {
+        return Err("bootstrap_payload_changed");
+    }
+    let payload = Payload::parse(&bytes)?;
+    let asset = payload
+        .products
+        .iter()
+        .find(|package| package.id == "control-center")
+        .and_then(|package| {
+            package
+                .files
+                .iter()
+                .find(|asset| asset.name == "resources/suite/devbox-suite-bootstrap.exe")
+        })
+        .ok_or("bootstrap_payload_incomplete")?;
+    let temporary =
+        std::env::temp_dir().join(format!("devbox-suite-uninstall-{}", uuid::Uuid::new_v4()));
+    ensure_no_links(temporary.parent().ok_or("bootstrap_directory_unsafe")?)
+        .map_err(|_| "bootstrap_directory_unsafe")?;
+    fs::create_dir(&temporary).map_err(|_| "bootstrap_directory_unavailable")?;
+    let helper = temporary.join("devbox-suite-bootstrap.exe");
+    let input = temporary.join("suite-payload.json");
+    retain_input(&cached.join("devbox-suite-bootstrap.exe"), &helper, asset)?;
+    let mut file = OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&input)
+        .map_err(|_| "bootstrap_input_unavailable")?;
+    file.write_all(&bytes)
+        .and_then(|()| file.sync_all())
+        .map_err(|_| "bootstrap_input_unavailable")?;
+    drop(file);
+    let output = std::process::Command::new(&helper)
+        .arg("--uninstall-install")
+        .arg(root)
+        .arg(&input)
+        .creation_flags(0x0800_0000)
+        .output()
+        .map_err(|_| "bootstrap_launch_failed")?;
+    // Only the freshly created, known temporary names are eligible for cleanup.
+    let _ = fs::remove_file(&helper);
+    let _ = fs::remove_file(&input);
+    let _ = fs::remove_dir(&temporary);
+    if !output.status.success() || output.stdout.len() > 4096 {
+        return Err("bootstrap_current_uninstall_failed");
+    }
+    let result: serde_json::Value =
+        serde_json::from_slice(&output.stdout).map_err(|_| "bootstrap_current_uninstall_failed")?;
+    if result["state"] != "packagesRemovedDataPreserved" || result["payloadRevision"] != revision {
+        return Err("bootstrap_current_uninstall_failed");
+    }
+    Ok(StageResult {
+        state: "packagesRemovedDataPreserved",
+        operation_id: None,
+        checkpoint: None,
+        source_sha: payload.source_sha,
+        suite_version: payload.suite_version,
+        payload_revision: revision.into(),
     })
 }

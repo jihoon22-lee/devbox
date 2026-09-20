@@ -50,7 +50,8 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             };
             match action {
                 "snapshot" | "activateClean" | "commitClean" => id.is_empty(),
-                "restore" | "resume" | "commit" | "rollback" => {
+                "restore" | "resume" | "commit" | "rollback" | "updateResume" | "updateCommit"
+                | "updateRollback" => {
                     uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
                 }
                 _ => false,

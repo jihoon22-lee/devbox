@@ -20,6 +20,7 @@ pub(crate) mod interactive;
 #[cfg(windows)]
 mod registration;
 mod uninstall;
+mod update;
 fn hash(bytes: &[u8]) -> String {
     Sha256::digest(bytes)
         .iter()
@@ -450,9 +451,19 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
         .iter()
         .any(|value| mode == *value)
     });
-    if arguments.len() != if restore { 4 } else { 3 }
+    let update_action = arguments.first().is_some_and(|mode| {
+        ["--apply-update", "--commit-update", "--rollback-update"]
+            .iter()
+            .any(|value| mode == *value)
+    });
+    if arguments.len() != if restore || update_action { 4 } else { 3 }
         || ![
             "--stage",
+            "--prepare-update",
+            "--prepare-and-apply-update",
+            "--apply-update",
+            "--commit-update",
+            "--rollback-update",
             "--uninstall-install",
             "--register-install",
             "--prepare-install",
@@ -480,7 +491,21 @@ pub fn run(arguments: Vec<std::ffi::OsString>) -> Result<StageResult> {
     let root = PathBuf::from(&arguments[1]);
     let payload = PathBuf::from(&arguments[2]);
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
-    if restore {
+    if update_action {
+        update::execute(
+            &root,
+            &payload,
+            &image,
+            arguments[3].to_str().ok_or("update_operation_invalid")?,
+            arguments[0].to_str().ok_or("bootstrap_arguments_invalid")?,
+        )
+    } else if arguments[0] == "--prepare-update" || arguments[0] == "--prepare-and-apply-update" {
+        if arguments[0] == "--prepare-update" {
+            update::prepare(&root, &payload, &image)
+        } else {
+            update::install(&root, &payload, &image)
+        }
+    } else if restore {
         let checkpoint = arguments[3].to_str().ok_or("checkpoint_manifest_invalid")?;
         if arguments[0] == "--prepare-data-restore" {
             prepare_data_restore(&root, &payload, &image, checkpoint)
@@ -542,7 +567,7 @@ fn setup_product(mode: &std::ffi::OsStr) -> Option<&'static str> {
     }
 }
 
-#[derive(serde::Deserialize, Serialize)]
+#[derive(Clone, serde::Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 struct InstallOwner {
     schema_version: u32,
@@ -805,6 +830,10 @@ fn prepare_install(root: &Path, payload_path: &Path, own_image: &Path) -> Result
 
 fn writer_gate(root: &Path, create: bool) -> Result<Lock> {
     let guard = writer_gate_for_restore(root, create)?;
+    if !matches!(fs::symlink_metadata(root.join("suite-update.json")), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+    {
+        return Err("bootstrap_update_pending");
+    }
     if !matches!(fs::symlink_metadata(root.join("uninstall-plan.json")), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
     {
         return Err("bootstrap_uninstall_pending");
@@ -1057,6 +1086,9 @@ fn open_install(
     let (_root, identity) =
         open_filesystem_object(&root, true).map_err(|_| "bootstrap_root_unavailable")?;
     let _directories = crate::suite::platform::component_scope::pin_directories(&root)?;
+    if let Some(result) = update::dispatch(&root, &payload, &payload_revision, product)? {
+        return Ok(result);
+    }
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "bootstrap_owner_invalid")?;
     if owner.schema_version != 1

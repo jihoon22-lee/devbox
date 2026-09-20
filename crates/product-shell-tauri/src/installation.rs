@@ -197,9 +197,11 @@ impl WriterGuard {
         }
         // The helper can exit between namespace renames. A durable gate keeps
         // WebView/window-state writers out until all four stores are coherent.
-        match std::fs::symlink_metadata(root.join("suite-data-restore.block")) {
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            _ => return Err("suite_data_restore_in_progress"),
+        for block in ["suite-data-restore.block", "suite-update.block"] {
+            match std::fs::symlink_metadata(root.join(block)) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                _ => return Err("suite_data_restore_in_progress"),
+            }
         }
         Ok(Self(Some(file)))
     }

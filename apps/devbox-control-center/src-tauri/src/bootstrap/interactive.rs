@@ -13,6 +13,9 @@ static LEAVING: AtomicBool = AtomicBool::new(false);
 /// its WebView/data namespace is unavailable. No product store is opened here.
 pub(crate) fn resume_before_shell() -> Result<bool> {
     let image = std::env::current_exe().map_err(|_| "bootstrap_identity_unavailable")?;
+    if update::resume_before_shell(&image)? {
+        return Ok(true);
+    }
     let Some(root) = image
         .parent()
         .and_then(|path| path.parent())
@@ -95,7 +98,8 @@ impl Request {
     pub(crate) fn validate(&self) -> bool {
         match self.action.as_str() {
             "snapshot" | "activateClean" | "commitClean" => self.id.is_empty(),
-            "restore" | "resume" | "commit" | "rollback" => {
+            "restore" | "resume" | "commit" | "rollback" | "updateResume" | "updateCommit"
+            | "updateRollback" => {
                 uuid::Uuid::parse_str(&self.id).is_ok_and(|id| id.to_string() == self.id)
             }
             _ => false,
@@ -256,8 +260,9 @@ pub(crate) fn inventory() -> Result<Value> {
         ),
     };
     scope.revalidate()?;
+    let update = update::status(&root, key)?;
     Ok(
-        json!({"checkpoints":checkpoints,"operations":operations,"activeOperation":active,"installation":installation}),
+        json!({"checkpoints":checkpoints,"operations":operations,"activeOperation":active,"installation":installation,"update":update}),
     )
 }
 pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> {
@@ -268,8 +273,39 @@ pub(crate) fn launch(app: &tauri::AppHandle, request: Request) -> Result<Value> 
         return Err("restore_action_already_started");
     }
     let result = (|| {
-        let (scope, root, payload, helper) = installation()?;
+        let (scope, root, mut payload, mut helper) = installation()?;
         let available = inventory()?;
+        if matches!(
+            request.action.as_str(),
+            "updateResume" | "updateCommit" | "updateRollback"
+        ) && available["update"]["id"] != request.id
+        {
+            return Err("update_operation_invalid");
+        }
+        if matches!(
+            request.action.as_str(),
+            "updateResume" | "updateCommit" | "updateRollback"
+        ) {
+            let revision = available["update"]["payloadRevision"]
+                .as_str()
+                .filter(|value| product_contract::commands::revision(value))
+                .ok_or("update_claim_invalid")?;
+            let directory = root.join("setup").join(revision);
+            payload = directory.join("suite-payload.json");
+            helper = directory.join("devbox-suite-bootstrap.exe");
+            let bytes = read(&payload, MAX_RELEASE_BYTES as u64)?;
+            if hash(&bytes) != revision {
+                return Err("bootstrap_payload_changed");
+            }
+            verify_payload_owner(&Payload::parse(&bytes)?, &helper)?;
+        }
+        if !matches!(
+            request.action.as_str(),
+            "updateResume" | "updateCommit" | "updateRollback"
+        ) && !available["update"].is_null()
+        {
+            return Err("bootstrap_update_pending");
+        }
         if matches!(request.action.as_str(), "activateClean" | "commitClean")
             && (available["installation"]["clean"] != true
                 || !available["activeOperation"].is_null())
@@ -343,7 +379,11 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
         serde_json::from_slice(&read(&verified_root.join("suite-owner.json"), 4096)?)
             .map_err(|_| "bootstrap_owner_invalid")?;
     if owner.schema_version != 1
-        || owner.payload_revision != hash(&payload_bytes)
+        || (owner.payload_revision != hash(&payload_bytes)
+            && !matches!(
+                request.action.as_str(),
+                "updateResume" | "updateCommit" | "updateRollback"
+            ))
         || owner.root_identity
             != filesystem_identity(&verified_root, true)
                 .map_err(|_| "bootstrap_root_changed")?
@@ -389,6 +429,15 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
             "snapshot" => snapshot_install(&root, &payload, &image, false),
             "activateClean" => activate_clean_install(&root, &payload, &image, false),
             "commitClean" => activate_clean_install(&root, &payload, &image, true),
+            "updateResume" => {
+                update::execute(&root, &payload, &image, &request.id, "--apply-update")
+            }
+            "updateCommit" => {
+                update::execute(&root, &payload, &image, &request.id, "--commit-update")
+            }
+            "updateRollback" => {
+                update::execute(&root, &payload, &image, &request.id, "--rollback-update")
+            }
             "restore" => prepare_data_restore(&root, &payload, &image, &request.id),
             "resume" => {
                 data_restore::execute(&root, &payload, &image, &request.id, "--apply-data-restore")
@@ -415,7 +464,14 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
                 request.action = "resume".into();
             }
             Ok(result) => {
-                open_install(&root, &payload, &image, "control-center")?;
+                if matches!(
+                    request.action.as_str(),
+                    "updateResume" | "updateCommit" | "updateRollback"
+                ) {
+                    update::open_current(&root, "control-center")?;
+                } else {
+                    open_install(&root, &payload, &image, "control-center")?;
+                }
                 return Ok(result);
             }
             Err("suite_writers_must_close")

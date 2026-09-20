@@ -216,6 +216,35 @@ fn registry(root: &Path, key: &str, version: &str) -> Result<()> {
     }
     Ok(())
 }
+/// Existing links and the generated uninstaller are stable dispatchers pinned
+/// by the first installation. Updates retain those bytes and change ARP version.
+pub(super) fn update_version(root: &Path, key: &str, version: &str) -> Result<()> {
+    if let Some(registration) = read_registration(root, key)? {
+        registration
+            .uninstaller
+            .as_ref()
+            .ok_or("suite_registration_incomplete")?
+            .verify_remaining(root)?;
+        registry(root, key, version)?;
+    }
+    Ok(())
+}
+pub(super) fn trusts_dispatcher(root: &Path, revision: &str) -> Result<bool> {
+    let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
+        .map_err(|_| "bootstrap_owner_invalid")?;
+    let identity = filesystem_identity(root, true)
+        .map_err(|_| "bootstrap_root_changed")?
+        .components();
+    if identity != owner.root_identity {
+        return Err("bootstrap_owner_changed");
+    }
+    let key = hash(
+        &serde_json::to_vec(&(identity, &owner.installation_id))
+            .map_err(|_| "bootstrap_owner_invalid")?,
+    );
+    Ok(read_registration(root, &key)?
+        .is_some_and(|registration| registration.payload_revision == revision))
+}
 pub(super) fn register(root: &Path, payload_path: &Path, image: &Path) -> Result<StageResult> {
     let bytes = read(payload_path, MAX_RELEASE_BYTES as u64)?;
     let payload = Payload::parse(&bytes)?;

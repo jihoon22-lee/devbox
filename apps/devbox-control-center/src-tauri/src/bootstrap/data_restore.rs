@@ -37,14 +37,14 @@ pub(super) fn directory_identity(path: &Path) -> Result<Option<Identity>> {
         }
     }
 }
-fn persist(path: &Path, value: &impl Serialize) -> Result<()> {
+pub(super) fn persist(path: &Path, value: &impl Serialize) -> Result<()> {
     devbox_filesystem::atomic_write(
         path,
         &serde_json::to_vec(value).map_err(|_| "restore_record_invalid")?,
     )
     .map_err(|_| "restore_record_write_failed")
 }
-fn claim(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(super) fn claim(path: &Path, bytes: &[u8]) -> Result<()> {
     match fs::symlink_metadata(path) {
         Ok(_) if read(path, 4096)? == bytes => Ok(()),
         Ok(_) => Err("restore_operation_conflict"),
@@ -65,7 +65,7 @@ fn claim(path: &Path, bytes: &[u8]) -> Result<()> {
         Err(_) => Err("restore_record_unavailable"),
     }
 }
-fn release(path: &Path, bytes: &[u8]) -> Result<()> {
+pub(super) fn release(path: &Path, bytes: &[u8]) -> Result<()> {
     match fs::symlink_metadata(path) {
         Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
         Ok(_) if read(path, 4096)? == bytes => {
@@ -74,7 +74,7 @@ fn release(path: &Path, bytes: &[u8]) -> Result<()> {
         _ => Err("restore_operation_conflict"),
     }
 }
-fn move_directory(source: &Path, destination: &Path, expected: Identity) -> Result<()> {
+pub(super) fn move_directory(source: &Path, destination: &Path, expected: Identity) -> Result<()> {
     if directory_identity(source)? != Some(expected) || directory_identity(destination)?.is_some() {
         return Err("restore_namespace_changed");
     }
@@ -155,6 +155,12 @@ pub(super) fn execute(
     #[cfg(windows)]
     let _root_pins = crate::suite::platform::component_scope::pin_directories(&root)?;
     let _gate = writer_gate_for_restore(&root, false)?;
+    for pending in ["suite-update.json", "uninstall-plan.json"] {
+        if !matches!(fs::symlink_metadata(root.join(pending)),Err(error) if error.kind()==std::io::ErrorKind::NotFound)
+        {
+            return Err("restore_other_operation_pending");
+        }
+    }
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "bootstrap_owner_invalid")?;
     if owner.schema_version != 1
