@@ -18,7 +18,7 @@ export function Startup({ children }: { children: ReactNode }) {
   useEffect(() => {
     if (!nativeMode) return;
     let alive = true;
-    void invoke<{ active: boolean; scheduled?: boolean; hasExisting?: boolean; vaultChange?: boolean; bindingUnavailable?: boolean }>("status").then(value => { if (alive) { setActive(value.active === true); setCanReconnect(value.bindingUnavailable === true); if (value.bindingUnavailable) setError("현재 노트 폴더에 연결할 수 없습니다. 폴더를 복구하거나 다른 폴더를 선택해 주세요."); setShowVault(value.vaultChange === true && !value.active); setHasExisting(value.hasExisting === true); setShowImport(value.scheduled === true && !value.active); } })
+    void invoke<{ active: boolean; prepared?:boolean; scheduled?: boolean; hasExisting?: boolean; vaultChange?: boolean; bindingUnavailable?: boolean }>("status").then(value => { if (alive) { setActive(value.active === true || value.prepared === true); setCanReconnect(value.bindingUnavailable === true); if (value.bindingUnavailable) setError("현재 노트 폴더에 연결할 수 없습니다. 폴더를 복구하거나 다른 폴더를 선택해 주세요."); setShowVault(value.vaultChange === true && !value.active); setHasExisting(value.hasExisting === true); setShowImport(value.scheduled === true && !value.active); } })
       .catch(error => { if (alive) { setError(error instanceof Error ? error.message : "저장소를 확인하지 못했습니다."); setBlocked(error instanceof Error && ["future_schema", "store_invalid", "restart_required", "import_schema_unsupported", "vault_change_invalid"].includes(error.name)); } })
       .finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -29,7 +29,7 @@ export function Startup({ children }: { children: ReactNode }) {
   if (showImport) return <Suspense fallback={<p role="status">가져오기 화면을 불러오고 있습니다…</p>}><MigrationSetup onActivated={() => setActive(true)} onBack={() => setShowImport(false)}/></Suspense>;
   const start = async () => {
     setLoading(true); setError(null);
-    try { const value = await invoke<{ active: boolean }>(hasExisting ? "continue_existing" : "start_empty"); setActive(value.active === true); }
+    try { const value = await invoke<{ active: boolean; prepared?:boolean }>(hasExisting ? "continue_existing" : "start_empty"); setActive(value.active === true || value.prepared === true); }
     catch (error) { setError(error instanceof Error ? error.message : "저장소를 준비하지 못했습니다."); setBlocked(error instanceof Error && ["future_schema", "store_invalid", "restart_required", "import_schema_unsupported", "vault_change_invalid"].includes(error.name)); }
     finally { setLoading(false); }
   };

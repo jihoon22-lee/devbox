@@ -326,7 +326,7 @@
           "apps/devbox-manager/src-tauri/src/lib.rs"
         ],
         "nativeRegisteredCommands": 33,
-        "newProductParity": "pending-owner-implementation"
+        "newProductParity": "verified-product-internal"
       },
       "registration": {
         "singleInstance": "Tauri app identifier",
@@ -338,6 +338,10 @@
         "tray": false,
         "autostart": "none in app",
         "globalShortcut": "none in app"
+      },
+      "implementationReview": {
+        "featureMappings": 40,
+        "evidence": "workthrough/2026-09-13-v08-b08-suite-recovery.md"
       }
     },
     {
@@ -7417,11 +7421,24 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Four-product native activation uses validated installation/session identity and typed route handoff; legacy app executable fallback is removed.",
+      "test": [
+        ".github/scripts/windows-product-foundation.mjs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/suite.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:import_dev_setup_configuration",
@@ -7429,13 +7446,27 @@
       "sourceLine": 205,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "environment",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve package-only Dev Setup review, operation cancellation and export through the local Control Center host.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:discard_dev_setup_configuration",
@@ -7443,13 +7474,27 @@
       "sourceLine": 237,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "environment",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve package-only Dev Setup review, operation cancellation and export through the local Control Center host.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:export_dev_setup_configuration",
@@ -7457,13 +7502,27 @@
       "sourceLine": 246,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "environment",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve package-only Dev Setup review, operation cancellation and export through the local Control Center host.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:apply_dev_setup_configuration",
@@ -7471,13 +7530,27 @@
       "sourceLine": 266,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "environment",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve package-only Dev Setup review, operation cancellation and export through the local Control Center host.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:cancel_dev_setup_apply",
@@ -7485,13 +7558,27 @@
       "sourceLine": 322,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "environment",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve package-only Dev Setup review, operation cancellation and export through the local Control Center host.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_install_root",
@@ -7501,11 +7588,25 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Suite setup explicitly selects and validates its custom root and retained physical installation identity; legacy roots are inventoried separately and never silently relocated.",
+      "test": [
+        ".github/scripts/test-build-suite-installer.py",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:apply_install_root",
@@ -7515,11 +7616,25 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Suite setup explicitly selects and validates its custom root and retained physical installation identity; legacy roots are inventoried separately and never silently relocated.",
+      "test": [
+        ".github/scripts/test-build-suite-installer.py",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:catalog",
@@ -7529,11 +7644,24 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Suite inventory replaces per-app installation status; unknown evidence remains unknown.",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/core/inventory.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/core/inventory.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:available",
@@ -7541,13 +7669,28 @@
       "sourceLine": 831,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "updates",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Replace independent legacy batches with explicitly reviewed, verified four-product generation download, activation and recovery.",
+      "test": [
+        "apps/devbox-control-center/src/Updates.test.tsx",
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:installed",
@@ -7557,11 +7700,24 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Suite inventory replaces per-app installation status; unknown evidence remains unknown.",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/core/inventory.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/core/inventory.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install_path",
@@ -7571,11 +7727,25 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Products opens the current verified Suite/portable installation directory after an explicit click. Native capture pins its own package root; renderer paths and foreign response provenance are rejected.",
+      "test": [
+        "apps/devbox-control-center/src/Inventory.test.tsx",
+        ".github/scripts/windows-suite-delivery-native.mjs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install",
@@ -7583,13 +7753,28 @@
       "sourceLine": 942,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "updates",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Replace independent legacy batches with explicitly reviewed, verified four-product generation download, activation and recovery.",
+      "test": [
+        "apps/devbox-control-center/src/Updates.test.tsx",
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install_many",
@@ -7597,13 +7782,28 @@
       "sourceLine": 961,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "updates",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Replace independent legacy batches with explicitly reviewed, verified four-product generation download, activation and recovery.",
+      "test": [
+        "apps/devbox-control-center/src/Updates.test.tsx",
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:current",
@@ -7611,13 +7811,27 @@
       "sourceLine": 1132,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "recovery",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve original legacy generation pointers in place; Suite package/data checkpoints and precommit rollback own a separate namespace. Postcommit downgrade requires backup/export.",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:rollback",
@@ -7625,13 +7839,27 @@
       "sourceLine": 1152,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "recovery",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve original legacy generation pointers in place; Suite package/data checkpoints and precommit rollback own a separate namespace. Postcommit downgrade requires backup/export.",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:launch",
@@ -7641,11 +7869,24 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Four-product native activation uses validated installation/session identity and typed route handoff; legacy app executable fallback is removed.",
+      "test": [
+        ".github/scripts/windows-product-foundation.mjs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/suite.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:open_install_folder",
@@ -7655,11 +7896,25 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Products opens the current verified Suite/portable installation directory after an explicit click. Native capture pins its own package root; renderer paths and foreign response provenance are rejected.",
+      "test": [
+        "apps/devbox-control-center/src/Inventory.test.tsx",
+        ".github/scripts/windows-suite-delivery-native.mjs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_remove_app",
@@ -7667,13 +7922,27 @@
       "sourceLine": 1366,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "migration",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve legacy Manager registration/manifest provenance; committed Suite cleanup rechecks exact file identities and resumes partial removal without deleting user data.",
+      "test": [
+        "apps/devbox-control-center/src/LegacyCleanup.test.tsx",
+        ".github/scripts/windows-suite-legacy-cleanup.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:remove_portable_app",
@@ -7681,13 +7950,27 @@
       "sourceLine": 1403,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "migration",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve legacy Manager registration/manifest provenance; committed Suite cleanup rechecks exact file identities and resumes partial removal without deleting user data.",
+      "test": [
+        "apps/devbox-control-center/src/LegacyCleanup.test.tsx",
+        ".github/scripts/windows-suite-legacy-cleanup.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:run_diagnosis",
@@ -7695,13 +7978,28 @@
       "sourceLine": 480,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:related_tools",
@@ -7709,13 +8007,27 @@
       "sourceLine": 390,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "tools",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve curated external-tool review and explicit user-authority install/launch; never automatic elevation.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:dev_setup_audit",
@@ -7723,13 +8035,27 @@
       "sourceLine": 403,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "environment",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve package-only Dev Setup review, operation cancellation and export through the local Control Center host.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:install_related_tool",
@@ -7737,13 +8063,27 @@
       "sourceLine": 415,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "tools",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve curated external-tool review and explicit user-authority install/launch; never automatic elevation.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:launch_related_tool",
@@ -7751,13 +8091,27 @@
       "sourceLine": 459,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "tools",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve curated external-tool review and explicit user-authority install/launch; never automatic elevation.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:inspect_data_databases",
@@ -7765,13 +8119,28 @@
       "sourceLine": 160,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_data_query",
@@ -7779,13 +8148,28 @@
       "sourceLine": 179,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:cancel_data_diagnostics",
@@ -7793,13 +8177,28 @@
       "sourceLine": 225,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:export_data_preview",
@@ -7807,13 +8206,28 @@
       "sourceLine": 242,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:preview_support_bundle",
@@ -7821,13 +8235,28 @@
       "sourceLine": 289,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:cancel_support_bundle",
@@ -7835,13 +8264,28 @@
       "sourceLine": 358,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:export_support_bundle",
@@ -7849,13 +8293,28 @@
       "sourceLine": 375,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:command:inspect_local_quality",
@@ -7863,13 +8322,28 @@
       "sourceLine": 34,
       "kind": "native-command",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:surface:App.tsx",
@@ -7879,11 +8353,25 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserved tools share their native adapter and frontend; Suite product, update, migration and recovery routes replace the legacy per-app installer screen.",
+      "test": [
+        "apps/devbox-control-center/src/App.test.tsx",
+        "packages/control-center-features/src/manager/App.test.tsx"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src/main.tsx",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/custom_root.rs",
@@ -7893,11 +8381,25 @@
       "product": "control-center",
       "route": "products",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Suite setup explicitly selects and validates its custom root and retained physical installation identity; legacy roots are inventoried separately and never silently relocated.",
+      "test": [
+        ".github/scripts/test-build-suite-installer.py",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/data_inspector.rs",
@@ -7905,13 +8407,28 @@
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "control-center",
-      "route": "products",
+      "route": "diagnostics",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve bounded read-only diagnostics and redaction; checkpoint-only inspection never substitutes for WAL-aware migration acquisition.",
+      "test": [
+        "packages/control-center-features/src/manager/App.test.tsx",
+        "packages/control-center-features/src/manager/api.test.ts",
+        "apps/devbox-manager/src-tauri/src/core/data_inspector.rs"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/layout.rs",
@@ -7919,13 +8436,27 @@
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "control-center",
-      "route": "products",
+      "route": "recovery",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve original legacy generation pointers in place; Suite package/data checkpoints and precommit rollback own a separate namespace. Postcommit downgrade requires backup/export.",
+      "test": [
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/managed_install.rs",
@@ -7933,13 +8464,28 @@
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "control-center",
-      "route": "products",
+      "route": "updates",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Replace independent legacy batches with explicitly reviewed, verified four-product generation download, activation and recovery.",
+      "test": [
+        "apps/devbox-control-center/src/Updates.test.tsx",
+        "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+        ".github/scripts/windows-suite-delivery.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/bootstrap/update.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/removal.rs",
@@ -7947,13 +8493,27 @@
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "control-center",
-      "route": "products",
+      "route": "migration",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Preserve legacy Manager registration/manifest provenance; committed Suite cleanup rechecks exact file identities and resumes partial removal without deleting user data.",
+      "test": [
+        "apps/devbox-control-center/src/LegacyCleanup.test.tsx",
+        ".github/scripts/windows-suite-legacy-cleanup.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-control-center/src-tauri/src/legacy_cleanup.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "devbox-manager:store:src-tauri/src/core/runtime_metadata.rs",
@@ -7961,13 +8521,26 @@
       "sourceLine": 1,
       "kind": "storage-source",
       "product": "control-center",
-      "route": "products",
+      "route": "migration",
       "dataOwner": "installation",
-      "authority": "installation",
-      "migration": "owner-review-required",
-      "test": null,
+      "authority": "Control Center local native route admission; package/data mutation delegated only to verified Suite helper or explicit legacy-cleanup coordinator",
+      "migration": "Read exact original Manager root locator/registry without publishing the Control Center namespace as a legacy install root.",
+      "test": [
+        ".github/scripts/windows-suite-legacy-cleanup.ps1"
+      ],
       "ownerIssue": 550,
-      "status": "pending"
+      "status": "verified",
+      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
+      "evidence": [
+        "workthrough/2026-09-13-v08-b08-suite-recovery.md",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35490650401",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35486669148",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35493753318",
+        "https://github.com/jihoon22-lee/devbox/actions/runs/35495003866"
+      ],
+      "verificationScope": "B08 mapped behavior: retained Manager unit/UI suites and actual four-product shells; installed folder action, reviewed source cutover, native restore/update/reinstall and exact installer/portable cleanup. Scoped native passes are combined with their recorded binary provenance; public exact-main release remains B09.",
+      "verifiedSourceCommit": "2f27e290c175cc1e41f63050086d8417c6628d24"
     },
     {
       "legacyFeatureId": "code-pad:command:take_pending_open",

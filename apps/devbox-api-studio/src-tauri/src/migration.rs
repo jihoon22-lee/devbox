@@ -504,8 +504,12 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                 let source_root = state.legacy_root.clone();
                 let selected = input.sources.clone();
                 let profiles = input.profile_ids.clone();
+                let backup_stage = stage.clone();
+                let native_cancelled = Arc::clone(&guard.cancelled);
                 let (mut documents, mut issues) = tauri::async_runtime::spawn_blocking(move || {
-                    native_sources(&source_root, &selected, &profiles)
+                    let identifiers = selected.iter().map(|app| app.identifier().to_owned()).collect::<Vec<_>>();
+                    let copied = crate::core::native_source_backup::capture(&source_root, &backup_stage, &identifiers, &profiles, &native_cancelled)?;
+                    native_sources(&copied, &selected, &profiles)
                 })
                 .await
                 .map_err(|_| "migration_source_unavailable".to_string())??;
@@ -550,7 +554,8 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
                         )
                         .await;
                         // The worker has closed its owned Job before returning.
-                        // Purge the raw copy even when export or cancellation failed.
+                        // Retire the worker copy even when export/cancellation failed.
+                        // The separately retained pre-WebView source backup remains.
                         guard.stage(match exported.as_ref().err().map(String::as_str) {
                             None => "api-export-copy-cleanup",
                             Some("legacy_worker_cleanup_failed") => "api-export-job-cleanup-failed",
@@ -630,8 +635,15 @@ pub async fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Resu
         "apply_migration" => {
             let input: ApplyInput = decode(args)?;
             let guard = state.begin(input.operation_id)?;
-            let repo = state.repository()?;
-            encode(repo.activate(&input.id, &input.browser, &guard.cancelled)?)
+            let root = state.root.clone();
+            let installation = state.installation.clone();
+            let legacy = state.legacy_root.clone();
+            let cancelled = guard.cancelled.clone();
+            guard.stage("source-revalidation");
+            let applied = tauri::async_runtime::spawn_blocking(move || {
+                Repository::open(&root, &installation)?.activate_from_sources(&input.id, &input.browser, &cancelled, &legacy)
+            }).await.map_err(|_| "migration_source_unavailable")??;
+            encode(applied)
         }
         "rollback_migration" => {
             #[derive(Deserialize)]
@@ -751,7 +763,9 @@ pub fn issue(error: &str) -> &'static str {
         }
         "migration_store_too_large"
         | "legacy_store_too_large"
-        | "migration_source_changed_or_large" => "source-large-or-changed",
+        | "migration_source_changed_or_large"
+        | "migration_source_changed"
+        | "legacy_store_changed" => "source-large-or-changed",
         "migration_schema_invalid"
         | "legacy_api_storage_invalid"
         | "migration_journal_future_schema"
@@ -793,6 +807,87 @@ pub(crate) fn operation_rows(
         )?);
     }
     Ok(rows)
+}
+
+pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.lock().map_err(|_| "migration_busy")?;
+    let config = flags(&state.root).map_err(|_| "migration_unavailable")?;
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    let pending = repository.pending().map_err(|_| "migration_unavailable")?;
+    let busy = work.current.is_some();
+    let review = pending.is_some() || config.request_import || state.force_import;
+    let native = serde_json::to_vec(&(busy, config.setup_done, review, pending, work.stage))
+        .map_err(|_| "migration_unavailable")?;
+    let mut summary = product_contract::migration_status::Summary::new(
+        "api-studio",
+        env!("CARGO_PKG_VERSION"),
+        busy,
+        config.setup_done,
+        review,
+        &native,
+    )?;
+    if !busy {
+        summary = summary.with_mappings(
+            repository
+                .mapping_summary()
+                .map_err(|_| "migration_unavailable")?,
+        )?;
+    }
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
+}
+
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
+    if work.current.is_some() {
+        return Err("migration_busy");
+    }
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    match id {
+        Some(id) => serde_json::to_value(
+            repository
+                .verify_backup(id)
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+        None => serde_json::to_value(
+            repository
+                .backup_catalog()
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+    }
+    .map_err(|_| "migration_backup_invalid")
+}
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
+    if work.current.is_some() {
+        return Err("migration_busy");
+    }
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    if repository
+        .pending()
+        .map_err(|_| "migration_unavailable")?
+        .is_some()
+    {
+        return Err("migration_busy");
+    }
+    serde_json::to_value(
+        repository
+            .current_sources(&state.legacy_root)
+            .map_err(|_| "migration_source_unavailable")?,
+    )
+    .map_err(|_| "migration_source_invalid")
 }
 
 #[cfg(test)]

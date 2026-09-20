@@ -1,7 +1,7 @@
 import { lazy, Suspense, useEffect, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 import { listen } from "@tauri-apps/api/event";
-import { nativeMode } from "@devbox/product-shell/api";
+import { nativeMode, productDataAvailable } from "@devbox/product-shell/api";
 import { componentInvoke } from "@devbox/api-studio-features/transport";
 const invokeNavigation = componentInvoke("api-studio.api");
 import { MigrationStartup } from "./migration/Startup";
@@ -53,4 +53,9 @@ function Content({ route, navigate }: ShellContentProps) {
     </div>}
   </>;
 }
-export default function Studio() { return <ProductShell product="api-studio" renderContent={(props) => <MigrationStartup><Content {...props}/></MigrationStartup>}/>; }
+export default function Studio() { return <ProductShell product="api-studio" renderContent={(props) => {
+  const available=productDataAvailable(props.description);
+  const pending=<p role="status">데이터 이전을 마친 뒤 Control Center에서 Suite 활성화를 완료해 주세요.</p>;
+  if(!available&&props.description.deliveryState!=="import")return pending;
+  return <MigrationStartup>{available?<Content {...props}/>:pending}</MigrationStartup>;
+}}/>; }

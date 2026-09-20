@@ -339,6 +339,28 @@ pub fn initialize_with_sources(
     legacy_base: &Path,
     sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
 ) -> Result<(), String> {
+    initialize_owner(app, data, common, legacy_base, sources, true)
+}
+
+/// Import-only Workspace initialization does not start cron, services or the
+/// maintenance worker. Commit requires a clean process restart with normal mode.
+pub fn initialize_import_only_with_sources(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    legacy_base: &Path,
+    sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
+) -> Result<(), String> {
+    initialize_owner(app, data, common, legacy_base, sources, false)
+}
+fn initialize_owner(
+    app: &tauri::AppHandle,
+    data: &Path,
+    common: &Path,
+    legacy_base: &Path,
+    sources: Option<Arc<dyn crate::workspace_sources::NativeTaskSources>>,
+    background_work: bool,
+) -> Result<(), String> {
     use crate::{
         core::imports::ImportOperationRegistry, lifecycle::RuntimeState, storage::DatabaseState,
     };
@@ -438,8 +460,10 @@ pub fn initialize_with_sources(
     app.manage(crate::applink::PendingOpen::new());
     app.manage(crate::task_control::PendingTaskControl::new());
     app.manage(runtime.clone());
-    crate::lifecycle::spawn_scheduler(runtime.clone());
-    crate::lifecycle::spawn_maintenance(runtime, database, app.clone(), data.to_path_buf());
+    if background_work {
+        crate::lifecycle::spawn_scheduler(runtime.clone());
+        crate::lifecycle::spawn_maintenance(runtime, database, app.clone(), data.to_path_buf());
+    }
     Ok(())
 }
 
@@ -732,4 +756,50 @@ pub async fn dispatch(
         }
     }
     Ok(value)
+}
+
+/// Read-only product migration ledger; never initializes execution owners.
+pub fn migration_mapping_summary(root: &Path) -> Result<(u64, String), String> {
+    crate::storage::imports::mapping_summary(root)
+}
+
+pub fn migration_backup_digest(root: &Path) -> Result<Option<(String, bool)>, String> {
+    Ok(crate::core::runtime_backup::receipt(root)?
+        .map(|(digest, binding)| (digest, binding.is_some())))
+}
+pub fn verify_migration_backup(
+    root: &Path,
+    digest: &str,
+) -> Result<(u64, u32, String, bool), String> {
+    crate::core::runtime_backup::verify(root, digest)
+}
+
+/// Reacquire SQLite + retained logs from the fixed legacy namespace. No execution
+/// owner/scheduler is opened and no source path comes from an IPC request.
+pub fn migration_source_current(root: &Path, source: &Path) -> Result<Option<String>, String> {
+    let Some((digest, binding)) = crate::core::runtime_backup::receipt(root)? else {
+        return Ok(None);
+    };
+    let Some(binding) = binding else {
+        return Ok(None);
+    };
+    crate::core::runtime_backup::verify(root, &digest)?;
+    let stage = root.join(format!("source-check-{}", uuid::Uuid::new_v4()));
+    struct Scratch(std::path::PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _scratch = Scratch(stage.clone());
+    let fresh = crate::core::runtime_import::PreparedImport::acquire(
+        source,
+        &stage,
+        &std::sync::atomic::AtomicBool::new(false),
+    )
+    .and_then(|prepared| Ok(prepared.digest() == digest && prepared.backup_digest()? == binding));
+    Ok(fresh
+        .ok()
+        .filter(|current| *current)
+        .map(|_| format!("runtime_{digest}")))
 }

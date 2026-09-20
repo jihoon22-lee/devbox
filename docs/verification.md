@@ -23,17 +23,25 @@
   커밋 전 허용 범위는 diff·계획 대조와 필요한 최소 문법·타입 확인뿐이다.
 - 로컬·수동 CI뿐 아니라 push 자동 실행에도 적용한다. 중간 커밋은 로컬에 모으고
   PR 개발 완료 시 push한다. 이미 수행한 검사와 겹치는 추가 실행을 예약하지 않는다.
-  최종 CI와 필수 수용 조건은 유지하며, 선행 PR의 완료 전에 의존하는 후속 개발로 넘어가지 않는다.
+  최종 CI와 필수 수용 조건은 유지한다. 검증 대기를 이유로 미완료 선행 PR을 둔 채
+  의존하는 후속 개발을 시작하지 않는다. 선행 기능·수용·병합을 먼저 마무리한다.
 - PR 완료 검증 전에 `verify:affected`가 이미 실행하는 항목을 확인한다. 포함된 테스트·타입·
   빌드·lint를 별도 집중 검사로 먼저 실행한 뒤 같은 범위의 verify를 다시 실행하지 않는다.
 - 검증 기록에는 대상 변경, 결과, 아직 남은 수용 항목을 구분한다. 재실행은 실패·관련 변경·
   새 위험 등 구체적인 근거가 있을 때만 한다. 커밋 생성·문서 갱신·작업 재개는 재실행 사유가 아니다.
+- PR 완료 테스트는 선택한 범위의 실패를 한 번에 모은다. Cargo `--no-fail-fast`와
+  pnpm `--no-bail`로 첫 실패 뒤에도 남은 테스트를 실행하되 최종 실패 종료 코드는 유지한다.
 - Rust 실패 재검사는 기존 Cargo feature 통합과 빌드 조건을 유지한다. 패키지 제외로
   실행 범위를 줄이면서 의존성 조합까지 바꿔 전체 재컴파일을 유발하지 않는다. 먼저 만든
   같은 코드·feature의 검사 산출물에서 미완료 target만 실행할 때는 Cargo의 패키지 작업
   디렉터리·런타임 환경과 공통 자원 제한을 보존하고, 완료/실패/미실행 target을 기록한다.
 - 최종 코드가 검사 후 바뀌면 영향을 받은 검증을 보충한다. resolver가 요구한 all 범위와
   최종 CI·Windows 수용 조건은 지킨다. 불필요한 반복을 줄이기 위해 gate 자체를 생략하지 않는다.
+
+Worktree마다 dependency/feature 구성이 다르면 공유 Cargo target이 있어도 이전 검사
+실행 파일을 다시 컴파일할 수 있다. 단일 회귀 검사에서 관행적으로 `--workspace`를 붙이지
+않는다. 필요한 package/test target을 선택하고, 변경되지 않은 실행 파일만 재사용한다.
+컴파일 범위가 커졌다는 이유로 이미 통과한 테스트 전체를 다시 실행하지 않는다.
 
 ## 기존 서비스와 공유 네트워크 보호
 
@@ -101,6 +109,9 @@ Windows compiler/native acceptance CI는 실패한 실행에서도 Rust 의존�
 실행에서 다시 컴파일하지 않도록 하기 위한 설정이다. compiler·Cargo manifest/lockfile·
 환경 해시 키와 기본 workspace crate 제외 정책은 유지하며, 캐시를 테스트 PASS 근거나
 이전 제품 실행 파일의 재사용 허가로 취급하지 않는다.
+Windows CI는 `shared-key: devbox-windows-unit-tests-v1`로 test codegen 의존성을 보관한다.
+`shared-key`가 있으면 별도 `key` 입력은 무시되므로 namespace를 shared-key 자체에 둔다. 이전 check/Clippy 전용
+불변 캐시가 적중한 채 테스트 의존성을 매번 다시 빌드하는 상황을 반복하지 않는다.
 
 Windows Rust CI의 Cargo build job은 1개다. 여러 Tauri build script가 같은
 target staging의 고지 파일을 동시에 복사하면 Windows sharing violation 32가

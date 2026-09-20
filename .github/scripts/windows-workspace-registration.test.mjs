@@ -4,6 +4,39 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {terminalProbePresent} from "./windows-workspace-terminal-sessions.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
+import {multiplexerPromptVisible,multiplexerRequestExpression} from "./windows-workspace-multiplexer.mjs";
+
+test("ConPTY prompt readiness accepts erased trailing blanks while still requiring a prompt",()=>{
+  assert.equal(multiplexerPromptVisible("root@fixture:/tmp/owned#\x1b[K\r\n\x1b[38;1H[tmux status]"),true);
+  assert.equal(multiplexerPromptVisible("user@fixture:~$ "),true);
+  assert.equal(multiplexerPromptVisible("root@fixture:/tmp/owned#\x1b[1;74H"),true);
+  assert.equal(multiplexerPromptVisible("\x1b[?25h\x1b[2Jstarting shell"),false);
+});
+
+test("multiplexer busy polling repeats only bounded read-only requests with fresh IDs",async()=>{
+  for(const method of ["terminal_output","list_sessions","terminal_layout","write_session","save_terminal_layout"]){
+    let calls=0,id=0;const requests=[];
+    const result=runInNewContext(multiplexerRequestExpression(method,{sessionId:"owned"}),{
+      window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>{
+        if(command==='plugin:workspace|terminal_describe')return {handshake:{installationId:"i",sessionId:"s"},context:null};
+        calls++;requests.push(JSON.parse(JSON.stringify(input.request)));
+        if(calls<3)throw 'busy';return 'observed';
+      }}},crypto:{randomUUID:()=>String(++id)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    });
+    if(["write_session","save_terminal_layout"].includes(method)){await assert.rejects(result,/busy/);assert.equal(calls,1);}
+    else{assert.equal(await result,'observed');assert.equal(calls,3);assert.equal(new Set(requests.map(r=>r.header.requestId)).size,3);assert.ok(requests.every(r=>r.header.deadlineMs===30000));}
+  }
+  for(const problem of ['busy','unauthorized']){
+    let calls=0;
+    await assert.rejects(runInNewContext(multiplexerRequestExpression('terminal_output'),{
+      window:{__TAURI_INTERNALS__:{invoke:async command=>{
+        if(command==='plugin:workspace|terminal_describe')return {handshake:{installationId:'i',sessionId:'s'},context:null};
+        if(++calls>20)throw 'unbounded';throw problem;
+      }}},crypto:{randomUUID:()=>String(calls)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    }),new RegExp(problem));
+    assert.equal(calls,problem==='busy'?20:1);
+  }
+});
 
 test("native registration probe executes generated requests with the described context", async () => {
   for (const context of [null, {projectId:"project", worktreeId:"tree", revision:2, target:{kind:"windows"}}]) {
@@ -185,4 +218,22 @@ test("terminal probe matches wrapped output without mistaking encoded command ec
   assert.equal(terminalProbePresent("printf '"+encoded+"\\n'\r\n",marker),false);
   assert.equal(terminalProbePresent("\u001b[32msynthetic-\r\nb06-output\u001b[0m\r\n",marker),true);
   assert.equal(terminalProbePresent("synthetic-b06-partial",marker),false);
+});
+
+test("read-only registry busy observations are bounded and bind each fresh request",async()=>{
+  for(const mode of ["transient","persistent","foreign"]){
+    let calls=0,ids=0;
+    const requests=[];
+    const result=await runInNewContext(workspaceRequestExpression("workspace.registry","snapshot"),{
+      window:{__TAURI_INTERNALS__:{invoke:async(command,input)=>{
+        if(command==="plugin:product-shell|describe")return {handshake:{installationId:"i",sessionId:"s"},context:null};
+        calls++;requests.push(input.request.header.requestId);
+        if(mode==="transient"&&calls===3)return {operation:{outcome:{state:"succeeded"}},value:{projects:[]}};
+        return {operation:{provenance:{product:"workspace",component:"workspace.registry",requestId:mode==="foreign"?"other":input.request.header.requestId},outcome:{state:"failed",code:"unavailable"}},value:{issue:"busy"}};
+      }}},crypto:{randomUUID:()=>String(++ids)},Date:{now:()=>1000},setTimeout:callback=>callback(),
+    });
+    assert.equal(calls,mode==="transient"?3:mode==="persistent"?20:1);
+    assert.equal(new Set(requests).size,calls);
+    assert.equal(result.operation.outcome.state,mode==="transient"?"succeeded":"failed");
+  }
 });

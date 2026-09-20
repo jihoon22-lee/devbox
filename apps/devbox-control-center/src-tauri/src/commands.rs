@@ -514,8 +514,11 @@ async fn command_import_launcher(
     window: WebviewWindow,
     request: ImportRequest,
 ) -> Result<Response<serde_json::Value>, Problem> {
-    let provenance =
-        product_shell_tauri::authorize(&window, &request.header, "control-center.commands")?;
+    let provenance = product_shell_tauri::authorize_owner_migration(
+        &window,
+        &request.header,
+        "control-center.commands",
+    )?;
     let app = window.app_handle().clone();
     let mut exact = std::collections::BTreeMap::<String, String>::new();
     if matches!(request.method.as_str(), "preview" | "apply") {

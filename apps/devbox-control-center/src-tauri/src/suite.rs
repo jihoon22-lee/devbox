@@ -11,6 +11,9 @@ use std::{
     time::{Duration, Instant},
 };
 use tauri::{Manager, State, WebviewWindow};
+#[cfg(windows)]
+#[path = "suite_health.rs"]
+pub(crate) mod health;
 
 pub(crate) type DomainHandler = fn(
     tauri::AppHandle,
@@ -85,6 +88,19 @@ struct Input {
     deny_unknown_fields
 )]
 enum Method {
+    ListMigrationBackups {
+        product: String,
+    },
+    VerifyMigrationBackup {
+        product: String,
+        id: String,
+    },
+    ReadHealthStatus {
+        product: String,
+    },
+    ReadMigrationStatus {
+        product: String,
+    },
     ReadOperations {
         product: String,
     },
@@ -138,11 +154,27 @@ async fn connection(
     suite: State<'_, Suite>,
     request: Input,
 ) -> Result<Response, Problem> {
-    let provenance = product_shell_tauri::authorize(
-        &window,
-        &request.header,
-        &format!("{}.commands", suite.product),
-    )?;
+    let provenance = if matches!(
+        &request.method,
+        Method::Status
+            | Method::Preview
+            | Method::Approve { .. }
+            | Method::Disconnect
+            | Method::Probe { .. }
+            | Method::ReadOperations { .. }
+            | Method::ReadMigrationStatus { .. }
+            | Method::ListMigrationBackups { .. }
+            | Method::VerifyMigrationBackup { .. }
+            | Method::ReadHealthStatus { .. }
+    ) {
+        product_shell_tauri::authorize_installation_review(&window, &request.header)?
+    } else {
+        product_shell_tauri::authorize(
+            &window,
+            &request.header,
+            &format!("{}.commands", suite.product),
+        )?
+    };
     #[cfg(windows)]
     let result = execute(
         suite.product,
@@ -157,6 +189,15 @@ async fn connection(
     let result: Result<serde_json::Value, &'static str> = {
         let _ = (suite.domain, suite.sources);
         match request.method {
+            Method::VerifyMigrationBackup { product, id } => {
+                let _ = (product, id);
+            }
+            Method::ListMigrationBackups { product }
+            | Method::ReadHealthStatus { product }
+            | Method::ReadMigrationStatus { product } => {
+                let _ = product;
+            }
+
             Method::ReadOperations { product } => {
                 let _ = product;
             }
@@ -220,7 +261,9 @@ async fn connection(
 }
 
 #[cfg(windows)]
-fn capture_own(product: &str) -> Result<platform::component_scope::CapturedScope, &'static str> {
+pub(crate) fn capture_own(
+    product: &str,
+) -> Result<platform::component_scope::CapturedScope, &'static str> {
     let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
     let root = image
         .parent()
@@ -312,6 +355,40 @@ async fn execute(
     use platform::component_bus;
     use serde_json::json;
     match method {
+        Method::ListMigrationBackups { product: target } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            health::backups(app, &target, domain, None, deadline).await
+        }
+        Method::VerifyMigrationBackup {
+            product: target,
+            id,
+        } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            health::backups(app, &target, domain, Some(id), deadline).await
+        }
+        Method::ReadHealthStatus { product: target } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            health::read(app, &target, domain, deadline).await
+        }
+        Method::ReadMigrationStatus { product: target } => {
+            if product != "control-center" {
+                return Err("peer_method_denied");
+            }
+            remote(
+                &app,
+                &target,
+                product_contract::transport::Call::ReadMigrationStatus {},
+                deadline,
+            )
+            .await
+        }
+
         Method::ReadOperations { product: target } => {
             if target == product {
                 match domain {
@@ -589,6 +666,21 @@ fn handler(
         let navigation = navigation.clone();
         let queries = queries.clone();
         Box::pin(async move {
+            if !matches!(
+                &call,
+                Call::Describe {}
+                    | Call::ReadMigrationStatus {}
+                    | Call::VerifyMigrationSources {}
+                    | Call::ListMigrationBackups {}
+                    | Call::VerifyMigrationBackup { .. }
+                    | Call::ReadHealthStatus { .. }
+                    | Call::ReadOperations {}
+                    | Call::CommandStatus { .. }
+                    | Call::ShortcutStatus {}
+            ) {
+                product_shell_tauri::require_suite_writable(&app)?;
+            }
+
             let cancellation = match &call {
                 Call::Query { query_id, .. } => Some(queries.begin(query_id, deadline, now())?),
                 Call::CancelQuery { query_id } => {
@@ -601,6 +693,9 @@ fn handler(
                 return Err("query_cancelled");
             }
             match call {
+                Call::ReadHealthStatus { challenge } => {
+                    health::observe(app, product, domain, challenge, deadline).await
+                }
                 Call::Describe {} => Ok(
                     serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
                 ),

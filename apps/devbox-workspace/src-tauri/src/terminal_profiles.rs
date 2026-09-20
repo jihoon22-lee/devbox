@@ -15,6 +15,8 @@ struct Envelope {
     /// Import receipts survive ordinary CRUD and prevent repeat imports from
     /// resurrecting a profile deleted after its first import.
     receipts: BTreeMap<String, String>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    source_backups: BTreeMap<String, crate::terminal_import::SourceBackups>,
     #[serde(default)]
     preferences: BTreeMap<String, String>,
 }
@@ -27,6 +29,7 @@ fn decode(bytes: Option<&[u8]>) -> Result<Envelope> {
             schema_version: 1,
             content: ProfileStore::default(),
             receipts: BTreeMap::new(),
+            source_backups: BTreeMap::new(),
             preferences: BTreeMap::new(),
         },
     };
@@ -38,6 +41,15 @@ fn decode(bytes: Option<&[u8]>) -> Result<Envelope> {
             .any(|(key, value)| key.len() > 128 || value.len() > 128)
     {
         return Err("terminal_profiles_invalid");
+    }
+    if envelope.source_backups.iter().any(|(key, backup)| {
+        !envelope.receipts.contains_key(key)
+            || [&backup.profiles, &backup.browser]
+                .into_iter()
+                .flatten()
+                .any(|value| !fingerprint(&value.sha256) || value.bytes > 256 * 1024 * 1024)
+    }) {
+        return Err("terminal_import_backup_invalid");
     }
     if envelope.preferences.iter().any(|(key, value)| {
         !crate::terminal_export::KEYS.contains(&key.as_str())
@@ -170,6 +182,10 @@ pub(crate) fn import(
     envelope
         .receipts
         .insert(fingerprint.clone(), input.id.clone());
+    envelope.source_backups.insert(
+        fingerprint.clone(),
+        crate::terminal_import::source_backups(source_root, &input.id)?,
+    );
     let bytes = serde_json::to_vec(&envelope).map_err(|_| "terminal_profiles_invalid")?;
     // Definitions, preferences and repeat receipt commit in one owner document.
     // Keep the exact preimage and original-to-destination mapping for recovery.
@@ -285,6 +301,7 @@ pub(crate) fn history(root: &MetadataRoot, method: &str, args: Value) -> Result<
     }
     // Restoring a preimage does not erase the record that this source was imported.
     restored.receipts.extend(current.receipts);
+    restored.source_backups.extend(current.source_backups);
     if restored.receipts.len() > 64 {
         return Err("terminal_import_limit");
     }
@@ -474,6 +491,125 @@ pub(crate) fn layout(
     Ok(json!({"revision":crate::definitions::digest(&bytes)}))
 }
 
+/// Hash only committed import receipts; ordinary profile edits do not erase them.
+pub(crate) fn mapping_records(root: &MetadataRoot) -> Result<(u64, Value)> {
+    let (envelope, _, _) = load(root)?;
+    let mut rows = Vec::new();
+    let mut count = 0;
+    for (key, expected) in &envelope.receipts {
+        if !fingerprint(key) || uuid::Uuid::parse_str(expected).is_err() {
+            return Err("terminal_import_history_invalid");
+        }
+        let path = root.path().join("import-history");
+        let history = MetadataRoot::open(&path)?;
+        let bytes = history
+            .read(&format!("{key}.json"))?
+            .ok_or("terminal_import_history_missing")?;
+        // The receipt value identifies the accepted operation; history preserves its
+        // exact original/destination IDs and preimage for reviewed restoration.
+        let record: HistoryRecord =
+            serde_json::from_slice(&bytes).map_err(|_| "terminal_import_history_invalid")?;
+        previous(&history, key)?;
+        count += record.mapping.len() as u64;
+        rows.push(json!([key, expected, record.mapping]));
+    }
+    Ok((count, json!(rows)))
+}
+
+pub(crate) fn backup_catalog(
+    root: &MetadataRoot,
+) -> Result<Vec<product_contract::migration_backup::Descriptor>> {
+    use product_contract::migration_backup::Descriptor;
+    let (envelope, _, _) = load(root)?;
+    let mut result = Vec::new();
+    for key in envelope.receipts.keys() {
+        if !fingerprint(key) {
+            return Err("terminal_import_backup_invalid");
+        }
+        let binding = envelope.source_backups.get(key);
+        // Old accepted imports without a binding remain an explicit failed
+        // verification candidate; never invent provenance from mutable bytes.
+        if binding.is_none_or(|binding| binding.profiles.is_some()) {
+            result.push(Descriptor {
+                id: format!("terminal_{key}_native"),
+                acquisition: "stable-json-files/v1".into(),
+            });
+        }
+        if binding.is_some_and(|binding| binding.browser.is_some()) {
+            result.push(Descriptor {
+                id: format!("terminal_{key}_browser"),
+                acquisition: "closed-leveldb-exclusive-copy/v1".into(),
+            });
+        }
+    }
+    Ok(result)
+}
+pub(crate) fn verify_backup(
+    root: &MetadataRoot,
+    sources: &std::path::Path,
+    id: &str,
+) -> Result<product_contract::migration_backup::Verified> {
+    let (key, kind) = id
+        .strip_prefix("terminal_")
+        .and_then(|id| id.rsplit_once('_'))
+        .ok_or("terminal_import_backup_invalid")?;
+    if !fingerprint(key) || !["native", "browser"].contains(&kind) {
+        return Err("terminal_import_backup_invalid");
+    }
+    let (envelope, before, _) = load(root)?;
+    let operation = envelope
+        .receipts
+        .get(key)
+        .ok_or("terminal_import_backup_missing")?;
+    let expected = envelope
+        .source_backups
+        .get(key)
+        .ok_or("terminal_import_backup_binding_missing")?;
+    let actual = crate::terminal_import::source_backups(sources, operation)?;
+    if &actual != expected || root.read(FILE)? != before {
+        return Err("terminal_import_backup_changed");
+    }
+    let (acquisition, backup) = if kind == "native" {
+        ("stable-json-files/v1", &actual.profiles)
+    } else {
+        ("closed-leveldb-exclusive-copy/v1", &actual.browser)
+    };
+    let backup = backup.as_ref().ok_or("terminal_import_backup_missing")?;
+    Ok(product_contract::migration_backup::Verified {
+        owner: "workspace".into(),
+        id: id.into(),
+        acquisition: acquisition.into(),
+        bytes: backup.bytes,
+        schema: 1,
+        sha256: backup.sha256.clone(),
+    })
+}
+
+pub(crate) fn current_sources(
+    root: &MetadataRoot,
+    sources: &std::path::Path,
+    legacy: &std::path::Path,
+) -> Result<Vec<String>> {
+    let (envelope, before, _) = load(root)?;
+    let mut ids = Vec::new();
+    for (key, operation) in &envelope.receipts {
+        if crate::terminal_import::source_current(sources, operation, legacy).is_err() {
+            continue;
+        }
+        for row in backup_catalog(root)?
+            .into_iter()
+            .filter(|row| row.id.starts_with(&format!("terminal_{key}_")))
+        {
+            verify_backup(root, sources, &row.id)?;
+            ids.push(row.id);
+        }
+    }
+    if root.read(FILE)? != before {
+        return Err("terminal_import_source_changed");
+    }
+    Ok(ids)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -501,6 +637,14 @@ mod tests {
         };
         stage
             .write("prepared.json", &serde_json::to_vec(&prepared).unwrap())
+            .unwrap();
+        let original_profiles = serde_json::to_vec(&ProfileStore {
+            version: 2,
+            profiles: prepared.profiles.clone(),
+        })
+        .unwrap();
+        stage
+            .write("profiles-source.json", &original_profiles)
             .unwrap();
         let review = import(
             &root,
@@ -562,6 +706,17 @@ mod tests {
         )
         .unwrap();
         assert_eq!(root.read(FILE).unwrap(), after_restore);
+        let backups = backup_catalog(&root).unwrap();
+        assert_eq!(backups.len(), 1);
+        let verified = verify_backup(&root, directory.path(), &backups[0].id).unwrap();
+        assert_eq!(
+            verified.sha256,
+            crate::definitions::digest(&original_profiles)
+        );
+        stage
+            .write("profiles-source.json", b"changed original backup")
+            .unwrap();
+        assert!(verify_backup(&root, directory.path(), &backups[0].id).is_err());
     }
     #[test]
     fn a_stale_companion_cannot_replace_imported_preferences() {

@@ -23,7 +23,24 @@ export function workspaceRequestExpression(component, method, args = {}, budgetM
     const d = await invoke("plugin:product-shell|describe");
     const header = {protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+${budgetMs},route:${JSON.stringify(route)},...(d.context ? {context:d.context} : {})};
     for(let attempt=0;;attempt++) {
-      try {return await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});}
+      try {
+        const result=await invoke("plugin:workspace|execute",{request:{header,...${JSON.stringify({component, method, args})}}});
+        // A registry snapshot is read-only. The foreground UI and this probe
+        // may briefly contend for its lease after Source retires a context.
+        // Only this exact, authenticated busy result may be queried again.
+        if(${component === "workspace.registry" && method === "snapshot"}
+          && attempt<19 && Date.now()+50<header.deadlineMs
+          && result?.operation?.provenance?.product==="workspace"
+          && result.operation.provenance.component==="workspace.registry"
+          && result.operation.provenance.requestId===header.requestId
+          && result.operation.outcome?.state==="failed"
+          && result.operation.outcome.code==="unavailable" && result.value?.issue==="busy") {
+          await new Promise(resolve=>setTimeout(resolve,50));
+          header.requestId=crypto.randomUUID();
+          continue;
+        }
+        return result;
+      }
       catch(problem) {
         // This exact envelope is emitted before authorization/admission. No
         // operation ran; background readers may still hold the context lease.

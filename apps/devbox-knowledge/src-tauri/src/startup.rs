@@ -18,6 +18,7 @@ struct Startup {
     legacy: PathBuf,
     lease_base: PathBuf,
     active: AtomicBool,
+    prepared: AtomicBool,
     initialized: AtomicBool,
     operation: Arc<AtomicBool>,
     owner: Mutex<Option<VaultOwner>>,
@@ -48,6 +49,7 @@ pub fn initialize(app: &tauri::AppHandle) -> Result<(), String> {
         legacy: legacy.clone(),
         lease_base: lease_base.clone(),
         active: AtomicBool::new(false),
+        prepared: AtomicBool::new(false),
         initialized: AtomicBool::new(false),
         operation: Arc::new(AtomicBool::new(false)),
         owner: Mutex::new(None),
@@ -97,9 +99,42 @@ pub fn require_active(app: &tauri::AppHandle) -> Result<(), String> {
         Err("setup_required".into())
     }
 }
+pub(crate) fn readiness(app: &tauri::AppHandle) -> (bool, bool) {
+    let state = app.state::<Startup>();
+    (
+        state.active.load(Ordering::Acquire),
+        state.prepared.load(Ordering::Acquire),
+    )
+}
+pub(crate) fn require_ready(app: &tauri::AppHandle) -> Result<(), String> {
+    let (active, prepared) = readiness(app);
+    if active || prepared {
+        Ok(())
+    } else {
+        Err("setup_required".into())
+    }
+}
+fn validate_prepared_stores(root: &Path, manifest: &stores::Manifest) -> Result<(), String> {
+    for source in [
+        import_rows::Source::Notes,
+        import_rows::Source::Activity,
+        import_rows::Source::Search,
+    ] {
+        let connection = Connection::open_with_flags(
+            stores::directory(root, manifest, source.key())?.join("data.db"),
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        )
+        .map_err(|_| "store_unavailable")?;
+        connection
+            .busy_timeout(std::time::Duration::from_millis(100))
+            .map_err(|_| "store_unavailable")?;
+        import_rows::validate_owned_store(&connection, source)?;
+    }
+    Ok(())
+}
 pub fn require_uninitialized(app: &tauri::AppHandle) -> Result<(), String> {
     let state = app.state::<Startup>();
-    if state.active.load(Ordering::Acquire) {
+    if state.active.load(Ordering::Acquire) || state.prepared.load(Ordering::Acquire) {
         return Err("import_restart_required".into());
     }
     if state.initialized.load(Ordering::Acquire) {
@@ -186,6 +221,14 @@ pub fn activate_with_owner(
 ) -> Result<(), String> {
     let state = app.state::<Startup>();
     require_uninitialized(app)?;
+    if product_shell_tauri::suite_import_only(app).map_err(str::to_owned)? {
+        validate_prepared_stores(&state.root, manifest)?;
+        *state.owner.lock().map_err(|_| "store_unavailable")? = Some(owner);
+        *state.failure.lock().map_err(|_| "store_unavailable")? = None;
+        state.prepared.store(true, Ordering::Release);
+        return Ok(());
+    }
+    product_shell_tauri::require_suite_writable(app).map_err(str::to_owned)?;
     *state.owner.lock().map_err(|_| "store_unavailable")? = Some(owner);
     state.initialized.store(true, Ordering::Release);
     let result = (|| {
@@ -246,13 +289,15 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 return Err(error);
             }
             Ok(
-                json!({"active":state.active.load(Ordering::Acquire),"scheduled":crate::migration::scheduled(app),"hasExisting":stores::read(&state.root)?.is_some(),"vaultChange":crate::vault_binding::pending(app)}),
+                json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire),"scheduled":crate::migration::scheduled(app),"hasExisting":stores::read(&state.root)?.is_some(),"vaultChange":crate::vault_binding::pending(app)}),
             )
         }
         "start_empty" | "continue_existing" => {
-            if state.active.load(Ordering::Acquire) {
+            if state.active.load(Ordering::Acquire) || state.prepared.load(Ordering::Acquire) {
                 crate::migration::finish_recovery(app)?;
-                return Ok(json!({"active":true}));
+                return Ok(
+                    json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire)}),
+                );
             }
             if crate::vault_binding::pending(app) {
                 return Err("vault_change_conflict".into());
@@ -272,7 +317,9 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 failure(app, error.clone())?;
                 return Err(error);
             }
-            Ok(json!({"active":true}))
+            Ok(
+                json!({"active":state.active.load(Ordering::Acquire),"prepared":state.prepared.load(Ordering::Acquire)}),
+            )
         }
         _ => Err("component_method_invalid".into()),
     }
@@ -281,4 +328,23 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
 pub(crate) fn integration_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     require_active(app)?;
     Ok(app.state::<Startup>().root.join("integration"))
+}
+
+#[cfg(test)]
+mod suite_preparation_tests {
+    use super::*;
+    #[test]
+    fn import_only_store_readiness_checks_schema_without_opening_engines() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = stores::create_empty(root.path()).unwrap();
+        validate_prepared_stores(root.path(), &manifest).unwrap();
+        let path = stores::directory(root.path(), &manifest, "search")
+            .unwrap()
+            .join("data.db");
+        Connection::open(path)
+            .unwrap()
+            .execute_batch("PRAGMA user_version=999")
+            .unwrap();
+        assert!(validate_prepared_stores(root.path(), &manifest).is_err());
+    }
 }

@@ -16,7 +16,7 @@ export interface Preview {previewId: string; binding: Worktree["binding"]; impor
 const registryCall = <T,>(method: string, args: Record<string, unknown> = {}) => nativeCall<T>("workspace.registry", method, args);
 const discoveryLabels = {known: "이미 등록한 폴더입니다.", newProject: "새 프로젝트로 등록합니다.", linkedWorktree: "기존 프로젝트의 연결된 작업 폴더입니다.", aliasOrMove: "기존 프로젝트의 경로가 변경되었습니다.", replacedRoot: "등록된 경로의 폴더가 교체되었습니다."};
 
-export default function RegistryGate({context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot, suggestedRoot}: {context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void; suggestedRoot?: {id:string;path:string;name:string;target?:ProjectContext["target"]}|null}) {
+export default function RegistryGate({migrationOnly=false,context = null, onContextChanged = async () => {}, onReady, editing = false, refreshSignal=0, onSnapshot, suggestedRoot}: {migrationOnly?:boolean;context?: ProjectContext | null; onContextChanged?: () => Promise<void>; onReady?: () => void; editing?: boolean; refreshSignal?:number; onSnapshot?: (registry: Registry) => void; suggestedRoot?: {id:string;path:string;name:string;target?:ProjectContext["target"]}|null}) {
   const incoming=useIncomingReview();
   const review=incoming.review?.route==="overview"&&incoming.review.target.kind==="entity"&&["project","worktree"].includes(incoming.review.target.entity)?incoming.review:null;
   const [status, setStatus] = useState<Status>({phase:"loading"});
@@ -121,7 +121,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
       {editing && <p role="status">편집 내용을 저장하거나 진행 중인 작업을 마친 뒤 프로젝트를 변경할 수 있습니다.</p>}
       {context && <p>현재 선택한 작업 폴더: {registry?.worktrees.find(tree => tree.id === context.worktreeId)?.binding.root ?? "목록 확인 중"} <button disabled={busy || editing} onClick={() => void act(async () => {await registryCall("clear_project"); await onContextChanged();})}>프로젝트 선택 해제</button></p>}
       <button disabled={busy} onClick={() => void act(refresh)}>목록 새로 고침</button>
-      <form onSubmit={event => {event.preventDefault(); void act(async () => {
+      {!migrationOnly&&<form onSubmit={event => {event.preventDefault(); void act(async () => {
         if (preview) await cancelPreview();
         const next = templateId?await registryCall<Preview>("preview_template_profile_windows",{templateId,root,name:name||registry?.importedTemplates?.find(template=>template.id===templateId)?.template.name||"새 프로젝트"}):await registryCall<Preview>("preview_windows", {root});
         if (!alive.current) {await registryCall("cancel_registration", {previewId:next.previewId}); return;}
@@ -133,8 +133,8 @@ export default function RegistryGate({context = null, onContextChanged = async (
         <label htmlFor="workspace-project-path">Windows 프로젝트 폴더</label>
         <input id="workspace-project-path" value={root} maxLength={32768} disabled={busy || !!preview} onChange={event => setRoot(event.target.value)} required />
         <button disabled={busy || !root.trim() || !!preview}>폴더 확인</button>
-      </form>
-      <button disabled={busy||!!preview||editing} aria-expanded={wslOpen} onClick={()=>{if(!wslOpen){setWslProfile(undefined);setWslBusy(true);}setWslOpen(value=>!value);}}>{wslOpen?"WSL 폴더 입력 닫기":"WSL 프로젝트 추가"}</button>
+      </form>}
+      <button disabled={migrationOnly||busy||!!preview||editing} aria-expanded={wslOpen} onClick={()=>{if(!wslOpen){setWslProfile(undefined);setWslBusy(true);}setWslOpen(value=>!value);}}>{wslOpen?"WSL 폴더 입력 닫기":"WSL 프로젝트 추가"}</button>
       {wslOpen&&<Suspense fallback={<p role="status">WSL 폴더 입력 화면을 불러오고 있습니다…</p>}><WslProjectForm key={wslProfile?.id??"new"} profile={wslProfile} templates={registry?.importedTemplates??[]} disabled={operationBusy||templateBusy||!!preview||editing} onBusyChange={setWslBusy} onReviewed={(next,suggestedName)=>{currentPreview.current=next.previewId;setPreview(next);setName(suggestedName);setTemplateId("");setWslOpen(false);setWslProfile(undefined);}}/></Suspense>}
       {preview && <section aria-label="프로젝트 등록 확인">
         <h2>등록 확인</h2><p>{discoveryLabels[preview.discovery.kind]}</p><p>{preview.binding.root}</p>
@@ -153,7 +153,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
       {registry?.projects.length === 0 && <p>등록한 프로젝트가 없습니다.</p>}
       {registry?.projects.map(project => <section key={project.id} aria-label={project.name} data-command-review={review?.context?.projectId===project.id||undefined}>
         <h2>{project.name}</h2>
-        <button disabled={busy} onClick={() => setRename({id:project.id,name:project.name})}>이름 변경</button>
+        <button disabled={migrationOnly||busy} onClick={() => setRename({id:project.id,name:project.name})}>이름 변경</button>
         {rename?.id === project.id && <form onSubmit={event => {event.preventDefault(); void act(async () => {
           await registryCall("rename", {revision:registry.revision,projectId:project.id,name:rename.name}); setRename(null); await refresh();
         });}}><label htmlFor="workspace-rename">새 이름</label><input id="workspace-rename" required maxLength={120} value={rename.name} disabled={busy} onChange={event => setRename({...rename,name:event.target.value})}/><button disabled={busy}>저장</button><button type="button" disabled={busy} onClick={() => setRename(null)}>취소</button></form>}
@@ -165,7 +165,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
             await registryCall("select_project", {context:next}); await onContextChanged();
             if(review?.context?.worktreeId===worktree.id)incoming.clear();
           })}>프로젝트 선택</button>
-          <button disabled={busy || editing} onClick={() => setRemove(worktree)}>등록 해제</button>
+          <button disabled={migrationOnly||busy || editing} onClick={() => setRemove(worktree)}>등록 해제</button>
           {remove?.id === worktree.id && <section aria-label="등록 해제 확인"><p>이 작업 폴더의 등록을 해제합니다. 실제 폴더와 Git 파일은 보존됩니다.</p>
             <button disabled={busy || editing} onClick={() => void act(async () => {
               const context: ProjectContext = {projectId:worktree.projectId,worktreeId:worktree.id,revision:worktree.revision,target:worktree.binding.target};
@@ -173,7 +173,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
             })}>해제 확인</button><button disabled={busy} onClick={() => setRemove(null)}>취소</button></section>}
         </div>)}
       </section>)}
-      {registry&&<>
+      {registry&&!migrationOnly&&<>
         <button aria-expanded={templatesOpen} disabled={busy||editing||!!preview} onClick={()=>setTemplatesOpen(value=>!value)}>{templatesOpen?"템플릿 관리 닫기":"템플릿 관리 열기"}</button>
         {templatesOpen&&<Suspense fallback={<p role="status">템플릿 관리 화면을 불러오고 있습니다…</p>}><WorkspaceTemplateManager registry={registry} disabled={operationBusy||editing||!!preview||!!rename||!!remove||!!unlinkProfile} onSaved={refresh} onBusyChange={setTemplateBusy}/></Suspense>}
       </>}
@@ -198,7 +198,7 @@ export default function RegistryGate({context = null, onContextChanged = async (
         {imported.profile.wsl&&<button disabled={busy||editing||!!preview} onClick={()=>{setWslProfile(imported);setWslBusy(true);setWslOpen(true);}}>WSL 폴더 연결 검토</button>}
         {(registry?.importedProfileBindings??[]).filter(binding=>binding.importedId===imported.id).map(binding=><div key={binding.target}>
           <p>연결한 폴더: {registry?.worktrees.find(tree=>tree.id===binding.worktreeId)?.binding.root}</p>
-          <button disabled={busy||editing} onClick={()=>setUnlinkProfile(binding)}>프로필 연결 해제</button>
+          <button disabled={migrationOnly||busy||editing} onClick={()=>setUnlinkProfile(binding)}>프로필 연결 해제</button>
           {unlinkProfile===binding&&<section aria-label="프로필 연결 해제 확인"><p>보관한 프로필과 프로젝트 등록을 유지하고 둘 사이의 연결을 해제합니다.</p>
             <button disabled={busy||editing} onClick={()=>void act(async()=>{await registryCall("unbind_imported_profile",{revision:registry!.revision,importedId:imported.id,target:binding.target});setUnlinkProfile(null);await refresh();})}>연결 해제 확인</button>
             <button disabled={busy} onClick={()=>setUnlinkProfile(null)}>취소</button>

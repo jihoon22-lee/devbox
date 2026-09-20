@@ -60,6 +60,8 @@ case "$action" in
     cargo fmt --all --check
     ;;
   test)
-    if [[ $scope == all ]]; then cargo test --workspace "${feature_args[@]}" "${test_threads[@]}"; else cargo test "${package_args[@]}" "${feature_args[@]}" "${test_threads[@]}"; fi
+    # Collect every selected target's findings in this final PR run. Cargo still
+    # returns failure; one failed crate must not hide the remaining findings.
+    if [[ $scope == all ]]; then cargo test --no-fail-fast --workspace "${feature_args[@]}" "${test_threads[@]}"; else cargo test --no-fail-fast "${package_args[@]}" "${feature_args[@]}" "${test_threads[@]}"; fi
     ;;
 esac

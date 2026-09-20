@@ -3,19 +3,29 @@ import ReactDOM from "react-dom/client";
 import {ProductShell,type ShellContentProps} from "@devbox/product-shell";
 import "./App.css";
 import {onShortcut,triggerShortcut} from "@devbox/product-shell/commands";
-import {nativeMode} from "@devbox/product-shell/api";
+import {nativeMode,productDataAvailable} from "@devbox/product-shell/api";
 const HostedLauncher=lazy(()=>import("./HostedLauncher"));
 const LauncherImport=lazy(()=>import("./LauncherImport"));
+const Backups=lazy(()=>import("./Backups"));
+const MigrationOwners=lazy(()=>import("./MigrationOwners"));
+const LegacyInventory=lazy(()=>import("./LegacyInventory"));
+const Health=lazy(()=>import("./Health"));
+const Recovery=lazy(()=>import("./Recovery"));
+const Cutover=lazy(()=>import("./Cutover"));
+const Updates=lazy(()=>import("./Updates"));
+const Inventory=lazy(()=>import("./Inventory"));
+const Tools=lazy(()=>import("./Tools"));
 const Commands=lazy(()=>import("./Commands"));
 const RouteView=lazy(()=>import("@devbox/product-shell/route-view"));
 function Content(props:ShellContentProps) {
+  const available=productDataAvailable(props.description);
   const [launcher,setLauncher]=useState(false);
   const [shortcutIssue,setShortcutIssue]=useState("");
   const current=useRef(props);current.current=props;
   const shortcutBusy=useRef(false);
   const close=useCallback(()=>setLauncher(false),[]);
   useEffect(()=>{
-    if(!nativeMode)return;
+    if(!nativeMode||!available)return;
     let active=true,remove:(()=>void)|undefined,composing=false;
     const compositionStart=()=>{composing=true;},compositionEnd=()=>{composing=false;};
     document.addEventListener("compositionstart",compositionStart,true);
@@ -33,10 +43,11 @@ function Content(props:ShellContentProps) {
       }
     }).then(unlisten=>{if(active)remove=unlisten;else unlisten();});
     return()=>{active=false;remove?.();document.removeEventListener("compositionstart",compositionStart,true);document.removeEventListener("compositionend",compositionEnd,true);};
-  },[]);
+  },[available]);
+  if(!available)return <Suspense fallback={<p role="status">설치 상태를 불러오고 있습니다…</p>}>{props.route==="migration"&&props.description.deliveryState==="import"?<><MigrationOwners {...props}/><Backups {...props}/><LegacyInventory {...props}/><LauncherImport {...props}/><Cutover {...props}/><Recovery {...props}/></>:<><Inventory {...props}/><Recovery {...props}/><Health {...props}/>{props.description.deliveryState==="import"&&<button onClick={()=>props.navigate("migration")}>데이터 이전 화면 열기</button>}</>}</Suspense>;
   const feature=props.description.features.find(feature=>feature.route===props.route);
   return <>{shortcutIssue&&<p role="alert">{shortcutIssue}</p>}<button onClick={()=>setLauncher(true)}>Launcher 열기</button>{launcher&&<Suspense fallback={<p role="status">Launcher를 불러오고 있습니다…</p>}><HostedLauncher {...props} close={close}/></Suspense>}<Suspense fallback={<p role="status">화면을 불러오고 있습니다…</p>}>{
-    props.route==="products"?<Commands {...props}/>:props.route==="migration"?<LauncherImport {...props}/>:feature?<RouteView description={props.description} feature={feature}/>:null
+    props.route==="recovery"?<><Recovery {...props}/><Health {...props}/><Tools route={props.route}/></>:["environment","diagnostics","tools"].includes(props.route)?<Tools route={props.route}/>:props.route==="products"?<><Inventory {...props}/><Commands {...props}/></>:props.route==="updates"?<><Updates {...props}/><Recovery {...props}/><Health {...props}/></>:props.route==="components"?<Inventory {...props}/>:props.route==="migration"?<><MigrationOwners {...props}/><Backups {...props}/><LegacyInventory {...props}/><LauncherImport {...props}/><Cutover {...props}/><Recovery {...props}/></>:feature?<RouteView description={props.description} feature={feature}/>:null
   }</Suspense></>;
 }
 ReactDOM.createRoot(document.getElementById("root")!).render(<React.StrictMode><ProductShell product="control-center" renderContent={Content}/></React.StrictMode>);

@@ -132,3 +132,27 @@ The build checks the complete static Requests import closure, including the shel
 against the preserved API Playground budget. OpenAPI/YAML parsing, Protocol Lab
 and Transforms remain deferred. Parser-independent limits live in a separate
 module so merely rendering Requests does not load the YAML engine.
+
+Suite migration retains the verified, closed legacy LevelDB bytes separately
+before the export WebView opens its working profile. Worker-profile cleanup does
+not remove that backup. A later preview archives completed import stages (source
+receipts, normalized snapshots and plans) under the same private product namespace;
+unaccepted previews can still be replaced. At the bounded retention limit, a new
+import requires backup retention review instead of deleting completed backups.
+These files are owner data, not diagnostics/support-bundle contents. This preserves
+recovery evidence; it does not grant Suite activation or legacy cleanup authority.
+
+Native legacy JSON inputs are likewise captured before parsing or credential
+resealing. The importer reads that retained copy; original credential ciphertext
+is preserved without writing decrypted secrets. Fixed source paths and explicitly
+selected profile IDs bound the copy. Accepted activation bundles bind both native
+and browser backup metadata hashes, so later verification rejects changed backup
+bytes or metadata instead of trusting a rewritten backup list.
+
+Before accepting a new legacy import, API Studio rechecks its original JSON and
+closed LevelDB bytes against the reviewed backup bindings. Windows retains
+read-only handles denying competing writers across native intent/file acceptance.
+Source changes require a fresh review. Resume of an already accepted intent uses
+its durable snapshot, preserving recovery when a legacy source later changes.
+This owner import boundary does not certify later Suite cutover or prevent edits
+after the import finishes; Suite activation needs its own fresh source check.

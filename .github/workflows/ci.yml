@@ -15,7 +15,7 @@ on:
     - cron: "17 18 * * 0"
 
 concurrency:
-  group: ci-${{ github.ref }}
+  group: ci-${{ github.ref }}-${{ github.event_name == 'pull_request' && github.event.pull_request.draft && 'draft' || 'ready' }}
   cancel-in-progress: true
 
 # Draft implementation/fix pushes do not start compiler suites. Ready-for-review
@@ -74,6 +74,7 @@ jobs:
           python3 .github/scripts/check-dependencies.py check
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-build-manifest.py
+          python3 .github/scripts/test-build-suite-installer.py
           python3 .github/scripts/test-build-candidate-metadata.py
           python3 .github/scripts/test-validate-release-input.py
           python3 .github/scripts/test-windows-package-candidate-config.py
@@ -341,7 +342,11 @@ jobs:
       - uses: Swatinem/rust-cache@v2
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         with:
-          shared-key: devbox-windows
+          shared-key: devbox-windows-unit-tests-v1
+          # The old immutable cache contains check/Clippy metadata only. A new
+          # namespace retains test-codegen dependencies instead of rebuilding
+          # hundreds of unchanged crates on every PR continuation.
+          # shared-key takes precedence over key in rust-cache.
           # Preserve compiled dependencies after a fixture fails; results are never cached.
           cache-on-failure: true
 

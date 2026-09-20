@@ -40,14 +40,16 @@ FRONTEND_DRIVER_PATHS = {
 # test deliberately locks the current consumers to this set.
 CATALOG_FRONTEND_CONSUMERS = {
     "apps/devbox-launcher",
-    "apps/devbox-manager",
+    "apps/devbox-control-center",
     "packages/workspace-features",
+    "packages/control-center-features",
     "packages/knowledge-features",
 }
 CATALOG_RUST_CONSUMERS = {
     "catalog",
     "devbox-launcher",
     "devbox-manager",
+    "devbox-control-center",
     "launch",
     "log-lens",
 }
@@ -60,6 +62,7 @@ RUST_SHARED_PLATFORM_CONSUMERS = {
     "apps/devbox-api-studio/src-tauri/src/platform/browser_profile.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/owned_copy.rs": {"devbox-workspace"},
+    "apps/devbox-control-center/src-tauri/src/suite_health.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
     "apps/devbox-control-center/src-tauri/src/suite.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
     "apps/devbox-control-center/src-tauri/src/platform/mod.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},
     "apps/devbox-control-center/src-tauri/src/platform/component_scope.rs": {"devbox-workspace", "devbox-api-studio", "devbox-knowledge"},

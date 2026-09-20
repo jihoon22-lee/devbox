@@ -755,6 +755,37 @@ fn normalize_input(input: &str) -> Result<String, CustomRootError> {
     Ok(normalized)
 }
 
+/// The suite bootstrapper reuses Manager's existing local-root protections.
+/// This validates a directory; it grants no permission to replace its contents.
+pub fn verify_suite_directory(path: &Path) -> Result<PathBuf, CustomRootError> {
+    canonical_safe_directory(path, &[])
+}
+
+/// Validate a single new suite directory before the bootstrapper creates it.
+/// Ancestors must already exist and remain plain; this performs no writes.
+pub fn preview_new_suite_directory(path: &Path) -> Result<PathBuf, CustomRootError> {
+    let normalized = normalize_input(path.to_str().ok_or(CustomRootError::NonUtf8Path)?)?;
+    if !valid_absolute_literal(&normalized) {
+        return Err(CustomRootError::InvalidPath);
+    }
+    let path = Path::new(&normalized);
+    ensure_plain_components_allow_missing_final(path)?;
+    if path.try_exists().map_err(|_| CustomRootError::UnsafePath)? {
+        return Err(CustomRootError::UnsafePath);
+    }
+    let parent = path.parent().ok_or(CustomRootError::InvalidPath)?;
+    let leaf = path.file_name().ok_or(CustomRootError::InvalidPath)?;
+    let parent = canonicalize_path(parent).map_err(|_| CustomRootError::MissingDirectory)?;
+    if !parent.is_dir() {
+        return Err(CustomRootError::UnsafePath);
+    }
+    let candidate = parent.join(leaf);
+    if dangerous_root(&candidate) {
+        return Err(CustomRootError::ProtectedPath);
+    }
+    Ok(candidate)
+}
+
 fn canonical_safe_directory(path: &Path, protected: &[&Path]) -> Result<PathBuf, CustomRootError> {
     let raw = path.to_str().ok_or(CustomRootError::NonUtf8Path)?;
     let normalized = normalize_input(raw)?;

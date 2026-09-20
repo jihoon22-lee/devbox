@@ -53,8 +53,14 @@ assert "Page.handleJavaScriptDialog" in workflow_probe
 assert "captureMasked: true" in workflow_probe
 assert "restartPreservesDraft: true" in workflow_probe
 
-assert "-p api-playground -p webhook-lab -p developer-toolbox" in workflow, "B02 must execute the actual Windows domain regressions, not only compile dependencies"
-assert "-p devbox-knowledge" in workflow, "B03 must execute Windows vault handle and migration regressions"
+# Windows domain/WAL/vault unit tests belong to the required CI Windows job.
+# The native workflow must not run a duplicate copy of the same unit suite.
+ci = (root / ".github/workflows/ci.yml").read_text()
+windows_job = ci.split("  rust-windows:\n", 1)[1]
+assert "runs-on: windows-latest" in windows_job
+assert 'run-rust-scope.sh test "$RUST_SCOPE" "$RUST_PACKAGES"' in windows_job, "Windows domain regressions must execute when affected, not merely compile"
+assert 'RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}' in windows_job
+assert "product-native-authority-" not in workflow, "do not duplicate CI's Windows unit suite"
 assert "windows-knowledge-migration.mjs" in workflow
 assert workflow.index("- name: Verify Knowledge migration") < workflow.index("- name: Verify anchor and product installer coexistence"), "migration claims absent legacy profiles before installer coexistence creates them"
 for source in ("packages/knowledge-features/**", "apps/knowledge-base/src-tauri/**", "apps/life-log/src-tauri/**", "apps/everything-plus/src-tauri/**"):

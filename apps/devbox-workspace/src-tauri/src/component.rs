@@ -252,6 +252,70 @@ struct Response {
     operation: Operation,
     value: Value,
 }
+fn migration_method(component: &str, method: &str) -> bool {
+    match component {
+        "workspace.migration" => true,
+        "workspace.registry" => matches!(
+            method,
+            "snapshot"
+                | "list_wsl_distros"
+                | "preview_wsl"
+                | "preview_legacy_workspace_windows"
+                | "preview_imported_profile_windows"
+                | "preview_imported_profile_wsl"
+                | "apply_registration"
+                | "cancel_registration"
+                | "select_project"
+                | "clear_project"
+        ),
+        "workspace.runtime" => matches!(
+            method,
+            "runtime_import_prepare"
+                | "runtime_import_resume"
+                | "runtime_import_apply"
+                | "runtime_import_cancel"
+                | "runtime_import_status"
+                | "runtime_import_catalog"
+                | "runtime_import_reviews"
+        ),
+        "workspace.files" => matches!(
+            method,
+            "preview_session_import"
+                | "apply_session_import"
+                | "cancel_session_import"
+                | "list_session_history"
+                | "preview_session_restore"
+                | "preview_recovery_import"
+                | "apply_recovery_import"
+                | "cancel_recovery_import"
+                | "list_recovery_history"
+                | "preview_recovery_restore"
+        ),
+        "workspace.lsp" => matches!(
+            method,
+            "preview_lsp_config_import"
+                | "apply_lsp_config_import"
+                | "cancel_lsp_config_import"
+                | "list_lsp_config_history"
+                | "preview_lsp_config_restore"
+        ),
+        "workspace.terminal" => matches!(
+            method,
+            "start_terminal_import"
+                | "cancel_terminal_import"
+                | "cleanup_terminal_import"
+                | "terminal_imports"
+                | "preview_terminal_import"
+                | "apply_terminal_import"
+                | "terminal_import_history"
+                | "preview_terminal_import_restore"
+                | "restore_terminal_import"
+                | "list_workspace_profiles"
+        ),
+        _ => false,
+    }
+}
+
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     if component == "workspace.problems" {
         return matches!(
@@ -1540,7 +1604,15 @@ async fn execute(
     let context_change = changes_context(&request.method);
     // Authenticate/replay-check once before waiting. A single bounded waiter
     // holds no context permit, so active file/metadata workers can retire.
-    let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
+    let provenance = if migration_method(&request.component, &request.method) {
+        product_shell_tauri::authorize_owner_migration(
+            &window,
+            &request.header,
+            &request.component,
+        )?
+    } else {
+        product_shell_tauri::authorize(&window, &request.header, &request.component)?
+    };
     let problem = |code| Problem {
         code,
         provenance: provenance.clone(),
@@ -2349,6 +2421,211 @@ pub(crate) async fn approve_received_file(
     .map_err(|_| "file_unavailable")?
 }
 
+pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
+    let host = runtime.host()?;
+    let status = host.status()?;
+    let rows = host.legacy.operation_rows()?;
+    let busy = rows.iter().any(|row| {
+        matches!(
+            row.phase,
+            product_contract::operations::Phase::Running
+                | product_contract::operations::Phase::CancelRequested
+                | product_contract::operations::Phase::Uncancellable
+        )
+    });
+    let selected = status
+        .get("selected")
+        .and_then(Value::as_bool)
+        .unwrap_or(false);
+    // Read the selected Registry and revalidate every owned component directory.
+    // No repository, task, terminal or scheduler is started by this observation.
+    let registry = if selected {
+        for component in crate::core::stores::COMPONENTS {
+            host.component(component)?;
+        }
+        Some(host.projects()?.snapshot()?)
+    } else {
+        None
+    };
+    let native =
+        serde_json::to_vec(&(status, rows, registry)).map_err(|_| "migration_unavailable")?;
+    let mut summary = product_contract::migration_status::Summary::new(
+        "workspace",
+        env!("CARGO_PKG_VERSION"),
+        busy,
+        selected,
+        !selected,
+        &native,
+    )?;
+    if selected && !busy {
+        summary = summary.with_mappings(crate::migration_ledger::summarize(&host)?)?;
+    }
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
+}
+
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+    deadline: u64,
+) -> Result<Value, &'static str> {
+    use product_contract::migration_backup::{Descriptor, Verified};
+    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
+    let host = runtime.host()?;
+    if let Some(id) = id.filter(|id| id.starts_with("runtime_")) {
+        crate::files_host::current_deadline(deadline)?;
+        let digest = id
+            .strip_prefix("runtime_")
+            .ok_or("migration_backup_invalid")?;
+        let (bytes, schema, sha256, logs) = run_manager_lib::component::verify_migration_backup(
+            &host.component("runtime")?,
+            digest,
+        )
+        .map_err(|_| "migration_backup_unavailable")?;
+        crate::files_host::current_deadline(deadline)?;
+        return serde_json::to_value(Verified {
+            owner: "workspace".into(),
+            id: id.into(),
+            acquisition: if logs {
+                "sqlite-and-logs-copy/v1"
+            } else {
+                "sqlite-online-backup/v1"
+            }
+            .into(),
+            bytes,
+            schema,
+            sha256,
+        })
+        .map_err(|_| "migration_backup_invalid");
+    }
+    if let Some(id) = id.filter(|id| id.starts_with("terminal_")) {
+        crate::files_host::current_deadline(deadline)?;
+        let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+        let verified = crate::terminal_profiles::verify_backup(&terminal, host.storage_root(), id)?;
+        crate::files_host::current_deadline(deadline)?;
+        return serde_json::to_value(verified).map_err(|_| "migration_backup_invalid");
+    }
+    let catalog = host.legacy.catalog()?;
+    if catalog.unrecognized != 0 {
+        return Err("migration_backup_invalid");
+    }
+    if let Some(id) = id {
+        if !catalog.snapshots.iter().any(|snapshot| snapshot.id == id) {
+            return Err("migration_backup_missing");
+        }
+        let snapshot = crate::core::legacy_snapshot::Snapshot::load_checked(
+            &host.storage_root().join("legacy-imports"),
+            id,
+            || crate::files_host::current_deadline(deadline),
+        )?;
+        let verified = Verified {
+            owner: "workspace".into(),
+            id: id.into(),
+            acquisition: "stable-json-files/v1".into(),
+            bytes: snapshot
+                .manifest
+                .files
+                .iter()
+                .map(|file| file.bytes as u64)
+                .sum(),
+            schema: snapshot.manifest.schema_version,
+            sha256: snapshot.id()?,
+        };
+        host.legacy.catalog()?;
+        serde_json::to_value(verified).map_err(|_| "migration_backup_invalid")
+    } else {
+        let mut rows = catalog
+            .snapshots
+            .into_iter()
+            .map(|snapshot| Descriptor {
+                id: snapshot.id,
+                acquisition: "stable-json-files/v1".into(),
+            })
+            .collect::<Vec<_>>();
+        if host.status()?.get("selected").and_then(Value::as_bool) == Some(true) {
+            let terminal =
+                crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+            rows.extend(crate::terminal_profiles::backup_catalog(&terminal)?);
+            if let Some((digest, logs)) =
+                run_manager_lib::component::migration_backup_digest(&host.component("runtime")?)
+                    .map_err(|_| "migration_backup_unavailable")?
+            {
+                rows.push(Descriptor {
+                    id: format!("runtime_{digest}"),
+                    acquisition: if logs {
+                        "sqlite-and-logs-copy/v1"
+                    } else {
+                        "sqlite-online-backup/v1"
+                    }
+                    .into(),
+                });
+            }
+        }
+        serde_json::to_value(rows).map_err(|_| "migration_backup_invalid")
+    }
+}
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    use crate::core::legacy_snapshot::Snapshot;
+    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
+    let host = runtime.host()?;
+    let base = host
+        .storage_root()
+        .parent()
+        .ok_or("migration_source_unavailable")?;
+    let (before, accepted) = crate::migration_ledger::summarize_with_sources(&host)?;
+    let mut rows = product_contract::migration_source::empty("workspace");
+    let catalog = host.legacy.catalog()?;
+    if catalog.unrecognized != 0 {
+        return Err("migration_source_invalid");
+    }
+    for entry in catalog
+        .snapshots
+        .iter()
+        .filter(|entry| accepted.contains(&entry.id))
+    {
+        let retained = Snapshot::load(&host.storage_root().join("legacy-imports"), &entry.id)?;
+        let source = retained.manifest.source;
+        if Snapshot::acquire(base, source, || Ok(()))
+            .and_then(|fresh| fresh.id())
+            .is_ok_and(|id| id == entry.id)
+        {
+            rows.iter_mut()
+                .find(|row| row.identifier == source.identifier())
+                .ok_or("migration_source_invalid")?
+                .backups
+                .push(entry.id.clone());
+        }
+    }
+    if let Some(id) = run_manager_lib::component::migration_source_current(
+        &host.component("runtime")?,
+        &base.join("com.devbox.runmanager"),
+    )
+    .map_err(|_| "migration_source_unavailable")?
+    {
+        rows.iter_mut()
+            .find(|row| row.identifier == "com.devbox.runmanager")
+            .ok_or("migration_source_invalid")?
+            .backups
+            .push(id);
+    }
+    let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+    let ids = crate::terminal_profiles::current_sources(
+        &terminal,
+        host.storage_root(),
+        &base.join("com.devbox.wsldesktop"),
+    )?;
+    rows.iter_mut()
+        .find(|row| row.identifier == "com.devbox.wsldesktop")
+        .ok_or("migration_source_invalid")?
+        .backups
+        .extend(ids);
+    if crate::migration_ledger::summarize(&host)? != before {
+        return Err("migration_source_changed");
+    }
+    serde_json::to_value(rows).map_err(|_| "migration_source_invalid")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2358,6 +2635,25 @@ mod tests {
             .unwrap()
             .as_millis() as u64
             + milliseconds
+    }
+    #[test]
+    fn migration_allowlist_includes_metadata_imports_without_opening_files_or_servers() {
+        for (component, method) in [
+            ("workspace.files", "apply_session_import"),
+            ("workspace.files", "preview_recovery_restore"),
+            ("workspace.lsp", "apply_lsp_config_import"),
+        ] {
+            assert!(migration_method(component, method));
+        }
+        for (component, method) in [
+            ("workspace.files", "open_file"),
+            ("workspace.files", "save_file"),
+            ("workspace.lsp", "open_lsp_document"),
+            ("workspace.terminal", "open_terminal_profile"),
+            ("workspace.runtime", "start_service"),
+        ] {
+            assert!(!migration_method(component, method));
+        }
     }
     #[tokio::test]
     async fn a_file_write_waits_for_the_retained_reader_and_enters_only_once() {

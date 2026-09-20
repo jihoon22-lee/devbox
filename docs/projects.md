@@ -110,3 +110,5 @@ catalog application. Its protocol-only library is consumed by the Windows host;
 the static executable currently shares root/Git observation with `crates/filesystem`.
 Product CI builds and verifies the helper resource from the same source commit.
 Files/Git/LSP delegation remains under B04 acceptance.
+
+- `packages/control-center-features`: 기존 Manager와 Control Center가 사용하는 진단·환경·관련 도구 UI. 설치 세대 전환은 Control Center 소유 native 경계에서 별도로 처리한다.

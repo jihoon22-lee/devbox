@@ -268,6 +268,57 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
     Ok(())
 }
 
+/// Shared writer lease for cooperating product processes. The suite updater
+/// takes the existing exclusive lock on the same file after all writers exit.
+/// Closing the handle releases either kind of lock.
+#[cfg(unix)]
+pub fn try_lock_shared(file: &File) -> io::Result<bool> {
+    use std::os::unix::io::AsRawFd;
+    if unsafe { libc::flock(file.as_raw_fd(), libc::LOCK_SH | libc::LOCK_NB) } == 0 {
+        return Ok(true);
+    }
+    let error = io::Error::last_os_error();
+    if matches!(error.raw_os_error(), Some(code) if code == libc::EAGAIN || code == libc::EWOULDBLOCK)
+    {
+        Ok(false)
+    } else {
+        Err(error)
+    }
+}
+#[cfg(windows)]
+pub fn try_lock_shared(file: &File) -> io::Result<bool> {
+    use std::os::windows::io::AsRawHandle;
+    use windows::Win32::Foundation::{ERROR_LOCK_VIOLATION, HANDLE, WIN32_ERROR};
+    use windows::Win32::Storage::FileSystem::{LockFileEx, LOCKFILE_FAIL_IMMEDIATELY};
+    use windows::Win32::System::IO::OVERLAPPED;
+    let mut overlapped = OVERLAPPED::default();
+    match unsafe {
+        LockFileEx(
+            HANDLE(file.as_raw_handle()),
+            LOCKFILE_FAIL_IMMEDIATELY,
+            None,
+            u32::MAX,
+            u32::MAX,
+            &mut overlapped,
+        )
+    } {
+        Ok(()) => Ok(true),
+        Err(error)
+            if WIN32_ERROR::from_error(&error).is_some_and(|code| code == ERROR_LOCK_VIOLATION) =>
+        {
+            Ok(false)
+        }
+        Err(error) => Err(io::Error::other(error)),
+    }
+}
+#[cfg(not(any(unix, windows)))]
+pub fn try_lock_shared(_file: &File) -> io::Result<bool> {
+    Err(io::Error::new(
+        io::ErrorKind::Unsupported,
+        "shared file locking is unsupported",
+    ))
+}
+
 /// Try to take an exclusive advisory lock on an already-open file.
 ///
 /// The operation is deliberately non-blocking: callers that need a bounded
@@ -528,6 +579,31 @@ fn sync_parent(_target: &Path) -> io::Result<()> {
     Ok(())
 }
 
+/// Move a legacy identifier directory into its current identifier directory.
+///
+/// The destination is never merged with or overwritten. If the destination
+/// already exists, or the legacy directory is absent, this is a no-op. A
+/// rename error is returned unchanged so callers can log it and retry on the
+/// next launch.
+pub fn migrate_legacy_identifier_dir(
+    base_dir: impl AsRef<Path>,
+    legacy_identifier: &str,
+    current_identifier: &str,
+) -> std::io::Result<()> {
+    let base_dir = base_dir.as_ref();
+    let current_dir = base_dir.join(current_identifier);
+    if current_dir.try_exists()? {
+        return Ok(());
+    }
+
+    let legacy_dir = base_dir.join(legacy_identifier);
+    if !legacy_dir.try_exists()? {
+        return Ok(());
+    }
+
+    std::fs::rename(legacy_dir, current_dir)
+}
+
 #[cfg(test)]
 mod identity_tests {
     use super::{filesystem_identity, open_filesystem_object};
@@ -673,31 +749,6 @@ mod identity_tests {
 
         let _ = fs::remove_dir_all(root);
     }
-}
-
-/// Move a legacy identifier directory into its current identifier directory.
-///
-/// The destination is never merged with or overwritten. If the destination
-/// already exists, or the legacy directory is absent, this is a no-op. A
-/// rename error is returned unchanged so callers can log it and retry on the
-/// next launch.
-pub fn migrate_legacy_identifier_dir(
-    base_dir: impl AsRef<Path>,
-    legacy_identifier: &str,
-    current_identifier: &str,
-) -> std::io::Result<()> {
-    let base_dir = base_dir.as_ref();
-    let current_dir = base_dir.join(current_identifier);
-    if current_dir.try_exists()? {
-        return Ok(());
-    }
-
-    let legacy_dir = base_dir.join(legacy_identifier);
-    if !legacy_dir.try_exists()? {
-        return Ok(());
-    }
-
-    std::fs::rename(legacy_dir, current_dir)
 }
 
 #[cfg(test)]

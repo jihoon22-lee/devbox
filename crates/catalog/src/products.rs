@@ -63,7 +63,13 @@ fn component_authority(owner: &str, id: &str, authority: &str) -> bool {
     }
     matches!(
         (owner, id, authority),
-        ("api-studio", "api-studio.api", "request-network")
+        ("control-center", "control-center.tools", "manager-tools")
+            | (
+                "control-center",
+                "control-center.delivery",
+                "suite-delivery"
+            )
+            | ("api-studio", "api-studio.api", "request-network")
             | ("api-studio", "api-studio.webhooks", "listener-network")
             | ("api-studio", "api-studio.transforms", "transform-local")
             | ("api-studio", "api-studio.migration", "legacy-import")

@@ -42,7 +42,7 @@ assert frontend_manifest_lock.dependency_scope == "all"
 
 rust_manifest_lock = resolve("apps/devbox-manager/src-tauri/Cargo.toml", "Cargo.lock")
 assert rust_manifest_lock.rust_scope == "packages"
-assert rust_manifest_lock.rust_packages == ["devbox-manager"]
+assert rust_manifest_lock.rust_packages == ["devbox-control-center", "devbox-manager"]
 assert rust_manifest_lock.dependency_scope == "all"
 
 lock_only = resolve("Cargo.lock")
@@ -121,7 +121,7 @@ wsl = resolve("crates/wsl/src/lib.rs")
 assert len({node for node in wsl.rust_packages if rust_graph.nodes[node].kind == "app"}) == 19
 
 catalog = resolve("apps/catalog.json")
-assert catalog.frontend_apps == ["code-pad", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench", "wsl-desktop"]
+assert catalog.frontend_apps == ["code-pad", "devbox-control-center", "devbox-knowledge", "devbox-launcher", "devbox-manager", "devbox-workspace", "everything-plus", "knowledge-base", "life-log", "log-lens", "port-manager", "repo-manager", "run-manager", "workbench", "wsl-desktop"]
 assert "packages/workspace-features" in catalog.frontend_packages
 assert "packages/knowledge-features" in catalog.frontend_packages
 assert "catalog" in catalog.rust_packages

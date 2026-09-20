@@ -35,6 +35,10 @@ pub struct FileChange {
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct Bundle {
     pub id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub native_backup_revision: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub browser_backup_revision: Option<String>,
     pub before_browser: BrowserState,
     pub after_browser: BrowserState,
     pub files: Vec<FileChange>,
@@ -209,8 +213,8 @@ impl Repository {
             return Err("migration_recovery_required".into());
         }
         // The exclusive activation lock excludes another importer/worker.
-        // A new preview supersedes older previews. Accepted activations keep
-        // their recovery bundle and completed ID receipts in the journal.
+        // A new preview supersedes unaccepted previews. Completed activations
+        // retain their source bytes and plans as well as journal ID receipts.
         let entries = fs::read_dir(&directory)
             .map_err(|_| "migration_storage_unavailable")?
             .take(33)
@@ -219,11 +223,58 @@ impl Repository {
         if entries.len() > 32 {
             return Err("migration_store_too_large".into());
         }
-        for entry in entries {
-            if !entry.file_name().to_str().is_some_and(valid_id) {
+        let retained = self.root.join("imports/retained");
+        ensure_directory(&retained)?;
+        let mut retained_count = 0;
+        for entry in fs::read_dir(&retained)
+            .map_err(|_| "migration_storage_unavailable")?
+            .take(33)
+        {
+            let entry = entry.map_err(|_| "migration_storage_unavailable")?;
+            if !entry.file_name().to_str().is_some_and(valid_id)
+                || !entry
+                    .file_type()
+                    .map_err(|_| "migration_path_invalid")?
+                    .is_dir()
+            {
                 return Err("migration_path_invalid".into());
             }
-            remove_owned_directory(&entry.path())?;
+            devbox_filesystem::ensure_no_links(entry.path())
+                .map_err(|_| "migration_path_invalid")?;
+            retained_count += 1;
+        }
+        if retained_count >= 32 {
+            return Err("migration_backup_retention_review_required".into());
+        }
+        for entry in entries {
+            let id = entry
+                .file_name()
+                .into_string()
+                .map_err(|_| "migration_path_invalid")?;
+            if !valid_id(&id) {
+                return Err("migration_path_invalid".into());
+            }
+            if self
+                .activation(&id)?
+                .is_some_and(|(phase, _)| phase == Phase::Complete)
+            {
+                if retained_count >= 32 {
+                    return Err("migration_backup_retention_review_required".into());
+                }
+                self.clear_export_copy(&id)?;
+                devbox_filesystem::ensure_no_links(entry.path())
+                    .map_err(|_| "migration_path_invalid")?;
+                let archive = retained.join(&id);
+                match fs::symlink_metadata(&archive) {
+                    Ok(_) => return Err("migration_backup_conflict".into()),
+                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                    Err(_) => return Err("migration_backup_unavailable".into()),
+                }
+                fs::rename(entry.path(), archive).map_err(|_| "migration_backup_unavailable")?;
+                retained_count += 1;
+            } else {
+                remove_owned_directory(&entry.path())?;
+            }
         }
         let id = uuid::Uuid::new_v4().to_string();
         let stage = directory.join(&id);
@@ -266,6 +317,251 @@ impl Repository {
             let rows = sql(statement.query_map([], |row| row.get::<_, String>(0)))?;
             let ids: Vec<_> = rows.collect::<Result<_, _>>().map_err(|_| "migration_journal_unavailable")?;
             if ids.len() > 1 { return Err("migration_journal_invalid".into()); } Ok(ids.into_iter().next())
+        })
+    }
+    /// Read the retained, completed ID mappings without exporting their IDs or
+    /// source data. This observation is not an activation or source-backup proof.
+    pub fn mapping_summary(
+        &self,
+    ) -> Result<product_contract::migration_status::MappingSummary, String> {
+        use sha2::{Digest, Sha256};
+        self.workspace.inspect(|connection| {
+            let mut statement = sql(connection.prepare("SELECT r.activation_id,r.source_store,r.source_id,r.fingerprint,r.destination_id FROM studio_import_receipts_v1 r JOIN studio_imports_v1 i ON i.id=r.activation_id WHERE i.phase='complete' ORDER BY r.activation_id,r.source_store,r.source_id,r.fingerprint LIMIT 100001"))?;
+            let mut rows = sql(statement.query([]))?;
+            let started = std::time::Instant::now();
+            let mut count = 0_u64;
+            let mut hash = Sha256::new();
+            hash.update(b"api-studio/mappings/v1");
+            while let Some(row) = sql(rows.next())? {
+                count += 1;
+                if count > 100_000 || started.elapsed() > std::time::Duration::from_secs(5) {
+                    return Err("migration_journal_too_large".into());
+                }
+                for column in 0..5 {
+                    let rusqlite::types::ValueRef::Text(bytes) = sql(row.get_ref(column))? else {
+                        return Err("migration_journal_invalid".into());
+                    };
+                    if bytes.len() > 1024 { return Err("migration_journal_invalid".into()); }
+                    hash.update((bytes.len() as u64).to_be_bytes());
+                    hash.update(bytes);
+                }
+            }
+            product_contract::migration_status::MappingSummary::new(count,
+                hash.finalize().iter().map(|byte| format!("{byte:02x}")).collect())
+                .map_err(str::to_owned)
+        })
+    }
+    fn completed_stage(&self, id: &str) -> Result<PathBuf, String> {
+        if !valid_id(id)
+            || !self
+                .activation(id)?
+                .is_some_and(|(phase, _)| phase == Phase::Complete)
+        {
+            return Err("migration_backup_invalid".into());
+        }
+        let candidates = [
+            self.root.join("imports/staging").join(id),
+            self.root.join("imports/retained").join(id),
+        ];
+        let mut found = None;
+        for path in candidates {
+            match fs::symlink_metadata(&path) {
+                Ok(_) => {
+                    devbox_filesystem::ensure_no_links(&path)
+                        .map_err(|_| "migration_path_invalid")?;
+                    if found.replace(path).is_some() {
+                        return Err("migration_backup_ambiguous".into());
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(_) => return Err("migration_backup_unavailable".into()),
+            }
+        }
+        found.ok_or_else(|| "migration_backup_missing".into())
+    }
+    /// Match only completed imports against fresh, exclusively held original
+    /// files. A retained backup alone never creates a current-source result.
+    pub fn current_sources(
+        &self,
+        base: &Path,
+    ) -> Result<Vec<product_contract::migration_source::Source>, String> {
+        let mut rows = product_contract::migration_source::empty("api-studio");
+        let cancelled = AtomicBool::new(false);
+        for descriptor in self
+            .backup_catalog()?
+            .into_iter()
+            .filter(|row| row.id.ends_with("_native"))
+        {
+            let id = descriptor
+                .id
+                .strip_suffix("_native")
+                .ok_or("migration_backup_invalid")?;
+            let (_, bundle) = self.activation(id)?.ok_or("migration_backup_missing")?;
+            let stage = self.completed_stage(id)?;
+            let checked = crate::platform::source_guard::acquire(base, &stage, &bundle, &cancelled)
+                .and_then(|mut sources| sources.revalidate(&cancelled));
+            if checked.is_err() {
+                continue;
+            }
+            let raw = read_file(&stage.join("retained-native/snapshot.json"), 512 * 1024)?
+                .ok_or("migration_backup_missing")?;
+            let manifest: Value =
+                serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
+            let selected = manifest["selected"]
+                .as_array()
+                .ok_or("migration_backup_invalid")?;
+            for row in &mut rows {
+                if selected
+                    .iter()
+                    .any(|value| value.as_str() == Some(row.identifier.as_str()))
+                {
+                    row.backups.push(descriptor.id.clone());
+                    if row.identifier == "com.devbox.apiplayground"
+                        && bundle.browser_backup_revision.is_some()
+                    {
+                        row.backups.push(format!("{id}_browser"));
+                    }
+                }
+            }
+        }
+        Ok(rows)
+    }
+    pub fn backup_catalog(
+        &self,
+    ) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {
+        let ids = self.workspace.inspect(|connection| {
+            let mut statement = sql(connection.prepare(
+                "SELECT id, json_extract(bundle,'$.nativeBackupRevision') IS NOT NULL, json_extract(bundle,'$.browserBackupRevision') IS NOT NULL FROM studio_imports_v1 WHERE phase='complete' ORDER BY id LIMIT 33",
+            ))?;
+            let rows = sql(statement.query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, bool>(1)?, row.get::<_, bool>(2)?))))?;
+            rows.collect::<Result<Vec<_>, _>>()
+                .map_err(|_| "migration_journal_invalid".into())
+        })?;
+        if ids.len() > 32 {
+            return Err("migration_backup_limit".into());
+        }
+        let mut rows = Vec::new();
+        for (id, native, browser) in ids {
+            if !valid_id(&id) {
+                return Err("migration_backup_invalid".into());
+            }
+            rows.push(product_contract::migration_backup::Descriptor {
+                id: format!("{id}_normalized"),
+                acquisition: "normalized-import-bundle/v1".into(),
+            });
+            if native {
+                rows.push(product_contract::migration_backup::Descriptor {
+                    id: format!("{id}_native"),
+                    acquisition: "stable-json-files/v1".into(),
+                });
+            }
+            if browser {
+                rows.push(product_contract::migration_backup::Descriptor {
+                    id: format!("{id}_browser"),
+                    acquisition: "closed-leveldb-exclusive-copy/v1".into(),
+                });
+            }
+        }
+        Ok(rows)
+    }
+    pub fn verify_backup(
+        &self,
+        id: &str,
+    ) -> Result<product_contract::migration_backup::Verified, String> {
+        let (operation, kind) = id.rsplit_once('_').ok_or("migration_backup_invalid")?;
+        let stage = self.completed_stage(operation)?;
+        let (_, accepted) = self
+            .activation(operation)?
+            .ok_or("migration_backup_missing")?;
+        let (acquisition, bytes, schema, sha256) = match kind {
+            "native" => {
+                let expected = accepted
+                    .native_backup_revision
+                    .as_deref()
+                    .ok_or("migration_backup_binding_missing")?;
+                let (revision, bytes) = super::native_source_backup::verify(
+                    &stage.join("retained-native"),
+                    Some(expected),
+                )?;
+                ("stable-json-files/v1".into(), bytes, 1, revision)
+            }
+            "browser" => {
+                let raw = read_file(&stage.join("closed-source.json"), 512 * 1024)?
+                    .ok_or("migration_backup_missing")?;
+                let expected = accepted
+                    .browser_backup_revision
+                    .as_deref()
+                    .ok_or("migration_backup_binding_missing")?;
+                let actual: String = {
+                    use sha2::{Digest, Sha256};
+                    Sha256::digest(raw.as_bytes())
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect()
+                };
+                if actual != expected {
+                    return Err("migration_backup_changed".into());
+                }
+                let receipt: data_migration::core::source_snapshot::ClosedStoreSnapshot =
+                    serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
+                data_migration::core::source_snapshot::verify_closed_copy(
+                    &stage.join("retained-leveldb"),
+                    &receipt,
+                    &AtomicBool::new(false),
+                )?;
+                let revision = {
+                    use sha2::{Digest, Sha256};
+                    Sha256::digest(raw.as_bytes())
+                        .iter()
+                        .map(|byte| format!("{byte:02x}"))
+                        .collect()
+                };
+                (
+                    receipt.acquisition,
+                    receipt.files.iter().map(|file| file.bytes).sum(),
+                    receipt.schema_version,
+                    revision,
+                )
+            }
+            "normalized" => {
+                let snapshot =
+                    data_migration::core::migration::resume_snapshot(&stage.join("snapshot"))?;
+                // resume_snapshot already verified the complete snapshot bytes.
+                let path = stage.join("snapshot/snapshot.db");
+                let connection = sql(Connection::open_with_flags(
+                    path,
+                    rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+                ))?;
+                let body: String = sql(connection.query_row(
+                    "SELECT body FROM activation_bundle_v1 WHERE id=?1",
+                    [operation],
+                    |row| row.get(0),
+                ))?;
+                let (_, bundle) = self
+                    .activation(operation)?
+                    .ok_or("migration_backup_missing")?;
+                if serde_json::from_str::<Value>(&body).map_err(|_| "migration_backup_invalid")?
+                    != serde_json::to_value(bundle).map_err(|_| "migration_backup_invalid")?
+                {
+                    return Err("migration_backup_changed".into());
+                }
+                (
+                    "normalized-import-bundle/v1".into(),
+                    snapshot.bytes,
+                    u32::try_from(snapshot.schema_version)
+                        .map_err(|_| "migration_backup_invalid")?,
+                    snapshot.sha256,
+                )
+            }
+            _ => return Err("migration_backup_invalid".into()),
+        };
+        Ok(product_contract::migration_backup::Verified {
+            owner: "api-studio".into(),
+            id: id.into(),
+            acquisition,
+            bytes,
+            schema,
+            sha256,
         })
     }
     fn prior_receipts(&self) -> Result<Vec<Receipt>, String> {
@@ -403,8 +699,25 @@ impl Repository {
                 })
             })
             .collect();
+        let stage = self.stage(id)?;
+        let native_backup_revision =
+            if read_file(&stage.join("retained-native/snapshot.json"), 512 * 1024)?.is_some() {
+                Some(super::native_source_backup::verify(&stage.join("retained-native"), None)?.0)
+            } else {
+                None
+            };
+        let browser_backup_revision = read_file(&stage.join("closed-source.json"), 512 * 1024)?
+            .map(|raw| {
+                use sha2::{Digest, Sha256};
+                Sha256::digest(raw.as_bytes())
+                    .iter()
+                    .map(|byte| format!("{byte:02x}"))
+                    .collect()
+            });
         let bundle = Bundle {
             id: id.to_string(),
+            native_backup_revision,
+            browser_backup_revision,
             before_browser: browser,
             after_browser,
             files,
@@ -415,7 +728,6 @@ impl Repository {
         if encoded.len() > MAX_BUNDLE {
             return Err("migration_store_too_large".into());
         }
-        let stage = self.stage(id)?;
         let source = stage.join("normalized.db");
         fs::OpenOptions::new()
             .write(true)
@@ -517,6 +829,40 @@ impl Repository {
             }
         }
         Ok(())
+    }
+    /// Recheck the original sources only before the first accepted import intent.
+    /// Recovery of an already accepted intent preserves its reviewed snapshot,
+    /// even if a legacy source later changes or disappears.
+    pub fn activate_from_sources(
+        &self,
+        id: &str,
+        browser: &BrowserState,
+        cancelled: &AtomicBool,
+        legacy: &Path,
+    ) -> Result<BrowserPatch, String> {
+        if self.activation(id)?.is_some() {
+            return self.activate(id, browser, cancelled);
+        }
+        let stage = self.stage(id)?;
+        data_migration::core::migration::resume_snapshot(&stage.join("snapshot"))?;
+        let connection = sql(Connection::open_with_flags(
+            stage.join("snapshot/snapshot.db"),
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ))?;
+        let raw: Option<String> = sql(connection.query_row(
+            "SELECT CASE WHEN length(CAST(body AS BLOB)) <= ?2 THEN body ELSE NULL END FROM activation_bundle_v1 WHERE id=?1",
+            (id, MAX_BUNDLE as u64), |row| row.get(0)))?;
+        let bundle: Bundle = serde_json::from_str(&raw.ok_or("migration_store_too_large")?)
+            .map_err(|_| "migration_plan_invalid")?;
+        if bundle.id != id {
+            return Err("migration_plan_invalid".into());
+        }
+        let mut sources =
+            crate::platform::source_guard::acquire(legacy, &stage, &bundle, cancelled)?;
+        sources.revalidate(cancelled)?;
+        // Handles stay alive across the durable intent and native-file writes.
+        // Browser application/acknowledgement remains an explicit recovery step.
+        self.activate(id, browser, cancelled)
     }
     pub fn activate(
         &self,
@@ -653,6 +999,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let before = browser();
         let repo = Repository::open(root.path(), "fixture-install").unwrap();
+        assert_eq!(repo.mapping_summary().unwrap().record_count, 0);
         let (id, _) = repo.new_stage().unwrap();
         let review = repo
             .prepare(
@@ -668,6 +1015,8 @@ mod tests {
             .activate(&id, &before, &AtomicBool::new(false))
             .unwrap();
         assert!(root.path().join("webhooks/fixtures.json").exists());
+        // Native files alone do not mean browser activation was acknowledged.
+        assert_eq!(repo.mapping_summary().unwrap().record_count, 0);
         assert!(repo.acknowledge(&id, &before, false).is_err());
         drop(repo);
         let repo = Repository::open(root.path(), "fixture-install").unwrap();
@@ -676,6 +1025,7 @@ mod tests {
             .activate(&id, &patch.after, &AtomicBool::new(false))
             .unwrap();
         repo.acknowledge(&id, &resumed.after, false).unwrap();
+        assert_eq!(repo.mapping_summary().unwrap().record_count, 2);
         assert!(repo.pending().unwrap().is_none());
         let mut edited = resumed.after;
         let mut collections = json_value(edited["apip-collections-v2"].as_ref().unwrap()).unwrap();
@@ -800,7 +1150,64 @@ mod tests {
         repo.acknowledge(&id, &patch.after, false).unwrap();
         repo.new_stage().unwrap();
         assert!(!stage.exists());
+        assert!(root
+            .path()
+            .join("imports/retained")
+            .join(&id)
+            .join("snapshot/snapshot.db")
+            .is_file());
         assert!(repo.pending().unwrap().is_none());
+        let backups = repo.backup_catalog().unwrap();
+        assert_eq!(backups.len(), 1);
+        let proof = repo.verify_backup(&backups[0].id).unwrap();
+        assert_eq!(proof.acquisition, "normalized-import-bundle/v1");
+        assert!(proof.bytes > 0);
+        fs::write(
+            root.path()
+                .join("imports/retained")
+                .join(&id)
+                .join("snapshot/snapshot.db"),
+            b"changed",
+        )
+        .unwrap();
+        assert!(repo.verify_backup(&backups[0].id).is_err());
+    }
+    #[test]
+    fn original_native_backup_metadata_is_bound_to_the_accepted_bundle() {
+        let root = tempfile::tempdir().unwrap();
+        let legacy = tempfile::tempdir().unwrap();
+        let repo = Repository::open(root.path(), "fixture-install").unwrap();
+        let (id, stage) = repo.new_stage().unwrap();
+        let original = legacy.path().join("com.devbox.webhooklab");
+        fs::create_dir(&original).unwrap();
+        let documents = sources();
+        let bytes = serde_json::to_vec(&documents[&StoreKind::Fixtures]).unwrap();
+        fs::write(original.join("fixtures.json"), &bytes).unwrap();
+        super::super::native_source_backup::capture(
+            legacy.path(),
+            &stage,
+            &["com.devbox.webhooklab".into()],
+            &None,
+            &AtomicBool::new(false),
+        )
+        .unwrap();
+        repo.prepare(
+            &id,
+            &documents,
+            browser(),
+            &AtomicBool::new(false),
+            |_, _| Ok(()),
+        )
+        .unwrap();
+        let patch = repo
+            .activate(&id, &browser(), &AtomicBool::new(false))
+            .unwrap();
+        repo.acknowledge(&id, &patch.after, false).unwrap();
+        let proof = repo.verify_backup(&format!("{id}_native")).unwrap();
+        assert_eq!(proof.bytes, bytes.len() as u64);
+        fs::write(stage.join("retained-native/snapshot.json"), b"{}").unwrap();
+        assert!(repo.verify_backup(&format!("{id}_native")).is_err());
+        assert_eq!(fs::read(original.join("fixtures.json")).unwrap(), bytes);
     }
     #[test]
     fn new_preview_purges_abandoned_raw_copies_and_invalidates_previous_plan() {
@@ -811,7 +1218,13 @@ mod tests {
         fs::create_dir(&raw).unwrap();
         fs::write(raw.join("synthetic-raw"), "synthetic source only").unwrap();
         fs::write(stage.join("worker-ticket.json"), "synthetic nonce").unwrap();
+        fs::create_dir(stage.join("retained-leveldb")).unwrap();
+        fs::write(stage.join("retained-leveldb/CURRENT"), b"original marker").unwrap();
         repo.clear_export_copy(&id).unwrap();
+        assert_eq!(
+            fs::read(stage.join("retained-leveldb/CURRENT")).unwrap(),
+            b"original marker"
+        );
         assert!(!raw.exists());
         assert!(!stage.join("worker-ticket.json").exists());
         repo.prepare(

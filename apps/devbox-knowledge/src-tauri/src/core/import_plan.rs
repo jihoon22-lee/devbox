@@ -22,6 +22,130 @@ const COMPONENTS: [&str; 3] = ["notes", "activity", "search"];
 const MAX_DATABASE_BYTES: u64 = 256 * 1024 * 1024;
 const MAX_JOURNAL_BYTES: u64 = 64 * 1024;
 const MAX_PLANS: usize = 8;
+/// Observe only retained ID receipts in the selected stores. Each SQLite reader
+/// supplies its own consistent view; this is not a cross-store commit proof.
+pub fn mapping_summary(
+    root: &Path,
+) -> Result<product_contract::migration_status::MappingSummary, String> {
+    let _lock = lock(root)?;
+    let manifest = stores::read(root)?.ok_or("store_unavailable")?;
+    let mut hash = Sha256::new();
+    hash.update(b"knowledge/mappings/v1");
+    hash.update(manifest.generation.as_bytes());
+    let mut count = 0_u64;
+    let started = std::time::Instant::now();
+    for source in [Source::Notes, Source::Activity, Source::Search] {
+        let path = stores::directory(root, &manifest, source.key())?.join("data.db");
+        let connection = sql(Connection::open_with_flags(
+            &path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ))?;
+        sql(connection.busy_timeout(std::time::Duration::from_millis(100)))?;
+        sql(connection.execute_batch("BEGIN"))?;
+        import_rows::validate_owned_store(&connection, source)?;
+        hash.update(source.key().as_bytes());
+        let exists: bool = sql(connection.query_row("SELECT EXISTS(SELECT 1 FROM sqlite_master WHERE type='table' AND name='knowledge_import_rows_v1')", [], |row| row.get(0)))?;
+        if !exists {
+            continue;
+        }
+        let mut statement = sql(connection.prepare("SELECT source,source_table,source_id,fingerprint,destination_id FROM knowledge_import_rows_v1 ORDER BY source,source_table,source_id LIMIT 100001"))?;
+        let mut rows = sql(statement.query([]))?;
+        let mut store_count = 0_u64;
+        while let Some(row) = sql(rows.next())? {
+            store_count += 1;
+            count += 1;
+            if store_count > 100_000 || started.elapsed() > std::time::Duration::from_secs(5) {
+                return Err("import_limit_exceeded".into());
+            }
+            for column in 0..5 {
+                let rusqlite::types::ValueRef::Text(bytes) = sql(row.get_ref(column))? else {
+                    return Err("import_row_invalid".into());
+                };
+                if bytes.len() > 1024 {
+                    return Err("import_row_invalid".into());
+                }
+                hash.update((bytes.len() as u64).to_be_bytes());
+                hash.update(bytes);
+            }
+        }
+    }
+    if stores::read(root)? != Some(manifest) {
+        return Err("import_preview_stale".into());
+    }
+    product_contract::migration_status::MappingSummary::new(
+        count,
+        hash.finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect(),
+    )
+    .map_err(str::to_owned)
+}
+/// Follow the selected generation's ancestry, so rolled-back or unrelated
+/// prepared plans cannot prove that an original source was accepted.
+pub fn current_sources(
+    root: &Path,
+    legacy: &Path,
+) -> Result<Vec<product_contract::migration_source::Source>, String> {
+    let _lock = lock(root)?;
+    let selected = stores::read(root)?;
+    let plans = list(root)?;
+    let mut ancestry = Vec::new();
+    let mut current = selected.clone();
+    while let Some(manifest) = current {
+        let Some(plan) = plans
+            .iter()
+            .find(|plan| plan.next == manifest && plan.phase == Phase::Activated)
+        else {
+            break;
+        };
+        if ancestry.iter().any(|prior: &&Plan| prior.id == plan.id) {
+            return Err("import_journal_invalid".into());
+        }
+        ancestry.push(plan);
+        current = plan.base.clone();
+    }
+    let mut rows = product_contract::migration_source::empty("knowledge");
+    let directory = root.join(format!("source-check-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&directory).map_err(|_| "import_storage_unavailable")?;
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let _scratch = Scratch(directory.clone());
+    for source in [Source::Notes, Source::Activity, Source::Search] {
+        let accepted = ancestry.iter().find_map(|plan| {
+            plan.sources
+                .iter()
+                .find(|row| row.source == source)
+                .map(|report| (*plan, report))
+        });
+        let Some((plan, report)) = accepted else {
+            continue;
+        };
+        let fresh = source_path(legacy, source).and_then(|path| {
+            acquire_snapshot(
+                &path,
+                &directory.join(source.key()),
+                &[0],
+                &AtomicBool::new(false),
+            )
+        });
+        if fresh.is_ok_and(|snapshot| snapshot.sha256 == report.snapshot.sha256) {
+            rows.iter_mut()
+                .find(|row| row.identifier == source.identifier())
+                .ok_or("import_source_invalid")?
+                .backups
+                .push(format!("{}_{}", plan.id, source.key()));
+        }
+    }
+    if stores::read(root)? != selected {
+        return Err("import_preview_stale".into());
+    }
+    Ok(rows)
+}
 pub fn list(root: &Path) -> Result<Vec<Plan>, String> {
     let imports = root.join("imports");
     match fs::symlink_metadata(&imports) {
@@ -568,8 +692,9 @@ pub fn activate(
     .map_err(|_| "import_storage_unavailable")?;
     Ok(plan)
 }
-/// Only after all three engines initialize successfully. A failed health check
-/// leaves Activating visible for an explicit restart/recovery choice.
+/// After the native owner validates all three selected stores and vault ownership.
+/// Direct startup also initializes engines; Suite preparation keeps them stopped
+/// until package activation commits. Failed validation leaves Activating visible.
 pub fn commit(root: &Path, id: &str) -> Result<Plan, String> {
     let _lock = lock(root)?;
     let mut plan = read(root, id)?;
@@ -711,6 +836,53 @@ pub fn cancel(root: &Path, id: &str) -> Result<Plan, String> {
     Ok(plan)
 }
 
+pub fn backup_catalog(
+    root: &Path,
+) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {
+    let _lock = lock(root)?;
+    Ok(list(root)?
+        .into_iter()
+        .filter(|plan| plan.phase == Phase::Activated)
+        .flat_map(|plan| {
+            plan.sources.into_iter().map(move |source| {
+                product_contract::migration_backup::Descriptor {
+                    id: format!("{}_{}", plan.id, source.source.key()),
+                    acquisition: "sqlite-online-backup/v1".into(),
+                }
+            })
+        })
+        .collect())
+}
+pub fn verify_backup(
+    root: &Path,
+    id: &str,
+) -> Result<product_contract::migration_backup::Verified, String> {
+    let _lock = lock(root)?;
+    let (operation, component) = id.rsplit_once('_').ok_or("migration_backup_invalid")?;
+    let plan = read(root, operation)?;
+    if plan.phase != Phase::Activated {
+        return Err("migration_backup_invalid".into());
+    }
+    let source = plan
+        .sources
+        .iter()
+        .find(|report| report.source.key() == component)
+        .ok_or("migration_backup_invalid")?;
+    verify_snapshot(
+        &plan_dir(root, operation)?.join(format!("source-{}", source.source.key())),
+        &source.snapshot,
+    )?;
+    Ok(product_contract::migration_backup::Verified {
+        owner: "knowledge".into(),
+        id: id.into(),
+        acquisition: source.snapshot.acquisition.clone(),
+        bytes: source.snapshot.bytes,
+        schema: u32::try_from(source.snapshot.schema_version)
+            .map_err(|_| "migration_backup_invalid")?,
+        sha256: source.snapshot.sha256.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -731,6 +903,40 @@ mod tests {
     }
     fn token() -> Arc<AtomicBool> {
         Arc::new(AtomicBool::new(false))
+    }
+    #[test]
+    fn mapping_observations_are_bounded_opaque_and_track_destination_changes() {
+        let root = tempfile::tempdir().unwrap();
+        let manifest = stores::create_empty(root.path()).unwrap();
+        let before = mapping_summary(root.path()).unwrap();
+        assert_eq!(before.record_count, 0);
+        let path = stores::directory(root.path(), &manifest, "notes")
+            .unwrap()
+            .join("data.db");
+        let connection = Connection::open(path).unwrap();
+        connection.execute_batch("CREATE TABLE knowledge_import_rows_v1(source TEXT NOT NULL,source_table TEXT NOT NULL,source_id TEXT NOT NULL,fingerprint TEXT NOT NULL,destination_id TEXT NOT NULL,PRIMARY KEY(source,source_table,source_id)); INSERT INTO knowledge_import_rows_v1 VALUES('notes','settings','synthetic-private-id','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','first-target');").unwrap();
+        let first = mapping_summary(root.path()).unwrap();
+        assert_eq!(first.record_count, 1);
+        assert_ne!(first.revision, before.revision);
+        assert!(!serde_json::to_string(&first)
+            .unwrap()
+            .contains("synthetic-private-id"));
+        connection
+            .execute(
+                "UPDATE knowledge_import_rows_v1 SET destination_id='second-target'",
+                [],
+            )
+            .unwrap();
+        let second = mapping_summary(root.path()).unwrap();
+        assert_eq!(second.record_count, 1);
+        assert_ne!(first.revision, second.revision);
+        connection
+            .execute(
+                "UPDATE knowledge_import_rows_v1 SET destination_id=x'01'",
+                [],
+            )
+            .unwrap();
+        assert!(mapping_summary(root.path()).is_err());
     }
     #[test]
     fn wal_snapshot_preparation_cancel_resume_and_atomic_pointer_preserve_originals() {
@@ -806,6 +1012,11 @@ mod tests {
             Phase::Activating
         );
         commit(root.path(), &plan.id).unwrap();
+        let backups = backup_catalog(root.path()).unwrap();
+        assert_eq!(backups.len(), 1);
+        let proof = verify_backup(root.path(), &backups[0].id).unwrap();
+        assert_eq!(proof.sha256, plan.sources[0].snapshot.sha256);
+        assert!(verify_backup(root.path(), "../foreign_notes").is_err());
         rollback(root.path(), &plan.id).unwrap();
         assert_eq!(stores::read(root.path()).unwrap(), Some(old.clone()));
         let next = prepare(root.path(), base.path(), &[Source::Notes], token()).unwrap();

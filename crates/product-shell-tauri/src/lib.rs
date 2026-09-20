@@ -1,6 +1,8 @@
 //! Product session and navigation boundary. Domain plugins separately declare
 //! their command allowlists and reuse this native session authorization.
+mod installation;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
+pub use installation::WriterGuard;
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
     RouteRequest, RouteStatus, SessionGuard,
@@ -15,6 +17,8 @@ struct ShellState {
     catalog: ProductCatalog,
     product: String,
     session: Mutex<SessionGuard>,
+    executable: std::path::PathBuf,
+    version: String,
 }
 
 #[derive(Serialize)]
@@ -24,6 +28,7 @@ struct Description {
     product: Product,
     features: Vec<Feature>,
     context: Option<ProjectContext>,
+    delivery_state: &'static str,
 }
 
 fn local_main(window: &WebviewWindow) -> bool {
@@ -57,7 +62,19 @@ fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Descr
         .map_err(|_| "세션을 사용할 수 없습니다.")?;
     let handshake = session.handshake().clone();
     let context = session.context().cloned();
+    drop(session);
+    let delivery_state = match installation::activation(&state.executable, &state.version) {
+        Ok(None) => "direct",
+        Ok(Some(marker)) => match marker.phase {
+            product_contract::activation::Phase::Import => "import",
+            product_contract::activation::Phase::Health => "health",
+            product_contract::activation::Phase::Committed => "committed",
+            product_contract::activation::Phase::Recover => "recover",
+        },
+        Err(_) => "unavailable",
+    };
     Ok(Description {
+        delivery_state,
         handshake,
         context,
         product,
@@ -95,6 +112,59 @@ pub fn authorize(
     request: &RouteRequest,
     component: &str,
 ) -> Result<Provenance, Problem> {
+    authorize_inner(window, request, component, Admission::Ordinary)
+}
+
+/// Only the native connection method allowlist may call this during setup or recovery.
+/// It preserves explicit package review without admitting domain commands.
+pub fn authorize_installation_review(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+) -> Result<Provenance, Problem> {
+    let product = window.state::<ShellState>().product.clone();
+    authorize_inner(
+        window,
+        request,
+        &format!("{product}.commands"),
+        Admission::InstallationReview,
+    )
+}
+/// Domain adapters use this only after matching their closed importer method
+/// allowlist. It never admits ordinary task, service, terminal or file commands.
+pub fn authorize_owner_migration(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+    component: &str,
+) -> Result<Provenance, Problem> {
+    authorize_inner(window, request, component, Admission::OwnerMigration)
+}
+#[derive(Clone, Copy)]
+enum Admission {
+    Ordinary,
+    InstallationReview,
+    OwnerMigration,
+}
+fn activation_allows(
+    marker: &product_contract::activation::Activation,
+    product: &str,
+    component: &str,
+    admission: Admission,
+) -> bool {
+    marker.allows(product, component)
+        || match admission {
+            Admission::Ordinary => false,
+            Admission::InstallationReview => true,
+            Admission::OwnerMigration => {
+                marker.phase == product_contract::activation::Phase::Import
+            }
+        }
+}
+fn authorize_inner(
+    window: &WebviewWindow,
+    request: &RouteRequest,
+    component: &str,
+    admission: Admission,
+) -> Result<Provenance, Problem> {
     let state = window.state::<ShellState>();
     let provenance = Provenance {
         product: state.product.clone(),
@@ -130,6 +200,12 @@ pub fn authorize(
         .filter(|f| f.owner == state.product)
         .map(|f| f.route.as_str())
         .collect();
+    if !installation::activation(&state.executable, &state.version)
+        .map_err(|_| problem(ProblemCode::Unavailable))?
+        .is_none_or(|marker| activation_allows(&marker, &state.product, component, admission))
+    {
+        return Err(problem(ProblemCode::Unavailable));
+    }
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
         .map_err(|_| problem(ProblemCode::Unavailable))?
@@ -147,6 +223,25 @@ pub fn authorize(
         .authorize(&caller_window, local_origin, request, now, &routes)
         .map_err(problem)?;
     Ok(provenance)
+}
+
+/// Observe a live local main shell without invoking a business command or
+/// changing navigation. The caller separately verifies package and data owners.
+pub fn health_session(app: &tauri::AppHandle, product: &str) -> Result<String, &'static str> {
+    let window = app
+        .get_webview_window("main")
+        .ok_or("health_window_unavailable")?;
+    if !local_main(&window) {
+        return Err("health_window_unavailable");
+    }
+    let state = app
+        .try_state::<ShellState>()
+        .ok_or("health_shell_unavailable")?;
+    if state.product != product {
+        return Err("health_owner_mismatch");
+    }
+    let session = state.session.lock().map_err(|_| "health_shell_busy")?;
+    Ok(session.handshake().session_id.clone())
 }
 
 /// Native context for Workspace-owned background notifications. The owner
@@ -232,6 +327,8 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 catalog,
                 product: product.into(),
                 session: Mutex::new(session),
+                executable,
+                version: app.package_info().version.to_string(),
             });
             window_state_tauri::restore_main_window(app.handle());
             Ok(())
@@ -239,9 +336,8 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
         .on_window_event(window_state_tauri::handle_window_event)
 }
 
-/// Hidden development installations use an executable-location namespace for
-/// data and single-instance identity. This does not claim suite registration or
-/// portable migration support; WP08 replaces it with verified install records.
+/// Direct portable/development binaries use their executable location; verified
+/// suite generations keep a physical installation key across package replacement.
 pub fn run(product: &'static str, context: tauri::Context<tauri::Wry>) -> tauri::Result<()> {
     run_with(product, context, |builder| builder)
 }
@@ -251,28 +347,49 @@ pub fn run_with(
     mut context: tauri::Context<tauri::Wry>,
     configure: impl FnOnce(tauri::Builder<tauri::Wry>) -> tauri::Builder<tauri::Wry>,
 ) -> tauri::Result<()> {
-    if cfg!(debug_assertions) {
+    let setup = product == "control-center"
+        && std::env::args_os().any(|argument| argument == "--suite-setup");
+    let initial_route = if setup {
+        // The installer supplies no route or data authority. Derive the review
+        // surface from this executable's verified generation marker instead.
+        let executable = std::env::current_exe()?.canonicalize()?;
+        let marker =
+            installation::activation(&executable, &context.package_info().version.to_string())
+                .map_err(std::io::Error::other)?
+                .ok_or_else(|| std::io::Error::other("suite_setup_requires_installation"))?;
+        Some(
+            match marker.phase {
+                product_contract::activation::Phase::Import => "migration",
+                product_contract::activation::Phase::Recover => "recovery",
+                product_contract::activation::Phase::Committed => "products",
+                product_contract::activation::Phase::Health => "updates",
+            }
+            .to_owned(),
+        )
+    } else if cfg!(debug_assertions) {
         let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
         let routes: Vec<&str> = catalog
             .features
             .iter()
-            .filter(|f| f.owner == product)
-            .map(|f| f.route.as_str())
+            .filter(|feature| feature.owner == product)
+            .map(|feature| feature.route.as_str())
             .collect();
-        if let Some(route) = product_contract::development_route(std::env::args().skip(1), &routes)
+        product_contract::development_route(std::env::args().skip(1), &routes)
             .map_err(std::io::Error::other)?
-        {
-            // Select the relative application URL before creating WebView2.
-            // Reading its current URL during setup can observe about:blank.
-            let window = context
-                .config_mut()
-                .app
-                .windows
-                .iter_mut()
-                .find(|window| window.label == "main")
-                .ok_or_else(|| std::io::Error::other("missing main window"))?;
-            window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
-        }
+    } else {
+        None
+    };
+    if let Some(route) = initial_route {
+        // Select the local URL before creating WebView2; about:blank during
+        // setup cannot supply navigation or command authorization.
+        let window = context
+            .config_mut()
+            .app
+            .windows
+            .iter_mut()
+            .find(|window| window.label == "main")
+            .ok_or_else(|| std::io::Error::other("missing main window"))?;
+        window.url = tauri::WebviewUrl::App(format!("index.html?route={route}").into());
     }
     if product == "workspace" && std::env::args_os().any(|arg| arg == "--background") {
         if let Some(window) = context
@@ -285,18 +402,110 @@ pub fn run_with(
             window.visible = false;
         }
     }
-    isolate_installation(&mut context)?;
+    let _installation = isolate_installation(&mut context)?;
     configure(builder(product)).run(context)
+}
+
+/// Owners call this before background initialization as well as route dispatch.
+/// Import-only authorization must not start activity collectors or schedulers.
+pub fn suite_activation_phase(
+    app: &tauri::AppHandle,
+) -> Result<Option<product_contract::activation::Phase>, &'static str> {
+    let executable = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
+    installation::activation(&executable, &app.package_info().version.to_string())
+        .map(|marker| marker.map(|marker| marker.phase))
+}
+
+pub fn suite_import_only(app: &tauri::AppHandle) -> Result<bool, &'static str> {
+    let executable = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|_| "suite_activation_unavailable")?;
+    match installation::activation(&executable, &app.package_info().version.to_string())? {
+        None => Ok(false),
+        Some(marker) => match marker.phase {
+            product_contract::activation::Phase::Committed => Ok(false),
+            // Health/recovery still need the native shell and metadata readers,
+            // with no schedulers or domain writers. Migration admission itself
+            // remains restricted to Import by its separate native access kind.
+            _ => Ok(true),
+        },
+    }
+}
+pub fn require_suite_writable(app: &tauri::AppHandle) -> Result<(), &'static str> {
+    require_suite_committed(&app.package_info().version.to_string())
+}
+pub fn require_suite_committed(version: &str) -> Result<(), &'static str> {
+    let executable = std::env::current_exe()
+        .and_then(|path| path.canonicalize())
+        .map_err(|_| "suite_activation_unavailable")?;
+    if installation::activation(&executable, version)?
+        .is_none_or(|marker| marker.phase == product_contract::activation::Phase::Committed)
+    {
+        Ok(())
+    } else {
+        Err("suite_activation_pending")
+    }
 }
 
 /// Shared by the product UI and its explicitly owned import worker. This only
 /// selects this executable installation's namespace; it grants no IPC authority.
-pub fn isolate_installation(context: &mut tauri::Context<tauri::Wry>) -> tauri::Result<()> {
+pub fn isolate_installation(
+    context: &mut tauri::Context<tauri::Wry>,
+) -> tauri::Result<WriterGuard> {
     let executable = std::env::current_exe()?.canonicalize()?;
-    let suffix: String = Sha256::digest(executable.to_string_lossy().as_bytes())
+    let guard = WriterGuard::acquire(&executable).map_err(std::io::Error::other)?;
+    let catalog = ProductCatalog::parse(SOURCE).map_err(std::io::Error::other)?;
+    let product = catalog
+        .products
         .iter()
-        .map(|byte| format!("{byte:02x}"))
-        .collect();
+        .find(|product| product.identifier == context.config().identifier)
+        .ok_or_else(|| std::io::Error::other("installation_product_invalid"))?;
+    let suffix = installation::namespace(
+        &executable,
+        &product.id,
+        &context.package_info().version.to_string(),
+    )
+    .map_err(std::io::Error::other)?;
     context.config_mut().identifier = format!("{}.i{}", context.config().identifier, suffix);
-    Ok(())
+    Ok(guard)
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    #[test]
+    fn health_review_never_grants_owner_migration_or_business_writes() {
+        use product_contract::activation::{Activation, Phase};
+        for phase in [Phase::Import, Phase::Health, Phase::Recover] {
+            let marker = Activation {
+                schema_version: 1,
+                installation_id: "installation".into(),
+                generation: "generation".into(),
+                operation_id: "operation".into(),
+                revision: 0,
+                phase,
+            };
+            assert!(activation_allows(
+                &marker,
+                "workspace",
+                "workspace.commands",
+                Admission::InstallationReview
+            ));
+            assert!(!activation_allows(
+                &marker,
+                "workspace",
+                "workspace.files",
+                Admission::Ordinary
+            ));
+            assert_eq!(
+                activation_allows(
+                    &marker,
+                    "workspace",
+                    "workspace.files",
+                    Admission::OwnerMigration
+                ),
+                phase == Phase::Import
+            );
+        }
+    }
 }

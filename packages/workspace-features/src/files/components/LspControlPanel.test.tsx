@@ -855,6 +855,11 @@ describe("LspControlPanel", () => {
     await waitFor(() => expect(
       (rendered.getByRole("option", { name: "설치된 관리형 서버" }) as HTMLOptionElement).disabled,
     ).toBe(false));
+    // Catalog/status and persisted configuration load independently. The real
+    // selector stays disabled until the latter has initialized its draft.
+    await waitFor(() => expect(
+      (rendered.getByLabelText("서버 종류") as HTMLSelectElement).disabled,
+    ).toBe(false));
     fireEvent.change(rendered.getByLabelText("서버 종류"), { target: { value: "managed" } });
     await waitFor(() => expect(
       (rendered.getByLabelText("관리형 서버 버전") as HTMLSelectElement).value,

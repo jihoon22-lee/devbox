@@ -1,9 +1,10 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
-import { nativeMode, type Description } from "@devbox/product-shell/api";
+import { nativeMode, productDataAvailable, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
 import type { Registry } from "./RegistryGate";
+const MigrationOnly=lazy(()=>import("./MigrationOnly"));
 const RegistryGate=lazy(()=>import("./RegistryGate"));
 import { componentCall } from "./native";
 const ProjectDefinitions=lazy(()=>import("./ProjectDefinitions"));
@@ -110,6 +111,9 @@ function NativeContent({route, description, refreshContext, navigate}: ShellCont
   };
   const markReady = useCallback(() => setReady(true), []);
   useEffect(() => {if (route === "files") setFilesVisited(true);}, [route]);
+  if(!productDataAvailable(description))return description.deliveryState==="import"
+    ? <Suspense fallback={<p role="status">이전 화면을 불러오고 있습니다…</p>}><MigrationOnly route={route} description={description} navigate={navigate} refreshContext={refreshContext}/></Suspense>
+    : <p role="status">Control Center에서 제품 상태 확인 또는 복구를 완료해 주세요.</p>;
   return <>
     <div hidden={ready && route === "files"}>
       <Suspense fallback={<p role="status">프로젝트 정보를 불러오고 있습니다…</p>}><RegistryGate context={description.context} onContextChanged={refreshContext} onReady={markReady} editing={tasksDirty || editing || sessionImportBusy || recoveryImportBusy || lspImportBusy || definitionsEditing || dependenciesBusy || sourceBusy || sourceDirty} refreshSignal={registrySignal} onSnapshot={setRegistry} suggestedRoot={registrationRequest}/></Suspense>

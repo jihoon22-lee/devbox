@@ -239,7 +239,7 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
         }
         "schedule_import" | "cancel_scheduled_import" => {
             empty(&value)?;
-            crate::startup::require_active(app)?;
+            crate::startup::require_ready(app)?;
             let requested = method == "schedule_import";
             crate::startup::configure(app, || {
                 if requested && crate::vault_binding::pending(app) {
@@ -308,7 +308,8 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, value: Value) -> Result<Va
                 crate::startup::activate_with_owner(&app, &plan.next, owner)?;
                 let plan = import_plan::commit(&state.root, &plan_id)?;
                 clear_schedule(&app)?;
-                Ok(json!({"plan":summary(&state.root,&plan)?,"active":true}))
+                let (active, prepared) = crate::startup::readiness(&app);
+                Ok(json!({"plan":summary(&state.root,&plan)?,"active":active,"prepared":prepared}))
             })
         }
         "discard_import" | "rollback_import" => {
@@ -395,6 +396,88 @@ pub(crate) fn operation_rows(
         }
     }
     Ok(rows)
+}
+
+pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<Migration>()
+        .ok_or("migration_unavailable")?;
+    let job = state.job.lock().map_err(|_| "migration_busy")?;
+    let busy = job.as_ref().is_some_and(|job| job.result.is_none());
+    let plans = import_plan::list(&state.root).map_err(|_| "migration_unavailable")?;
+    let selected = stores::read(&state.root)
+        .map_err(|_| "migration_unavailable")?
+        .is_some();
+    let review = (selected && crate::startup::require_ready(app).is_err())
+        || state.scheduled.load(Ordering::Acquire)
+        || plans.iter().any(|plan| {
+            !matches!(
+                plan.phase,
+                Phase::Activated | Phase::Cancelled | Phase::RolledBack
+            )
+        });
+    let native = serde_json::to_vec(&(
+        busy,
+        selected,
+        review,
+        plans
+            .iter()
+            .map(|plan| (&plan.id, &plan.phase))
+            .collect::<Vec<_>>(),
+    ))
+    .map_err(|_| "migration_unavailable")?;
+    let mut summary = product_contract::migration_status::Summary::new(
+        "knowledge",
+        env!("CARGO_PKG_VERSION"),
+        busy,
+        selected,
+        review,
+        &native,
+    )?;
+    if selected && !busy {
+        summary = summary.with_mappings(
+            import_plan::mapping_summary(&state.root).map_err(|_| "migration_unavailable")?,
+        )?;
+    }
+    serde_json::to_value(summary).map_err(|_| "migration_unavailable")
+}
+
+pub(crate) fn suite_backups(
+    app: &tauri::AppHandle,
+    id: Option<&str>,
+) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<Migration>()
+        .ok_or("migration_unavailable")?;
+    let job = state.job.try_lock().map_err(|_| "migration_busy")?;
+    if job.as_ref().is_some_and(|job| job.result.is_none()) {
+        return Err("migration_busy");
+    }
+    match id {
+        Some(id) => serde_json::to_value(
+            import_plan::verify_backup(&state.root, id)
+                .map_err(|_| "migration_backup_unavailable")?,
+        ),
+        None => serde_json::to_value(
+            import_plan::backup_catalog(&state.root).map_err(|_| "migration_backup_unavailable")?,
+        ),
+    }
+    .map_err(|_| "migration_backup_invalid")
+}
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<Migration>()
+        .ok_or("migration_unavailable")?;
+    let job = state.job.try_lock().map_err(|_| "migration_busy")?;
+    if job.as_ref().is_some_and(|job| job.result.is_none()) {
+        return Err("migration_busy");
+    }
+    serde_json::to_value(
+        import_plan::current_sources(&state.root, &state.legacy)
+            .map_err(|_| "migration_source_unavailable")?,
+    )
+    .map_err(|_| "migration_source_invalid")
 }
 
 #[cfg(test)]

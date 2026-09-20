@@ -36,6 +36,9 @@ on:
       - 'pnpm-lock.yaml'
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
+      - '.github/scripts/windows-suite-delivery*'
+      - '.github/scripts/windows-suite-legacy-cleanup.ps1'
+      - '.github/scripts/build-suite-*'
       - '.github/scripts/windows-workspace-*'
       - '.github/scripts/copy-owned-terminal-profile.ps1'
       - '.github/scripts/workspace-wsl-*'
@@ -60,6 +63,27 @@ on:
       - '.github/workflows/product-foundation.yml'
   workflow_dispatch:
     inputs:
+      delivery_completion_only:
+        description: Finish failed Suite assembly and product-shell acceptance; retain prior domain passes
+        type: boolean
+        default: false
+      delivery_scope:
+        description: Completion scope; delivery retains already accepted shell and WSL2 evidence
+        type: choice
+        options: [remaining, delivery]
+        default: remaining
+      delivery_diagnostic_run:
+        description: Reuse the original Suite setup and four products for delivery acceptance only
+        type: string
+        default: ''
+      delivery_remaining_only:
+        description: Finish updated uninstall, reviewed source cutover and legacy cleanup; retain restore/reinstall evidence
+        type: boolean
+        default: false
+      delivery_rebuild_control_center:
+        description: Rebuild only Control Center and its helper after proving the other retained product inputs unchanged
+        type: boolean
+        default: false
       suite_diagnostic_run:
         description: Reuse retained four-product executables for remaining suite acceptance
         type: string
@@ -71,7 +95,7 @@ on:
       wsl2_scope:
         description: Remaining acceptance scope (full runs ignore this option)
         type: choice
-        options: [remaining, containers]
+        options: [remaining, containers, multiplexers]
         default: remaining
       wsl2_build_only:
         description: Build only Workspace and run remaining Zellij/container/stopped-query acceptance
@@ -81,6 +105,10 @@ on:
         description: Reuse this original private Workspace artifact for isolated WSL2 acceptance without rebuilding
         type: string
         default: ''
+      legacy_reference_only:
+        description: Acquire fixed legacy installed-file identities on a disposable hosted VM without building products
+        type: boolean
+        default: false
       terminal_diagnostic_run:
         description: Reuse this prior foundation run's exact Workspace artifact for hosted companion diagnosis only
         type: string
@@ -95,10 +123,108 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.legacy_reference_only && 'legacy-reference' || inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
   cancel-in-progress: true
 
 jobs:
+  legacy-reference:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.legacy_reference_only }}
+    runs-on: windows-2025
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: Acquire fixed v0.7 installed-file identities on two owned roots
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: .github/scripts/windows-legacy-installer-reference.ps1
+      - name: Preserve reference provenance and result
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: legacy-installer-reference-${{ github.run_id }}
+          path: legacy-installer-reference.json
+          if-no-files-found: error
+          retention-days: 7
+
+  delivery-diagnostic:
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_diagnostic_run != '' }}
+    runs-on: windows-2025
+    timeout-minutes: ${{ inputs.delivery_rebuild_control_center && 60 || 45 }}
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - name: Acquire original Suite setup and payload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SOURCE_RUN: ${{ inputs.delivery_diagnostic_run }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          if ($env:SOURCE_RUN -notmatch '^\d+$') { throw 'Invalid delivery source run' }
+          $record = gh api "repos/$env:GITHUB_REPOSITORY/actions/runs/$env:SOURCE_RUN" | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0 -or $record.path -ne '.github/workflows/product-foundation.yml' -or $record.repository.full_name -ne $env:GITHUB_REPOSITORY) { throw 'Unexpected delivery source workflow' }
+          gh run download $env:SOURCE_RUN --name "suite-delivery-fixture-$env:SOURCE_RUN" --dir "$env:RUNNER_TEMP/suite-retained"
+          if ($LASTEXITCODE -ne 0) { throw 'Original delivery artifact unavailable' }
+          $source = Get-Content -Raw "$env:RUNNER_TEMP/suite-retained/suite-fixture-source.json" | ConvertFrom-Json
+          $payload = Get-Content -Raw "$env:RUNNER_TEMP/suite-retained/suite-payload.json" | ConvertFrom-Json
+          if ($source.runHeadSha -ne $record.head_sha -or $source.sourceSha -ne $payload.sourceSha -or $source.repository -ne $env:GITHUB_REPOSITORY -or $source.runId -ne $env:SOURCE_RUN) { throw 'Retained delivery source mismatch' }
+          "DEVBOX_SUITE_ARTIFACT_SOURCE=$($source.sourceSha)" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_TEST_STAGING=$env:RUNNER_TEMP/suite-retained" >> $env:GITHUB_ENV
+      - name: Prepare Control Center build dependencies only when rebuilding
+        if: inputs.delivery_rebuild_control_center
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+      - uses: dtolnay/rust-toolchain@stable
+        if: inputs.delivery_rebuild_control_center
+      - uses: Swatinem/rust-cache@v2
+        if: inputs.delivery_rebuild_control_center
+        with:
+          shared-key: devbox-product-foundation
+          cache-on-failure: true
+      - name: Rebuild only changed Control Center inputs and reassemble private delivery
+        if: inputs.delivery_rebuild_control_center
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force product-foundation-evidence | Out-Null
+          Start-Transcript -LiteralPath product-foundation-evidence/control-center-rebuild.log
+          $destination = Join-Path $env:RUNNER_TEMP 'suite-rebuilt'
+          .github/scripts/rebuild-suite-control-center.ps1 -Retained "$env:RUNNER_TEMP/suite-retained" -Output $destination
+          "DEVBOX_SUITE_TEST_STAGING=$destination" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_SOURCE=$env:GITHUB_SHA" >> $env:GITHUB_ENV
+          "DEVBOX_SUITE_ARTIFACT_RUN=$env:GITHUB_RUN_ID" >> $env:GITHUB_ENV
+          Stop-Transcript
+      - name: Retain rebuilt private Suite before delivery execution
+        if: inputs.delivery_rebuild_control_center
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-delivery-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/suite-rebuilt
+          if-no-files-found: error
+          retention-days: 1
+      - name: Exercise retained installed Suite delivery
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: .github/scripts/windows-suite-delivery.ps1 -Staging $env:DEVBOX_SUITE_TEST_STAGING -Bootstrap "$env:DEVBOX_SUITE_TEST_STAGING/devbox-suite-bootstrap.exe" -RemainingOnly:([bool]::Parse("${{ inputs.delivery_remaining_only }}"))
+      - name: Preserve focused delivery evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-delivery-diagnostic-${{ github.run_id }}
+          path: product-foundation-evidence
+          retention-days: 7
+
   suite-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' }}
     name: Remaining suite workflow with retained executables
@@ -145,7 +271,7 @@ jobs:
           if-no-files-found: error
 
   terminal-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && inputs.terminal_diagnostic_run != '' }}
     name: Retained Workspace artifact companion diagnostic
     runs-on: windows-2025
     timeout-minutes: 12
@@ -190,7 +316,7 @@ jobs:
           if-no-files-found: error
 
   workspace-wsl-helper:
-    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '') }}
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -238,7 +364,7 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '') }}
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
     name: Hidden products (Windows native)
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
@@ -264,10 +390,10 @@ jobs:
           cache-on-failure: true
       - run: pnpm install --frozen-lockfile
       - name: Check generated Workspace fixture requests
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         run: node --test .github/scripts/windows-workspace-registration.test.mjs
       - name: Check native Workspace chooser driver
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         shell: powershell
         run: .github/scripts/windows-workspace-file-dialog.test.ps1
       - uses: actions/download-artifact@v8
@@ -306,7 +432,7 @@ jobs:
         shell: pwsh
         run: .github/scripts/windows-workspace-wsl-git.ps1
       - name: Exercise packaged Workspace helper on owned WSL
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
         shell: pwsh
         run: |
           cargo test -p devbox-workspace --test wsl_native actual_packaged_helper_observes_owned_wsl_and_requires_explicit_start -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-native.log
@@ -316,27 +442,15 @@ jobs:
           cargo test -p devbox-workspace --lib source_host::wsl_execution_tests::owned_source_stage_commit_revocation_and_cancellation_keep_native_ownership -- --ignored --exact --nocapture 2>&1 | Tee-Object -FilePath product-foundation-evidence/workspace-wsl-source-execution.log
           exit $LASTEXITCODE
       - name: Preserve native WSL results before independent acceptance
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
         uses: actions/upload-artifact@v7
         with:
           name: workspace-wsl-runtime-${{ github.run_id }}
           path: product-foundation-evidence/workspace-wsl-*
           if-no-files-found: error
           retention-days: 7
-      - name: Run native authority and WAL fixtures on Windows
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
-        shell: pwsh
-        run: |
-          cargo test -p product-contract -p devbox-control-center -p data-migration -p devbox-api-studio -p devbox-knowledge -p api-playground -p webhook-lab -p developer-toolbox -p devbox-workspace -- --test-threads=2 2>&1 | Tee-Object -FilePath product-foundation-evidence/native-authority.log
-          exit $LASTEXITCODE
-      - name: Preserve authority results before product packaging
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: product-native-authority-${{ github.run_id }}
-          path: product-foundation-evidence/native-authority.log
-          if-no-files-found: error
-          retention-days: 7
+      # Windows unit/authority/WAL tests run once in CI's Windows Rust job.
+      # This workflow owns actual packaged applications and hosted WSL fixtures.
       - name: Build unpublished product installers
         id: product-build
         if: ${{ !cancelled() }}
@@ -348,19 +462,66 @@ jobs:
             exit 0
           }
           foreach ($product in @('workspace', 'api-studio', 'knowledge', 'control-center')) {
-            if ('${{ inputs.suite_remaining_only }}' -eq 'true') {
+            if ('${{ inputs.suite_remaining_only }}' -eq 'true' -or ('${{ inputs.delivery_completion_only }}' -eq 'true' -and $product -ne 'control-center')) {
               pnpm --filter "devbox-$product" tauri build --debug --no-bundle
             } else {
               pnpm --filter "devbox-$product" tauri build --debug --bundles nsis
             }
             if ($LASTEXITCODE -ne 0) { throw "Product build failed: $product" }
           }
-      - name: Exercise packaged shell and installation namespace isolation
+      - name: Assemble the private Suite installer from these four product binaries
+        id: suite-build
         if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Start-Transcript -LiteralPath product-foundation-evidence/suite-assembly.log
+          cargo build -p devbox-control-center --bin devbox-suite-bootstrap
+          if ($LASTEXITCODE -ne 0) { throw 'Suite bootstrap compilation failed' }
+          $payload = Join-Path $env:RUNNER_TEMP 'suite-native-payload'
+          $staging = Join-Path $env:RUNNER_TEMP 'suite-native-staging'
+          New-Item -ItemType Directory -Path $payload | Out-Null
+          foreach ($product in @('workspace','api-studio','knowledge','control-center')) {
+            New-Item -ItemType Directory -Path "$payload/$product" | Out-Null
+            Copy-Item "target/debug/devbox-$product.exe" "$payload/$product/"
+          }
+          New-Item -ItemType Directory -Path "$payload/workspace/resources/wsl" -Force | Out-Null
+          Copy-Item 'apps/devbox-workspace/src-tauri/resources/wsl/*' "$payload/workspace/resources/wsl/"
+          New-Item -ItemType Directory -Path "$payload/control-center/resources/suite" -Force | Out-Null
+          Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$payload/control-center/resources/suite/"
+          Copy-Item THIRD_PARTY_NOTICES.md "$payload/"
+          $version = (Get-Content -Raw apps/devbox-control-center/src-tauri/tauri.conf.json | ConvertFrom-Json).version
+          $source = (git rev-parse HEAD).Trim()
+          python .github/scripts/build-suite-package.py portables $payload $staging $version $source
+          if ($LASTEXITCODE -ne 0) { throw 'Suite portable assembly failed' }
+          # NSIS also ships Bin/makensis.exe; Tauri invokes the toolset-root exe.
+          $nsis = Join-Path $env:LOCALAPPDATA 'tauri/NSIS/makensis.exe'
+          if (-not (Test-Path -LiteralPath $nsis -PathType Leaf)) { throw 'Expected the NSIS compiler already used by Tauri' }
+          python .github/scripts/build-suite-installer.py $staging "$payload/control-center/resources/suite/devbox-suite-bootstrap.exe" --makensis $nsis
+          if ($LASTEXITCODE -ne 0) { throw 'Suite installer assembly failed' }
+          Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$staging/devbox-suite-bootstrap.exe"
+          @{ sourceSha=$source; runHeadSha='${{ github.event.pull_request.head.sha || github.sha }}'; repository=$env:GITHUB_REPOSITORY; runId=$env:GITHUB_RUN_ID } | ConvertTo-Json | Set-Content -Encoding utf8 "$staging/suite-fixture-source.json"
+          Stop-Transcript
+      - name: Retain the Suite fixture before native execution
+        if: ${{ steps.suite-build.outcome == 'success' }}
+        uses: actions/upload-artifact@v7
+        with:
+          name: suite-delivery-fixture-${{ github.run_id }}
+          path: ${{ runner.temp }}/suite-native-staging
+          if-no-files-found: error
+          retention-days: 1
+      - name: Exercise Suite installation, data restore and data-preserving removal
+        if: ${{ !cancelled() && steps.suite-build.outcome == 'success' }}
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: pwsh
+        run: .github/scripts/windows-suite-delivery.ps1 -Staging "$env:RUNNER_TEMP/suite-native-staging" -Bootstrap "$env:RUNNER_TEMP/suite-native-staging/devbox-suite-bootstrap.exe"
+      - name: Exercise packaged shell and installation namespace isolation
+        if: ${{ (!inputs.delivery_completion_only || inputs.delivery_scope != 'delivery') && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-product-foundation.mjs
       - name: Export Workspace build for isolated WSL2 WebView acceptance
         id: workspace-export
-        if: ${{ !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ (!inputs.delivery_completion_only || inputs.delivery_scope != 'delivery') && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         run: |
           $ErrorActionPreference = 'Stop'
@@ -398,7 +559,7 @@ jobs:
           if-no-files-found: error
           retention-days: 7
       - name: Preserve focused suite executables for failure continuation
-        if: ${{ inputs.suite_remaining_only && steps.product-build.outcome == 'success' }}
+        if: ${{ !cancelled() && !inputs.wsl2_build_only && steps.product-build.outcome == 'success' }}
         uses: actions/upload-artifact@v7
         with:
           name: suite-workflow-fixture-${{ github.run_id }}
@@ -412,7 +573,7 @@ jobs:
           if-no-files-found: error
           retention-days: 1
       - name: Verify four-product commands and artifact workflows
-        if: ${{ !inputs.wsl2_build_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !cancelled() && steps.product-build.outcome == 'success' }}
         timeout-minutes: 15
         shell: pwsh
         run: |
@@ -423,18 +584,18 @@ jobs:
           }
           exit $LASTEXITCODE
       - name: Verify API Studio migration from pinned legacy storage
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-api-migration.mjs
       - name: Verify temporary listener and service worker lifetimes
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-lifecycle.mjs
       - name: Verify API Studio end-to-end local workflow
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         run: node .github/scripts/windows-api-workflow.mjs
       - name: Verify Knowledge migration, vault ownership and window lifetime
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: node .github/scripts/windows-knowledge-migration.mjs
@@ -444,7 +605,7 @@ jobs:
         shell: pwsh
         run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
       - name: Verify anchor and product installer coexistence
-        if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
+        if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         shell: pwsh
         env:
           GH_TOKEN: ${{ github.token }}
@@ -537,7 +698,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '')) }}
+    if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -587,7 +748,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '' }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:

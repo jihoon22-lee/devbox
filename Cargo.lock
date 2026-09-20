@@ -1327,18 +1327,24 @@ version = "0.8.0"
 dependencies = [
  "catalog",
  "data-migration",
+ "devbox-manager",
+ "dirs",
  "filesystem",
  "product-contract",
  "product-shell-tauri",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",
  "sha2 0.11.0",
  "tauri",
  "tauri-build",
+ "tauri-plugin-dialog",
+ "tauri-plugin-opener",
  "tokio",
  "uuid",
  "windows 0.61.3",
+ "zip",
 ]
 
 [[package]]
@@ -4748,8 +4754,10 @@ name = "product-shell-tauri"
 version = "0.1.0"
 dependencies = [
  "catalog",
+ "filesystem",
  "product-contract",
  "serde",
+ "serde_json",
  "sha2 0.11.0",
  "tauri",
  "tauri-plugin-single-instance",

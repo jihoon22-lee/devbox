@@ -261,6 +261,21 @@ impl PreparedImport {
     pub fn digest(&self) -> &str {
         &self.manifest.snapshot.sha256
     }
+    pub fn backup_digest(&self) -> Result<String> {
+        let bytes = serde_json::to_vec(&self.manifest).map_err(|_| "runtime_import_invalid")?;
+        Ok(Sha256::digest(bytes)
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect())
+    }
+    pub fn backup_bytes(&self) -> Result<u64> {
+        self.manifest
+            .snapshot
+            .bytes
+            .checked_add(self.manifest.summary.log_bytes)
+            .ok_or_else(|| "runtime_import_invalid".into())
+    }
+
     pub fn acquire(source: &Path, stage: &Path, flag: &AtomicBool) -> Result<Self> {
         devbox_filesystem::ensure_no_links(source).map_err(|_| "runtime_import_source_changed")?;
         let (_source_root, root_identity) = devbox_filesystem::open_filesystem_object(source, true)
