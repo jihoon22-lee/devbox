@@ -30,7 +30,7 @@ assert frontend_only.frontend_apps == ["run-manager"]
 assert frontend_only.rust_scope == "none"
 assert frontend_only.dependency_scope == "none"
 
-rust_only = resolve("apps/run-manager/src-tauri/src/lib.rs")
+rust_only = resolve("crates/runtime-engine/src/lib.rs")
 assert rust_only.frontend_scope == "none"
 assert rust_only.rust_scope == "packages"
 assert rust_only.rust_packages == ["devbox-workspace", "run-manager"]
@@ -40,7 +40,7 @@ assert frontend_manifest_lock.frontend_scope == "apps"
 assert frontend_manifest_lock.frontend_packages == ["apps/wsl-desktop"]
 assert frontend_manifest_lock.dependency_scope == "all"
 
-rust_manifest_lock = resolve("apps/devbox-manager/src-tauri/Cargo.toml", "Cargo.lock")
+rust_manifest_lock = resolve("crates/installation-tools/Cargo.toml", "Cargo.lock")
 assert rust_manifest_lock.rust_scope == "packages"
 assert rust_manifest_lock.rust_packages == ["devbox-control-center", "devbox-manager"]
 assert rust_manifest_lock.dependency_scope == "all"
@@ -86,7 +86,7 @@ assert migration.rust_packages == ["data-migration", "devbox-api-studio", "devbo
 for app in ["run-manager", "port-manager", "log-lens"]:
     native_runtime = resolve(f"apps/{app}/src-tauri/src/component.rs")
     assert native_runtime.rust_packages == sorted([app, "devbox-workspace"])
-api_native = resolve("apps/api-playground/src-tauri/src/component.rs")
+api_native = resolve("crates/http-client-engine/src/component.rs")
 assert api_native.rust_packages == ["api-playground", "devbox-api-studio"]
 
 a11y = resolve("packages/a11y/src/index.ts")
@@ -235,5 +235,5 @@ for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
         assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(shared.rust_packages)
         assert shared.frontend_scope == "none"
 
-hotkey = resolve("apps/devbox-launcher/src-tauri/src/hotkey.rs")
+hotkey = resolve("apps/devbox-control-center/src-tauri/src/platform/hotkey.rs")
 assert {"devbox-launcher", "devbox-control-center"} <= set(hotkey.rust_packages)

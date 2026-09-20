@@ -13,7 +13,7 @@ export async function exerciseWorkspaceRuntimeImport({cdp,directory,call,success
   const own=identifier=>{const root=path.join(process.env.LOCALAPPDATA,identifier);mkdirSync(root);writeFileSync(path.join(root,".fixture-owner"),nonce,{flag:"wx"});roots.push({root,identity:realpathSync.native(root)});return root;};
   const source=own("com.devbox.runmanager"),port=own("com.devbox.portmanager"),logs=own("com.devbox.loglens");
   const jobId=randomUUID(),serviceId=randomUUID(),runId=randomUUID();
-  const sql=readFileSync("apps/run-manager/src-tauri/src/storage.rs","utf8").match(/const MIGRATION_SQL: &str = r#"([\s\S]*?)"#;/)?.[1];assert.ok(sql);
+  const sql=readFileSync("crates/runtime-engine/src/storage.rs","utf8").match(/const MIGRATION_SQL: &str = r#"([\s\S]*?)"#;/)?.[1];assert.ok(sql);
   const schema=path.join(directory,"runtime-import-schema.sql");writeFileSync(schema,sql,{flag:"wx"});
   const bytes=Buffer.from("synthetic preserved run log\n");const logDirectory=path.join(source,"logs","runs",runId);mkdirSync(logDirectory,{recursive:true});writeFileSync(path.join(logDirectory,`stdout.g0.o0-${bytes.length}.log`),bytes,{flag:"wx"});
   const preferences={schema_version:1,refresh_interval_ms:2000,pinned_only:false,favorite_ports:[],favorite_processes:[]};

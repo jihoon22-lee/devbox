@@ -1,0 +1,51 @@
+[package]
+name = "everything-plus"
+version = "0.5.0"
+publish = false
+description = "Everything+ Local Search"
+authors = ["jihoon22.lee"]
+edition = "2021"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[lib]
+# The `_lib` suffix may seem redundant but it is necessary
+# to make the lib name unique and wouldn't conflict with the bin name.
+# This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
+name = "everything_plus_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+# Products link the native component without embedding the legacy UI/entrypoint.
+[features]
+default = ["standalone"]
+standalone = []
+
+[[bin]]
+name = "everything-plus"
+path = "src/main.rs"
+required-features = ["standalone"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tauri-plugin-opener = "2"
+tauri-plugin-single-instance = "2"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+dirs = "6.0.0"
+notify = "8.2.0"
+rusqlite = { version = "0.32", features = ["bundled", "modern_sqlite"] }
+lopdf = { version = "=0.44.0", default-features = false }
+calamine = { version = "=0.36.1", default-features = false }
+cfb = "=0.7.3"
+quick-xml = { version = "=0.41.0", default-features = false, features = ["encoding"] }
+zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
+filesystem = { path = "../filesystem" }
+devbox-window-state-tauri = { package = "window-state-tauri", path = "../window-state-tauri" }
+search = { path = "../search" }
+devbox-applink = { package = "applink", path = "../applink" }
+devbox-launch = { package = "launch", path = "../launch" }
+devbox-integration = { package = "integration", path = "../integration" }
+devbox-wsl = { package = "wsl", path = "../wsl" }

@@ -143,7 +143,7 @@ export async function exerciseWorkspaceLspInstaller({cdp,root,directory,call,suc
   const cached=await state(rust);assert.equal(cached.installed.install_source,"archive_cache");assert.equal(network.attempts(),beforeCache);
   await click("닫기",'document.querySelector(".lsp-panel")');
 
-  const lockBytes=readFileSync("apps/code-pad/src-tauri/src/lsp/node-lock.json");
+  const lockBytes=readFileSync("crates/editor-engine/src/lsp/node-lock.json");
   assert.equal(createHash("sha256").update(lockBytes).digest("hex"),node.files.package_lock_sha256);
   const lock=JSON.parse(lockBytes), packages=lock.roots[node.id].map(root=>lock.packages.find(item=>item.name===root.name&&item.version===root.version&&item.path===root.path));
   assert.equal(packages.length,2);

@@ -7,16 +7,16 @@
     {
       "legacyApp": "port-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/port-manager/src-tauri/src/core/preferences.rs",
+      "sourcePath": "crates/ports-engine/src/core/preferences.rs",
       "items": [
         "port-manager-preferences-v1.json"
       ],
       "treatment": "Preserve interval and opaque endpoint/process favorites; do not infer process ownership from favorites. B05 implementation is prepared; complete PR validation is pending. Prior settings and importer receipt share the same atomic product record; repeated import preserves edits.",
       "importerStatus": "pending",
-      "implementationPath": "apps/port-manager/src-tauri/src/core/product_preferences.rs",
+      "implementationPath": "crates/ports-engine/src/core/product_preferences.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/port-manager/src-tauri/src/core/product_preferences.rs",
+        "crates/ports-engine/src/core/product_preferences.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
       ]
     },
@@ -29,7 +29,7 @@
       ],
       "treatment": "Preserve workflow metadata. Do not persist transient HMAC/JWT input or non-exportable results.",
       "importerStatus": "verified",
-      "baselineSourcePath": "apps/developer-toolbox/src-tauri/src/core/workflows.rs",
+      "baselineSourcePath": "crates/toolbox-engine/src/core/workflows.rs",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
       "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
       "test": [
@@ -105,7 +105,7 @@
     {
       "legacyApp": "wsl-desktop",
       "classification": "authoritative",
-      "sourcePath": "apps/wsl-desktop/src-tauri/src/commands/workspace.rs",
+      "sourcePath": "crates/terminal-engine/src/commands/workspace.rs",
       "items": [
         "terminal-profiles.json"
       ],
@@ -223,7 +223,7 @@
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src-tauri/src/commands/grpc_credentials.rs",
+      "sourcePath": "crates/http-client-engine/src/commands/grpc_credentials.rs",
       "items": [
         "tls-credentials.json"
       ],
@@ -246,7 +246,7 @@
     {
       "legacyApp": "api-playground",
       "classification": "authoritative",
-      "sourcePath": "apps/api-playground/src-tauri/src/commands/mcp_oauth.rs",
+      "sourcePath": "crates/http-client-engine/src/commands/mcp_oauth.rs",
       "items": [
         "mcp-grants.json"
       ],
@@ -269,7 +269,7 @@
     {
       "legacyApp": "everything-plus",
       "classification": "authoritative",
-      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/content-index-engine/src/core/db.rs",
       "items": [
         "roots",
         "saved_queries"
@@ -294,7 +294,7 @@
     {
       "legacyApp": "everything-plus",
       "classification": "mixed",
-      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/content-index-engine/src/core/db.rs",
       "items": [
         "meta"
       ],
@@ -318,7 +318,7 @@
     {
       "legacyApp": "everything-plus",
       "classification": "derived",
-      "sourcePath": "apps/everything-plus/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/content-index-engine/src/core/db.rs",
       "items": [
         "files",
         "files_fts",
@@ -345,7 +345,7 @@
     {
       "legacyApp": "knowledge-base",
       "classification": "authoritative",
-      "sourcePath": "apps/knowledge-base/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/knowledge-vault-engine/src/core/db.rs",
       "items": [
         "settings",
         "note_templates"
@@ -395,7 +395,7 @@
     {
       "legacyApp": "knowledge-base",
       "classification": "derived",
-      "sourcePath": "apps/knowledge-base/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/knowledge-vault-engine/src/core/db.rs",
       "items": [
         "docs",
         "docs_fts",
@@ -422,7 +422,7 @@
     {
       "legacyApp": "life-log",
       "classification": "authoritative",
-      "sourcePath": "apps/life-log/src-tauri/src/core/db.rs",
+      "sourcePath": "crates/activity-engine/src/core/db.rs",
       "items": [
         "sessions",
         "settings",
@@ -448,13 +448,13 @@
     {
       "legacyApp": "devbox-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-manager/src-tauri/src/core/runtime_metadata.rs",
+      "sourcePath": "crates/installation-tools/src/core/runtime_metadata.rs",
       "items": [
         "install-roots/v1/registry.json"
       ],
       "treatment": "Read original Manager root locator/registry and retained manifest provenance in place; verified legacy cleanup uses that original namespace without publishing Control Center as a legacy Manager root. No registry-copy import or implicit ownership grant.",
       "importerStatus": "verified",
-      "implementationPath": "apps/devbox-manager/src-tauri/src/component.rs",
+      "implementationPath": "crates/installation-tools/src/component.rs",
       "schemaMapping": "workthrough/2026-09-13-v08-b08-suite-recovery.md",
       "test": [
         ".github/scripts/windows-suite-legacy-cleanup.ps1"
@@ -472,7 +472,7 @@
     {
       "legacyApp": "devbox-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-manager/src-tauri/src/core/layout.rs",
+      "sourcePath": "crates/installation-tools/src/core/layout.rs",
       "items": [
         "current.json"
       ],
@@ -497,7 +497,7 @@
     {
       "legacyApp": "code-pad",
       "classification": "authoritative",
-      "sourcePath": "apps/code-pad/src-tauri/src/commands/session.rs",
+      "sourcePath": "crates/editor-engine/src/commands/session.rs",
       "items": [
         "session.json"
       ],
@@ -507,7 +507,7 @@
     {
       "legacyApp": "code-pad",
       "classification": "authoritative",
-      "sourcePath": "apps/code-pad/src-tauri/src/commands/recovery.rs",
+      "sourcePath": "crates/editor-engine/src/commands/recovery.rs",
       "items": [
         "recovery.json"
       ],
@@ -517,7 +517,7 @@
     {
       "legacyApp": "code-pad",
       "classification": "authoritative",
-      "sourcePath": "apps/code-pad/src-tauri/src/lsp/config.rs",
+      "sourcePath": "crates/editor-engine/src/lsp/config.rs",
       "items": [
         "config.json"
       ],
@@ -527,7 +527,7 @@
     {
       "legacyApp": "code-pad",
       "classification": "mixed",
-      "sourcePath": "apps/code-pad/src-tauri/src/lsp/manager.rs",
+      "sourcePath": "crates/editor-engine/src/lsp/manager.rs",
       "items": [
         "journal.json",
         "managed runtime state"
@@ -538,7 +538,7 @@
     {
       "legacyApp": "run-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/run-manager/src-tauri/src/storage.rs",
+      "sourcePath": "crates/runtime-engine/src/storage.rs",
       "items": [
         "jobs",
         "runs",
@@ -553,33 +553,33 @@
       ],
       "treatment": "Preserve schedules, sealed environments, occurrence/ownership history, task-source links and receipts. Imported jobs/services remain disabled; PID and old writer leases are not revived. B05 implementation is prepared; complete PR validation is pending. Original schema/logical metadata and ciphertext remain in a private WAL snapshot; destination ciphertext requires explicit reconnect/clear. Ephemeral notification delivery is not replayed.",
       "importerStatus": "pending",
-      "implementationPath": "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+      "implementationPath": "crates/runtime-engine/src/core/runtime_import.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+        "crates/runtime-engine/src/core/runtime_import.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
       ]
     },
     {
       "legacyApp": "run-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/run-manager/src-tauri/src/logs.rs",
+      "sourcePath": "crates/runtime-engine/src/logs.rs",
       "items": [
         "run-owned stdout/stderr rotation segments and manifests"
       ],
       "treatment": "Preserve retained log history with run-ID mapping; do not invent paths from renderer input. B05 implementation is prepared; complete PR validation is pending. Original schema/logical metadata and ciphertext remain in a private WAL snapshot; destination ciphertext requires explicit reconnect/clear. Ephemeral notification delivery is not replayed.",
       "importerStatus": "pending",
-      "implementationPath": "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+      "implementationPath": "crates/runtime-engine/src/core/runtime_import.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/run-manager/src-tauri/src/core/runtime_import.rs",
+        "crates/runtime-engine/src/core/runtime_import.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
       ]
     },
     {
       "legacyApp": "workbench",
       "classification": "authoritative",
-      "sourcePath": "apps/workbench/src-tauri/src/commands/workspace.rs",
+      "sourcePath": "crates/projects-engine/src/commands/workspace.rs",
       "items": [
         "project-profiles.json"
       ],
@@ -589,7 +589,7 @@
     {
       "legacyApp": "workbench",
       "classification": "authoritative",
-      "sourcePath": "apps/workbench/src-tauri/src/commands/templates.rs",
+      "sourcePath": "crates/projects-engine/src/commands/templates.rs",
       "items": [
         "profile-templates.json"
       ],
@@ -605,7 +605,7 @@
       ],
       "treatment": "Preserve masked fixtures and their ID mapping; no raw request-header vault import.",
       "importerStatus": "verified",
-      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/fixtures.rs",
+      "baselineSourcePath": "crates/webhook-host/src/core/fixtures.rs",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
       "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
       "test": [
@@ -629,7 +629,7 @@
       ],
       "treatment": "Preserve exported listener profiles as inactive definitions; do not start a listener during import.",
       "importerStatus": "verified",
-      "baselineSourcePath": "apps/webhook-lab/src-tauri/src/core/service_profile.rs",
+      "baselineSourcePath": "crates/webhook-host/src/core/service_profile.rs",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/migration.rs",
       "schemaMapping": "apps/devbox-api-studio/src-tauri/src/core/import_model.rs",
       "test": [
@@ -647,7 +647,7 @@
     {
       "legacyApp": "webhook-lab",
       "classification": "ephemeral",
-      "sourcePath": "apps/webhook-lab/src-tauri/src/commands.rs",
+      "sourcePath": "crates/webhook-host/src/commands.rs",
       "items": [
         "live listener",
         "in-memory request history",
@@ -673,7 +673,7 @@
     {
       "legacyApp": "repo-manager",
       "classification": "authoritative",
-      "sourcePath": "apps/repo-manager/src-tauri/src/core/git.rs",
+      "sourcePath": "crates/repositories-engine/src/core/git.rs",
       "items": [
         "user repository/worktree files and Git metadata"
       ],
@@ -683,7 +683,7 @@
     {
       "legacyApp": "repo-manager",
       "classification": "derived",
-      "sourcePath": "apps/repo-manager/src-tauri/src/commands/dependency_enrichment.rs",
+      "sourcePath": "crates/repositories-engine/src/commands/dependency_enrichment.rs",
       "items": [
         "dependency-enrichment-v1.json"
       ],
@@ -703,7 +703,7 @@
     {
       "legacyApp": "devbox-launcher",
       "classification": "authoritative",
-      "sourcePath": "apps/devbox-launcher/src-tauri/src/hotkey.rs",
+      "sourcePath": "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs",
       "items": [
         "shortcut.json"
       ],
@@ -713,16 +713,16 @@
     {
       "legacyApp": "log-lens",
       "classification": "authoritative",
-      "sourcePath": "apps/log-lens/src-tauri/src/core/saved_views.rs",
+      "sourcePath": "crates/logs-engine/src/core/saved_views.rs",
       "items": [
         "saved-views.json"
       ],
       "treatment": "Preserve validated saved source/query definitions; do not archive the transient ring or persist webhook capture sources. B05 implementation is prepared; complete PR validation is pending. Runtime run IDs require owner mappings, missing sources remain disconnected, and filter identities never widen during rebasing.",
       "importerStatus": "pending",
-      "implementationPath": "apps/log-lens/src-tauri/src/core/product_saved_views.rs",
+      "implementationPath": "crates/logs-engine/src/core/product_saved_views.rs",
       "schemaMapping": "docs/architecture/v0.8-workspace.md",
       "test": [
-        "apps/log-lens/src-tauri/src/core/product_saved_views.rs",
+        "crates/logs-engine/src/core/product_saved_views.rs",
         ".github/scripts/windows-workspace-runtime-import.mjs"
       ]
     }

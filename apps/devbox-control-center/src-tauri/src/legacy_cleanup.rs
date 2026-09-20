@@ -170,7 +170,7 @@ fn shortcut_candidates(
             SHGetKnownFolderPath, KF_FLAG_DEFAULT,
         },
     };
-    let catalog = devbox_catalog::parse_catalog(include_str!("../../../catalog.json"))
+    let catalog = devbox_catalog::parse_catalog(include_str!("../../../legacy-v0.7-catalog.json"))
         .map_err(|_| "legacy_catalog_invalid")?;
     let app = catalog
         .apps

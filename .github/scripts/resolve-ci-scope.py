@@ -57,8 +57,8 @@ CATALOG_RUST_CONSUMERS = {
 # Native platform modules are compiled by both products without linking another
 # product's application crate. Keep their exact source edges visible to CI.
 RUST_SHARED_PLATFORM_CONSUMERS = {
-    "apps/devbox-launcher/src-tauri/src/hotkey.rs": {"devbox-control-center"},
-    "apps/api-playground/src-tauri/src/commands/process_tree.rs": {"devbox-workspace"},
+    "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs": {"devbox-control-center"},
+    "crates/http-client-engine/src/commands/process_tree.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/browser_profile.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/browser_snapshot.rs": {"devbox-workspace"},
     "apps/devbox-api-studio/src-tauri/src/platform/owned_copy.rs": {"devbox-workspace"},

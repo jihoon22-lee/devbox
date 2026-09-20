@@ -205,7 +205,7 @@ pub(crate) fn require_closed() -> Result<()> {
             TH32CS_SNAPPROCESS,
         },
     };
-    let catalog = devbox_catalog::parse_catalog(include_str!("../../../../catalog.json"))
+    let catalog = devbox_catalog::parse_catalog(include_str!("../../../../legacy-v0.7-catalog.json"))
         .map_err(|_| "bootstrap_catalog_invalid")?;
     let names = catalog
         .apps

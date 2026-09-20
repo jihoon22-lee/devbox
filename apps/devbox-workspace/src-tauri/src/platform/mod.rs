@@ -32,7 +32,7 @@ pub(crate) mod owned_copy;
 // API-owned request cleanup uses additional methods from this same implementation.
 #[cfg(windows)]
 #[allow(dead_code)]
-#[path = "../../../../api-playground/src-tauri/src/commands/process_tree.rs"]
+#[path = "../../../../../crates/http-client-engine/src/commands/process_tree.rs"]
 pub(crate) mod owned_process;
 
 pub(crate) mod task_sources;
