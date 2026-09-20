@@ -208,6 +208,8 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     assert.equal(restored.id,windowId);assert.equal(restored.restoreOnly,true);
     assert.deepEqual(success(await terminal("restore_terminal",restore)),restored);
     companion=await connectTerminal(windowId);
+    const retainedLayout=await invoke("terminal_layout");
+    assert.deepEqual(retainedLayout.layout.panes.map(pane=>pane.key).sort(),["one","two"],"Stopping the prior window changed its retained layout");
     const reconnected=await until(async()=>{const value=await invoke("list_sessions");return value.length===2&&value;},"Reopened companion did not restore panes");
     assert.ok(reconnected.every(value=>!panes.some(old=>old.id===value.id)));
     assert.ok(reconnected.every(value=>value.multiplexer===multiplexer));
@@ -220,8 +222,9 @@ export async function exerciseTerminalSessionFixture({cdp,directory,call,success
     if(companion) {
       try {
         const state=await companion.evaluate("({text:(document.body?.innerText??'').slice(0,12000),panes:document.querySelectorAll('.xterm').length})");
-        writeFileSync(path.join(directory,"b06-terminal-failure.json"),JSON.stringify({error:String(error),state},null,2));
-        console.error(JSON.stringify({stage:"terminal-companion-failure",state}));
+        const native={layout:await invoke("terminal_layout").catch(error=>String(error)),sessions:await invoke("list_sessions").catch(error=>String(error))};
+        writeFileSync(path.join("product-foundation-evidence",`b06-terminal-failure-${Date.now()}.json`),JSON.stringify({error:String(error),state,native},null,2));
+        console.error(JSON.stringify({stage:"terminal-companion-failure",state,native}));
       }catch{/* Keep the original acceptance failure. */}
     }
     throw error;

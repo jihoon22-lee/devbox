@@ -115,6 +115,48 @@ fn parse<T: serde::de::DeserializeOwned>(args: Value) -> Result<T> {
     serde_json::from_value(args).map_err(|_| "terminal_args_invalid")
 }
 
+fn require_peer_session(peer: &Peer, header: &RouteRequest) -> Result<()> {
+    let guard = peer.guard.lock().map_err(|_| "terminal_owner_busy")?;
+    let current = guard.handshake();
+    if current.session_id != header.session_id
+        || current.installation_id != header.installation_id
+        || peer.record.context != header.context
+    {
+        return Err("terminal_request_denied");
+    }
+    Ok(())
+}
+
+/// Caller holds the same mutex that publishes `stopping` before PTY retirement.
+/// Closed events from the retiring renderer must not persist a shrinking layout.
+fn peer_layout(
+    inner: &Inner,
+    peer: &Arc<Peer>,
+    header: &RouteRequest,
+    method: &str,
+    args: Value,
+) -> Result<Value> {
+    require_peer_session(peer, header)?;
+    if !inner
+        .peers
+        .get(peer.terminal.window())
+        .is_some_and(|current| Arc::ptr_eq(current, peer))
+    {
+        return Err("terminal_owner_changed");
+    }
+    let record = inner
+        .records
+        .iter()
+        .find(|record| record.id == peer.record.id)
+        .ok_or("terminal_session_missing")?;
+    // Preparing is a current new renderer initializing its first layout.
+    if method == "save_terminal_layout" && !matches!(record.state.as_str(), "preparing" | "active")
+    {
+        return Err("terminal_session_stopping");
+    }
+    crate::terminal_profiles::layout(&inner.root, &peer.record.id, method, args)
+}
+
 pub(crate) fn wsl_management(method: &str) -> bool {
     matches!(
         method,
@@ -1034,6 +1076,9 @@ impl Terminals {
         args: Value,
     ) -> Result<Value> {
         let peer = self.peer(window.label())?;
+        // Admission can precede a worker wait. The same window label may now
+        // belong to a restored incarnation; never transfer an old request.
+        require_peer_session(&peer, header)?;
         crate::files_host::current_deadline(header.deadline_ms)?;
         if method != "close_session" {
             if let Some(context) = &peer.record.context {
@@ -1094,7 +1139,7 @@ impl Terminals {
         if matches!(method, "terminal_layout" | "save_terminal_layout") {
             let selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
             let inner = selected.as_ref().ok_or("terminal_owner_unavailable")?;
-            return crate::terminal_profiles::layout(&inner.root, &peer.record.id, method, args);
+            return peer_layout(inner, &peer, header, method, args);
         }
         if method == "start_session" {
             {
@@ -1163,13 +1208,20 @@ impl Terminals {
             return Err("terminal_import_retirement_pending");
         }
 
-        let peers: Vec<_> = self
-            .inner
-            .lock()
-            .map_err(|_| "terminal_owner_busy")?
-            .as_ref()
-            .map(|inner| inner.peers.values().cloned().collect())
-            .unwrap_or_default();
+        let peers: Vec<_> = {
+            let mut selected = self.inner.lock().map_err(|_| "terminal_owner_busy")?;
+            if let Some(inner) = selected.as_mut() {
+                for record in &mut inner.records {
+                    if inner.peers.contains_key(&format!("terminal-{}", record.id)) {
+                        record.state = "stopping".into();
+                    }
+                }
+                save(inner)?;
+                inner.peers.values().cloned().collect()
+            } else {
+                Vec::new()
+            }
+        };
         let mut pending = false;
         for peer in peers {
             pending |= peer.terminal.stop(app).is_err();
@@ -1192,5 +1244,153 @@ impl Terminals {
             inner.peers.clear();
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_peer(record: Record) -> (Arc<Peer>, RouteRequest) {
+        let label = format!("terminal-{}", record.id);
+        let handshake = Handshake {
+            protocol_version: 1,
+            product: "workspace".into(),
+            installation_id: "fixture-installation".into(),
+            session_id: uuid::Uuid::new_v4().to_string(),
+        };
+        let header = RouteRequest {
+            protocol_version: 1,
+            installation_id: handshake.installation_id.clone(),
+            session_id: handshake.session_id.clone(),
+            request_id: uuid::Uuid::new_v4().to_string(),
+            deadline_ms: 1000,
+            route: "terminal".into(),
+            context: record.context.clone(),
+        };
+        let mut guard = SessionGuard::for_window(handshake, &label).unwrap();
+        guard.bind_context(record.context.clone()).unwrap();
+        (
+            Arc::new(Peer {
+                record,
+                guard: Mutex::new(guard),
+                terminal: TerminalOwner::new(label).unwrap(),
+            }),
+            header,
+        )
+    }
+
+    #[test]
+    fn retirement_preserves_layout_against_late_autosave_and_replaced_window() {
+        let directory = tempfile::tempdir().unwrap();
+        let root = MetadataRoot::open(directory.path()).unwrap();
+        let record = Record {
+            id: uuid::Uuid::new_v4().to_string(),
+            context: None,
+            state: "active".into(),
+            initial_layout_revision: None,
+            restore_generation: 0,
+            last_restore_operation: None,
+            restore_only: false,
+        };
+        let (peer, header) = make_peer(record.clone());
+        let mut inner = Inner {
+            root,
+            records: vec![record.clone()],
+            peers: HashMap::from([(peer.terminal.window().to_owned(), peer.clone())]),
+        };
+        let complete = json!({
+            "id":record.id,"name":"Owned fixture",
+            "tabs":[{"id":"main","title":"Main","layout":"grid","paneKeys":["one","two"],"sizing":{"columns":[0.5,0.5],"rows":[1.0]}}],
+            "panes":[{"key":"one","distro":"Fixture"},{"key":"two","distro":"Fixture"}],
+            "activeTabId":"main","activePaneKey":"two"
+        });
+        let (_, revision) = crate::terminal_profiles::read_layout(&inner.root, &record.id).unwrap();
+        peer_layout(
+            &inner,
+            &peer,
+            &header,
+            "save_terminal_layout",
+            json!({"expectedRevision":revision,"layout":complete}),
+        )
+        .unwrap();
+        let retained = crate::terminal_profiles::read_layout(&inner.root, &record.id).unwrap();
+        let shrinking = json!({
+            "id":record.id,"name":"Owned fixture",
+            "tabs":[{"id":"main","title":"Main","layout":"grid","paneKeys":["two"],"sizing":{"columns":[1.0],"rows":[1.0]}}],
+            "panes":[{"key":"two","distro":"Fixture"}],
+            "activeTabId":"main","activePaneKey":"two"
+        });
+        let late_save = json!({"expectedRevision":retained.1,"layout":shrinking});
+        for state in ["stopping", "stopped", "interrupted"] {
+            // The peer retains its original active Record, like a queued IPC.
+            inner.records[0].state = state.into();
+            assert_eq!(
+                peer_layout(
+                    &inner,
+                    &peer,
+                    &header,
+                    "save_terminal_layout",
+                    late_save.clone()
+                )
+                .unwrap_err(),
+                "terminal_session_stopping"
+            );
+            assert_eq!(
+                crate::terminal_profiles::read_layout(&inner.root, &record.id).unwrap(),
+                retained
+            );
+        }
+
+        inner.records[0].state = "preparing".into();
+        inner.records[0].restore_generation = 1;
+        let (restored, current_header) = make_peer(inner.records[0].clone());
+        inner
+            .peers
+            .insert(restored.terminal.window().to_owned(), restored.clone());
+        assert_eq!(
+            peer_layout(
+                &inner,
+                &peer,
+                &header,
+                "save_terminal_layout",
+                late_save.clone()
+            )
+            .unwrap_err(),
+            "terminal_owner_changed"
+        );
+        // An old request may have passed admission before the worker was queued.
+        assert_eq!(
+            peer_layout(
+                &inner,
+                &restored,
+                &header,
+                "save_terminal_layout",
+                late_save
+            )
+            .unwrap_err(),
+            "terminal_request_denied"
+        );
+        assert_eq!(
+            crate::terminal_profiles::read_layout(&inner.root, &record.id).unwrap(),
+            retained
+        );
+        peer_layout(
+            &inner,
+            &restored,
+            &current_header,
+            "save_terminal_layout",
+            json!({"expectedRevision":retained.1,"layout":complete}),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::terminal_profiles::read_layout(&inner.root, &record.id)
+                .unwrap()
+                .0
+                .unwrap()
+                .panes
+                .len(),
+            2
+        );
     }
 }
