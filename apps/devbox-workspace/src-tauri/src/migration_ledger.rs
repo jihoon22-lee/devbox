@@ -57,6 +57,12 @@ fn optional(path: &Path) -> Result<Option<MetadataRoot>> {
     }
 }
 pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
+    Ok(summarize_with_sources(host)?.0)
+}
+pub(crate) fn summarize_with_sources(
+    host: &Host,
+) -> Result<(MappingSummary, std::collections::BTreeSet<String>)> {
+    let mut sources = std::collections::BTreeSet::new();
     let registry = host.projects()?.snapshot()?;
     let mut ledger = Ledger::new();
     ledger.add(
@@ -64,6 +70,18 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
         registry.legacy_references.len() as u64,
         json!(registry.legacy_references),
     )?;
+    sources.extend(
+        registry
+            .imported_templates
+            .iter()
+            .filter_map(|row| row.source_snapshot_id.clone()),
+    );
+    sources.extend(
+        registry
+            .imported_profiles
+            .iter()
+            .filter_map(|row| row.source_snapshot_id.clone()),
+    );
     let templates = registry
         .imported_templates
         .iter()
@@ -93,12 +111,14 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
     ledger.add("runtime", count, json!(revision))?;
     let processes =
         port_manager_lib::component::product_preferences::load(&host.component("processes")?)?;
+    sources.extend(processes.imported_snapshot.clone());
     ledger.add(
         "process-preferences",
         u64::from(processes.imported_snapshot.is_some()),
         json!(processes.imported_snapshot),
     )?;
     let logs = log_lens_lib::core::product_saved_views::load(&host.component("logs")?)?;
+    sources.extend(logs.imported_snapshot.clone());
     ledger.add(
         "saved-views",
         u64::from(logs.imported_snapshot.is_some()),
@@ -134,6 +154,7 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
             let view = MetadataRoot::open(&views.path().join(&name))?;
             if let Some(bytes) = ledger.read(&view, "session.json")? {
                 let saved = crate::core::legacy_sessions::StoredSession::decode(&bytes)?;
+                sources.extend(saved.imports.iter().map(|row| row.snapshot_id.clone()));
                 let count = saved
                     .imports
                     .iter()
@@ -147,6 +168,7 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
             }
             if let Some(bytes) = ledger.read(&view, "recovery.json")? {
                 let saved = crate::core::legacy_recovery::StoredRecovery::decode(&bytes)?;
+                sources.extend(saved.imports.iter().map(|row| row.snapshot_id.clone()));
                 let count = saved
                     .imports
                     .iter()
@@ -157,6 +179,7 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
             if let Some(lsp) = optional(&view.path().join("lsp"))? {
                 if let Some(bytes) = ledger.read(&lsp, "config.json")? {
                     let saved = crate::core::legacy_lsp::StoredConfig::decode(&bytes)?;
+                    sources.extend(saved.imports.iter().cloned());
                     ledger.add(
                         &format!("{name}/lsp"),
                         saved.imports.len() as u64,
@@ -172,7 +195,7 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
         return Err("workspace_mapping_changed");
     }
     ledger.check()?;
-    MappingSummary::new(
+    let summary = MappingSummary::new(
         ledger.count,
         ledger
             .hash
@@ -180,7 +203,8 @@ pub(crate) fn summarize(host: &Host) -> Result<MappingSummary> {
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect::<String>(),
-    )
+    )?;
+    Ok((summary, sources))
 }
 
 #[cfg(test)]

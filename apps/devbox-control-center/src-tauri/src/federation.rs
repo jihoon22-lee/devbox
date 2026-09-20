@@ -13,6 +13,7 @@ pub(crate) fn handle(
         if matches!(
             &call,
             Call::ReadMigrationStatus {}
+                | Call::VerifyMigrationSources {}
                 | Call::ListMigrationBackups {}
                 | Call::VerifyMigrationBackup { .. }
         ) {
@@ -26,6 +27,7 @@ pub(crate) fn handle(
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
                 match call {
+                    Call::VerifyMigrationSources {} => crate::launcher_import::suite_sources(&app),
                     Call::ListMigrationBackups {} => {
                         crate::launcher_import::suite_backups(&app, None)
                     }

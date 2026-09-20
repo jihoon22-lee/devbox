@@ -577,3 +577,27 @@ pub(crate) fn suite_backups(app: &tauri::AppHandle, id: Option<&str>) -> Result<
         serde_json::to_value(rows).map_err(|_| "launcher_import_backup_invalid")
     }
 }
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<serde_json::Value> {
+    let owner = app
+        .try_state::<Owner>()
+        .ok_or("launcher_import_unavailable")?;
+    let pending = owner.0.try_lock().map_err(|_| "launcher_import_busy")?;
+    if pending.is_some() {
+        return Err("launcher_import_busy");
+    }
+    let root = app
+        .path()
+        .app_local_data_dir()
+        .map_err(|_| "launcher_import_unavailable")?;
+    let mut rows = product_contract::migration_source::empty("control-center");
+    if let Some(journal) = read_journal(&root)?.filter(|journal| journal.committed) {
+        if source(app).is_ok_and(|source| source.revision == journal.source)
+            && source_retained(&root, &journal.source)?
+        {
+            rows[0].backups.push(journal.source);
+        }
+    }
+    // Manager installation metadata is reviewed separately; no importer claim.
+    serde_json::to_value(rows).map_err(|_| "migration_source_invalid")
+}

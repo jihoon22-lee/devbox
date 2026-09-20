@@ -65,7 +65,15 @@ pub struct HealthCheck {
 /// Record mappings stay in the owner's journal; the suite pins their digest.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SourceEvidence {
+    pub sources: Vec<product_contract::migration_source::Source>,
+    pub namespaces: Vec<super::legacy_sources::Namespace>,
+}
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
 pub struct OwnerEvidence {
+    #[serde(default)]
+    pub sources: Option<SourceEvidence>,
     pub summary: product_contract::migration_status::Summary,
     pub backups: Vec<product_contract::migration_backup::Verified>,
 }
@@ -80,6 +88,34 @@ impl OwnerEvidence {
             backup.validate(&self.summary.owner, &backup.id)?;
             if !ids.insert(&backup.id) {
                 return Err("suite_owner_backup_duplicate");
+            }
+        }
+        if let Some(source) = &self.sources {
+            product_contract::migration_source::validate(&self.summary.owner, &source.sources)?;
+            if source.namespaces.len() != source.sources.len() {
+                return Err("suite_source_invalid");
+            }
+            let mut seen = BTreeSet::new();
+            for row in &source.namespaces {
+                if !seen.insert(&row.identifier)
+                    || !hash(&row.revision)
+                    || !source
+                        .sources
+                        .iter()
+                        .any(|source| source.identifier == row.identifier)
+                    || row.files > 50_000
+                    || row.bytes > 2 * 1024 * 1024 * 1024
+                {
+                    return Err("suite_source_invalid");
+                }
+            }
+            if source
+                .sources
+                .iter()
+                .flat_map(|source| &source.backups)
+                .any(|id| !ids.contains(id))
+            {
+                return Err("suite_source_backup_missing");
             }
         }
         Ok(())
@@ -564,6 +600,7 @@ mod tests {
             advance(&mut j);
         }
         let evidence = OwnerEvidence {
+            sources: None,
             summary: product_contract::migration_status::Summary::new(
                 "workspace",
                 "0.8.0",

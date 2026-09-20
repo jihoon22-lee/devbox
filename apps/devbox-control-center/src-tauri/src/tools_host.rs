@@ -17,6 +17,10 @@ struct Response {
 }
 #[tauri::command]
 async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Response, Problem> {
+    let cutover = matches!(
+        request.method.as_str(),
+        "cutover_review" | "prepare_cutover"
+    );
     let record_health = request.method == "record_suite_health";
     let record_owner = record_health || request.method == "record_migration_owner";
     let inventory = request.method == "suite_inventory";
@@ -32,7 +36,8 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             | "cancel_suite_update"
             | "launch_suite_update"
     );
-    let component = if inventory
+    let component = if cutover
+        || inventory
         || recovery
         || legacy
         || record_owner
@@ -45,7 +50,18 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
         "control-center.tools"
     };
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
-    let allowed = if suite_update {
+    let allowed = if cutover {
+        matches!(request.header.route.as_str(), "migration" | "recovery")
+            && if request.method == "cutover_review" {
+                request.args.as_object().is_some_and(|args| args.is_empty())
+            } else {
+                serde_json::from_value::<crate::core::cutover::Request>(request.args.clone())
+                    .is_ok_and(|request| {
+                        request.choices.len() <= 17
+                            && product_contract::commands::revision(&request.revision)
+                    })
+            }
+    } else if suite_update {
         request.header.route == "updates"
             && request.args.as_object().is_some_and(|args| {
                 if request.method == "check_suite_update" {
@@ -76,7 +92,8 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
                 return false;
             };
             match action {
-                "snapshot" | "activateClean" | "commitClean" => id.is_empty(),
+                "snapshot" | "activateClean" | "commitClean" | "activateReviewed"
+                | "commitReviewed" | "reviewImportAgain" => id.is_empty(),
                 "restore" | "resume" | "commit" | "rollback" | "updateResume" | "updateCommit"
                 | "updateRollback" => {
                     uuid::Uuid::parse_str(id).is_ok_and(|value| value.to_string() == id)
@@ -111,7 +128,23 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             code: ProblemCode::Unauthorized,
         });
     }
-    let value = if suite_update {
+    let value = if cutover {
+        #[cfg(windows)]
+        let result = tauri::async_runtime::spawn_blocking(move || {
+            let input = if request.method == "prepare_cutover" {
+                Some(serde_json::from_value(request.args).map_err(|_| "cutover_request_invalid")?)
+            } else {
+                None
+            };
+            crate::bootstrap::cutover::review(input)
+        })
+        .await
+        .map_err(|_| "cutover_worker_unavailable")
+        .and_then(|result| result);
+        #[cfg(not(windows))]
+        let result: Result<Value, &'static str> = Err("suite_windows_required");
+        result.map_err(str::to_owned)
+    } else if suite_update {
         #[cfg(windows)]
         let result = crate::updates::execute(
             window.app_handle().clone(),
@@ -227,7 +260,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             OperationState::Failed {
                 code: ProblemCode::Unavailable,
             },
-            if suite_update {
+            if suite_update || cutover {
                 serde_json::json!({"issue":issue})
             } else {
                 serde_json::json!({"issue":"manager_tools_unavailable"})

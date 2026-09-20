@@ -161,3 +161,27 @@ pub(crate) async fn backups(
     }
     Ok(result)
 }
+
+pub(crate) async fn sources(
+    app: tauri::AppHandle,
+    product: &str,
+    domain: Option<DomainHandler>,
+    deadline: u64,
+) -> Result<Vec<product_contract::migration_source::Source>> {
+    let scope = approved(&app)?;
+    scope.member(product)?;
+    let call = Call::VerifyMigrationSources {};
+    let value = if product == "control-center" {
+        domain.ok_or("migration_unavailable")?(app.clone(), call, deadline, None).await?
+    } else {
+        super::remote(&app, product, call, deadline).await?
+    };
+    let rows = serde_json::from_value::<Vec<product_contract::migration_source::Source>>(value)
+        .map_err(|_| "migration_source_invalid")?;
+    product_contract::migration_source::validate(product, &rows)?;
+    scope.revalidate()?;
+    if super::now() >= deadline {
+        return Err("migration_source_expired");
+    }
+    Ok(rows)
+}

@@ -936,3 +936,27 @@ pub(crate) fn suite_backups(
     }
     .map_err(|_| "migration_backup_invalid")
 }
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    let state = app
+        .try_state::<MigrationState>()
+        .ok_or("migration_unavailable")?;
+    let work = state.work.try_lock().map_err(|_| "migration_busy")?;
+    if work.current.is_some() {
+        return Err("migration_busy");
+    }
+    let repository = state.repository().map_err(|_| "migration_unavailable")?;
+    if repository
+        .pending()
+        .map_err(|_| "migration_unavailable")?
+        .is_some()
+    {
+        return Err("migration_busy");
+    }
+    serde_json::to_value(
+        repository
+            .current_sources(&state.legacy_root)
+            .map_err(|_| "migration_source_unavailable")?,
+    )
+    .map_err(|_| "migration_source_invalid")
+}

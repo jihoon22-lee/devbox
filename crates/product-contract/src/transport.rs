@@ -54,6 +54,7 @@ pub enum Call {
         challenge: String,
     },
     ReadMigrationStatus {},
+    VerifyMigrationSources {},
     ListMigrationBackups {},
     VerifyMigrationBackup {
         id: String,

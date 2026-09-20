@@ -2451,7 +2451,12 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
     let native =
         serde_json::to_vec(&(status, rows, registry)).map_err(|_| "migration_unavailable")?;
     let mut summary = product_contract::migration_status::Summary::new(
-        "workspace", env!("CARGO_PKG_VERSION"), busy, selected, !selected, &native,
+        "workspace",
+        env!("CARGO_PKG_VERSION"),
+        busy,
+        selected,
+        !selected,
+        &native,
     )?;
     if selected && !busy {
         summary = summary.with_mappings(crate::migration_ledger::summarize(&host)?)?;
@@ -2916,12 +2921,29 @@ pub(crate) fn suite_backups(
     let host = runtime.host()?;
     if let Some(id) = id.filter(|id| id.starts_with("runtime_")) {
         crate::files_host::current_deadline(deadline)?;
-        let digest = id.strip_prefix("runtime_").ok_or("migration_backup_invalid")?;
-        let (bytes, schema, sha256, logs) = run_manager_lib::component::verify_migration_backup(&host.component("runtime")?, digest)
-            .map_err(|_| "migration_backup_unavailable")?;
+        let digest = id
+            .strip_prefix("runtime_")
+            .ok_or("migration_backup_invalid")?;
+        let (bytes, schema, sha256, logs) = run_manager_lib::component::verify_migration_backup(
+            &host.component("runtime")?,
+            digest,
+        )
+        .map_err(|_| "migration_backup_unavailable")?;
         crate::files_host::current_deadline(deadline)?;
-        return serde_json::to_value(Verified { owner: "workspace".into(), id: id.into(),
-            acquisition: if logs { "sqlite-and-logs-copy/v1" } else { "sqlite-online-backup/v1" }.into(), bytes, schema, sha256 }).map_err(|_| "migration_backup_invalid");
+        return serde_json::to_value(Verified {
+            owner: "workspace".into(),
+            id: id.into(),
+            acquisition: if logs {
+                "sqlite-and-logs-copy/v1"
+            } else {
+                "sqlite-online-backup/v1"
+            }
+            .into(),
+            bytes,
+            schema,
+            sha256,
+        })
+        .map_err(|_| "migration_backup_invalid");
     }
     if let Some(id) = id.filter(|id| id.starts_with("terminal_")) {
         crate::files_host::current_deadline(deadline)?;
@@ -2959,17 +2981,94 @@ pub(crate) fn suite_backups(
         host.legacy.catalog()?;
         serde_json::to_value(verified).map_err(|_| "migration_backup_invalid")
     } else {
-        let mut rows = catalog.snapshots.into_iter().map(|snapshot| Descriptor {
-            id: snapshot.id, acquisition: "stable-json-files/v1".into(),
-        }).collect::<Vec<_>>();
+        let mut rows = catalog
+            .snapshots
+            .into_iter()
+            .map(|snapshot| Descriptor {
+                id: snapshot.id,
+                acquisition: "stable-json-files/v1".into(),
+            })
+            .collect::<Vec<_>>();
         if host.status()?.get("selected").and_then(Value::as_bool) == Some(true) {
-            let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+            let terminal =
+                crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
             rows.extend(crate::terminal_profiles::backup_catalog(&terminal)?);
-            if let Some((digest, logs)) = run_manager_lib::component::migration_backup_digest(&host.component("runtime")?)
-                .map_err(|_| "migration_backup_unavailable")? {
-                rows.push(Descriptor { id: format!("runtime_{digest}"), acquisition: if logs { "sqlite-and-logs-copy/v1" } else { "sqlite-online-backup/v1" }.into() });
+            if let Some((digest, logs)) =
+                run_manager_lib::component::migration_backup_digest(&host.component("runtime")?)
+                    .map_err(|_| "migration_backup_unavailable")?
+            {
+                rows.push(Descriptor {
+                    id: format!("runtime_{digest}"),
+                    acquisition: if logs {
+                        "sqlite-and-logs-copy/v1"
+                    } else {
+                        "sqlite-online-backup/v1"
+                    }
+                    .into(),
+                });
             }
         }
         serde_json::to_value(rows).map_err(|_| "migration_backup_invalid")
     }
+}
+
+pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
+    use crate::core::legacy_snapshot::Snapshot;
+    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
+    let host = runtime.host()?;
+    let base = host
+        .storage_root()
+        .parent()
+        .ok_or("migration_source_unavailable")?;
+    let (before, accepted) = crate::migration_ledger::summarize_with_sources(&host)?;
+    let mut rows = product_contract::migration_source::empty("workspace");
+    let catalog = host.legacy.catalog()?;
+    if catalog.unrecognized != 0 {
+        return Err("migration_source_invalid");
+    }
+    for entry in catalog
+        .snapshots
+        .iter()
+        .filter(|entry| accepted.contains(&entry.id))
+    {
+        let retained = Snapshot::load(&host.storage_root().join("legacy-imports"), &entry.id)?;
+        let source = retained.manifest.source;
+        if Snapshot::acquire(base, source, || Ok(()))
+            .and_then(|fresh| fresh.id())
+            .is_ok_and(|id| id == entry.id)
+        {
+            rows.iter_mut()
+                .find(|row| row.identifier == source.identifier())
+                .ok_or("migration_source_invalid")?
+                .backups
+                .push(entry.id.clone());
+        }
+    }
+    if let Some(id) = run_manager_lib::component::migration_source_current(
+        &host.component("runtime")?,
+        &base.join("com.devbox.runmanager"),
+    )
+    .map_err(|_| "migration_source_unavailable")?
+    {
+        rows.iter_mut()
+            .find(|row| row.identifier == "com.devbox.runmanager")
+            .ok_or("migration_source_invalid")?
+            .backups
+            .push(id);
+    }
+    let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
+    let ids = crate::terminal_profiles::current_sources(
+        &terminal,
+        host.storage_root(),
+        &base.join("com.devbox.wsldesktop"),
+    )?;
+    rows.iter_mut()
+        .find(|row| row.identifier == "com.devbox.wsldesktop")
+        .ok_or("migration_source_invalid")?
+        .backups
+        .extend(ids);
+    if crate::migration_ledger::summarize(&host)? != before {
+        return Err("migration_source_changed");
+    }
+    serde_json::to_value(rows).map_err(|_| "migration_source_invalid")
 }

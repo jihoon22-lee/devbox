@@ -104,6 +104,18 @@ pub(crate) async fn record(
             }
             backups.push(verified);
         }
+        let before_sources = capture_sources(owner.clone()).await?;
+        let sources = crate::suite::health::sources(
+            app.clone(),
+            &owner,
+            Some(crate::federation::handle),
+            deadline,
+        )
+        .await?;
+        let namespaces = capture_sources(owner.clone()).await?;
+        if namespaces != before_sources {
+            return Err("migration_source_changed");
+        }
         let after = health(&app, &owner, deadline).await?;
         if before.session_id != after.session_id
             || before.store != after.store
@@ -112,6 +124,10 @@ pub(crate) async fn record(
             return Err("suite_owner_changed");
         }
         let evidence = OwnerEvidence {
+            sources: Some(crate::core::delivery::SourceEvidence {
+                sources,
+                namespaces,
+            }),
             summary: after.store,
             backups,
         };
@@ -144,4 +160,18 @@ pub(crate) async fn record(
     .await
     .map_err(|_| "suite_store_unavailable")??;
     Ok(result)
+}
+
+async fn capture_sources(owner: String) -> Result<Vec<crate::core::legacy_sources::Namespace>> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let base = dirs::data_local_dir().ok_or("source_inventory_unavailable")?;
+        Ok(crate::core::legacy_sources::capture(
+            &base,
+            product_contract::migration_source::identifiers(&owner),
+            false,
+        )?
+        .namespaces)
+    })
+    .await
+    .map_err(|_| "source_inventory_unavailable")?
 }

@@ -379,6 +379,53 @@ impl Repository {
         }
         found.ok_or_else(|| "migration_backup_missing".into())
     }
+    /// Match only completed imports against fresh, exclusively held original
+    /// files. A retained backup alone never creates a current-source result.
+    pub fn current_sources(
+        &self,
+        base: &Path,
+    ) -> Result<Vec<product_contract::migration_source::Source>, String> {
+        let mut rows = product_contract::migration_source::empty("api-studio");
+        let cancelled = AtomicBool::new(false);
+        for descriptor in self
+            .backup_catalog()?
+            .into_iter()
+            .filter(|row| row.id.ends_with("_native"))
+        {
+            let id = descriptor
+                .id
+                .strip_suffix("_native")
+                .ok_or("migration_backup_invalid")?;
+            let (_, bundle) = self.activation(id)?.ok_or("migration_backup_missing")?;
+            let stage = self.completed_stage(id)?;
+            let checked = crate::platform::source_guard::acquire(base, &stage, &bundle, &cancelled)
+                .and_then(|mut sources| sources.revalidate(&cancelled));
+            if checked.is_err() {
+                continue;
+            }
+            let raw = read_file(&stage.join("retained-native/snapshot.json"), 512 * 1024)?
+                .ok_or("migration_backup_missing")?;
+            let manifest: Value =
+                serde_json::from_str(&raw).map_err(|_| "migration_backup_invalid")?;
+            let selected = manifest["selected"]
+                .as_array()
+                .ok_or("migration_backup_invalid")?;
+            for row in &mut rows {
+                if selected
+                    .iter()
+                    .any(|value| value.as_str() == Some(row.identifier.as_str()))
+                {
+                    row.backups.push(descriptor.id.clone());
+                    if row.identifier == "com.devbox.apiplayground"
+                        && bundle.browser_backup_revision.is_some()
+                    {
+                        row.backups.push(format!("{id}_browser"));
+                    }
+                }
+            }
+        }
+        Ok(rows)
+    }
     pub fn backup_catalog(
         &self,
     ) -> Result<Vec<product_contract::migration_backup::Descriptor>, String> {

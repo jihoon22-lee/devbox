@@ -81,6 +81,71 @@ pub fn mapping_summary(
     )
     .map_err(str::to_owned)
 }
+/// Follow the selected generation's ancestry, so rolled-back or unrelated
+/// prepared plans cannot prove that an original source was accepted.
+pub fn current_sources(
+    root: &Path,
+    legacy: &Path,
+) -> Result<Vec<product_contract::migration_source::Source>, String> {
+    let _lock = lock(root)?;
+    let selected = stores::read(root)?;
+    let plans = list(root)?;
+    let mut ancestry = Vec::new();
+    let mut current = selected.clone();
+    while let Some(manifest) = current {
+        let Some(plan) = plans
+            .iter()
+            .find(|plan| plan.next == manifest && plan.phase == Phase::Activated)
+        else {
+            break;
+        };
+        if ancestry.iter().any(|prior: &&Plan| prior.id == plan.id) {
+            return Err("import_journal_invalid".into());
+        }
+        ancestry.push(plan);
+        current = plan.base.clone();
+    }
+    let mut rows = product_contract::migration_source::empty("knowledge");
+    let directory = root.join(format!("source-check-{}", uuid::Uuid::new_v4()));
+    fs::create_dir(&directory).map_err(|_| "import_storage_unavailable")?;
+    struct Scratch(PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+    let _scratch = Scratch(directory.clone());
+    for source in [Source::Notes, Source::Activity, Source::Search] {
+        let accepted = ancestry.iter().find_map(|plan| {
+            plan.sources
+                .iter()
+                .find(|row| row.source == source)
+                .map(|report| (*plan, report))
+        });
+        let Some((plan, report)) = accepted else {
+            continue;
+        };
+        let fresh = source_path(legacy, source).and_then(|path| {
+            acquire_snapshot(
+                &path,
+                &directory.join(source.key()),
+                &[0],
+                &AtomicBool::new(false),
+            )
+        });
+        if fresh.is_ok_and(|snapshot| snapshot.sha256 == report.snapshot.sha256) {
+            rows.iter_mut()
+                .find(|row| row.identifier == source.identifier())
+                .ok_or("import_source_invalid")?
+                .backups
+                .push(format!("{}_{}", plan.id, source.key()));
+        }
+    }
+    if stores::read(root)? != selected {
+        return Err("import_preview_stale".into());
+    }
+    Ok(rows)
+}
 pub fn list(root: &Path) -> Result<Vec<Plan>, String> {
     let imports = root.join("imports");
     match fs::symlink_metadata(&imports) {

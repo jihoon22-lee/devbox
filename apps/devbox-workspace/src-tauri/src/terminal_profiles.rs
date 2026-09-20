@@ -519,8 +519,14 @@ mod tests {
         stage
             .write("prepared.json", &serde_json::to_vec(&prepared).unwrap())
             .unwrap();
-        let original_profiles = serde_json::to_vec(&ProfileStore { version: 2, profiles: prepared.profiles.clone() }).unwrap();
-        stage.write("profiles-source.json", &original_profiles).unwrap();
+        let original_profiles = serde_json::to_vec(&ProfileStore {
+            version: 2,
+            profiles: prepared.profiles.clone(),
+        })
+        .unwrap();
+        stage
+            .write("profiles-source.json", &original_profiles)
+            .unwrap();
         let review = import(
             &root,
             directory.path(),
@@ -584,8 +590,13 @@ mod tests {
         let backups = backup_catalog(&root).unwrap();
         assert_eq!(backups.len(), 1);
         let verified = verify_backup(&root, directory.path(), &backups[0].id).unwrap();
-        assert_eq!(verified.sha256, crate::definitions::digest(&original_profiles));
-        stage.write("profiles-source.json", b"changed original backup").unwrap();
+        assert_eq!(
+            verified.sha256,
+            crate::definitions::digest(&original_profiles)
+        );
+        stage
+            .write("profiles-source.json", b"changed original backup")
+            .unwrap();
         assert!(verify_backup(&root, directory.path(), &backups[0].id).is_err());
     }
     #[test]
@@ -714,4 +725,29 @@ pub(crate) fn verify_backup(
         schema: 1,
         sha256: backup.sha256.clone(),
     })
+}
+
+pub(crate) fn current_sources(
+    root: &MetadataRoot,
+    sources: &std::path::Path,
+    legacy: &std::path::Path,
+) -> Result<Vec<String>> {
+    let (envelope, before, _) = load(root)?;
+    let mut ids = Vec::new();
+    for (key, operation) in &envelope.receipts {
+        if crate::terminal_import::source_current(sources, operation, legacy).is_err() {
+            continue;
+        }
+        for row in backup_catalog(root)?
+            .into_iter()
+            .filter(|row| row.id.starts_with(&format!("terminal_{key}_")))
+        {
+            verify_backup(root, sources, &row.id)?;
+            ids.push(row.id);
+        }
+    }
+    if root.read(FILE)? != before {
+        return Err("terminal_import_source_changed");
+    }
+    Ok(ids)
 }

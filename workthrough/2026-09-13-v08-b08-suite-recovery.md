@@ -690,3 +690,29 @@ Detailed B08 fault/installer acceptance remains at PR completion.
 - Restore helper cancellation does not reopen a blocked update in a recovery loop.
   Apply the user's current predecessor rule to AGENTS/CONVENTIONS: finish and accept
   B08 before beginning dependent B09 work.
+
+### Source-aware first activation
+
+- Add an authenticated Control-Center-only source observation to the existing
+  product transport. Each owner compares accepted import bindings with current
+  fixed legacy sources; retained bytes alone cannot produce a current match.
+  Knowledge follows the selected generation ancestry; Runtime reacquires its
+  consistent SQLite/log snapshot; browser imports compare closed LevelDB sources.
+- Bracket owner observations with bounded fingerprints of the fixed legacy
+  namespaces, including WAL and excluding transient SQLite shared-memory files.
+  Never follow external paths found in source preferences. Store only opaque hashes,
+  counts and source identifiers in suite evidence, not file paths or user records.
+- Add explicit per-source cutover review. A nonmatching/unimported source cannot be
+  labelled transferred; preserving it requires an explicit skipped-data choice.
+  Review keeps importer coverage/reconnect limitations visible and preserves all
+  originals. Each choice binds the four native observations and destination mappings.
+- The closed helper retains exclusive source file handles and directory pins,
+  rejects running legacy product images, rechecks source inventory and keeps new
+  schedulers/business writes blocked until four fresh native health results/commit.
+  A changed source can return to Import while preserving current product data and
+  requiring new owner observations. No legacy process is killed.
+- Minimal Linux production typecheck of all four product crates passed in 26.45s.
+  Frontend typecheck found the catalog label is displayName; corrected it. New pure
+  cutover/source and frontend scenarios remain source-only, and Windows-only code
+  awaits the single final B08 acceptance phase. Legacy cleanup/reinstall and final
+  installer/fault fixtures remain unfinished; this does not close #550.

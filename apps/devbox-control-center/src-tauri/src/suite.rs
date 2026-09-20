@@ -670,6 +670,7 @@ fn handler(
                 &call,
                 Call::Describe {}
                     | Call::ReadMigrationStatus {}
+                    | Call::VerifyMigrationSources {}
                     | Call::ListMigrationBackups {}
                     | Call::VerifyMigrationBackup { .. }
                     | Call::ReadHealthStatus { .. }

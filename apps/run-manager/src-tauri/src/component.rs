@@ -764,8 +764,42 @@ pub fn migration_mapping_summary(root: &Path) -> Result<(u64, String), String> {
 }
 
 pub fn migration_backup_digest(root: &Path) -> Result<Option<(String, bool)>, String> {
-    Ok(crate::core::runtime_backup::receipt(root)?.map(|(digest, binding)| (digest, binding.is_some())))
+    Ok(crate::core::runtime_backup::receipt(root)?
+        .map(|(digest, binding)| (digest, binding.is_some())))
 }
-pub fn verify_migration_backup(root: &Path, digest: &str) -> Result<(u64, u32, String, bool), String> {
+pub fn verify_migration_backup(
+    root: &Path,
+    digest: &str,
+) -> Result<(u64, u32, String, bool), String> {
     crate::core::runtime_backup::verify(root, digest)
+}
+
+/// Reacquire SQLite + retained logs from the fixed legacy namespace. No execution
+/// owner/scheduler is opened and no source path comes from an IPC request.
+pub fn migration_source_current(root: &Path, source: &Path) -> Result<Option<String>, String> {
+    let Some((digest, binding)) = crate::core::runtime_backup::receipt(root)? else {
+        return Ok(None);
+    };
+    let Some(binding) = binding else {
+        return Ok(None);
+    };
+    crate::core::runtime_backup::verify(root, &digest)?;
+    let stage = root.join(format!("source-check-{}", uuid::Uuid::new_v4()));
+    struct Scratch(std::path::PathBuf);
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+    let _scratch = Scratch(stage.clone());
+    let fresh = crate::core::runtime_import::PreparedImport::acquire(
+        source,
+        &stage,
+        &std::sync::atomic::AtomicBool::new(false),
+    )
+    .and_then(|prepared| Ok(prepared.digest() == digest && prepared.backup_digest()? == binding));
+    Ok(fresh
+        .ok()
+        .filter(|current| *current)
+        .map(|_| format!("runtime_{digest}")))
 }

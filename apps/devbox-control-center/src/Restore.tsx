@@ -8,10 +8,10 @@ import catalog from "../../../apps/products.json";
 interface Checkpoint {id:string; bytes:number; files:number}
 interface RestoreOperation {id:string; phase:string; checkpointId?:string; preparedMs?:number}
 interface UpdateOperation {id:string;state:string;previousVersion:string;version:string;checkpointId:string}
-interface Inventory {update?:UpdateOperation|null;checkpoints:Checkpoint[]; operations:RestoreOperation[]; activeOperation:string|null; installation?:{phase:string;committed:boolean;recordedOwners:number;clean:boolean;freshHealth:boolean}}
-type Action = "updateResume"|"updateCommit"|"updateRollback"|"activateClean"|"commitClean"|"snapshot"|"restore"|"resume"|"commit"|"rollback";
+interface Inventory {update?:UpdateOperation|null;checkpoints:Checkpoint[]; operations:RestoreOperation[]; activeOperation:string|null; installation?:{phase:string;committed:boolean;recordedOwners:number;clean:boolean;reviewed?:boolean;freshHealth:boolean}}
+type Action = "reviewImportAgain"|"commitReviewed"|"updateResume"|"updateCommit"|"updateRollback"|"activateClean"|"commitClean"|"snapshot"|"restore"|"resume"|"commit"|"rollback";
 const labels:Record<string,string>={prepared:"복원 준비됨",applying:"복원 적용 중단",health:"제품 상태 확인 대기",committing:"확정 재개 필요",committed:"복원 확정됨",rollingBack:"원본 복귀 재개 필요",rolledBack:"원본 복귀 완료",preparationInterrupted:"준비 중단 · 보존된 파일 유지"};
-const actionLabels:Record<Action,string>={updateResume:"업데이트 재개",updateCommit:"업데이트 확정",updateRollback:"이전 버전과 데이터로 복귀",activateClean:"신규 설치 활성화 준비",commitClean:"신규 설치 확정",snapshot:"현재 데이터 보존",restore:"선택한 보존본으로 복원",resume:"복원 재개",commit:"복원 확정",rollback:"복원 전 원본으로 복귀"};
+const actionLabels:Record<Action,string>={reviewImportAgain:"데이터를 보존하고 이전 검토로 돌아가기",commitReviewed:"이전 검토를 반영한 설치 확정",updateResume:"업데이트 재개",updateCommit:"업데이트 확정",updateRollback:"이전 버전과 데이터로 복귀",activateClean:"신규 설치 활성화 준비",commitClean:"신규 설치 확정",snapshot:"현재 데이터 보존",restore:"선택한 보존본으로 복원",resume:"복원 재개",commit:"복원 확정",rollback:"복원 전 원본으로 복귀"};
 
 export default function Restore({description, route}:Pick<ShellContentProps,"description"|"route">) {
  const [inventory,setInventory]=useState<Inventory|null>(null);
@@ -57,11 +57,12 @@ export default function Restore({description, route}:Pick<ShellContentProps,"des
     </div>}
     {!inventory.installation?.committed&&inventory.installation&&<div>
      <h3>설치 활성화</h3>
+     {["health","validate","quiesce","activate"].includes(inventory.installation.phase)&&<button disabled={busy||!!inventory.activeOperation||!!inventory.update} onClick={()=>select("reviewImportAgain")}>데이터를 보존하고 이전 검토로 돌아가기</button>}
      <p>제품별 이전·신규 사용 검토 기록: {inventory.installation.recordedOwners}/4</p>
      {inventory.installation.clean?<>
       {["snapshot","import","validate","quiesce","activate"].includes(inventory.installation.phase)&&<button disabled={busy||!!inventory.activeOperation||!!inventory.update} onClick={()=>select("activateClean")}>신규 설치 활성화 준비</button>}
       {["health","commit"].includes(inventory.installation.phase)&&<><p>아래에서 네 제품의 활성화용 상태를 기록하고 목록을 새로고침한 뒤 확정할 수 있습니다.</p><button disabled={busy||!!inventory.activeOperation||!!inventory.update||!inventory.installation.freshHealth} onClick={()=>select("commitClean")}>신규 설치 확정</button></>}
-     </>:<p>기존 데이터·설치 또는 이전 검토가 남아 있습니다. 신규 설치 경로로 활성화할 수 없습니다.</p>}
+     </>:inventory.installation.reviewed&&["health","commit"].includes(inventory.installation.phase)?<><p>네 제품의 활성화용 상태를 기록하고 기존 앱을 모두 닫은 뒤 확정하세요. 원본은 보존됩니다.</p><button disabled={busy||!!inventory.activeOperation||!!inventory.update||!inventory.installation.freshHealth} onClick={()=>select("commitReviewed")}>이전 검토를 반영한 설치 확정</button></>:<p>기존 데이터·설치가 있습니다. 데이터 이전 화면에서 제품별 결과를 기록하고 원본별 전환 계획을 검토하세요.</p>}
     </div>}
     <button disabled={busy||!!inventory.activeOperation||!!inventory.update} onClick={()=>select("snapshot")}>현재 데이터 보존</button>
     <h3>제품 데이터 보존본</h3>
