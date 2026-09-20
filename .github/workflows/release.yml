@@ -350,7 +350,7 @@ jobs:
   published-runtime:
     name: Fresh public download and four-product startup
     needs: [preflight, verify]
-    if: ${{ needs.preflight.outputs.prerelease == 'false' && needs.verify.result == 'success' }}
+    if: ${{ always() && needs.preflight.result == 'success' && needs.preflight.outputs.prerelease == 'false' && needs.verify.result == 'success' }}
     permissions:
       contents: read
     uses: ./.github/workflows/windows-installer-acceptance.yml

@@ -12,6 +12,11 @@ impl PendingOpen {
         Self::default()
     }
 
+    #[cfg(test)]
+    fn set(&self, request: OpenRequest) {
+        *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
+    }
+
     pub fn take(&self) -> Option<OpenRequest> {
         self.0.lock().expect("PendingOpen mutex poisoned").take()
     }

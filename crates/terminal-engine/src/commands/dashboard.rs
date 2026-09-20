@@ -42,8 +42,6 @@ pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<Dis
     Ok(distros)
 }
 
-/// 임의의 WSL 명령을 지정한 배포판에서 실행하고 출력을 반환한다.
-
 /// Docker 컨테이너 목록을 조회한다 (기본 distro에서 docker CLI 실행).
 #[tauri::command]
 pub async fn docker_ps(

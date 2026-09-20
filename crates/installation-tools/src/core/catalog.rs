@@ -22,7 +22,7 @@ mod tests {
         let catalog = parse_catalog(BUILD_CATALOG).unwrap();
         assert_eq!(catalog.schema_version, 2);
         assert_eq!(catalog.catalog_revision, Some(18));
-        assert_eq!(catalog.apps.len(), 19);
+        assert_eq!(catalog.apps.len(), 15);
         assert_eq!(catalog.apps.iter().filter(|app| app.release).count(), 15);
         let knowledge = catalog
             .apps

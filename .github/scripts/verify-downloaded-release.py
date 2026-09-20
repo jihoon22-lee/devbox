@@ -285,7 +285,10 @@ def main() -> int:
         if len(expected) != 31:
             failures.append("manifest-declared asset count mismatch")
 
-    downloaded_files = [item for item in assets_directory.iterdir() if item.is_file()]
+    entries = list(assets_directory.iterdir())
+    if any(not item.is_file() or item.is_symlink() for item in entries):
+        failures.append("download directory contains non-regular entries")
+    downloaded_files = [item for item in entries if item.is_file()]
     downloaded_names = {item.name for item in downloaded_files}
     linked_names = sorted(item.name for item in downloaded_files if item.is_symlink())
     if linked_names:

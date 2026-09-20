@@ -4,7 +4,8 @@ import copy
 import importlib.util
 import json
 from pathlib import Path
-import shutil
+import subprocess
+import sys
 import tempfile
 import unittest
 import zipfile
@@ -54,6 +55,25 @@ class SuiteContractTests(unittest.TestCase):
             self.assertEqual(len(acceptance_config(manifest)['products']), 4)
             with self.assertRaises(ValueError): verify_public_assets(assets, 'b'*40)
             with self.assertRaises(ValueError): verify_public_assets(assets, SOURCE, 'v0.8.1')
+
+    def test_independent_candidate_verifier_binds_config_and_seven_remote_digests(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary); assets, _ = fixture(root)
+            metadata = root / 'candidate.json'; config = root / 'config.json'
+            subprocess.run([sys.executable, str(SCRIPTS/'build-candidate-metadata.py'), '--assets', str(assets), '--tag', 'v0.8.0', '--commit', SOURCE, '--repository', 'jihoon22-lee/devbox', '--workflow-run', '123', '--output', str(metadata)], check=True, capture_output=True)
+            manifest = json.loads((assets/'release-manifest.json').read_text())
+            config.write_text(json.dumps(acceptance_config(manifest)))
+            command = [sys.executable, str(SCRIPTS/'verify-downloaded-release.py'), '--assets', str(assets), '--release', str(metadata), '--config', str(config), '--tag', 'v0.8.0', '--commit', SOURCE, '--artifact-kind', 'candidate', '--repository', 'jihoon22-lee/devbox', '--workflow-run', '123']
+            passed = subprocess.run(command, capture_output=True, text=True)
+            self.assertEqual(passed.returncode, 0, passed.stdout+passed.stderr)
+            self.assertEqual(json.loads(passed.stdout)['verifiedAssets'], 7)
+            bad = acceptance_config(manifest); bad['products'][0]['identifier'] = 'foreign.profile'
+            config.write_text(json.dumps(bad))
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
+            config.write_text(json.dumps(acceptance_config(manifest)))
+            remote = json.loads(metadata.read_text()); remote['assets'][0]['digest'] = 'sha256:'+'0'*64
+            metadata.write_text(json.dumps(remote))
+            self.assertNotEqual(subprocess.run(command, capture_output=True).returncode, 0)
 
     def test_refuses_unknown_missing_and_tampered_assets_before_materialization(self):
         for mutation in ('extra', 'missing', 'tampered', 'linked'):

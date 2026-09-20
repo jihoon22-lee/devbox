@@ -20,10 +20,6 @@ pub struct AutostartStatus {
     pub command: Option<String>,
 }
 
-/// 현재 자동 시작 등록 상태.
-
-/// 자동 시작 등록/해제를 되돌릴 수 있게 토글한다.
-
 #[cfg(target_os = "windows")]
 fn open_run_key() -> Result<winreg::RegKey, String> {
     use winreg::enums::{HKEY_CURRENT_USER, KEY_READ, KEY_SET_VALUE};

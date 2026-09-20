@@ -65,9 +65,6 @@ impl Default for SnapshotCoordinator {
     }
 }
 
-/// 앱 시작 이후 60초 주기 writer를 시작한다. 초기 발행도 debounce worker를 통해
-/// 수행하므로 setup 경계에서 WSL process를 동기 실행하지 않는다.
-
 /// 성공한 dashboard refresh 또는 terminal lifecycle 변화가 snapshot을 갱신하도록
 /// 요청한다. 여러 이벤트는 하나의 debounce worker로 합쳐진다.
 pub fn request_snapshot_write(state: Arc<SessionState>) {

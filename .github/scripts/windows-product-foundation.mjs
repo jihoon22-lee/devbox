@@ -135,7 +135,7 @@ async function start(product, suffix) {
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
-    child = spawn(executable, [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
+    child = spawn(executable, process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`], { env, stdio: ["ignore","ignore","pipe"] });
     retainNativeErrors(child,product,suffix);
     await once(child, "spawn");
     cdp = await connect(port, child);
@@ -180,7 +180,7 @@ async function start(product, suffix) {
       progress(product, suffix, "workspace-performance");
       performanceProbe = await measureWorkspaceStartup({cdp, child, executable, env, started, startupMs, product});
     }
-    assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), product.defaultRoute);
+    assert.equal(await cdp.evaluate('new URLSearchParams(location.search).get("route")'), process.env.DEVBOX_FIXTURE_PROFILE === "release" ? null : product.defaultRoute);
     progress(product, suffix, "description");
     const description = await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');
     assert.equal(description.product.id, product.id);
@@ -207,7 +207,7 @@ async function start(product, suffix) {
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
       copyClosedTerminalImport(terminalImport);
-      child=spawn(executable,[`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
+      child=spawn(executable,process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
       retainNativeErrors(child,product,suffix);
       cdp=await connect(port,child,performance.now()+45000);
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");

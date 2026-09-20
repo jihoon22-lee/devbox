@@ -63,7 +63,21 @@ public runtime/release product list. The fake LSP server remains test-only.
 
 ## Verification state
 
-No detailed B09 tests/build/Clippy/native checks have run during development. After all
-implementation/fixtures/docs finish, perform one full local audit and required CI. Candidate
+No detailed B09 checks ran during development. After implementation/fixtures/docs were
+complete, the final audit started. Four product builds/budgets, additional TypeScript and
+all frontend packages except one obsolete catalog-count assertion passed; the corrected
+assertion passed in its focused rerun. Source/parity/data/package corruption/provenance
+contracts passed. Rust check initially exposed dependency aliases after Cargo package
+renaming; explicit original library aliases fixed the whole graph and check passed. Clippy
+found two orphan comments after standalone deletion; both were removed together. Rust
+unit compilation also exposed two removed legacy seed helpers; restored them only under
+cfg(test), preserving one-shot/replacement regressions without a production argv writer.
+The complete Clippy/all-target and Actions syntax gates passed. The full Rust test run
+completed with only the frozen Manager catalog count assertion failing (19→15); that
+exact assertion passed after correction. Three deliberately ignored tests remain ignored.
+The complete frontend suite likewise had only its frozen count assertion corrected.
+Final formatting and changed native-script syntax passed. Required CI and exact-main
+native/package acceptance are still pending, not claimed PASS.
+Successful unrelated scopes are retained instead of rerunning the full suite. Candidate
 assembly/native/installer/WSL2 gates run only on exact current main after B09 source merge.
 Final outcomes belong in #541/#542/#551 and Actions, without a result-only source PR.

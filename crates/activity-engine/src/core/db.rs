@@ -271,8 +271,6 @@ pub fn absorb_activity_timeline(conn: &Connection, legacy_path: &Path) -> rusqli
     Ok(())
 }
 
-/// 이전 activity-timeline 앱의 data.db 기본 경로.
-
 #[cfg(test)]
 mod tests {
     use super::*;
