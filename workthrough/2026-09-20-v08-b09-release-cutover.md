@@ -157,3 +157,35 @@ The subsequent native badge-only JSX correction passed product-shell TypeScript;
 its consuming products are covered by final PR CI. No repeated Runtime/Rust checks.
 Installer 35511259083 also passed; product-shell Source remains that candidate's only
 failed scope. The candidate is not eligible for stable promotion.
+
+## Terminal retirement correction
+
+PR #564 passed CI 35514330280 and merged as 658a25bd. Candidate 35514551027
+passed Source in both installations, installer, API, Knowledge and cross-product.
+Initial WSL2 ownership observation returned unavailable; a single scoped retry
+with identical bytes passed the full WSL2/tmux/Zellij/Docker scope. Preserve the
+original failure rather than claim a root cause that its report did not retain.
+Product-shell attempt 1 completed the first installation's native WSL tasks but
+timed out on the second; attempt 2 exposed a companion reopen with one pane.
+No further blind retries are planned.
+
+The native owner marked a window stopping but still accepted layout autosaves
+while PTYs closed one by one. Those closed events could persist a shrinking
+layout before the window was destroyed. Freeze layout writes under the same
+owner lock once retirement begins, including app shutdown. Revalidate the
+current window session after worker admission and reject requests from replaced
+peers. Keep preparing-generation writes valid for initial hydration. Add a real
+metadata regression retaining two panes across late autosave, stop and replacement.
+The native fixture asserts retained pane keys immediately on reopen; bounded
+failure reports now retain layout/session and WSL operation/run/log state before
+cleanup. No deadlines are relaxed and no assertion or safety gate is removed.
+
+Finish this correction, fixture and documentation before completion checks. Keep
+successful unrelated scopes; require final CI and a new exact-main candidate for
+the changed native code. Existing local Docker/services/network remain untouched.
+
+Terminal correction completion: `pnpm verify:affected` passed Workspace Rust
+format/check/Clippy/tests (182 tests), including the real metadata retirement
+regression. Changed JavaScript syntax and diff checks passed. Frontend code was
+unchanged and not rerun; authoritative dependency audit runs in required CI.
+Final required PR CI and the new release-byte candidate remain.

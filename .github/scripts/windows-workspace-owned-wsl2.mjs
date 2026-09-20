@@ -52,7 +52,7 @@ const wsl=(args,input)=>{
 };
 let child,cdp,policy,confirmed=false,appExited=false,ownedDataRemoved=false;
 const evidence={source:artifactSource,fixtureSource:expectedSource,artifactRun,environment:'github-hosted-windows-wsl2',result:'diagnostic',scope,observations:{}};
-const success=result=>{if(result.operation.outcome.state!=='succeeded')throw new Error('Native operation failed: '+JSON.stringify(result.operation.outcome));return result.value;};
+const success=result=>{if(result.operation.outcome.state!=='succeeded')throw new Error('Native operation failed: '+JSON.stringify({outcome:result.operation.outcome,issue:result.value?.issue??null}));return result.value;};
 try{
  const port=await freePort();policy=windowsProcessIsElevated()?inspectElevatedCdpPolicy(imageName,port):null;if(policy)installElevatedCdpPolicy(policy);
  child=spawn(executable,['--route=overview'],{cwd:appDirectory,env:{...process.env,WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS:`--remote-debugging-port=${port}`,WEBVIEW2_USER_DATA_FOLDER:path.join(appDirectory,'webview2')},stdio:['ignore','ignore','pipe']});
@@ -61,7 +61,7 @@ try{
  const deadline=performance.now()+30000;let ready=false;
  while(performance.now()<deadline){try{ready=await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-registry button")).some(b=>b.textContent.trim()==="빈 Workspace 시작"&&!b.disabled)');}catch{cdp.close();cdp=await connect(port,child,deadline);}if(ready)break;await delay(100);}
  assert.ok(ready);const description=await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');assert.equal(description.handshake.installationId,installationId);confirmed=true;
- const call=(component,method,args={})=>cdp.evaluate(workspaceRequestExpression(component,method,args,29000),{timeoutMs:35000});
+ const call=(component,method,args={},budgetMs=29000)=>cdp.evaluate(workspaceRequestExpression(component,method,args,budgetMs),{timeoutMs:budgetMs+6000});
  success(await call('workspace.migration','start_empty'));
  const connectTerminal=id=>connect(port,child,performance.now()+45000,id);
  if(scope==='all'){

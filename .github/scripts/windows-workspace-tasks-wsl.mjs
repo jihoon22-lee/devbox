@@ -1,6 +1,8 @@
 // Runs only inside the caller's disposable registered WSL filesystem.
 import assert from "node:assert/strict";
 import {randomUUID} from "node:crypto";
+import {writeFileSync} from "node:fs";
+import path from "node:path";
 import {setTimeout as delay} from "node:timers/promises";
 export async function exerciseNativeWslTasks({cdp,call,success,distro,wsl,root}){
   const before=(await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")')).context;
@@ -69,7 +71,32 @@ export async function exerciseNativeWslTasks({cdp,call,success,distro,wsl,root})
     assert.equal((await control("run_workspace_task_operation",{id:jobs[0].jobId,failFast:true})).operation.outcome.state,"failed");
     assert.ok(success(await runtime("list_workspace_tasks")).filter(job=>job.sourceId===applied.sourceId).every(job=>!job.trusted));
     return {linuxSource:true,explicitTrust:true,actualCwd:true,matcherAndLogOffset:true,problemToNativeFileUi:true,sourceChangeRejectsStart:true,sourceChangeDoesNotBlockOwnedStop:true};
-  }catch(error){primary=error;throw error;}
+  }catch(error){
+    primary=error;
+    // Retain the actual operation/run/log state before cleanup changes it.
+    // Only this hosted fixture's two synthetic operations are observed.
+    const observations=[];
+    const observe=(method,args)=>call("workspace.runtime",method,args,3000).catch(error=>({error:String(error).slice(0,500)}));
+    for(const operationId of operations.slice(0,2)){
+      const operation=await observe("get_workspace_task_operation",{operationId});
+      const runs=[];
+      for(const entry of (operation.value?.runs??[]).slice(0,2))if(entry.runId){
+        const run=await observe("get_run",{id:entry.runId});
+        const logs={};
+        for(const stream of ["stdout","stderr"]){
+          const result=await observe("tail_log",{input:{runId:entry.runId,stream,cursor:null,maxBytes:8192}});
+          if(Array.isArray(result.value?.data))result.value.data=Buffer.from(result.value.data).toString("utf8");
+          logs[stream]=result;
+        }
+        runs.push({run,logs});
+      }
+      observations.push({operation,runs});
+    }
+    let processes;
+    try{processes=wsl(["/usr/bin/ps","-eo","pid=,ppid=,pgid=,sid=,stat=,comm="]).split(/\r?\n/).slice(0,300);}catch(cause){processes=String(cause).slice(0,500);}
+    try{writeFileSync(path.join("product-foundation-evidence",`native-wsl-task-failure-${Date.now()}.json`),JSON.stringify({error:String(error),observations,processes},null,2));}catch{/* Keep the original task failure. */}
+    throw error;
+  }
   finally{
     const errors=[];
     const attempt=async(action)=>{try{await action();return true;}catch(error){errors.push(error);return false;}};
