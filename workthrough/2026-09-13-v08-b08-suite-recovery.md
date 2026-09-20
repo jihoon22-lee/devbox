@@ -1029,3 +1029,22 @@ WSL2 remaining-scope run `35491659992` passed Zellij reconnect/no command replay
 real Docker lifecycle/identity/log linkage and stopped-distro non-start behavior.
 Together with Runtime/Session coverage in `35488794839` and tmux in `35490692260`,
 the planned WSL2 range is complete on retained Workspace source `0992e083`.
+
+### Installed restore, reinstall and generation update acceptance
+
+`35493753318` (Control Center/helper `2f27e290`, other products retained at
+`83ad98d1`) passed folder opening/path refusal, clean activation, selected
+checkpoint restore and undo preserving newer data, actual data-preserving
+uninstall/reinstall, and generation update undo/commit with four live owners.
+Original-uninstaller completion timed out at the fixture's 60-second deadline;
+cleanup then found the writer gate still held. The original NSIS launcher exits
+before its temporary uninstaller/helper. The three-generation debug removal
+hashes several GB before publishing its receipt; no product failure was emitted.
+Wait up to a bounded 300 seconds for the durable receipt and retain the failure
+if it remains absent. This is not yet an accepted updated uninstall.
+
+Continue on the same retained Suite bytes, skipping already accepted restore and
+reinstall. Keep update undo/commit to reproduce the same three-generation removal.
+The independent reviewed-source/legacy-cleanup installation now executes even if
+the first case fails, collecting both outcomes before failing the run. Native
+product logic is unchanged; completed compiler evidence remains applicable.
