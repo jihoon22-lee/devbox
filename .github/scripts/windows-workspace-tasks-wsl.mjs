@@ -65,12 +65,16 @@ export async function exerciseNativeWslTasks({cdp,call,success,distro,wsl,root})
     const pid=await until(async()=>{const value=wsl(["/usr/bin/python3","-c","import pathlib,sys; p=pathlib.Path(sys.argv[1])/'linger'; print(p.read_text() if p.exists() else '')",root]);return value&&Number(value);},"Native WSL task did not start");
     wsl(["/usr/bin/python3","-c","import pathlib,sys; (pathlib.Path(sys.argv[1])/'.vscode/tasks.json').write_text('changed synthetic source')",root]);
     // Stop uses the retained target even after the source loses execution trust.
-    success(await control("stop_workspace_task_operation",{operationId:second.id}));
+    // Losing the filesystem lease cannot revoke cleanup of this owned run.
+    const moved=root+"-moved";
+    wsl(["/usr/bin/python3","-c","import os,sys; assert not os.path.exists(sys.argv[2]); os.rename(sys.argv[1],sys.argv[2])",root,moved]);
+    try {success(await control("stop_workspace_task_operation",{operationId:second.id}));}
+    finally {wsl(["/usr/bin/python3","-c","import os,sys; os.rename(sys.argv[1],sys.argv[2])",moved,root]);}
     await until(async()=>success(await runtime("get_workspace_task_operation",{operationId:second.id})).status==="cancelled","Native WSL stop did not settle");
     assert.equal(wsl(["/usr/bin/python3","-c","import pathlib,sys; print('gone' if not pathlib.Path('/proc/'+sys.argv[1]).exists() else 'present')",String(pid)]),"gone");
     assert.equal((await control("run_workspace_task_operation",{id:jobs[0].jobId,failFast:true})).operation.outcome.state,"failed");
     assert.ok(success(await runtime("list_workspace_tasks")).filter(job=>job.sourceId===applied.sourceId).every(job=>!job.trusted));
-    return {linuxSource:true,explicitTrust:true,actualCwd:true,matcherAndLogOffset:true,problemToNativeFileUi:true,sourceChangeRejectsStart:true,sourceChangeDoesNotBlockOwnedStop:true};
+    return {linuxSource:true,explicitTrust:true,actualCwd:true,matcherAndLogOffset:true,problemToNativeFileUi:true,sourceChangeRejectsStart:true,sourceChangeDoesNotBlockOwnedStop:true,movedRootDoesNotBlockOwnedStop:true};
   }catch(error){
     primary=error;
     // Retain the actual operation/run/log state before cleanup changes it.

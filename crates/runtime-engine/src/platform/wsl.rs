@@ -15,10 +15,11 @@ use tokio::time::sleep;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::core::shell::{
-    build_wsl_command, build_wsl_proc_dir_probe_argv, build_wsl_proc_environ_argv,
-    build_wsl_proc_stat_argv, build_wsl_process_command, build_wsl_termination_plan,
-    parse_proc_stat_identity, parse_wsl_handshake, validate_wsl_handshake_identity,
-    validate_wsl_identity, ShellError, WslCommandSpec, WslProcessIdentity, WslTerminationPlan,
+    build_wsl_command, build_wsl_completion_probe_argv, build_wsl_proc_dir_probe_argv,
+    build_wsl_proc_environ_argv, build_wsl_proc_stat_argv, build_wsl_process_command,
+    build_wsl_termination_plan, parse_proc_stat_identity, parse_wsl_handshake,
+    validate_wsl_handshake_identity, validate_wsl_identity, ShellError, WslCommandSpec,
+    WslProcessIdentity, WslTerminationPlan,
 };
 
 const HANDSHAKE_BUFFER_LIMIT: usize = 64 * 1024;
@@ -651,19 +652,25 @@ impl Target {
         identity: &WslProcessIdentity,
         timeout: Duration,
     ) -> Result<(), WslExecutionError> {
-        let plan = build_wsl_termination_plan(self.distro.as_str(), identity)?;
-        let deadline = Instant::now() + timeout;
-        let probe = self.output_until(&plan.probe, deadline).await?;
-        if probe.status.success() {
-            return Err(WslExecutionError::ProcessGroupStillAlive);
+        // Do not spend one short deadline on two target validations and two
+        // WSL startups. A single retained-target query observes both conditions.
+        let argv = build_wsl_completion_probe_argv(self.distro.as_str(), identity)?;
+        let output = self.output_until(&argv, Instant::now() + timeout).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
         }
-        let leader = build_wsl_proc_dir_probe_argv(self.distro.as_str(), identity.pid)?;
-        let leader = self.output_until(&leader, deadline).await?;
-        if leader.status.success() {
-            return Err(WslExecutionError::ProcessGroupStillAlive);
+        match output.stdout.as_slice() {
+            b"gone\n" | b"gone\r\n" => Ok(()),
+            b"present\n" | b"present\r\n" => Err(WslExecutionError::ProcessGroupStillAlive),
+            _ => Err(WslExecutionError::Io(std::io::Error::other(
+                "invalid group completion witness",
+            ))),
         }
-        Ok(())
     }
+
     pub async fn validate_identity(
         &self,
         expected: &WslProcessIdentity,
@@ -852,6 +859,57 @@ mod tests {
         assert!(target.contains_process(&identity, 101, 123).await.is_err());
         assert_eq!(attempts.load(Ordering::SeqCst), 4);
     }
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn completion_uses_one_retained_binding_and_requires_an_explicit_witness() {
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        struct Probe {
+            calls: Arc<AtomicUsize>,
+            script: &'static str,
+        }
+        impl CommandBinding for Probe {
+            fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+                assert_eq!(&argv[..4], &["wsl.exe", "-d", "Fixture", "--exec"]);
+                assert_eq!(&argv[argv.len() - 2..], &["100", "100"]);
+                self.calls.fetch_add(1, Ordering::SeqCst);
+                Ok(vec!["sh".into(), "-c".into(), self.script.into()])
+            }
+        }
+        let identity = WslProcessIdentity {
+            pid: 100,
+            pgid: 100,
+            sid: 100,
+            marker: "10000000-0000-4000-8000-000000000001".into(),
+        };
+        for (script, success) in [
+            ("printf 'gone\\n'", true),
+            ("printf 'present\\n'", false),
+            ("printf 'gone\\n'; exit 1", false),
+            ("printf 'noise\\ngone\\n'", false),
+            ("true", false),
+        ] {
+            let calls = Arc::new(AtomicUsize::new(0));
+            let target = Target::bound(
+                "Fixture",
+                Arc::new(Probe {
+                    calls: calls.clone(),
+                    script,
+                }),
+            );
+            assert_eq!(
+                target
+                    .confirm_group_gone(&identity, Duration::from_secs(1))
+                    .await
+                    .is_ok(),
+                success
+            );
+            assert_eq!(calls.load(Ordering::SeqCst), 1);
+        }
+    }
+
     #[test]
     fn spec_uses_wsl_exe_and_piped_streams_without_script_environment_prefix() {
         let environment = BTreeMap::from([(String::from("TOKEN"), String::from("secret"))]);

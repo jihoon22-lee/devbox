@@ -180,12 +180,16 @@ mod native {
             argv: Vec<String>,
         ) -> std::result::Result<Vec<String>, run_manager_lib::platform::wsl::WslExecutionError>
         {
-            super::outside_runtime(|| self.0.distro.require_running())
-                .and_then(|result| result)
-                .map_err(|_| std::io::Error::other("runtime-target-unavailable"))?;
-            self.0
-                .bind_argv(argv)
-                .map_err(|_| std::io::Error::other("runtime-target-changed").into())
+            // Observing/retiring an already owned run must survive a moved
+            // project or a retired filesystem helper. Its retained distro and
+            // executable identities remain mandatory on every command.
+            super::outside_runtime(|| {
+                self.0.distro.require_running()?;
+                self.0.check_target()?;
+                self.0.bind_checked_argv(argv)
+            })
+            .and_then(|result| result)
+            .map_err(|_| std::io::Error::other("runtime-target-changed").into())
         }
         fn bind_launch(
             &self,
@@ -220,6 +224,14 @@ mod native {
                     return Err("project_binding_changed");
                 }
             }
+            self.check_target()?;
+            match &self.project {
+                Some(Project::Windows(lease)) => lease.revalidate(),
+                Some(Project::Wsl(lease)) => lease.revalidate(),
+                None => Ok(()),
+            }
+        }
+        fn check_target(&self) -> Result<()> {
             self.distro.revalidate()?;
             if filesystem_identity(&self.executable, false)
                 .map_err(|_| "wsl_executable_unavailable")?
@@ -227,38 +239,37 @@ mod native {
             {
                 return Err("wsl_executable_changed");
             }
-            match &self.project {
-                Some(Project::Windows(lease)) => lease.revalidate(),
-                Some(Project::Wsl(lease)) => lease.revalidate(),
-                None => Ok(()),
+            Ok(())
+        }
+        fn bind_checked_argv(&self, mut argv: Vec<String>) -> Result<Vec<String>> {
+            if argv.len() < 3
+                || argv[0] != "wsl.exe"
+                || argv[1] != "-d"
+                || argv[2] != self.distro.name()
+            {
+                return Err("terminal_target_invalid");
             }
+            argv[0] = self
+                .executable
+                .to_str()
+                .ok_or("wsl_executable_unavailable")?
+                .into();
+            argv[1] = "--distribution-id".into();
+            argv[2] = self.distro.id().into();
+            Ok(argv)
         }
     }
     impl TerminalLaunchLease for Admission {
         fn revalidate(&self) -> std::result::Result<(), String> {
             self.check().map_err(str::to_owned)
         }
-        fn bind_argv(&self, mut argv: Vec<String>) -> std::result::Result<Vec<String>, String> {
+        fn bind_argv(&self, argv: Vec<String>) -> std::result::Result<Vec<String>, String> {
             super::outside_runtime(|| {
                 self.revalidate()?;
                 if !self.allow_start {
                     self.distro.require_running().map_err(str::to_owned)?;
                 }
-                if argv.len() < 3
-                    || argv[0] != "wsl.exe"
-                    || argv[1] != "-d"
-                    || argv[2] != self.distro.name()
-                {
-                    return Err("terminal_target_invalid".into());
-                }
-                argv[0] = self
-                    .executable
-                    .to_str()
-                    .ok_or("wsl_executable_unavailable")?
-                    .into();
-                argv[1] = "--distribution-id".into();
-                argv[2] = self.distro.id().into();
-                Ok(argv)
+                self.bind_checked_argv(argv).map_err(str::to_owned)
             })
             .map_err(str::to_owned)?
         }

@@ -223,3 +223,27 @@ show→hide, bounded always-show rejection and receipt mismatch rejection. Both
 PowerShell files parsed successfully. The delayed real native chooser regression
 will run in the existing hosted Product foundation pre-build step; cancel duplicate
 debug product work after that result and retain required CI.
+
+## Retained WSL completion correction
+
+PR #566 passed CI 35524593180 and native chooser Cancel/Open/Multi/Slow plus
+17 fixture contracts in 35524593227; merged as 8f304734. Candidate 35524957563
+passed API/Knowledge/cross-product/WSL2; product-shell diagnostics now show the
+short native task emitted its expected output and Linux PID/group disappeared,
+while the host run remained running. The two-pane layout and fixed driver stages
+passed. Preserve this evidence; do not repeat the failed scope blindly.
+
+The completion path reused full project/filesystem launch admission and spent one
+2-second deadline across two separate WSL probes. A closed filesystem connection
+or slow double admission could leave an already exited run in endless cleanup
+observation. Separate retained distro/executable checks from project/source launch
+authority for owned observation/cleanup; do not relax any new-launch admission.
+Observe leader and group absence in one read-only bound query, requiring successful
+CLI status and an exact witness. Keep the original deadline. Add strict witness and
+single-binding regressions plus an actual owned WSL stop after its root is moved.
+Complete implementation/fixtures/docs before checks; local Docker/network untouched.
+
+Completion checks passed: verify:affected Runtime + Workspace check/Clippy/fmt
+and tests, including the actual owned process-group probe and strict witness
+regression. Changed JS syntax/diff passed. No unrelated frontend or other product
+checks ran locally. Final required CI and new packaged native acceptance remain.

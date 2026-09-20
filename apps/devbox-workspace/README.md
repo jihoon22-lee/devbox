@@ -35,3 +35,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 [이전 개발 단계의 상세 README](../../docs/history/v0.8-development/workspace.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
+
+Owned Runtime 작업의 관찰·종료는 보존한 distro/executable identity를 매번 확인하며,
+프로젝트 경로 이동이나 filesystem helper 종료로 차단되지 않는다. 새 실행은 기존
+project/source/target 승인을 계속 요구한다.
