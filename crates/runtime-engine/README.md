@@ -21,3 +21,7 @@ Natural WSL completion requires an explicit leader-and-group absence witness fro
 one bound query. Command failure or unexpected output never proves absence. The
 Workspace adapter retains distro/executable identity for observation and cleanup;
 launch still validates project and filesystem authority.
+
+Owned WSL stop validates the exact NUL-delimited marker and current PID/group/session
+and signals in one bound invocation. The TERM grace starts after signal delivery;
+KILL revalidates independently. Only an explicit absence witness settles a raced exit.

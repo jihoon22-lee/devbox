@@ -15,11 +15,11 @@ use tokio::time::sleep;
 use zeroize::{Zeroize, Zeroizing};
 
 use crate::core::shell::{
-    build_wsl_command, build_wsl_completion_probe_argv, build_wsl_proc_dir_probe_argv,
-    build_wsl_proc_environ_argv, build_wsl_proc_stat_argv, build_wsl_process_command,
-    build_wsl_termination_plan, parse_proc_stat_identity, parse_wsl_handshake,
-    validate_wsl_handshake_identity, validate_wsl_identity, ShellError, WslCommandSpec,
-    WslProcessIdentity, WslTerminationPlan,
+    build_wsl_command, build_wsl_completion_probe_argv, build_wsl_guarded_signal_argv,
+    build_wsl_proc_dir_probe_argv, build_wsl_proc_environ_argv, build_wsl_proc_stat_argv,
+    build_wsl_process_command, build_wsl_termination_plan, parse_proc_stat_identity,
+    parse_wsl_handshake, validate_wsl_handshake_identity, validate_wsl_identity, ShellError,
+    WslCommandSpec, WslProcessIdentity, WslSignal,
 };
 
 const HANDSHAKE_BUFFER_LIMIT: usize = 64 * 1024;
@@ -379,21 +379,6 @@ pub async fn contains_process(
         .await
 }
 
-async fn run_helper_status_until(
-    argv: &[String],
-    deadline: Instant,
-) -> Result<(), WslExecutionError> {
-    let output = run_helper_output_until(argv, deadline).await?;
-    if output.status.success() {
-        Ok(())
-    } else {
-        Err(WslExecutionError::CommandFailed {
-            argv: argv.to_owned(),
-            code: output.status.code(),
-        })
-    }
-}
-
 async fn run_helper_output(argv: &[String]) -> Result<Output, WslExecutionError> {
     run_helper_output_with_timeout(argv, HELPER_COMMAND_TIMEOUT).await
 }
@@ -597,38 +582,52 @@ impl Target {
     ) -> Result<Output, WslExecutionError> {
         run_helper_output_until(&self.bind_query(argv).await?, deadline).await
     }
-    async fn status_until(
+    async fn signal_owned_group(
         &self,
-        argv: &[String],
-        deadline: Instant,
+        identity: &WslProcessIdentity,
+        signal: WslSignal,
     ) -> Result<(), WslExecutionError> {
-        run_helper_status_until(&self.bind_query(argv).await?, deadline).await
+        let argv = build_wsl_guarded_signal_argv(self.distro.as_str(), identity, signal)?;
+        let output = self.output(&argv).await?;
+        if !output.status.success() {
+            return Err(WslExecutionError::CommandFailed {
+                argv,
+                code: output.status.code(),
+            });
+        }
+        if !matches!(output.stdout.as_slice(), b"signalled\n" | b"signalled\r\n") {
+            return Err(std::io::Error::other("invalid group signal acknowledgement").into());
+        }
+        Ok(())
     }
     pub async fn terminate_group(
         &self,
         identity: &WslProcessIdentity,
         grace: Duration,
     ) -> Result<(), WslExecutionError> {
-        let term_deadline = Instant::now() + grace;
-        let observed = self
-            .validate_identity_until(identity, term_deadline)
-            .await?;
-        validate_wsl_identity(identity, &observed)?;
-        let plan = build_wsl_termination_plan(self.distro.as_str(), identity)?;
-        self.status_until(&plan.term, term_deadline).await?;
-
-        if !self.wait_for_group_gone(&plan, term_deadline).await? {
-            // TERM may leave a process alive long enough for its session or group
-            // identity to change. Re-read all identity fields before KILL.
-            let kill_deadline = Instant::now() + grace;
-            self.validate_identity_until(identity, kill_deadline)
-                .await?;
-            self.status_until(&plan.kill, kill_deadline).await?;
-            if !self.wait_for_group_gone(&plan, kill_deadline).await? {
-                return Err(WslExecutionError::ProcessGroupStillAlive);
+        for signal in [WslSignal::Term, WslSignal::Kill] {
+            // Identity checks and signal share one bound invocation. The grace
+            // period starts after delivery, not before several WSL startups.
+            if let Err(error) = self.signal_owned_group(identity, signal).await {
+                // A concurrent natural exit can retire the leader between reads.
+                // Only an explicit absence witness can settle that failed action.
+                if matches!(error, WslExecutionError::CommandFailed { .. })
+                    && self.confirm_group_gone(identity, grace).await.is_ok()
+                {
+                    return Ok(());
+                }
+                return Err(error);
             }
+            if self
+                .wait_for_group_gone(identity, Instant::now() + grace)
+                .await?
+            {
+                return Ok(());
+            }
+            // KILL repeats the exact marker/group/session checks; never reuse
+            // the earlier TERM admission after waiting for a stubborn process.
         }
-        Ok(())
+        Err(WslExecutionError::ProcessGroupStillAlive)
     }
     pub async fn recover_stale_group(
         &self,
@@ -725,21 +724,6 @@ impl Target {
         }
         Ok(output.stdout)
     }
-    async fn read_process_environ_until(
-        &self,
-        pid: u32,
-        deadline: Instant,
-    ) -> Result<Vec<u8>, WslExecutionError> {
-        let argv = build_wsl_proc_environ_argv(self.distro.as_str(), pid)?;
-        let output = self.output_until(&argv, deadline).await?;
-        if !output.status.success() {
-            return Err(WslExecutionError::CommandFailed {
-                argv,
-                code: output.status.code(),
-            });
-        }
-        Ok(output.stdout)
-    }
     async fn read_process_identity(
         &self,
         expected: &WslProcessIdentity,
@@ -754,66 +738,28 @@ impl Target {
         }
         parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
     }
-    async fn read_process_identity_until(
-        &self,
-        expected: &WslProcessIdentity,
-        deadline: Instant,
-    ) -> Result<WslProcessIdentity, WslExecutionError> {
-        let argv = build_wsl_proc_stat_argv(self.distro.as_str(), expected.pid)?;
-        let output = self.output_until(&argv, deadline).await?;
-        if !output.status.success() {
-            return Err(WslExecutionError::CommandFailed {
-                argv,
-                code: output.status.code(),
-            });
-        }
-        parse_proc_stat_identity(expected.pid, &output.stdout, &expected.marker).map_err(Into::into)
-    }
-    async fn validate_identity_until(
-        &self,
-        expected: &WslProcessIdentity,
-        deadline: Instant,
-    ) -> Result<WslProcessIdentity, WslExecutionError> {
-        let environ = self
-            .read_process_environ_until(expected.pid, deadline)
-            .await?;
-        if !crate::core::shell::environ_contains_exact_marker(&environ, &expected.marker)? {
-            return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
-        }
-        let observed = self.read_process_identity_until(expected, deadline).await?;
-        validate_wsl_identity(expected, &observed)?;
-        Ok(observed)
-    }
     async fn wait_for_group_gone(
         &self,
-        plan: &WslTerminationPlan,
+        identity: &WslProcessIdentity,
         deadline: Instant,
     ) -> Result<bool, WslExecutionError> {
         loop {
-            if Instant::now() >= deadline {
-                return Ok(false);
-            }
-            let probe = self.output_until(&plan.probe, deadline).await?;
-            if !probe.status.success() {
-                // A failed kill -0 is followed by a numeric /proc check.  If the
-                // marker-bearing PID still exists, it must not be treated as a
-                // vanished group (it may have escaped the group).
-                let proc_probe = build_wsl_proc_dir_probe_argv(self.distro.as_str(), plan.pid)?;
-                let proc = self.output_until(&proc_probe, deadline).await?;
-                if !proc.status.success() {
-                    return Ok(true);
-                }
-                let environ = self.read_process_environ_until(plan.pid, deadline).await?;
-                if !crate::core::shell::environ_contains_exact_marker(&environ, &plan.marker)? {
-                    return Err(WslExecutionError::Shell(ShellError::MarkerMismatch));
-                }
-                return Ok(false);
-            }
-            if Instant::now() >= deadline {
-                return Ok(false);
-            }
             let remaining = deadline.saturating_duration_since(Instant::now());
-            sleep(TERMINATION_POLL_INTERVAL.min(remaining)).await;
+            if remaining.is_zero() {
+                return Ok(false);
+            }
+            match self.confirm_group_gone(identity, remaining).await {
+                Ok(()) => return Ok(true),
+                Err(WslExecutionError::ProcessGroupStillAlive) => {}
+                Err(WslExecutionError::HelperTimeout) if Instant::now() >= deadline => {
+                    return Ok(false)
+                }
+                Err(error) => return Err(error),
+            }
+            sleep(
+                TERMINATION_POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
+            )
+            .await;
         }
     }
 }
@@ -908,6 +854,92 @@ mod tests {
             );
             assert_eq!(calls.load(Ordering::SeqCst), 1);
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn owned_stop_checks_marker_group_and_session_before_term_and_kill() {
+        use std::io::BufRead;
+        use std::sync::{
+            atomic::{AtomicUsize, Ordering},
+            Arc,
+        };
+        struct Owned(std::process::Child);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                let _ = self.0.kill();
+                let _ = self.0.wait();
+            }
+        }
+        struct Native(Arc<AtomicUsize>);
+        impl CommandBinding for Native {
+            fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+                assert_eq!(&argv[..4], &["wsl.exe", "-d", "Fixture", "--exec"]);
+                if argv[9] == "devbox-run-signal" {
+                    self.0.fetch_add(1, Ordering::SeqCst);
+                }
+                Ok(argv[4..].to_vec())
+            }
+        }
+        let marker = "10000000-0000-4000-8000-000000000001";
+        let forged = "20000000-0000-4000-8000-000000000002";
+        let mut child=Owned(std::process::Command::new("setsid")
+            .args(["python3","-c","import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);print('ready',flush=True);time.sleep(30)"])
+            .env("DEVBOX_RUN_MARKER",marker)
+            .env("UNRELATED",format!("prefix\nDEVBOX_RUN_MARKER={forged}"))
+            .stdout(Stdio::piped()).spawn().unwrap());
+        let mut ready = String::new();
+        std::io::BufReader::new(child.0.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready, "ready\n");
+        let identity = WslProcessIdentity {
+            pid: child.0.id(),
+            pgid: child.0.id(),
+            sid: child.0.id(),
+            marker: marker.into(),
+        };
+        let signals = Arc::new(AtomicUsize::new(0));
+        let target = Target::bound("Fixture", Arc::new(Native(signals.clone())));
+        for wrong in [
+            WslProcessIdentity {
+                marker: forged.into(),
+                ..identity.clone()
+            },
+            WslProcessIdentity {
+                pgid: identity.pgid + 1,
+                ..identity.clone()
+            },
+            WslProcessIdentity {
+                sid: identity.sid + 1,
+                ..identity.clone()
+            },
+        ] {
+            assert!(target
+                .terminate_group(&wrong, Duration::from_millis(200))
+                .await
+                .is_err());
+            assert!(child.0.try_wait().unwrap().is_none());
+        }
+        assert_eq!(signals.swap(0, Ordering::SeqCst), 3);
+        // Reap the exact child independently so /proc does not retain our zombie
+        // while the adapter waits for explicit group absence.
+        let reaper = std::thread::spawn(move || {
+            let status = child.0.wait().unwrap();
+            status.success()
+        });
+        target
+            .terminate_group(&identity, Duration::from_millis(500))
+            .await
+            .unwrap();
+        assert!(!reaper.join().unwrap());
+        assert_eq!(signals.load(Ordering::SeqCst), 2);
+        // A repeated stop of the already absent group is safe, with no signal
+        // admitted against a missing or replacement process.
+        target
+            .terminate_group(&identity, Duration::from_millis(200))
+            .await
+            .unwrap();
     }
 
     #[test]
