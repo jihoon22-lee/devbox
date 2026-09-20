@@ -17,7 +17,7 @@ const evidence={source:JSON.parse(readFileSync(path.join(root,"suite-payload.jso
 const live=[];
 const value=(result)=>{assert.equal(result.operation.outcome.state,"succeeded",JSON.stringify(result));return result.value;};
 async function call(item,command,body,route){
- return item.cdp.evaluate(`(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route)},context:d.context};return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});})()`,{timeoutMs:35000});
+ return item.cdp.evaluate(`(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke('plugin:product-shell|describe');const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+29000,route:${JSON.stringify(route)},context:d.context};try{return await invoke(${JSON.stringify(command)},{request:{header,...${JSON.stringify(body)}}});}catch(problem){throw new Error(JSON.stringify(problem).slice(0,2000));}})()`,{timeoutMs:35000});
 }
 async function start(member){
  const executable=realpathSync.native(path.join(root,member.executable)),port=await freePort();
@@ -79,7 +79,15 @@ try {
  for(const item of Object.values(apps)) {
   const route={workspace:"overview","api-studio":"requests",knowledge:"notes","control-center":"migration"}[item.product];
   const review=value(await call(item,"plugin:suite|connection",{method:{kind:"preview"}},route));assert.equal(review.products.length,4);
-  value(await call(item,"plugin:suite|connection",{method:{kind:"approve",token:review.token,remember:true}},route));
+  assert.equal(review.installationId,manifest.installationId);
+  assert.ok(review.products.every(product=>product.available));
+  // Health/reinstall/update reopen a remembered native connection. Preview
+  // checks this exact package; approving an already connected bus is rejected.
+  const status=value(await call(item,"plugin:suite|connection",{method:{kind:"status"}},route));
+  if(!status.connected)value(await call(item,"plugin:suite|connection",{method:{kind:"approve",token:review.token,remember:true}},route));
+  const connected=value(await call(item,"plugin:suite|connection",{method:{kind:"status"}},route));
+  assert.equal(connected.connected,true);assert.equal(connected.generation,review.generation);
+  evidence.checks[`connection_${item.product}`]=true;
  }
  const center=apps["control-center"];
  if(mode==="legacyImport") {

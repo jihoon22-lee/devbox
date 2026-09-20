@@ -952,3 +952,21 @@ a literal trailing blank. Accept prompt whitespace/end after stripping VT contro
 actual input execution still requires the owned proof file. Prepare a
 `multiplexers` continuation (tmux, Zellij, containers and stopped-query only),
 using artifact `35486669148`; do not rerun the accepted Runtime/Session cases.
+
+Suite run `35488919818` on `83ad98d1` passed real initial import, checkpointed
+activation and the required-health-before-commit refusal. Health then hit a fixture
+error: startup had restored a remembered bus, but the fixture approved it again.
+Keep the fresh package preview and compare its generation with native status;
+approve only when disconnected, then require the exact connected generation.
+Retain structured native rejection details instead of CDP's generic `Object`.
+This is a fixture-only continuation using the exact retained Suite from this run;
+no product rebuild is required for this correction.
+
+Windows CI log `35486663516` shows 485 crate compilations in Test after a successful
+cache restore, followed by `Cache up-to-date`. The immutable cache was populated
+during an earlier check/Clippy failure, so newly built test-codegen dependencies
+were never saved. Give the Windows CI dependency cache `key: unit-tests-v1`; retain
+source/compiler/environment fingerprints, workspace-crate exclusion and actual
+check/test execution. This changes no acceptance gate and caches no test results.
+
+CI `35488911946` passed every required job on `83ad98d18be918d6940cf48d770e6761f7f08212`, including the Windows pinned-reference and retained-coordinator-lock regressions. Subsequent pending changes are fixture continuation and the dependency-cache namespace, not product logic.

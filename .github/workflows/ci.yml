@@ -343,6 +343,10 @@ jobs:
         if: ${{ needs.scope.outputs.rust_scope != 'none' }}
         with:
           shared-key: devbox-windows
+          # The old immutable cache contains check/Clippy metadata only. A new
+          # namespace retains test-codegen dependencies instead of rebuilding
+          # hundreds of unchanged crates on every PR continuation.
+          key: unit-tests-v1
           # Preserve compiled dependencies after a fixture fails; results are never cached.
           cache-on-failure: true
 
