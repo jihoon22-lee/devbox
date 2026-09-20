@@ -75,8 +75,8 @@ export default function Restore({description, route}:Pick<ShellContentProps,"des
      {operation.preparedMs&&<time dateTime={new Date(operation.preparedMs).toISOString()}>{new Date(operation.preparedMs).toLocaleString()}</time>}
      {(!inventory.activeOperation||inventory.activeOperation===operation.id)&&<>
       {["prepared","applying"].includes(operation.phase)&&<button disabled={busy} onClick={()=>select("resume",operation.id)}>복원 재개</button>}
-      {["health","committing","committed"].includes(operation.phase)&&<button disabled={busy} onClick={()=>select("commit",operation.id)}>복원 확정</button>}
-      {["prepared","applying","health","rollingBack","rolledBack"].includes(operation.phase)&&<button disabled={busy} onClick={()=>select("rollback",operation.id)}>원본으로 복귀</button>}
+      {(["health","committing"].includes(operation.phase)||(operation.phase==="committed"&&inventory.activeOperation===operation.id))&&<button disabled={busy} onClick={()=>select("commit",operation.id)}>복원 확정</button>}
+      {(["prepared","applying","health","rollingBack"].includes(operation.phase)||(operation.phase==="rolledBack"&&inventory.activeOperation===operation.id))&&<button disabled={busy} onClick={()=>select("rollback",operation.id)}>원본으로 복귀</button>}
      </>}
     </li>)}</ul>:<p>진행한 복원 작업이 없습니다.</p>}
    </>}

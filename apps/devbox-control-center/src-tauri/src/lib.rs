@@ -31,6 +31,8 @@ mod commands;
 mod launcher_import;
 
 mod tools_host;
+#[cfg(windows)]
+mod updates;
 
 pub mod bootstrap;
 

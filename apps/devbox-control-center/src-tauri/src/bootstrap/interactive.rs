@@ -491,7 +491,7 @@ pub(super) fn run(arguments: &[std::ffi::OsString]) -> Result<StageResult> {
                     )
                 };
                 if answer == IDCANCEL {
-                    if matches!(fs::symlink_metadata(root.join("suite-data-restore.block")), Err(error) if error.kind() == std::io::ErrorKind::NotFound)
+                    if ["suite-data-restore.block", "suite-update.block"].iter().all(|name| matches!(fs::symlink_metadata(root.join(name)), Err(error) if error.kind() == std::io::ErrorKind::NotFound))
                     {
                         let _ = open_install(&root, &payload, &image, "control-center");
                     }

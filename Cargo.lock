@@ -1332,6 +1332,7 @@ dependencies = [
  "filesystem",
  "product-contract",
  "product-shell-tauri",
+ "reqwest",
  "rusqlite",
  "serde",
  "serde_json",

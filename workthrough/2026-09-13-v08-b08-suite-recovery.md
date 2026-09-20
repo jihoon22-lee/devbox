@@ -673,3 +673,20 @@ Detailed B08 fault/installer acceptance remains at PR completion.
   source; no tests, Clippy, app build, CI or Windows acceptance have been executed.
   Official update discovery/download, legacy source cutover/cleanup, reinstall and
   final fixture/acceptance completion remain in this B08 bundle.
+
+### Explicit official Suite updates
+
+- Add user-triggered stable release discovery and seven-asset manifest validation.
+  Download only the native reviewed setup URL, enforce official size and SHA-256,
+  keep partial files separate, support cancellation and preserve bounded caches.
+- Download and execution are separate actions. The update screen requires a second
+  explicit confirmation before closing Control Center and opening the verified NSIS
+  installer at the current installation root. Native commands accept opaque review
+  IDs only. Prepared frontend regressions cover no automatic execution and rejection
+  of foreign operation provenance; they have not run.
+- Minimal Linux Rust check passed. Typechecking found the new test supplied only
+  the two consumed shell props; narrow the component type accordingly. Detailed
+  tests/Windows checks remain deferred until all B08 implementation is complete.
+- Restore helper cancellation does not reopen a blocked update in a recovery loop.
+  Apply the user's current predecessor rule to AGENTS/CONVENTIONS: finish and accept
+  B08 before beginning dependent B09 work.

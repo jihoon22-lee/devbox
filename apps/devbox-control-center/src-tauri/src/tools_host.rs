@@ -24,14 +24,41 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     let restore_inventory = request.method == "restore_inventory";
     let restore_action = request.method == "restore_action";
     let legacy = request.method == "legacy_inventory";
-    let component =
-        if inventory || recovery || legacy || record_owner || restore_inventory || restore_action {
-            "control-center.delivery"
-        } else {
-            "control-center.tools"
-        };
+    let suite_update = matches!(
+        request.method.as_str(),
+        "check_suite_update"
+            | "suite_update_status"
+            | "download_suite_update"
+            | "cancel_suite_update"
+            | "launch_suite_update"
+    );
+    let component = if inventory
+        || recovery
+        || legacy
+        || record_owner
+        || restore_inventory
+        || restore_action
+        || suite_update
+    {
+        "control-center.delivery"
+    } else {
+        "control-center.tools"
+    };
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
-    let allowed = if restore_inventory || restore_action {
+    let allowed = if suite_update {
+        request.header.route == "updates"
+            && request.args.as_object().is_some_and(|args| {
+                if request.method == "check_suite_update" {
+                    args.is_empty()
+                } else {
+                    args.len() == 1
+                        && args
+                            .get("id")
+                            .and_then(Value::as_str)
+                            .is_some_and(product_contract::commands::revision)
+                }
+            })
+    } else if restore_inventory || restore_action {
         matches!(
             request.header.route.as_str(),
             "updates" | "recovery" | "products" | "migration"
@@ -84,7 +111,19 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             code: ProblemCode::Unauthorized,
         });
     }
-    let value = if restore_inventory || restore_action {
+    let value = if suite_update {
+        #[cfg(windows)]
+        let result = crate::updates::execute(
+            window.app_handle().clone(),
+            &request.method,
+            request.args,
+            request.header.deadline_ms,
+        )
+        .await;
+        #[cfg(not(windows))]
+        let result: Result<Value, &'static str> = Err("suite_windows_required");
+        result.map_err(str::to_owned)
+    } else if restore_inventory || restore_action {
         #[cfg(windows)]
         let result = {
             let app = window.app_handle().clone();
@@ -184,11 +223,15 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     };
     let (outcome, value) = match value {
         Ok(value) => (OperationState::Succeeded {}, value),
-        Err(_) => (
+        Err(issue) => (
             OperationState::Failed {
                 code: ProblemCode::Unavailable,
             },
-            serde_json::json!({"issue":"manager_tools_unavailable"}),
+            if suite_update {
+                serde_json::json!({"issue":issue})
+            } else {
+                serde_json::json!({"issue":"manager_tools_unavailable"})
+            },
         ),
     };
     Ok(Response {
@@ -203,6 +246,8 @@ pub(crate) fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("control-center")
         .invoke_handler(tauri::generate_handler![execute])
         .setup(|app, _| {
+            #[cfg(windows)]
+            app.manage(crate::updates::Updates::default());
             devbox_manager_lib::component::initialize(app).map_err(std::io::Error::other)?;
             Ok(())
         })
