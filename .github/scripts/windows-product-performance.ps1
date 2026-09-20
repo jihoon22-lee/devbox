@@ -44,8 +44,11 @@ if ($Apps.Count -gt 0) {
   $settings = Read-Json $performance
   if (@($Apps | Sort-Object -Unique).Count -ne $Apps.Count -or @($Apps | Where-Object { $_ -notin $settings.apps }).Count -ne 0) { Fail 'Unknown/repeated baseline measurement selection' }
   $settings.apps = $Apps
+  # Read-Json returns PSCustomObject; Write-Report deliberately accepts a dictionary.
+  $selected = [ordered]@{}
+  foreach ($property in $settings.PSObject.Properties) { $selected[$property.Name] = $property.Value }
   $performance = Join-Path $root 'measurement-config.json'
-  Write-Report $settings $performance
+  Write-Report $selected $performance
   $extra = @('--performance-only','true')
 }
 & node "$PSScriptRoot/windows-packaged-smoke.mjs" --config $config --verification $verification --assets $assets --output (Join-Path $root 'runtime.json') --runtime (Join-Path $root 'runtime') --tag $baseline.tag --commit $baseline.commit --performance $performance @extra

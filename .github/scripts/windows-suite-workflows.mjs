@@ -21,7 +21,7 @@ const root=realpathSync.native(mkdtempSync(path.join(tmpdir(),"devbox-suite-work
 const evidence={source:process.env.DEVBOX_SUITE_ARTIFACT_SOURCE??process.env.GITHUB_SHA,fixtureSource:process.env.GITHUB_SHA,artifactRun:process.env.DEVBOX_SUITE_ARTIFACT_RUN??process.env.GITHUB_RUN_ID,environment:"github-hosted-windows",stage:"assembly",scope:remainingOnly?"remaining":"all",checks:{},result:"failed"};
 mkdirSync("product-foundation-evidence",{recursive:true});
 const report=()=>writeFileSync("product-foundation-evidence/suite-workflows.json",JSON.stringify(evidence,null,2));
-const stage=value=>{evidence.stage=value;report();};
+const stage=value=>{evidence.stage=value;report();console.log(`Suite workflow: ${value}`);};
 const live=[];
 const digest=file=>createHash("sha256").update(readFileSync(file)).digest("hex");
 // WinForms SendKeys uses a literal space; {SPACE} is not a supported keyword.
@@ -107,10 +107,14 @@ try {
   await assert.rejects(()=>commands(center,"command_open",{command:{...openRequest(),revision:"f".repeat(64)}}));
   evidence.checks.routeReviewRejectAcceptReplayAndStale=true;
   stage("cold-activation-and-namespace");
-  knowledge.cdp.close();const oldKnowledgeExit=once(knowledge.child,"exit");knowledge.child.kill();await oldKnowledgeExit;
-  const coldRequest=openRequest();const coldReceipt=await commands(center,"command_open",{command:coldRequest});
+  knowledge.cdp.close();await stopOwnedProcess(knowledge.identity,knowledge.executable,knowledge.child);
+  const coldRequest=openRequest();let coldReceipt,coldFailure;
+  try {coldReceipt=await commands(center,"command_open",{command:coldRequest});}catch(error){coldFailure=error;}
+  // Adopt the exact fixture member even if its first command failed, so the
+  // failure path retires the newly launched process too and cannot hang Node.
   const identity=allWindowsProcesses().find(item=>path.resolve(item.Path).toLowerCase()===path.resolve(knowledge.executable).toLowerCase());assert.ok(identity,"cold activation did not launch the verified member");
   knowledge.identity=identity;knowledge.child={pid:identity.Pid,get exitCode(){return allWindowsProcesses().some(item=>item.Pid===identity.Pid&&item.Created===identity.Created&&item.Path===identity.Path)?null:0;}};
+  if(coldFailure)throw coldFailure;
   knowledge.cdp=await connect(knowledge.port,knowledge.child);await review(knowledge,coldReceipt);
   await until(async()=>(await commands(center,"command_status",{product:"knowledge",operationId:coldReceipt.operationId})).phase==="opened","cold route was not acknowledged");
   evidence.checks.coldActivationUsesExactRememberedMember=true;
@@ -239,5 +243,5 @@ finally {
     } catch(error){evidence.cleanup.push({product:item.product,error:String(error)});process.exitCode=1;evidence.result="failed";}
     finally {if(item.policy)restoreElevatedCdpPolicy(item.policy);}
   }
-  report();
+  report();console.log(`Suite workflow completed: ${evidence.result} (${evidence.stage})`);
 }

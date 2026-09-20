@@ -94,3 +94,41 @@ keep the reviewed digest/data unchanged. Add a metadata assertion for the attrib
 and pinned digest so future relocation cannot wait until native tests to reveal this.
 No product logic changes and no repeat local frontend/Rust suite are needed for this
 checkout-byte correction. Final-source required CI remains mandatory.
+
+## Exact candidate findings — bounded B09 correction
+
+PR #562 merged after final CI 35504681097 passed. Exact-main candidate 35505536649
+at d88cb623 assembled all seven public assets; installer migration/update/recovery/
+removal passed. The candidate is not accepted for promotion while native scopes fail.
+
+- Three native scopes stopped before product execution because baseline subset
+  configuration was a PSCustomObject passed to a dictionary-only report writer.
+  Preserve all frozen budgets/nested values and explicitly convert its top-level
+  properties to an ordered dictionary before writing.
+- The native WSL short task produced its cwd file but no matcher diagnostic. The
+  supervisor could execute and exit before the host's /proc identity probes. Gate
+  user execution on a bounded stdin acknowledgement after exact identity validation;
+  missing/wrong acknowledgement cannot execute the task. Keep task stdin closed and
+  preserve all buffered output. Add supervisor regressions for short exit/status/logs
+  and rejected acknowledgement, and distinguish native exit 3 from handshake failure.
+  The native fixture records bounded stdout/stderr on any remaining matcher failure.
+- Complete these corrections and their fixtures/docs before running the failed and
+  affected scopes together. Retain unrelated successful B09 local checks. Required
+  final-source CI and a fresh exact-main candidate remain necessary for changed code.
+- Actual Windows 11 two-monitor 96-DPI window move and restart-position retention
+  passed on the original candidate. Native IME input was blocked by Windows foreground
+  ownership and is not reported as passed. No Docker/service/network/display changes.
+- Cross-product evidence retained after cancelling the already failed candidate shows
+  cold Knowledge activation failed after successful approval/project/Review scenarios.
+  Suite resumed its listener during plugin setup, before Tauri creates the main window
+  and shell state. Resume on RunEvent::Ready instead. The fixture now adopts a cold
+  child even when command delivery fails, closes the old instance gracefully, and
+  prints stage/completion records so a failed child cannot silently keep the job alive.
+- Runtime's isolated package compilation exposed its missing explicit Tokio `net`
+  feature, previously supplied by workspace feature unification. Declare its actual
+  dependency. Runtime regressions: 302 passed, one deliberately ignored. Baseline
+  PowerShell parsing and all three subset serializations passed with unchanged budgets;
+  performance JS contracts passed. Retain these results after the separate Suite fix.
+
+Final affected Clippy/all-targets passed for Runtime and all four consuming products.
+Changed JS syntax and diff checks passed. Required PR CI and fresh candidate remain.

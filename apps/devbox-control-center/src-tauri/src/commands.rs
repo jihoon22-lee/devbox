@@ -227,9 +227,13 @@ async fn command_open(
         request.header.deadline_ms,
     )
     .await
-    .map_err(|_| Problem {
-        code: ProblemCode::Unavailable,
-        provenance: provenance.clone(),
+    .map_err(|reason| {
+        // Fixed native codes only: no command body, path, selection or secret.
+        eprintln!("suite command delivery failed: {reason}");
+        Problem {
+            code: ProblemCode::Unavailable,
+            provenance: provenance.clone(),
+        }
     })?;
     Ok(Response {
         operation: Operation {
