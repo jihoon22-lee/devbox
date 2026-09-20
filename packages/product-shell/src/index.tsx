@@ -44,7 +44,7 @@ function ReadyShell({ description, renderContent, refreshContext }: { descriptio
     }
   }}>
     <a className="shell-skip" href="#product-content" onClick={() => content.current?.focus()}>본문으로 이동</a>
-    <header><strong>{description.product.label}</strong><span className="shell-badge">{nativeMode ? "개발 빌드" : "브라우저 미리보기 · 모의 데이터"}</span></header>
+    <header><strong>{description.product.label}</strong>{!nativeMode && <span className="shell-badge">브라우저 미리보기 · 모의 데이터</span>}</header>
     {description.deliveryState && !["direct","committed"].includes(description.deliveryState) && <p role="status" className="shell-delivery-notice">{
       description.deliveryState === "import" ? "Suite 전환 중입니다. 데이터 이전을 마친 뒤 Control Center에서 활성화를 완료해 주세요. 일반 작업과 자동 실행은 대기합니다."
       : description.deliveryState === "health" ? "Suite 활성화 전 제품 상태를 확인하고 있습니다. 일반 작업은 아직 시작할 수 없습니다."

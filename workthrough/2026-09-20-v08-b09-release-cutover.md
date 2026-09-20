@@ -132,3 +132,28 @@ removal passed. The candidate is not accepted for promotion while native scopes 
 
 Final affected Clippy/all-targets passed for Runtime and all four consuming products.
 Changed JS syntax and diff checks passed. Required PR CI and fresh candidate remain.
+
+## Final Source first-frame correction
+
+PR #563 passed CI 35509894449 and merged as 1f09afaa. Candidate 35511259083
+passed four-product assembly, API, Knowledge, cross-product and full WSL2/Docker
+acceptance, including the previously failing cold activation and short WSL task.
+Product-shell acceptance exposed a Source UI first-frame race: immediately after
+approving a new worktree, HistoryDiffPanel's passive initialization could invalidate
+the first history request, leaving the panel empty with no error. Initialize and
+retire repository state in a layout effect, before the frame accepts input. A
+regression clicks in the first committed frame on mount and repository change;
+the native fixture keeps its immediate first click and its assertions unchanged.
+Preserve passing unrelated checks, collect this frontend correction's completion
+checks, and require final CI plus a fresh exact-main candidate for changed UI bytes.
+The same candidate screenshot also exposed the obsolete unconditional native
+“development build” badge. Remove that badge from native products; retain the
+explicit browser/mock-data notice. This is a label correction, with no route,
+authority, feature or native-code changes.
+
+History correction completion: verify:affected passed the Workspace build/bundle,
+772 workspace-feature tests and 91 product tests, including the first-frame regression.
+The subsequent native badge-only JSX correction passed product-shell TypeScript;
+its consuming products are covered by final PR CI. No repeated Runtime/Rust checks.
+Installer 35511259083 also passed; product-shell Source remains that candidate's only
+failed scope. The candidate is not eligible for stable promotion.

@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import { useLayoutEffect, useRef } from "react";
 import {
   GIT_VIEW_ERROR,
   repoCommitDetail,
@@ -71,6 +72,26 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("HistoryDiffPanel", () => {
+  it("keeps the first committed-frame request on mount and repository change", async () => {
+    function FirstFrame({ selected }: { selected: RepoEntry }) {
+      const host = useRef<HTMLDivElement>(null);
+      useLayoutEffect(() => {
+        host.current?.querySelector<HTMLButtonElement>(".history-panel-head button")?.click();
+      }, [selected.canonicalKey, selected.path]);
+      return <div ref={host}><HistoryDiffPanel repo={selected} /></div>;
+    }
+    const view = render(<FirstFrame selected={repo} />);
+    await screen.findByRole("button", { name: /Add fixture/ });
+    expect(repoHistoryMock).toHaveBeenLastCalledWith(repo.path, 50);
+
+    const next = { entries: [{ ...entry, id: "f".repeat(40), subject: "Other worktree" }], hasMore: false };
+    repoHistoryMock.mockResolvedValueOnce(next);
+    view.rerender(<FirstFrame selected={otherRepo} />);
+    await screen.findByRole("button", { name: /Other worktree/ });
+    expect(screen.queryByRole("button", { name: /Add fixture/ })).toBeNull();
+    expect(repoHistoryMock).toHaveBeenLastCalledWith(otherRepo.path, 50);
+    expect(repoHistoryMock).toHaveBeenCalledTimes(2);
+  });
   it("preserves the native bridge's fixed recovery message for failed diff reads", async () => {
     repoDiffMock.mockRejectedValueOnce(new WorkspaceOperationError("Git 설정이나 실행 근거를 다시 검토해 주세요."));
     render(<HistoryDiffPanel repo={repo}/>);

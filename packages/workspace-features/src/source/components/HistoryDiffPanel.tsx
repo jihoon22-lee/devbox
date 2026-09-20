@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type KeyboardEvent } from "react";
+import { useEffect, useLayoutEffect, useRef, useState, type KeyboardEvent } from "react";
 import { WorkspaceOperationError } from "../../transport";
 import {
   GIT_VIEW_ERROR,
@@ -47,7 +47,9 @@ export default function HistoryDiffPanel({ repo, onBusyChange, onOpenFile }: Pro
   useEffect(() => {onBusyChange?.(busy);}, [busy, onBusyChange]);
   useEffect(() => () => {onBusyChange?.(false);}, [onBusyChange]);
 
-  useEffect(() => {
+  // Invalidate the previous repository before this frame accepts input. A
+  // passive mount effect can run after the first click and discard its reply.
+  useLayoutEffect(() => {
     sequenceRef.current += 1;
     busyRef.current = false;
     setBusy(false);
