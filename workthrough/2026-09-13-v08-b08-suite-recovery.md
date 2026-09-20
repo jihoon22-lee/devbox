@@ -1015,3 +1015,17 @@ fixture so it cannot hide restore/update/reinstall and reviewed-cutover findings
 The Products folder-action type check and its three focused UI tests passed in
 4.874s together with parity metadata validation. Native folder opening/refused
 renderer-path and the cleanup fixes run together in the next scoped package.
+
+### Cache namespace correction from the completed run
+
+CI `35490650401` passed but restored the old `devbox-windows` key and reported
+cache up-to-date after Test. The attempted `key: unit-tests-v1` was ineffective:
+[rust-cache config](https://github.com/Swatinem/rust-cache/blob/v2/src/config.ts)
+uses shared-key in preference to key. Put the namespace in
+`shared-key: devbox-windows-unit-tests-v1` itself. No check is removed or repeated
+for this correction; the final required CI will populate the actual namespace.
+
+WSL2 remaining-scope run `35491659992` passed Zellij reconnect/no command replay,
+real Docker lifecycle/identity/log linkage and stopped-distro non-start behavior.
+Together with Runtime/Session coverage in `35488794839` and tmux in `35490692260`,
+the planned WSL2 range is complete on retained Workspace source `0992e083`.

@@ -109,7 +109,8 @@ Windows compiler/native acceptance CI는 실패한 실행에서도 Rust 의존�
 실행에서 다시 컴파일하지 않도록 하기 위한 설정이다. compiler·Cargo manifest/lockfile·
 환경 해시 키와 기본 workspace crate 제외 정책은 유지하며, 캐시를 테스트 PASS 근거나
 이전 제품 실행 파일의 재사용 허가로 취급하지 않는다.
-Windows CI는 `unit-tests-v1` 키로 test codegen 의존성을 보관한다. 이전 check/Clippy 전용
+Windows CI는 `shared-key: devbox-windows-unit-tests-v1`로 test codegen 의존성을 보관한다.
+`shared-key`가 있으면 별도 `key` 입력은 무시되므로 namespace를 shared-key 자체에 둔다. 이전 check/Clippy 전용
 불변 캐시가 적중한 채 테스트 의존성을 매번 다시 빌드하는 상황을 반복하지 않는다.
 
 Windows Rust CI의 Cargo build job은 1개다. 여러 Tauri build script가 같은
