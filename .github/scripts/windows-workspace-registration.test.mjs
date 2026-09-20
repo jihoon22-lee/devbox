@@ -4,6 +4,14 @@ import {test} from "node:test";
 import {runInNewContext} from "node:vm";
 import {terminalProbePresent} from "./windows-workspace-terminal-sessions.mjs";
 import {workspaceRequestExpression} from "./windows-workspace-registration.mjs";
+import {multiplexerPromptVisible} from "./windows-workspace-multiplexer.mjs";
+
+test("ConPTY prompt readiness accepts erased trailing blanks while still requiring a prompt",()=>{
+  assert.equal(multiplexerPromptVisible("root@fixture:/tmp/owned#\x1b[K\r\n\x1b[38;1H[tmux status]"),true);
+  assert.equal(multiplexerPromptVisible("user@fixture:~$ "),true);
+  assert.equal(multiplexerPromptVisible("root@fixture:/tmp/owned#\x1b[1;74H"),true);
+  assert.equal(multiplexerPromptVisible("\x1b[?25h\x1b[2Jstarting shell"),false);
+});
 
 test("native registration probe executes generated requests with the described context", async () => {
   for (const context of [null, {projectId:"project", worktreeId:"tree", revision:2, target:{kind:"windows"}}]) {

@@ -943,3 +943,12 @@ Run `35488794839` reuses the unchanged Workspace executable from `35486669148` f
 previously unrun hosted WSL2 acceptance. Further Suite completion selects
 `delivery_scope=delivery`, retaining the successful shell/domain cases and their
 original source. Release assembly still requires all exact-main products.
+
+WSL2 retained-artifact run `35488794839` passed Runtime process-group/listener/secret
+checks and native Session/task/worktree/PTY/reload/SIGINT cases, then stopped at the
+tmux prompt probe. Captured output shows the real `root@...:/tmp/devbox-mux-...#`
+prompt followed by erase/newline/cursor controls; the fixture incorrectly required
+a literal trailing blank. Accept prompt whitespace/end after stripping VT controls;
+actual input execution still requires the owned proof file. Prepare a
+`multiplexers` continuation (tmux, Zellij, containers and stopped-query only),
+using artifact `35486669148`; do not rerun the accepted Runtime/Session cases.

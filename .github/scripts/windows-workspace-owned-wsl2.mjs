@@ -16,7 +16,7 @@ import {freePort,connect,waitForRenderer} from "./workspace-cdp-fixture.mjs";
 const networkFixture=requireHostedNetworkFixture();
 assert.equal(process.platform,'win32');
 const [ownerFile,artifact,expectedSource,expectedRun,_installedTargets,artifactSource=expectedSource,artifactRun=expectedRun,scope='all']=process.argv.slice(2);
-assert.ok(['all','remaining','containers'].includes(scope));
+assert.ok(['all','remaining','containers','multiplexers'].includes(scope));
 assert.match(artifactSource,/^[a-f0-9]{40}$/);assert.match(artifactRun,/^[0-9]+$/);
 assert.equal(expectedRun,networkFixture.runId);
 const json=p=>JSON.parse(readFileSync(p,'utf8').replace(/^\uFEFF/,''));
@@ -70,7 +70,7 @@ try{
  evidence.observations.sessions=await exerciseTerminalSessionFixture({cdp,directory,call,success,connectTerminal,distro:owner.name,wsl});
  }
  evidence.observations.multiplexers=[];
- for(const multiplexer of scope==='all'?["tmux","zellij"]:scope==='remaining'?["zellij"]:[])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
+ for(const multiplexer of ['all','multiplexers'].includes(scope)?["tmux","zellij"]:scope==='remaining'?["zellij"]:[])evidence.observations.multiplexers.push(await exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro:owner.name,multiplexer}));
  evidence.observations.containers=await exerciseOwnedContainers({cdp,call,success,wsl,distro:owner.name,nativeDockerProbe:()=>{
    const args=['--distribution-id',owner.distroId,'--exec','docker','ps','-a','--no-trunc','--format','{{.ID}}\t{{.Names}}\t{{.Image}}\t{{.Status}}\t{{.Ports}}'];
    const probe=spawnSync(wslExe,args,{encoding:'utf8',timeout:15000,maxBuffer:65536,windowsHide:true});

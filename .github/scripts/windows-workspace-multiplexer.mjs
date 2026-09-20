@@ -4,6 +4,11 @@ import {writeFileSync} from "node:fs";
 import {stripVTControlCharacters} from "node:util";
 import {randomUUID} from "node:crypto";
 import {setTimeout as delay} from "node:timers/promises";
+export function multiplexerPromptVisible(output){
+  // ConPTY can erase the prompt's trailing blank and position the cursor
+  // separately. Actual command execution is still proved by the owned file.
+  return /[#$](?:\s|$)/.test(stripVTControlCharacters(output));
+}
 export async function exerciseMultiplexerReconnect({call,success,connectTerminal,wsl,distro,multiplexer}){
   assert.ok(["tmux","zellij"].includes(multiplexer));
   const id=randomUUID(),root="/tmp/devbox-mux-"+id;
@@ -17,7 +22,7 @@ export async function exerciseMultiplexerReconnect({call,success,connectTerminal
     await until(async()=>{
       const batch=await peer("terminal_output",{sessionId:session,after:cursor});cursor=batch.cursor;
       startupOutput=(startupOutput+batch.frames.map(frame=>frame.data).join("")).slice(-512*1024);
-      return /[#$] /.test(stripVTControlCharacters(startupOutput));
+      return multiplexerPromptVisible(startupOutput);
     },"Multiplexer shell did not become interactive");
   };
   try{
