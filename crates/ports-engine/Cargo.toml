@@ -1,6 +1,6 @@
 [package]
-name = "port-manager"
-version = "0.4.0"
+name = "devbox-ports-engine"
+version = "0.8.0"
 publish = false
 description = "Port & Process Manager"
 authors = ["jihoon22.lee"]
@@ -13,29 +13,20 @@ edition = "2021"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "port_manager_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 # Product consumers reuse commands without embedding the standalone frontend.
 [features]
-default = ["standalone"]
-standalone = ["desktop"]
+default = ["desktop"]
 desktop = []
 
-[[bin]]
-name = "port-manager"
-path = "src/main.rs"
-required-features = ["standalone"]
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
-devbox-window-state-tauri = { package = "window-state-tauri", path = "../window-state-tauri" }
 devbox-process = { package = "process", path = "../process" }
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-applink = { package = "applink", path = "../applink" }

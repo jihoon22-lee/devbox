@@ -10,8 +10,6 @@ use serde::Serialize;
 
 #[cfg(target_os = "windows")]
 const RUN_KEY: &str = r"Software\Microsoft\Windows\CurrentVersion\Run";
-#[cfg(all(target_os = "windows", feature = "standalone"))]
-const VALUE_NAME: &str = "LifeLog";
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -23,64 +21,8 @@ pub struct AutostartStatus {
 }
 
 /// 현재 자동 시작 등록 상태.
-#[cfg(feature = "standalone")]
-#[tauri::command]
-pub fn autostart_status() -> AutostartStatus {
-    #[cfg(target_os = "windows")]
-    {
-        match read_value(VALUE_NAME) {
-            Ok(Some(command)) => AutostartStatus {
-                supported: true,
-                enabled: true,
-                command: Some(command),
-            },
-            Ok(None) => AutostartStatus {
-                supported: true,
-                enabled: false,
-                command: None,
-            },
-            Err(_) => AutostartStatus {
-                supported: true,
-                enabled: false,
-                command: None,
-            },
-        }
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        AutostartStatus {
-            supported: false,
-            enabled: false,
-            command: None,
-        }
-    }
-}
 
 /// 자동 시작 등록/해제를 되돌릴 수 있게 토글한다.
-#[cfg(feature = "standalone")]
-#[tauri::command]
-pub fn set_autostart(enabled: bool) -> Result<AutostartStatus, String> {
-    #[cfg(target_os = "windows")]
-    {
-        if enabled {
-            let exe = std::env::current_exe().map_err(|e| e.to_string())?;
-            let command = format!("\"{}\"", exe.display());
-            set_value(VALUE_NAME, &command)?;
-        } else {
-            delete_value(VALUE_NAME)?;
-        }
-        Ok(autostart_status())
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let _ = enabled;
-        Ok(AutostartStatus {
-            supported: false,
-            enabled: false,
-            command: None,
-        })
-    }
-}
 
 #[cfg(target_os = "windows")]
 fn open_run_key() -> Result<winreg::RegKey, String> {
@@ -88,19 +30,6 @@ fn open_run_key() -> Result<winreg::RegKey, String> {
     let hkcu = winreg::RegKey::predef(HKEY_CURRENT_USER);
     hkcu.open_subkey_with_flags(RUN_KEY, KEY_READ | KEY_SET_VALUE)
         .map_err(|e| format!("Run 키 열기 실패: {e}"))
-}
-
-#[cfg(all(target_os = "windows", feature = "standalone"))]
-fn read_value(name: &str) -> Result<Option<String>, String> {
-    use winreg::enums::KEY_READ;
-    let hkcu = winreg::RegKey::predef(winreg::enums::HKEY_CURRENT_USER);
-    let key = hkcu
-        .open_subkey_with_flags(RUN_KEY, KEY_READ)
-        .map_err(|e| e.to_string())?;
-    match key.get_value::<String, _>(name) {
-        Ok(command) => Ok(Some(command)),
-        Err(_) => Ok(None),
-    }
 }
 
 #[cfg(target_os = "windows")]

@@ -6,7 +6,7 @@ import path from "node:path";
 import {randomUUID} from "node:crypto";
 import {setTimeout as delay} from "node:timers/promises";
 
-export async function exerciseWorkspaceRuntime({cdp,directory,call,success,waitForRenderer}) {
+export async function exerciseWorkspaceRuntime({cdp,directory,call,success,waitForRenderer,measurePerformance=false}) {
   assert.equal(process.platform,"win32");
   assert.equal(process.env.GITHUB_ACTIONS,"true");assert.equal(process.env.RUNNER_ENVIRONMENT,"github-hosted");
   const root=path.join(directory,"Runtime owned fixture");mkdirSync(root);
@@ -75,6 +75,22 @@ if(process.argv.includes('--child')){
     failed(await call("workspace.processes","open_port_log",{actionKey:observed.correlation.action_key,stream:"stdout"},29000));
     assert.equal(success(await runtime("get_active_run",{id:job.id})),null);
     const terminal=success(await read());assert.ok(JSON.stringify(terminal).includes("synthetic-child-ready"),"Terminalization changed a retained log reference");
+    if (measurePerformance) {
+      const measuredJob=success(await runtime("create_job",{input:{name:"Owned task latency",command:"exit /b 0",cwd:root,targetKind:"windows",targetDistro:null,environment:{action:"keep"},cronExpr:"0 0 0 1 1 *",enabled:false,overlapPolicy:"skip",catchUp:false}}));
+      try {
+        const started=performance.now();
+        success(await control("run_job_now",{id:measuredJob.id}));
+        const completed=await until(async()=>{const runs=success(await runtime("list_runs",{jobId:measuredJob.id,limit:1}));return runs[0]?.endedAt!=null&&runs[0];},"Measured owned task did not finish",30000);
+        assert.equal(completed.exitCode,0);
+        const completeMs=Math.round(performance.now()-started);
+        const budget=JSON.parse(readFileSync(".github/scripts/product-foundation-performance.json","utf8")).budgets.ownedTaskCompleteMs;
+        assert.ok(completeMs<=budget);
+        writeFileSync("product-foundation-evidence/workspace-task-performance.json",JSON.stringify({source:process.env.GITHUB_SHA,build:"exact candidate release",kind:"disabled-windows-job-explicit-owned-execution",completeMs,budget,result:"passed"},null,2));
+      } finally {
+        await control("stop_active_run",{id:measuredJob.id}).catch(()=>{});
+        await runtime("delete_job",{id:measuredJob.id}).catch(()=>{});
+      }
+    }
     return {duplicateReceipt:true,rendererReload:true,ownedDescendant:true,exactCreationMismatch:true,ownerBrokerRoutesWithoutKill:true,listenerLogTaskNavigation:true,terminalLogLease:true,staleActionRejected:true,stopWaitsForDescendants:true};
   } catch(error) {
     // Preserve only this disposable fixture's bounded run/log evidence before

@@ -1309,7 +1309,8 @@ mod tests {
     #[test]
     fn run_manager_root_identifier_matches_the_release_catalog() {
         let catalog: serde_json::Value =
-            serde_json::from_str(include_str!("../../../../apps/legacy-v0.7-catalog.json")).unwrap();
+            serde_json::from_str(include_str!("../../../../apps/legacy-v0.7-catalog.json"))
+                .unwrap();
         let identifier = catalog["apps"]
             .as_array()
             .unwrap()

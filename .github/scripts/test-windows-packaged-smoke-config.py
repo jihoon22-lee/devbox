@@ -10,8 +10,8 @@ import sys
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / ".github/scripts/windows-packaged-smoke-config.json"
-CATALOG_PATH = ROOT / "apps/catalog.json"
+CONFIG_PATH = ROOT / ".github/scripts/legacy-v0.7-windows-packaged-smoke-config.json"
+CATALOG_PATH = ROOT / "apps/legacy-v0.7-catalog.json"
 
 
 def read_json(path: pathlib.Path) -> dict:
@@ -111,22 +111,10 @@ def check() -> list[str]:
         if app_id not in released:
             continue
         catalog_app = released[app_id]
-        app_root = ROOT / catalog_app["appDir"]
-        package = read_json(app_root / "package.json")
-        tauri = read_json(app_root / "src-tauri/tauri.conf.json")
-        windows = tauri.get("app", {}).get("windows", [])
-        main_window = next((window for window in windows if window.get("label", "main") == "main"), None)
-
-        if app.get("version") != package.get("version"):
-            failures.append(f"{app_id}: packaged version differs from package.json")
-        if app.get("identifier") != catalog_app.get("identifier") or app.get("identifier") != tauri.get("identifier"):
-            failures.append(f"{app_id}: packaged identifier differs from catalog/Tauri")
-        if main_window is None or app.get("title") != main_window.get("title"):
-            failures.append(f"{app_id}: packaged title differs from the Tauri main window")
-
-        expected_product_image = f"{tauri.get('productName')}.exe"
+        if app.get("identifier") != catalog_app.get("identifier"):
+            failures.append(f"{app_id}: frozen identifier differs from legacy catalog")
         process_names = app.get("additionalProcessNames", [])
-        if expected_product_image not in process_names or len(process_names) != len(set(process_names)):
+        if not process_names or len(process_names) != len(set(process_names)):
             failures.append(f"{app_id}: protected process names omit or duplicate the product image")
         if any(
             not isinstance(name, str)
@@ -136,25 +124,21 @@ def check() -> list[str]:
         ):
             failures.append(f"{app_id}: protected process name is unsafe")
 
-        frontend = frontend_source(app_root)
-        markers = app.get("markers", [])
-        if not markers or any(not isinstance(marker, str) or marker not in frontend for marker in markers):
-            failures.append(f"{app_id}: a packaged UI marker is empty or absent from frontend source")
+        if not app.get("markers") or not app.get("probes"):
+            failures.append(f"{app_id}: frozen native contract missing")
 
-        rust = source_text(app_root / "src-tauri/src", {".rs"})
-        probes = app.get("probes", [])
-        if not probes:
-            failures.append(f"{app_id}: at least one read-only packaged IPC probe is required")
-        for probe in probes:
-            command = probe.get("command") if isinstance(probe, dict) else None
-            if not isinstance(command, str) or re.search(rf"\b{re.escape(command)}\b", rust) is None:
-                failures.append(f"{app_id}: packaged IPC probe command is absent from Rust source")
-        quit_command = app.get("quitCommand")
-        if quit_command is not None and (
-            not isinstance(quit_command, str)
-            or re.search(rf"\b{re.escape(quit_command)}\b", rust) is None
-        ):
-            failures.append(f"{app_id}: orderly quit command is absent from Rust source")
+    # Current public product identities come from the four Tauri sources.
+    live = read_json(ROOT / ".github/scripts/windows-packaged-smoke-config.json")
+    assert live == read_json(ROOT / ".github/scripts/windows-installer-acceptance-config.json")
+    assert live["schemaVersion"] == 2 and len(live["products"]) == 4
+    for product in live["products"]:
+        app_root = ROOT / f"apps/devbox-{product['id']}"
+        tauri = read_json(app_root / "src-tauri/tauri.conf.json")
+        package = read_json(app_root / "package.json")
+        if product["version"] != package["version"] or product["version"] != live["suiteVersion"]:
+            failures.append("Suite product version mismatch")
+        if product["identifier"] != tauri["identifier"]:
+            failures.append("Suite identifier mismatch")
 
     return failures
 

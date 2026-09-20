@@ -10,7 +10,8 @@ import re
 import sys
 
 APP_ID_PATTERN = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
-EXPECTED_RELEASE_APPS = 15
+EXPECTED_RELEASE_APPS = 4
+PRODUCT_IDS = {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
 MIN_SHARDS = 2
 MAX_SHARDS = 4
 
@@ -42,7 +43,10 @@ def release_app_ids(catalog: object) -> list[str]:
         )
     if len(set(selected)) != len(selected):
         raise ShardPlanError("release catalog contains duplicate application ids")
-    return selected
+    if set(selected) != PRODUCT_IDS:
+        raise ShardPlanError("release catalog must contain exactly the four Suite products")
+    # Pair the large Workspace with Control Center, and API with Knowledge.
+    return ["devbox-workspace", "devbox-api-studio", "devbox-control-center", "devbox-knowledge"]
 
 
 def build_matrix(app_ids: list[str], shard_count: int) -> dict[str, object]:

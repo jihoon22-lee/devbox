@@ -1,5 +1,15 @@
 # Release evidence index
 
+## v0.8 source cutover
+
+네 제품 소스·Suite 7-file 배포 계약을 B09에서 전환한다. 실제 최종 CI·exact-main 후보·
+게시·fresh-download 결과와 남은 제한은 [#541](https://github.com/jihoon22-lee/devbox/issues/541) 및
+[#542](https://github.com/jihoon22-lee/devbox/issues/542)에 기록한다. 이 문서의 아래 v0.7 기록은
+역사적 evidence이며 v0.8 PASS로 재해석하지 않는다. [v0.8 수용 추적](v0.8-acceptance.md).
+
+## v0.7 및 이전 기록
+
+
 AGENTS.md에서 옮긴 historical stable 기록이다. 2026-09-07 정리 시점의 기준이며,
 새 릴리스 작업 시 GitHub 상태를 다시 확인한다. 아래 수치는 v0.8 목표 topology에 적용하지 않는다.
 

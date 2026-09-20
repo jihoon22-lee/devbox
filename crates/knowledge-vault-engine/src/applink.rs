@@ -15,11 +15,6 @@ impl PendingOpen {
         Self::default()
     }
 
-    #[cfg(feature = "standalone")]
-    pub fn set(&self, request: OpenRequest) {
-        *self.0.lock().expect("PendingOpen mutex poisoned") = Some(request);
-    }
-
     /// Product offers never replace a request that the frontend has yet to take.
     pub fn offer(&self, request: OpenRequest) -> Result<(), String> {
         let mut pending = self.0.lock().map_err(|_| "draft_delivery_unavailable")?;

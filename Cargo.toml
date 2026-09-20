@@ -27,7 +27,6 @@ members = [
     "crates/projects-engine",
     "crates/webhook-host",
     "crates/repositories-engine",
-    "apps/devbox-launcher/src-tauri",
     "crates/logs-engine",
     "crates/filesystem",
     "crates/markdown",

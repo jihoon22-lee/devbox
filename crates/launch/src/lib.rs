@@ -220,8 +220,35 @@ fn version_sort_key(name: &str) -> Vec<u32> {
     name.split('.').map(|s| s.parse().unwrap_or(0)).collect()
 }
 
+/// Historical installation metadata remains readable for migration/diagnostics.
+/// A v0.8 host must route through Suite; it may never spawn a retired product.
+fn refuse_retired_product(app_id: &str) -> Result<(), String> {
+    if matches!(
+        app_id,
+        "port-manager"
+            | "developer-toolbox"
+            | "wsl-desktop"
+            | "api-playground"
+            | "everything-plus"
+            | "knowledge-base"
+            | "life-log"
+            | "devbox-manager"
+            | "code-pad"
+            | "run-manager"
+            | "workbench"
+            | "webhook-lab"
+            | "repo-manager"
+            | "devbox-launcher"
+            | "log-lens"
+    ) {
+        return Err("legacy-product-unavailable-use-suite-route".into());
+    }
+    Ok(())
+}
+
 /// 설치된 앱을 실행하고 자식 pid를 반환한다.
 pub fn launch(app_id: &str, args: &[&str]) -> Result<u32, String> {
+    refuse_retired_product(app_id)?;
     let exe = resolve_installed(app_id)
         .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
     let mut command = std::process::Command::new(&exe);
@@ -256,6 +283,7 @@ pub fn launch_with_environment(
     {
         return Err("프로젝트 환경이 runtime 환경을 덮어쓸 수 없습니다".into());
     }
+    refuse_retired_product(app_id)?;
     let exe = resolve_installed(app_id)
         .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
     let mut command = std::process::Command::new(&exe);
@@ -294,6 +322,7 @@ pub fn launch_owned_with_environment(
     {
         return Err("프로젝트 환경이 runtime 환경을 덮어쓸 수 없습니다".into());
     }
+    refuse_retired_product(app_id)?;
     let exe = resolve_installed(app_id)
         .ok_or_else(|| "앱 설치 없음 — Devbox Manager에서 먼저 설치하세요".to_string())?;
     let mut command = std::process::Command::new(&exe);
@@ -384,6 +413,37 @@ pub fn open_argv(req: &devbox_applink::OpenRequest) -> Result<Vec<String>, Strin
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn retired_products_cannot_fall_back_to_installed_executables() {
+        for app in [
+            "port-manager",
+            "developer-toolbox",
+            "wsl-desktop",
+            "api-playground",
+            "everything-plus",
+            "knowledge-base",
+            "life-log",
+            "devbox-manager",
+            "code-pad",
+            "run-manager",
+            "workbench",
+            "webhook-lab",
+            "repo-manager",
+            "devbox-launcher",
+            "log-lens",
+        ] {
+            assert_eq!(
+                launch(app, &[]).unwrap_err(),
+                "legacy-product-unavailable-use-suite-route"
+            );
+            assert_eq!(
+                launch_with_environment(app, &[], &[]).unwrap_err(),
+                "legacy-product-unavailable-use-suite-route"
+            );
+            assert!(launch_owned_with_environment(app, &[], &[]).is_err());
+        }
+    }
 
     #[test]
     fn runtime_environment_drops_unrelated_host_values() {

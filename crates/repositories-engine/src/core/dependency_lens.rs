@@ -2747,7 +2747,7 @@ version = "2.0.0"
     #[test]
     fn scans_the_checked_in_monorepo_as_an_offline_smoke_fixture() {
         let root = Path::new(env!("CARGO_MANIFEST_DIR"))
-            .join("../../..")
+            .join("../..")
             .canonicalize()
             .unwrap();
         let discovery =

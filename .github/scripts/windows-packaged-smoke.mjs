@@ -1816,8 +1816,10 @@ async function main() {
   const expectedCommit = args.get("commit") ?? fail("missing --commit");
   if (!/^v\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$/.test(expectedTag)) fail("invalid --tag");
   if (!/^[0-9a-f]{40}$/.test(expectedCommit)) fail("invalid --commit");
+  const performanceOnly = args.get("performance-only") === "true";
+  if (args.has("performance-only") && (!performanceOnly || !args.has("performance"))) fail("performance-only requires an explicit baseline measurement config");
   const performanceConfiguration = args.has("performance")
-    ? loadPerformanceConfig(path.resolve(args.get("performance")), expectedTag, expectedCommit, isGitHubHostedWindowsAcceptanceHost(process.env))
+    ? loadPerformanceConfig(path.resolve(args.get("performance")), expectedTag, expectedCommit, isGitHubHostedWindowsAcceptanceHost(process.env), performanceOnly)
     : null;
   const config = JSON.parse(readFileSync(configFile, "utf8"));
   const verification = JSON.parse(readFileSync(verificationFile, "utf8"));
@@ -1904,7 +1906,10 @@ async function main() {
     report.performanceConfiguration = performanceConfiguration;
     report.performanceHost = performanceHost();
   }
-  for (const app of config.apps) {
+  const selectedApps = performanceOnly ? config.apps.filter(app => performanceConfiguration.apps.includes(app.id)) : config.apps;
+  report.scope = performanceOnly ? "selected-pinned-baseline-measurements" : "full-packaged-runtime";
+  report.selectedApps = selectedApps.map(app => app.id);
+  for (const app of selectedApps) {
     const result = await runApp(app, context);
     report.apps.push(result);
     writeJson(outputFile, { ...report, completedAt: null });
@@ -1915,7 +1920,7 @@ async function main() {
     passed: report.apps.filter((app) => app.status === "PASS").length,
     failed: report.apps.filter((app) => app.status === "FAIL").length,
     skipped: report.apps.filter((app) => app.status === "SKIP").length,
-    unattempted: config.apps.length - report.apps.length,
+    unattempted: selectedApps.length - report.apps.length,
     interrupted: requestedSignal,
   };
   if (performanceConfiguration) {

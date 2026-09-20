@@ -1,5 +1,15 @@
 # Roadmap
 
+## v0.8 source cutover
+
+네 제품 소스·Suite 7-file 배포 계약을 B09에서 전환한다. 실제 최종 CI·exact-main 후보·
+게시·fresh-download 결과와 남은 제한은 [#541](https://github.com/jihoon22-lee/devbox/issues/541) 및
+[#542](https://github.com/jihoon22-lee/devbox/issues/542)에 기록한다. 이 문서의 아래 v0.7 기록은
+역사적 evidence이며 v0.8 PASS로 재해석하지 않는다. [v0.8 수용 추적](v0.8-acceptance.md).
+
+## v0.7 및 이전 기록
+
+
 15개 앱을 순차적으로 완성하고, 공통 코드가 실제로 필요해지면 그때 `crates/`·`packages/`로 추출한다.
 처음 8개 앱(port-manager~devbox-manager)을 완성한 뒤 에디터(code-pad)·예약 실행·서비스 관리자(run-manager),
 그리고 Stage 4·5 앱(workbench·webhook-lab·repo-manager)을 추가했다.

@@ -1,5 +1,5 @@
 [CmdletBinding()]
-param()
+param([string[]]$Apps = @())
 Set-StrictMode -Version Latest
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted' -or $env:OS -ne 'Windows_NT') {
@@ -38,5 +38,15 @@ Write-Report $metadata $metadataPath
 $verification = Join-Path $root 'verification.json'
 & python "$PSScriptRoot/verify-downloaded-release.py" --assets $assets --release $metadataPath --config $config --tag $baseline.tag --commit $baseline.commit --draft false --prerelease false | Set-Content -LiteralPath $verification -Encoding utf8
 if ($LASTEXITCODE -ne 0) { Fail 'independent baseline asset verification failed' }
-& node "$PSScriptRoot/windows-packaged-smoke.mjs" --config $config --verification $verification --assets $assets --output (Join-Path $root 'runtime.json') --runtime (Join-Path $root 'runtime') --tag $baseline.tag --commit $baseline.commit --performance "$PSScriptRoot/product-foundation-performance.json"
+$performance = "$PSScriptRoot/product-foundation-performance.json"
+$extra = @()
+if ($Apps.Count -gt 0) {
+  $settings = Read-Json $performance
+  if (@($Apps | Sort-Object -Unique).Count -ne $Apps.Count -or @($Apps | Where-Object { $_ -notin $settings.apps }).Count -ne 0) { Fail 'Unknown/repeated baseline measurement selection' }
+  $settings.apps = $Apps
+  $performance = Join-Path $root 'measurement-config.json'
+  Write-Report $settings $performance
+  $extra = @('--performance-only','true')
+}
+& node "$PSScriptRoot/windows-packaged-smoke.mjs" --config $config --verification $verification --assets $assets --output (Join-Path $root 'runtime.json') --runtime (Join-Path $root 'runtime') --tag $baseline.tag --commit $baseline.commit --performance $performance @extra
 if ($LASTEXITCODE -ne 0) { Fail 'baseline execution or measurement budget failed; inspect private evidence' }

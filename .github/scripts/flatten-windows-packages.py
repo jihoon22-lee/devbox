@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# Historical v0.7 15-app format only. Current release uses build-suite-package.py.
 """Flatten a complete staged Windows package set after shard assembly."""
 
 from __future__ import annotations

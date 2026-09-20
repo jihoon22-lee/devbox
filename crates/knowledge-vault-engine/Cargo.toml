@@ -1,6 +1,6 @@
 [package]
-name = "knowledge-base"
-version = "0.5.1"
+name = "devbox-knowledge-vault-engine"
+version = "0.8.0"
 publish = false
 description = "Knowledge Base"
 authors = ["jihoon22.lee"]
@@ -13,26 +13,17 @@ edition = "2021"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "knowledge_base_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 # Products link the native component without embedding the legacy UI/entrypoint.
 [features]
-default = ["standalone"]
-standalone = []
+default = []
 
-[[bin]]
-name = "knowledge-base"
-path = "src/main.rs"
-required-features = ["standalone"]
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
 
 [dependencies]
 tauri = { version = "2", features = [] }
-tauri-plugin-clipboard-manager = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 sha2 = "0.11.0"
@@ -44,7 +35,6 @@ search = { path = "../search" }
 notify = "8.2.0"
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
-devbox-window-state-tauri = { package = "window-state-tauri", path = "../window-state-tauri" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-launch = { package = "launch", path = "../launch" }
 devbox-wsl = { package = "wsl", path = "../wsl" }

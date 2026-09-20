@@ -164,31 +164,17 @@ for a in apps:
     if a.get("release") and "../../../THIRD_PARTY_NOTICES.md" not in resources:
         report(f"{app_id}: bundle.resources에 THIRD_PARTY_NOTICES.md가 없다")
 
-    # 9. W4에서는 15개 release 앱 모두 두 번째 프로세스가 새 window를
-    # 남기지 않고 기존 main window를 복구·focus해야 한다. dependency만 선언하고
-    # 초기화를 빠뜨리는 회귀도 함께 차단한다.
+    # Product shells share one authenticated, installation-specific startup host.
     if a.get("release"):
         lib = open(lib_path).read() if os.path.isfile(lib_path) else ""
-        # Parse the relevant TOML declarations only: other dependencies use
-        # Cargo's TOML 1.1 multiline inline tables, beyond Python's TOML 1.0.
-        declaration = re.search(r'^tauri-plugin-single-instance\s*=.*$', cargo, re.M)
-        plugin = tomllib.loads(declaration.group(0)).get("tauri-plugin-single-instance") if declaration else None
-        version = plugin.get("version") if isinstance(plugin, dict) else plugin
-        feature_section = re.search(r'^\[features\]\s*\n(.*?)(?=^\[|\Z)', cargo, re.M | re.S)
-        features = tomllib.loads(feature_section.group(0)).get("features", {}) if feature_section else {}
-        active, pending = set(), list(features.get("default", []))
-        while pending:
-            feature = pending.pop()
-            if feature not in active:
-                active.add(feature)
-                pending.extend(features.get(feature, []))
-        enabled = not isinstance(plugin, dict) or not plugin.get("optional", False) or bool(
-            {"tauri-plugin-single-instance", "dep:tauri-plugin-single-instance"} & active
-        )
-        if version != "2" or not enabled:
-            report(f"{app_id}: default build에 tauri-plugin-single-instance v2 dependency가 없다")
-        if "tauri_plugin_single_instance::init" not in lib:
-            report(f"{app_id}: single-instance plugin을 초기화하지 않는다")
+        if "product_shell_tauri::run_with(" not in lib:
+            report(f"{app_id}: product startup host is not initialized")
+        shell = open("crates/product-shell-tauri/src/lib.rs").read()
+        shell_cargo = open("crates/product-shell-tauri/Cargo.toml").read()
+        if "tauri_plugin_single_instance::init" not in shell or 'tauri-plugin-single-instance = "2"' not in shell_cargo:
+            report("shared product startup lacks the single-instance adapter")
+        if "suite::plugin(" not in lib:
+            report(f"{app_id}: native installation/session boundary is missing")
 
     # 8. v2 capability/action은 정적이고 versioned인 선언만 허용
     accepts = a.get("accepts")
@@ -245,6 +231,8 @@ python3 .github/scripts/test-windows-packaged-smoke-config.py
 python3 .github/scripts/test-verify-downloaded-release.py
 python3 .github/scripts/test-windows-installer-acceptance-config.py
 python3 .github/scripts/test-build-candidate-metadata.py
+python3 .github/scripts/test-suite-release-contract.py
+python3 .github/scripts/check-source-cutover.py
 python3 .github/scripts/test-plan-windows-package-shards.py
 python3 .github/scripts/test-flatten-windows-packages.py
 python3 .github/scripts/test-windows-package-candidate-config.py
@@ -255,6 +243,8 @@ node --check .github/scripts/windows-packaged-smoke.mjs
 if command -v pwsh >/dev/null 2>&1; then
   pwsh -NoLogo -NoProfile -NonInteractive -Command '
     $scripts = @(
+      ".github/scripts/acquire-suite-nsis.ps1",
+      ".github/scripts/assemble-suite-candidate.ps1",
       ".github/scripts/build-windows-packages.ps1",
       ".github/scripts/windows-installer-acceptance.ps1"
     )

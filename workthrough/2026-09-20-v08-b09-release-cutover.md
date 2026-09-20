@@ -33,3 +33,37 @@ redirect relative dependencies/includes and source consumers. The following sema
 commit removes the standalone bootstrap/configuration and obsolete app directories.
 The frozen `apps/legacy-v0.7-catalog.json` is migration/reference input, never the
 public runtime/release product list. The fake LSP server remains test-only.
+
+## Source and release cutover implementation
+
+- Removed all 15 standalone shells after extracting their consumed engines; frozen legacy
+  catalog remains read-only source discovery/provenance. Public catalog now exposes exactly
+  four products. Retained Launcher UI tests and existing engine/domain fixtures.
+- Removed standalone engine Tauri bootstrap/build/resources and renamed Cargo packages,
+  preserving Rust library aliases. Lockfiles/notices follow the current dependency graph.
+- Direct Suite routing remains the product path; retired executable launch is centrally
+  rejected before spawn. Historical metadata readers/argv fixtures remain for migration.
+- Updated 572 feature records and data mappings with accepted B02–B08 source evidence.
+  Git/vault original files, Manager install provenance remain in place. Derived caches,
+  managed runtimes and live processes are not falsely marked as copied user data.
+- Two Windows shards build four products, including static Workspace helper and Suite
+  bootstrap. Private LSP fixtures stay outside public assets. Pinned NSIS assembles one
+  setup plus four ZIPs, manifest and notices; exact file closures/digests/source are checked.
+- Reconstruct installer acceptance input from verified public bytes; test exact original
+  private payload byte identity, including LF on Windows. Stable promotion has no rebuild
+  fallback. Published acceptance downloads again and exercises all four full ZIPs.
+- Candidate native domains run independently on disposable Windows, WSL2/Docker separately.
+  Seven pinned baseline anchors are measured on the same VM as matching product workloads;
+  unchanged B01 budgets cover startup/input/idle/warm/search/task/profile readback.
+- Windows Cargo jobs restored to two after locking only the shared Tauri build-script
+  staging copy. Dependency cache namespace and failure retention remain in place.
+- Current documentation now describes four products and migration/recovery; old v0.7
+  guides are preserved under docs/history/v0.7. R01–R26/S01–S08 mapping and unexecuted
+  physical IME/monitor/reboot layer limits are explicit in docs/v0.8-acceptance.md.
+
+## Verification state
+
+No detailed B09 tests/build/Clippy/native checks have run during development. After all
+implementation/fixtures/docs finish, perform one full local audit and required CI. Candidate
+assembly/native/installer/WSL2 gates run only on exact current main after B09 source merge.
+Final outcomes belong in #541/#542/#551 and Actions, without a result-only source PR.

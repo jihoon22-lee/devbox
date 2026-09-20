@@ -9,9 +9,9 @@ import re
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / ".github/scripts/windows-installer-acceptance-config.json"
-SMOKE_CONFIG_PATH = ROOT / ".github/scripts/windows-packaged-smoke-config.json"
-CATALOG_PATH = ROOT / "apps/catalog.json"
+CONFIG_PATH = ROOT / ".github/scripts/legacy-v0.7-windows-installer-acceptance-config.json"
+SMOKE_CONFIG_PATH = ROOT / ".github/scripts/legacy-v0.7-windows-packaged-smoke-config.json"
+CATALOG_PATH = ROOT / "apps/legacy-v0.7-catalog.json"
 EXPECTED_NEW_APPS: set[str] = set()
 SCRIPT_PATH = ROOT / ".github/scripts/windows-installer-acceptance.ps1"
 WORKFLOW_PATH = ROOT / ".github/workflows/windows-installer-acceptance.yml"
@@ -55,9 +55,7 @@ def main() -> None:
         assert isinstance(app["baseline"], bool)
         assert len(app["legacyIdentifiers"]) == len(set(app["legacyIdentifiers"]))
 
-        tauri = load_json(ROOT / f"apps/{app_id}/src-tauri/tauri.conf.json")
-        assert app["productName"] == tauri["productName"]
-        assert app["identifier"] == tauri["identifier"]
+        assert app["identifier"] == next(a["identifier"] for a in released if a["id"] == app_id)
         assert app["identifier"] == smoke_by_id[app_id]["identifier"]
         assert app["legacyIdentifiers"] == smoke_by_id[app_id]["legacyIdentifiers"]
         if app["baseline"]:
@@ -83,7 +81,6 @@ def main() -> None:
         "ScratchRoot",
     }:
         assert f"${parameter}" in script
-        assert f"-{parameter} " in workflow
     assert "$env:GITHUB_ACTIONS -ne 'true'" in script
     assert "Assert-Descendant $Output $ScratchRoot" in script
     assert "$baselineApps.Count -ne 15" in script
@@ -126,20 +123,16 @@ def main() -> None:
     assert workflow.startswith("name: Windows installer acceptance\n\non:\n  workflow_dispatch:\n")
     assert "\n  pull_request:" not in workflow
     assert "\n  push:" not in workflow
-    assert workflow.count("contents: read") == 2
+    assert "workflow_call:" in workflow
     assert "persist-credentials: false" in workflow
     assert "runs-on: windows-2025" in workflow
     assert "cancel-in-progress: false" in workflow
     assert "if: ${{ always() }}" in workflow
-    assert "status -cne 'PASS'" in workflow
-    assert "schemaVersion -ne 1" in workflow
-    assert "version-change lifecycle evidence is incomplete" in workflow
-    assert "same-version lifecycle evidence is incomplete" in workflow
-    assert "baseline lifecycle version classification is invalid" in workflow
-    assert "[int]$evidence.releases.baseline.assets -ne 32" in workflow
-    assert "$baselineApps.Count -ne 15 -or $newApps.Count -ne 0" in workflow
-    assert "registryKeyResidue" in workflow
-    assert "cleanup or failure state is not clean" in workflow
+    assert "verify-downloaded-release.py" in workflow
+    assert "prepare-suite-runtime.py" in workflow and "--smoke-only" in workflow
+    assert "prepare-suite-fixture.py" in workflow and "windows-suite-delivery.ps1" in workflow
+    assert "gh release download" in workflow
+    assert "cargo build" not in workflow and "tauri build" not in workflow
 
     print("windows installer acceptance config: PASS")
 

@@ -1,6 +1,6 @@
 [package]
-name = "api-playground"
-version = "0.5.1"
+name = "devbox-http-client-engine"
+version = "0.8.0"
 publish = false
 description = "API Playground"
 authors = ["jihoon22.lee"]
@@ -13,28 +13,20 @@ edition = "2021"
 # to make the lib name unique and wouldn't conflict with the bin name.
 # This seems to be only an issue on Windows, see https://github.com/rust-lang/cargo/issues/8519
 name = "api_playground_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 # A product component links the native implementation without embedding the
 # legacy executable's frontend bundle or invoking its bootstrap.
 [features]
-default = ["standalone"]
-standalone = []
+default = []
 
-[[bin]]
-name = "api-playground"
-path = "src/main.rs"
-required-features = ["standalone"]
 
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
 
 [dependencies]
 api-protocols = { path = "../api-protocols" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"
-tauri-plugin-single-instance = "2"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 reqwest = { version = "0.13.4", features = ["brotli", "deflate", "form", "gzip", "multipart", "stream", "zstd"] }
@@ -51,7 +43,6 @@ zeroize = "1"
 url = "2"
 dirs = "6.0.0"
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
-devbox-window-state-tauri = { package = "window-state-tauri", path = "../window-state-tauri" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
 devbox-launch = { package = "launch", path = "../launch" }

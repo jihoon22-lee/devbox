@@ -47,6 +47,7 @@ jobs:
             --event workflow_dispatch \
             --tag "$CANDIDATE_TAG" \
             --allow-prerelease false
+          [[ "$GITHUB_REF" == "refs/heads/main" ]]
           if [[ ! "$CANDIDATE_COMMIT" =~ ^[0-9a-f]{40}$ ]]; then
             echo "candidate_commit must be 40 lowercase hexadecimal characters"
             exit 1
@@ -71,188 +72,244 @@ jobs:
           echo "artifact_name=windows-package-candidate-$CANDIDATE_TAG-$CANDIDATE_COMMIT" >> "$GITHUB_OUTPUT"
 
       - id: shards
-        name: Plan three bounded app shards
+        name: Plan two bounded product shards
         shell: bash
         run: |
           set -euo pipefail
           python3 .github/scripts/plan-windows-package-shards.py \
             --catalog apps/catalog.json \
-            --shards 3 \
+            --shards 2 \
             --github-output "$GITHUB_OUTPUT"
 
-  build:
-    name: Build Windows packages (shard ${{ matrix.shard }})
+  workspace-wsl-helper:
     needs: plan
-    runs-on: windows-2025
-    timeout-minutes: 90
-    strategy:
-      fail-fast: true
-      max-parallel: 3
-      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    name: Build required static Workspace component
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    env:
+      CARGO_BUILD_JOBS: 2
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.candidate_commit }}
           persist-credentials: false
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
-      - name: Enable repository-pinned pnpm
-        run: corepack enable pnpm
-
-      - id: pnpm-store
-        name: Resolve pnpm store
-        shell: bash
-        run: echo "path=$(pnpm store path --silent)" >> "$GITHUB_OUTPUT"
-
-      - uses: actions/cache@v6
-        with:
-          path: ${{ steps.pnpm-store.outputs.path }}
-          key: pnpm-${{ runner.os }}-${{ hashFiles('pnpm-lock.yaml') }}
-          restore-keys: pnpm-${{ runner.os }}-
-
       - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-unknown-linux-musl
+      - uses: Swatinem/rust-cache@v2
+        with:
+          shared-key: workspace-wsl-musl
+          cache-on-failure: true
+      - run: sudo apt-get update && sudo apt-get install -y musl-tools
+      - name: Build production helper and separate private LSP fixture
+        run: |
+          cargo build --locked --release -p workspace-wsl --target x86_64-unknown-linux-musl
+          node .github/scripts/workspace-wsl-artifact.mjs prepare target/x86_64-unknown-linux-musl/release/devbox-workspace-wsl "$GITHUB_SHA"
+          cargo build --locked --release -p workspace-wsl --features test-fixtures --bin workspace-lsp-fixture --target x86_64-unknown-linux-musl
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidate-workspace-component-${{ github.run_id }}
+          path: apps/devbox-workspace/src-tauri/resources/wsl/
+          if-no-files-found: error
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        with:
+          name: candidate-private-wsl-lsp-${{ github.run_id }}
+          path: target/x86_64-unknown-linux-musl/release/workspace-lsp-fixture
+          if-no-files-found: error
+          retention-days: 7
 
+  build:
+    name: Build Windows products (shard ${{ matrix.shard }})
+    needs: [plan, workspace-wsl-helper]
+    runs-on: windows-2025
+    timeout-minutes: 100
+    strategy:
+      fail-fast: false
+      max-parallel: 2
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    env:
+      CARGO_TARGET_DIR: ${{ github.workspace }}/target
+      CARGO_BUILD_JOBS: 2
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - run: corepack enable pnpm
+      - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-windows-package
-          save-if: ${{ matrix.shard == '01' }}
-
-      - name: Install frontend dependencies
-        run: pnpm install --frozen-lockfile
-
-      - name: Build and stage assigned app packages
+          cache-on-failure: true
+      - run: pnpm install --frozen-lockfile
+      - uses: actions/download-artifact@v8
+        with:
+          name: candidate-workspace-component-${{ github.run_id }}
+          path: apps/devbox-workspace/src-tauri/resources/wsl
+      - name: Build each assigned product once, including required components
         shell: pwsh
         env:
           SHARD_APPS: ${{ matrix.apps }}
         run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
           $apps = @($env:SHARD_APPS -split ',')
-          if ($apps.Count -ne ${{ matrix.app_count }}) {
-            throw 'package shard input count mismatch'
-          }
-          & ./.github/scripts/build-windows-packages.ps1 `
-            -StagingRoot 'candidate/staging' `
-            -AppIds $apps
-
-      - name: Upload staged package shard
-        uses: actions/upload-artifact@v7
+          if ($apps.Count -ne ${{ matrix.app_count }}) { throw 'Shard input count mismatch.' }
+          .github/scripts/build-windows-packages.ps1 -StagingRoot candidate/staging -AppIds $apps
+      - uses: actions/upload-artifact@v7
         with:
           name: windows-package-candidate-shard-${{ github.run_id }}-${{ matrix.shard }}
           path: candidate/staging
           if-no-files-found: error
-          retention-days: 1
           compression-level: 0
+          retention-days: 7
+      - uses: actions/upload-artifact@v7
+        if: contains(matrix.apps, 'devbox-workspace')
+        with:
+          name: candidate-private-windows-lsp-${{ github.run_id }}
+          path: target/release/fake-lsp-server.exe
+          if-no-files-found: error
+          retention-days: 7
 
   assemble:
     name: Assemble and verify unpublished candidate
     needs: [plan, build]
-    runs-on: ubuntu-24.04
+    runs-on: windows-2025
     timeout-minutes: 20
     outputs:
-      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      artifact_name: ${{ needs.plan.outputs.artifact_name }}
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.candidate_commit }}
           persist-credentials: false
-
-      - id: identity
-        name: Preserve candidate artifact identity
-        shell: bash
-        env:
-          ARTIFACT_NAME: ${{ needs.plan.outputs.artifact_name }}
-        run: echo "artifact_name=$ARTIFACT_NAME" >> "$GITHUB_OUTPUT"
-
-      - name: Download and merge all package shards
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           pattern: windows-package-candidate-shard-${{ github.run_id }}-*
-          path: candidate/staging
-          merge-multiple: true
-
-      - name: Build manifest and flat candidate set
-        shell: bash
-        env:
-          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
-        run: |
-          set -euo pipefail
-          for reserved in THIRD_PARTY_NOTICES.md release-manifest.json; do
-            if [[ -e "candidate/staging/$reserved" || -L "candidate/staging/$reserved" ]]; then
-              echo "package shard supplied reserved assembly asset: $reserved"
-              exit 1
-            fi
-          done
-          cp THIRD_PARTY_NOTICES.md candidate/staging/THIRD_PARTY_NOTICES.md
-          python3 .github/scripts/build-manifest.py \
-            candidate/staging \
-            "$CANDIDATE_TAG" \
-            apps/catalog.json \
-            candidate/staging/release-manifest.json
-          python3 .github/scripts/flatten-windows-packages.py \
-            --staging candidate/staging \
-            --catalog apps/catalog.json \
-            --output candidate/assets
-
-      - name: Generate and independently verify candidate metadata
-        shell: bash
+          path: candidate/shards
+          merge-multiple: false
+      - name: Assemble one Suite setup and four product ZIPs with exact source provenance
+        shell: pwsh
         env:
           CANDIDATE_TAG: ${{ inputs.candidate_tag }}
           CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
-        run: |
-          set -euo pipefail
-          install -d -m 0755 candidate/evidence
-          install -m 0644 \
-            .github/scripts/windows-packaged-smoke-config.json \
-            candidate/evidence/windows-packaged-smoke-config.json
-          python3 .github/scripts/build-candidate-metadata.py \
-            --assets candidate/assets \
-            --tag "$CANDIDATE_TAG" \
-            --commit "$CANDIDATE_COMMIT" \
-            --repository "$GITHUB_REPOSITORY" \
-            --workflow-run "$GITHUB_RUN_ID" \
-            --output candidate/evidence/candidate-metadata.json
-          python3 .github/scripts/verify-downloaded-release.py \
-            --artifact-kind candidate \
-            --assets candidate/assets \
-            --release candidate/evidence/candidate-metadata.json \
-            --config candidate/evidence/windows-packaged-smoke-config.json \
-            --tag "$CANDIDATE_TAG" \
-            --commit "$CANDIDATE_COMMIT" \
-            --repository "$GITHUB_REPOSITORY" \
-            --workflow-run "$GITHUB_RUN_ID" \
-            > candidate/evidence/verification.json
-
-      - name: Upload unpublished package candidate
-        id: upload
-        uses: actions/upload-artifact@v7
+        run: .github/scripts/assemble-suite-candidate.ps1 -Shards candidate/shards -Output candidate/output -Tag $env:CANDIDATE_TAG -Source $env:CANDIDATE_COMMIT
+      - uses: actions/upload-artifact@v7
         with:
           name: ${{ needs.plan.outputs.artifact_name }}
           path: |
-            candidate/assets
-            candidate/evidence
+            candidate/output/assets
+            candidate/output/evidence
+          if-no-files-found: error
+          compression-level: 0
+          retention-days: 14
+
+  packaged-runtime:
+    name: Packaged native acceptance (${{ matrix.scope }})
+    needs: assemble
+    runs-on: windows-2025
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        scope: [product-shells, api, knowledge, cross-product]
+    env:
+      DEVBOX_FIXTURE_PROFILE: release
+      DEVBOX_PORTABLE_FIXTURES: target/portable-fixture
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ inputs.candidate_commit }}
+          persist-credentials: false
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.assemble.outputs.artifact_name }}
+          path: candidate
+      - uses: actions/download-artifact@v8
+        if: matrix.scope == 'product-shells'
+        with:
+          name: candidate-private-windows-lsp-${{ github.run_id }}
+          path: target/debug
+      - uses: actions/download-artifact@v8
+        if: matrix.scope == 'product-shells'
+        with:
+          name: candidate-private-wsl-lsp-${{ github.run_id }}
+          path: target/native-lsp-fixture
+      - uses: actions/checkout@v7
+        if: matrix.scope != 'cross-product'
+        with:
+          ref: 3a23f49c85aa3c3d04b86f227e8aa184ef964085
+          path: baseline-source
+          persist-credentials: false
+      - name: Measure only the matching pinned anchors on this same VM
+        if: matrix.scope != 'cross-product'
+        shell: pwsh
+        run: |
+          $anchors = switch ('${{ matrix.scope }}') {
+            'product-shells' { @('workbench','devbox-manager','run-manager','wsl-desktop') }
+            'api' { @('api-playground') }
+            'knowledge' { @('knowledge-base','everything-plus') }
+          }
+          .github/scripts/windows-product-performance.ps1 -Apps $anchors
+      - name: Materialize exact release bytes for native fixtures without rebuilding
+        shell: pwsh
+        run: |
+          python .github/scripts/prepare-suite-runtime.py candidate/assets --source '${{ inputs.candidate_commit }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate runtime materialization failed.' }
+          if ('${{ matrix.scope }}' -eq 'product-shells') {
+            "DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV
+          }
+      - name: Prepare owned WSL1 filesystem for actual Source and Knowledge flows
+        if: matrix.scope == 'product-shells' || matrix.scope == 'knowledge'
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1
+      - name: Provision Git only in the owned filesystem fixture
+        if: matrix.scope == 'product-shells'
+        shell: pwsh
+        run: .github/scripts/windows-workspace-wsl-git.ps1
+      - name: Execute the complete selected native scope
+        shell: pwsh
+        run: |
+          $scripts = switch ('${{ matrix.scope }}') {
+            'product-shells' { @('windows-product-foundation.mjs') }
+            'api' { @('windows-api-migration.mjs','windows-api-lifecycle.mjs','windows-api-workflow.mjs') }
+            'knowledge' { @('windows-knowledge-migration.mjs') }
+            'cross-product' { @('windows-suite-workflows.mjs') }
+          }
+          $failed = @()
+          foreach ($script in $scripts) {
+            node ".github/scripts/$script"
+            if ($LASTEXITCODE -ne 0) { $failed += $script }
+          }
+          if ($failed.Count -gt 0) { throw "Native scopes failed: $($failed -join ', ')" }
+      - name: Record matched same-host performance comparisons
+        if: matrix.scope != 'cross-product'
+        run: node .github/scripts/compare-product-performance.mjs '${{ matrix.scope }}'
+      - name: Remove only the owned WSL1 fixture
+        if: ${{ always() && (matrix.scope == 'product-shells' || matrix.scope == 'knowledge') }}
+        shell: pwsh
+        run: .github/scripts/windows-knowledge-wsl.ps1 -Cleanup
+      - uses: actions/upload-artifact@v7
+        if: ${{ always() }}
+        with:
+          name: candidate-native-${{ matrix.scope }}-${{ github.run_id }}
+          path: |
+            product-foundation-evidence
+            performance-baseline/*.json
           if-no-files-found: error
           retention-days: 14
-          compression-level: 0
 
-      - name: Record candidate artifact digest
-        shell: bash
-        run: |
-          {
-            echo "### Unpublished Windows package candidate"
-            echo "- commit: \`${{ inputs.candidate_commit }}\`"
-            echo "- intended tag: \`${{ inputs.candidate_tag }}\`"
-            echo "- artifact: \`${{ needs.plan.outputs.artifact_name }}\`"
-            echo "- artifact digest: \`${{ steps.upload.outputs.artifact-digest }}\`"
-            echo "- package shards: \`3 x 5 apps\`"
-            echo "- contract: 15 apps / 32 files / 31 manifest-declared / mismatch 0"
-          } >> "$GITHUB_STEP_SUMMARY"
-
-  packaged-smoke:
-    name: Packaged app runtime acceptance
+  installer-acceptance:
+    name: Installer migration update recovery and removal acceptance
     needs: assemble
     runs-on: windows-2025
     timeout-minutes: 60
@@ -261,192 +318,106 @@ jobs:
         with:
           ref: ${{ inputs.candidate_commit }}
           persist-credentials: false
-
       - uses: actions/setup-node@v7
         with:
           node-version: 22
-
-      - id: paths
-        name: Allocate isolated packaged-smoke paths
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          $root = Join-Path $env:RUNNER_TEMP ("devbox-packaged-smoke-" + [guid]::NewGuid().ToString('N'))
-          $download = Join-Path $root 'download'
-          $evidenceDirectory = Join-Path $root 'evidence'
-          $runtimeParent = Join-Path $root 'runtime'
-          $config = Join-Path $download 'evidence/windows-packaged-smoke-config.json'
-          $output = Join-Path $evidenceDirectory 'packaged-smoke.json'
-          $runtime = Join-Path $runtimeParent 'packaged'
-          New-Item -ItemType Directory -Path $root, $download, $evidenceDirectory, $runtimeParent | Out-Null
-          @(
-            "config=$config"
-            "download=$download"
-            "output=$output"
-            "runtime=$runtime"
-          ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
-
-      - name: Download exact unpublished candidate
-        uses: actions/download-artifact@v8
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}
-          path: ${{ steps.paths.outputs.download }}
-
-      - name: Run all packaged app contracts
+          path: candidate
+      - name: Recover the exact private payload from public bytes
+        shell: pwsh
+        run: |
+          python .github/scripts/prepare-suite-fixture.py candidate/assets candidate/delivery --source '${{ inputs.candidate_commit }}' --run-id '${{ github.run_id }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Candidate delivery inputs failed.' }
+      - name: Exercise full installed Suite migration and recovery
         shell: pwsh
         env:
-          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
-          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          & node '.github/scripts/windows-packaged-smoke.mjs' `
-            --config '${{ steps.paths.outputs.config }}' `
-            --verification (Join-Path '${{ steps.paths.outputs.download }}' 'evidence/verification.json') `
-            --assets (Join-Path '${{ steps.paths.outputs.download }}' 'assets') `
-            --output '${{ steps.paths.outputs.output }}' `
-            --runtime '${{ steps.paths.outputs.runtime }}' `
-            --tag $env:CANDIDATE_TAG `
-            --commit $env:CANDIDATE_COMMIT
-          if ($LASTEXITCODE -ne 0) { throw 'packaged app runtime acceptance failed' }
-          $report = Get-Content -LiteralPath '${{ steps.paths.outputs.output }}' -Raw | ConvertFrom-Json
-          $directWindowContracts = @(
-            $report.apps | Where-Object { $_.secondInstance.windowContract -eq 'direct-restoration' }
-          ).Count
-          $hostedWindowContracts = @(
-            $report.apps | Where-Object { $_.secondInstance.windowContract -eq 'hosted-visible-primary' }
-          ).Count
-          $restoredPolicyContracts = @(
-            $report.apps | Where-Object {
-              $_.cdpOverride -eq 'hklm-policy' -and $_.cleanup.cdpPolicyRestored -eq $true
-            }
-          ).Count
-          if (($directWindowContracts + $hostedWindowContracts) -ne 15) {
-            throw 'packaged window contract accounting mismatch'
-          }
-          if ($report.host.elevated -eq $true -and $restoredPolicyContracts -ne 15) {
-            throw 'elevated WebView2 policy restoration accounting mismatch'
-          }
-          @(
-            '### Packaged app runtime acceptance'
-            "- passed: $($report.summary.passed) / 15"
-            "- failed: $($report.summary.failed)"
-            "- skipped: $($report.summary.skipped)"
-            "- unattempted: $($report.summary.unattempted)"
-            "- direct window restoration contracts: $directWindowContracts"
-            "- GitHub-hosted visible-primary contracts: $hostedWindowContracts"
-            "- restored elevated CDP policy contracts: $restoredPolicyContracts"
-            "- runtime root removed: $($report.runtimeRootRemoved)"
-          ) | Add-Content -LiteralPath $env:GITHUB_STEP_SUMMARY -Encoding utf8
-
-      - name: Upload packaged app acceptance evidence
+          GH_TOKEN: ${{ github.token }}
+          DEVBOX_SUITE_ARTIFACT_SOURCE: ${{ inputs.candidate_commit }}
+          DEVBOX_SUITE_ARTIFACT_RUN: ${{ github.run_id }}
+        run: .github/scripts/windows-suite-delivery.ps1 -Staging candidate/delivery -Bootstrap candidate/delivery/devbox-suite-bootstrap.exe
+      - uses: actions/upload-artifact@v7
         if: ${{ always() }}
-        uses: actions/upload-artifact@v7
         with:
-          name: windows-package-candidate-packaged-smoke-evidence-${{ inputs.candidate_commit }}
-          path: ${{ steps.paths.outputs.output }}
-          if-no-files-found: warn
+          name: candidate-installer-${{ github.run_id }}
+          path: product-foundation-evidence
+          if-no-files-found: error
           retention-days: 14
 
-  installer-acceptance:
-    name: Installer upgrade and rollback acceptance
+  windows-wsl2:
+    name: Exact candidate WSL2 and Docker acceptance on disposable VM
     needs: assemble
     runs-on: windows-2025
-    timeout-minutes: 120
+    timeout-minutes: 30
     steps:
       - uses: actions/checkout@v7
         with:
           ref: ${{ inputs.candidate_commit }}
           persist-credentials: false
-
-      - id: paths
-        name: Allocate isolated acceptance paths
-        shell: pwsh
-        run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          $root = Join-Path $env:RUNNER_TEMP ("devbox-package-candidate-" + [guid]::NewGuid().ToString('N'))
-          $candidate = Join-Path $root 'candidate'
-          $baseline = Join-Path $root 'baseline-assets'
-          $evidence = Join-Path $root 'installer-evidence.json'
-          New-Item -ItemType Directory -Path $root, $candidate, $baseline | Out-Null
-          @(
-            "ACCEPTANCE_ROOT=$root"
-            "CANDIDATE_ROOT=$candidate"
-            "BASELINE_ASSETS=$baseline"
-            "BASELINE_METADATA=$(Join-Path $root 'baseline-metadata.json')"
-            "INSTALLER_EVIDENCE=$evidence"
-          ) | Add-Content -LiteralPath $env:GITHUB_ENV -Encoding utf8
-          @(
-            "candidate=$candidate"
-            "evidence=$evidence"
-          ) | Add-Content -LiteralPath $env:GITHUB_OUTPUT -Encoding utf8
-
-      - name: Download exact unpublished candidate
-        uses: actions/download-artifact@v8
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 22
+      - uses: actions/download-artifact@v8
         with:
           name: ${{ needs.assemble.outputs.artifact_name }}
-          path: ${{ steps.paths.outputs.candidate }}
-
-      - name: Download and describe the pinned stable baseline
+          path: candidate
+      - name: Export the same verified Workspace bytes with source receipt
         shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
+        run: |
+          python .github/scripts/prepare-suite-runtime.py candidate/assets --source '${{ inputs.candidate_commit }}'
+          if ($LASTEXITCODE -ne 0) { throw 'Workspace candidate extraction failed.' }
+          $destination = Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture'
+          New-Item -ItemType Directory -Path "$destination/resources/wsl" -Force | Out-Null
+          $files = [ordered]@{
+            'devbox-workspace.exe' = 'target/debug/devbox-workspace.exe'
+            'resources/wsl/devbox-workspace-wsl' = 'apps/devbox-workspace/src-tauri/resources/wsl/devbox-workspace-wsl'
+            'resources/wsl/manifest.json' = 'apps/devbox-workspace/src-tauri/resources/wsl/manifest.json'
+            'THIRD_PARTY_NOTICES.md' = 'candidate/assets/THIRD_PARTY_NOTICES.md'
+          }
+          $records = @()
+          foreach ($entry in $files.GetEnumerator()) {
+            $target = Join-Path $destination $entry.Key
+            Copy-Item -LiteralPath $entry.Value -Destination $target
+            $records += @{path=$entry.Key;size=(Get-Item $target).Length;sha256=(Get-FileHash $target -Algorithm SHA256).Hash.ToLowerInvariant()}
+          }
+          @{schemaVersion=1;purpose='owned-workspace-webview-acceptance';sourceSha=$env:GITHUB_SHA;runId=$env:GITHUB_RUN_ID;buildProfile='release';files=$records} | ConvertTo-Json -Depth 6 | Set-Content -Encoding utf8 "$destination/fixture.json"
+      - uses: actions/cache/restore@v6
+        id: wsl2-rootfs-cache
+        with:
+          path: ${{ runner.temp }}/devbox-wsl-rootfs
+          key: owned-wsl-rootfs-2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934
+      - name: Prepare pinned WSL2 root filesystem
+        shell: powershell
         run: |
           $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          $config = Get-Content -LiteralPath '.github/scripts/windows-installer-acceptance-config.json' -Raw | ConvertFrom-Json
-          $tag = [string]$config.baseline.tag
-          $commit = [string]$config.baseline.commit
-          $tagRef = "refs/tags/$tag"
-          & git fetch --force --no-tags origin "+${tagRef}:${tagRef}"
-          if ($LASTEXITCODE -ne 0) { throw 'stable baseline tag fetch failed' }
-          $tagType = (& git cat-file -t $tagRef).Trim()
-          $peeled = (& git rev-parse ($tagRef + '^{}')).Trim()
-          if ($tagType -cne 'tag' -or $peeled -cne $commit) {
-            throw 'stable baseline annotated tag identity mismatch'
+          $ProgressPreference = 'SilentlyContinue'
+          $directory = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs'
+          New-Item -ItemType Directory -Force -Path $directory | Out-Null
+          $archive = Join-Path $directory 'ubuntu-rootfs.tar.gz'
+          if (-not (Test-Path -LiteralPath $archive)) {
+            Invoke-WebRequest -UseBasicParsing -TimeoutSec 180 -Uri 'https://cloud-images.ubuntu.com/wsl/releases/noble/current/ubuntu-noble-wsl-amd64-24.04lts.rootfs.tar.gz' -OutFile $archive
           }
-          & gh release download $tag --repo $env:GITHUB_REPOSITORY --dir $env:BASELINE_ASSETS --clobber
-          if ($LASTEXITCODE -ne 0) { throw 'stable baseline asset download failed' }
-          $release = (& gh release view $tag --repo $env:GITHUB_REPOSITORY --json 'tagName,isDraft,isPrerelease,assets') | ConvertFrom-Json
-          if ($LASTEXITCODE -ne 0) { throw 'stable baseline metadata lookup failed' }
-          $metadata = [ordered]@{
-            tagName = [string]$release.tagName
-            isDraft = [bool]$release.isDraft
-            isPrerelease = [bool]$release.isPrerelease
-            targetCommit = $commit
-            assets = @($release.assets | ForEach-Object {
-              [ordered]@{ name = [string]$_.name; size = [int64]$_.size; digest = [string]$_.digest }
-            })
-          }
-          $metadata | ConvertTo-Json -Depth 8 | Set-Content -LiteralPath $env:BASELINE_METADATA -Encoding utf8
-
-      - name: Run disposable installer lifecycle matrix
-        shell: pwsh
-        env:
-          CANDIDATE_TAG: ${{ inputs.candidate_tag }}
-          CANDIDATE_COMMIT: ${{ inputs.candidate_commit }}
+          if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934') { throw 'Owned root filesystem digest mismatch' }
+      # Preserve verified input before the fixture, even when a later test fails.
+      - uses: actions/cache/save@v6
+        if: steps.wsl2-rootfs-cache.outputs.cache-hit != 'true'
+        with:
+          path: ${{ runner.temp }}/devbox-wsl-rootfs
+          key: owned-wsl-rootfs-2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934
+      - name: Exercise the compiled artifact on an independent hosted WSL2 VM
+        shell: powershell
         run: |
-          $ErrorActionPreference = 'Stop'
-          Set-StrictMode -Version Latest
-          & ./.github/scripts/windows-installer-acceptance.ps1 `
-            -Config '.github/scripts/windows-installer-acceptance-config.json' `
-            -BaselineAssets $env:BASELINE_ASSETS `
-            -BaselineMetadata $env:BASELINE_METADATA `
-            -CandidateAssets (Join-Path $env:CANDIDATE_ROOT 'assets') `
-            -CandidateMetadata (Join-Path $env:CANDIDATE_ROOT 'evidence/candidate-metadata.json') `
-            -CandidateTag $env:CANDIDATE_TAG `
-            -CandidateCommit $env:CANDIDATE_COMMIT `
-            -Output $env:INSTALLER_EVIDENCE `
-            -ScratchRoot $env:ACCEPTANCE_ROOT
-          if ($LASTEXITCODE -ne 0) { throw 'installer lifecycle acceptance failed' }
-
-      - name: Upload installer acceptance evidence
+          $archive = Join-Path $env:RUNNER_TEMP 'devbox-wsl-rootfs/ubuntu-rootfs.tar.gz'
+          $scope = 'all'
+          .github/scripts/windows-workspace-owned-wsl2.ps1 -Scope $scope -Archive $archive -Digest '2a790896740b14d637dbdc583cce1ba081ac53b9e9cdb46dc09a2f73abbd9934' -AppArtifact (Join-Path $env:RUNNER_TEMP 'workspace-webview-fixture') -NodeScript (Join-Path $env:GITHUB_WORKSPACE '.github/scripts/windows-workspace-owned-wsl2.mjs') -SourceSha $env:GITHUB_SHA -RunId $env:GITHUB_RUN_ID -ArtifactSourceSha $env:GITHUB_SHA -ArtifactRunId $env:GITHUB_RUN_ID
+      - name: Preserve isolated WSL2 acceptance evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
         with:
-          name: windows-package-candidate-installer-evidence-${{ inputs.candidate_commit }}
-          path: ${{ steps.paths.outputs.evidence }}
+          name: candidate-wsl2-${{ github.run_id }}
+          path: |
+            ${{ runner.temp }}/workspace-webview-fixture/*acceptance.json
+            ${{ runner.temp }}/workspace-webview-fixture/wsl2-details
           if-no-files-found: warn
           retention-days: 14

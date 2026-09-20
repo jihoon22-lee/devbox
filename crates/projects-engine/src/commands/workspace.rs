@@ -2369,10 +2369,6 @@ pub fn run_registry() -> Arc<RunRegistry> {
 ///
 /// snapshot 전체를 먼저 검증하고 임시 store에 반영한 뒤에만 caller의 store를 교체한다.
 /// 파일 없음은 정상적인 no-op이고 손상/스키마 불일치는 기존 store를 그대로 둔 채 실패한다.
-#[cfg(feature = "standalone")]
-pub fn absorb_life_log_projects(store: &mut ProfileStore) -> Result<LifeLogAbsorbReport, String> {
-    absorb_life_log_projects_in(store, &crate::component::integration_root())
-}
 
 pub fn absorb_life_log_projects_in(
     store: &mut ProfileStore,

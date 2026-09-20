@@ -1,4 +1,6 @@
+include!("../../../crates/product-shell-tauri/build_support.rs");
 fn main() {
+    let _bundle_staging = lock_bundle_staging();
     helper_digest();
     let windows_msvc = std::env::var("CARGO_CFG_TARGET_OS").as_deref() == Ok("windows")
         && std::env::var("CARGO_CFG_TARGET_ENV").as_deref() == Ok("msvc");

@@ -32,6 +32,7 @@ sha2 = { version = "0.11.0", optional = true }
 libc = { version = "0.2", optional = true }
 
 [dependencies.code-pad]
+package = "devbox-editor-engine"
 path = "../../../crates/editor-engine"
 default-features = false
 optional = true
@@ -57,6 +58,7 @@ path = "../../../crates/git"
 optional = true
 
 [dependencies.repo-manager]
+package = "devbox-repositories-engine"
 path = "../../../crates/repositories-engine"
 default-features = false
 optional = true

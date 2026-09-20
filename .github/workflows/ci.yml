@@ -75,6 +75,7 @@ jobs:
           python3 .github/scripts/test-check-dependencies.py
           python3 .github/scripts/test-build-manifest.py
           python3 .github/scripts/test-build-suite-installer.py
+          python3 .github/scripts/test-suite-release-contract.py
           python3 .github/scripts/test-build-candidate-metadata.py
           python3 .github/scripts/test-validate-release-input.py
           python3 .github/scripts/test-windows-package-candidate-config.py
@@ -317,7 +318,7 @@ jobs:
     # Tauri app build scripts copy shared notice resources into one target
     # staging path. Parallel copies can fail with Windows sharing violation 32.
     env:
-      CARGO_BUILD_JOBS: 1
+      CARGO_BUILD_JOBS: 2
     needs: scope
     if: ${{ !cancelled() && (github.event_name != 'pull_request' || !github.event.pull_request.draft) && (needs.scope.result != 'success' || needs.scope.outputs.rust_scope != 'none') }}
     steps:

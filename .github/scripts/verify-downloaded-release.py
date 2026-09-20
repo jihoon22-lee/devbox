@@ -9,6 +9,8 @@ import json
 import pathlib
 import re
 import sys
+import zipfile
+from suite_release_contract import acceptance_config, manifest_assets, verify_archive
 
 
 def sha256(path: pathlib.Path) -> str:
@@ -135,139 +137,153 @@ def main() -> int:
         failures.append("artifact target commit mismatch")
     if manifest.get("releaseTag") != arguments.tag:
         failures.append("manifest release tag mismatch")
-    if (
-        set(manifest)
-        != {"schemaVersion", "releaseTag", "generatedAt", "apps", "notices"}
-        or manifest.get("schemaVersion") != 1
-        or not isinstance(manifest.get("generatedAt"), str)
-        or re.fullmatch(
-            r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", manifest["generatedAt"]
-        )
-        is None
-    ):
-        failures.append("manifest envelope or schema mismatch")
-
-    apps = manifest.get("apps", [])
-    if not isinstance(apps, list):
-        failures.append("manifest applications must be an array")
-        apps = []
-    manifest_ids = [
-        app.get("id")
-        for app in apps
-        if isinstance(app, dict) and isinstance(app.get("id"), str)
-    ]
-    if len(apps) != 15 or len(manifest_ids) != 15 or len(set(manifest_ids)) != 15:
-        failures.append("manifest application count or identity mismatch")
-    configured_apps = config.get("apps", [])
-    if not isinstance(configured_apps, list):
-        failures.append("acceptance config applications must be an array")
-        configured_apps = []
-    configured_versions = {
-        app.get("id"): app.get("version")
-        for app in configured_apps
-        if isinstance(app, dict) and isinstance(app.get("id"), str)
-    }
-    manifest_versions = {
-        app.get("id"): app.get("version")
-        for app in apps
-        if isinstance(app, dict) and isinstance(app.get("id"), str)
-    }
-    if (
-        set(config) != {"schemaVersion", "apps"}
-        or config.get("schemaVersion") != 1
-        or len(configured_apps) != 15
-        or len(configured_versions) != 15
-        or configured_versions != manifest_versions
-    ):
-        failures.append(
-            "manifest application identities or versions differ from acceptance config"
-        )
-
-    expected: dict[str, dict] = {}
-    for app in apps:
-        if not isinstance(app, dict):
-            failures.append("manifest application entry is not an object")
-            continue
-        if set(app) != {"id", "version", "portable", "installer"}:
-            failures.append("manifest application shape mismatch")
-        app_id = app.get("id", "")
-        version = app.get("version", "")
-        valid_app_id = (
-            isinstance(app_id, str) and re.fullmatch(r"[a-z0-9-]+", app_id) is not None
-        )
-        valid_version = (
-            isinstance(version, str)
-            and re.fullmatch(r"\d+\.\d+\.\d+", version) is not None
-        )
-        if not valid_app_id:
-            failures.append("invalid application id")
-        if not valid_version:
-            failures.append(f"invalid version: {app_id}")
-        for kind in ("portable", "installer"):
-            item = app.get(kind, {})
-            if not isinstance(item, dict):
-                failures.append(f"invalid {kind} manifest entry: {app_id}")
-                continue
-            if set(item) != {"name", "size", "sha256"}:
-                failures.append(f"invalid {kind} manifest shape: {app_id}")
-            name = item.get("name", "")
-            if not is_safe_leaf(name):
-                failures.append(f"unsafe {kind} manifest asset name: {app_id}")
-                continue
-            size = item.get("size")
-            digest = item.get("sha256")
-            if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
-                failures.append(f"invalid {kind} manifest asset size: {app_id}")
-            if (
-                not isinstance(digest, str)
-                or re.fullmatch(r"[0-9a-f]{64}", digest) is None
-            ):
-                failures.append(f"invalid {kind} manifest asset digest: {app_id}")
-            if name in expected:
-                failures.append(f"duplicate manifest asset: {name}")
-            else:
-                expected[name] = item
-            expected_name = (
-                f"{app_id}.exe"
-                if kind == "portable" and valid_app_id
-                else f"{app_id}_{version}_x64-setup.exe"
-                if kind == "installer" and valid_app_id and valid_version
-                else None
-            )
-            if expected_name is not None and name != expected_name:
-                failures.append(f"{kind} name mismatch: {app_id}")
-
-    notices = manifest.get("notices", {})
-    if not isinstance(notices, dict):
-        failures.append("notices manifest entry is not an object")
-        notices = {}
-    if set(notices) != {"name", "size", "sha256"}:
-        failures.append("notices manifest shape mismatch")
-    notices_name = notices.get("name")
-    if not is_safe_leaf(notices_name):
-        failures.append("unsafe notices manifest asset name")
-    elif notices_name != "THIRD_PARTY_NOTICES.md":
-        failures.append("notices manifest entry mismatch")
+    suite = manifest.get("schemaVersion") == 2
+    asset_count = 7 if suite else 32
+    if suite:
+        apps = manifest.get("products", [])
+        expected = {}
+        try:
+            expected = manifest_assets(manifest, arguments.tag, arguments.commit, allow_prerelease=expected_prerelease)
+            if config != acceptance_config(manifest):
+                failures.append("Suite acceptance config identities/versions mismatch")
+            for product in apps:
+                verify_archive(assets_directory, product, manifest)
+        except (ValueError, KeyError, TypeError, OSError, zipfile.BadZipFile) as error:
+            failures.append(f"Suite contract rejected: {error}")
     else:
-        if notices_name in expected:
-            failures.append(f"duplicate manifest asset: {notices_name}")
+        if (
+            set(manifest)
+            != {"schemaVersion", "releaseTag", "generatedAt", "apps", "notices"}
+            or manifest.get("schemaVersion") != 1
+            or not isinstance(manifest.get("generatedAt"), str)
+            or re.fullmatch(
+                r"\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z", manifest["generatedAt"]
+            )
+            is None
+        ):
+            failures.append("manifest envelope or schema mismatch")
+
+        apps = manifest.get("apps", [])
+        if not isinstance(apps, list):
+            failures.append("manifest applications must be an array")
+            apps = []
+        manifest_ids = [
+            app.get("id")
+            for app in apps
+            if isinstance(app, dict) and isinstance(app.get("id"), str)
+        ]
+        if len(apps) != 15 or len(manifest_ids) != 15 or len(set(manifest_ids)) != 15:
+            failures.append("manifest application count or identity mismatch")
+        configured_apps = config.get("apps", [])
+        if not isinstance(configured_apps, list):
+            failures.append("acceptance config applications must be an array")
+            configured_apps = []
+        configured_versions = {
+            app.get("id"): app.get("version")
+            for app in configured_apps
+            if isinstance(app, dict) and isinstance(app.get("id"), str)
+        }
+        manifest_versions = {
+            app.get("id"): app.get("version")
+            for app in apps
+            if isinstance(app, dict) and isinstance(app.get("id"), str)
+        }
+        if (
+            set(config) != {"schemaVersion", "apps"}
+            or config.get("schemaVersion") != 1
+            or len(configured_apps) != 15
+            or len(configured_versions) != 15
+            or configured_versions != manifest_versions
+        ):
+            failures.append(
+                "manifest application identities or versions differ from acceptance config"
+            )
+
+        expected: dict[str, dict] = {}
+        for app in apps:
+            if not isinstance(app, dict):
+                failures.append("manifest application entry is not an object")
+                continue
+            if set(app) != {"id", "version", "portable", "installer"}:
+                failures.append("manifest application shape mismatch")
+            app_id = app.get("id", "")
+            version = app.get("version", "")
+            valid_app_id = (
+                isinstance(app_id, str) and re.fullmatch(r"[a-z0-9-]+", app_id) is not None
+            )
+            valid_version = (
+                isinstance(version, str)
+                and re.fullmatch(r"\d+\.\d+\.\d+", version) is not None
+            )
+            if not valid_app_id:
+                failures.append("invalid application id")
+            if not valid_version:
+                failures.append(f"invalid version: {app_id}")
+            for kind in ("portable", "installer"):
+                item = app.get(kind, {})
+                if not isinstance(item, dict):
+                    failures.append(f"invalid {kind} manifest entry: {app_id}")
+                    continue
+                if set(item) != {"name", "size", "sha256"}:
+                    failures.append(f"invalid {kind} manifest shape: {app_id}")
+                name = item.get("name", "")
+                if not is_safe_leaf(name):
+                    failures.append(f"unsafe {kind} manifest asset name: {app_id}")
+                    continue
+                size = item.get("size")
+                digest = item.get("sha256")
+                if not isinstance(size, int) or isinstance(size, bool) or size <= 0:
+                    failures.append(f"invalid {kind} manifest asset size: {app_id}")
+                if (
+                    not isinstance(digest, str)
+                    or re.fullmatch(r"[0-9a-f]{64}", digest) is None
+                ):
+                    failures.append(f"invalid {kind} manifest asset digest: {app_id}")
+                if name in expected:
+                    failures.append(f"duplicate manifest asset: {name}")
+                else:
+                    expected[name] = item
+                expected_name = (
+                    f"{app_id}.exe"
+                    if kind == "portable" and valid_app_id
+                    else f"{app_id}_{version}_x64-setup.exe"
+                    if kind == "installer" and valid_app_id and valid_version
+                    else None
+                )
+                if expected_name is not None and name != expected_name:
+                    failures.append(f"{kind} name mismatch: {app_id}")
+
+        notices = manifest.get("notices", {})
+        if not isinstance(notices, dict):
+            failures.append("notices manifest entry is not an object")
+            notices = {}
+        if set(notices) != {"name", "size", "sha256"}:
+            failures.append("notices manifest shape mismatch")
+        notices_name = notices.get("name")
+        if not is_safe_leaf(notices_name):
+            failures.append("unsafe notices manifest asset name")
+        elif notices_name != "THIRD_PARTY_NOTICES.md":
+            failures.append("notices manifest entry mismatch")
         else:
-            expected[notices_name] = notices
-    notices_size = notices.get("size")
-    notices_digest = notices.get("sha256")
-    if (
-        not isinstance(notices_size, int)
-        or isinstance(notices_size, bool)
-        or notices_size <= 0
-    ):
-        failures.append("invalid notices manifest asset size")
-    if (
-        not isinstance(notices_digest, str)
-        or re.fullmatch(r"[0-9a-f]{64}", notices_digest) is None
-    ):
-        failures.append("invalid notices manifest asset digest")
-    if len(expected) != 31:
-        failures.append("manifest-declared asset count mismatch")
+            if notices_name in expected:
+                failures.append(f"duplicate manifest asset: {notices_name}")
+            else:
+                expected[notices_name] = notices
+        notices_size = notices.get("size")
+        notices_digest = notices.get("sha256")
+        if (
+            not isinstance(notices_size, int)
+            or isinstance(notices_size, bool)
+            or notices_size <= 0
+        ):
+            failures.append("invalid notices manifest asset size")
+        if (
+            not isinstance(notices_digest, str)
+            or re.fullmatch(r"[0-9a-f]{64}", notices_digest) is None
+        ):
+            failures.append("invalid notices manifest asset digest")
+        if len(expected) != 31:
+            failures.append("manifest-declared asset count mismatch")
 
     downloaded_files = [item for item in assets_directory.iterdir() if item.is_file()]
     downloaded_names = {item.name for item in downloaded_files}
@@ -283,7 +299,7 @@ def main() -> int:
         failures.append(f"missing assets: {len(missing)}")
     if undeclared:
         failures.append(f"undeclared assets: {len(undeclared)}")
-    if len(downloaded_names) != 32:
+    if len(downloaded_names) != asset_count:
         failures.append("downloaded release asset count mismatch")
 
     local: dict[str, dict] = {}
@@ -322,7 +338,7 @@ def main() -> int:
             failures.append(f"artifact metadata contains a duplicate asset: {name}")
             continue
         remote[name] = asset
-    if len(remote_assets) != 32 or len(remote) != 32:
+    if len(remote_assets) != asset_count or len(remote) != asset_count:
         failures.append("artifact metadata asset count or duplicate mismatch")
     if set(remote) != required_names:
         failures.append("artifact metadata asset names mismatch")

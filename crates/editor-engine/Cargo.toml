@@ -1,41 +1,30 @@
 [package]
-name = "code-pad"
-version = "0.5.1"
+name = "devbox-editor-engine"
+version = "0.8.0"
 publish = false
 description = "Code Pad"
 authors = ["jihoon22.lee"]
 edition = "2021"
-default-run = "code-pad"
 
 [lib]
 name = "code_pad_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
+crate-type = ["rlib"]
 
 # Product consumers reuse native components without embedding legacy web assets.
 [features]
-default = ["standalone"]
-standalone = ["desktop"]
+default = ["desktop"]
 preview = ["dep:devbox-markdown"]
 desktop = [
-    "dep:tauri-build", "dep:tauri", "dep:tauri-plugin-clipboard-manager",
-    "dep:tauri-plugin-dialog", "dep:tauri-plugin-opener", "dep:tauri-plugin-single-instance",
-    "dep:devbox-window-state-tauri", "dep:devbox-applink", "preview", "dep:notify",
+    "dep:tauri",
+    "dep:tauri-plugin-opener",
+    "dep:devbox-applink", "preview", "dep:notify",
 ]
 
-[[bin]]
-name = "code-pad"
-path = "src/main.rs"
-required-features = ["standalone"]
 
-[build-dependencies]
-tauri-build = { version = "2", features = [], optional = true }
 
 [dependencies]
 tauri = { version = "2", features = [], optional = true }
-tauri-plugin-clipboard-manager = { version = "2", optional = true }
-tauri-plugin-dialog = { version = "2", optional = true }
 tauri-plugin-opener = { version = "2", optional = true }
-tauri-plugin-single-instance = { version = "2", optional = true }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 dirs = "6.0.0"
@@ -55,7 +44,6 @@ tar = { version = "0.4.46", default-features = false }
 zip = { version = "8.6.0", default-features = false, features = ["deflate-flate2"] }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-wsl = { package = "wsl", path = "../wsl" }
-devbox-window-state-tauri = { package = "window-state-tauri", path = "../window-state-tauri", optional = true }
 devbox-markdown = { package = "markdown", path = "../markdown", optional = true }
 devbox-applink = { package = "applink", path = "../applink", optional = true }
 

@@ -1,7 +1,7 @@
 import { invoke,isProductHosted } from "../transport";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { openUrl } from "@tauri-apps/plugin-opener";
-import catalogJson from "../../../../apps/catalog.json";
+import catalogJson from "../../../../apps/legacy-v0.7-catalog.json";
 import { isTauri } from "./lib/isTauri";
 import type {
   BatchInstallRequest,

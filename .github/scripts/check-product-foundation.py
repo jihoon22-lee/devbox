@@ -16,12 +16,14 @@ def has_verified_source(record):
 
 def check(root=ROOT):
     catalog = json.loads((root / "apps/products.json").read_text())
-    legacy = json.loads((root / "apps/catalog.json").read_text())
+    legacy = json.loads((root / "apps/legacy-v0.7-catalog.json").read_text())
+    public = json.loads((root / "apps/catalog.json").read_text())
     parity = json.loads((root / "apps/v0.8-feature-parity.json").read_text())
     data_inventory = json.loads((root / "apps/v0.8-data-inventory.json").read_text())
-    assert catalog["schemaVersion"] == 3 and catalog["channel"] == "development"
+    assert catalog["schemaVersion"] == 3 and catalog["channel"] == "stable"
     assert {p["id"] for p in catalog["products"]} == PRODUCTS
     assert len(catalog["products"]) == 4
+    assert {p["id"] for p in public["apps"]} == {"devbox-" + p for p in PRODUCTS}
     assert len([p for p in legacy["apps"] if p["release"]]) == 15
     assert {p["legacyApp"] for p in parity["apps"]} == {p["id"] for p in legacy["apps"] if p["release"]}
     for app in parity["apps"]:
@@ -63,8 +65,8 @@ def check(root=ROOT):
         assert (root / path).is_file()
     for product in catalog["products"]:
         app_id = "devbox-" + product["id"]
-        entry = next(p for p in legacy["apps"] if p["id"] == app_id)
-        assert entry["release"] is False and entry["managerVisible"] is False
+        entry = next(p for p in public["apps"] if p["id"] == app_id)
+        assert entry["release"] is True and entry["managerVisible"] is True
         assert entry["identifier"] == product["identifier"]
         config = json.loads((root / entry["appDir"] / "src-tauri/tauri.conf.json").read_text())
         assert config["identifier"] == product["identifier"]
@@ -132,7 +134,7 @@ def check(root=ROOT):
                 assert (root / test_path).is_file(), test_path
         if feature["status"] == "verified":
             assert feature["test"] and feature.get("implementationPath") and has_verified_source(feature)
-    print(f"Product foundation metadata: 4 hidden products, {len(ids)} parity entries; "
+    print(f"Product foundation metadata: 4 public products, {len(ids)} parity entries; "
           f"{sum(f['status'] == 'pending' for f in parity['features'])} still pending. This is not feature parity acceptance.")
 
 

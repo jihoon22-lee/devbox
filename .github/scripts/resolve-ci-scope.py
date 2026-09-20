@@ -39,7 +39,6 @@ FRONTEND_DRIVER_PATHS = {
 # these virtual build edges complement the dependency graph. The regression
 # test deliberately locks the current consumers to this set.
 CATALOG_FRONTEND_CONSUMERS = {
-    "apps/devbox-launcher",
     "apps/devbox-control-center",
     "packages/workspace-features",
     "packages/control-center-features",
@@ -47,11 +46,10 @@ CATALOG_FRONTEND_CONSUMERS = {
 }
 CATALOG_RUST_CONSUMERS = {
     "catalog",
-    "devbox-launcher",
-    "devbox-manager",
+    "devbox-installation-tools",
     "devbox-control-center",
     "launch",
-    "log-lens",
+    "devbox-logs-engine",
 }
 
 # Native platform modules are compiled by both products without linking another
@@ -350,7 +348,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             reasons.append(f"Rust workspace configuration changed: {path}")
             continue
 
-        if path == "apps/catalog.json":
+        if path in {"apps/catalog.json", "apps/legacy-v0.7-catalog.json"}:
             for directory in CATALOG_FRONTEND_CONSUMERS:
                 node_name = frontend.by_directory.get(directory)
                 if node_name is None:

@@ -1660,8 +1660,9 @@ fn activate_install(
                     return Err("bootstrap_legacy_registration_review_required");
                 }
             }
-            let legacy = devbox_catalog::parse_catalog(include_str!("../../../legacy-v0.7-catalog.json"))
-                .map_err(|_| "bootstrap_catalog_invalid")?;
+            let legacy =
+                devbox_catalog::parse_catalog(include_str!("../../../legacy-v0.7-catalog.json"))
+                    .map_err(|_| "bootstrap_catalog_invalid")?;
             for app in legacy.apps {
                 if !matches!(fs::symlink_metadata(parent.join(app.identifier)),Err(error) if error.kind() == std::io::ErrorKind::NotFound)
                 {

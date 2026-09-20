@@ -4,11 +4,9 @@ use crate::core::{
     SourceSnapshot, SourceSpec, SourceSummary,
 };
 use serde::Serialize;
-#[cfg(feature = "standalone")]
-use std::path::PathBuf;
+
 use std::sync::Arc;
-#[cfg(feature = "standalone")]
-use tauri::AppHandle;
+
 use tauri::State;
 use zeroize::Zeroizing;
 
@@ -110,48 +108,6 @@ pub fn send_selection_to_toolbox(text: String) -> Result<ToolboxDispatch, String
 #[tauri::command]
 pub fn summarize_source(source: SourceSpec) -> Result<SourceSummary, String> {
     source.summary().map_err(|error| error.to_string())
-}
-
-#[cfg(feature = "standalone")]
-fn saved_views_directory(app: &AppHandle) -> Result<PathBuf, String> {
-    crate::component::data_root(app)
-        .map_err(|_| crate::core::saved_views::SAVED_VIEWS_READ_ERROR.to_string())
-}
-
-#[tauri::command]
-#[cfg(feature = "standalone")]
-pub fn list_saved_views(
-    app: AppHandle,
-) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
-    crate::core::saved_views::list_from_dir(&saved_views_directory(&app)?).map_err(str::to_string)
-}
-
-#[tauri::command]
-#[cfg(feature = "standalone")]
-pub fn save_saved_view(
-    app: AppHandle,
-    expected_revision: u64,
-    view: crate::core::SavedView,
-) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
-    if expected_revision > crate::core::saved_views::MAX_SAFE_INTEGER {
-        return Err(crate::core::saved_views::SAVED_VIEWS_INPUT_ERROR.to_string());
-    }
-    crate::core::saved_views::upsert_in_dir(&saved_views_directory(&app)?, expected_revision, view)
-        .map_err(str::to_string)
-}
-
-#[tauri::command]
-#[cfg(feature = "standalone")]
-pub fn delete_saved_view(
-    app: AppHandle,
-    expected_revision: u64,
-    name: String,
-) -> Result<crate::core::saved_views::SavedViewsDocument, String> {
-    if expected_revision > crate::core::saved_views::MAX_SAFE_INTEGER {
-        return Err(crate::core::saved_views::SAVED_VIEWS_INPUT_ERROR.to_string());
-    }
-    crate::core::saved_views::delete_in_dir(&saved_views_directory(&app)?, expected_revision, &name)
-        .map_err(str::to_string)
 }
 
 #[tauri::command]

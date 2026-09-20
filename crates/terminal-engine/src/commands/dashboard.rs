@@ -14,8 +14,7 @@ const MAX_WSL_STDERR_BYTES: usize = 64 * 1024;
 const WSL_COMMAND_TIMEOUT: Duration = Duration::from_secs(10);
 // Docker normally waits ten seconds for a Linux container before killing it.
 const DOCKER_ACTION_TIMEOUT: Duration = Duration::from_secs(25);
-#[cfg(feature = "standalone")]
-const MAX_WSL_COMMAND_BYTES: usize = 4 * 1024;
+
 const MAX_DISTRO_BYTES: usize = 128;
 const MAX_CONTAINER_ID_BYTES: usize = 128;
 const SAFE_WSL_ERROR: &str = "WSL 상태를 읽거나 명령을 실행하지 못했습니다.";
@@ -44,19 +43,6 @@ pub async fn list_distros(state: State<'_, Arc<SessionState>>) -> Result<Vec<Dis
 }
 
 /// 임의의 WSL 명령을 지정한 배포판에서 실행하고 출력을 반환한다.
-#[tauri::command]
-#[cfg(feature = "standalone")]
-pub async fn run_wsl_command(distro: String, command: String) -> Result<String, String> {
-    if command.is_empty() || command.len() > MAX_WSL_COMMAND_BYTES {
-        return Err(SAFE_WSL_ERROR.into());
-    }
-    let distro = normalize_distro(&distro)?;
-    let argv =
-        devbox_wsl::argv::build_exec_argv(&distro, None, &command).map_err(|_| SAFE_WSL_ERROR)?;
-    let refs: Vec<&str> = argv.iter().map(|s| s.as_str()).collect();
-    let output = run_wsl(&refs, None).await?;
-    Ok(output)
-}
 
 /// Docker 컨테이너 목록을 조회한다 (기본 distro에서 docker CLI 실행).
 #[tauri::command]
