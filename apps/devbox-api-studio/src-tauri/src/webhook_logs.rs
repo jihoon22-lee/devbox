@@ -58,8 +58,48 @@ pub(crate) fn handle(call: Call) -> Result<Value, &'static str> {
             operation_id,
         } => {
             store.acknowledge(&id, &revision, &operation_id, now())?;
-            Ok(Value::Null)
+            // Suite replies carry Option<Value>; JSON null decodes as None
+            // and would turn a successful acknowledgement into a wire error.
+            Ok(json!({"acknowledged": true}))
         }
         _ => Err("webhook_log_invalid"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn acknowledgement_survives_optional_wire_value_and_is_retryable() {
+        let id = uuid::Uuid::new_v4().simple().to_string();
+        let payload =
+            applink::webhook_log_payload("POST", "/fixture", 1_788_000_000_000, &[], "ordinary")
+                .unwrap();
+        let artifact = store()
+            .lock()
+            .unwrap()
+            .publish(id.clone(), payload, now())
+            .unwrap();
+        let revision = artifact.revision().unwrap();
+        let operation_id = "acknowledgement-fixture".to_owned();
+        let claim = Call::ClaimWebhookLog {
+            id: id.clone(),
+            revision: revision.clone(),
+            operation_id: operation_id.clone(),
+        };
+        handle(claim.clone()).unwrap();
+        for _ in 0..2 {
+            let reply = handle(Call::AcknowledgeWebhookLog {
+                id: id.clone(),
+                revision: revision.clone(),
+                operation_id: operation_id.clone(),
+            })
+            .unwrap();
+            let wire = serde_json::to_vec(&Some(reply)).unwrap();
+            let decoded: Option<Value> = serde_json::from_slice(&wire).unwrap();
+            assert_eq!(decoded, Some(json!({"acknowledged": true})));
+        }
+        assert_eq!(handle(claim), Err("webhook_log_claimed"));
     }
 }

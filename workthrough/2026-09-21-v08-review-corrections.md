@@ -186,3 +186,21 @@ This change is inside `#[cfg(test)]` only. Native acceptance 35552488590 continu
 results for the unchanged production binaries; do not discard its successful unrelated scopes.
 The seven GraphQL-specific local regressions pass after that fixture correction, with shared
 resource limits; no unrelated Rust tests were executed. Windows confirmation remains pending.
+
+Native run 35552488590 (checkout `0d225978e9554598a6298b85e6fa8539bde7776e`)
+passed WSL helper/Git, four product builds, Suite assembly/install/restore/update/removal,
+packaged shell (including corrected Runtime readiness), API migration/lifetime/workflow,
+Knowledge migration and installer coexistence. Cross-product Webhook delivery still failed:
+the producer returned JSON null for acknowledgement, which the named-pipe Reply's Option<Value>
+decodes as no value and rejects. Return an explicit acknowledgement object and cover its optional
+wire-value round trip, repeated acknowledgement and rejected subsequent claim. Preserve peer,
+installation, review, revision and expiry admission. WSL2 remained skipped and must be run.
+
+Add an explicit full cross-product choice to the existing no-installer Suite continuation mode.
+Use it for fresh corrected binaries without rerunning accepted installation/migration scopes;
+run the existing retained-artifact WSL2 continuation against the unchanged Workspace binary.
+Final compiler CI remains required, and release acceptance still uses a fresh exact-main candidate.
+Acknowledgement correction checks pass: optional wire-value/retry regression, workspace Clippy,
+fmt and foundation workflow contracts. The fixture initially used u64 for the payload's i64
+receive timestamp; corrected the synthetic literal before completing these checks. WSL2-only
+run 35556724537 uses the unchanged Workspace artifact from 35552488590 on a hosted VM.

@@ -92,6 +92,10 @@ on:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
         default: false
+      suite_full_workflow:
+        description: With suite_remaining_only, run the complete cross-product workflow while retaining unrelated acceptance
+        type: boolean
+        default: false
       wsl2_scope:
         description: Remaining acceptance scope (full runs ignore this option)
         type: choice
@@ -579,7 +583,7 @@ jobs:
         timeout-minutes: 15
         shell: pwsh
         run: |
-          if ('${{ inputs.suite_remaining_only }}' -eq 'true') {
+          if ('${{ inputs.suite_remaining_only }}' -eq 'true' -and '${{ inputs.suite_full_workflow }}' -ne 'true') {
             node .github/scripts/windows-suite-workflows.mjs --remaining
           } else {
             node .github/scripts/windows-suite-workflows.mjs
