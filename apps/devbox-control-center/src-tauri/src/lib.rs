@@ -16,6 +16,7 @@ pub fn run() {
         builder
             .plugin(suite::plugin(
                 "control-center",
+                env!("CARGO_PKG_VERSION"),
                 Some(federation::handle),
                 &[],
             ))

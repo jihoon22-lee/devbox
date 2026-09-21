@@ -107,7 +107,7 @@ async fn bounded(mut response: reqwest::Response, limit: usize) -> Result<Vec<u8
 }
 fn installation(app: &tauri::AppHandle) -> Result<(PathBuf, String)> {
     product_shell_tauri::require_suite_writable(app)?;
-    let scope = crate::suite::capture_own("control-center")?;
+    let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
     let root = PathBuf::from(scope.review_root());
     let owner = root.join("suite-owner.json");
     ensure_no_links(&owner).map_err(|_| "update_installed_suite_required")?;

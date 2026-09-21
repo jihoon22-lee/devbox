@@ -44,6 +44,7 @@ pub fn run() {
         builder
             .plugin(suite::plugin(
                 "workspace",
+                env!("CARGO_PKG_VERSION"),
                 Some(federation::handle),
                 &[
                     product_contract::transport::Source::Projects,

@@ -10,3 +10,7 @@ Extracted from the Control Center source shared by path inclusion. No new extern
 library, executable, service or renderer authority is introduced. Existing native
 identity/transport tests move with the implementation; CI resolves all four hosts
 through Cargo dependency edges instead of manually registered source paths.
+
+The host passes its own package version to plugin registration and bootstrap capture.
+Library package metadata is never a product identity. Scope, Describe and health
+verification use the host version, including when the library has an independent version.

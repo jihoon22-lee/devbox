@@ -120,7 +120,7 @@ fn journal(
     Journal,
 )> {
     product_shell_tauri::require_suite_writable(app)?;
-    let scope = crate::suite::capture_own("control-center")?;
+    let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
     let data = app
         .path()
         .app_local_data_dir()

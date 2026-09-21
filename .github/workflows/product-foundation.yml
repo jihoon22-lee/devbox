@@ -10,6 +10,7 @@ on:
       - 'apps/devbox-control-center/**'
       - 'apps/products.json'
       - 'crates/product-*/**'
+      - 'crates/suite-runtime/**'
       - 'packages/product-shell/**'
       - 'packages/api-studio-features/**'
       - 'packages/knowledge-features/**'

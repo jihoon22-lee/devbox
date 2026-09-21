@@ -136,7 +136,7 @@ pub(super) fn plan(data: &Path, journal: &Journal) -> Result<Plan> {
 }
 #[cfg(windows)]
 pub(crate) fn review(request: Option<Request>) -> Result<serde_json::Value> {
-    let scope = crate::suite::capture_own("control-center")?;
+    let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
     let base = dirs::data_local_dir().ok_or("bootstrap_data_unavailable")?;
     let data = base.join(format!(
         "com.devbox.v08.controlcenter.i{}",

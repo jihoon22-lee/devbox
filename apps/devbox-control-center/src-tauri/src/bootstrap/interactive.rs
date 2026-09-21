@@ -113,7 +113,7 @@ fn installation() -> Result<(
     PathBuf,
     PathBuf,
 )> {
-    let scope = crate::suite::capture_own("control-center")?;
+    let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
     let root = PathBuf::from(scope.review_root());
     let owner: InstallOwner = serde_json::from_slice(&read(&root.join("suite-owner.json"), 4096)?)
         .map_err(|_| "bootstrap_owner_invalid")?;

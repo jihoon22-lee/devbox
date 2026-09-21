@@ -52,7 +52,7 @@ pub(crate) async fn record(
         .map_err(|_| "suite_store_unavailable")?;
     let initial_root = root.clone();
     let (scope, mut journal, digest) = tauri::async_runtime::spawn_blocking(move || {
-        let scope = crate::suite::capture_own("control-center")?;
+        let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
         let (journal, digest) = Store::inspect(&initial_root)?.ok_or("suite_journal_missing")?;
         if journal.installation_key != scope.installation_key || journal.candidate != scope.manifest
         {

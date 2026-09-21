@@ -24,6 +24,7 @@ pub type DomainHandler = fn(
 >;
 struct Suite {
     product: &'static str,
+    version: &'static str,
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
     #[cfg(windows)]
@@ -186,7 +187,7 @@ async fn connection(
     .await;
     #[cfg(not(windows))]
     let result: Result<serde_json::Value, &'static str> = {
-        let _ = (suite.domain, suite.sources);
+        let _ = (suite.domain, suite.sources, suite.version);
         match request.method {
             Method::VerifyMigrationBackup { product, id } => {
                 let _ = (product, id);
@@ -262,6 +263,7 @@ async fn connection(
 #[cfg(windows)]
 pub fn capture_own(
     product: &str,
+    version: &str,
 ) -> Result<platform::component_scope::CapturedScope, &'static str> {
     let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
     let root = image
@@ -271,12 +273,7 @@ pub fn capture_own(
         .take(6)
         .find(|root| root.join("devbox-installation.json").is_file())
         .ok_or("suite_package_unavailable")?;
-    platform::component_scope::CapturedScope::capture(
-        root,
-        product,
-        &image,
-        env!("CARGO_PKG_VERSION"),
-    )
+    platform::component_scope::CapturedScope::capture(root, product, &image, version)
 }
 #[cfg(windows)]
 async fn resume(
@@ -296,12 +293,13 @@ async fn resume(
         return;
     };
     let storage_app = app.clone();
+    let version = host_version(&app);
     let captured = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let Some(preference) = platform::connection_preference::read(&storage_app)? else {
             return Ok::<_, &'static str>(None);
         };
-        let scope = capture_own(product)?;
+        let scope = capture_own(product, version)?;
         if !preference.matches(product, &scope) {
             return Err("suite_review_required");
         }
@@ -531,9 +529,10 @@ async fn execute(
             // renderer/registry executable path is accepted by this boundary.
             let slots = state.lock().map_err(|_| "suite_busy")?.review_slots.clone();
             let permit = slots.try_acquire_owned().map_err(|_| "suite_review_busy")?;
+            let version = host_version(&app);
             let scope = tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                capture_own(product)
+                capture_own(product, version)
             })
             .await
             .map_err(|_| "suite_review_unavailable")??;
@@ -695,9 +694,7 @@ fn handler(
                 Call::ReadHealthStatus { challenge } => {
                     health::observe(app, product, domain, challenge, deadline).await
                 }
-                Call::Describe {} => Ok(
-                    serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
-                ),
+                Call::Describe {} => Ok(describe_owner(product, host_version(&app), sources)),
                 Call::Query {
                     query_id,
                     source: Source::Commands,
@@ -1027,8 +1024,25 @@ async fn activate(
     Err("suite_activation_timeout")
 }
 
+#[cfg(windows)]
+fn host_version(app: &tauri::AppHandle) -> &'static str {
+    app.state::<Suite>().version
+}
+
+#[cfg(any(windows, test))]
+fn describe_owner(
+    product: &str,
+    version: &str,
+    sources: &[product_contract::transport::Source],
+) -> serde_json::Value {
+    use product_contract::transport::Source;
+    serde_json::json!({"product": product, "version": version,
+        "sources": std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()})
+}
+
 pub fn plugin(
     product: &'static str,
+    version: &'static str,
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
 ) -> tauri::plugin::TauriPlugin<tauri::Wry> {
@@ -1037,6 +1051,7 @@ pub fn plugin(
         .setup(move |app, _| {
             app.manage(Suite {
                 product,
+                version,
                 domain,
                 sources,
                 #[cfg(windows)]
@@ -1160,5 +1175,20 @@ pub fn project_operations(
             enqueue_review(app, &descriptor, &request)
         }
         _ => Err("operation_invalid"),
+    }
+}
+
+#[cfg(test)]
+mod host_identity_tests {
+    #[test]
+    fn wire_identity_uses_the_product_version_and_keeps_owner_sources() {
+        use product_contract::transport::Source;
+        let value = super::describe_owner("knowledge", "9.8.7", &[Source::Notes]);
+        assert_eq!(value["product"], "knowledge");
+        assert_eq!(value["version"], "9.8.7");
+        assert_eq!(
+            value["sources"],
+            serde_json::json!([Source::Commands, Source::Notes])
+        );
     }
 }

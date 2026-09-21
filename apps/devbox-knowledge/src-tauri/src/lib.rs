@@ -18,6 +18,7 @@ pub fn run() {
         builder
             .plugin(suite::plugin(
                 "knowledge",
+                env!("CARGO_PKG_VERSION"),
                 Some(federation::handle),
                 &[
                     product_contract::transport::Source::Notes,

@@ -64,7 +64,7 @@ pub(super) async fn observe(
     };
     report.validate(
         product,
-        env!("CARGO_PKG_VERSION"),
+        super::host_version(&app),
         &scope.installation_key,
         &scope.manifest.generation,
         &challenge,
@@ -102,7 +102,7 @@ pub async fn read(
     let report: Report = serde_json::from_value(value).map_err(|_| "suite_health_invalid")?;
     report.validate(
         product,
-        env!("CARGO_PKG_VERSION"),
+        super::host_version(&app),
         &scope.installation_key,
         &scope.manifest.generation,
         &challenge,

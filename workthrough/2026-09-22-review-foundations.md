@@ -33,3 +33,15 @@
 - First CI dependency policy and Linux Rust PASS; Windows check/Clippy/tests completed
   without failures. Superseded native acceptance was cancelled early to avoid wasting
   a long run on a head requiring metadata/fixture corrections. Final head must rerun CI.
+
+- Native acceptance caught a real extraction regression: library CARGO_PKG_VERSION
+  (0.1.0) replaced the host version (0.8.1) in package capture, Describe and health.
+  Hosts now explicitly pass their version to plugin/bootstrap capture; all shared
+  paths use it. Add a wire-identity regression and a foundation contract rejecting
+  library-version identity; register Suite-only changes for native acceptance.
+  Revalidate the affected native crates/contracts, then final-head CI/native gates.
+- Version correction validation: foundation/catalog contracts and affected native
+  check/Clippy/fmt/tests PASS. Clippy's test-module placement finding was corrected
+  before resuming unfinished checks. Native artifact evidence explicitly records
+  `installation_version_mismatch` for the superseded extraction; its failed gates
+  are not counted as PASS. Final corrected source still requires CI/native acceptance.
