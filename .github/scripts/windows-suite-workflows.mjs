@@ -40,7 +40,7 @@ function assemble(directory,products=catalog.products){
     copyFileSync("THIRD_PARTY_NOTICES.md",path.join(path.dirname(file),"THIRD_PARTY_NOTICES.md"));
     return {product:product.id,executable:member,sha256:digest(file)};
   });
-  const manifest={schemaVersion:1,installationId:randomUUID(),generation:randomUUID(),suiteVersion:"0.8.0",protocolVersion:1,members};
+  const manifest={schemaVersion:1,installationId:randomUUID(),generation:randomUUID(),suiteVersion:JSON.parse(readFileSync("apps/devbox-workspace/package.json","utf8")).version,protocolVersion:1,members};
   writeFileSync(path.join(directory,"devbox-installation.json"),JSON.stringify(manifest));return manifest;
 }
 async function start(product,directory){

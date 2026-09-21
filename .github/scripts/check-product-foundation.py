@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Check hidden product ownership, build identity and evidenced parity coverage."""
 import json
+import re
+import tomllib
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -70,7 +72,10 @@ def check(root=ROOT):
         assert entry["identifier"] == product["identifier"]
         config = json.loads((root / entry["appDir"] / "src-tauri/tauri.conf.json").read_text())
         assert config["identifier"] == product["identifier"]
-        assert config["version"] == "0.8.0"
+        cargo = tomllib.loads((root / entry["appDir"] / "src-tauri/Cargo.toml").read_text())
+        package = json.loads((root / entry["appDir"] / "package.json").read_text())
+        assert re.fullmatch(r"0\.8\.(?:0|[1-9][0-9]*)", cargo["package"]["version"])
+        assert config["version"] == package["version"] == cargo["package"]["version"]
         assert product["identifier"] not in {p["identifier"] for p in parity["apps"]}
         features = [f for f in catalog["features"] if f["owner"] == product["id"]]
         assert product["defaultRoute"] in {f["route"] for f in features}

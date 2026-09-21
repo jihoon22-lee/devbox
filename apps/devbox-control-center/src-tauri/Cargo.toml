@@ -1,7 +1,7 @@
 [package]
 name = "devbox-control-center"
 default-run = "devbox-control-center"
-version = "0.8.0"
+version = "0.8.1"
 publish = false
 edition = "2021"
 authors = ["jihoon22.lee"]

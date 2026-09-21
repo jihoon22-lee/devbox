@@ -1,11 +1,22 @@
 # Release evidence index
 
-## v0.8 source cutover
+## v0.8.1 patch release
 
-네 제품 소스·Suite 7-file 배포 계약을 B09에서 전환한다. 실제 최종 CI·exact-main 후보·
-게시·fresh-download 결과와 남은 제한은 [#541](https://github.com/jihoon22-lee/devbox/issues/541) 및
-[#542](https://github.com/jihoon22-lee/devbox/issues/542)에 기록한다. 이 문서의 아래 v0.7 기록은
-역사적 evidence이며 v0.8 PASS로 재해석하지 않는다. [v0.8 수용 추적](v0.8-acceptance.md).
+[PR #569](https://github.com/jihoon22-lee/devbox/pull/569)에서 리뷰 결함 수정과 네 제품의
+0.8.1 버전·설치/portable 검증 설정을 함께 준비한다. 게시 완료 여부, exact-main source,
+후보·게시 workflow와 Windows 수용 결과는
+[v0.8.1 Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.1) 및 #541/#542의
+후속 evidence를 원장으로 삼는다. 이 준비 문서는 게시 완료 또는 Windows PASS를 뜻하지 않는다.
+
+## v0.8.0 source cutover — published
+
+[Release](https://github.com/jihoon22-lee/devbox/releases/tag/v0.8.0)는 2026-09-20에 공개됐으며
+source는 `d6208b37f199545965fa1a55b473f3c4e8add299`다. 네 제품 portable ZIP + Suite setup +
+manifest + notices의 7개 파일, draft=false, prerelease=false를 확인했다.
+[후보 수용](https://github.com/jihoon22-lee/devbox/actions/runs/35535443667)과
+[공개 파일 재다운로드·제품 실행](https://github.com/jihoon22-lee/devbox/actions/runs/35538725828)을
+기록한다. 물리 IME 등 미실행 환경의 제한은 [#542](https://github.com/jihoon22-lee/devbox/issues/542)에
+구분돼 있다. 아래 v0.7 기록은 v0.8.1의 검증 근거로 재사용하지 않는다.
 
 ## v0.7 및 이전 기록
 

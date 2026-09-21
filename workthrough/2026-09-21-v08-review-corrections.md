@@ -3,8 +3,9 @@
 Base: main `d6208b37f199545965fa1a55b473f3c4e8add299`.
 Branch: `fix/workspace/v08-review-corrections`; reuse the existing worktree.
 Single PR explicitly requested by the user; logical commits separate the changes.
-Refs B02–B08, R02/R07–R09/R12/R15–R22/R25. User authorizes implementation and verification;
-no main merge or release. No intermediate test/build/Clippy/CI execution.
+Refs B02–B08, R02/R07–R09/R12/R15–R22/R25. Original scope was implementation and verification.
+The follow-up explicitly authorizes CI-gated merge, cleanup and v0.8.1 publication (see below).
+No intermediate test/build/Clippy/CI execution.
 
 ## Scope
 
@@ -123,3 +124,20 @@ hosted result is recorded. No main merge, release or deletion of the active unme
 - Local logs: `.git/devbox-evidence/review-corrections-2026-09-21/` (affected, remaining,
   final-stages, targets). Main/remote main still `d6208b37`; one reused worktree, one correction
   branch. No main merge/release. GitHub CI results are separate from these local passes.
+
+
+## v0.8.1 release authorization and preparation
+
+The user subsequently explicitly authorized CI-gated merge, owned branch/worktree/temp/process
+cleanup and publication of v0.8.1. Keep all source preparation in PR #569. Four product Cargo,
+Tauri and package manifests and the four local Cargo.lock entries now agree on 0.8.1; engine
+versions and third-party dependencies are unchanged. Both packaged-smoke/installer configurations
+also use 0.8.1 for the Suite and all four products. Product foundation validation compares
+all three manifests instead of pinning 0.8.0, and Suite workflow fixtures read the product version.
+Final CI must cover this source before merge. Candidate dispatch, acceptance, annotation and
+promotion will use exact current main and the same immutable candidate bytes. Prior Windows
+release evidence is not reused as proof for v0.8.1. No local Docker/service/network mutation.
+
+Version preparation checks: locked Cargo metadata, catalog/product foundation, packaged-smoke
+configuration and Suite release-contract checks passed. Compiler suites already passed locally;
+the versioned final PR source will receive the required final CI and exact-main candidate gates.
