@@ -141,3 +141,7 @@ release evidence is not reused as proof for v0.8.1. No local Docker/service/netw
 Version preparation checks: locked Cargo metadata, catalog/product foundation, packaged-smoke
 configuration and Suite release-contract checks passed. Compiler suites already passed locally;
 the versioned final PR source will receive the required final CI and exact-main candidate gates.
+
+Version-head CI 35547702918 found the generated notices still bound to the pre-version
+Cargo.lock digest. The official generator updated only that digest; third-party inventory and
+dependency versions did not change. Final-head CI must pass after this metadata correction.
