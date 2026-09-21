@@ -115,6 +115,7 @@ export default function MigrationSetup({ onActivated, onBack }: { onActivated: (
       <p>전환 뒤 변경된 데이터가 있으면 되돌리기를 거부하고 두 저장소를 모두 보존합니다. 되돌려도 새로 만든 Markdown·이미지 파일은 삭제하지 않습니다.</p>
       <ul>{plans.filter(plan => !["cancelled", "rolled_back"].includes(plan.phase)).map((saved, index) => <li key={saved.id}>
         <span>가져오기 {index + 1} · {saved.phase === "prepared" ? "적용 전" : ["building", "cancelling"].includes(saved.phase) ? "준비 미완료" : "전환 기록"}</span>{" "}
+        {saved.phase === "activating" && <button type="button" disabled={busy || blocked} onClick={() => void start("activate_import", { planId: saved.id })}>가져오기 재개</button>}
         {saved.phase === "prepared" && <button type="button" disabled={busy || blocked} onClick={() => setPlan(saved)}>미리보기 열기</button>}
         {["prepared", "building", "cancelling"].includes(saved.phase) && <button type="button" disabled={busy || blocked} onClick={() => void start("discard_import", { planId: saved.id })}>준비 사본 삭제</button>}
         {["activating", "activated", "rolling_back"].includes(saved.phase) && <button type="button" disabled={busy || blocked} onClick={() => { if (window.confirm("변경이 없는 경우에만 이전 저장소로 돌아갑니다. 새로 만든 Markdown과 이미지는 보존됩니다. 진행할까요?")) void start("rollback_import", { planId: saved.id }); }}>이전 저장소로 되돌리기</button>}

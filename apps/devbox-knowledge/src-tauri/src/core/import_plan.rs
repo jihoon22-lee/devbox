@@ -642,7 +642,9 @@ pub fn activate(
         // rollback, not forward recovery, that requires the original hashes.
         return Ok(plan);
     }
-    if plan.phase != Phase::Prepared || stores::read(root)? != plan.base {
+    if !matches!(plan.phase, Phase::Prepared | Phase::Activating)
+        || stores::read(root)? != plan.base
+    {
         return Err("import_preview_stale".into());
     }
     verify_staged(root, &plan)?;
@@ -715,7 +717,10 @@ pub fn rollback(root: &Path, id: &str) -> Result<Plan, String> {
     if plan.phase == Phase::RolledBack && stores::read(root)? == plan.base {
         return Ok(plan);
     }
-    if plan.phase == Phase::RollingBack && stores::read(root)? == plan.base {
+    // Intent persisted before the pointer changed: no user store was displaced.
+    if matches!(plan.phase, Phase::Activating | Phase::RollingBack)
+        && stores::read(root)? == plan.base
+    {
         plan.phase = Phase::RolledBack;
         write(root, &plan)?;
         return Ok(plan);
@@ -790,8 +795,9 @@ pub fn cancel(root: &Path, id: &str) -> Result<Plan, String> {
     }
     if !matches!(
         plan.phase,
-        Phase::Building | Phase::Prepared | Phase::Cancelling
+        Phase::Building | Phase::Prepared | Phase::Cancelling | Phase::Activating
     ) || stores::read(root)? == Some(plan.next.clone())
+        || (plan.phase == Phase::Activating && stores::read(root)? != plan.base)
     {
         return Err("import_preview_stale".into());
     }
@@ -1145,5 +1151,73 @@ mod tests {
                 .unwrap(),
             "keep it"
         );
+    }
+    #[test]
+    fn pre_pointer_activation_intent_can_resume_rollback_or_cancel() {
+        for existing in [false, true] {
+            for action in ["resume", "rollback", "cancel"] {
+                let root = tempfile::tempdir().unwrap();
+                let source = tempfile::tempdir().unwrap();
+                legacy(source.path(), Source::Notes);
+                let base = existing.then(|| stores::create_empty(root.path()).unwrap());
+                let mut plan =
+                    prepare(root.path(), source.path(), &[Source::Notes], token()).unwrap();
+                plan.phase = Phase::Activating;
+                write(root.path(), &plan).unwrap();
+                assert_eq!(stores::read(root.path()).unwrap(), base);
+                match action {
+                    "resume" => {
+                        activate(
+                            root.path(),
+                            source.path(),
+                            &plan.id,
+                            &AtomicBool::new(false),
+                        )
+                        .unwrap();
+                        assert_eq!(stores::read(root.path()).unwrap(), Some(plan.next));
+                    }
+                    "rollback" => {
+                        assert_eq!(
+                            rollback(root.path(), &plan.id).unwrap().phase,
+                            Phase::RolledBack
+                        );
+                        assert_eq!(stores::read(root.path()).unwrap(), base);
+                    }
+                    _ => {
+                        assert_eq!(
+                            cancel(root.path(), &plan.id).unwrap().phase,
+                            Phase::Cancelled
+                        );
+                        assert_eq!(stores::read(root.path()).unwrap(), base);
+                    }
+                }
+            }
+        }
+    }
+    #[test]
+    fn intent_recovery_revalidates_sources_and_preserves_changed_base() {
+        let root = tempfile::tempdir().unwrap();
+        let source = tempfile::tempdir().unwrap();
+        let legacy = legacy(source.path(), Source::Notes);
+        let base = stores::create_empty(root.path()).unwrap();
+        let mut plan = prepare(root.path(), source.path(), &[Source::Notes], token()).unwrap();
+        plan.phase = Phase::Activating;
+        write(root.path(), &plan).unwrap();
+        Connection::open(legacy)
+            .unwrap()
+            .execute("INSERT INTO settings VALUES('external','keep')", [])
+            .unwrap();
+        assert_eq!(
+            activate(
+                root.path(),
+                source.path(),
+                &plan.id,
+                &AtomicBool::new(false)
+            )
+            .unwrap_err(),
+            "import_source_changed"
+        );
+        rollback(root.path(), &plan.id).unwrap();
+        assert_eq!(stores::read(root.path()).unwrap(), Some(base));
     }
 }

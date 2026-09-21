@@ -100,7 +100,7 @@ pub fn initialize(app: &tauri::AppHandle, root: PathBuf, legacy: PathBuf) -> Res
                 Phase::Building | Phase::Prepared | Phase::Cancelling
             ))
             || plan.phase == Phase::RollingBack
-            || (plan.phase == Phase::Activating && active == Some(plan.next.clone()))
+            || plan.phase == Phase::Activating
     });
     if !app.manage(Migration {
         root,
