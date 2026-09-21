@@ -423,31 +423,45 @@ export async function discardRenamePreview(planId: string): Promise<void> {
   await invoke("discard_rename_preview", { planId });
 }
 
+const draftMessages: Record<string, string> = {
+  draft_stale: "저장 위치나 초안 상태가 바뀌었습니다. 새로 준비해 주세요.",
+  draft_busy: "다른 초안을 미리보기 중입니다.",
+  draft_invalid: "초안 요청의 형식이나 대상을 확인해 주세요.",
+  draft_unavailable: "초안을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+};
+function normalizeDraftError(cause: unknown): never {
+  const code = typeof cause === "string" ? cause : cause instanceof Error ? cause.name : "";
+  if (Object.prototype.hasOwnProperty.call(draftMessages, code)) {
+    throw Object.assign(new Error(draftMessages[code]), { name: code });
+  }
+  throw cause;
+}
+
 /** Claim a native handoff for preview; no file is written at this stage. */
 export async function previewKnowledgeDraft(
   id: string,
   kind: KnowledgeDraftPreview["kind"] = "knowledge-draft/v1",
 ): Promise<KnowledgeDraftPreview> {
   if (!isTauri()) throw new Error("Knowledge 초안 미리보기는 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id, kind });
+  return invoke<KnowledgeDraftPreview>("preview_knowledge_draft", { id, kind }).catch(normalizeDraftError);
 }
 
 /** Save a confirmed preview and acknowledge/delete the one-time handoff. */
 export async function saveKnowledgeDraft(id: string): Promise<SaveKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge 초안 저장은 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<SaveKnowledgeDraftResult>("save_knowledge_draft", { id });
+  return invoke<SaveKnowledgeDraftResult>("save_knowledge_draft", { id }).catch(normalizeDraftError);
 }
 
 /** Restore a claimed draft without creating a note. */
 export async function discardKnowledgeDraft(id: string): Promise<void> {
   if (!isTauri()) throw new Error("Knowledge 초안 취소는 데스크톱 앱에서 사용할 수 없습니다");
-  await invoke("discard_knowledge_draft", { id });
+  await invoke("discard_knowledge_draft", { id }).catch(normalizeDraftError);
 }
 
 /** Keep a long-running preview within the bounded claim lease. */
 export async function renewKnowledgeDraft(id: string): Promise<RenewKnowledgeDraftResult> {
   if (!isTauri()) throw new Error("Knowledge 초안 갱신은 데스크톱 앱에서 사용할 수 없습니다");
-  return invoke<RenewKnowledgeDraftResult>("renew_knowledge_draft", { id });
+  return invoke<RenewKnowledgeDraftResult>("renew_knowledge_draft", { id }).catch(normalizeDraftError);
 }
 
 export async function listTemplates(): Promise<NoteTemplate[]> {

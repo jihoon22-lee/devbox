@@ -2,7 +2,7 @@
 //! The file declaration alone never activates a listener or launches a product.
 #[cfg(windows)]
 #[path = "platform/mod.rs"]
-pub(crate) mod platform;
+pub mod platform;
 use product_contract::{Operation, OperationState, Problem, ProblemCode, RouteRequest};
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
@@ -12,10 +12,9 @@ use std::{
 };
 use tauri::{Manager, State, WebviewWindow};
 #[cfg(windows)]
-#[path = "suite_health.rs"]
-pub(crate) mod health;
+pub mod health;
 
-pub(crate) type DomainHandler = fn(
+pub type DomainHandler = fn(
     tauri::AppHandle,
     product_contract::transport::Call,
     u64,
@@ -25,6 +24,7 @@ pub(crate) type DomainHandler = fn(
 >;
 struct Suite {
     product: &'static str,
+    version: &'static str,
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
     #[cfg(windows)]
@@ -187,7 +187,7 @@ async fn connection(
     .await;
     #[cfg(not(windows))]
     let result: Result<serde_json::Value, &'static str> = {
-        let _ = (suite.domain, suite.sources);
+        let _ = (suite.domain, suite.sources, suite.version);
         match request.method {
             Method::VerifyMigrationBackup { product, id } => {
                 let _ = (product, id);
@@ -261,8 +261,9 @@ async fn connection(
 }
 
 #[cfg(windows)]
-pub(crate) fn capture_own(
+pub fn capture_own(
     product: &str,
+    version: &str,
 ) -> Result<platform::component_scope::CapturedScope, &'static str> {
     let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
     let root = image
@@ -272,12 +273,7 @@ pub(crate) fn capture_own(
         .take(6)
         .find(|root| root.join("devbox-installation.json").is_file())
         .ok_or("suite_package_unavailable")?;
-    platform::component_scope::CapturedScope::capture(
-        root,
-        product,
-        &image,
-        env!("CARGO_PKG_VERSION"),
-    )
+    platform::component_scope::CapturedScope::capture(root, product, &image, version)
 }
 #[cfg(windows)]
 async fn resume(
@@ -297,12 +293,13 @@ async fn resume(
         return;
     };
     let storage_app = app.clone();
+    let version = host_version(&app);
     let captured = tokio::task::spawn_blocking(move || {
         let _permit = permit;
         let Some(preference) = platform::connection_preference::read(&storage_app)? else {
             return Ok::<_, &'static str>(None);
         };
-        let scope = capture_own(product)?;
+        let scope = capture_own(product, version)?;
         if !preference.matches(product, &scope) {
             return Err("suite_review_required");
         }
@@ -532,9 +529,10 @@ async fn execute(
             // renderer/registry executable path is accepted by this boundary.
             let slots = state.lock().map_err(|_| "suite_busy")?.review_slots.clone();
             let permit = slots.try_acquire_owned().map_err(|_| "suite_review_busy")?;
+            let version = host_version(&app);
             let scope = tokio::task::spawn_blocking(move || {
                 let _permit = permit;
-                capture_own(product)
+                capture_own(product, version)
             })
             .await
             .map_err(|_| "suite_review_unavailable")??;
@@ -696,9 +694,7 @@ fn handler(
                 Call::ReadHealthStatus { challenge } => {
                     health::observe(app, product, domain, challenge, deadline).await
                 }
-                Call::Describe {} => Ok(
-                    serde_json::json!({"product":product,"version":env!("CARGO_PKG_VERSION"),"sources":std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()}),
-                ),
+                Call::Describe {} => Ok(describe_owner(product, host_version(&app), sources)),
                 Call::Query {
                     query_id,
                     source: Source::Commands,
@@ -868,7 +864,7 @@ fn now() -> u64 {
         .min(u128::from(u64::MAX)) as u64
 }
 #[allow(dead_code)]
-pub(crate) fn installed_products(app: &tauri::AppHandle) -> std::collections::BTreeSet<String> {
+pub fn installed_products(app: &tauri::AppHandle) -> std::collections::BTreeSet<String> {
     #[allow(unused_mut)]
     let mut products = std::collections::BTreeSet::from(["control-center".to_owned()]);
     #[cfg(windows)]
@@ -895,7 +891,7 @@ pub(crate) fn installed_products(app: &tauri::AppHandle) -> std::collections::BT
     products
 }
 #[allow(dead_code)] // Only the actual shortcut and project-provider consumers use this shared module entry.
-pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
+pub fn connection_ready(app: &tauri::AppHandle) -> bool {
     #[cfg(windows)]
     {
         app.try_state::<Suite>().is_some_and(|suite| {
@@ -914,7 +910,7 @@ pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
     }
 }
 /// Native command host calls this only after its own renderer authorization.
-pub(crate) async fn remote(
+pub async fn remote(
     app: &tauri::AppHandle,
     product: &str,
     call: product_contract::transport::Call,
@@ -1028,8 +1024,25 @@ async fn activate(
     Err("suite_activation_timeout")
 }
 
-pub(crate) fn plugin(
+#[cfg(windows)]
+fn host_version(app: &tauri::AppHandle) -> &'static str {
+    app.state::<Suite>().version
+}
+
+#[cfg(any(windows, test))]
+fn describe_owner(
+    product: &str,
+    version: &str,
+    sources: &[product_contract::transport::Source],
+) -> serde_json::Value {
+    use product_contract::transport::Source;
+    serde_json::json!({"product": product, "version": version,
+        "sources": std::iter::once(Source::Commands).chain(sources.iter().cloned()).collect::<Vec<_>>()})
+}
+
+pub fn plugin(
     product: &'static str,
+    version: &'static str,
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
 ) -> tauri::plugin::TauriPlugin<tauri::Wry> {
@@ -1038,6 +1051,7 @@ pub(crate) fn plugin(
         .setup(move |app, _| {
             app.manage(Suite {
                 product,
+                version,
                 domain,
                 sources,
                 #[cfg(windows)]
@@ -1062,7 +1076,7 @@ pub(crate) fn plugin(
 
 /// Shared native adapter used by product-specific incoming Artifact consumers.
 #[allow(dead_code)]
-pub(crate) fn enqueue_review(
+pub fn enqueue_review(
     app: &tauri::AppHandle,
     descriptor: &product_contract::commands::Descriptor,
     request: &product_contract::commands::Request,
@@ -1104,7 +1118,7 @@ pub(crate) fn enqueue_review(
     }
 }
 #[allow(dead_code)]
-pub(crate) fn require_reviewed(
+pub fn require_reviewed(
     app: &tauri::AppHandle,
     id: &str,
     revision: &str,
@@ -1136,7 +1150,7 @@ pub(crate) fn require_reviewed(
     }
 }
 
-pub(crate) fn project_operations(
+pub fn project_operations(
     app: &tauri::AppHandle,
     call: &product_contract::transport::Call,
     rows: Vec<product_contract::operations::Row>,
@@ -1161,5 +1175,20 @@ pub(crate) fn project_operations(
             enqueue_review(app, &descriptor, &request)
         }
         _ => Err("operation_invalid"),
+    }
+}
+
+#[cfg(test)]
+mod host_identity_tests {
+    #[test]
+    fn wire_identity_uses_the_product_version_and_keeps_owner_sources() {
+        use product_contract::transport::Source;
+        let value = super::describe_owner("knowledge", "9.8.7", &[Source::Notes]);
+        assert_eq!(value["product"], "knowledge");
+        assert_eq!(value["version"], "9.8.7");
+        assert_eq!(
+            value["sources"],
+            serde_json::json!([Source::Commands, Source::Notes])
+        );
     }
 }

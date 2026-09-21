@@ -70,13 +70,19 @@ fn check_cancel(cancelled: &AtomicBool, started: Instant) -> Result<(), String> 
     }
     Ok(())
 }
-fn digest(file: &mut File) -> Result<(u64, String), String> {
+fn digest(
+    file: &mut (impl Read + Seek),
+    cancelled: &AtomicBool,
+    started: Instant,
+) -> Result<(u64, String), String> {
+    check_cancel(cancelled, started)?;
     file.seek(SeekFrom::Start(0))
         .map_err(|_| "legacy_store_unreadable")?;
     let mut hasher = Sha256::new();
     let mut bytes = 0_u64;
     let mut buffer = [0_u8; 65536];
     loop {
+        check_cancel(cancelled, started)?;
         let count = file
             .read(&mut buffer)
             .map_err(|_| "legacy_store_unreadable")?;
@@ -159,7 +165,7 @@ pub fn copy_closed_store(
             .file_name()
             .and_then(|name| name.to_str())
             .ok_or("legacy_store_invalid")?;
-        let (bytes, hash) = digest(handle)?;
+        let (bytes, hash) = digest(handle, cancelled, started)?;
         handle
             .seek(SeekFrom::Start(0))
             .map_err(|_| "legacy_store_unreadable")?;
@@ -189,12 +195,12 @@ pub fn copy_closed_store(
         output
             .sync_all()
             .map_err(|_| "legacy_snapshot_write_failed")?;
-        let (after_bytes, after_hash) = digest(handle)?;
+        let (after_bytes, after_hash) = digest(handle, cancelled, started)?;
         let mut copy = File::open(target.join(name)).map_err(|_| "legacy_snapshot_write_failed")?;
         if written != bytes
             || after_bytes != bytes
             || after_hash != hash
-            || digest(&mut copy)? != (bytes, hash.clone())
+            || digest(&mut copy, cancelled, started)? != (bytes, hash.clone())
             || devbox_filesystem::filesystem_identity(&*path, false)
                 .map_err(|_| "legacy_store_changed")?
                 != *before
@@ -288,7 +294,7 @@ impl ClosedSourceGuard {
         }
         for (entry, handle, identity) in &mut self.handles {
             check_cancel(cancelled, started)?;
-            if digest(handle)? != (entry.bytes, entry.sha256.clone())
+            if digest(handle, cancelled, started)? != (entry.bytes, entry.sha256.clone())
                 || devbox_filesystem::filesystem_identity(self.root.join(&entry.name), false)
                     .map_err(|_| "legacy_store_changed")?
                     != *identity
@@ -371,7 +377,7 @@ pub fn verify_closed_copy(
         devbox_filesystem::ensure_no_links(&path).map_err(|_| "legacy_snapshot_invalid")?;
         let (mut file, id) = devbox_filesystem::open_filesystem_object(&path, false)
             .map_err(|_| "legacy_snapshot_unavailable")?;
-        if digest(&mut file)? != (entry.bytes, entry.sha256.clone())
+        if digest(&mut file, cancelled, started)? != (entry.bytes, entry.sha256.clone())
             || devbox_filesystem::filesystem_identity(&path, false)
                 .map_err(|_| "legacy_snapshot_changed")?
                 != id
@@ -441,6 +447,53 @@ pub fn retain_closed_copy(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn digest_checks_cancellation_between_blocks_and_expired_deadlines() {
+        use super::*;
+        use std::io::Cursor;
+        struct CancellingReader<'a> {
+            inner: Cursor<Vec<u8>>,
+            cancelled: &'a AtomicBool,
+            reads: usize,
+        }
+        impl Read for CancellingReader<'_> {
+            fn read(&mut self, bytes: &mut [u8]) -> std::io::Result<usize> {
+                self.reads += 1;
+                let count = self.inner.read(bytes)?;
+                self.cancelled.store(true, Ordering::Relaxed);
+                Ok(count)
+            }
+        }
+        impl Seek for CancellingReader<'_> {
+            fn seek(&mut self, position: SeekFrom) -> std::io::Result<u64> {
+                self.inner.seek(position)
+            }
+        }
+        let cancelled = AtomicBool::new(false);
+        let mut reader = CancellingReader {
+            inner: Cursor::new(vec![42; 131072]),
+            cancelled: &cancelled,
+            reads: 0,
+        };
+        assert_eq!(
+            digest(&mut reader, &cancelled, Instant::now()).unwrap_err(),
+            "legacy_snapshot_cancelled"
+        );
+        assert_eq!(reader.reads, 1);
+        cancelled.store(false, Ordering::Relaxed);
+        reader.reads = 0;
+        assert_eq!(
+            digest(
+                &mut reader,
+                &cancelled,
+                Instant::now() - Duration::from_secs(MAX_SECONDS + 1)
+            )
+            .unwrap_err(),
+            "legacy_snapshot_timeout"
+        );
+        assert_eq!(reader.reads, 0);
+    }
+
     use super::*;
     fn fixture(root: &Path) -> PathBuf {
         let source = root.join("legacy");

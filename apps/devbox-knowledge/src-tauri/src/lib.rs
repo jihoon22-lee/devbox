@@ -6,9 +6,8 @@ mod migration;
 mod project_provider;
 mod search;
 mod session_receive;
-#[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
-mod suite;
 pub use search::{disconnect_project_provider, install_project_snapshot};
+use suite_runtime as suite;
 mod startup;
 mod storage_space;
 mod vault_owner;
@@ -19,6 +18,7 @@ pub fn run() {
         builder
             .plugin(suite::plugin(
                 "knowledge",
+                env!("CARGO_PKG_VERSION"),
                 Some(federation::handle),
                 &[
                     product_contract::transport::Source::Notes,

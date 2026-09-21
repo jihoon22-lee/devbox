@@ -15,6 +15,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+suite-runtime = { path = "../../../crates/suite-runtime" }
 dirs = "6.0.0"
 zip = { version = "=8.6.0", default-features = false, features = ["deflate"] }
 devbox_manager_lib = { package = "devbox-installation-tools",path="../../../crates/installation-tools",default-features=false}

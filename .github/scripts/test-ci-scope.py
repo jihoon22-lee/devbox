@@ -82,7 +82,7 @@ assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-content-ind
 for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engine"]:
     assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge"])
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == sorted(["devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl"])
+assert secrets.rust_packages == sorted(["devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
 
 native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
 assert native_helper.frontend_scope == "none"
@@ -278,3 +278,7 @@ assert hotkey.rust_packages == ["devbox-control-center"]
 legacy_catalog = resolve("apps/legacy-v0.7-catalog.json")
 assert legacy_catalog.rust_packages == catalog.rust_packages
 assert legacy_catalog.frontend_packages == catalog.frontend_packages
+
+# Explicit crate edges replace source-inclusion exceptions for Suite ownership.
+suite = resolve("crates/suite-runtime/src/lib.rs")
+assert {"suite-runtime", "devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(suite.rust_packages)

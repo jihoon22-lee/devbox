@@ -62,13 +62,12 @@ impl PendingKnowledgeDraft {
     fn take(&self, id: &str) -> Result<ClaimedKnowledgeDraft, String> {
         let mut slot = self.slot();
         let Some(current) = slot.as_ref() else {
-            return Err("Knowledge draft 미리보기가 없습니다".into());
+            return Err("draft_stale".into());
         };
         if current.claim.envelope.id != id {
-            return Err("다른 Knowledge draft 미리보기가 열려 있습니다".into());
+            return Err("draft_busy".into());
         }
-        slot.take()
-            .ok_or_else(|| "Knowledge draft 미리보기가 없습니다".to_string())
+        slot.take().ok_or_else(|| "draft_stale".to_string())
     }
 
     fn slot(&self) -> MutexGuard<'_, Option<ClaimedKnowledgeDraft>> {
@@ -117,7 +116,7 @@ pub fn preview_knowledge_draft(
                 | product_contract::knowledge_draft::KIND
         )
     {
-        return Err("Knowledge draft를 사용할 수 없습니다".into());
+        return Err("draft_invalid".into());
     }
     // Workspace metadata is admitted only by the product-owned native store.
     if matches!(
@@ -129,10 +128,10 @@ pub fn preview_knowledge_draft(
     }
     let now_ms = current_epoch_ms();
     if now_ms == 0 {
-        return Err("Knowledge draft를 사용할 수 없습니다".into());
+        return Err("draft_invalid".into());
     }
     if pending.is_open() {
-        return Err("Knowledge draft가 이미 미리보기 중입니다".into());
+        return Err("draft_busy".into());
     }
     let vault = {
         let connection = state
@@ -155,7 +154,7 @@ pub fn preview_knowledge_draft(
         Err(_) => {
             let _ = store.restore(&claim, CONSUMER_APP, now_ms);
             let _ = record_handoff_status(&store, &claim, HandoffStatus::Pending, now_ms);
-            return Err("Knowledge draft를 처리할 수 없습니다".into());
+            return Err("draft_invalid".into());
         }
     };
     let preview = KnowledgeDraftPreview::from_claim(&claim, &payload);
@@ -164,7 +163,7 @@ pub fn preview_knowledge_draft(
         drop(slot);
         let _ = store.restore(&claim, CONSUMER_APP, now_ms);
         let _ = record_handoff_status(&store, &claim, HandoffStatus::Pending, now_ms);
-        return Err("Knowledge draft가 이미 미리보기 중입니다".into());
+        return Err("draft_busy".into());
     }
     *slot = Some(ClaimedKnowledgeDraft {
         claim,
@@ -196,7 +195,7 @@ pub fn save_knowledge_draft(
         // draft from its producer instead.
         let _ = store.ack(&claimed.claim, CONSUMER_APP, now_ms);
         let _ = record_handoff_status(&store, &claimed.claim, HandoffStatus::Expired, now_ms);
-        return Err("Knowledge draft가 만료되었습니다. 보낸 앱에서 새로 생성하세요".into());
+        return Err("draft_stale".into());
     }
     let root = match state
         .db
@@ -311,7 +310,7 @@ pub fn discard_knowledge_draft(
                 let _ =
                     record_handoff_status(&store, &claimed.claim, HandoffStatus::Expired, now_ms);
             }
-            Err("Knowledge draft가 만료되었습니다. 보낸 앱에서 새로 생성하세요".into())
+            Err("draft_stale".into())
         }
         Err(_) => {
             let _ = pending.inner().put_if_empty(claimed);
@@ -330,10 +329,10 @@ pub fn renew_knowledge_draft(
 ) -> Result<RenewKnowledgeDraftResult, String> {
     let mut slot = pending.slot();
     let Some(current) = slot.as_mut() else {
-        return Err("Knowledge draft 미리보기가 없습니다".into());
+        return Err("draft_stale".into());
     };
     if current.claim.envelope.id != id {
-        return Err("다른 Knowledge draft 미리보기가 열려 있습니다".into());
+        return Err("draft_busy".into());
     }
     let renewed = match pending.store().renew(
         &current.claim,
@@ -461,7 +460,7 @@ fn validate_note_parent(vault: &VaultIdentity) -> Result<(), String> {
 }
 
 fn stale_vault_message() -> String {
-    "Knowledge 저장 위치가 변경되어 다시 확인해야 합니다".to_string()
+    "draft_stale".to_string()
 }
 
 fn note_content(payload: &IncomingKnowledgeDraft) -> String {

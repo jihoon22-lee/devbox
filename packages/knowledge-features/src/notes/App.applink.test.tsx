@@ -363,7 +363,7 @@ describe("Knowledge Path/Query app-link delivery", () => {
       from: "life-log",
     });
     saveKnowledgeDraftMock.mockRejectedValueOnce(
-      new Error("Knowledge 저장 위치가 변경되어 다시 확인해야 합니다: /raw/path"),
+      Object.assign(new Error("wording independent: /raw/path"), { name: "draft_stale" }),
     );
 
     render(<App />);
@@ -438,4 +438,16 @@ describe("Knowledge Path/Query app-link delivery", () => {
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+});
+
+
+it("does not infer draft expiry from display wording", async () => {
+  takePendingOpenMock.mockResolvedValueOnce({ target: { kind: "handoff", handoffKind: "knowledge-draft/v1", id: "0123456789abcdef0123456789abcdef" }, from: "life-log" });
+  saveKnowledgeDraftMock.mockRejectedValueOnce(new Error("만료 처리를 사용할 수 없습니다"));
+  render(<App/>);
+  await screen.findByRole("heading", { name: "Life Log 초안 미리보기" });
+  fireEvent.click(screen.getByRole("button", { name: "초안 저장" }));
+  await waitFor(() => expect(saveKnowledgeDraftMock).toHaveBeenCalled());
+  expect(screen.getByRole("dialog")).toBeTruthy();
+  expect(screen.queryByText(/저장 위치가 변경되었거나 초안이 만료되었습니다/u)).toBeNull();
 });

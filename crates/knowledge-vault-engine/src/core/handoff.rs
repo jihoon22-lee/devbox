@@ -229,17 +229,33 @@ pub fn validate_toolbox_draft(payload: &ToolboxDraftPayload) -> Result<(), Strin
     Ok(())
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DraftIssue {
+    Stale,
+    Busy,
+    Invalid,
+    Unavailable,
+}
+impl DraftIssue {
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Stale => "draft_stale",
+            Self::Busy => "draft_busy",
+            Self::Invalid => "draft_invalid",
+            Self::Unavailable => "draft_unavailable",
+        }
+    }
+}
 pub fn map_claim_error(error: &HandoffError) -> &'static str {
     match error {
         HandoffError::Missing | HandoffError::Expired | HandoffError::LeaseExpired => {
-            "Knowledge draft를 사용할 수 없거나 만료되었습니다. 보낸 앱에서 새로 생성하세요."
+            DraftIssue::Stale
         }
-        HandoffError::AlreadyClaimed => "Knowledge draft가 이미 미리보기 중입니다.",
-        HandoffError::WrongTarget | HandoffError::WrongKind => {
-            "Knowledge draft 대상이 올바르지 않습니다."
-        }
-        _ => "Knowledge draft를 처리할 수 없습니다.",
+        HandoffError::AlreadyClaimed => DraftIssue::Busy,
+        HandoffError::WrongTarget | HandoffError::WrongKind => DraftIssue::Invalid,
+        _ => DraftIssue::Unavailable,
     }
+    .code()
 }
 
 pub fn validate_knowledge_draft(payload: &KnowledgeDraftPayload) -> Result<(), String> {
@@ -814,8 +830,8 @@ mod tests {
     }
 
     #[test]
-    fn maps_claim_failures_to_fixed_messages() {
-        assert!(map_claim_error(&HandoffError::Expired).contains("만료"));
+    fn maps_claim_failures_to_stable_codes() {
+        assert_eq!(map_claim_error(&HandoffError::Expired), "draft_stale");
         assert!(!map_claim_error(&HandoffError::Corrupt).contains("Corrupt"));
     }
 

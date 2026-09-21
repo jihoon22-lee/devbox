@@ -15,7 +15,7 @@ pub struct IndexedFile {
 pub struct WalkResult {
     /// 상한 안에 수집된 파일 목록.
     pub files: Vec<IndexedFile>,
-    /// 상한 밖에 반환 가능한 파일이 하나 이상 있었는지 여부.
+    /// File-count or directory-entry work budget was exceeded.
     pub truncated: bool,
     /// At least one directory entry or metadata record could not be read.
     /// Consumers that reconcile deletions must retain their previous state
@@ -26,25 +26,40 @@ pub struct WalkResult {
 
 /// 루트 디렉터리를 순회하며 인덱스 대상 파일을 수집한다 (제외 규칙 적용).
 pub fn collect(root: &Path) -> Vec<IndexedFile> {
-    collect_inner(root, None).files
+    collect_inner(root, None, None).files
 }
 
 /// 루트 디렉터리를 순회하며 최대 `max_entries`개의 파일을 수집한다.
 ///
 /// 기존 [`collect`]와 같은 ignore·파일 판정·metadata 오류 무시 규칙을 사용한다.
-/// `truncated`는 상한에 도달한 것만으로는 켜지지 않고, 상한 밖에 추가로 반환 가능한
-/// 파일이 실제로 발견될 때만 `true`가 된다. 따라서 파일이 정확히 상한 개수면
-/// `truncated`는 `false`이고, `max_entries == 0`도 파일이 있을 때만 `true`다.
+/// File-count exhaustion requires an additional eligible file. Independently, visiting
+/// more than max(1024, 4 * max_entries) entries reports truncation even without files.
 pub fn collect_limited(root: &Path, max_entries: usize) -> WalkResult {
-    collect_inner(root, Some(max_entries))
+    collect_bounded(root, max_entries, max_entries.saturating_mul(4).max(1024))
 }
 
-fn collect_inner(root: &Path, max_entries: Option<usize>) -> WalkResult {
+/// Bound files and all visited entries independently, including empty/ignored directories.
+pub fn collect_bounded(root: &Path, max_files: usize, max_visited: usize) -> WalkResult {
+    collect_inner(root, Some(max_files), Some(max_visited))
+}
+fn collect_inner(
+    root: &Path,
+    max_entries: Option<usize>,
+    max_visited: Option<usize>,
+) -> WalkResult {
     let mut out = Vec::new();
     let mut incomplete = false;
-    for entry in WalkDir::new(root).into_iter().filter_entry(|e| {
-        !(e.file_type().is_dir() && is_ignored_dir(&e.file_name().to_string_lossy()))
-    }) {
+    let mut walker = WalkDir::new(root).into_iter();
+    let mut visited = 0usize;
+    while let Some(entry) = walker.next() {
+        if max_visited.is_some_and(|limit| visited >= limit) {
+            return WalkResult {
+                files: out,
+                truncated: true,
+                incomplete,
+            };
+        }
+        visited = visited.saturating_add(1);
         let entry = match entry {
             Ok(entry) => entry,
             Err(_) => {
@@ -52,6 +67,10 @@ fn collect_inner(root: &Path, max_entries: Option<usize>) -> WalkResult {
                 continue;
             }
         };
+        if entry.file_type().is_dir() && is_ignored_dir(&entry.file_name().to_string_lossy()) {
+            walker.skip_current_dir();
+            continue;
+        }
         if !entry.file_type().is_file() {
             continue;
         }
@@ -103,6 +122,21 @@ mod tests {
     fn new_test_dir() -> PathBuf {
         let id = NEXT_TEST_DIR.fetch_add(1, Ordering::Relaxed);
         std::env::temp_dir().join(format!("filesystem-test-{}-{id}", std::process::id()))
+    }
+
+    #[test]
+    fn empty_directories_exhaust_work_without_exhausting_file_count() {
+        let root = new_test_dir();
+        fs::create_dir_all(&root).unwrap();
+        for index in 0..40 {
+            fs::create_dir(root.join(format!("empty-{index}"))).unwrap();
+        }
+        let result = collect_bounded(&root, 100, 10);
+        assert!(result.truncated);
+        assert!(!result.incomplete);
+        assert!(result.files.is_empty());
+        assert!(!collect_bounded(&root, 100, 41).truncated);
+        fs::remove_dir_all(root).unwrap();
     }
 
     fn setup() -> PathBuf {

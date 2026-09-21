@@ -1,6 +1,6 @@
 mod federation;
 mod shortcuts;
-mod suite;
+use suite_runtime as suite;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     #[cfg(windows)]
@@ -16,6 +16,7 @@ pub fn run() {
         builder
             .plugin(suite::plugin(
                 "control-center",
+                env!("CARGO_PKG_VERSION"),
                 Some(federation::handle),
                 &[],
             ))

@@ -105,10 +105,7 @@ function utf8Bytes(value: string): number {
 }
 
 function draftNeedsRegeneration(cause: unknown): boolean {
-  const message = cause instanceof Error
-    ? cause.message
-    : typeof cause === "string" ? cause : "";
-  return /만료|사용할 수 없|처리할 수 없|저장 위치가 변경/u.test(message);
+  return cause instanceof Error && cause.name === "draft_stale";
 }
 
 function remapPath(path: string | null, from: string, to: string): string | null {

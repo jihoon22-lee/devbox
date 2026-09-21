@@ -16,6 +16,7 @@ serde_json = "1"
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
+suite-runtime = { path = "../../../crates/suite-runtime" }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
 data-migration = { path = "../../../crates/data-migration" }
 workspace-wsl = { path = "../native", default-features = false, features = ["files", "git"] }

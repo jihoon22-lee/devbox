@@ -278,7 +278,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             #[cfg(windows)]
             {
                 use tauri_plugin_opener::OpenerExt;
-                let scope = crate::suite::capture_own("control-center")?;
+                let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION"))?;
                 scope.revalidate()?;
                 app.opener()
                     .open_path(scope.review_root(), None::<&str>)
@@ -298,7 +298,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     } else if inventory {
         tauri::async_runtime::spawn_blocking(|| {
             #[cfg(windows)]
-            let scope = crate::suite::capture_own("control-center").ok();
+            let scope = crate::suite::capture_own("control-center", env!("CARGO_PKG_VERSION")).ok();
             #[cfg(windows)]
             let captured = scope.as_ref().map(|scope| {
                 (

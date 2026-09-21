@@ -76,6 +76,9 @@ def check(root=ROOT):
         package = json.loads((root / entry["appDir"] / "package.json").read_text())
         assert re.fullmatch(r"0\.8\.(?:0|[1-9][0-9]*)", cargo["package"]["version"])
         assert config["version"] == package["version"] == cargo["package"]["version"]
+        host = (root / entry["appDir"] / "src-tauri/src/lib.rs").read_text()
+        assert re.search(r'suite::plugin\(\s*"[a-z-]+"\s*,\s*env!\("CARGO_PKG_VERSION"\)', host), "Suite identity must use the product host version"
+
         assert product["identifier"] not in {p["identifier"] for p in parity["apps"]}
         features = [f for f in catalog["features"] if f["owner"] == product["id"]]
         assert product["defaultRoute"] in {f["route"] for f in features}
@@ -116,6 +119,10 @@ def check(root=ROOT):
             assert "remote" not in exporter and not exporter.get("webviews")
             assert exporter["permissions"] == ["api-studio:allow-legacy-export-message"]
         assert {path.name for path in capability_dir.glob("*.json")} == expected_files
+    for source in (root / "crates/suite-runtime/src").rglob("*.rs"):
+        assert "CARGO_PKG_VERSION" not in source.read_text(), "Suite library metadata is not product identity"
+    workflow = (root / ".github/workflows/product-foundation.yml").read_text()
+    assert "'crates/suite-runtime/**'" in workflow, "Suite-only changes require native acceptance"
     ids = set()
     for feature in parity["features"]:
         assert feature["legacyFeatureId"] not in ids, feature["legacyFeatureId"]

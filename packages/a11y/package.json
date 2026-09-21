@@ -12,7 +12,7 @@
   },
   "scripts": {
     "build": "tsc --noEmit",
-    "test": "vitest run --passWithNoTests"
+    "test": "vitest run --passWithNoTests && node test-browser.mjs"
   },
   "devDependencies": {
     "axe-core": "4.13.0",

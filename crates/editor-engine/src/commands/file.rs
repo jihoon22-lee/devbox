@@ -545,8 +545,8 @@ pub fn save_path_with_policy(
     }
     temporary.published = true;
     let mut warnings = Vec::new();
-    if let Err(error) = sync_parent(&canonical) {
-        warnings.push(error.to_string());
+    if let Some(warning) = devbox_filesystem::finish_replacement(&canonical).durability_warning {
+        warnings.push(warning.to_string());
     }
     let (mtime, size) = match metadata(&canonical) {
         Ok(metadata) => match modified_epoch_nanos(&metadata) {

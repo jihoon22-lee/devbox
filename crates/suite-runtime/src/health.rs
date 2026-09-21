@@ -64,7 +64,7 @@ pub(super) async fn observe(
     };
     report.validate(
         product,
-        env!("CARGO_PKG_VERSION"),
+        super::host_version(&app),
         &scope.installation_key,
         &scope.manifest.generation,
         &challenge,
@@ -77,7 +77,7 @@ pub(super) async fn observe(
     }
     serde_json::to_value(report).map_err(|_| "suite_health_invalid")
 }
-pub(crate) async fn read(
+pub async fn read(
     app: tauri::AppHandle,
     product: &str,
     domain: Option<DomainHandler>,
@@ -102,7 +102,7 @@ pub(crate) async fn read(
     let report: Report = serde_json::from_value(value).map_err(|_| "suite_health_invalid")?;
     report.validate(
         product,
-        env!("CARGO_PKG_VERSION"),
+        super::host_version(&app),
         &scope.installation_key,
         &scope.manifest.generation,
         &challenge,
@@ -116,7 +116,7 @@ pub(crate) async fn read(
     Ok(serde_json::json!({"nativeStoreReady":report.store_ready(),"report":report}))
 }
 
-pub(crate) async fn backups(
+pub async fn backups(
     app: tauri::AppHandle,
     product: &str,
     domain: Option<DomainHandler>,
@@ -165,7 +165,7 @@ pub(crate) async fn backups(
 // The shared health module is also compiled by products that only answer this
 // request; Control Center alone collects source evidence for suite cutover.
 #[allow(dead_code)]
-pub(crate) async fn sources(
+pub async fn sources(
     app: tauri::AppHandle,
     product: &str,
     domain: Option<DomainHandler>,

@@ -7949,7 +7949,7 @@
     },
     {
       "legacyFeatureId": "devbox-manager:command:take_pending_open",
-      "sourcePath": "apps/devbox-control-center/src-tauri/src/suite.rs",
+      "sourcePath": "crates/suite-runtime/src/lib.rs",
       "sourceLine": 1,
       "kind": "native-command",
       "product": "control-center",
@@ -7962,7 +7962,7 @@
       ],
       "ownerIssue": 550,
       "status": "verified",
-      "implementationPath": "apps/devbox-control-center/src-tauri/src/suite.rs",
+      "implementationPath": "crates/suite-runtime/src/lib.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
         "workthrough/2026-09-13-v08-b08-suite-recovery.md",
@@ -8426,7 +8426,7 @@
       ],
       "ownerIssue": 550,
       "status": "verified",
-      "implementationPath": "apps/devbox-control-center/src-tauri/src/suite.rs",
+      "implementationPath": "crates/suite-runtime/src/lib.rs",
       "dispatchPath": "apps/devbox-control-center/src-tauri/src/tools_host.rs",
       "evidence": [
         "workthrough/2026-09-13-v08-b08-suite-recovery.md",
