@@ -10,4 +10,6 @@
 - Regression coverage: unknown/nonempty authority with concurrent executor heartbeat,
   expired deadlines, forced escalation/reaping, duplicate cleanup, nonblocking Drop,
   unassigned child and existing owned descendant/stdio tests.
-- Validation: pending whole-branch affected and CI checks. Windows behavior must pass CI.
+- Validation: `pnpm verify:affected` PASS (315s), check/Clippy/fmt plus API Studio
+  42, HTTP engine 147 and shared-source Workspace 182 tests. Windows CI/native
+  acceptance remain required; no repeated local run is planned.
