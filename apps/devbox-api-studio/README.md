@@ -47,3 +47,12 @@ An unavailable/offline receiver leaves the original history/fixture intact. Sour
 restart or expiry requires sending a new projection. Windows end-to-end execution evidence is
 tracked in `workthrough/2026-09-21-v08-review-corrections.md`; historical producer acceptance
 does not establish receiver acceptance.
+
+### HTTP request lifetime
+
+HTTP timeout covers the complete redirect chain, including multipart preparation
+inside execution and the final response body. Redirects do not reset this budget.
+New sends supersede older sends; cancellation routing and retained response headers
+are registered in the same order. Authenticated HTTP cancellation has eight bounded
+control slots independent of the 64 normal component operations, with shared replay
+protection. Exhausting normal slots cannot prevent cancellation admission.
