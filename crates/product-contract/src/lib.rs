@@ -367,3 +367,5 @@ mod tests {
         assert!(g.authorize("main", true, &r, 1000, &["overview"]).is_err());
     }
 }
+
+pub mod webhook_log;

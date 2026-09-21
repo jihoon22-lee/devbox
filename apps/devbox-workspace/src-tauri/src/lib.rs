@@ -73,3 +73,5 @@ mod selection_send;
 mod selection_logs;
 
 mod migration_ledger;
+
+mod webhook_logs;

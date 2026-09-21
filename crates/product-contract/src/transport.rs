@@ -50,6 +50,21 @@ pub enum QueryMode {
     deny_unknown_fields
 )]
 pub enum Call {
+    DeliverWebhookLog {
+        id: String,
+        revision: String,
+        operation_id: String,
+    },
+    ClaimWebhookLog {
+        id: String,
+        revision: String,
+        operation_id: String,
+    },
+    AcknowledgeWebhookLog {
+        id: String,
+        revision: String,
+        operation_id: String,
+    },
     ReadHealthStatus {
         challenge: String,
     },
@@ -199,7 +214,9 @@ impl Guard {
         }
         if matches!(
             request.call,
-            Call::DeliverKnowledgeDraft { .. } | Call::ReadTransformSelection { .. }
+            Call::DeliverKnowledgeDraft { .. }
+                | Call::ReadTransformSelection { .. }
+                | Call::DeliverWebhookLog { .. }
         ) && self.peer.product != "api-studio"
         {
             return Err("peer_method_denied");
@@ -217,6 +234,8 @@ impl Guard {
                     | Call::DeliverTransformSelection { .. }
                     | Call::DeliverSessionSummary { .. }
                     | Call::ReadFileReference { .. }
+                    | Call::ClaimWebhookLog { .. }
+                    | Call::AcknowledgeWebhookLog { .. }
             ) && self.peer.product != "workspace")
         {
             return Err("peer_method_denied");
@@ -227,7 +246,9 @@ impl Guard {
             && !(self.peer.product == "api-studio"
                 && matches!(
                     request.call,
-                    Call::DeliverKnowledgeDraft { .. } | Call::ReadTransformSelection { .. }
+                    Call::DeliverKnowledgeDraft { .. }
+                        | Call::ReadTransformSelection { .. }
+                        | Call::DeliverWebhookLog { .. }
                 ))
             && !(self.peer.product == "knowledge"
                 && matches!(
@@ -244,6 +265,8 @@ impl Guard {
                         | Call::DeliverTransformSelection { .. }
                         | Call::DeliverSessionSummary { .. }
                         | Call::ReadFileReference { .. }
+                        | Call::ClaimWebhookLog { .. }
+                        | Call::AcknowledgeWebhookLog { .. }
                 ))
             && !matches!(
                 request.call,
@@ -267,6 +290,26 @@ impl Guard {
 }
 pub fn validate_call(call: &Call) -> Result<()> {
     match call {
+        Call::DeliverWebhookLog {
+            id,
+            revision,
+            operation_id,
+        }
+        | Call::ClaimWebhookLog {
+            id,
+            revision,
+            operation_id,
+        }
+        | Call::AcknowledgeWebhookLog {
+            id,
+            revision,
+            operation_id,
+        } if !commands::opaque_id(id)
+            || !commands::revision(revision)
+            || !commands::opaque_id(operation_id) =>
+        {
+            return Err("peer_webhook_log_invalid");
+        }
         Call::VerifyMigrationBackup { id } if !commands::opaque_id(id) => {
             return Err("peer_request_invalid");
         }
@@ -642,6 +685,44 @@ mod tests {
             }
         }
     }
+    #[test]
+    fn webhook_projection_calls_require_native_owner_installation_and_fresh_request() {
+        for product in ["control-center", "workspace", "knowledge", "api-studio"] {
+            for kind in 0..3 {
+                let mut guard = Guard::new(
+                    Peer::from_native(product, &"a".repeat(64), &"b".repeat(64)).unwrap(),
+                    "native-session",
+                )
+                .unwrap();
+                let mut input = request();
+                input.call = match kind {
+                    0 => Call::DeliverWebhookLog {
+                        id: "capture".into(),
+                        revision: "c".repeat(64),
+                        operation_id: "review".into(),
+                    },
+                    1 => Call::ClaimWebhookLog {
+                        id: "capture".into(),
+                        revision: "c".repeat(64),
+                        operation_id: "review".into(),
+                    },
+                    _ => Call::AcknowledgeWebhookLog {
+                        id: "capture".into(),
+                        revision: "c".repeat(64),
+                        operation_id: "review".into(),
+                    },
+                };
+                let expected = product == if kind == 0 { "api-studio" } else { "workspace" };
+                let mut foreign = input.clone();
+                foreign.installation_key = "d".repeat(64);
+                assert!(guard.authorize(&foreign, 1000).is_err());
+                assert!(guard.authorize(&input, 2001).is_err());
+                assert_eq!(guard.authorize(&input, 1000).is_ok(), expected);
+                assert!(guard.authorize(&input, 1000).is_err());
+            }
+        }
+    }
+
     #[test]
     fn executable_strings_and_raw_payloads_are_not_wire_methods() {
         let mut value = serde_json::to_value(request()).unwrap();

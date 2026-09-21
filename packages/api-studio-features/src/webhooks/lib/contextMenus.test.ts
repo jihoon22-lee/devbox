@@ -15,7 +15,7 @@ describe("Webhook Lab context menu contracts", () => {
       "마스킹된 fixture 저장",
       "마스킹된 요청 재전송",
       "API Playground로 변환",
-      "Log Lens에서 보기",
+      "Workspace Logs에서 보기",
       "삭제",
     ]);
     expect(items.find((item) => item.id === "delete")?.danger).toBe(true);

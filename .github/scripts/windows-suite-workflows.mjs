@@ -164,6 +164,32 @@ try {
   const logPending=(await suite(api,{kind:"pending"})).find(row=>row.target.kind==="entity"&&row.target.id===logSent.handoffId);assert.ok(logPending);await review(api,{operationId:logPending.operationId});
   await waitForRenderer(api.cdp,"[...document.querySelectorAll('[role=dialog]')].some(node=>node.textContent.includes('synthetic log selection'))","Log Transform preview missing");await click(api,'[role=dialog] button',"취소");
   evidence.checks.nativeLogSelectionPreview=true;
+  stage("webhook-projection-to-workspace-logs");
+  const capturePort=await freePort();
+  await domain(api,"api-studio.webhooks","start_server",{bind:"127.0.0.1",port:capturePort,allowLan:false});
+  const privateToken="synthetic-suite-webhook-token";
+  try {
+    const captured=await fetch(`http://127.0.0.1:${capturePort}/suite-webhook`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${privateToken}`},body:JSON.stringify({message:"suite webhook ordinary",token:privateToken})});
+    await captured.arrayBuffer();
+    const captures=await domain(api,"api-studio.webhooks","list_history");
+    const historyId=captures.at(-1).id;
+    const fixture=await domain(api,"api-studio.webhooks","save_fixture",{historyId});
+    for(const [method,args] of [["send_history_to_log_lens",{historyId}],["send_fixture_to_log_lens",{id:fixture.id}]]) {
+      const sent=await domain(api,"api-studio.webhooks",method,args);
+      const pending=(await suite(workspace,{kind:"pending"})).find(row=>row.target.kind==="entity"&&row.target.id===sent.handoffId);
+      assert.ok(pending);
+      await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:pending.commandRevision,operationId:pending.operationId}));
+      await review(workspace,pending);
+      await waitForRenderer(workspace.cdp,"document.querySelector('.workspace-feature-logs')?.textContent.includes('suite webhook ordinary')","reviewed Webhook did not reach Logs");
+      const rendered=await workspace.cdp.evaluate("document.querySelector('.workspace-feature-logs').textContent");
+      assert.ok(!rendered.includes(privateToken));
+      await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:"0".repeat(64),operationId:pending.operationId}));
+      await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:pending.commandRevision,operationId:randomUUID()}));
+    }
+    evidence.checks.webhookHistoryAndFixtureReachReviewedLogs=true;
+    evidence.checks.webhookStaleReplayAndUnreviewedDenied=true;
+    assert.ok((await domain(api,"api-studio.webhooks","list_history")).some(row=>row.id===historyId));
+  } finally { await domain(api,"api-studio.webhooks","stop_server"); }
   stage("saved-result-to-knowledge");
   const saved=await domain(api,"api-studio.api","save_knowledge_draft",{output:"synthetic suite knowledge result"});
   const delivery=await domain(api,"api-studio.api","send_knowledge_draft",{id:saved.draft.artifact.id});

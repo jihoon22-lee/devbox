@@ -90,7 +90,7 @@ const SAFE_ERROR_MESSAGES = new Set([
   "API Playground를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
   "API Playground를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다",
   "API Playground handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
-  "Logs 연결을 사용할 수 없습니다. 수신 요청과 저장한 fixture는 유지됩니다.",
+  "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.",
   "Log Lens를 사용할 수 없습니다. 설치 또는 업데이트 후 다시 시도하세요. 클립보드로 자동 전환하지 않습니다",
   "Log Lens를 실행하지 못했습니다. handoff를 안전하게 정리했으며 클립보드로 자동 전환하지 않습니다",
   "Log Lens handoff를 만들지 못했습니다. 클립보드로 자동 전환하지 않습니다",
@@ -736,7 +736,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     try {
       const dispatch = await sendHistoryToLogLens(request.id);
       if (!mountedRef.current) return;
-      showHandoffSuccess(dispatch, "Log Lens");
+      showHandoffSuccess(dispatch, "Workspace Logs");
     } catch (e) {
       if (mountedRef.current) setError(safeMessage(e));
     } finally {
@@ -751,7 +751,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
     try {
       const dispatch = await sendFixtureToLogLens(fixture.id);
       if (!mountedRef.current) return;
-      showHandoffSuccess(dispatch, "Log Lens");
+      showHandoffSuccess(dispatch, "Workspace Logs");
     } catch (e) {
       if (mountedRef.current) setError(safeMessage(e));
     } finally {
@@ -1484,10 +1484,10 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                     type="button"
                     className="mini"
                     disabled={busy}
-                    aria-label={`${fixture.method} ${fixture.url} Log Lens에서 보기`}
+                    aria-label={`${fixture.method} ${fixture.url} Workspace Logs에서 보기`}
                     onClick={() => void onSendFixtureToLogLens(fixture)}
                   >
-                    Log Lens에서 보기
+                    Workspace Logs에서 보기
                   </button>
                   <button
                     type="button"

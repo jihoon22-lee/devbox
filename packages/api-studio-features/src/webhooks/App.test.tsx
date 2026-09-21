@@ -791,7 +791,7 @@ describe("Webhook Lab history and rule context menus", () => {
     fireEvent.contextMenu(target, { clientX: 20, clientY: 20 });
 
     expect(target.getAttribute("aria-current")).toBe("true");
-    for (const label of ["마스킹 복사", "원본 복사", "헤더 복사", "API Playground로 변환", "Log Lens에서 보기", "삭제"]) {
+    for (const label of ["마스킹 복사", "원본 복사", "헤더 복사", "API Playground로 변환", "Workspace Logs에서 보기", "삭제"]) {
       expect(screen.getByRole("menuitem", { name: label })).toBeTruthy();
     }
     expect(screen.getByRole("menuitem", { name: "API Playground로 변환" }).getAttribute("aria-disabled"))
@@ -1182,11 +1182,23 @@ describe("Webhook Lab history and rule context menus", () => {
     const target = await screen.findByLabelText("POST /hook 요청") as HTMLDivElement;
 
     fireEvent.contextMenu(target);
-    fireEvent.click(screen.getByRole("menuitem", { name: "Log Lens에서 보기" }));
+    fireEvent.click(screen.getByRole("menuitem", { name: "Workspace Logs에서 보기" }));
 
     await waitFor(() => expect(sendHistoryToLogLensMock).toHaveBeenCalledWith(1));
     expect(sendHistoryToLogLensMock.mock.calls[0]).toEqual([1]);
     expect((await screen.findByRole("status")).textContent).toContain("consumer: log-lens");
+    expect(writeTextMock).not.toHaveBeenCalled();
+  });
+
+  it("keeps history on an unavailable Workspace without clipboard fallback", async () => {
+    const issue="Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
+    sendHistoryToLogLensMock.mockRejectedValueOnce(new Error(issue));
+    render(<App/>);
+    const target=await screen.findByLabelText("POST /hook 요청");
+    fireEvent.contextMenu(target);
+    fireEvent.click(screen.getByRole("menuitem",{name:"Workspace Logs에서 보기"}));
+    await screen.findByText(issue);
+    expect(screen.getByLabelText("POST /hook 요청")).toBeTruthy();
     expect(writeTextMock).not.toHaveBeenCalled();
   });
 
@@ -1274,7 +1286,7 @@ describe("Webhook Lab history and rule context menus", () => {
       receivedAtMs: 1_700_000_000_000,
     }];
     render(<App />);
-    const action = await screen.findByRole("button", { name: "POST /hooks/push?access_token=[REDACTED] Log Lens에서 보기" });
+    const action = await screen.findByRole("button", { name: "POST /hooks/push?access_token=[REDACTED] Workspace Logs에서 보기" });
     fireEvent.click(action);
 
     await waitFor(() => expect(sendFixtureToLogLensMock).toHaveBeenCalledWith("fixture-1"));

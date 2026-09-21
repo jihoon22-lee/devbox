@@ -1,3 +1,4 @@
+import IncomingWebhookLog from "./IncomingWebhookLog";
 import {useIncomingReview} from "@devbox/product-shell/incoming";
 import {lazy,Suspense,useCallback,useEffect,useRef,useState} from "react";
 import {listen} from "@tauri-apps/api/event";
@@ -31,6 +32,15 @@ export default function NativeRuntimeRoutes({route,description,navigate,tasksDir
   const [engineVisited, setEngineVisited] = useState(() => new Set([route]));
   const [logQueue, setLogQueue] = useState<RuntimeLogOpenRequest[]>([]);
   const runtimeLogOpen=logQueue[0]??null;
+  const logQueueRef=useRef(logQueue);
+  logQueueRef.current=logQueue;
+  const acceptWebhook=useCallback((request:RuntimeLogOpenRequest)=>{
+    if(logQueueRef.current.some(item=>item.id===request.id))return;
+    if(logQueueRef.current.length>=8)throw new Error("log queue full");
+    const next=[...logQueueRef.current,request];
+    logQueueRef.current=next;
+    setLogQueue(next);
+  },[]);
   const consumedExternal=useRef<string|null>(null);
   useEffect(()=>{
     if(externalLogOpen && consumedExternal.current!==externalLogOpen.id && logQueue.length<8 && !logQueue.some(request=>request.id===externalLogOpen.id)) {
@@ -82,7 +92,7 @@ export default function NativeRuntimeRoutes({route,description,navigate,tasksDir
       <Suspense fallback={<p role="status">프로세스와 포트를 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "runtime"} kind="runtime" onImported={()=>setRuntimeSettingsRevision(value=>value+1)}/><Runtime openPort={focus?.target.kind==="port"?{id:focus.id,port:focus.target.port}:null} onPortConsumed={onFocusConsumed} active={route === "runtime"} settingsRevision={runtimeSettingsRevision}/><RuntimeWsl description={description} active={route === "runtime"}/></Suspense>
     </div>}
     {(engineVisited.has("logs") || route === "logs") && <div className="workspace-feature-logs" hidden={route !== "logs"} inert={route !== "logs"}>
-      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><RuntimeSettingsImport description={description} active={route === "logs"} kind="logs" onImported={()=>setLogSettingsRevision(value=>value+1)}/><Logs settingsRevision={logSettingsRevision} active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog}/></Suspense>
+      <Suspense fallback={<p role="status">로그 화면을 불러오고 있습니다…</p>}><IncomingWebhookLog description={description} onOpen={acceptWebhook}/><RuntimeSettingsImport description={description} active={route === "logs"} kind="logs" onImported={()=>setLogSettingsRevision(value=>value+1)}/><Logs settingsRevision={logSettingsRevision} active={route === "logs"} openRequest={runtimeLogOpen} onOpenConsumed={consumeLog}/></Suspense>
     </div>}
   </>;
 }

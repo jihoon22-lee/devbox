@@ -1,7 +1,7 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
-import App from "./App";
+import App, { type RuntimeLogOpenRequest } from "./App";
 
 const writeText = vi.fn<(value: string) => Promise<void>>();
 
@@ -16,6 +16,20 @@ beforeEach(() => {
 afterEach(() => cleanup());
 
 describe("Log Lens bounded UI", () => {
+  it("accepts a reviewed webhook source once while retaining the open request prop", async () => {
+    const request: RuntimeLogOpenRequest = { id: "review-one", source: { kind: "webhookCapture", capture: {
+      schemaVersion: 1, method: "POST", target: "/events", receivedAtMs: 1788000000000,
+      headerNames: [], bodyPreview: "ordinary", redacted: true, truncated: false,
+    } } };
+    const consumed = vi.fn();
+    const app = render(<App openRequest={request} onOpenConsumed={consumed}/>);
+    await waitFor(() => expect(consumed).toHaveBeenCalledOnce());
+    app.rerender(<App openRequest={request} onOpenConsumed={consumed}/>);
+    expect(consumed).toHaveBeenCalledWith("review-one");
+    expect(consumed).toHaveBeenCalledOnce();
+    expect(screen.getByText(/2\/16개 선택/)).toBeTruthy();
+  });
+
   it("초기 셸이 접근성 위반 없이 렌더링된다", async () => {
     const { container } = render(<App />);
     await screen.findAllByRole("row");

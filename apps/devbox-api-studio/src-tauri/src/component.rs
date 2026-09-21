@@ -186,16 +186,14 @@ async fn execute(
             "send_history_to_log_lens" | "send_fixture_to_log_lens"
         )
     {
-        // The source projection is ready for WP07. No legacy executable or raw
-        // capture is used when the verified Workspace Logs receiver is absent.
-        webhook_lab_lib::component::prepare_log_handoff(
+        crate::webhook_logs::send(
             app,
             request.args,
             request.method == "send_fixture_to_log_lens",
+            provenance.request_id.clone(),
+            request.header.deadline_ms,
         )
-        .and_then(|_| {
-            Err("Logs 연결을 사용할 수 없습니다. 수신 요청과 저장한 fixture는 유지됩니다.".into())
-        })
+        .await
     } else if request.component == "api-studio.webhooks"
         && crate::mock_draft::COMMANDS.contains(&request.method.as_str())
     {

@@ -14486,23 +14486,22 @@
         "crates/webhook-host/src/commands.rs",
         "packages/api-studio-features/src/webhooks/App.test.tsx",
         "crates/applink/src/webhook_log.rs",
-        ".github/scripts/windows-api-workflow.mjs"
+        ".github/scripts/windows-api-workflow.mjs",
+        "crates/product-contract/src/webhook_log.rs",
+        "apps/devbox-workspace/src/IncomingWebhookLog.test.tsx",
+        ".github/scripts/windows-suite-workflows.mjs"
       ],
       "ownerIssue": 544,
-      "status": "verified",
-      "implementationPath": "crates/webhook-host/src/component.rs",
+      "status": "pending",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/webhook_logs.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
         "workthrough/2026-09-07-v08-b02-api-studio.md",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373",
-        "workthrough/2026-09-20-v08-b09-release-cutover.md",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/35450355975",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/35444386766",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/35448284131"
+        "workthrough/2026-09-21-v08-review-corrections.md"
       ],
-      "verificationScope": "Completed owner PR implementation and its recorded fixture/native scopes; B09 preserves the engines and runs final source/package cutover acceptance separately. Hardware-specific claims require their own evidence.",
+      "verificationScope": "Historical evidence covers the masked producer only. The corrected native Suite receiver and actual Windows history/fixture-to-Logs fixture await execution; no cross-product end-to-end PASS is claimed.",
       "integrationOwnerIssue": 549,
-      "integrationContract": "Source-owned webhook-log/v1 bounded projection; Workspace Logs receiver unavailable until verified WP07 provider; no legacy executable launch",
+      "integrationContract": "API Studio owns a bounded redacted 120-second projection; verified same-installation Suite peer, explicit Workspace Logs review, revision-bound claim and acknowledgement; no raw path, clipboard or legacy executable.",
       "verifiedSourceCommit": "4ea48c5967c49a740ef2b77fa4f93dfa5afd41c5",
       "producerVerified": true,
       "baselineSourcePath": "apps/webhook-lab/src-tauri/src/commands.rs"
@@ -14521,23 +14520,22 @@
         "crates/webhook-host/src/commands.rs",
         "packages/api-studio-features/src/webhooks/App.test.tsx",
         "crates/applink/src/webhook_log.rs",
-        ".github/scripts/windows-api-workflow.mjs"
+        ".github/scripts/windows-api-workflow.mjs",
+        "crates/product-contract/src/webhook_log.rs",
+        "apps/devbox-workspace/src/IncomingWebhookLog.test.tsx",
+        ".github/scripts/windows-suite-workflows.mjs"
       ],
       "ownerIssue": 544,
-      "status": "verified",
-      "implementationPath": "crates/webhook-host/src/component.rs",
+      "status": "pending",
+      "implementationPath": "apps/devbox-api-studio/src-tauri/src/webhook_logs.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
         "workthrough/2026-09-07-v08-b02-api-studio.md",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/34154505373",
-        "workthrough/2026-09-20-v08-b09-release-cutover.md",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/35450355975",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/35444386766",
-        "https://github.com/jihoon22-lee/devbox/actions/runs/35448284131"
+        "workthrough/2026-09-21-v08-review-corrections.md"
       ],
-      "verificationScope": "Completed owner PR implementation and its recorded fixture/native scopes; B09 preserves the engines and runs final source/package cutover acceptance separately. Hardware-specific claims require their own evidence.",
+      "verificationScope": "Historical evidence covers the masked producer only. The corrected native Suite receiver and actual Windows history/fixture-to-Logs fixture await execution; no cross-product end-to-end PASS is claimed.",
       "integrationOwnerIssue": 549,
-      "integrationContract": "Source-owned webhook-log/v1 bounded projection; Workspace Logs receiver unavailable until verified WP07 provider; no legacy executable launch",
+      "integrationContract": "API Studio owns a bounded redacted 120-second projection; verified same-installation Suite peer, explicit Workspace Logs review, revision-bound claim and acknowledgement; no raw path, clipboard or legacy executable.",
       "verifiedSourceCommit": "4ea48c5967c49a740ef2b77fa4f93dfa5afd41c5",
       "producerVerified": true,
       "baselineSourcePath": "apps/webhook-lab/src-tauri/src/commands.rs"
