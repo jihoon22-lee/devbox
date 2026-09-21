@@ -14,6 +14,7 @@ export class NoteDocument {
   private document = 0;
   private edits = 0;
   private opening = 0;
+  private inspecting = 0;
   private writing: Promise<boolean> | null = null;
   constructor(private read: (path: string) => Promise<NoteSnapshot>, private write: Writer) {}
   snapshot = () => this.view;
@@ -57,6 +58,7 @@ export class NoteDocument {
     const path = current === from ? to : current.startsWith(`${from}/`) ? to + current.slice(from.length) : current;
     const document = this.document, edits = this.edits;
     this.opening++;
+    this.inspecting++;
     this.publish({ path, revision: "" });
     try {
       const saved = await this.read(path);
@@ -76,13 +78,16 @@ export class NoteDocument {
   }
   async inspect(): Promise<void> {
     const { path, revision } = this.view, document = this.document;
+    const inspection = ++this.inspecting;
+    const current = () => inspection === this.inspecting && document === this.document
+      && path === this.view.path && revision === this.view.revision;
     if (!path) return;
     try {
       const disk = await this.read(path);
-      if (document === this.document && revision === this.view.revision) {
+      if (current()) {
         this.publish({ conflict: disk.revision === revision ? null : disk });
       }
-    } catch { if (document === this.document) this.publish({ error: "파일의 현재 상태를 확인하지 못했습니다. 편집 내용은 유지됩니다." }); }
+    } catch { if (current()) this.publish({ error: "파일의 현재 상태를 확인하지 못했습니다. 편집 내용은 유지됩니다." }); }
   }
   save(overwriteRevision?: string): Promise<boolean> {
     // Duplicate clicks and keyboard saves share one write; late replies cannot
@@ -96,6 +101,7 @@ export class NoteDocument {
       try {
         const saved = await this.write(path, content, overwriteRevision ?? revision);
         if (document !== this.document) return false;
+        this.inspecting++;
         this.publish({ revision: saved.revision, dirty: edits !== this.edits, conflict: null });
         return edits === this.edits;
       } catch (error) {

@@ -17,6 +17,7 @@ import {
   openTargets,
   previewRename,
   readFile,
+  renderMarkdown,
   revealEntry,
 } from "./api";
 
@@ -447,4 +448,44 @@ it("preserves a dirty note when Daily creation or a product open request is decl
   expect(confirm).toHaveBeenCalledTimes(2);
   expect(readFileMock).not.toHaveBeenCalled();
   expect(editor.state.doc.toString()).toBe("# Unsaved note");
+});
+
+
+it("keeps the newest preview when renders complete backwards", async () => {
+  const old = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
+  const latest = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
+  const renderMock = vi.mocked(renderMarkdown);
+  renderMock.mockClear().mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+  const view = render(<App/>);
+  fireEvent.click(await screen.findByText("note.md"));
+  fireEvent.click(await screen.findByRole("button", { name: "분할" }));
+  await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
+  const editor = EditorView.findFromDOM(view.container.querySelector(".cm-content") as HTMLElement)!;
+  act(() => editor.dispatch({ changes: { from: 0, to: editor.state.doc.length, insert: "newest" } }));
+  await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
+  const doc = (html: string) => ({ title: null, tags: [], html, mermaid: [] });
+  await act(async () => { latest.resolve(doc("<p>newest preview</p>")); });
+  await screen.findByText("newest preview");
+  await act(async () => { old.resolve(doc("<p>obsolete preview</p>")); });
+  expect(screen.queryByText("obsolete preview")).toBeNull();
+  expect(screen.getByText("newest preview")).toBeTruthy();
+});
+it.each(["switch", "edit", "unmount"])("invalidates outstanding preview on %s", async action => {
+  const old = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
+  const renderMock = vi.mocked(renderMarkdown); renderMock.mockClear().mockReturnValueOnce(old.promise);
+  const view = render(<App/>);
+  fireEvent.click(await screen.findByText("note.md"));
+  fireEvent.click(await screen.findByRole("button", { name: "분할" }));
+  await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(1));
+  if (action === "switch") {
+    fireEvent.click(screen.getByText("image.png"));
+    await waitFor(() => expect(view.container.querySelector(".editor-body")?.className).toContain("mode-edit"));
+    fireEvent.click(screen.getByText("note.md"));
+    await waitFor(() => expect(screen.getByRole("button", { name: "분할" })).not.toBeDisabled());
+    fireEvent.click(screen.getByRole("button", { name: "분할" }));
+    await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
+  } else if (action === "edit") fireEvent.click(screen.getByRole("button", { name: "편집" }));
+  else view.unmount();
+  await act(async () => { old.reject(new Error("obsolete render failure")); });
+  expect(screen.queryByText("obsolete render failure")).toBeNull();
 });

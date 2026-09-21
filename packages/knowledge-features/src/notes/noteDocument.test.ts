@@ -73,3 +73,30 @@ describe("note editor ordering and native revisions", () => {
     expect(await note.saveBeforeQuit()).toBe(false); expect(note.snapshot().dirty).toBe(true);
   });
 });
+
+
+it("does not let older inspections clear conflicts or overwrite newer errors", async () => {
+  const { note, read } = await fixture();
+  const old = deferred<NoteSnapshot>(), latest = deferred<NoteSnapshot>();
+  read.mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+  const a = note.inspect(), b = note.inspect();
+  latest.resolve(disk("external", "r2")); await b;
+  old.resolve(disk("original")); await a;
+  expect(note.snapshot().conflict).toEqual(disk("external", "r2"));
+  const staleFailure = deferred<NoteSnapshot>();
+  read.mockReturnValueOnce(staleFailure.promise);
+  const failing = note.inspect(); await note.inspect();
+  staleFailure.reject(new Error("old failure")); await failing;
+  expect(note.snapshot().error).toBeNull();
+});
+it("invalidates inspect across A-B-A, rename and a completed save", async () => {
+  for (const action of ["switch", "rename", "save"]) {
+    const { note, read } = await fixture(); const old = deferred<NoteSnapshot>();
+    read.mockReturnValueOnce(old.promise); const inspection = note.inspect();
+    if (action === "switch") { await note.openPath("B.md", () => true); await note.openPath("A.md", () => true); }
+    if (action === "rename") await note.renamed("A.md", "renamed.md");
+    if (action === "save") { note.edit("saved"); await note.save(); }
+    old.resolve(disk("obsolete", "old")); await inspection;
+    expect(note.snapshot().conflict).toBeNull();
+  }
+});

@@ -41,3 +41,12 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 [이전 개발 단계의 상세 README](../../docs/history/v0.8-development/knowledge.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
+
+### 화면 오류와 비동기 응답 복구
+
+기능별 렌더·lazy import 실패는 해당 화면에서 격리한다. 제품의 노트 세션과 종료 확인은
+화면 오류 경계 밖에서 유지되며, 노트 화면 실패 시 메모리의 현재 내용과 조건부 저장을
+복구 화면에서 제공한다. 복구는 실행 중인 프로세스의 메모리 보존이며 자동 평문 백업이나
+강제 종료 복구를 추가하지 않는다. 재시도해도 청크를 불러오지 못하면 복구 화면을 유지한다.
+미리보기와 디스크 inspect는 오래된 응답을 무효화한다. 일반 Markdown 링크는 URL 경로와
+fragment를 나누어 한 번 디코딩하고 vault 경계 안에서 연 뒤 heading anchor로 이동한다.
