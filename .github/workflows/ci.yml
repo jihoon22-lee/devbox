@@ -313,7 +313,7 @@ jobs:
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
   rust-windows:
-    name: Rust (Windows compile check)
+    name: Rust (Windows)
     runs-on: windows-latest
     # Tauri app build scripts copy shared notice resources into one target
     # staging path. Parallel copies can fail with Windows sharing violation 32.

@@ -1,7 +1,5 @@
 [workspace]
 resolver = "2"
-# 앱과 공용 크레이트가 생길 때마다 추가한다.
-# 예:
 members = [
     "apps/devbox-workspace/src-tauri",
     "apps/devbox-workspace/native",
@@ -41,7 +39,6 @@ members = [
     "crates/catalog",
     "crates/window-state",
     "crates/window-state-tauri",
-    # "crates/database",
 ]
 
 [workspace.package]
