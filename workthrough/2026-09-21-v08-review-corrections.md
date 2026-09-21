@@ -204,3 +204,10 @@ Acknowledgement correction checks pass: optional wire-value/retry regression, wo
 fmt and foundation workflow contracts. The fixture initially used u64 for the payload's i64
 receive timestamp; corrected the synthetic literal before completing these checks. WSL2-only
 run 35556724537 uses the unchanged Workspace artifact from 35552488590 on a hosted VM.
+
+Head 42be2525 passed all required CI in 35556768342. WSL2 run 35556724537 passed scope=all.
+Suite run 35556768534 confirmed acknowledgement now succeeds and the Webhook source is added,
+but the fixture's preceding native log read used generation 700, poisoning the first real UI
+read's smaller generation. Use initial generation zero before the first Logs mount. This is a
+fixture-only correction; preserve 42be2525 binaries and use the existing retained-executable
+continuation with the full-workflow choice (rather than rebuilding or rerunning installation).

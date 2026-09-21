@@ -231,7 +231,7 @@ jobs:
 
   suite-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' }}
-    name: Remaining suite workflow with retained executables
+    name: Suite workflow with retained executables
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
@@ -263,8 +263,15 @@ jobs:
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/THIRD_PARTY_NOTICES.md" -Destination THIRD_PARTY_NOTICES.md -ErrorAction Stop
           "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
           "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
-      - name: Finish only foreign-installation and shared-surface acceptance
-        run: node .github/scripts/windows-suite-workflows.mjs --remaining
+      - name: Finish the selected Suite acceptance scope
+        shell: pwsh
+        run: |
+          if ('${{ inputs.suite_full_workflow }}' -eq 'true') {
+            node .github/scripts/windows-suite-workflows.mjs
+          } else {
+            node .github/scripts/windows-suite-workflows.mjs --remaining
+          }
+          exit $LASTEXITCODE
       - name: Preserve remaining suite evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7

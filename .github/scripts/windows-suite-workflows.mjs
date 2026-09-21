@@ -159,8 +159,11 @@ try {
 
   stage("native-log-selection");
   const logFile=path.join(projects[0].directory,"selected.log");writeFileSync(logFile,"synthetic log selection\n");
-  const logs=await domain(workspace,"workspace.logs","read_sources",{sources:[{kind:"localFile",path:logFile}],cursors:[null],sequenceStarts:[0],generation:700,operationId:randomUUID()});assert.ok(logs.records.length);
-  const logSent=await domain(workspace,"workspace.logs","send_selection_to_toolbox",{generation:700,keys:logs.records.map(row=>({sourceId:row.sourceId,sequence:row.sequence}))});
+  // This direct fixture read precedes the first Logs UI mount. Do not advance
+  // its native generation beyond the renderer's initial counter.
+  const logGeneration=0;
+  const logs=await domain(workspace,"workspace.logs","read_sources",{sources:[{kind:"localFile",path:logFile}],cursors:[null],sequenceStarts:[0],generation:logGeneration,operationId:randomUUID()});assert.ok(logs.records.length);
+  const logSent=await domain(workspace,"workspace.logs","send_selection_to_toolbox",{generation:logGeneration,keys:logs.records.map(row=>({sourceId:row.sourceId,sequence:row.sequence}))});
   const logPending=(await suite(api,{kind:"pending"})).find(row=>row.target.kind==="entity"&&row.target.id===logSent.handoffId);assert.ok(logPending);await review(api,{operationId:logPending.operationId});
   await waitForRenderer(api.cdp,"[...document.querySelectorAll('[role=dialog]')].some(node=>node.textContent.includes('synthetic log selection'))","Log Transform preview missing");await click(api,'[role=dialog] button',"취소");
   evidence.checks.nativeLogSelectionPreview=true;
