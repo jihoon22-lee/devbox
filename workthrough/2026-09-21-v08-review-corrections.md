@@ -145,3 +145,35 @@ the versioned final PR source will receive the required final CI and exact-main 
 Version-head CI 35547702918 found the generated notices still bound to the pre-version
 Cargo.lock digest. The official generator updated only that digest; third-party inventory and
 dependency versions did not change. Final-head CI must pass after this metadata correction.
+
+
+## Windows acceptance findings and correction batch
+
+Final version/notices head `f0610c03` passed compiler CI on Linux and Windows (35547941032).
+Native run 35547940964 completed its independent scopes and found three issues:
+
+- Runtime added-marker redaction held a fixed 35-byte tail, delaying a short readiness log.
+  Keep only suffixes that can actually prefix a secret (precomputed KMP prefix tables), while
+  preserving split-secret and longest-secret masking. Add immediate-output and ambiguous-prefix
+  regressions. This is a real runtime correction; old Workspace bytes cannot prove the fix.
+- Webhook→Logs fixture expected ordinary body text even though credential-bearing bodies are
+  intentionally masked wholesale and the Logs row displays method/target. Use distinct safe
+  targets for history and saved-fixture deliveries, with secret absence and source preservation.
+- The new offline message was absent from the shared native/frontend error contract and became
+  `component_unavailable`. Register only that fixed owner-scoped message and test foreign/detail
+  rejection on both sides.
+
+Actual WSL helper/Git, Suite install/restore/update/removal, API migration/lifetimes, Knowledge
+migration and installer coexistence passed in that native run. Product-shell, cross-product and
+API workflow failed as above; WSL2 remained skipped. Preserve those distinctions. The native job
+budget increases from 60 to 90 minutes: the original run consumed about 58 minutes despite its
+three early exits, so the complete successful path needs room. Worker/resource limits and all
+acceptance stages remain unchanged. Corrections, fixtures and this record are completed together
+before targeted local rechecks and the final source's CI/native run.
+
+Correction-batch local checks passed: API Studio build and 16 frontend tests, foundation workflow
+contract tests, workspace Clippy and fmt. Existing compiled test artifacts ran 22 Runtime tests
+(one actual-WSL test ignored locally) and two API error-contract tests successfully. The temporary
+artifact selector initially looked only for `lib` instead of Cargo's `rlib`/`staticlib` kinds;
+correcting that selector required no recompilation or repeated unrelated tests. Hosted Windows
+acceptance remains pending for these corrected binaries.

@@ -169,26 +169,30 @@ try {
   await domain(api,"api-studio.webhooks","start_server",{bind:"127.0.0.1",port:capturePort,allowLan:false});
   const privateToken="synthetic-suite-webhook-token";
   try {
-    const captured=await fetch(`http://127.0.0.1:${capturePort}/suite-webhook`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${privateToken}`},body:JSON.stringify({message:"suite webhook ordinary",token:privateToken})});
-    await captured.arrayBuffer();
-    const captures=await domain(api,"api-studio.webhooks","list_history");
-    const historyId=captures.at(-1).id;
-    const fixture=await domain(api,"api-studio.webhooks","save_fixture",{historyId});
-    for(const [method,args] of [["send_history_to_log_lens",{historyId}],["send_fixture_to_log_lens",{id:fixture.id}]]) {
-      const sent=await domain(api,"api-studio.webhooks",method,args);
+    for(const savedFixture of [false,true]) {
+      const target=savedFixture?"/suite-webhook-fixture":"/suite-webhook-history";
+      const captured=await fetch(`http://127.0.0.1:${capturePort}${target}`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${privateToken}`},body:JSON.stringify({message:"suite webhook ordinary",token:privateToken})});
+      await captured.arrayBuffer();
+      const captures=await domain(api,"api-studio.webhooks","list_history");
+      const historyId=Math.max(...captures.map(row=>row.id));
+      const fixture=savedFixture?await domain(api,"api-studio.webhooks","save_fixture",{historyId}):null;
+      const sent=await domain(api,"api-studio.webhooks",savedFixture?"send_fixture_to_log_lens":"send_history_to_log_lens",savedFixture?{id:fixture.id}:{historyId});
       const pending=(await suite(workspace,{kind:"pending"})).find(row=>row.target.kind==="entity"&&row.target.id===sent.handoffId);
       assert.ok(pending);
       await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:pending.commandRevision,operationId:pending.operationId}));
       await review(workspace,pending);
-      await waitForRenderer(workspace.cdp,"document.querySelector('.workspace-feature-logs')?.textContent.includes('suite webhook ordinary')","reviewed Webhook did not reach Logs");
+      // Credential-bearing bodies are intentionally redacted as a whole. Distinct
+      // safe targets prove both deliveries; the first source cannot satisfy the second.
+      try { await waitForRenderer(workspace.cdp,`document.querySelector('.workspace-feature-logs')?.textContent.includes(${JSON.stringify(target)})`,"reviewed Webhook did not reach Logs"); }
+      catch(error){evidence.webhookFailure=await workspace.cdp.evaluate("({alerts:[...document.querySelectorAll('[role=alert]')].map(node=>node.textContent?.slice(0,1000)),logs:document.querySelector('.workspace-feature-logs')?.textContent?.slice(0,4000)})");throw error;}
       const rendered=await workspace.cdp.evaluate("document.querySelector('.workspace-feature-logs').textContent");
       assert.ok(!rendered.includes(privateToken));
+      assert.ok((await domain(api,"api-studio.webhooks","list_history")).some(row=>row.id===historyId));
       await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:"0".repeat(64),operationId:pending.operationId}));
       await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:pending.commandRevision,operationId:randomUUID()}));
     }
     evidence.checks.webhookHistoryAndFixtureReachReviewedLogs=true;
     evidence.checks.webhookStaleReplayAndUnreviewedDenied=true;
-    assert.ok((await domain(api,"api-studio.webhooks","list_history")).some(row=>row.id===historyId));
   } finally { await domain(api,"api-studio.webhooks","stop_server"); }
   stage("saved-result-to-knowledge");
   const saved=await domain(api,"api-studio.api","save_knowledge_draft",{output:"synthetic suite knowledge result"});

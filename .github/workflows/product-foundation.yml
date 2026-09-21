@@ -369,7 +369,9 @@ jobs:
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
     runs-on: windows-2025
-    timeout-minutes: 60
+    # Four product builds plus installed-Suite and independent native scopes.
+    # The prior review run used 58 minutes even with three early fixture exits.
+    timeout-minutes: 90
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       CARGO_BUILD_JOBS: 2

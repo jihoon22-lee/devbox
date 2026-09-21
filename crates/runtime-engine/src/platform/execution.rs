@@ -91,9 +91,11 @@ fn workspace_environment_is_allowed(
 }
 
 /// Byte-oriented per-run secret redaction. At most `max_len - 1` bytes are
-/// carried between reads, so a secret split across pipe chunks is still found.
+/// carried only when they could begin a secret. Ordinary readiness/log output
+/// is emitted immediately while secrets split across chunks remain protected.
 struct SecretRedactor {
     secrets: Vec<Vec<u8>>,
+    prefixes: Vec<Vec<usize>>,
     carry: Vec<u8>,
     max_len: usize,
 }
@@ -108,8 +110,13 @@ impl SecretRedactor {
         secrets.sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
         secrets.dedup();
         let max_len = secrets.first().map_or(0, Vec::len);
+        let prefixes = secrets
+            .iter()
+            .map(|secret| Self::prefix_table(secret))
+            .collect();
         Self {
             secrets,
+            prefixes,
             carry: Vec::new(),
             max_len,
         }
@@ -124,6 +131,42 @@ impl SecretRedactor {
             .sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
         self.secrets.dedup();
         self.max_len = self.secrets.first().map_or(0, Vec::len);
+        self.prefixes = self
+            .secrets
+            .iter()
+            .map(|secret| Self::prefix_table(secret))
+            .collect();
+    }
+
+    fn prefix_table(secret: &[u8]) -> Vec<usize> {
+        let mut table = vec![0; secret.len()];
+        let mut matched = 0;
+        for index in 1..secret.len() {
+            while matched > 0 && secret[matched] != secret[index] {
+                matched = table[matched - 1];
+            }
+            if secret[matched] == secret[index] {
+                matched += 1;
+            }
+            table[index] = matched;
+        }
+        table
+    }
+
+    fn pending_suffix(input: &[u8], secret: &[u8], table: &[usize]) -> usize {
+        // Only a proper prefix can need a future chunk. KMP keeps repeated
+        // prefix patterns linear instead of rescanning every possible suffix.
+        let start = input.len().saturating_sub(secret.len() - 1);
+        let mut matched = 0;
+        for byte in &input[start..] {
+            while matched > 0 && secret[matched] != *byte {
+                matched = table[matched - 1];
+            }
+            if secret[matched] == *byte {
+                matched += 1;
+            }
+        }
+        matched
     }
 
     fn redact(&mut self, bytes: &[u8]) -> Vec<u8> {
@@ -132,7 +175,14 @@ impl SecretRedactor {
         if self.max_len == 0 {
             return input;
         }
-        let safe_start_count = input.len().saturating_sub(self.max_len.saturating_sub(1));
+        let pending = self
+            .secrets
+            .iter()
+            .zip(&self.prefixes)
+            .map(|(secret, table)| Self::pending_suffix(&input, secret, table))
+            .max()
+            .unwrap_or(0);
+        let safe_start_count = input.len() - pending;
         let (output, consumed) = self.redact_prefix(&input, safe_start_count);
         self.carry.extend_from_slice(&input[consumed..]);
         input.zeroize();
@@ -174,6 +224,9 @@ impl Drop for SecretRedactor {
     fn drop(&mut self) {
         for secret in &mut self.secrets {
             secret.zeroize();
+        }
+        for table in &mut self.prefixes {
+            table.zeroize();
         }
         self.carry.zeroize();
     }
@@ -1687,6 +1740,55 @@ mod tests {
         output.extend(redactor.redact(&marker.as_bytes()[12..]));
         output.extend(redactor.finish());
         assert_eq!(output, REDACTED_BYTES);
+    }
+
+    #[test]
+    fn marker_redaction_flushes_short_readiness_logs_before_process_exit() {
+        let mut redactor = SecretRedactor::from_environment(&std::collections::BTreeMap::new());
+        redactor.include_secret("10000000-0000-4000-8000-000000000001");
+        assert_eq!(
+            redactor.redact(b"synthetic-wsl-listener\n"),
+            b"synthetic-wsl-listener\n"
+        );
+        assert_eq!(redactor.redact(b"still running"), b"still running");
+        assert!(redactor.finish().is_empty());
+    }
+
+    #[test]
+    fn streaming_redaction_holds_only_ambiguous_prefixes_and_prefers_longer_secrets() {
+        let environment = std::collections::BTreeMap::from([
+            ("SHORT".to_owned(), "abc".to_owned()),
+            ("LONG".to_owned(), "abcdef".to_owned()),
+            ("REPEATED".to_owned(), "ababac".to_owned()),
+        ]);
+        let mut redactor = SecretRedactor::from_environment(&environment);
+        assert_eq!(redactor.redact(b"ready\nab"), b"ready\n");
+        assert!(redactor.redact(b"c").is_empty());
+        assert!(redactor.redact(b"d").is_empty());
+        assert_eq!(redactor.redact(b"ef\n"), b"<redacted>\n");
+        assert_eq!(redactor.redact(b"ababa"), b"");
+        assert_eq!(redactor.redact(b"bac!"), b"ab<redacted>!");
+        assert!(redactor.finish().is_empty());
+    }
+
+    #[test]
+    fn streaming_redaction_is_consistent_at_every_byte_boundary() {
+        let environment = std::collections::BTreeMap::from([
+            ("SHORT".to_owned(), "abc".to_owned()),
+            ("LONG".to_owned(), "abcdef".to_owned()),
+            ("UTF8".to_owned(), "한글-secret".to_owned()),
+        ]);
+        let input = "ready\nabcdef abc 한글-secret done\n".as_bytes();
+        for split in 0..=input.len() {
+            let mut redactor = SecretRedactor::from_environment(&environment);
+            let mut output = redactor.redact(&input[..split]);
+            output.extend(redactor.redact(&input[split..]));
+            output.extend(redactor.finish());
+            assert_eq!(
+                output, b"ready\n<redacted> <redacted> <redacted> done\n",
+                "split={split}"
+            );
+        }
     }
 
     #[test]
