@@ -612,6 +612,15 @@ impl Fixture {
         id: &str,
         retained: T,
     ) -> PreparedSource {
+        let mut args = args;
+        if method == "repo_commit" && args["request"].get("indexRevision").is_none() {
+            let review = self.execute(
+                "repo_commit_preview",
+                json!({"request":{"path":args["request"]["path"]}}),
+                &format!("{id}-review"),
+            );
+            args["request"]["indexRevision"] = review["revision"].clone();
+        }
         let key = serde_json::to_string(&self.context).unwrap();
         let admitted = self.operations.register(&key, Some(id)).unwrap();
         self.source

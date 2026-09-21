@@ -175,6 +175,7 @@
       "Webhook service profile 개수 제한에 도달했습니다",
       "Webhook service profile을 만들 수 없습니다",
       "Webhook service profile을 읽을 수 없습니다",
+      "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.",
       "component_closing",
       "component_unavailable",
       "credential 형태의 응답이 포함된 규칙은 service profile로 내보낼 수 없습니다",

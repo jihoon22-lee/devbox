@@ -46,6 +46,9 @@ const SEARCH_SETTINGS: &[&str] = &[
 const OPENERS: &[&str] = &["open_file", "reveal_file", "open_targets", "open_in"];
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     match component {
+        "knowledge.commands" => {
+            route == "notes" && crate::lifecycle::QUIT_METHODS.contains(&method)
+        }
         "knowledge.migration" => {
             route == "notes"
                 && (crate::startup::COMMANDS.contains(&method)
@@ -87,6 +90,8 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
 pub(crate) fn issue(error: &str) -> &'static str {
     match error {
         "component_args_invalid" => "invalid_request",
+        "note_conflict" => "note_conflict",
+        "note_unavailable" => "note_unavailable",
         "setup_required" => "setup_required",
         "store_busy" | "digest_busy" | "search_busy" => "busy",
         "search_stale" => "search_stale",
@@ -183,7 +188,11 @@ async fn execute(
     {
         return Err(rejected(ProblemCode::InvalidRequest));
     }
-    let provenance = product_shell_tauri::authorize(&window, &request.header, &request.component)?;
+    let provenance = if request.component == "knowledge.commands" {
+        product_shell_tauri::authorize_installation_review(&window, &request.header)?
+    } else {
+        product_shell_tauri::authorize(&window, &request.header, &request.component)?
+    };
     let problem = |code| Problem {
         code,
         provenance: provenance.clone(),
@@ -206,7 +215,10 @@ async fn execute(
         }
     };
     let app = window.app_handle();
-    if request.component != "knowledge.migration" {
+    if !matches!(
+        request.component.as_str(),
+        "knowledge.migration" | "knowledge.commands"
+    ) {
         crate::startup::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
     }
     if (request.component == "knowledge.search"
@@ -222,6 +234,7 @@ async fn execute(
         crate::project_provider::refresh(app, request.header.deadline_ms).await;
     }
     let value = match request.component.as_str() {
+        "knowledge.commands" => crate::lifecycle::quit_dispatch(app, &request.method, request.args),
         "knowledge.migration" => crate::startup::dispatch(app, &request.method, request.args),
         "knowledge.notes" if request.method == "open_result_draft" => {
             crate::result_receive::open(app, request.args, request.header.deadline_ms).await

@@ -64,9 +64,9 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   const currentRoot = succeeded(await command(item, "knowledge.notes", "get_root"));
   assert.equal(identity(currentRoot), identity(root));
   const content = "# 한글 WSL note\r\nExplicit native save\r\n";
-  succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content }));
+  succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content, expectedRevision: succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })).revision }));
   assert.equal(readFileSync(path.join(notes, "Case.md"), "utf8"), content);
-  assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/case.md" })), "# Lower case\nSeparate Linux file\n");
+  assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/case.md" })).content, "# Lower case\nSeparate Linux file\n");
   assert.equal(succeeded(await command(item, "knowledge.notes", "list_templates"))[0].content, "new product edit");
   evidence.wsl.vaultExplicitApprovalAndCaseDistinctAtomicEdit = true;
 
@@ -152,7 +152,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
     // The unrelated active Notes vault and local indexed source remain usable.
     // Notes unavailable/save refusal is separately executed by the native WSL2
     // vault fixture, where the owned vault root can actually be moved.
-    succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content }));
+    succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content, expectedRevision: succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })).revision }));
     assert.equal(readFileSync(path.join(notes, "Case.md"), "utf8"), content);
     // An unrelated local root continues serving results during WSL failure.
     const local = await sourceQuery(item, "files", "fixturesearch0001");
@@ -168,7 +168,7 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
     const ready = gone.rows.length === 0 && fresh.rows.length === 1 && fresh.rows[0].availability === "available";
     await cancel(gone); await cancel(fresh); return ready;
   }, "WSL polling did not converge after reconnect", 120_000);
-  assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })), content);
+  assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })).content, content);
   evidence.wsl.reconnectPollingConverged = true;
   evidence.wsl.result = "pass";
   return item;

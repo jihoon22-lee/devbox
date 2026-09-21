@@ -1234,7 +1234,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-api-studio"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "applink",
  "catalog",
@@ -1291,7 +1291,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-control-center"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "catalog",
  "data-migration",
@@ -1416,7 +1416,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-knowledge"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "applink",
  "catalog",
@@ -1651,7 +1651,7 @@ dependencies = [
 
 [[package]]
 name = "devbox-workspace"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "applink",
  "catalog",

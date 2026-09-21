@@ -15,7 +15,7 @@ Windows용 네 제품을 제공하는 Tauri v2·React·Rust 모노레포입니�
 v0.8 소스 전환과 공개 완료는 구분하며, 현재 진행 및 최종 후보·배포 근거는
 [v0.8 원장 #541](https://github.com/jihoon22-lee/devbox/issues/541)에 기록합니다.
 
-v0.8 배포는 `Devbox_0.8.0_x64-setup.exe` 하나와 제품별 portable ZIP 네 개,
+v0.8 배포는 `Devbox_0.8.1_x64-setup.exe` 하나와 제품별 portable ZIP 네 개,
 `release-manifest.json`, `THIRD_PARTY_NOTICES.md`로 구성됩니다. ZIP은 폴더 전체를
 풀어 실행하세요. Workspace WSL helper와 Control Center 설치 helper를 떼어내지 마세요.
 기존 v0.7 데이터는 명시적인 이전 검토 후 새 namespace로 복사하며 원본을 유지합니다.

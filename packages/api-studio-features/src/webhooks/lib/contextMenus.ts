@@ -21,7 +21,7 @@ export function buildHistoryContextMenu(
     {
       type: "item",
       id: "inspect-log-lens",
-      label: "Log Lens에서 보기",
+      label: "Workspace Logs에서 보기",
       // The backend publishes only a bounded webhook-log/v1 projection.
       disabled: busy,
     },

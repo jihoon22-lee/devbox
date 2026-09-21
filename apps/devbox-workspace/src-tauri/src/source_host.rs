@@ -767,6 +767,7 @@ pub(crate) fn issue(error: &str) -> &'static str {
         | "native_path_transport_denied"
         | "git_source_path_invalid"
         | "git_source_path_unsupported" => "git_source_path_unsupported",
+        "commit_review_stale" => "commit_review_stale",
         "request_expired" | "git_timeout" => "request_expired",
         "busy" | "context_busy" => "busy",
         _ => "source_operation_unavailable",

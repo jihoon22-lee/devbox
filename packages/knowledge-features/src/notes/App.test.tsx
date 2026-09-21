@@ -33,8 +33,8 @@ vi.mock("./api", () => {
   return {
     listTree: vi.fn(async () => TREE),
     listTags: vi.fn(async () => [] as string[]),
-    readFile: vi.fn(async (path: string) => (path.endsWith(".md") ? "# Hello" : "binary-content")),
-    openInboundNote: vi.fn(async () => ({ path: "note.md", content: "# Hello" })),
+    readFile: vi.fn(async (path: string) => ({ content: path.endsWith(".md") ? "# Hello" : "binary-content", revision: "disk-1" })),
+    openInboundNote: vi.fn(async () => ({ path: "note.md", content: "# Hello", revision: "disk-1" })),
     takePendingOpen: vi.fn(async () => null),
     onOpenRequest: vi.fn(async () => () => undefined),
     onQuickCaptureRequested: vi.fn(async () => () => undefined),
@@ -55,7 +55,7 @@ vi.mock("./api", () => {
     saveTemplate: vi.fn(async () => { throw new Error("unused"); }),
     discardTemplatePreview: vi.fn(async () => undefined),
     readClipboardText: vi.fn(async () => ""),
-    writeFile: vi.fn(async () => undefined),
+    writeFile: vi.fn(async (_path: string, content: string) => ({ content, revision: "disk-2" })),
     createFile: vi.fn(async () => undefined),
     createDirectory: vi.fn(async () => undefined),
     previewRename: vi.fn(async (from: string, to: string) => ({

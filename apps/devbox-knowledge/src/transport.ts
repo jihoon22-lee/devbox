@@ -4,7 +4,7 @@ import { describe, makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation, problemMessage, type Operation } from "@devbox/product-shell/operation";
 import catalog from "../../../apps/products.json";
 const routeFor: Record<Component, string> = {
-  "knowledge.notes": "notes", "knowledge.activity": "activity", "knowledge.search": "search",
+  "knowledge.commands": "notes", "knowledge.notes": "notes", "knowledge.activity": "activity", "knowledge.search": "search",
   "knowledge.search-settings": "search", "knowledge.opener": "search", "knowledge.migration": "notes",
 };
 import { issueError } from "./issues";

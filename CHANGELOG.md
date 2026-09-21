@@ -1,5 +1,16 @@
 # Changelog
 
+## [v0.8.1] - 2026-09-21
+
+- GraphQL 교차 출처 리다이렉트에서 원본 query·variables·params 재전송 차단.
+- Notes 저장·열기 응답 순서 보호, 외부 파일 충돌 비교와 조건부 저장, 정상 종료 시 저장·버리기·취소.
+- Git commit 승인을 native index·HEAD revision에 연결하고 외부 변경 시 재검토.
+- Webhook 기록·fixture를 검증된 Suite review를 통해 Workspace Logs에 전달.
+- WSL 종료 시 leader·자식 정리와 marker 보호, 중단된 Knowledge import 활성화 복구.
+- watcher poison 오류 격리와 CI cross-crate include 탐지 보강.
+
+게시·Windows 실기·후보 검증 결과는 해당 Release와 릴리스 원장을 따른다.
+
 ## [v0.8.0] - 2026-09-20
 
 - Workspace, API Studio, Knowledge, Control Center 네 제품으로 기존 15개 앱 기능 통합.

@@ -6,6 +6,8 @@ from __future__ import annotations
 import importlib.util
 import re
 import sys
+import subprocess
+import tempfile
 from pathlib import Path
 
 sys.dont_write_bytecode = True
@@ -189,17 +191,78 @@ for path in ("apps/products.json", "packages/product-shell/fixtures/route-reques
 parity = resolve("apps/v0.8-feature-parity.json")
 assert parity.frontend_scope == parity.rust_scope == "all"
 
-# Every cross-app platform include must retain its second consumer in affected CI.
-native_module = ROOT / "apps/devbox-workspace/src-tauri/src/platform/mod.rs"
-included_sources = {
-    (native_module.parent / relative).resolve().relative_to(ROOT).as_posix()
-    for relative in re.findall(r'#\[path = "([^"]+)"\]', native_module.read_text())
-}
-assert included_sources <= set(module.RUST_SHARED_PLATFORM_CONSUMERS)
-for path in included_sources:
+# Discover every explicit include and propagate consumers through shared modules.
+# Same-crate includes require no manual edge unless the including file itself
+# is compiled by a different crate (suite.rs -> platform/mod.rs, for example).
+def included_consumers(root, sources, owners):
+    def owner(path):
+        return next((name for directory, name in sorted(owners.items(), key=lambda item: -len(item[0]))
+                     if path == directory or path.startswith(directory + "/")), None)
+
+    edges = []
+    consumers = {}
+    for source in sources:
+        name = source.relative_to(root).as_posix()
+        native = owner(name)
+        if native is None:
+            continue
+        consumers.setdefault(name, set()).add(native)
+        for relative in re.findall(r'#\[\s*path\s*=\s*"([^"\n]+)"\s*\]', source.read_text()):
+            target = (source.parent / relative).resolve().relative_to(root).as_posix()
+            assert (root / target).is_file(), (name, target)
+            edges.append((name, target))
+            consumers.setdefault(target, set()).add(owner(target))
+    changed = True
+    while changed:
+        changed = False
+        for source, target in edges:
+            previous = len(consumers[target])
+            consumers[target].update(consumers[source])
+            changed |= previous != len(consumers[target])
+    return {target: values - {owner(target), None} for target, values in consumers.items()
+            if values - {owner(target), None}}
+
+
+def require_include_edges(discovered, registered):
+    for path, consumers in discovered.items():
+        assert consumers <= registered.get(path, set()), ("unregistered cross-crate include", path, consumers)
+
+
+rust_files = subprocess.check_output(
+    ["git", "ls-files", "--cached", "--others", "--exclude-standard", "--", "*.rs"], cwd=ROOT, text=True
+).splitlines()
+owners = {node.directory: name for name, node in module.load_rust_graph(ROOT).nodes.items()}
+included_sources = included_consumers(ROOT, [ROOT / name for name in rust_files if (ROOT / name).is_file()], owners)
+require_include_edges(included_sources, module.RUST_SHARED_PLATFORM_CONSUMERS)
+for path, consumers in included_sources.items():
     shared = resolve(path)
-    assert "devbox-workspace" in shared.rust_packages
+    assert consumers <= set(shared.rust_packages)
     assert shared.frontend_scope == "none"
+
+# Inject a new cross-crate include outside the formerly scanned platform module.
+# Test an isolated source tree so the repository never contains a broken fixture.
+with tempfile.TemporaryDirectory(prefix="devbox-include-scope-") as temporary:
+    root = Path(temporary).resolve()
+    sources = {
+        "apps/a/src-tauri/src/lib.rs": '#[path = "../../../b/src-tauri/src/shared.rs"]\nmod shared;',
+        "apps/b/src-tauri/src/shared.rs": '#[path = "nested.rs"]\nmod nested;',
+        "apps/b/src-tauri/src/nested.rs": "",
+        "apps/a/src-tauri/src/local.rs": '#[path = "local_child.rs"]\nmod local_child;',
+        "apps/a/src-tauri/src/local_child.rs": "",
+    }
+    for name, contents in sources.items():
+        path = root / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(contents)
+    discovered = included_consumers(root, [root / name for name in sources], {"apps/a/src-tauri": "a", "apps/b/src-tauri": "b"})
+    assert discovered == {"apps/b/src-tauri/src/shared.rs": {"a"}, "apps/b/src-tauri/src/nested.rs": {"a"}}
+    try:
+        require_include_edges(discovered, {})
+    except AssertionError:
+        pass
+    else:
+        raise AssertionError("an unregistered include must fail")
+    require_include_edges(discovered, discovered)
 print("CI scope regression tests passed")
 
 for path in module.RUST_SHARED_PLATFORM_CONSUMERS:

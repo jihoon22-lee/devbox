@@ -23,8 +23,8 @@ const mocks = vi.hoisted(() => ({
 vi.mock("./api", () => ({
   listTree: vi.fn(async () => [{ path: "Notes/existing.md", is_dir: false }]),
   listTags: vi.fn(async () => [] as string[]),
-  readFile: vi.fn(async () => "# existing"),
-  writeFile: vi.fn(async () => undefined),
+  readFile: vi.fn(async () => ({ content: "# existing", revision: "disk-1" })),
+  writeFile: vi.fn(async (_path: string, content: string) => ({ content, revision: "disk-2" })),
   previewKnowledgeDraft: vi.fn(),
   saveKnowledgeDraft: vi.fn(),
   discardKnowledgeDraft: vi.fn(async () => undefined),
@@ -82,7 +82,7 @@ vi.mock("./api", () => ({
   previewTemplate: vi.fn(async () => { throw new Error("unused"); }),
   saveTemplate: vi.fn(async () => { throw new Error("unused"); }),
   discardTemplatePreview: vi.fn(async () => undefined),
-  openInboundNote: vi.fn(async () => ({ path: "Notes/inbound.md", content: "# inbound" })),
+  openInboundNote: vi.fn(async () => ({ path: "Notes/inbound.md", content: "# inbound", revision: "disk-1" })),
   searchDocs: vi.fn(async (query: string) => [{ path: "Notes/result.md", title: `Result ${query}` }]),
   takePendingOpen: vi.fn().mockImplementation(async () => {
     mocks.order.push("take");
@@ -117,7 +117,7 @@ beforeEach(() => {
     mocks.openHandler = handler;
     return () => undefined;
   });
-  openInboundNoteMock.mockReset().mockResolvedValue({ path: "Notes/inbound.md", content: "# inbound" });
+  openInboundNoteMock.mockReset().mockResolvedValue({ path: "Notes/inbound.md", content: "# inbound", revision: "disk-1" });
   searchDocsMock.mockReset().mockImplementation(async (query) => [
     { path: "Notes/result.md", title: `Result ${query}` },
   ]);

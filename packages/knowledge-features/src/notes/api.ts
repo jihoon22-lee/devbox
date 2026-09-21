@@ -50,7 +50,10 @@ export interface OpenRequest {
   from: string | null;
 }
 
+export interface NoteSnapshot { content: string | null; revision: string }
+
 export interface InboundNote {
+  revision: string;
   path: string;
   content: string;
 }
@@ -352,17 +355,17 @@ export async function onKnowledgeWatcherStatus(
   return listen<KnowledgeWatcherStatus>("knowledge-watcher-status", (event) => cb(event.payload));
 }
 
-export async function readFile(rel: string): Promise<string> {
+export async function readFile(rel: string): Promise<NoteSnapshot> {
   if (!isTauri()) {
-    return rel.endsWith(".md") ? "# Mock note\n\nEdit me." : "";
+    return { content: rel.endsWith(".md") ? "# Mock note\n\nEdit me." : "", revision: "mock-revision" };
   }
-  return invoke<string>("read_file", { rel });
+  return invoke<NoteSnapshot>("read_file", { rel });
 }
 
 export async function openInboundNote(path: string): Promise<InboundNote> {
   if (!isTauri()) {
     const normalized = path.replace(/\\/g, "/");
-    return { path: normalized.split("/Knowledge/").pop() ?? normalized, content: "# Mock note\n" };
+    return { path: normalized.split("/Knowledge/").pop() ?? normalized, content: "# Mock note\n", revision: "mock-revision" };
   }
   return invoke<InboundNote>("open_inbound_note", { path });
 }
@@ -380,9 +383,9 @@ export async function onOpenRequest(cb: (request: OpenRequest) => void): Promise
   return listen<OpenRequest>("devbox://open", (event) => cb(event.payload));
 }
 
-export async function writeFile(rel: string, content: string): Promise<void> {
-  if (!isTauri()) return;
-  await invoke("write_file", { rel, content });
+export async function writeFile(rel: string, content: string, expectedRevision: string): Promise<NoteSnapshot> {
+  if (!isTauri()) return { content, revision: crypto.randomUUID() };
+  return invoke<NoteSnapshot>("write_file", { rel, content, expectedRevision });
 }
 
 export async function createFile(rel: string, content?: string): Promise<void> {

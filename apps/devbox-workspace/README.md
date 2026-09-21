@@ -39,3 +39,26 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 Owned Runtime 작업의 관찰·종료는 보존한 distro/executable identity를 매번 확인하며,
 프로젝트 경로 이동이나 filesystem helper 종료로 차단되지 않는다. 새 실행은 기존
 project/source/target 승인을 계속 요구한다.
+
+### Review corrections (2026-09-21)
+
+Source commit confirmation reads a native Git index/HEAD witness. The approval includes that
+revision; execution rejects external add/reset, changed staged blobs (including the same path),
+or a changed HEAD until the user reviews again. Existing repository identity, Git trust and
+cancellation checks still apply to both Windows and the WSL helper. The witness is checked
+immediately before the Git command; it is an optimistic check, not a lock on arbitrary external
+Git writers or trusted hooks after that check.
+
+Logs accepts a source-owned, bounded/redacted Webhook projection from API Studio through the
+approved Suite peer and explicit incoming review. Claims bind artifact, revision and operation;
+retries of that operation are idempotent, other claims/replays are refused. Failed delivery
+preserves existing Logs and the API source. These transient captures are not saved as file paths.
+
+WSL stop preserves the supervisor through TERM, validates live marked group membership again
+before KILL, and passes the marker through private stdin. Unreaped zombies do not block live
+resource cleanup. Noisy/failed probes cannot establish success or prevent a freshly authorized
+KILL. Normal leader probes are constant-time; a retired leader requires a bounded-frequency
+process scan to find remaining marked descendants. Stop delivery and observation share bounded
+phase budgets (six seconds total for the default two-second grace). Actual Windows/WSL startup
+latency and process behavior require the Windows acceptance fixture; local bash tests alone are
+not Windows evidence.

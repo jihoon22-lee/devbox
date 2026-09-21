@@ -8,3 +8,10 @@ it("preserves terminal protocol errors without reflecting untrusted details", ()
   }
   expect(componentFailure("api-studio.transforms", { issue: "mcp_request_cancelled" }).message).toBe("작업을 완료하지 못했습니다.");
 });
+
+it("preserves the reviewed Webhook receiver-unavailable message only for its owner", () => {
+  const issue = "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
+  expect(componentFailure("api-studio.webhooks", {issue}).message).toBe(issue);
+  expect(componentFailure("api-studio.api", {issue}).message).toBe("작업을 완료하지 못했습니다.");
+  expect(componentFailure("api-studio.webhooks", {issue:issue+" synthetic-secret"}).message).toBe("작업을 완료하지 못했습니다.");
+});

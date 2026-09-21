@@ -77,7 +77,7 @@ try {
   const captured = await fetch(`http://127.0.0.1:${capturePort}/s03`, { method: "POST", headers: { "Content-Type": "application/json", Authorization: `Bearer ${secret}` }, body: '{"fixture":true}' }); await captured.arrayBuffer();
   const captures = await success("api-studio.webhooks", "list_history"); assert.equal(captures.length, 1); assert.ok(!JSON.stringify(captures).includes(secret));
   const logs = await call("api-studio.webhooks", "send_history_to_log_lens", { historyId: captures[0].id });
-  assert.equal(logs.operation.outcome.state, "failed"); assert.equal(logs.value.issue, "Logs 연결을 사용할 수 없습니다. 수신 요청과 저장한 fixture는 유지됩니다.");
+  assert.equal(logs.operation.outcome.state, "failed"); assert.equal(logs.value.issue, "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.");
   assert.equal((await success("api-studio.webhooks", "list_history")).length, 1);
   await success("api-studio.webhooks", "stop_server");
   progress("request-preview"); await success("api-studio.webhooks", "send_history_to_api", { historyId: captures[0].id });

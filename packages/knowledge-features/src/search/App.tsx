@@ -154,6 +154,7 @@ function fmtSize(bytes: number): string {
 }
 
 function watcherLabel(status: RootStatus): string {
+  if (status.error === "watcher_state_poisoned") return "색인 중단";
   if (status.error === "root_unavailable") return "연결 끊김";
   if (status.error === "root_scan_limit") return "범위 상한";
   if (status.error === "root_scan_incomplete") return "부분 스캔";
@@ -163,6 +164,7 @@ function watcherLabel(status: RootStatus): string {
 }
 
 function watcherTitle(status: RootStatus): string {
+  if (status.error === "watcher_state_poisoned") return "색인 상태 오류로 자동 갱신을 중단했습니다. 앱을 다시 시작하세요.";
   if (status.error === "root_unavailable") {
     return status.sourceKind === "wsl"
       ? "WSL 배포판 또는 검색 루트에 연결할 수 없어 기존 인덱스를 보존했습니다. 연결되면 자동으로 다시 확인합니다."

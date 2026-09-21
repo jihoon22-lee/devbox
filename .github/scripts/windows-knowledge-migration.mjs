@@ -243,7 +243,7 @@ try {
   assert.equal((await command(item, "knowledge.migration", "status")).value.active, true);
   const templates = (await command(item, "knowledge.notes", "list_templates")).value;
   assert.equal(templates.length, 1); assert.equal(templates[0].content, "# {{title}}\nlegacy template"); assert.notEqual(templates[0].id, evidence.sourceTemplateId);
-  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/original.md" })).value, "# Original\n\n[[second]]\n\n![](assets/pixel.png)\n");
+  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/original.md" })).value.content, "# Original\n\n[[second]]\n\n![](assets/pixel.png)\n");
   assert.equal((await command(item, "knowledge.activity", "get_privacy_rules")).value.maskAllTitles, true);
   const history = (await command(item, "knowledge.activity", "knowledge_draft_history")).value;
   assert.equal(history.length, 1); assert.equal(history[0].status, "expired"); assert.equal(history[0].summary.startDate, "2024-02-29");
@@ -361,7 +361,7 @@ try {
   const repeat = await prepare(item); assert.ok(repeat.sources.every(source => source.report.imported === 0));
   const repeated = await job(item, "activate_import", { planId: repeat.id }); assert.equal(repeated.state, "succeeded");
   assert.equal((await command(item, "knowledge.notes", "list_templates")).value[0].content, "new product edit");
-  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/new-product.md" })).value, "# Keep new product note");
+  assert.equal((await command(item, "knowledge.notes", "read_file", { rel: "Notes/new-product.md" })).value.content, "# Keep new product note");
   assert.equal((await command(item, "knowledge.search", "list_saved_queries")).value.length, 2);
   assert.equal((await command(item, "knowledge.activity", "is_tracking")).value, false);
   assert.equal(logicalSources(), frozen); assert.equal(digest(path.join(vault, "Notes/original.md")), originalNote); assert.equal(digest(path.join(vault, "Notes/second.md")), originalSecond); assert.equal(digest(path.join(vault, "Notes/assets/pixel.png")), originalImage);
@@ -406,7 +406,7 @@ try {
   await wait(item.cdp,'!!document.querySelector(".knowledge-feature-notes .app")',"explicit vault activation missing");
   assert.ok(sameDirectory((await command(item,"knowledge.notes","get_root")).value,selectedVault));
   assert.equal((await command(item,"knowledge.notes","list_templates")).value[0].content,"new product edit");
-  assert.equal((await command(item,"knowledge.notes","read_file",{rel:"Notes/existing.md"})).value,"# Existing selected note");
+  assert.equal((await command(item,"knowledge.notes","read_file",{rel:"Notes/existing.md"})).value.content,"# Existing selected note");
   assert.equal((await command(item,"knowledge.notes","create_file",{rel:"Notes/new-selected.md",content:"# Selected vault"})).operation.outcome.state,"succeeded");
   assert.ok(existsSync(path.join(selectedVault,"Notes/new-selected.md"))); assert.equal(existsSync(path.join(vault,"Notes/new-selected.md")),false);
   let selectedQuery;

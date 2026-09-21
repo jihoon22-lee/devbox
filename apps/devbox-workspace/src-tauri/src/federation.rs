@@ -306,6 +306,19 @@ pub(crate) fn handle(
             .map_err(|_| "migration_unavailable")?;
         }
 
+        if let Call::DeliverWebhookLog {
+            id,
+            revision,
+            operation_id,
+        } = &call
+        {
+            return crate::webhook_logs::offer(
+                &app,
+                id.clone(),
+                revision.clone(),
+                operation_id.clone(),
+            );
+        }
         if let Call::ReadTransformSelection { id } = &call {
             return crate::selection_send::read(&app, id, _deadline).await;
         }

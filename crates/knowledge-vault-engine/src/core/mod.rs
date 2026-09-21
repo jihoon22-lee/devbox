@@ -1,6 +1,7 @@
 pub mod assets;
 pub mod capture;
 pub mod db;
+pub mod document;
 pub mod entry_actions;
 pub mod frontmatter;
 pub mod handoff;

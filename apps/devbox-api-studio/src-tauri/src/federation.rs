@@ -76,6 +76,9 @@ pub(crate) fn handle(
             });
         }
         match call {
+            call @ (Call::ClaimWebhookLog { .. } | Call::AcknowledgeWebhookLog { .. }) => {
+                crate::webhook_logs::handle(call)
+            }
             Call::DeliverTransformSelection {
                 id,
                 operation_id,

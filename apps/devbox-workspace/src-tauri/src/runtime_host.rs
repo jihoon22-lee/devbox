@@ -140,6 +140,9 @@ pub(crate) fn component(name: &str) -> bool {
     )
 }
 pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
+    if component == "workspace.logs" && route == "logs" && method == "open_webhook_log" {
+        return true;
+    }
     match component {
         "workspace.runtime" => {
             route == "tasks"
@@ -342,6 +345,9 @@ pub(crate) async fn dispatch(
         terminals,
     } = request;
     crate::files_host::current_deadline(deadline)?;
+    if component == "workspace.logs" && method == "open_webhook_log" {
+        return crate::webhook_logs::open(app, value, deadline).await;
+    }
     owners.initialize_runtime(app, host)?;
     if matches!(
         method,

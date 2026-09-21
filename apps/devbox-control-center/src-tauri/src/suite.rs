@@ -940,6 +940,7 @@ pub(crate) async fn remote(
                 | product_contract::transport::Call::DeliverSessionSummary { .. }
                 | product_contract::transport::Call::DeliverFileReference { .. }
                 | product_contract::transport::Call::DeliverKnowledgeDraft { .. }
+                | product_contract::transport::Call::DeliverWebhookLog { .. }
                 | product_contract::transport::Call::DeliverTransformSelection { .. }
         ) {
             let launch = suite

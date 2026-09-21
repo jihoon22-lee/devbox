@@ -92,6 +92,10 @@ on:
         description: Build four products without installers and finish foreign-installation and shared-surface checks
         type: boolean
         default: false
+      suite_full_workflow:
+        description: With suite_remaining_only, run the complete cross-product workflow while retaining unrelated acceptance
+        type: boolean
+        default: false
       wsl2_scope:
         description: Remaining acceptance scope (full runs ignore this option)
         type: choice
@@ -227,7 +231,7 @@ jobs:
 
   suite-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.suite_diagnostic_run != '' }}
-    name: Remaining suite workflow with retained executables
+    name: Suite workflow with retained executables
     runs-on: windows-2025
     timeout-minutes: 15
     steps:
@@ -259,8 +263,15 @@ jobs:
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/THIRD_PARTY_NOTICES.md" -Destination THIRD_PARTY_NOTICES.md -ErrorAction Stop
           "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
           "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV
-      - name: Finish only foreign-installation and shared-surface acceptance
-        run: node .github/scripts/windows-suite-workflows.mjs --remaining
+      - name: Finish the selected Suite acceptance scope
+        shell: pwsh
+        run: |
+          if ('${{ inputs.suite_full_workflow }}' -eq 'true') {
+            node .github/scripts/windows-suite-workflows.mjs
+          } else {
+            node .github/scripts/windows-suite-workflows.mjs --remaining
+          }
+          exit $LASTEXITCODE
       - name: Preserve remaining suite evidence
         if: ${{ always() }}
         uses: actions/upload-artifact@v7
@@ -369,7 +380,9 @@ jobs:
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
     runs-on: windows-2025
-    timeout-minutes: 60
+    # Four product builds plus installed-Suite and independent native scopes.
+    # The prior review run used 58 minutes even with three early fixture exits.
+    timeout-minutes: 90
     env:
       CARGO_TARGET_DIR: ${{ github.workspace }}/target
       CARGO_BUILD_JOBS: 2
@@ -577,7 +590,7 @@ jobs:
         timeout-minutes: 15
         shell: pwsh
         run: |
-          if ('${{ inputs.suite_remaining_only }}' -eq 'true') {
+          if ('${{ inputs.suite_remaining_only }}' -eq 'true' -and '${{ inputs.suite_full_workflow }}' -ne 'true') {
             node .github/scripts/windows-suite-workflows.mjs --remaining
           } else {
             node .github/scripts/windows-suite-workflows.mjs

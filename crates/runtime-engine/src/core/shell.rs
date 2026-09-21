@@ -343,6 +343,8 @@ IFS= read -r -t 30 __devbox_ack || exit 125;
 unset __devbox_ack;
 exec </dev/null;
 set +e;
+# Catch TERM before user code. Caught traps reset in exec children, unlike IGN.
+trap ' : ' TERM;
 __DEVBOX_RUN_INVOCATION__
 __devbox_status=$?;
 trap '' TERM;
@@ -694,27 +696,6 @@ impl WslSignal {
     }
 }
 
-pub fn build_wsl_group_signal_argv(
-    distro: &str,
-    signal: WslSignal,
-    pgid: u32,
-) -> Result<Vec<String>, ShellError> {
-    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
-    if pgid == 0 {
-        return Err(ShellError::InvalidNumericField("PGID"));
-    }
-    Ok(vec![
-        "wsl.exe".to_owned(),
-        "-d".to_owned(),
-        distro.to_owned(),
-        "--".to_owned(),
-        "kill".to_owned(),
-        format!("-{}", signal.as_str()),
-        "--".to_owned(),
-        format!("-{pgid}"),
-    ])
-}
-
 pub fn build_wsl_group_probe_argv(distro: &str, pgid: u32) -> Result<Vec<String>, ShellError> {
     devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     if pgid == 0 {
@@ -732,30 +713,67 @@ pub fn build_wsl_group_probe_argv(distro: &str, pgid: u32) -> Result<Vec<String>
     ])
 }
 
-/// Validate the exact NUL-delimited marker and current PGID/SID before sending
-/// one group signal. Everything after the fixed program is structured argv.
-pub fn build_wsl_guarded_signal_argv(
+/// A private stdin marker authorizes each signal against a fresh live group
+/// member. The command line carries only numeric identities and a fixed action.
+const GROUP_CONTROL: &str = r#"
+IFS= read -r -t 2 marker || exit 83;
+[ "${#marker}" = 36 ] || exit 83;
+witness() { printf '__DEVBOX_GROUP_V1__:%s\n' "$1"; }
+stat_for() {
+  stat=$(cat -- "/proc/$1/stat" 2>/dev/null) || return 2;
+  fields=${stat##*) };
+  [ "$fields" != "$stat" ] || return 2;
+  read -r state _ group session _ <<< "$fields";
+}
+marked() {
+  matched=0;
+  while IFS= read -r -d '' entry; do
+    if [ "$entry" = "DEVBOX_RUN_MARKER=$marker" ]; then matched=1; fi;
+  done < "/proc/$1/environ" 2>/dev/null || return 2;
+  [ "$matched" = 1 ];
+}
+owned=;
+if [ -d "/proc/$1" ]; then
+  stat_for "$1" || exit 83;
+  if [ "$state" != Z ] && [ "$state" != X ]; then
+    [ "$group" = "$2" ] && [ "$session" = "$3" ] || { witness mismatch; exit 80; };
+    marked "$1" || { witness mismatch; exit 80; };
+    owned=$1;
+  fi;
+fi;
+if [ -z "$owned" ]; then
+  # A live leader is the constant-time common case. Enumerate only after it
+  # retires, to distinguish live descendants from unreaped zombies. Never
+  # infer absence from a failed ps, unreadable identity, or a reused leader.
+  rows=$(ps -eo pid=,pgid=,sid=,stat=) || exit 83;
+  live=0;
+  while read -r pid group session state; do
+    [ "$group" = "$2" ] && [ "$session" = "$3" ] || continue;
+    case "$state" in Z*|X*) continue;; esac;
+    live=1;
+    if stat_for "$pid" && [ "$group" = "$2" ] && [ "$session" = "$3" ] && marked "$pid"; then
+      owned=$pid; break;
+    fi;
+  done <<< "$rows";
+  if [ "$live" = 0 ]; then witness gone; exit 0; fi;
+  [ -n "$owned" ] || { witness mismatch; exit 80; };
+fi;
+if [ "$4" = probe ]; then witness present; exit 0; fi;
+case "$4" in TERM|KILL) ;; *) exit 83;; esac;
+# Recheck the selected member just before the mutation, including inherited
+# marker, group and session. No cached TERM admission grants a later KILL.
+stat_for "$owned" && [ "$group" = "$2" ] && [ "$session" = "$3" ] && marked "$owned" || { witness mismatch; exit 80; };
+kill "-$4" -- "-$2" || { witness delivery-failed; exit 82; };
+witness signalled
+"#;
+
+fn group_control_argv(
     distro: &str,
     identity: &WslProcessIdentity,
-    signal: WslSignal,
+    action: &str,
 ) -> Result<Vec<String>, ShellError> {
     devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
     identity.validate()?;
-    const SCRIPT: &str = r#"
-matched=0;
-while IFS= read -r -d '' entry; do
-  if [ "$entry" = "DEVBOX_RUN_MARKER=$4" ]; then matched=1; fi;
-done < "/proc/$1/environ";
-[ "$matched" = 1 ] || exit 125;
-unset entry;
-stat=$(cat -- "/proc/$1/stat") || exit 125;
-fields=${stat##*) };
-[ "$fields" != "$stat" ] || exit 125;
-read -r state parent group session rest <<< "$fields";
-[ "$group" = "$2" ] && [ "$session" = "$3" ] || exit 125;
-kill "-$5" -- "-$2" || exit 126;
-printf 'signalled\n'
-"#;
     Ok(vec![
         "wsl.exe".into(),
         "-d".into(),
@@ -765,30 +783,30 @@ printf 'signalled\n'
         "--noprofile".into(),
         "--norc".into(),
         "-c".into(),
-        SCRIPT.into(),
-        "devbox-run-signal".into(),
+        GROUP_CONTROL.into(),
+        "devbox-run-control".into(),
         identity.pid.to_string(),
         identity.pgid.to_string(),
         identity.sid.to_string(),
-        identity.marker.clone(),
-        signal.as_str().into(),
+        action.into(),
     ])
 }
 
-/// Read-only completion witness in one WSL invocation. CLI failure is never
-/// interpreted as absence, and both the leader and its group must be absent.
+pub fn build_wsl_guarded_signal_argv(
+    distro: &str,
+    identity: &WslProcessIdentity,
+    signal: WslSignal,
+) -> Result<Vec<String>, ShellError> {
+    group_control_argv(distro, identity, signal.as_str())
+}
+
+/// Explicit proof that no live owned group member remains. Zombies cannot
+/// execute or retain streams; their parent wait owner still reaps separately.
 pub fn build_wsl_completion_probe_argv(
     distro: &str,
     identity: &WslProcessIdentity,
 ) -> Result<Vec<String>, ShellError> {
-    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
-    identity.validate()?;
-    Ok(vec![
-        "wsl.exe".into(), "-d".into(), distro.into(), "--exec".into(),
-        "bash".into(), "--noprofile".into(), "--norc".into(), "-c".into(),
-        r#"if [ -d "/proc/$1" ]; then printf 'present\n'; exit 0; fi; groups=$(ps -eo pgid=) || exit 1; for group in $groups; do if [ "$group" = "$2" ]; then printf 'present\n'; exit 0; fi; done; printf 'gone\n'"#.into(),
-        "devbox-run-completion".into(), identity.pid.to_string(), identity.pgid.to_string(),
-    ])
+    group_control_argv(distro, identity, "probe")
 }
 
 /// A numeric-only `/proc` path used by the platform adapter for a fresh marker
@@ -874,34 +892,6 @@ pub fn parse_proc_stat_identity(
     })
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WslTerminationPlan {
-    pub term: Vec<String>,
-    pub probe: Vec<String>,
-    pub kill: Vec<String>,
-    pub marker: String,
-    pub pid: u32,
-    pub pgid: u32,
-    pub sid: u32,
-}
-
-pub fn build_wsl_termination_plan(
-    distro: &str,
-    identity: &WslProcessIdentity,
-) -> Result<WslTerminationPlan, ShellError> {
-    devbox_wsl::distro::validate_distro_name(distro).map_err(|_| ShellError::InvalidDistro)?;
-    identity.validate()?;
-    Ok(WslTerminationPlan {
-        term: build_wsl_group_signal_argv(distro, WslSignal::Term, identity.pgid)?,
-        probe: build_wsl_group_probe_argv(distro, identity.pgid)?,
-        kill: build_wsl_group_signal_argv(distro, WslSignal::Kill, identity.pgid)?,
-        marker: identity.marker.clone(),
-        pid: identity.pid,
-        pgid: identity.pgid,
-        sid: identity.sid,
-    })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -919,6 +909,7 @@ mod tests {
         let mut child = Owned(
             std::process::Command::new("setsid")
                 .args(["sleep", "30"])
+                .env("DEVBOX_RUN_MARKER", run_id())
                 .spawn()
                 .unwrap(),
         );
@@ -931,11 +922,15 @@ mod tests {
         };
         let observe = |identity: &WslProcessIdentity| {
             let argv = build_wsl_completion_probe_argv("Fixture", identity).unwrap();
-            let output = std::process::Command::new(&argv[4])
+            use std::io::Write;
+            let mut helper = std::process::Command::new(&argv[4])
                 .args(&argv[5..])
-                .output()
+                .stdin(std::process::Stdio::piped())
+                .stdout(std::process::Stdio::piped())
+                .spawn()
                 .unwrap();
-            assert!(output.status.success());
+            writeln!(helper.stdin.take().unwrap(), "{}", identity.marker).unwrap();
+            let output = helper.wait_with_output().unwrap();
             output.stdout
         };
         // Wait for setsid by observing only this owned child's /proc identity.
@@ -950,24 +945,24 @@ mod tests {
             }
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
-        assert_eq!(observe(&identity), b"present\n");
+        assert_eq!(observe(&identity), b"__DEVBOX_GROUP_V1__:present\n");
         assert_eq!(
             observe(&WslProcessIdentity {
                 pid: u32::MAX,
                 ..identity.clone()
             }),
-            b"present\n"
+            b"__DEVBOX_GROUP_V1__:present\n"
         );
         assert_eq!(
             observe(&WslProcessIdentity {
                 pgid: u32::MAX,
                 ..identity.clone()
             }),
-            b"present\n"
+            b"__DEVBOX_GROUP_V1__:mismatch\n"
         );
         child.0.kill().unwrap();
         child.0.wait().unwrap();
-        assert_eq!(observe(&identity), b"gone\n");
+        assert_eq!(observe(&identity), b"__DEVBOX_GROUP_V1__:gone\n");
         assert!(build_wsl_completion_probe_argv(
             "Fixture",
             &WslProcessIdentity { pid: 0, ..identity }
@@ -1305,19 +1300,14 @@ mod tests {
             sid: 40,
             marker: run_id().to_owned(),
         };
-        let plan = build_wsl_termination_plan("Ubuntu", &identity).unwrap();
+        let probe = build_wsl_group_probe_argv("Ubuntu", identity.pgid).unwrap();
         assert_eq!(
-            plan.term,
-            vec!["wsl.exe", "-d", "Ubuntu", "--", "kill", "-TERM", "--", "-41"]
-        );
-        assert_eq!(
-            plan.probe,
+            probe,
             vec!["wsl.exe", "-d", "Ubuntu", "--", "kill", "-0", "--", "-41"]
         );
-        assert_eq!(
-            plan.kill,
-            vec!["wsl.exe", "-d", "Ubuntu", "--", "kill", "-KILL", "--", "-41"]
-        );
+        let signal = build_wsl_guarded_signal_argv("Ubuntu", &identity, WslSignal::Kill).unwrap();
+        assert_eq!(&signal[10..], &["42", "41", "40", "KILL"]);
+        assert!(signal.iter().all(|part| !part.contains(&identity.marker)));
 
         let mut other = identity.clone();
         other.pid = 43;

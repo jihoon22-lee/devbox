@@ -12,7 +12,7 @@ export interface KnowledgeWatcherStatus {
     | "vault_unavailable"
     | "vault_scan_limit"
     | "vault_scan_incomplete"
-    | "vault_index_failed"
+    | "vault_index_failed" | "watcher_state_poisoned"
     | null;
 }
 

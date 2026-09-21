@@ -19,6 +19,7 @@ const issues: Record<string, string> = {
   worktree_target_unavailable: "생성할 위치의 부모 폴더를 읽지 못했습니다. 경로와 연결 상태를 확인해 주세요.",
   source_requires_repository: "이 프로젝트 폴더에는 Git 저장소가 없습니다.",
   source_context_changed: "프로젝트 또는 Git 실행 근거가 변경되었습니다. 승인 상태를 다시 확인해 주세요.",
+  commit_review_stale: "검토 이후 Git index 또는 HEAD가 바뀌었습니다. 다시 검토해 주세요.",
   source_preview_stale: "Git 실행 검토가 만료되었거나 이미 사용되었습니다. 다시 검토해 주세요.",
   source_trust_invalid: "저장된 Git 승인을 확인할 수 없습니다. 기존 파일을 보존했습니다.",
   source_operation_unavailable: "Git 작업을 완료하지 못했습니다. 저장소 상태와 실행 승인을 확인해 주세요.",

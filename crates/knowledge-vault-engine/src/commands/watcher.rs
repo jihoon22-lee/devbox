@@ -156,6 +156,7 @@ type SharedStatus = Arc<Mutex<KnowledgeWatcherStatus>>;
 
 pub struct KnowledgeWatcher {
     app: AppHandle,
+    state: Arc<AppState>,
     watcher: Mutex<Option<notify::RecommendedWatcher>>,
     sender: SyncSender<Message>,
     worker: Mutex<Option<JoinHandle<()>>>,
@@ -196,6 +197,7 @@ impl KnowledgeWatcher {
         };
         Arc::new(Self {
             app,
+            state,
             watcher: Mutex::new(None),
             sender,
             worker: Mutex::new(Some(worker)),
@@ -207,6 +209,11 @@ impl KnowledgeWatcher {
     }
 
     pub fn set_root(&self, root: &Path) -> Result<(), String> {
+        if self.state.db.is_poisoned() || self.root.is_poisoned() || self.status.is_poisoned() {
+            return Err(
+                "Knowledge 감시 상태를 사용할 수 없습니다. 앱을 다시 시작해 주세요.".into(),
+            );
+        }
         let vault = VaultIdentity::inspect(root)
             .map_err(|_| "Knowledge watcher 저장 위치를 확인할 수 없습니다".to_string())?;
         let canonical = vault.canonical_path().to_path_buf();
@@ -256,8 +263,14 @@ impl KnowledgeWatcher {
             Some(watcher)
         };
 
-        *self.watcher.lock().unwrap() = next_watcher;
-        *self.root.lock().unwrap() = Some(canonical);
+        *self
+            .watcher
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = next_watcher;
+        *self
+            .root
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(canonical);
         set_status(
             &self.status,
             &self.app,
@@ -287,8 +300,14 @@ impl KnowledgeWatcher {
             return;
         }
 
-        *self.watcher.lock().unwrap() = None;
-        *self.root.lock().unwrap() = Some(root.to_path_buf());
+        *self
+            .watcher
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
+        *self
+            .root
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(root.to_path_buf());
         set_status(
             &self.status,
             &self.app,
@@ -304,8 +323,22 @@ impl KnowledgeWatcher {
     }
 
     pub fn status(&self) -> KnowledgeWatcherStatus {
-        self.status.lock().unwrap().clone()
+        status_snapshot(
+            &self.status,
+            self.state.db.is_poisoned() || self.root.is_poisoned(),
+        )
     }
+}
+
+fn status_snapshot(status: &SharedStatus, failed: bool) -> KnowledgeWatcherStatus {
+    let mut snapshot = status
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    if failed || status.is_poisoned() {
+        snapshot.error = Some("watcher_state_poisoned".into());
+    }
+    snapshot
 }
 
 #[tauri::command]
@@ -345,6 +378,15 @@ fn watcher_worker(
     let mut next_poll = Instant::now() + WSL_POLL_INTERVAL;
 
     loop {
+        if state.db.is_poisoned() || root.is_poisoned() || status.is_poisoned() {
+            let mut next = status
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .clone();
+            next.error = Some("watcher_state_poisoned".into());
+            set_status(&status, &app, next);
+            break;
+        }
         let now = Instant::now();
         let mut wait = WORKER_TICK.min(next_poll.saturating_duration_since(now));
         if let Some(deadline) = debouncer.next_deadline() {
@@ -365,7 +407,10 @@ fn watcher_worker(
             Some(Message::Shutdown) => break,
         }
 
-        let current_root = root.lock().unwrap().clone();
+        let current_root = root
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .clone();
         if current_root != observed_root {
             observed_root = current_root;
             previous.clear();
@@ -391,10 +436,14 @@ fn watcher_worker(
         if Instant::now() >= next_poll {
             let polling = root
                 .lock()
-                .unwrap()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
                 .as_ref()
                 .is_some_and(|root| root_source_kind(root) == "wsl");
-            let retry_unavailable = status.lock().unwrap().error.is_some();
+            let retry_unavailable = status
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .error
+                .is_some();
             if polling || retry_unavailable {
                 reconcile_configured_root(&state, &app, &root, &status, &mut previous, false);
             }
@@ -411,7 +460,11 @@ fn apply_incremental_paths(
     reconcile: &AtomicBool,
     paths: &[PathBuf],
 ) {
-    let Some(root_path) = root.lock().unwrap().clone() else {
+    let Some(root_path) = root
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+    else {
         return;
     };
     let Ok(vault) = VaultIdentity::inspect(&root_path) else {
@@ -440,7 +493,10 @@ fn apply_incremental_paths(
     }
 
     let applied = {
-        let conn = state.db.lock().unwrap();
+        let Ok(conn) = state.db.lock() else {
+            update_status_error(status, app, &root_path, "watcher_state_poisoned");
+            return;
+        };
         let Ok(transaction) = conn.unchecked_transaction() else {
             update_status_error(status, app, &root_path, "vault_index_failed");
             return;
@@ -470,7 +526,11 @@ fn reconcile_configured_root(
     previous: &mut HashMap<String, FileStamp>,
     force: bool,
 ) {
-    let Some(root_path) = root.lock().unwrap().clone() else {
+    let Some(root_path) = root
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone()
+    else {
         return;
     };
     let vault = match VaultIdentity::inspect(&root_path) {
@@ -487,7 +547,12 @@ fn reconcile_configured_root(
         .map(|(path, document)| (path.clone(), document.stamp))
         .collect::<HashMap<_, _>>();
     let changed = changed_paths(previous, &current, force);
-    let recovered = status.lock().unwrap().error.is_some() && scan.complete;
+    let recovered = status
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .error
+        .is_some()
+        && scan.complete;
     let needs_apply = force
         || recovered
         || !changed.is_empty()
@@ -769,7 +834,9 @@ fn watch_mode(path: &Path) -> &'static str {
 }
 
 fn set_status(status: &SharedStatus, app: &AppHandle, next: KnowledgeWatcherStatus) {
-    *status.lock().unwrap() = next.clone();
+    *status
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner) = next.clone();
     let _ = app.emit("knowledge-watcher-status", next);
 }
 
@@ -787,7 +854,10 @@ fn update_status_success(status: &SharedStatus, app: &AppHandle, root: &Path, er
 }
 
 fn update_status_error(status: &SharedStatus, app: &AppHandle, root: &Path, error: &'static str) {
-    let last_synced_at = status.lock().unwrap().last_synced_at;
+    let last_synced_at = status
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .last_synced_at;
     set_status(
         status,
         app,
@@ -812,10 +882,10 @@ fn now_ms() -> u64 {
 }
 
 fn publish_docs_changed(state: &Arc<AppState>, app: &AppHandle) {
-    let _ = crate::integration::write_snapshot(
-        &state.db.lock().unwrap(),
-        state.integration_root.as_deref(),
-    );
+    let Ok(conn) = state.db.lock() else {
+        return;
+    };
+    let _ = crate::integration::write_snapshot(&conn, state.integration_root.as_deref());
     let _ = app.emit("docs-changed", ());
 }
 
@@ -943,6 +1013,27 @@ pub(crate) async fn __component_knowledge_watcher_status(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn poisoned_metadata_remains_diagnosable_without_clearing_poison() {
+        let status = std::sync::Arc::new(std::sync::Mutex::new(
+            super::KnowledgeWatcherStatus::default(),
+        ));
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = status.lock().unwrap();
+            panic!("synthetic watcher panic");
+        });
+        let snapshot = super::status_snapshot(&status, false);
+        assert_eq!(snapshot.error.as_deref(), Some("watcher_state_poisoned"));
+        assert!(status.is_poisoned());
+        let healthy = std::sync::Arc::new(std::sync::Mutex::new(
+            super::KnowledgeWatcherStatus::default(),
+        ));
+        assert_eq!(
+            super::status_snapshot(&healthy, true).error.as_deref(),
+            Some("watcher_state_poisoned")
+        );
+    }
+
     use super::*;
     use crate::core::db;
 

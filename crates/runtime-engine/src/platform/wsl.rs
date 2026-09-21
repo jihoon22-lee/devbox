@@ -16,14 +16,13 @@ use zeroize::{Zeroize, Zeroizing};
 
 use crate::core::shell::{
     build_wsl_command, build_wsl_completion_probe_argv, build_wsl_guarded_signal_argv,
-    build_wsl_proc_dir_probe_argv, build_wsl_proc_environ_argv, build_wsl_proc_stat_argv,
-    build_wsl_process_command, build_wsl_termination_plan, parse_proc_stat_identity,
-    parse_wsl_handshake, validate_wsl_handshake_identity, validate_wsl_identity, ShellError,
-    WslCommandSpec, WslProcessIdentity, WslSignal,
+    build_wsl_proc_environ_argv, build_wsl_proc_stat_argv, build_wsl_process_command,
+    parse_proc_stat_identity, parse_wsl_handshake, validate_wsl_handshake_identity,
+    validate_wsl_identity, ShellError, WslCommandSpec, WslProcessIdentity, WslSignal,
 };
 
 const HANDSHAKE_BUFFER_LIMIT: usize = 64 * 1024;
-const TERMINATION_POLL_INTERVAL: Duration = Duration::from_millis(25);
+const TERMINATION_POLL_INTERVAL: Duration = Duration::from_millis(200);
 const HELPER_COMMAND_TIMEOUT: Duration = Duration::from_secs(2);
 const HELPER_REAP_TIMEOUT: Duration = Duration::from_millis(250);
 
@@ -383,25 +382,18 @@ async fn run_helper_output(argv: &[String]) -> Result<Output, WslExecutionError>
     run_helper_output_with_timeout(argv, HELPER_COMMAND_TIMEOUT).await
 }
 
-async fn run_helper_output_until(
-    argv: &[String],
-    deadline: Instant,
-) -> Result<Output, WslExecutionError> {
-    let remaining = deadline.saturating_duration_since(Instant::now());
-    if remaining.is_zero() {
-        return Err(WslExecutionError::HelperTimeout);
-    }
-    run_helper_output_with_timeout(argv, remaining).await
-}
-
 async fn collect_helper_output(
     child: &mut Child,
-    mut stdout: ChildStdout,
+    stdout: ChildStdout,
 ) -> Result<Output, std::io::Error> {
     let mut stdout_bytes = Vec::new();
+    let mut stdout = stdout.take((HANDSHAKE_BUFFER_LIMIT + 1) as u64);
     let (read_result, status_result) =
         tokio::join!(stdout.read_to_end(&mut stdout_bytes), child.wait(),);
     read_result?;
+    if stdout_bytes.len() > HANDSHAKE_BUFFER_LIMIT {
+        return Err(std::io::Error::other("helper output limit"));
+    }
     let status = status_result?;
     Ok(Output {
         status,
@@ -419,6 +411,14 @@ async fn run_helper_output_with_timeout(
     argv: &[String],
     timeout: Duration,
 ) -> Result<Output, WslExecutionError> {
+    run_helper_with_input(argv, timeout, None).await
+}
+
+async fn run_helper_with_input(
+    argv: &[String],
+    timeout: Duration,
+    input: Option<&str>,
+) -> Result<Output, WslExecutionError> {
     let Some(program) = argv.first() else {
         return Err(WslExecutionError::Shell(ShellError::EmptyField(
             "helper program",
@@ -427,7 +427,11 @@ async fn run_helper_output_with_timeout(
     let mut command = Command::new(program);
     command
         .args(&argv[1..])
-        .stdin(Stdio::null())
+        .stdin(if input.is_some() {
+            Stdio::piped()
+        } else {
+            Stdio::null()
+        })
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
@@ -443,7 +447,19 @@ async fn run_helper_output_with_timeout(
             return Err(error.into());
         }
     };
-    match tokio::time::timeout(timeout, collect_helper_output(&mut child, stdout)).await {
+    let exchange = async {
+        if let Some(input) = input {
+            let mut stdin = child
+                .stdin
+                .take()
+                .ok_or_else(|| std::io::Error::other("helper stdin unavailable"))?;
+            let bytes = Zeroizing::new(format!("{input}\n"));
+            stdin.write_all(bytes.as_bytes()).await?;
+            stdin.shutdown().await?;
+        }
+        collect_helper_output(&mut child, stdout).await
+    };
+    match tokio::time::timeout(timeout, exchange).await {
         Ok(Ok(output)) => Ok(output),
         Ok(Err(error)) => {
             kill_and_reap_helper(&mut child).await;
@@ -457,6 +473,30 @@ async fn run_helper_output_with_timeout(
             Err(WslExecutionError::HelperTimeout)
         }
     }
+}
+
+fn group_witness(output: &Output) -> Result<&str, WslExecutionError> {
+    let text = std::str::from_utf8(&output.stdout)
+        .map_err(|_| std::io::Error::other("invalid group witness"))?;
+    let mut frames = text
+        .lines()
+        .filter_map(|line| line.strip_prefix("__DEVBOX_GROUP_V1__:"));
+    let frame = frames
+        .next()
+        .ok_or_else(|| std::io::Error::other("missing group witness"))?;
+    if frames.next().is_some()
+        || text
+            .lines()
+            .last()
+            .and_then(|line| line.strip_prefix("__DEVBOX_GROUP_V1__:"))
+            != Some(frame)
+    {
+        return Err(std::io::Error::other("ambiguous group witness").into());
+    }
+    if frame == "mismatch" && output.status.code() == Some(80) {
+        return Err(ShellError::MarkerMismatch.into());
+    }
+    Ok(frame)
 }
 
 /// Native product binding is retained for launch, observation and cleanup.
@@ -575,75 +615,85 @@ impl Target {
     async fn output(&self, argv: &[String]) -> Result<Output, WslExecutionError> {
         run_helper_output(&self.bind_query(argv).await?).await
     }
-    async fn output_until(
+    async fn control_until(
         &self,
         argv: &[String],
+        identity: &WslProcessIdentity,
         deadline: Instant,
     ) -> Result<Output, WslExecutionError> {
-        run_helper_output_until(&self.bind_query(argv).await?, deadline).await
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        let bound = tokio::time::timeout(remaining, self.bind_query(argv))
+            .await
+            .map_err(|_| WslExecutionError::HelperTimeout)??;
+        let remaining = deadline.saturating_duration_since(Instant::now());
+        if remaining.is_zero() {
+            return Err(WslExecutionError::HelperTimeout);
+        }
+        run_helper_with_input(&bound, remaining, Some(&identity.marker)).await
     }
     async fn signal_owned_group(
         &self,
         identity: &WslProcessIdentity,
         signal: WslSignal,
+        deadline: Instant,
     ) -> Result<(), WslExecutionError> {
         let argv = build_wsl_guarded_signal_argv(self.distro.as_str(), identity, signal)?;
-        let output = self.output(&argv).await?;
-        if !output.status.success() {
-            return Err(WslExecutionError::CommandFailed {
+        let output = self.control_until(&argv, identity, deadline).await?;
+        match group_witness(&output)? {
+            "signalled" | "gone" if output.status.success() => Ok(()),
+            _ => Err(WslExecutionError::CommandFailed {
                 argv,
                 code: output.status.code(),
-            });
+            }),
         }
-        if !matches!(output.stdout.as_slice(), b"signalled\n" | b"signalled\r\n") {
-            return Err(std::io::Error::other("invalid group signal acknowledgement").into());
-        }
-        Ok(())
     }
     pub async fn terminate_group(
         &self,
         identity: &WslProcessIdentity,
         grace: Duration,
     ) -> Result<(), WslExecutionError> {
+        // Delivery, observations and escalation share one total budget. A
+        // failed/ambiguous observation may trigger a fresh guarded escalation,
+        // but can never establish successful cleanup or grant signal authority.
+        let phase_budget = grace.saturating_add(HELPER_COMMAND_TIMEOUT / 2);
+        let mut last_error = None;
         for signal in [WslSignal::Term, WslSignal::Kill] {
-            // Identity checks and signal share one bound invocation. The grace
-            // period starts after delivery, not before several WSL startups.
-            if let Err(error) = self.signal_owned_group(identity, signal).await {
-                // A concurrent natural exit can retire the leader between reads.
-                // Only an explicit absence witness can settle that failed action.
-                if matches!(error, WslExecutionError::CommandFailed { .. })
-                    && self.confirm_group_gone(identity, grace).await.is_ok()
+            let deadline = Instant::now() + phase_budget;
+            // Reserve completion observation time in both phases. A cold TERM
+            // helper cannot consume KILL's budget or its final witness.
+            let observation_budget = grace.min(HELPER_COMMAND_TIMEOUT / 2);
+            let delivery_deadline = (deadline - observation_budget)
+                .min(Instant::now() + grace.max(HELPER_COMMAND_TIMEOUT));
+            let delivered = self
+                .signal_owned_group(identity, signal, delivery_deadline)
+                .await;
+            if matches!(
+                &delivered,
+                Err(WslExecutionError::Shell(ShellError::MarkerMismatch))
+            ) {
+                // A raced natural exit is accepted only with a new explicit
+                // absence witness; a live replacement retains MarkerMismatch.
+                if self
+                    .confirm_group_gone_until(identity, deadline)
+                    .await
+                    .is_ok()
                 {
                     return Ok(());
                 }
-                return Err(error);
+                return delivered;
             }
-            if self
-                .wait_for_group_gone(identity, Instant::now() + grace)
-                .await?
-            {
+            last_error = delivered.err();
+            if self.wait_for_group_gone(identity, deadline).await? {
                 return Ok(());
             }
-            // KILL repeats the exact marker/group/session checks; never reuse
-            // the earlier TERM admission after waiting for a stubborn process.
         }
-        Err(WslExecutionError::ProcessGroupStillAlive)
+        Err(last_error.unwrap_or(WslExecutionError::ProcessGroupStillAlive))
     }
     pub async fn recover_stale_group(
         &self,
         identity: &WslProcessIdentity,
         grace: Duration,
     ) -> Result<(), WslExecutionError> {
-        let leader_probe = build_wsl_proc_dir_probe_argv(self.distro.as_str(), identity.pid)?;
-        let leader = self.output(&leader_probe).await?;
-        if !leader.status.success() {
-            let plan = build_wsl_termination_plan(self.distro.as_str(), identity)?;
-            let group = self.output(&plan.probe).await?;
-            if group.status.success() {
-                return Err(WslExecutionError::ProcessGroupStillAlive);
-            }
-            return Ok(());
-        }
         self.terminate_group(identity, grace).await
     }
     pub async fn confirm_group_gone(
@@ -651,22 +701,23 @@ impl Target {
         identity: &WslProcessIdentity,
         timeout: Duration,
     ) -> Result<(), WslExecutionError> {
-        // Do not spend one short deadline on two target validations and two
-        // WSL startups. A single retained-target query observes both conditions.
+        self.confirm_group_gone_until(identity, Instant::now() + timeout)
+            .await
+    }
+    async fn confirm_group_gone_until(
+        &self,
+        identity: &WslProcessIdentity,
+        deadline: Instant,
+    ) -> Result<(), WslExecutionError> {
         let argv = build_wsl_completion_probe_argv(self.distro.as_str(), identity)?;
-        let output = self.output_until(&argv, Instant::now() + timeout).await?;
-        if !output.status.success() {
-            return Err(WslExecutionError::CommandFailed {
+        let output = self.control_until(&argv, identity, deadline).await?;
+        match group_witness(&output)? {
+            "gone" if output.status.success() => Ok(()),
+            "present" if output.status.success() => Err(WslExecutionError::ProcessGroupStillAlive),
+            _ => Err(WslExecutionError::CommandFailed {
                 argv,
                 code: output.status.code(),
-            });
-        }
-        match output.stdout.as_slice() {
-            b"gone\n" | b"gone\r\n" => Ok(()),
-            b"present\n" | b"present\r\n" => Err(WslExecutionError::ProcessGroupStillAlive),
-            _ => Err(WslExecutionError::Io(std::io::Error::other(
-                "invalid group completion witness",
-            ))),
+            }),
         }
     }
 
@@ -754,7 +805,12 @@ impl Target {
                 Err(WslExecutionError::HelperTimeout) if Instant::now() >= deadline => {
                     return Ok(false)
                 }
-                Err(error) => return Err(error),
+                Err(error @ WslExecutionError::Shell(ShellError::MarkerMismatch)) => {
+                    return Err(error)
+                }
+                // Unknown completion is not absence. Escalation revalidates
+                // current membership, so probe transport failures cannot block it.
+                Err(_) => return Ok(false),
             }
             sleep(
                 TERMINATION_POLL_INTERVAL.min(deadline.saturating_duration_since(Instant::now())),
@@ -803,7 +859,7 @@ mod tests {
             .await
             .is_err());
         assert!(target.contains_process(&identity, 101, 123).await.is_err());
-        assert_eq!(attempts.load(Ordering::SeqCst), 4);
+        assert_eq!(attempts.load(Ordering::SeqCst), 10);
     }
     #[cfg(unix)]
     #[tokio::test]
@@ -819,9 +875,13 @@ mod tests {
         impl CommandBinding for Probe {
             fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
                 assert_eq!(&argv[..4], &["wsl.exe", "-d", "Fixture", "--exec"]);
-                assert_eq!(&argv[argv.len() - 2..], &["100", "100"]);
+                assert_eq!(&argv[10..], &["100", "100", "100", "probe"]);
                 self.calls.fetch_add(1, Ordering::SeqCst);
-                Ok(vec!["sh".into(), "-c".into(), self.script.into()])
+                Ok(vec![
+                    "sh".into(),
+                    "-c".into(),
+                    format!("read marker; {}", self.script),
+                ])
             }
         }
         let identity = WslProcessIdentity {
@@ -831,10 +891,10 @@ mod tests {
             marker: "10000000-0000-4000-8000-000000000001".into(),
         };
         for (script, success) in [
-            ("printf 'gone\\n'", true),
-            ("printf 'present\\n'", false),
-            ("printf 'gone\\n'; exit 1", false),
-            ("printf 'noise\\ngone\\n'", false),
+            ("printf '__DEVBOX_GROUP_V1__:gone\\n'", true),
+            ("printf '__DEVBOX_GROUP_V1__:present\\n'", false),
+            ("printf '__DEVBOX_GROUP_V1__:gone\\n'; exit 1", false),
+            ("printf 'noise\\n__DEVBOX_GROUP_V1__:gone\\n'", true),
             ("true", false),
         ] {
             let calls = Arc::new(AtomicUsize::new(0));
@@ -875,7 +935,7 @@ mod tests {
         impl CommandBinding for Native {
             fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
                 assert_eq!(&argv[..4], &["wsl.exe", "-d", "Fixture", "--exec"]);
-                if argv[9] == "devbox-run-signal" {
+                if argv.last().is_some_and(|action| action != "probe") {
                     self.0.fetch_add(1, Ordering::SeqCst);
                 }
                 Ok(argv[4..].to_vec())
@@ -915,24 +975,22 @@ mod tests {
                 ..identity.clone()
             },
         ] {
-            assert!(target
-                .terminate_group(&wrong, Duration::from_millis(200))
-                .await
-                .is_err());
+            assert!(matches!(
+                target
+                    .terminate_group(&wrong, Duration::from_millis(200))
+                    .await,
+                Err(WslExecutionError::Shell(ShellError::MarkerMismatch))
+            ));
             assert!(child.0.try_wait().unwrap().is_none());
         }
         assert_eq!(signals.swap(0, Ordering::SeqCst), 3);
-        // Reap the exact child independently so /proc does not retain our zombie
-        // while the adapter waits for explicit group absence.
-        let reaper = std::thread::spawn(move || {
-            let status = child.0.wait().unwrap();
-            status.success()
-        });
+        // Deliberately do not reap until the production termination API
+        // returns. A zombie is not a live process retaining user resources.
         target
             .terminate_group(&identity, Duration::from_millis(500))
             .await
             .unwrap();
-        assert!(!reaper.join().unwrap());
+        assert!(!child.0.wait().unwrap().success());
         assert_eq!(signals.load(Ordering::SeqCst), 2);
         // A repeated stop of the already absent group is safe, with no signal
         // admitted against a missing or replacement process.
@@ -979,6 +1037,173 @@ mod tests {
             spawn_spec_for_distro("Debian", spec),
             Err(WslExecutionError::Shell(ShellError::InvalidDistro))
         ));
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn real_supervisor_keeps_identity_until_stubborn_child_cleanup_without_a_test_reaper() {
+        use std::io::{BufRead, Write};
+        struct Native;
+        impl CommandBinding for Native {
+            fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+                assert!(!argv
+                    .iter()
+                    .any(|value| value.contains("10000000-0000-4000-8000-000000000001")));
+                Ok(argv[4..].to_vec())
+            }
+        }
+        struct Owned(std::process::Child, bool);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                // Only this retained child's newly created group is ours.
+                if !self.1 {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-KILL", "--", &format!("-{}", self.0.id())])
+                        .status();
+                }
+                let _ = self.0.wait();
+            }
+        }
+        let marker = "10000000-0000-4000-8000-000000000001";
+        let wrapper = crate::core::shell::build_wsl_process_wrapper(marker).unwrap();
+        let mut child = Owned(std::process::Command::new("setsid").args([
+            "bash", "--noprofile", "--norc", "-c", &wrapper, "devbox-run-supervisor",
+            "python3", "-c", "import signal,time;signal.signal(signal.SIGTERM,signal.SIG_IGN);print('ready',flush=True);time.sleep(30)",
+        ]).env("DEVBOX_RUN_MARKER",marker).stdin(Stdio::piped()).stdout(Stdio::piped()).spawn().unwrap(), false);
+        let mut output = std::io::BufReader::new(child.0.stdout.take().unwrap());
+        let mut handshake = String::new();
+        for _ in 0..6 {
+            output.read_line(&mut handshake).unwrap();
+        }
+        let handshake = parse_wsl_handshake(handshake.as_bytes(), marker).unwrap();
+        let identity = validate_wsl_handshake_identity(
+            handshake,
+            marker,
+            format!("DEVBOX_RUN_MARKER={marker}\0").as_bytes(),
+        )
+        .unwrap();
+        writeln!(child.0.stdin.take().unwrap(), "{marker}").unwrap();
+        let mut ready = String::new();
+        output.read_line(&mut ready).unwrap();
+        assert_eq!(ready, "ready\n");
+        let target = Target::bound("Fixture", std::sync::Arc::new(Native));
+        target
+            .terminate_group(&identity, Duration::from_millis(300))
+            .await
+            .unwrap();
+        child.1 = true;
+        assert!(!child.0.wait().unwrap().success());
+        target
+            .confirm_group_gone(&identity, Duration::from_secs(1))
+            .await
+            .unwrap();
+    }
+
+    #[cfg(target_os = "linux")]
+    #[tokio::test]
+    async fn retired_unreaped_leader_does_not_prevent_killing_owned_descendants() {
+        use std::io::BufRead;
+        struct Native;
+        impl CommandBinding for Native {
+            fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+                Ok(argv[4..].to_vec())
+            }
+        }
+        struct Owned(std::process::Child, bool);
+        impl Drop for Owned {
+            fn drop(&mut self) {
+                if !self.1 {
+                    let _ = std::process::Command::new("kill")
+                        .args(["-KILL", "--", &format!("-{}", self.0.id())])
+                        .status();
+                }
+                let _ = self.0.wait();
+            }
+        }
+        let marker = "10000000-0000-4000-8000-000000000001";
+        let script = "import os,signal,time\nif os.fork()==0:\n signal.signal(signal.SIGTERM,signal.SIG_IGN)\n print('ready',flush=True)\nwhile True: time.sleep(1)";
+        let mut child = Owned(
+            std::process::Command::new("setsid")
+                .args(["python3", "-c", script])
+                .env("DEVBOX_RUN_MARKER", marker)
+                .stdout(Stdio::piped())
+                .spawn()
+                .unwrap(),
+            false,
+        );
+        let mut ready = String::new();
+        std::io::BufReader::new(child.0.stdout.take().unwrap())
+            .read_line(&mut ready)
+            .unwrap();
+        assert_eq!(ready, "ready\n");
+        let identity = WslProcessIdentity {
+            pid: child.0.id(),
+            pgid: child.0.id(),
+            sid: child.0.id(),
+            marker: marker.into(),
+        };
+        let target = Target::bound("Fixture", std::sync::Arc::new(Native));
+        target
+            .terminate_group(&identity, Duration::from_millis(100))
+            .await
+            .unwrap();
+        child.1 = true;
+        child.0.wait().unwrap();
+        target
+            .confirm_group_gone(&identity, Duration::from_secs(1))
+            .await
+            .unwrap();
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn noisy_or_failed_observation_cannot_skip_fresh_kill_admission() {
+        use std::sync::{Arc, Mutex};
+        struct Fixture {
+            actions: Mutex<Vec<String>>,
+            probe_fails: bool,
+            term_times_out: bool,
+        }
+        impl CommandBinding for Fixture {
+            fn bind(&self, argv: Vec<String>) -> Result<Vec<String>, WslExecutionError> {
+                let action = argv.last().unwrap().clone();
+                let mut actions = self.actions.lock().unwrap();
+                let killed = actions.iter().any(|action| action == "KILL");
+                actions.push(action.clone());
+                let script = match action.as_str() {
+                    "TERM" if self.term_times_out => "read marker; exec sleep 10",
+                    "TERM" => "read marker; printf 'ambiguous acknowledgement\\n'",
+                    "KILL" => {
+                        "read marker; printf 'startup noise\\n__DEVBOX_GROUP_V1__:signalled\\n'"
+                    }
+                    _ if killed => "read marker; printf '__DEVBOX_GROUP_V1__:gone\\n'",
+                    _ if self.probe_fails => "read marker; exit 1",
+                    _ => "read marker; printf '__DEVBOX_GROUP_V1__:present\\n'",
+                };
+                Ok(vec!["sh".into(), "-c".into(), script.into()])
+            }
+        }
+        for (probe_fails, term_times_out) in [(true, false), (false, false), (true, true)] {
+            let binding = Arc::new(Fixture {
+                actions: Mutex::new(Vec::new()),
+                probe_fails,
+                term_times_out,
+            });
+            let target = Target::bound("Fixture", binding.clone());
+            let identity = WslProcessIdentity {
+                pid: 100,
+                pgid: 100,
+                sid: 100,
+                marker: "10000000-0000-4000-8000-000000000001".into(),
+            };
+            target
+                .terminate_group(&identity, Duration::from_millis(50))
+                .await
+                .unwrap();
+            let actions = binding.actions.lock().unwrap();
+            assert!(actions.iter().any(|action| action == "KILL"));
+            assert_eq!(actions.last().unwrap(), "probe");
+        }
     }
 
     #[cfg(unix)]

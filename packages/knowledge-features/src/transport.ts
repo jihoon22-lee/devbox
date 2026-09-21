@@ -1,6 +1,6 @@
 import { invoke as legacyInvoke } from "@tauri-apps/api/core";
 
-export type Component = "knowledge.notes" | "knowledge.activity" | "knowledge.search" | "knowledge.search-settings" | "knowledge.opener" | "knowledge.migration";
+export type Component = "knowledge.notes" | "knowledge.activity" | "knowledge.search" | "knowledge.search-settings" | "knowledge.opener" | "knowledge.migration" | "knowledge.commands";
 export type Transport = <T>(component: Component, method: string, args: Record<string, unknown>) => Promise<T>;
 let productTransport: Transport | undefined;
 

@@ -40,7 +40,7 @@ function assemble(directory,products=catalog.products){
     copyFileSync("THIRD_PARTY_NOTICES.md",path.join(path.dirname(file),"THIRD_PARTY_NOTICES.md"));
     return {product:product.id,executable:member,sha256:digest(file)};
   });
-  const manifest={schemaVersion:1,installationId:randomUUID(),generation:randomUUID(),suiteVersion:"0.8.0",protocolVersion:1,members};
+  const manifest={schemaVersion:1,installationId:randomUUID(),generation:randomUUID(),suiteVersion:JSON.parse(readFileSync("apps/devbox-workspace/package.json","utf8")).version,protocolVersion:1,members};
   writeFileSync(path.join(directory,"devbox-installation.json"),JSON.stringify(manifest));return manifest;
 }
 async function start(product,directory){
@@ -159,11 +159,44 @@ try {
 
   stage("native-log-selection");
   const logFile=path.join(projects[0].directory,"selected.log");writeFileSync(logFile,"synthetic log selection\n");
-  const logs=await domain(workspace,"workspace.logs","read_sources",{sources:[{kind:"localFile",path:logFile}],cursors:[null],sequenceStarts:[0],generation:700,operationId:randomUUID()});assert.ok(logs.records.length);
-  const logSent=await domain(workspace,"workspace.logs","send_selection_to_toolbox",{generation:700,keys:logs.records.map(row=>({sourceId:row.sourceId,sequence:row.sequence}))});
+  // This direct fixture read precedes the first Logs UI mount. Do not advance
+  // its native generation beyond the renderer's initial counter.
+  const logGeneration=0;
+  const logs=await domain(workspace,"workspace.logs","read_sources",{sources:[{kind:"localFile",path:logFile}],cursors:[null],sequenceStarts:[0],generation:logGeneration,operationId:randomUUID()});assert.ok(logs.records.length);
+  const logSent=await domain(workspace,"workspace.logs","send_selection_to_toolbox",{generation:logGeneration,keys:logs.records.map(row=>({sourceId:row.sourceId,sequence:row.sequence}))});
   const logPending=(await suite(api,{kind:"pending"})).find(row=>row.target.kind==="entity"&&row.target.id===logSent.handoffId);assert.ok(logPending);await review(api,{operationId:logPending.operationId});
   await waitForRenderer(api.cdp,"[...document.querySelectorAll('[role=dialog]')].some(node=>node.textContent.includes('synthetic log selection'))","Log Transform preview missing");await click(api,'[role=dialog] button',"취소");
   evidence.checks.nativeLogSelectionPreview=true;
+  stage("webhook-projection-to-workspace-logs");
+  const capturePort=await freePort();
+  await domain(api,"api-studio.webhooks","start_server",{bind:"127.0.0.1",port:capturePort,allowLan:false});
+  const privateToken="synthetic-suite-webhook-token";
+  try {
+    for(const savedFixture of [false,true]) {
+      const target=savedFixture?"/suite-webhook-fixture":"/suite-webhook-history";
+      const captured=await fetch(`http://127.0.0.1:${capturePort}${target}`,{method:"POST",headers:{"Content-Type":"application/json",Authorization:`Bearer ${privateToken}`},body:JSON.stringify({message:"suite webhook ordinary",token:privateToken})});
+      await captured.arrayBuffer();
+      const captures=await domain(api,"api-studio.webhooks","list_history");
+      const historyId=Math.max(...captures.map(row=>row.id));
+      const fixture=savedFixture?await domain(api,"api-studio.webhooks","save_fixture",{historyId}):null;
+      const sent=await domain(api,"api-studio.webhooks",savedFixture?"send_fixture_to_log_lens":"send_history_to_log_lens",savedFixture?{id:fixture.id}:{historyId});
+      const pending=(await suite(workspace,{kind:"pending"})).find(row=>row.target.kind==="entity"&&row.target.id===sent.handoffId);
+      assert.ok(pending);
+      await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:pending.commandRevision,operationId:pending.operationId}));
+      await review(workspace,pending);
+      // Credential-bearing bodies are intentionally redacted as a whole. Distinct
+      // safe targets prove both deliveries; the first source cannot satisfy the second.
+      try { await waitForRenderer(workspace.cdp,`document.querySelector('.workspace-feature-logs')?.textContent.includes(${JSON.stringify(target)})`,"reviewed Webhook did not reach Logs"); }
+      catch(error){evidence.webhookFailure=await workspace.cdp.evaluate("({alerts:[...document.querySelectorAll('[role=alert]')].map(node=>node.textContent?.slice(0,1000)),logs:document.querySelector('.workspace-feature-logs')?.textContent?.slice(0,4000)})");throw error;}
+      const rendered=await workspace.cdp.evaluate("document.querySelector('.workspace-feature-logs').textContent");
+      assert.ok(!rendered.includes(privateToken));
+      assert.ok((await domain(api,"api-studio.webhooks","list_history")).some(row=>row.id===historyId));
+      await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:"0".repeat(64),operationId:pending.operationId}));
+      await assert.rejects(()=>domain(workspace,"workspace.logs","open_webhook_log",{id:sent.handoffId,revision:pending.commandRevision,operationId:randomUUID()}));
+    }
+    evidence.checks.webhookHistoryAndFixtureReachReviewedLogs=true;
+    evidence.checks.webhookStaleReplayAndUnreviewedDenied=true;
+  } finally { await domain(api,"api-studio.webhooks","stop_server"); }
   stage("saved-result-to-knowledge");
   const saved=await domain(api,"api-studio.api","save_knowledge_draft",{output:"synthetic suite knowledge result"});
   const delivery=await domain(api,"api-studio.api","send_knowledge_draft",{id:saved.draft.artifact.id});

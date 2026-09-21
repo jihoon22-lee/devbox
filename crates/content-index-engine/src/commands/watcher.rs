@@ -25,6 +25,8 @@ use std::sync::mpsc::{self, Receiver, RecvTimeoutError, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
 use std::time::{Duration, Instant};
+// Poisoned DB state is never recovered for mutation. Derived metadata remains
+// readable for diagnostics/teardown, while the worker stops until app restart.
 use tauri::AppHandle;
 
 const MAX_WATCH_MESSAGES: usize = 1_024;
@@ -113,7 +115,9 @@ impl WatcherManager {
     /// 등록된 모든 루트에 watcher를 (재)설치한다. 앱 재시작 시 복원용.
     pub fn restore_all(&self) {
         let roots = {
-            let conn = self.state.db.lock().unwrap();
+            let Ok(conn) = self.state.db.lock() else {
+                return;
+            };
             crate::core::db::list_roots(&conn).unwrap_or_default()
         };
         for root in roots {
@@ -140,9 +144,20 @@ impl WatcherManager {
 
     /// 루트 하나에 watcher를 추가한다.
     pub fn add(&self, root_path: &str) -> Result<(), String> {
+        if self.state.db.is_poisoned()
+            || self.roots.is_poisoned()
+            || self.status.is_poisoned()
+            || self.polling_roots.is_poisoned()
+            || self.reconcile_roots.is_poisoned()
+        {
+            return Err("검색 감시 상태를 사용할 수 없습니다. 앱을 다시 시작해 주세요.".into());
+        }
         let normalized = crate::core::db::normalize_path(root_path);
         {
-            let roots = self.roots.lock().unwrap();
+            let roots = self
+                .roots
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
             if roots.contains_key(&normalized) {
                 return Ok(());
             }
@@ -196,23 +211,26 @@ impl WatcherManager {
 
         self.roots
             .lock()
-            .unwrap()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(normalized.clone(), root_watcher);
-        self.status.lock().unwrap().insert(
-            normalized.clone(),
-            RootStatus {
-                root: normalized,
-                source_kind,
-                watch_mode: if source_kind == RootSourceKind::Wsl {
-                    WatchMode::Polling
-                } else {
-                    WatchMode::Native
+        self.status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(
+                normalized.clone(),
+                RootStatus {
+                    root: normalized,
+                    source_kind,
+                    watch_mode: if source_kind == RootSourceKind::Wsl {
+                        WatchMode::Polling
+                    } else {
+                        WatchMode::Native
+                    },
+                    last_synced_at: None,
+                    pending: 0,
+                    error: None,
                 },
-                last_synced_at: None,
-                pending: 0,
-                error: None,
-            },
-        );
+            );
         let _ = self.sender.try_send(WatcherMessage::Wake);
         Ok(())
     }
@@ -224,36 +242,65 @@ impl WatcherManager {
 
     fn record_unavailable(&self, root: &str) {
         let normalized = crate::core::db::normalize_path(root);
-        self.status.lock().unwrap().insert(
-            normalized.clone(),
-            RootStatus {
-                root: normalized,
-                source_kind: root_source_kind(root),
-                watch_mode: WatchMode::Unavailable,
-                last_synced_at: None,
-                pending: 0,
-                error: Some("root_unavailable".to_string()),
-            },
-        );
+        self.status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(
+                normalized.clone(),
+                RootStatus {
+                    root: normalized,
+                    source_kind: root_source_kind(root),
+                    watch_mode: WatchMode::Unavailable,
+                    last_synced_at: None,
+                    pending: 0,
+                    error: Some("root_unavailable".to_string()),
+                },
+            );
     }
 
     /// 루트 제거 시 watcher와 상태를 함께 해제한다.
     pub fn remove(&self, root_path: &str) {
         let normalized = crate::core::db::normalize_path(root_path);
-        self.roots.lock().unwrap().remove(&normalized);
-        self.polling_roots.lock().unwrap().remove(&normalized);
-        self.reconcile_roots.lock().unwrap().remove(&normalized);
-        self.status.lock().unwrap().remove(&normalized);
+        self.roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&normalized);
+        self.polling_roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&normalized);
+        self.reconcile_roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&normalized);
+        self.status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .remove(&normalized);
         let _ = self.sender.try_send(WatcherMessage::Wake);
     }
 
     /// 루트별 watcher 상태를 반환한다.
     pub fn statuses(&self) -> Vec<RootStatus> {
-        let status = self.status.lock().unwrap();
-        let mut list: Vec<RootStatus> = status.values().cloned().collect();
-        list.sort_by(|a, b| a.root.cmp(&b.root));
-        list
+        status_snapshot(
+            &self.status,
+            self.state.db.is_poisoned() || self.roots.is_poisoned(),
+        )
     }
+}
+
+fn status_snapshot(status: &SharedStatus, failed: bool) -> Vec<RootStatus> {
+    let entries = status
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let mut list: Vec<_> = entries.values().cloned().collect();
+    if failed || status.is_poisoned() {
+        for entry in &mut list {
+            entry.error = Some("watcher_state_poisoned".into());
+        }
+    }
+    list.sort_by(|a, b| a.root.cmp(&b.root));
+    list
 }
 
 /// 루트별 watcher 상태 (마지막 반영 시각, pending, 오류).
@@ -287,6 +334,20 @@ fn watcher_worker(
     let mut poll_snapshots = HashMap::<String, HashMap<String, FileStamp>>::new();
     let mut next_poll = Instant::now() + WSL_POLL_INTERVAL;
     loop {
+        if state.db.is_poisoned()
+            || status.is_poisoned()
+            || polling_roots.is_poisoned()
+            || reconcile_roots.is_poisoned()
+        {
+            for entry in status
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner)
+                .values_mut()
+            {
+                entry.error = Some("watcher_state_poisoned".into());
+            }
+            break;
+        }
         let now = Instant::now();
         let mut wait = WORKER_TICK;
         if let Some(deadline) = debouncer.next_deadline() {
@@ -312,7 +373,11 @@ fn watcher_worker(
                         }
                     }
                 }
-                if let Some(entry) = status.lock().unwrap().get_mut(&root) {
+                if let Some(entry) = status
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_mut(&root)
+                {
                     entry.pending = entry.pending.saturating_add(accepted);
                     if entry.error.as_deref() == Some("incremental_index_failed") {
                         entry.error = None;
@@ -343,7 +408,9 @@ fn watcher_worker(
 
 fn service_reconciliations(state: &Arc<AppState>, reconcile_roots: &SharedRoots) {
     let pending = {
-        let mut roots = reconcile_roots.lock().unwrap();
+        let mut roots = reconcile_roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         std::mem::take(&mut *roots)
     };
     for root in pending {
@@ -358,13 +425,20 @@ fn poll_wsl_roots(
     snapshots: &mut HashMap<String, HashMap<String, FileStamp>>,
     debouncer: &mut Debouncer,
 ) {
-    let roots = polling_roots.lock().unwrap().clone();
+    let roots = polling_roots
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     snapshots.retain(|root, _| roots.contains(root));
     for root in roots {
         let scanned = match scan_poll_snapshot(&root) {
             Ok(scanned) => scanned,
             Err(code) => {
-                if let Some(entry) = status.lock().unwrap().get_mut(&root) {
+                if let Some(entry) = status
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner)
+                    .get_mut(&root)
+                {
                     entry.error = Some(code.to_string());
                     entry.watch_mode = WatchMode::Polling;
                 }
@@ -404,7 +478,11 @@ fn poll_wsl_roots(
             scanned.files
         };
         snapshots.insert(root.clone(), next_snapshot);
-        let recovered = if let Some(entry) = status.lock().unwrap().get_mut(&root) {
+        let recovered = if let Some(entry) = status
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .get_mut(&root)
+        {
             let recovered = entry.error.is_some() && !scanned.truncated && !scanned.incomplete;
             entry.last_synced_at = Some(now_ms());
             entry.pending = accepted;
@@ -470,7 +548,11 @@ fn deliver_ready(
             if let Ok(conn) = state.db.lock() {
                 if let Ok(Some(root)) = find_root_for(&conn, &path_str) {
                     mark_reconcile(reconcile_roots, &root.path);
-                    if let Some(entry) = status.lock().unwrap().get_mut(&root.path) {
+                    if let Some(entry) = status
+                        .lock()
+                        .unwrap_or_else(std::sync::PoisonError::into_inner)
+                        .get_mut(&root.path)
+                    {
                         entry.error = Some("incremental_index_failed".to_string());
                     }
                 }
@@ -481,7 +563,9 @@ fn deliver_ready(
     }
 
     let now = now_ms();
-    let mut statuses = status.lock().unwrap();
+    let mut statuses = status
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
     for (root, delivered) in delivered_by_root {
         if let Some(entry) = statuses.get_mut(&root) {
             entry.last_synced_at = Some(now);
@@ -507,7 +591,10 @@ fn root_source_kind(path: &str) -> RootSourceKind {
 
 fn mark_reconcile(roots: &SharedRoots, root: &str) {
     if root.len() <= MAX_WATCH_PATH_BYTES {
-        roots.lock().unwrap().insert(root.to_string());
+        roots
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(root.to_string());
     }
 }
 
@@ -707,6 +794,30 @@ pub(crate) async fn __component_watcher_statuses(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn poisoned_status_preserves_last_good_metadata_and_reports_failure() {
+        let status: super::SharedStatus =
+            std::sync::Arc::new(std::sync::Mutex::new(std::collections::HashMap::from([(
+                "fixture".into(),
+                super::RootStatus {
+                    root: "fixture".into(),
+                    source_kind: super::RootSourceKind::Native,
+                    watch_mode: super::WatchMode::Native,
+                    last_synced_at: Some(1000),
+                    pending: 0,
+                    error: None,
+                },
+            )])));
+        let _ = std::panic::catch_unwind(|| {
+            let _guard = status.lock().unwrap();
+            panic!("synthetic watcher panic");
+        });
+        let rows = super::status_snapshot(&status, false);
+        assert_eq!(rows[0].last_synced_at, Some(1000));
+        assert_eq!(rows[0].error.as_deref(), Some("watcher_state_poisoned"));
+        assert!(status.is_poisoned());
+    }
+
     use super::*;
 
     fn stamp(size: i64, modified_ts: i64) -> FileStamp {

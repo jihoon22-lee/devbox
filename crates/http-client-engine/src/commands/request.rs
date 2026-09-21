@@ -757,21 +757,10 @@ async fn execute_request(
                 let location = location
                     .to_str()
                     .map_err(|_| "리다이렉트 위치가 올바르지 않습니다".to_string())?;
-                let next_url = current_url
+                let mut next_url = current_url
                     .join(location)
                     .map_err(|_| "리다이렉트 위치가 올바르지 않습니다".to_string())?;
-                if req.body_kind == "graphql" {
-                    validate_graphql_endpoint_url(next_url.as_str())?;
-                }
-                let redacted_location = redactor.redact_url(next_url.as_str());
                 let cross_origin = is_cross_origin(&current_url, &next_url);
-                if cross_origin && redacted_location != next_url.as_str() {
-                    return Err(safe_cross_origin_redirect_error());
-                }
-                redirects.push(RedirectHop {
-                    status: status.as_u16(),
-                    location: redacted_location,
-                });
                 if cross_origin {
                     allow_sensitive = false;
                     include_body = false;
@@ -779,18 +768,31 @@ async fn execute_request(
                 if redirect_switches_to_get(status.as_u16(), &method) {
                     method = reqwest::Method::GET;
                     include_body = false;
-                    if req.body_kind == "graphql" {
+                    // Payload permission is sticky across the whole chain. Do
+                    // not resurrect original GraphQL data after leaving origin.
+                    if allow_sensitive && req.body_kind == "graphql" {
                         if let Some(graphql) = req.graphql.as_ref() {
-                            current_url = reqwest::Url::parse(&append_graphql_query(
+                            next_url = reqwest::Url::parse(&append_graphql_query(
                                 next_url.as_str(),
                                 &req.params,
                                 graphql,
                             )?)
                             .map_err(|_| GRAPHQL_ENDPOINT_ERROR.to_string())?;
-                            continue;
                         }
                     }
                 }
+                if req.body_kind == "graphql" {
+                    validate_graphql_endpoint_url(next_url.as_str())?;
+                }
+                // Inspect the final URL, including any reconstructed query.
+                let redacted_location = redactor.redact_url(next_url.as_str());
+                if !allow_sensitive && redacted_location != next_url.as_str() {
+                    return Err(safe_cross_origin_redirect_error());
+                }
+                redirects.push(RedirectHop {
+                    status: status.as_u16(),
+                    location: redacted_location,
+                });
                 current_url = next_url;
                 continue;
             }
@@ -4163,6 +4165,91 @@ mod tests {
             request_token,
         ));
         assert_eq!(result.err().as_deref(), Some(REQUEST_CANCELLED));
+    }
+
+    #[test]
+    fn graphql_redirects_only_keep_payload_on_the_original_origin() {
+        for status in [301, 302, 303, 307, 308] {
+            for cross_origin in [false, true] {
+                let source = TcpListener::bind("127.0.0.1:0").unwrap();
+                let target = cross_origin.then(|| TcpListener::bind("127.0.0.1:0").unwrap());
+                let source_port = source.local_addr().unwrap().port();
+                let target_port = target
+                    .as_ref()
+                    .unwrap_or(&source)
+                    .local_addr()
+                    .unwrap()
+                    .port();
+                let server = std::thread::spawn(move || {
+                    let (mut first, _) = source.accept().unwrap();
+                    first
+                        .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                        .unwrap();
+                    let original = read_http_request(&mut first);
+                    write!(first, "HTTP/1.1 {status} Redirect\r\nLocation: http://127.0.0.1:{target_port}/collect\r\nContent-Length: 0\r\nConnection: close\r\n\r\n").unwrap();
+                    drop(first);
+                    let receiver = target.unwrap_or(source);
+                    receiver.set_nonblocking(true).unwrap();
+                    let until = Instant::now() + std::time::Duration::from_secs(4);
+                    let mut second = loop {
+                        match receiver.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(error)
+                                if error.kind() == std::io::ErrorKind::WouldBlock
+                                    && Instant::now() < until =>
+                            {
+                                std::thread::sleep(std::time::Duration::from_millis(10))
+                            }
+                            Err(error) => panic!("redirect receiver: {error}"),
+                        }
+                    };
+                    // Winsock inherits the listener's nonblocking mode on
+                    // accepted sockets. The bounded request reader below
+                    // needs blocking reads on both Windows and Unix.
+                    second.set_nonblocking(false).unwrap();
+                    second
+                        .set_read_timeout(Some(std::time::Duration::from_secs(3)))
+                        .unwrap();
+                    let redirected = read_http_request(&mut second);
+                    write!(second, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: 2\r\nConnection: close\r\n\r\n{{}}").unwrap();
+                    (original, redirected)
+                });
+                let mut request = template();
+                request.url = format!("http://127.0.0.1:{source_port}/graphql");
+                request.method = "POST".into();
+                request.body_kind = "graphql".into();
+                request.body.clear();
+                request.auth = None;
+                request.headers.clear();
+                request.params = vec![KeyValue {
+                    key: "label".into(),
+                    value: "original-param".into(),
+                }];
+                request.graphql = Some(GraphqlRequest {
+                    query: "query Viewer($token: String!, $name: String!) { viewer(token: $token, name: $name) { id } }".into(),
+                    variables: r#"{"token":"synthetic-private-token","name":"ordinary-variable"}"#.into(),
+                    operation_name: "Viewer".into(),
+                });
+                let response = send_test(request).unwrap();
+                let (original, redirected) = server.join().unwrap();
+                assert!(original.contains("synthetic-private-token"));
+                for payload in ["synthetic-private-token", "ordinary-variable"] {
+                    assert_eq!(
+                        redirected.contains(payload),
+                        !cross_origin,
+                        "status={status}, cross={cross_origin}, field={payload}"
+                    );
+                }
+                if cross_origin {
+                    assert!(!redirected.contains("original-param"));
+                    assert!(!redirected.contains("query="));
+                }
+                assert_eq!(redirected.starts_with("GET "), status <= 303);
+                assert!(!serde_json::to_string(&response)
+                    .unwrap()
+                    .contains("synthetic-private-token"));
+            }
+        }
     }
 
     #[test]

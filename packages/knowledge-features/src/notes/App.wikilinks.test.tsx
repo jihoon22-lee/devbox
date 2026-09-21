@@ -10,8 +10,8 @@ vi.mock("./api", () => ({
     { path: "Source.md", is_dir: false },
   ]),
   listTags: vi.fn(async () => []),
-  readFile: vi.fn(async (path: string) => path === "Current.md" ? "[[Missing]]" : "first\n  [[Current]]"),
-  writeFile: vi.fn(async () => undefined),
+  readFile: vi.fn(async (path: string) => ({ content: path === "Current.md" ? "[[Missing]]" : "first\n  [[Current]]", revision: "disk-1" })),
+  writeFile: vi.fn(async (_path: string, content: string) => ({ content, revision: "disk-2" })),
   createFile: vi.fn(async () => undefined),
   createDirectory: vi.fn(async () => undefined),
   previewRename: vi.fn(async () => { throw new Error("unused"); }),
@@ -79,6 +79,7 @@ vi.mock("./api", () => ({
   openInboundNote: vi.fn(async (path: string) => ({
     path,
     content: path === "Source.md" ? "first\n  [[Current]]" : "[[Missing]]",
+    revision: "disk-1",
   })),
 }));
 

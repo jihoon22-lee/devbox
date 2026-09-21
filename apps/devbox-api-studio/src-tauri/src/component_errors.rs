@@ -25,6 +25,20 @@ pub fn project(component: &str, error: &str) -> &'static str {
 mod tests {
     use super::*;
     #[test]
+    fn webhook_unavailable_message_is_fixed_and_owner_scoped() {
+        let message = "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
+        assert_eq!(project("api-studio.webhooks", message), message);
+        assert_eq!(project("api-studio.api", message), "component_unavailable");
+        assert_eq!(
+            project(
+                "api-studio.webhooks",
+                &format!("{message} synthetic-secret")
+            ),
+            "component_unavailable"
+        );
+    }
+
+    #[test]
     fn terminal_errors_survive_and_details_or_foreign_errors_do_not() {
         for error in [
             "grpc_connection_stale",

@@ -1,31 +1,31 @@
 {
   "schemaVersion": 2,
-  "suiteVersion": "0.8.0",
+  "suiteVersion": "0.8.1",
   "products": [
     {
       "id": "workspace",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "identifier": "com.devbox.v08.workspace",
       "executable": "devbox-workspace.exe",
       "defaultRoute": "overview"
     },
     {
       "id": "api-studio",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "identifier": "com.devbox.v08.apistudio",
       "executable": "devbox-api-studio.exe",
       "defaultRoute": "requests"
     },
     {
       "id": "knowledge",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "identifier": "com.devbox.v08.knowledge",
       "executable": "devbox-knowledge.exe",
       "defaultRoute": "notes"
     },
     {
       "id": "control-center",
-      "version": "0.8.0",
+      "version": "0.8.1",
       "identifier": "com.devbox.v08.controlcenter",
       "executable": "devbox-control-center.exe",
       "defaultRoute": "products"

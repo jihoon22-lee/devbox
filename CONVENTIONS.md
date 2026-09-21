@@ -1,6 +1,6 @@
 # devbox — 공통 개발 규약
 
-**현재 소스는 v0.8.0 네 제품** Workspace / API Studio / Knowledge / Control Center다.
+**현재 소스는 v0.8.1 네 제품** Workspace / API Studio / Knowledge / Control Center다.
 각 제품은 독립 Windows 실행 파일이며 Suite의 typed route·authority·installation identity를 공유한다.
 공개 완료 여부는 [#541](https://github.com/jihoon22-lee/devbox/issues/541)과 Release가 원장이다.
 v0.7의 15개 앱·32개 자산은 역사적 계약이며 frozen catalog는 migration/reference에만 사용한다.

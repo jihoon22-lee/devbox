@@ -1,5 +1,5 @@
 import {isProductHosted} from "../transport";
-import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
   ContextMenu,
   useContextMenu,
@@ -47,6 +47,8 @@ import {
   type KnowledgeDraftPreview,
   type RenamePreview,
 } from "./api";
+import { NoteDocument } from "./noteDocument";
+import { registerNoteEditor } from "./lifecycle";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
 import QuickCaptureDialog from "./components/QuickCaptureDialog";
@@ -119,7 +121,9 @@ function watcherStatusLabel(status: KnowledgeWatcherStatus): string {
   const source = status.sourceKind === "wsl"
     ? "WSL 저장소 · 5초 폴링"
     : "Windows 저장소 · 실시간 감시";
-  const error = status.error === "vault_unconfigured"
+  const error = status.error === "watcher_state_poisoned"
+    ? "색인 중단 · 앱을 다시 시작하세요"
+    : status.error === "vault_unconfigured"
     ? "저장소 미설정"
     : status.error === "vault_unavailable"
       ? "저장소 연결 끊김 · 마지막 색인 유지"
@@ -146,10 +150,11 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   const activateRef = useRef(onActivate); activateRef.current = onActivate;
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
-  const [selected, setSelected] = useState<string | null>(null);
+  const [editorDocument] = useState(() => new NoteDocument(readFile, writeFile));
+  const note = useSyncExternalStore(editorDocument.subscribe, editorDocument.snapshot);
+  const { path: selected, content, dirty } = note;
+  useEffect(() => registerNoteEditor(editorDocument), [editorDocument]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
-  const [content, setContent] = useState("");
-  const [dirty, setDirty] = useState(false);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -254,7 +259,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
 
   useEffect(() => {
     void loadMeta();
-  }, [loadMeta]);
+  }, [loadMeta, editorDocument]);
 
   useEffect(() => {
     let disposed = false;
@@ -325,7 +330,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     let disposed = false;
     let unlisten: (() => void) | null = null;
     void onDocsChanged(() => {
-      if (!disposed) void loadMeta();
+      if (!disposed) { void loadMeta(); void editorDocument.inspect(); }
     }).then((stop) => {
       if (disposed) stop();
       else unlisten = stop;
@@ -334,7 +339,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
       disposed = true;
       unlisten?.();
     };
-  }, [loadMeta]);
+  }, [loadMeta, editorDocument]);
 
   useEffect(() => {
     let disposed = false;
@@ -414,18 +419,11 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     return () => window.clearTimeout(timer);
   }, [quickCaptureNotice]);
 
+  const confirmDiscard = () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?");
   const openFile = async (path: string) => {
-    if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
     setError(null);
-    try {
-      const text = await readFile(path);
-      setSelected(path);
-      setSelectedTreePath(path);
-      setContent(text);
-      setDirty(false);
-      setCursorRequest(null);
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
+    if (await editorDocument.openPath(path, confirmDiscard)) {
+      setSelectedTreePath(editorDocument.snapshot().path); setCursorRequest(null);
     }
   };
 
@@ -438,35 +436,15 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   }, [active, openRequest]);
 
   const openIndexedNoteAt = async (path: string, line = 1, column = 1) => {
-    if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
     setError(null);
-    try {
-      // Link/backlink path는 raw target이 아니라 backend index가 유일하게 해석한
-      // 상대 경로다. 실제 열기 직전에도 canonical root/.md/size 경계를 다시 검증한다.
-      const note = await openInboundNote(path);
-      setSelected(note.path);
-      setSelectedTreePath(note.path);
-      setContent(note.content);
-      setDirty(false);
-      setMode("edit");
+    if (await editorDocument.open(() => openInboundNote(path).catch(() => { throw new Error("요청한 노트를 열 수 없습니다"); }), confirmDiscard)) {
+      setSelectedTreePath(editorDocument.snapshot().path); setMode("edit");
       cursorTokenRef.current += 1;
       setCursorRequest({ line, column, token: cursorTokenRef.current });
-    } catch {
-      setError("연결된 노트를 열 수 없습니다");
     }
   };
 
-  const save = async () => {
-    if (!selected) return;
-    setError(null);
-    try {
-      await writeFile(selected, content);
-      setDirty(false);
-      await loadMeta();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  };
+  const save = async () => { if (await editorDocument.save()) await loadMeta(); };
 
   const importImageAsset = useCallback(async (file: File) => {
     const note = selectedRef.current;
@@ -514,25 +492,22 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     setDraftBusy(true);
     setError(null);
     try {
-      const result = await saveKnowledgeDraft(preview.id);
-      if (!draftMountedRef.current) return;
+      const savedDraft: { result?: Awaited<ReturnType<typeof saveKnowledgeDraft>>; failure?: unknown } = {};
+      await editorDocument.open(async () => {
+        let result: Awaited<ReturnType<typeof saveKnowledgeDraft>>;
+        try { result = await saveKnowledgeDraft(preview.id); }
+        catch (cause) { savedDraft.failure = cause; throw new Error("Knowledge 초안을 저장하지 못했습니다. 미리보기는 유지됩니다."); }
+        savedDraft.result = result;
+        const saved = await readFile(result.path);
+        if (saved.content === null) throw new Error("저장한 초안을 다시 읽지 못했습니다. 현재 편집 내용은 유지됩니다.");
+        return { ...saved, path: result.path, content: saved.content };
+      }, confirmDiscard);
+      if (savedDraft.failure) throw savedDraft.failure;
+      const result = savedDraft.result;
+      if (!draftMountedRef.current || !result) return;
       draftPreviewRef.current = null;
       setDraftPreview(null);
-      try {
-        const saved = await readFile(result.path);
-        if (!draftMountedRef.current) return;
-        setSelected(result.path);
-        setSelectedTreePath(result.path);
-        setContent(saved);
-      } catch {
-        if (!draftMountedRef.current) return;
-        // The native save/index transaction succeeded. Keep the selected path
-        // visible without fabricating stale editor content if a reread fails.
-        setSelected(result.path);
-        setSelectedTreePath(result.path);
-        setContent("");
-      }
-      setDirty(false);
+      setSelectedTreePath(editorDocument.snapshot().path);
       setCursorRequest(null);
       await loadMeta();
       if (!draftMountedRef.current) return;
@@ -552,7 +527,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
       draftBusyRef.current = false;
       if (draftMountedRef.current) setDraftBusy(false);
     }
-  }, [draftPreview, loadMeta]);
+  }, [draftPreview, loadMeta, editorDocument]);
 
   const openDraftPreview = useCallback(async (
     id: string,
@@ -690,18 +665,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     const action = routeOpenRequest(request);
     switch (action.kind) {
       case "openNote":
-        if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
-        setError(null);
-        try {
-          const note = await openInboundNote(action.path);
-          setSelected(note.path);
-          setSelectedTreePath(note.path);
-          setContent(note.content);
-          setDirty(false);
-          setCursorRequest(null);
-        } catch {
-          setError("요청한 노트를 열 수 없습니다");
-        }
+        await openIndexedNoteAt(action.path);
         break;
       case "search":
         setQuery(action.query);
@@ -761,19 +725,14 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
 
   const openDaily = async () => {
     if (onDaily) { onDaily(); return; }
-    if (dirty && !confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?")) return;
-    setError(null);
-    try {
-      const [rel, text] = await dailyNote();
-      setSelected(rel);
-      setSelectedTreePath(rel);
-      setContent(text);
-      setDirty(false);
-      setCursorRequest(null);
-      await loadMeta();
-    } catch (e) {
-      setError(e instanceof Error ? e.message : String(e));
-    }
+    await editorDocument.open(async () => {
+      const [path] = await dailyNote();
+      const saved = await readFile(path);
+      if (saved.content === null) throw new Error("일일 노트를 열지 못했습니다.");
+      return { ...saved, path, content: saved.content };
+    }, confirmDiscard);
+    setSelectedTreePath(editorDocument.snapshot().path); setCursorRequest(null);
+    await loadMeta();
   };
 
   const newFile = async () => {
@@ -835,22 +794,9 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     setError(null);
     try {
       const applied = await applyRename(planId);
-      const current = selectedRef.current;
-      const mapped = remapPath(current, applied.from, applied.to);
-      setSelected(mapped);
-      setSelectedTreePath((path) => remapPath(path, applied.from, applied.to));
-      if (mapped) {
-        try {
-          setContent(await readFile(mapped));
-        } catch {
-          // Native transaction은 이미 성공했다. 이전 경로의 stale editor 내용을 새
-          // 경로 아래에 표시하거나 저장하지 않고 metadata refresh는 계속한다.
-          setContent("");
-          setError("이름은 변경했지만 현재 노트를 다시 읽지 못했습니다");
-        }
-        setDirty(false);
-        setCursorRequest(null);
-      }
+      setSelectedTreePath(value => remapPath(value, applied.from, applied.to));
+      await editorDocument.renamed(applied.from, applied.to);
+      setCursorRequest(null);
       setRenamePreview(null);
       await loadMeta();
     } catch (cause) {
@@ -871,9 +817,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     try {
       await deleteFile(path);
       if (isSameOrChild(selected, path)) {
-        setSelected(null);
-        setContent("");
-        setDirty(false);
+        editorDocument.clear();
         setCursorRequest(null);
       }
       setSelectedTreePath((current) => (isSameOrChild(current, path) ? null : current));
@@ -1079,6 +1023,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
           </section>
         </div>
       )}
+      {note.error && <p role="alert">{note.error}</p>}
       {error && <div className="error" role="alert">{error}</div>}
       {quickCaptureNotice && <div className="quick-capture-notice" role="status">{quickCaptureNotice}</div>}
       {quickCaptureShortcut && ["conflict", "unavailable"].includes(quickCaptureShortcut.state) && (
@@ -1236,18 +1181,23 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
                 </>
               )}
               {dirty && <span className="dirty">● 저장되지 않음</span>}
-              <button className="btn" onClick={() => void save()}>
+              <button className="btn" disabled={note.saving} onClick={() => void save()}>
                 저장
               </button>
             </div>
+            {note.conflict && <section aria-label="노트 저장 충돌">
+              <p role="alert">파일이 외부에서 변경되거나 삭제되었습니다. 편집 중인 내용은 유지됩니다.</p>
+              <ChangeSetPreview selectable={false} disabled={note.saving} approveLabel="비교한 내용에 덮어쓰기" onApprove={() => { const revision = note.conflict?.revision; if (revision && confirm("비교한 디스크 내용을 현재 편집 내용으로 덮어쓸까요?")) void editorDocument.save(revision).then(saved => { if (saved) void loadMeta(); }); }} items={[{path: selected ?? "노트", before: note.conflict.content ?? "(삭제된 파일)", after: content, meta: "디스크 내용 → 현재 편집 내용"}]}/>
+              <button disabled={note.saving || note.conflict.content === null} onClick={() => { if (selected) void openFile(selected); }}>디스크에서 다시 읽기</button>
+              <button disabled={note.saving} onClick={() => void editorDocument.inspect()}>디스크 상태 다시 확인</button>
+            </section>}
             <div className="note-workspace">
               <div className={`editor-body mode-${mode}`}>
                 {mode !== "preview" && (
                   <MarkdownEditor
                     value={content}
                     onChange={(text) => {
-                      setContent(text);
-                      setDirty(true);
+                      editorDocument.edit(text);
                     }}
                     onSave={() => void save()}
                     onError={setError}
