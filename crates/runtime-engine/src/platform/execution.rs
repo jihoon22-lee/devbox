@@ -115,6 +115,17 @@ impl SecretRedactor {
         }
     }
 
+    fn include_secret(&mut self, value: &str) {
+        if value.is_empty() {
+            return;
+        }
+        self.secrets.push(value.as_bytes().to_vec());
+        self.secrets
+            .sort_by(|left, right| right.len().cmp(&left.len()).then_with(|| left.cmp(right)));
+        self.secrets.dedup();
+        self.max_len = self.secrets.first().map_or(0, Vec::len);
+    }
+
     fn redact(&mut self, bytes: &[u8]) -> Vec<u8> {
         let mut input = std::mem::take(&mut self.carry);
         input.extend_from_slice(bytes);
@@ -409,7 +420,7 @@ impl PlatformExecutionAdapter {
         environment: &std::collections::BTreeMap<String, String>,
         streams: LogStreams,
         mut stdout_redactor: SecretRedactor,
-        stderr_redactor: SecretRedactor,
+        mut stderr_redactor: SecretRedactor,
     ) -> Result<Arc<dyn ExecutionHandle>, AdapterError> {
         let distro = request
             .job
@@ -474,6 +485,8 @@ impl PlatformExecutionAdapter {
                 return Err(failure(FailureCode::Handshake));
             }
         };
+        stdout_redactor.include_secret(&handshake.identity.marker);
+        stderr_redactor.include_secret(&handshake.identity.marker);
         let mut handshake_stdout = handshake.consumed_stdout;
         let consumed_stdout = stdout_redactor.redact(&handshake_stdout);
         handshake_stdout.zeroize();
@@ -1663,6 +1676,17 @@ mod tests {
             .unwrap();
         assert_eq!(response.data, b"prefix\0binary\noutput");
         assert_eq!(response.next_cursor, "20");
+    }
+
+    #[test]
+    fn native_run_marker_is_redacted_from_handshake_and_split_pipe_output() {
+        let mut redactor = SecretRedactor::from_environment(&std::collections::BTreeMap::new());
+        let marker = "10000000-0000-4000-8000-000000000001";
+        redactor.include_secret(marker);
+        let mut output = redactor.redact(&marker.as_bytes()[..12]);
+        output.extend(redactor.redact(&marker.as_bytes()[12..]));
+        output.extend(redactor.finish());
+        assert_eq!(output, REDACTED_BYTES);
     }
 
     #[test]
