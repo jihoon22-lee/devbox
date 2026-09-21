@@ -17,7 +17,7 @@ it("isolates actual Knowledge features and retains a dirty NoteDocument through 
   render(<Knowledge/>);
   const nav = await screen.findByRole("navigation", { name: "제품 화면" });
   await act(async () => { await vi.dynamicImportSettled(); });
-  fireEvent.click(await screen.findByText("FamilyCard.md"));
+  fireEvent.click(await screen.findByText("devbox.md"));
   const editor = await screen.findByLabelText("테스트 노트 편집");
   fireEvent.change(editor, { target: { value: "unsaved recovery note" } });
   expect(hasUnsavedNote()).toBe(true);

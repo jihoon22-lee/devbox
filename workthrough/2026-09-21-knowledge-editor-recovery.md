@@ -12,4 +12,7 @@
 - Fixtures: actual Knowledge tree with dirty Notes, Activity render/Search import/editor
   failures; preview reverse completion/A-B-A/mode exit/unmount; inspect ordering;
   encoded links and deferred anchor movement.
-- Validation: pending whole-branch affected checks and CI. No Windows GUI PASS claimed yet.
+- Validation: affected build/type/bundle checks PASS; knowledge-features 210 tests PASS,
+  product 23 existing/new tests PASS. One recovery fixture used an obsolete filename;
+  corrected it and reran only that test file under the resource supervisor: PASS.
+  No additional typecheck is required (both selected builds run tsc). CI remains the merge gate.
