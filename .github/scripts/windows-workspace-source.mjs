@@ -184,7 +184,7 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   assert.match(linkedText,/^worktree /);
   assert.match(readFileSync(path.join(folder,"tracked.txt"),"utf8"),/^unsaved /);
   success(await source("repo_stage",{request:{path:linked.binding.root,paths:["tracked.txt"],operationId:"linked-stage"}}));
-  success(await source("repo_commit",{request:{path:linked.binding.root,message:"linked worktree edit",operationId:"linked-commit"}}));
+  success(await source("repo_commit",{request:{path:linked.binding.root,message:"linked worktree edit",operationId:"linked-commit",indexRevision:success(await source("repo_commit_preview",{request:{path:linked.binding.root}})).revision}}));
   assert.equal(git(["show","source-fixture-worktree:tracked.txt"]),linkedText.trim());
   assert.equal(git(["show","HEAD:tracked.txt"]),"edited in the selected root");
   await selectTree(originalTree);
@@ -254,7 +254,7 @@ export async function exerciseWorkspaceSource({cdp,directory,call,success,waitFo
   success(await source("repo_stage",{request:{path:root,paths:["tracked.txt"],operationId:"source-stage-cancel-fixture"}}));
   const doc=success(await call("workspace.files","open_file",{request:{path:path.join(root,"tracked.txt"),encoding:null}}));
   const operationId="source-cancel-fixture";
-  const committing=source("repo_commit",{request:{path:root,message:"cancelled fixture",operationId}});
+  const committing=source("repo_commit",{request:{path:root,message:"cancelled fixture",operationId,indexRevision:success(await source("repo_commit_preview",{request:{path:root}})).revision}});
   const started=Date.now();
   while(!existsSync(cancellationMarker)&&Date.now()-started<5000)await new Promise(resolve=>setTimeout(resolve,25));
   assert.equal(existsSync(cancellationMarker),true,"owned pre-commit did not start");

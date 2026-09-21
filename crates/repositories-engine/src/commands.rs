@@ -1,5 +1,6 @@
 //! Repo Manager command — 저장소 탐색·상태·worktree.
 
+mod commit_review;
 pub(crate) mod dependency_enrichment;
 
 use crate::core::cleanup::{
@@ -2913,6 +2914,7 @@ pub struct CommitRequest {
     pub path: String,
     pub message: String,
     pub operation_id: String,
+    pub index_revision: String,
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
@@ -2991,6 +2993,17 @@ pub async fn repo_unstage(request: UnstagePathsRequest) -> Result<(), String> {
 }
 
 #[cfg_attr(feature = "desktop", tauri::command)]
+pub async fn repo_commit_preview(
+    request: RepoChangesRequest,
+) -> Result<commit_review::Review, String> {
+    spawn_git_task(GIT_MUTATION_ERROR, move || {
+        let context = validated_repository_context(&request.path, GIT_MUTATION_ERROR)?;
+        commit_review::capture(&context, &AtomicBool::new(false))
+    })
+    .await
+}
+
+#[cfg_attr(feature = "desktop", tauri::command)]
 pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
     let message = validate_commit_message(&request.message)?;
     let operation = begin_git_operation(
@@ -3007,6 +3020,11 @@ pub async fn repo_commit(request: CommitRequest) -> Result<(), String> {
             GIT_MUTATION_ERROR,
         )?;
         revalidate_repository_context(&context, GIT_MUTATION_ERROR)?;
+        commit_review::require(
+            &context,
+            &request.index_revision,
+            operation.cancellation.as_ref(),
+        )?;
         run_git_mutation_with_cancel(
             &git_commit_args(&message),
             &context.worktree,
@@ -3539,6 +3557,19 @@ pub(crate) async fn __component_repo_unstage(
 }
 
 /// Typed product adapter; the native host owns caller/session/owner admission.
+pub(crate) async fn __component_repo_commit_preview(
+    args: serde_json::Value,
+) -> Result<serde_json::Value, String> {
+    #[derive(serde::Deserialize)]
+    #[serde(deny_unknown_fields)]
+    struct Input {
+        request: RepoChangesRequest,
+    }
+    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    serde_json::to_value(repo_commit_preview(input.request).await?)
+        .map_err(|_| "component_response_invalid".into())
+}
+
 pub(crate) async fn __component_repo_commit(
     args: serde_json::Value,
 ) -> Result<serde_json::Value, String> {
@@ -3947,6 +3978,11 @@ mod scan_tests {
         .unwrap();
         crate::runtime::block_on(repo_commit(CommitRequest {
             path: path.clone(),
+            index_revision: crate::runtime::block_on(repo_commit_preview(RepoChangesRequest {
+                path: path.clone(),
+            }))
+            .unwrap()
+            .revision,
             message: "Commit selected\nfixture".to_string(),
             operation_id: "commit-selected".to_string(),
         }))
@@ -4374,8 +4410,15 @@ mod scan_tests {
         let path = repo.to_string_lossy().into_owned();
         let started = Instant::now();
         let worker = std::thread::spawn(move || {
+            let index_revision =
+                crate::runtime::block_on(repo_commit_preview(RepoChangesRequest {
+                    path: path.clone(),
+                }))
+                .unwrap()
+                .revision;
             crate::runtime::block_on(repo_commit(CommitRequest {
                 path,
+                index_revision,
                 message: "cancelled commit".to_string(),
                 operation_id: "cancel-local-commit".to_string(),
             }))
@@ -4489,6 +4532,7 @@ mod scan_tests {
 
         let error = crate::runtime::block_on(repo_commit(CommitRequest {
             path,
+            index_revision: "0".repeat(64),
             message: format!("invalid\0{secret}"),
             operation_id: "commit-invalid-message".to_string(),
         }))
@@ -5474,6 +5518,51 @@ mod scan_tests {
                 remote_marker_exists(tmp.path(), marker, None).unwrap_err(),
                 GIT_REMOTE_ERROR
             );
+        }
+    }
+
+    #[test]
+    fn commit_review_rejects_external_add_reset_blob_and_head_changes() {
+        for change in ["add", "reset", "blob", "head"] {
+            let root = tempfile::tempdir().unwrap();
+            let repo = root.path();
+            init_real_git_dir(repo);
+            fs::write(repo.join("A"), "base").unwrap();
+            git_fixture(repo, &["add", "A"]);
+            git_fixture(repo, &["commit", "-qm", "initial"]);
+            fs::write(repo.join("A"), "reviewed A").unwrap();
+            git_fixture(repo, &["add", "A"]);
+            let path = repo.to_string_lossy().into_owned();
+            let review = crate::runtime::block_on(repo_commit_preview(RepoChangesRequest {
+                path: path.clone(),
+            }))
+            .unwrap();
+            assert_eq!(review.staged_paths, ["A"]);
+            match change {
+                "add" => {
+                    fs::write(repo.join("B"), "unreviewed B").unwrap();
+                    git_fixture(repo, &["add", "B"]);
+                }
+                "reset" => {
+                    git_fixture(repo, &["reset", "-q", "HEAD", "--", "A"]);
+                }
+                "blob" => {
+                    fs::write(repo.join("A"), "same path different blob").unwrap();
+                    git_fixture(repo, &["add", "A"]);
+                }
+                _ => {
+                    git_fixture(repo, &["commit", "-qm", "external commit"]);
+                }
+            }
+            let before = git_fixture(repo, &["rev-parse", "HEAD"]);
+            let result = crate::runtime::block_on(repo_commit(CommitRequest {
+                path,
+                message: "reviewed commit".into(),
+                operation_id: format!("review-{change}"),
+                index_revision: review.revision,
+            }));
+            assert_eq!(result.unwrap_err(), commit_review::STALE, "{change}");
+            assert_eq!(git_fixture(repo, &["rev-parse", "HEAD"]), before);
         }
     }
 

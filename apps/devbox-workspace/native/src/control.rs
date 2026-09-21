@@ -156,6 +156,7 @@ pub fn source_method(method: &str) -> bool {
             | "repo_changes"
             | "repo_stage"
             | "repo_unstage"
+            | "repo_commit_preview"
             | "repo_commit"
             | "repo_remote_status"
             | "repo_fetch"

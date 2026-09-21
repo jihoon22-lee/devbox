@@ -150,7 +150,15 @@ impl Helper {
         )
         .unwrap();
     }
-    fn execute(&mut self, method: &str, args: Value) {
+    fn execute(&mut self, method: &str, mut args: Value) {
+        if method == "repo_commit" && args["request"].get("indexRevision").is_none() {
+            self.execute(
+                "repo_commit_preview",
+                json!({"request":{"path":args["request"]["path"]}}),
+            );
+            let review = self.complete(true).result.unwrap();
+            args["request"]["indexRevision"] = review["revision"].clone();
+        }
         self.send(
             "source_execute",
             json!({"context":self.context,"digest":self.digest,"method":method,"args":args}),
@@ -306,6 +314,25 @@ fn source_runs_selected_stage_and_commit_only_after_native_per_command_approval(
         b"preserved\n"
     );
     assert!(helper.admissions >= 3);
+    helper.retire();
+}
+
+#[test]
+fn source_rejects_a_review_after_external_replacement_of_the_same_staged_blob() {
+    let fixture = fixture();
+    let root = fixture.path();
+    fs::write(root.join("tracked.txt"), b"reviewed\n").unwrap();
+    git(root, &["add", "--", "tracked.txt"]);
+    let before = git(root, &["rev-parse", "HEAD"]);
+    let mut helper = Helper::start(root);
+    helper.execute("repo_commit_preview", json!({"request":{"path":root}}));
+    let review = helper.complete(true).result.unwrap();
+    fs::write(root.join("tracked.txt"), b"external replacement\n").unwrap();
+    git(root, &["add", "--", "tracked.txt"]);
+    helper.execute("repo_commit", json!({"request":{"path":root,"message":"stale review","operationId":"stale","indexRevision":review["revision"]}}));
+    assert!(helper.complete(true).result.is_err());
+    assert_eq!(git(root, &["rev-parse", "HEAD"]), before);
+    assert_eq!(git(root, &["show", ":tracked.txt"]), "external replacement");
     helper.retire();
 }
 #[test]

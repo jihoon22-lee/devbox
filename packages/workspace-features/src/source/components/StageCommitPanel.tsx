@@ -4,6 +4,7 @@ import {
   GIT_MUTATION_ERROR,
   repoChanges,
   repoCommit,
+  repoCommitPreview,
   repoLocalCancel,
   repoStage,
   repoUnstage,
@@ -35,6 +36,7 @@ interface CommitConfirmation {
   repositoryPath: string;
   message: string;
   stagedPaths: string[];
+  indexRevision: string;
 }
 
 function isCommitMessageValid(value: string): boolean {
@@ -216,7 +218,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     }
   };
 
-  const runCommit = async (confirmedMessage: string) => {
+  const runCommit = async (confirmedMessage: string, indexRevision: string) => {
     if (busyRef.current) return;
     if (!isCommitMessageValid(confirmedMessage) || !pathsFor(changes, "unstage").length) {
       setError(GIT_MUTATION_ERROR);
@@ -233,7 +235,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     setOperationStatus(null);
     setError(null);
     try {
-      await repoCommit(repo.path, confirmedMessage, operationId);
+      await repoCommit(repo.path, confirmedMessage, operationId, indexRevision);
       if (!isCurrent(sequence)) return;
       operationIdRef.current = null;
       setLocalAction(null);
@@ -261,37 +263,31 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
     }
   };
 
-  const requestCommit = () => {
-    if (busyRef.current) return;
-    const stagedPaths = pathsFor(changes, "unstage").map((change) => change.path);
-    if (!isCommitMessageValid(message) || stagedPaths.length === 0) {
-      setError(GIT_MUTATION_ERROR);
-      return;
-    }
-    setError(null);
-    setCommitConfirmation({
-      repositoryKey: repo.canonicalKey,
-      repositoryPath: repo.path,
-      message,
-      stagedPaths,
-    });
+  const requestCommit = async () => {
+    if (busyRef.current || !isCommitMessageValid(message)) return;
+    const sequence = ++sequenceRef.current;
+    const reviewedMessage = message;
+    busyRef.current = true; setBusy(true); setError(null);
+    try {
+      const review = await repoCommitPreview(repo.path);
+      if (!isCurrent(sequence)) return;
+      if (!review.stagedPaths.length) throw new Error(GIT_MUTATION_ERROR);
+      setCommitConfirmation({repositoryKey:repo.canonicalKey,repositoryPath:repo.path,message:reviewedMessage,stagedPaths:review.stagedPaths,indexRevision:review.revision});
+    } catch { if (isCurrent(sequence)) setError("Git index를 확인하지 못했습니다. 변경 목록을 다시 불러와 주세요."); }
+    finally { if (isCurrent(sequence)) { busyRef.current=false;setBusy(false); } }
   };
 
   const confirmCommit = () => {
     const pending = commitConfirmation;
     if (!pending) return;
-    const currentStagedPaths = pathsFor(changes, "unstage").map((change) => change.path);
     const stillCurrent = pending.repositoryKey === repo.canonicalKey
-      && pending.repositoryPath === repo.path
-      && pending.message === message
-      && pending.stagedPaths.length === currentStagedPaths.length
-      && pending.stagedPaths.every((path, index) => path === currentStagedPaths[index]);
+      && pending.repositoryPath === repo.path && pending.message === message;
     setCommitConfirmation(null);
     if (!stillCurrent) {
       setError(GIT_MUTATION_ERROR);
       return;
     }
-    void runCommit(pending.message);
+    void runCommit(pending.message, pending.indexRevision);
   };
 
   const cancel = () => {
@@ -317,7 +313,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
   const onMessageKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
     if (!isImeComposing(event) && (event.ctrlKey || event.metaKey) && event.key === "Enter") {
       event.preventDefault();
-      requestCommit();
+      void requestCommit();
     }
   };
 
@@ -458,7 +454,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
             type="button"
             className="btn primary"
             disabled={busy || staged.length === 0 || !isCommitMessageValid(message)}
-            onClick={requestCommit}
+            onClick={() => void requestCommit()}
           >
             Commit ({staged.length})
           </button>
@@ -468,7 +464,7 @@ export default function StageCommitPanel({ repo, onBusyChange, onDirtyChange, on
         <ConfirmDialog
           title="Commit을 실행할까요?"
           summary={[
-            `현재 스테이징된 변경 ${commitConfirmation.stagedPaths.length}개를 commit합니다.`,
+            `방금 확인한 Git index의 변경 ${commitConfirmation.stagedPaths.length}개를 commit합니다.`,
             "스테이징되지 않은 변경은 자동으로 포함하지 않습니다.",
             "입력한 커밋 메시지와 경로는 이 확인창에 표시하지 않습니다.",
           ]}

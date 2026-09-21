@@ -788,9 +788,14 @@ export function repoUnstage(path: string, paths: string[], operationId: string):
   return invoke<void>("repo_unstage", { request: { path, paths, operationId } });
 }
 
-export function repoCommit(path: string, message: string, operationId: string): Promise<void> {
+export interface CommitReview { revision: string; stagedPaths: string[] }
+export function repoCommitPreview(path: string): Promise<CommitReview> {
+  if (!isTauri()) return Promise.resolve({revision:"browser-fixture",stagedPaths:MOCK_CHANGES.filter(change=>change.staged).map(change=>change.path)});
+  return invoke<CommitReview>("repo_commit_preview", {request:{path}});
+}
+export function repoCommit(path: string, message: string, operationId: string, indexRevision: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return invoke<void>("repo_commit", { request: { path, message, operationId } });
+  return invoke<void>("repo_commit", { request: { path, message, operationId, indexRevision } });
 }
 
 export function repoLocalCancel(operationId: string): Promise<boolean> {
