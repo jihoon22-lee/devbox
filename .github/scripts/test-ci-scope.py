@@ -278,3 +278,7 @@ assert hotkey.rust_packages == ["devbox-control-center"]
 legacy_catalog = resolve("apps/legacy-v0.7-catalog.json")
 assert legacy_catalog.rust_packages == catalog.rust_packages
 assert legacy_catalog.frontend_packages == catalog.frontend_packages
+
+# Explicit crate edges replace source-inclusion exceptions for Suite ownership.
+suite = resolve("crates/suite-runtime/src/lib.rs")
+assert {"suite-runtime", "devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(suite.rust_packages)

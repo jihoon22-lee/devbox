@@ -2,7 +2,7 @@
 //! The file declaration alone never activates a listener or launches a product.
 #[cfg(windows)]
 #[path = "platform/mod.rs"]
-pub(crate) mod platform;
+pub mod platform;
 use product_contract::{Operation, OperationState, Problem, ProblemCode, RouteRequest};
 use serde::{Deserialize, Serialize};
 #[cfg(windows)]
@@ -12,10 +12,9 @@ use std::{
 };
 use tauri::{Manager, State, WebviewWindow};
 #[cfg(windows)]
-#[path = "suite_health.rs"]
-pub(crate) mod health;
+pub mod health;
 
-pub(crate) type DomainHandler = fn(
+pub type DomainHandler = fn(
     tauri::AppHandle,
     product_contract::transport::Call,
     u64,
@@ -261,7 +260,7 @@ async fn connection(
 }
 
 #[cfg(windows)]
-pub(crate) fn capture_own(
+pub fn capture_own(
     product: &str,
 ) -> Result<platform::component_scope::CapturedScope, &'static str> {
     let image = std::env::current_exe().map_err(|_| "suite_image_unavailable")?;
@@ -868,7 +867,7 @@ fn now() -> u64 {
         .min(u128::from(u64::MAX)) as u64
 }
 #[allow(dead_code)]
-pub(crate) fn installed_products(app: &tauri::AppHandle) -> std::collections::BTreeSet<String> {
+pub fn installed_products(app: &tauri::AppHandle) -> std::collections::BTreeSet<String> {
     #[allow(unused_mut)]
     let mut products = std::collections::BTreeSet::from(["control-center".to_owned()]);
     #[cfg(windows)]
@@ -895,7 +894,7 @@ pub(crate) fn installed_products(app: &tauri::AppHandle) -> std::collections::BT
     products
 }
 #[allow(dead_code)] // Only the actual shortcut and project-provider consumers use this shared module entry.
-pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
+pub fn connection_ready(app: &tauri::AppHandle) -> bool {
     #[cfg(windows)]
     {
         app.try_state::<Suite>().is_some_and(|suite| {
@@ -914,7 +913,7 @@ pub(crate) fn connection_ready(app: &tauri::AppHandle) -> bool {
     }
 }
 /// Native command host calls this only after its own renderer authorization.
-pub(crate) async fn remote(
+pub async fn remote(
     app: &tauri::AppHandle,
     product: &str,
     call: product_contract::transport::Call,
@@ -1028,7 +1027,7 @@ async fn activate(
     Err("suite_activation_timeout")
 }
 
-pub(crate) fn plugin(
+pub fn plugin(
     product: &'static str,
     domain: Option<DomainHandler>,
     sources: &'static [product_contract::transport::Source],
@@ -1062,7 +1061,7 @@ pub(crate) fn plugin(
 
 /// Shared native adapter used by product-specific incoming Artifact consumers.
 #[allow(dead_code)]
-pub(crate) fn enqueue_review(
+pub fn enqueue_review(
     app: &tauri::AppHandle,
     descriptor: &product_contract::commands::Descriptor,
     request: &product_contract::commands::Request,
@@ -1104,7 +1103,7 @@ pub(crate) fn enqueue_review(
     }
 }
 #[allow(dead_code)]
-pub(crate) fn require_reviewed(
+pub fn require_reviewed(
     app: &tauri::AppHandle,
     id: &str,
     revision: &str,
@@ -1136,7 +1135,7 @@ pub(crate) fn require_reviewed(
     }
 }
 
-pub(crate) fn project_operations(
+pub fn project_operations(
     app: &tauri::AppHandle,
     call: &product_contract::transport::Call,
     rows: Vec<product_contract::operations::Row>,

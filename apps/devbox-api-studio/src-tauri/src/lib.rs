@@ -11,8 +11,7 @@ mod migration_export;
 mod mock_draft;
 mod platform;
 mod service_worker;
-#[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
-mod suite;
+use suite_runtime as suite;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

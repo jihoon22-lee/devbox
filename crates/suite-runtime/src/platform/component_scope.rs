@@ -15,7 +15,7 @@ type Result<T> = std::result::Result<T, &'static str>;
 const MANIFEST: &str = "devbox-installation.json";
 const MAX_EXECUTABLE_BYTES: u64 = 512 * 1024 * 1024;
 
-pub(crate) struct Directory {
+pub struct Directory {
     path: PathBuf,
     identity: FilesystemIdentity,
     _file: File,
@@ -48,7 +48,7 @@ impl Directory {
         Ok(())
     }
 }
-pub(crate) fn pin_directories(path: &Path) -> Result<Vec<Directory>> {
+pub fn pin_directories(path: &Path) -> Result<Vec<Directory>> {
     use std::path::{Component, Prefix};
     if !path.is_absolute()
         || !matches!(path.components().next(),Some(Component::Prefix(prefix))
@@ -135,21 +135,21 @@ impl PinnedFile {
     }
 }
 
-pub(crate) struct CapturedScope {
+pub struct CapturedScope {
     retired: AtomicBool,
     root: PathBuf,
     root_identity: FilesystemIdentity,
     directories: Vec<Directory>,
     manifest_file: PinnedFile,
-    pub(crate) manifest: Manifest,
+    pub manifest: Manifest,
     members: BTreeMap<String, PinnedFile>,
-    pub(crate) issues: BTreeMap<String, &'static str>,
-    pub(crate) installation_key: String,
-    pub(crate) id: String,
+    pub issues: BTreeMap<String, &'static str>,
+    pub installation_key: String,
+    pub id: String,
 }
 impl CapturedScope {
     /// The caller uses only a native reviewed folder or its own package directory.
-    pub(crate) fn capture(
+    pub fn capture(
         root: &Path,
         own_product: &str,
         current_executable: &Path,
@@ -233,13 +233,13 @@ impl CapturedScope {
         scope.revalidate()?;
         Ok(scope)
     }
-    pub(crate) fn retire(&self) {
+    pub fn retire(&self) {
         self.retired.store(true, Ordering::Release);
     }
-    pub(crate) fn review_root(&self) -> String {
+    pub fn review_root(&self) -> String {
         self.root.to_string_lossy().into_owned()
     }
-    pub(crate) fn revalidate(&self) -> Result<()> {
+    pub fn revalidate(&self) -> Result<()> {
         if self.retired.load(Ordering::Acquire) {
             return Err("suite_connection_retired");
         }
@@ -258,7 +258,7 @@ impl CapturedScope {
         }
         Ok(())
     }
-    pub(crate) fn product_for_image(&self, image: &Path) -> Result<String> {
+    pub fn product_for_image(&self, image: &Path) -> Result<String> {
         self.revalidate()?;
         // QueryFullProcessImageName may preserve an 8.3 launch path while the
         // captured root is canonical. Reject links before resolving that alias;
@@ -300,7 +300,7 @@ impl CapturedScope {
         }
         found.ok_or("peer_image_denied")
     }
-    pub(crate) fn member(&self, product: &str) -> Result<(&Member, &Path, FilesystemIdentity)> {
+    pub fn member(&self, product: &str) -> Result<(&Member, &Path, FilesystemIdentity)> {
         self.revalidate()?;
         let description = self
             .manifest

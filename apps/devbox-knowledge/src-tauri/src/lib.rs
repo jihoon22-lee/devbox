@@ -6,8 +6,7 @@ mod migration;
 mod project_provider;
 mod search;
 mod session_receive;
-#[path = "../../../devbox-control-center/src-tauri/src/suite.rs"]
-mod suite;
+use suite_runtime as suite;
 pub use search::{disconnect_project_provider, install_project_snapshot};
 mod startup;
 mod storage_space;

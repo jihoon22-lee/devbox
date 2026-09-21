@@ -1250,6 +1250,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "suite-runtime",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -1305,6 +1306,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "suite-runtime",
  "tauri",
  "tauri-build",
  "tauri-plugin-dialog",
@@ -1432,6 +1434,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "suite-runtime",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -1672,6 +1675,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2 0.11.0",
+ "suite-runtime",
  "tauri",
  "tauri-build",
  "tauri-plugin-clipboard-manager",
@@ -5963,6 +5967,23 @@ name = "subtle"
 version = "2.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "13c2bddecc57b384dee18652358fb23172facb8a2c51ccc10d74c157bdea3292"
+
+[[package]]
+name = "suite-runtime"
+version = "0.1.0"
+dependencies = [
+ "catalog",
+ "filesystem",
+ "product-contract",
+ "product-shell-tauri",
+ "serde",
+ "serde_json",
+ "sha2 0.11.0",
+ "tauri",
+ "tokio",
+ "uuid",
+ "windows 0.61.3",
+]
 
 [[package]]
 name = "swift-rs"
