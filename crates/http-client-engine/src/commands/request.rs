@@ -251,21 +251,32 @@ impl Default for RequestCancellation {
 }
 
 impl RequestCancellation {
+    #[cfg(test)]
     fn begin(&self, request_id: &str) -> Result<u64, String> {
+        self.begin_registered(request_id, |_| Ok(()))
+            .map(|(token, ())| token)
+    }
+
+    // One linearization order owns cancellation routing and retained response data.
+    // Registration must not call back into cancellation (lock order: routing -> vault).
+    fn begin_registered<T>(
+        &self,
+        request_id: &str,
+        register: impl FnOnce(u64) -> Result<T, String>,
+    ) -> Result<(u64, T), String> {
         if !valid_request_id(request_id) {
             return Err("요청 취소 상태를 준비하지 못했습니다".to_string());
         }
-        let token = self
-            .current
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |current| {
-                current.checked_add(1)
-            })
-            .map(|previous| previous + 1)
-            .map_err(|_| "요청 취소 상태를 준비하지 못했습니다".to_string())?;
         let mut routing = self
             .routing
             .lock()
             .map_err(|_| "요청 취소 상태를 준비하지 못했습니다".to_string())?;
+        let token = self
+            .current
+            .load(Ordering::Acquire)
+            .checked_add(1)
+            .ok_or_else(|| "요청 취소 상태를 준비하지 못했습니다".to_string())?;
+        let registered = register(token)?;
         routing.current = Some((request_id.to_string(), token));
         if let Some(index) = routing
             .pending
@@ -275,7 +286,8 @@ impl RequestCancellation {
             routing.pending.remove(index);
             self.cancelled.store(token, Ordering::Release);
         }
-        Ok(token)
+        self.current.store(token, Ordering::Release);
+        Ok((token, registered))
     }
 
     fn cancel(&self, request_id: &str) {
@@ -495,8 +507,8 @@ async fn send_request_with_vault_and_cancellation(
     response_headers: &ResponseHeaderVault,
     cancellation: &RequestCancellation,
 ) -> Result<ApiResponse, String> {
-    let request_token = cancellation.begin(request_id)?;
-    let response_id = response_headers.begin_request()?;
+    let (request_token, response_id) =
+        cancellation.begin_registered(request_id, |_| response_headers.begin_request())?;
     validate_cookie_rows(&req.headers, &req.cookies)?;
     validate_multipart_rows(&req)?;
     validate_graphql_header_rows(&req)?;
@@ -647,6 +659,28 @@ pub fn sanitize_persisted_json(
 }
 
 async fn execute_request(
+    req: ResolvedRequest,
+    redactor: &Redactor,
+    cancellation: &RequestCancellation,
+    request_token: u64,
+) -> Result<ExecutedResponse, String> {
+    let timeout_ms = if req.body_kind == "graphql" {
+        req.timeout_ms
+    } else {
+        req.timeout_ms.max(1000)
+    };
+    let deadline = tokio::time::Instant::now()
+        .checked_add(std::time::Duration::from_millis(timeout_ms))
+        .ok_or_else(|| "요청 시간 제한이 올바르지 않습니다".to_string())?;
+    tokio::time::timeout_at(
+        deadline,
+        execute_request_chain(req, redactor, cancellation, request_token),
+    )
+    .await
+    .map_err(|_| "요청 시간이 초과되었습니다".to_string())?
+}
+
+async fn execute_request_chain(
     req: ResolvedRequest,
     redactor: &Redactor,
     cancellation: &RequestCancellation,
@@ -4249,6 +4283,139 @@ mod tests {
                     .unwrap()
                     .contains("synthetic-private-token"));
             }
+        }
+    }
+
+    #[test]
+    fn concurrent_registration_keeps_routing_and_response_ownership_together() {
+        let cancellation = std::sync::Arc::new(RequestCancellation::default());
+        let vault = std::sync::Arc::new(ResponseHeaderVault::default());
+        let (entered_tx, entered_rx) = mpsc::channel();
+        let (release_tx, release_rx) = mpsc::channel();
+        let first = {
+            let cancellation = cancellation.clone();
+            let vault = vault.clone();
+            std::thread::spawn(move || {
+                cancellation
+                    .begin_registered("first", |_| {
+                        entered_tx.send(()).unwrap();
+                        release_rx
+                            .recv_timeout(std::time::Duration::from_secs(5))
+                            .unwrap();
+                        vault.begin_request()
+                    })
+                    .unwrap()
+            })
+        };
+        entered_rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .unwrap();
+        // No generation is visible until its response registration is ready.
+        assert_eq!(cancellation.current.load(Ordering::Acquire), 0);
+        let second = {
+            let cancellation = cancellation.clone();
+            let vault = vault.clone();
+            std::thread::spawn(move || {
+                cancellation
+                    .begin_registered("second", |_| vault.begin_request())
+                    .unwrap()
+            })
+        };
+        release_tx.send(()).unwrap();
+        let (first_token, first_response) = first.join().unwrap();
+        let (second_token, second_response) = second.join().unwrap();
+        assert!(cancellation.is_cancelled(first_token));
+        assert!(!cancellation.is_cancelled(second_token));
+        assert!(!vault.store_if_current(&first_response, vec![]).unwrap());
+        assert!(vault.store_if_current(&second_response, vec![]).unwrap());
+        cancellation.cancel("first");
+        assert!(!cancellation.is_cancelled(second_token));
+        cancellation.cancel("second");
+        cancellation.cancel("second");
+        assert!(cancellation.is_cancelled(second_token));
+        assert!(cancellation
+            .routing
+            .lock()
+            .unwrap()
+            .pending
+            .iter()
+            .all(|id| id != "second"));
+    }
+
+    #[test]
+    fn failed_registration_does_not_replace_the_current_request() {
+        let cancellation = RequestCancellation::default();
+        let token = cancellation.begin("current").unwrap();
+        assert!(cancellation
+            .begin_registered("failed", |_| Err::<(), _>("failed".into()))
+            .is_err());
+        assert!(!cancellation.is_cancelled(token));
+        cancellation.cancel("current");
+        assert!(cancellation.is_cancelled(token));
+        cancellation.cancel("early");
+        cancellation.cancel("early");
+        let early = cancellation.begin("early").unwrap();
+        assert!(cancellation.is_cancelled(early));
+        assert!(!cancellation.is_cancelled(cancellation.begin("next").unwrap()));
+    }
+
+    #[test]
+    fn redirect_headers_and_final_body_share_one_deadline() {
+        for slow_body in [false, true] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let port = listener.local_addr().unwrap().port();
+            listener.set_nonblocking(true).unwrap();
+            let server = std::thread::spawn(move || {
+                let deadline = Instant::now() + std::time::Duration::from_secs(4);
+                for hop in 0..2 {
+                    let mut stream = loop {
+                        match listener.accept() {
+                            Ok((stream, _)) => break stream,
+                            Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
+                                assert!(Instant::now() < deadline, "request never reached fixture");
+                                std::thread::sleep(std::time::Duration::from_millis(5));
+                            }
+                            Err(error) => panic!("{error}"),
+                        }
+                    };
+                    stream
+                        .set_read_timeout(Some(std::time::Duration::from_secs(2)))
+                        .unwrap();
+                    let _ = read_http_request(&mut stream);
+                    if hop == 0 {
+                        std::thread::sleep(std::time::Duration::from_millis(600));
+                        let _ = write!(stream, "HTTP/1.1 302 Found\r\nLocation: /final\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    } else {
+                        if slow_body {
+                            let _ = write!(
+                                stream,
+                                "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\n"
+                            );
+                            let _ = stream.flush();
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(600));
+                        if slow_body {
+                            let _ = write!(stream, "ok");
+                        } else {
+                            let _ = write!(stream, "HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nok");
+                        }
+                    }
+                }
+            });
+            let mut request = template();
+            request.url = format!("http://127.0.0.1:{port}/start");
+            request.method = "GET".into();
+            request.headers.clear();
+            request.auth = None;
+            request.body_kind = "none".into();
+            request.body.clear();
+            request.timeout_ms = 1000;
+            let started = Instant::now();
+            let result = send_test(request);
+            let elapsed = started.elapsed();
+            server.join().unwrap();
+            assert_eq!(result.unwrap_err(), "요청 시간이 초과되었습니다");
+            assert!(elapsed < std::time::Duration::from_millis(1700));
         }
     }
 

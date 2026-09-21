@@ -2,17 +2,18 @@
 use product_contract::{Operation, OperationState, Problem, ProblemCode, Provenance, RouteRequest};
 use serde::{Deserialize, Serialize};
 use std::{
-    collections::HashSet,
+    collections::HashMap,
     sync::{Arc, Mutex},
 };
 use tauri::{Manager, State, WebviewWindow};
 
 const MAX_ARGUMENT_BYTES: usize = 20 * 1024 * 1024;
 const MAX_ACTIVE: usize = 64;
+const MAX_ACTIVE_CONTROLS: usize = 8;
 #[derive(Default)]
-struct Active(Arc<Mutex<HashSet<String>>>);
+struct Active(Arc<Mutex<HashMap<String, bool>>>);
 struct Reservation {
-    ids: Arc<Mutex<HashSet<String>>>,
+    ids: Arc<Mutex<HashMap<String, bool>>>,
     id: String,
 }
 impl Drop for Reservation {
@@ -84,15 +85,21 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
     }
 }
 
-fn reserve(active: &Active, id: &str) -> Result<Reservation, ProblemCode> {
+fn reserve(active: &Active, id: &str, control: bool) -> Result<Reservation, ProblemCode> {
     let mut ids = active.0.lock().map_err(|_| ProblemCode::Unavailable)?;
-    if ids.contains(id) {
+    if ids.contains_key(id) {
         return Err(ProblemCode::Replayed);
     }
-    if ids.len() >= MAX_ACTIVE {
+    if ids.values().filter(|value| **value == control).count()
+        >= if control {
+            MAX_ACTIVE_CONTROLS
+        } else {
+            MAX_ACTIVE
+        }
+    {
         return Err(ProblemCode::Overloaded);
     }
-    ids.insert(id.into());
+    ids.insert(id.into(), control);
     Ok(Reservation {
         ids: Arc::clone(&active.0),
         id: id.into(),
@@ -128,7 +135,12 @@ async fn execute(
     };
     // Admission deadline is distinct from a protocol lifetime. Keep the ID
     // reserved across dialogs/long awaits even after the replay cache expires.
-    let _reservation = reserve(&active, &request.header.request_id).map_err(problem)?;
+    let _reservation = reserve(
+        &active,
+        &request.header.request_id,
+        request.component == "api-studio.api" && request.method == "cancel_request",
+    )
+    .map_err(problem)?;
     let app = window.app_handle();
     if request.component != "api-studio.migration" {
         crate::migration::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
@@ -329,21 +341,53 @@ mod tests {
         ));
     }
     #[test]
+    fn cancellation_has_bounded_capacity_when_data_slots_are_full() {
+        let active = Active::default();
+        let _data: Vec<_> = (0..MAX_ACTIVE)
+            .map(|i| reserve(&active, &format!("data-{i}"), false).unwrap())
+            .collect();
+        assert!(matches!(
+            reserve(&active, "extra", false),
+            Err(ProblemCode::Overloaded)
+        ));
+        assert!(matches!(
+            reserve(&active, "data-0", true),
+            Err(ProblemCode::Replayed)
+        ));
+        let mut controls: Vec<_> = (0..MAX_ACTIVE_CONTROLS)
+            .map(|i| reserve(&active, &format!("cancel-{i}"), true).unwrap())
+            .collect();
+        assert!(matches!(
+            reserve(&active, "extra-control", true),
+            Err(ProblemCode::Overloaded)
+        ));
+        controls.pop();
+        assert!(reserve(&active, "replacement-control", true).is_ok());
+        assert!(matches!(
+            reserve(&active, "extra", false),
+            Err(ProblemCode::Overloaded)
+        ));
+    }
+
+    #[test]
     fn active_requests_reject_duplicate_ids_until_completion_or_drop() {
         let active = Active::default();
-        let first = reserve(&active, "id").unwrap();
-        assert!(matches!(reserve(&active, "id"), Err(ProblemCode::Replayed)));
+        let first = reserve(&active, "id", false).unwrap();
+        assert!(matches!(
+            reserve(&active, "id", false),
+            Err(ProblemCode::Replayed)
+        ));
         drop(first);
-        let _again = reserve(&active, "id").unwrap();
+        let _again = reserve(&active, "id", false).unwrap();
         let mut pending = Vec::new();
         for i in 1..MAX_ACTIVE {
-            pending.push(reserve(&active, &format!("id-{i}")).unwrap());
+            pending.push(reserve(&active, &format!("id-{i}"), false).unwrap());
         }
         assert!(matches!(
-            reserve(&active, "overflow"),
+            reserve(&active, "overflow", false),
             Err(ProblemCode::Overloaded)
         ));
         pending.pop();
-        assert!(reserve(&active, "overflow").is_ok());
+        assert!(reserve(&active, "overflow", false).is_ok());
     }
 }
