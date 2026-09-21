@@ -415,8 +415,8 @@ impl StdioProcess {
         let tree = match ProcessTree::assign(&child) {
             Ok(tree) => tree,
             Err(()) => {
-                ProcessTree::terminate_unassigned(&mut child).await;
-                return Err(SPAWN_FAILED.into());
+                let reaped = ProcessTree::terminate_unassigned(&mut child).await;
+                return Err(if reaped { SPAWN_FAILED } else { CLEANUP_FAILED }.into());
             }
         };
         let Some(stdin) = child.stdin.take() else {
@@ -540,44 +540,53 @@ impl StdioProcess {
     }
 
     async fn cancel_and_terminate(&mut self, request_id: &str) -> bool {
+        let deadline = tokio::time::Instant::now() + super::process_tree::CLEANUP_TIMEOUT;
         if let Ok(notification) = mcp::build_legacy_cancelled(request_id) {
-            let _ =
-                tokio::time::timeout(Duration::from_millis(200), self.send(&notification)).await;
+            let notification_deadline =
+                (tokio::time::Instant::now() + Duration::from_millis(200)).min(deadline);
+            let _ = tokio::time::timeout_at(notification_deadline, self.send(&notification)).await;
         }
-        self.terminate(false).await
+        self.terminate_until(false, deadline).await
     }
 
     async fn terminate(&mut self, graceful: bool) -> bool {
+        self.terminate_until(
+            graceful,
+            tokio::time::Instant::now() + super::process_tree::CLEANUP_TIMEOUT,
+        )
+        .await
+    }
+
+    async fn terminate_until(&mut self, graceful: bool, deadline: tokio::time::Instant) -> bool {
         if self.terminated {
             return true;
         }
         self.stdin.take();
-        let gone = if graceful {
-            match tokio::time::timeout(GRACEFUL_SHUTDOWN, self.child.wait()).await {
-                Ok(Ok(_)) => self.tree.terminate_descendants(),
-                Ok(Err(_)) | Err(_) => self.tree.terminate(&mut self.child).await,
-            }
-        } else {
-            self.tree.terminate(&mut self.child).await
-        };
+        if graceful {
+            let grace = (tokio::time::Instant::now() + GRACEFUL_SHUTDOWN).min(deadline);
+            let _ = tokio::time::timeout_at(grace, self.child.wait()).await;
+        }
+        let gone = self.tree.terminate_until(&mut self.child, deadline).await;
         self.terminated = gone;
-        self.finish_stderr().await;
+        self.finish_stderr(deadline).await;
         gone
     }
 
-    async fn finish_stderr(&mut self) {
+    async fn finish_stderr(&mut self, deadline: tokio::time::Instant) {
         let Some(mut task) = self.stderr_task.take() else {
             return;
         };
-        if tokio::time::timeout(STDERR_JOIN_TIMEOUT, &mut task)
+        let join_deadline = (tokio::time::Instant::now() + STDERR_JOIN_TIMEOUT).min(deadline);
+        if tokio::time::timeout_at(join_deadline, &mut task)
             .await
             .is_err()
         {
             task.abort();
-            let _ = task.await;
+            let _ = tokio::time::timeout_at(deadline, task).await;
         }
-        let mut ring = self.stderr_ring.lock().await;
-        ring.clear();
+        if let Ok(mut ring) = tokio::time::timeout_at(deadline, self.stderr_ring.lock()).await {
+            ring.clear();
+        }
     }
 }
 
@@ -585,8 +594,8 @@ async fn terminate_failed_spawn(
     mut child: Child,
     mut tree: ProcessTree,
 ) -> Result<StdioProcess, String> {
-    let _ = tree.terminate(&mut child).await;
-    Err(SPAWN_FAILED.into())
+    let gone = tree.terminate(&mut child).await;
+    Err(if gone { SPAWN_FAILED } else { CLEANUP_FAILED }.into())
 }
 
 enum ModernConnectFailure {

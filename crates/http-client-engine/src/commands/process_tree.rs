@@ -6,11 +6,11 @@
 //! malicious descendant which deliberately calls `setsid()`; that OS authority
 //! limit is documented by the stdio contract rather than hidden.
 
-use std::thread;
-use std::time::{Duration, Instant};
+use std::time::Duration;
 use tokio::process::Child;
+use tokio::time::Instant;
 
-const CLEANUP_TIMEOUT: Duration = Duration::from_millis(750);
+pub(crate) const CLEANUP_TIMEOUT: Duration = Duration::from_millis(750);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
 #[cfg(target_os = "windows")]
@@ -88,7 +88,6 @@ impl ProcessTree {
                 unsafe {
                     let _ = TerminateJobObject(job, 1);
                 }
-                let _ = wait_for_job_empty(job, CLEANUP_TIMEOUT);
                 unsafe {
                     let _ = CloseHandle(job);
                 }
@@ -98,7 +97,6 @@ impl ProcessTree {
                 unsafe {
                     let _ = TerminateJobObject(job, 1);
                 }
-                let _ = wait_for_job_empty(job, CLEANUP_TIMEOUT);
                 unsafe {
                     let _ = CloseHandle(job);
                 }
@@ -132,31 +130,39 @@ impl ProcessTree {
     }
 
     pub(crate) async fn terminate(&mut self, child: &mut Child) -> bool {
+        self.terminate_until(child, Instant::now() + CLEANUP_TIMEOUT)
+            .await
+    }
+
+    pub(crate) async fn terminate_until(&mut self, child: &mut Child, deadline: Instant) -> bool {
         if self.terminal_empty {
-            return tokio::time::timeout(CLEANUP_TIMEOUT, child.wait())
+            return tokio::time::timeout_at(deadline, child.wait())
                 .await
                 .is_ok_and(|result| result.is_ok());
         }
         if !self.signal_termination(false) && self.authority_is_empty() != Some(true) {
-            let _ = child.kill().await;
+            // start_kill only sends a signal; all waits share the original deadline.
+            let _ = child.start_kill();
         }
-        let mut root_gone = tokio::time::timeout(CLEANUP_TIMEOUT / 2, child.wait())
+        let now = Instant::now();
+        let grace = now + deadline.saturating_duration_since(now) / 2;
+        let mut root_gone = tokio::time::timeout_at(grace, child.wait())
             .await
             .is_ok_and(|result| result.is_ok());
-        if !root_gone {
+        if !root_gone || self.authority_is_empty() != Some(true) {
             let _ = self.signal_termination(true);
-            root_gone = tokio::time::timeout(CLEANUP_TIMEOUT, child.wait())
-                .await
-                .is_ok_and(|result| result.is_ok());
+            if !root_gone {
+                let _ = child.start_kill();
+                root_gone = tokio::time::timeout_at(deadline, child.wait())
+                    .await
+                    .is_ok_and(|result| result.is_ok());
+            }
         }
-        if self.authority_is_empty() != Some(true) {
-            let _ = self.signal_termination(true);
-        }
-        let tree_gone = self.wait_authority_empty(
-            Instant::now()
-                .checked_add(CLEANUP_TIMEOUT)
-                .unwrap_or_else(Instant::now),
-        );
+        let tree_gone = wait_for_empty(deadline, {
+            let tree = &mut *self;
+            move || tree.authority_is_empty()
+        })
+        .await;
         if tree_gone {
             self.terminal_empty = true;
         }
@@ -179,73 +185,6 @@ impl ProcessTree {
     #[cfg(not(any(unix, target_os = "windows")))]
     fn signal_termination(&self, _force: bool) -> bool {
         true
-    }
-
-    pub(crate) fn terminate_descendants(&mut self) -> bool {
-        if self.terminal_empty {
-            return true;
-        }
-        if self.authority_is_empty() == Some(true) {
-            self.terminal_empty = true;
-            return true;
-        }
-
-        #[cfg(target_os = "windows")]
-        if unsafe { TerminateJobObject(self.job, 1) }.is_err()
-            && self.authority_is_empty() != Some(true)
-        {
-            return false;
-        }
-
-        #[cfg(unix)]
-        if !signal_group(self.process_group, libc::SIGTERM)
-            && self.authority_is_empty() != Some(true)
-        {
-            return false;
-        }
-
-        let deadline = Instant::now()
-            .checked_add(CLEANUP_TIMEOUT / 2)
-            .unwrap_or_else(Instant::now);
-        if self.wait_authority_empty(deadline) {
-            self.terminal_empty = true;
-            return true;
-        }
-
-        #[cfg(unix)]
-        if !signal_group(self.process_group, libc::SIGKILL)
-            && self.authority_is_empty() != Some(true)
-        {
-            return false;
-        }
-
-        #[cfg(target_os = "windows")]
-        if unsafe { TerminateJobObject(self.job, 1) }.is_err()
-            && self.authority_is_empty() != Some(true)
-        {
-            return false;
-        }
-
-        if self.wait_authority_empty(
-            Instant::now()
-                .checked_add(CLEANUP_TIMEOUT)
-                .unwrap_or_else(Instant::now),
-        ) {
-            self.terminal_empty = true;
-            true
-        } else {
-            false
-        }
-    }
-
-    fn wait_authority_empty(&self, deadline: Instant) -> bool {
-        loop {
-            match self.authority_is_empty() {
-                Some(true) => return true,
-                Some(false) | None if Instant::now() >= deadline => return false,
-                Some(false) | None => thread::sleep(POLL_INTERVAL),
-            }
-        }
     }
 
     #[cfg(target_os = "windows")]
@@ -271,9 +210,12 @@ impl ProcessTree {
         Some(true)
     }
 
-    pub(crate) async fn terminate_unassigned(child: &mut Child) {
-        let _ = child.kill().await;
-        let _ = tokio::time::timeout(CLEANUP_TIMEOUT, child.wait()).await;
+    pub(crate) async fn terminate_unassigned(child: &mut Child) -> bool {
+        let deadline = Instant::now() + CLEANUP_TIMEOUT;
+        let _ = child.start_kill();
+        tokio::time::timeout_at(deadline, child.wait())
+            .await
+            .is_ok_and(|result| result.is_ok())
     }
 }
 
@@ -298,17 +240,15 @@ fn query_job_active_processes(job: HANDLE) -> Option<u32> {
     .map(|_| accounting.ActiveProcesses)
 }
 
-#[cfg(target_os = "windows")]
-fn wait_for_job_empty(job: HANDLE, timeout: Duration) -> bool {
-    let deadline = Instant::now()
-        .checked_add(timeout)
-        .unwrap_or_else(Instant::now);
+async fn wait_for_empty(deadline: Instant, mut probe: impl FnMut() -> Option<bool>) -> bool {
     loop {
-        match query_job_active_processes(job) {
-            Some(0) => return true,
-            Some(_) | None if Instant::now() >= deadline => return false,
-            Some(_) | None => thread::sleep(POLL_INTERVAL),
+        if probe() == Some(true) {
+            return true;
         }
+        if Instant::now() >= deadline {
+            return false;
+        }
+        tokio::time::sleep_until((Instant::now() + POLL_INTERVAL).min(deadline)).await;
     }
 }
 
@@ -366,17 +306,9 @@ fn resume_primary_thread(pid: u32, job: HANDLE) -> Result<(), ()> {
 #[cfg(target_os = "windows")]
 impl Drop for ProcessTree {
     fn drop(&mut self) {
+        // Drop is only the signal/kill-on-close fallback, never proof of cleanup.
         if !self.terminal_empty {
-            if self.authority_is_empty() == Some(true) {
-                self.terminal_empty = true;
-            } else {
-                unsafe {
-                    let _ = TerminateJobObject(self.job, 1);
-                }
-                if wait_for_job_empty(self.job, CLEANUP_TIMEOUT) {
-                    self.terminal_empty = true;
-                }
-            }
+            let _ = self.signal_termination(true);
         }
         unsafe {
             let _ = CloseHandle(self.job);
@@ -387,21 +319,8 @@ impl Drop for ProcessTree {
 #[cfg(unix)]
 impl Drop for ProcessTree {
     fn drop(&mut self) {
-        if self.terminal_empty {
-            return;
-        }
-        if self.authority_is_empty() == Some(true) {
-            self.terminal_empty = true;
-            return;
-        }
-        if signal_group(self.process_group, libc::SIGKILL)
-            && self.wait_authority_empty(
-                Instant::now()
-                    .checked_add(CLEANUP_TIMEOUT)
-                    .unwrap_or_else(Instant::now),
-            )
-        {
-            self.terminal_empty = true;
+        if !self.terminal_empty {
+            let _ = self.signal_termination(true);
         }
     }
 }
@@ -413,6 +332,70 @@ mod tests {
     fn process_tree_can_move_with_its_async_worker() {
         fn assert_send<T: Send>() {}
         assert_send::<super::ProcessTree>();
+    }
+
+    #[tokio::test]
+    async fn unconfirmed_authority_yields_and_obeys_one_deadline() {
+        use super::*;
+        for state in [None, Some(false)] {
+            let started = Instant::now();
+            let deadline = started + Duration::from_millis(100);
+            let (empty, heartbeat) = tokio::join!(wait_for_empty(deadline, || state), async {
+                tokio::time::sleep(Duration::from_millis(5)).await;
+                Instant::now()
+            });
+            assert!(!empty);
+            assert!(heartbeat < deadline, "cleanup blocked the executor");
+            assert!(started.elapsed() < Duration::from_millis(500));
+        }
+        assert!(wait_for_empty(Instant::now(), || Some(true)).await);
+        assert!(!wait_for_empty(Instant::now(), || None).await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn force_escalation_keeps_time_to_reap_before_the_same_deadline() {
+        use super::*;
+        use tokio::io::{AsyncBufReadExt, BufReader};
+        let mut child = tokio::process::Command::new("/bin/sh")
+            .args(["-c", "trap '' TERM; printf 'ready\\n'; exec sleep 30"])
+            .stdout(std::process::Stdio::piped())
+            .process_group(0)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let mut tree = ProcessTree::assign(&child).unwrap();
+        let mut ready = String::new();
+        tokio::time::timeout(
+            Duration::from_secs(2),
+            BufReader::new(child.stdout.take().unwrap()).read_line(&mut ready),
+        )
+        .await
+        .unwrap()
+        .unwrap();
+        let started = Instant::now();
+        assert!(tree.terminate(&mut child).await);
+        assert!(started.elapsed() < CLEANUP_TIMEOUT + Duration::from_millis(500));
+        assert!(child.try_wait().unwrap().is_some());
+        assert!(tree.terminate(&mut child).await);
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn unassigned_cleanup_reaps_and_drop_does_not_poll() {
+        use super::*;
+        let mut child = tokio::process::Command::new("/bin/sleep")
+            .arg("30")
+            .process_group(0)
+            .kill_on_drop(true)
+            .spawn()
+            .unwrap();
+        let tree = ProcessTree::assign(&child).unwrap();
+        let started = Instant::now();
+        drop(tree);
+        assert!(started.elapsed() < Duration::from_millis(200));
+        assert!(ProcessTree::terminate_unassigned(&mut child).await);
+        assert!(child.try_wait().unwrap().is_some());
     }
 
     #[test]
