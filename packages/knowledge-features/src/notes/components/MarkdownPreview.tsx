@@ -11,14 +11,23 @@ import type { RenderedDoc } from "../types";
 // 있어, 이 값을 낮추면 곧바로 임의 파일 조작으로 이어진다.
 
 /** `href`를 `baseRel` 문서가 위치한 디렉터리 기준으로 해석한다. (POSIX 스타일 상대 경로) */
-function resolveRelativePath(baseRel: string, href: string): string {
-  const stack = baseRel.split("/").slice(0, -1);
-  for (const part of href.split("/")) {
-    if (part === "" || part === ".") continue;
-    if (part === "..") stack.pop();
-    else stack.push(part);
-  }
-  return stack.join("/");
+export function resolveNoteLink(baseRel: string, href: string): { path: string; fragment?: string } | null {
+  // Split URL syntax before decoding once; encoded '#' remains part of a filename.
+  if (/^[a-z][a-z0-9+.-]*:/i.test(href) || href.startsWith("//")) return null;
+  const hash = href.indexOf("#");
+  const urlPath = (hash < 0 ? href : href.slice(0, hash)).split("?")[0];
+  try {
+    const decoded = decodeURIComponent(urlPath);
+    if (decoded.includes("\\") || decoded.includes("\0")) return null;
+    const stack = decoded.startsWith("/") ? [] : baseRel.split("/").slice(0, -1);
+    if (!decoded) return { path: baseRel, fragment: hash < 0 ? undefined : decodeURIComponent(href.slice(hash + 1)) };
+    for (const part of decoded.split("/")) {
+      if (part === "" || part === ".") continue;
+      if (part === "..") { if (!stack.length) return null; stack.pop(); }
+      else stack.push(part);
+    }
+    return { path: stack.join("/"), fragment: hash < 0 ? undefined : decodeURIComponent(href.slice(hash + 1)) };
+  } catch { return null; }
 }
 
 interface MarkdownPreviewProps {
@@ -26,7 +35,8 @@ interface MarkdownPreviewProps {
   /** 현재 문서의 루트 상대 경로 — 상대 링크/이미지 해석 기준 */
   baseRel: string;
   /** 상대 링크 클릭 시 호출된다 (기존 openFile 재사용) */
-  onNavigate: (rel: string) => void;
+  onNavigate: (rel: string, fragment?: string) => void;
+  anchorRequest?: { fragment: string; id: number } | null;
   /** backend가 유일하게 resolve한 root-relative wikilink 전용 안전 열기 경로. */
   onNavigateWikilink?: (rel: string) => void;
 }
@@ -36,6 +46,7 @@ export default function MarkdownPreview({
   baseRel,
   onNavigate,
   onNavigateWikilink,
+  anchorRequest,
 }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   // 인덱스별 마지막 성공 SVG. mermaid 문법 오류가 나도 지우지 않고 유지한다(설계 결정 6).
@@ -103,11 +114,31 @@ export default function MarkdownPreview({
     };
   }, [baseRel, doc]);
 
+  useEffect(() => {
+    const container = containerRef.current;
+    if (!container || !doc) return;
+    const used = new Set(Array.from(container.querySelectorAll("[id]")).map(node => node.id));
+    for (const heading of container.querySelectorAll("h1,h2,h3,h4,h5,h6")) {
+      if (heading.id) continue;
+      const base = (heading.textContent ?? "").trim().toLowerCase().replace(/[^\p{L}\p{N}_\s-]/gu, "").replace(/\s/g, "-") || "section";
+      let id = base, index = 1;
+      while (used.has(id)) id = `${base}-${index++}`;
+      heading.id = id; used.add(id);
+    }
+  }, [doc]);
+
+  useEffect(() => {
+    if (!doc || !anchorRequest) return;
+    const target = Array.from(containerRef.current?.querySelectorAll<HTMLElement>("[id]") ?? [])
+      .find(element => element.id === anchorRequest.fragment);
+    target?.scrollIntoView?.({ block: "start" });
+  }, [doc, anchorRequest]);
+
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
     const anchor = (e.target as HTMLElement).closest("a[href]");
     if (!anchor) return;
     const href = anchor.getAttribute("href");
-    if (!href || href.startsWith("#")) return;
+    if (!href) return;
     e.preventDefault();
     if (href.startsWith("http://") || href.startsWith("https://")) {
       void openExternal(href);
@@ -116,7 +147,11 @@ export default function MarkdownPreview({
     if (href.startsWith("/") && anchor.classList.contains("wikilink")) {
       (onNavigateWikilink ?? onNavigate)(href.slice(1));
     } else {
-      onNavigate(resolveRelativePath(baseRel, href));
+      const link = resolveNoteLink(baseRel, href);
+      if (link) {
+        if (link.fragment === undefined) onNavigate(link.path);
+        else onNavigate(link.path, link.fragment);
+      }
     }
   };
 

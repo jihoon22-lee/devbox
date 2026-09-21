@@ -48,7 +48,7 @@ import {
   type RenamePreview,
 } from "./api";
 import { NoteDocument } from "./noteDocument";
-import { registerNoteEditor } from "./lifecycle";
+import { registerNoteEditor, useNoteSession } from "./lifecycle";
 import MarkdownEditor from "./components/MarkdownEditor";
 import MarkdownPreview from "./components/MarkdownPreview";
 import QuickCaptureDialog from "./components/QuickCaptureDialog";
@@ -150,16 +150,19 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   const activateRef = useRef(onActivate); activateRef.current = onActivate;
   const [tree, setTree] = useState<TreeEntry[]>([]);
   const [tags, setTags] = useState<string[]>([]);
-  const [editorDocument] = useState(() => new NoteDocument(readFile, writeFile));
+  const session = useNoteSession();
+  const [localDocument] = useState(() => new NoteDocument(readFile, writeFile));
+  const editorDocument = session ?? localDocument;
   const note = useSyncExternalStore(editorDocument.subscribe, editorDocument.snapshot);
   const { path: selected, content, dirty } = note;
-  useEffect(() => registerNoteEditor(editorDocument), [editorDocument]);
+  useEffect(() => session ? undefined : registerNoteEditor(editorDocument), [session, editorDocument]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [query, setQuery] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>("edit");
+  const [anchorRequest, setAnchorRequest] = useState<{ path: string; fragment: string; id: number } | null>(null);
   const [rendered, setRendered] = useState<RenderedDoc | null>(null);
   const [contextTarget, setContextTarget] = useState<TreeContextTarget | null>(null);
   const [availableTargets, setAvailableTargets] = useState<KnowledgeOpenTarget[] | null>(null);
@@ -230,18 +233,19 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
       return;
     }
     const rel = selected as string;
+    let invalidated = false;
     const timer = setTimeout(() => {
       void renderMarkdown(rel, content)
         .then((doc) => {
-          if (!draftMountedRef.current || selectedRef.current !== rel) return;
+          if (invalidated || !draftMountedRef.current || selectedRef.current !== rel) return;
           setRendered(doc);
         })
         .catch((e) => {
-          if (!draftMountedRef.current || selectedRef.current !== rel) return;
+          if (invalidated || !draftMountedRef.current || selectedRef.current !== rel) return;
           setError(e instanceof Error ? e.message : String(e));
         });
     }, RENDER_DEBOUNCE_MS);
-    return () => clearTimeout(timer);
+    return () => { invalidated = true; clearTimeout(timer); };
   }, [content, selected, mode]);
 
   const loadMeta = useCallback(async () => {
@@ -420,10 +424,13 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   }, [quickCaptureNotice]);
 
   const confirmDiscard = () => confirm("저장하지 않은 변경사항이 있습니다. 계속할까요?");
-  const openFile = async (path: string) => {
+  const openFile = async (path: string, fragment?: string) => {
     setError(null);
-    if (await editorDocument.openPath(path, confirmDiscard)) {
+    const opened = fragment !== undefined && editorDocument.snapshot().path === path
+      || await editorDocument.openPath(path, confirmDiscard);
+    if (opened) {
       setSelectedTreePath(editorDocument.snapshot().path); setCursorRequest(null);
+      setAnchorRequest(fragment === undefined ? null : { path, fragment, id: Date.now() });
     }
   };
 
@@ -1211,9 +1218,10 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
                 )}
                 {mode !== "edit" && (
                   <MarkdownPreview
+                    anchorRequest={anchorRequest?.path === selected ? anchorRequest : null}
                     doc={rendered}
                     baseRel={selected}
-                    onNavigate={(rel) => void openFile(rel)}
+                    onNavigate={(rel, fragment) => void openFile(rel, fragment)}
                     onNavigateWikilink={(rel) => void openIndexedNoteAt(rel)}
                   />
                 )}

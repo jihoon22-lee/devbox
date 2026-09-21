@@ -7,3 +7,5 @@ export function registerNoteEditor(editor: NoteEditorExit) {
 export function hasUnsavedNote() { return current?.unsaved() ?? false; }
 export async function saveNoteBeforeQuit() { return await current?.saveBeforeQuit() ?? true; }
 export async function settleNoteBeforeQuit() { await current?.settleBeforeQuit(); }
+
+export { NoteSessionProvider, useNoteSession } from "./session";
