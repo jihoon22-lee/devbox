@@ -4203,6 +4203,10 @@ mod tests {
                             Err(error) => panic!("redirect receiver: {error}"),
                         }
                     };
+                    // Winsock inherits the listener's nonblocking mode on
+                    // accepted sockets. The bounded request reader below
+                    // needs blocking reads on both Windows and Unix.
+                    second.set_nonblocking(false).unwrap();
                     second
                         .set_read_timeout(Some(std::time::Duration::from_secs(3)))
                         .unwrap();

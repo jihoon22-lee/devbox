@@ -177,3 +177,12 @@ contract tests, workspace Clippy and fmt. Existing compiled test artifacts ran 2
 artifact selector initially looked only for `lib` instead of Cargo's `rlib`/`staticlib` kinds;
 correcting that selector required no recompilation or repeated unrelated tests. Hosted Windows
 acceptance remains pending for these corrected binaries.
+
+Final CI 35552488707 passed Linux/frontend/dependency/catalog gates but Windows found a
+GraphQL loopback-fixture race: an accepted socket inherited its nonblocking listener mode on
+Winsock and `read_http_request` returned WouldBlock before bytes arrived. Explicitly restore
+blocking mode on the accepted connection; keep bounded reads and all redirect assertions.
+This change is inside `#[cfg(test)]` only. Native acceptance 35552488590 continues collecting
+results for the unchanged production binaries; do not discard its successful unrelated scopes.
+The seven GraphQL-specific local regressions pass after that fixture correction, with shared
+resource limits; no unrelated Rust tests were executed. Windows confirmation remains pending.
