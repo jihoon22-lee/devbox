@@ -34,3 +34,16 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 [이전 개발 단계의 상세 README](../../docs/history/v0.8-development/api-studio.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
+
+### Review corrections (2026-09-21)
+
+GraphQL redirects permanently stop forwarding the original payload after leaving its origin,
+including POST-to-GET URL reconstruction. Secret checks run against the final destination URL.
+Webhook history and saved fixtures can send a bounded, redacted projection to Workspace Logs.
+The approved Suite installation and peer are required; Workspace asks the user to review the
+incoming item before claiming it. Projection lifetime is two minutes, with at most 32 pending
+items. No raw capture, filesystem path, clipboard or legacy executable is used as a fallback.
+An unavailable/offline receiver leaves the original history/fixture intact. Source process
+restart or expiry requires sending a new projection. Windows end-to-end execution evidence is
+tracked in `workthrough/2026-09-21-v08-review-corrections.md`; historical producer acceptance
+does not establish receiver acceptance.
