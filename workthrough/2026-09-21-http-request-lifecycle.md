@@ -9,5 +9,7 @@
 - Regression fixtures cover concurrent registration, supersession, early/stale/duplicate
   cancel, registration failure, saturated admission and delayed redirect headers/body.
 - Existing request/redirect/cancellation tests remain part of affected Rust validation.
-- Validation: pending final affected checks and GitHub Actions CI. No Windows GUI
-  execution claimed; this stage changes native request logic and admission only.
+- Validation: `pnpm verify:affected` PASS (125s): API Studio and HTTP engine
+  check/Clippy/fmt/tests, including all new regression fixtures. GitHub Actions CI
+  is the remaining merge gate. No Windows GUI execution claimed; this stage changes
+  native request logic and admission only.
