@@ -1,4 +1,6 @@
 const messages: Record<string, string> = {
+  note_conflict: "파일이 외부에서 변경되었습니다. 비교 후 다시 저장해 주세요.",
+  note_unavailable: "파일을 읽거나 저장하지 못했습니다. 편집 내용은 유지됩니다.",
   vault_change_invalid: "저장소 변경 정보를 확인할 수 없습니다. 현재 연결과 원본 파일은 유지됩니다.",
   vault_change_save_failed: "저장소 연결을 저장하지 못했습니다. 공간과 권한을 확인하고 다시 시도해 주세요.",
   vault_change_stale: "폴더나 연결 정보가 바뀌었거나 미리보기가 만료되었습니다. 다시 확인해 주세요.",

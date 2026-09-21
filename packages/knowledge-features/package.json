@@ -4,6 +4,7 @@
   "private": true,
   "type": "module",
   "exports": {
+    "./notes-lifecycle": "./src/notes/lifecycle.ts",
     "./notes": "./src/notes/App.tsx",
     "./activity": "./src/activity/App.tsx",
     "./search": "./src/search/App.tsx",

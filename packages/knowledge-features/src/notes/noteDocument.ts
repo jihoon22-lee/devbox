@@ -1,0 +1,119 @@
+import type { InboundNote, NoteSnapshot } from "./api";
+
+export interface NoteView {
+  path: string | null; content: string; revision: string; dirty: boolean;
+  saving: boolean; conflict: NoteSnapshot | null; error: string | null;
+}
+type Writer = (path: string, content: string, revision: string) => Promise<NoteSnapshot>;
+const empty: NoteView = { path: null, content: "", revision: "", dirty: false, saving: false, conflict: null, error: null };
+
+/** One editor, one ordered writer. Native revisions are independent of edit revisions. */
+export class NoteDocument {
+  private view: NoteView = empty;
+  private listeners = new Set<() => void>();
+  private document = 0;
+  private edits = 0;
+  private opening = 0;
+  private writing: Promise<boolean> | null = null;
+  constructor(private read: (path: string) => Promise<NoteSnapshot>, private write: Writer) {}
+  snapshot = () => this.view;
+  subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
+  private publish(change: Partial<NoteView>) {
+    this.view = { ...this.view, ...change };
+    for (const listener of this.listeners) listener();
+  }
+  edit(content: string) { this.edits++; this.publish({ content, dirty: true }); }
+  clear() { this.opening++; this.document++; this.edits++; this.publish({ ...empty, saving: !!this.writing }); }
+  async open(load: () => Promise<InboundNote>, discard: () => boolean): Promise<boolean> {
+    const request = ++this.opening;
+    if (this.view.dirty && !discard()) return false;
+    const edits = this.edits;
+    this.publish({ error: null });
+    try {
+      const note = await load();
+      if (request !== this.opening) return false;
+      if (edits !== this.edits) {
+        this.publish({ error: "파일을 읽는 동안 편집한 내용을 유지했습니다. 노트를 다시 선택해 주세요." });
+        return false;
+      }
+      this.document++;
+      this.publish({ path: note.path, content: note.content, revision: note.revision, dirty: false, conflict: null, error: null });
+      return true;
+    } catch (error) {
+      if (request === this.opening) this.publish({ error: error instanceof Error ? error.message : "노트를 열지 못했습니다." });
+      return false;
+    }
+  }
+  openPath(path: string, discard: () => boolean) {
+    return this.open(async () => {
+      const note = await this.read(path);
+      if (note.content === null) throw new Error("파일이 삭제되었습니다. 현재 편집 내용은 유지됩니다.");
+      return { ...note, path, content: note.content };
+    }, discard);
+  }
+  async renamed(from: string, to: string): Promise<void> {
+    const current = this.view.path;
+    if (!current) return;
+    const path = current === from ? to : current.startsWith(`${from}/`) ? to + current.slice(from.length) : current;
+    const document = this.document, edits = this.edits;
+    this.opening++;
+    this.publish({ path, revision: "" });
+    try {
+      const saved = await this.read(path);
+      if (document !== this.document) return;
+      if (saved.content === null) throw new Error("missing");
+      if (edits !== this.edits || this.view.dirty) {
+        this.publish({ conflict: saved });
+      } else {
+        this.publish({ content: saved.content, revision: saved.revision, conflict: null });
+      }
+    } catch {
+      if (document === this.document) this.publish({
+        ...(this.view.dirty ? {} : { content: "" }),
+        error: "이름은 변경했지만 현재 노트를 다시 읽지 못했습니다",
+      });
+    }
+  }
+  async inspect(): Promise<void> {
+    const { path, revision } = this.view, document = this.document;
+    if (!path) return;
+    try {
+      const disk = await this.read(path);
+      if (document === this.document && revision === this.view.revision) {
+        this.publish({ conflict: disk.revision === revision ? null : disk });
+      }
+    } catch { if (document === this.document) this.publish({ error: "파일의 현재 상태를 확인하지 못했습니다. 편집 내용은 유지됩니다." }); }
+  }
+  save(overwriteRevision?: string): Promise<boolean> {
+    // Duplicate clicks and keyboard saves share one write; late replies cannot
+    // reorder writes on disk. Edits made in flight remain dirty for the next save.
+    if (this.writing) return this.writing;
+    const { path, content, revision } = this.view;
+    if (!path) return Promise.resolve(true);
+    const document = this.document, edits = this.edits;
+    this.publish({ saving: true, error: null });
+    const task = (async () => {
+      try {
+        const saved = await this.write(path, content, overwriteRevision ?? revision);
+        if (document !== this.document) return false;
+        this.publish({ revision: saved.revision, dirty: edits !== this.edits, conflict: null });
+        return edits === this.edits;
+      } catch (error) {
+        if (document === this.document) {
+          this.publish({ dirty: true, error: error instanceof Error ? error.message : "저장하지 못했습니다. 편집 내용은 유지됩니다." });
+          await this.inspect();
+        }
+        return false;
+      } finally { this.writing = null; this.publish({ saving: false }); }
+    })();
+    this.writing = task;
+    return task;
+  }
+  unsaved = () => this.view.dirty || this.view.saving;
+  settleBeforeQuit = async () => { if (this.writing) await this.writing; };
+  saveBeforeQuit = async () => {
+    if (this.writing) await this.writing;
+    if (this.view.conflict) return false;
+    return !this.view.dirty || await this.save();
+  };
+}

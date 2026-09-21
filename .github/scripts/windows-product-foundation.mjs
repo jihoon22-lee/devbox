@@ -390,7 +390,7 @@ async function start(product, suffix) {
         const blockedBinding = await call("knowledge.notes", "notes", "set_root", { path: "C:/synthetic-unapproved-vault" });
         return { replayRejected, legacyCommandRejected, foreignInstallationRejected,
           privateVault: root.operation.outcome.state === "succeeded" && root.value.includes("notes-vault"),
-          explicitNoteWrite: created.operation.outcome.state === "succeeded" && read.value === "# Product fixture",
+          explicitNoteWrite: created.operation.outcome.state === "succeeded" && read.value.content === "# Product fixture",
           collectorStartsOff: tracking.operation.outcome.state === "succeeded" && tracking.value === false,
           independentSearch: results.operation.outcome.state === "succeeded" && Array.isArray(results.value.rows) && results.value.rows.length === 0 && results.value.source === "files",
           queryMutationDenials: denied, unapprovedBindingRejected: blockedBinding.operation.outcome.state === "failed" };
@@ -423,10 +423,10 @@ async function start(product, suffix) {
         const content = await notes("read_file", { rel: path });
         let legacyDailyRejected = false;
         try { await notes("daily_note"); } catch { legacyDailyRejected = true; }
-        return { previewDoesNotWrite: before.operation.outcome.state === "failed", cancelPreventsWrite: cancelled.operation.outcome.state === "failed",
+        return { previewDoesNotWrite: before.operation.outcome.state === "succeeded" && before.value.content === null, cancelPreventsWrite: cancelled.operation.outcome.state === "failed",
           explicitSave: saved.operation.outcome.state === "succeeded", repeatRejected: repeated.operation.outcome.state === "failed",
           existingOnlyOpens: existing.value.exists === true && existing.value.previewId === null,
-          civilDate: content.value.includes("# 2024-02-29"), legacyDailyRejected };
+          civilDate: content.value.content.includes("# 2024-02-29"), legacyDailyRejected };
       })()`);
       assert.deepEqual(componentProbe.daily, { previewDoesNotWrite: true, cancelPreventsWrite: true, explicitSave: true, repeatRejected: true, existingOnlyOpens: true, civilDate: true, legacyDailyRejected: true });
       componentProbe.closePolicy = await cdp.evaluate(`(async () => {

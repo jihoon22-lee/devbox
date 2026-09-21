@@ -44,6 +44,7 @@ pub struct TreeEntry {
 pub struct InboundNote {
     pub path: String,
     pub content: String,
+    pub revision: String,
 }
 
 #[derive(Clone, Serialize)]
@@ -211,11 +212,15 @@ pub fn list_tree(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<TreeEntry
 }
 
 #[tauri::command]
-pub fn read_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Result<String, String> {
+pub fn read_file(
+    state: tauri::State<'_, Arc<AppState>>,
+    rel: String,
+) -> Result<crate::core::document::Snapshot, String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
-    let path = canonical_existing_entry(&root, &rel).map_err(str::to_string)?;
-    store::read_file(&path)
+    let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
+    let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
+    crate::core::document::read(&path)
 }
 
 /// Untrusted applink `Path`를 현재 Knowledge root 안의 실제 Markdown note로
@@ -230,8 +235,13 @@ pub fn open_inbound_note(
         let conn = state.db.lock().unwrap();
         resolve_root(&conn).map_err(|_| "요청한 노트를 열 수 없습니다".to_string())?
     };
-    let (path, content) = crate::core::inbound::read_note(&root, &path).map_err(str::to_string)?;
-    Ok(InboundNote { path, content })
+    let resolved = crate::core::inbound::resolve_note(&root, &path).map_err(str::to_string)?;
+    let snapshot = crate::core::document::read(&resolved.canonical_path)?;
+    Ok(InboundNote {
+        path: resolved.relative_path,
+        content: snapshot.content.ok_or("note_unavailable")?,
+        revision: snapshot.revision,
+    })
 }
 
 #[tauri::command]
@@ -239,22 +249,23 @@ pub fn write_file(
     state: tauri::State<'_, Arc<AppState>>,
     rel: String,
     content: String,
-) -> Result<(), String> {
+    expected_revision: String,
+) -> Result<crate::core::document::Snapshot, String> {
     let conn = state.db.lock().unwrap();
     let root = resolve_root(&conn)?;
     let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
-    let path = vault
-        .existing_entry(&rel)
-        .map_err(|error| error.to_string())?;
-    store::write_file(&path, &content)?;
-    db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
+    let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
+    vault.revalidate().map_err(|error| error.to_string())?;
+    let saved = crate::core::document::save(&path, &content, &expected_revision)?;
+    // Index failure cannot turn an already committed file write into a retry
+    // using the obsolete revision. The watcher rebuilds derived metadata.
+    let _ = db::index_doc(&conn, &rel, &content);
     drop(conn);
-    // integration snapshot 갱신 (best-effort — 실패해도 저장은 유지)
     let _ = crate::integration::write_snapshot(
         &state.db.lock().unwrap(),
         state.integration_root.as_deref(),
     );
-    Ok(())
+    Ok(saved)
 }
 
 #[tauri::command]
@@ -969,11 +980,15 @@ pub(crate) async fn __component_write_file(
     struct Input {
         rel: String,
         content: String,
+        expected_revision: String,
     }
-    let Input { rel, content } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    write_file(component_app.state(), rel, content)?;
-    Ok(serde_json::Value::Null)
+    let Input {
+        rel,
+        content,
+        expected_revision,
+    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
+    let saved = write_file(component_app.state(), rel, content, expected_revision)?;
+    serde_json::to_value(saved).map_err(|_| "component_response_invalid".into())
 }
 
 /// Typed product adapter; the caller enforces native owner/session authorization.
