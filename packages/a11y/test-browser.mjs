@@ -1,7 +1,8 @@
 // Actual Chromium keyboard navigation, separate from jsdom selector fixtures.
 import assert from "node:assert/strict";
 import { spawn } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdtempSync, readFileSync } from "node:fs";
+import { rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -11,8 +12,10 @@ const root = path.dirname(fileURLToPath(import.meta.url));
 const chrome = [process.env.DEVBOX_TEST_CHROME, "/usr/bin/google-chrome", "/usr/bin/chromium", "/usr/bin/chromium-browser", process.env.PROGRAMFILES && path.join(process.env.PROGRAMFILES, "Google/Chrome/Application/chrome.exe")].find(value => value && existsSync(value));
 assert.ok(chrome, "A Chromium executable is required for the actual Tab-order acceptance fixture");
 const profile = mkdtempSync(path.join(tmpdir(), "devbox-a11y-browser-"));
-const child = spawn(chrome, ["--headless=new", "--disable-gpu", "--disable-background-networking", "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { stdio: ["ignore", "ignore", "pipe"] });
-let stderr = "", cdp;
+const child = spawn(chrome, ["--headless=new", "--disable-gpu", "--disable-background-networking", "--no-first-run", "--remote-debugging-port=0", `--user-data-dir=${profile}`, "about:blank"], { detached: process.platform !== "win32", stdio: ["ignore", "ignore", "pipe"] });
+let stderr = "", cdp, closed = false;
+const closure = new Promise(resolve => child.once("close", () => { closed = true; resolve(); }));
+child.on("error", error => { stderr += String(error); });
 child.stderr.on("data", chunk => { stderr = (stderr + chunk).slice(-4000); });
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
 try {
@@ -48,13 +51,34 @@ try {
   assert.equal(await press(), "first", "forward trap wraps in real Tab order");
   assert.equal(await press(true), "last", "reverse trap wraps in real Tab order");
   assert.equal(cdp.runtimeExceptions, 0);
-  console.log("Chromium CSS visibility and actual Tab/Shift+Tab order: PASS");
 } finally {
+  // Browser.close flushes the private profile; parent exit alone is not sufficient.
+  if (cdp && !closed) await cdp.send("Browser.close").catch(() => {});
   cdp?.close();
-  if (child.exitCode === null) {
-    child.kill("SIGTERM");
-    await Promise.race([new Promise(resolve => child.once("exit", resolve)), sleep(3000)]);
-    if (child.exitCode === null) child.kill("SIGKILL");
+  const signalOwned = signal => {
+    if (closed) return;
+    try {
+      if (process.platform === "win32") child.kill(signal);
+      else if (child.pid) process.kill(-child.pid, signal);
+    } catch (error) { if (error.code !== "ESRCH") throw error; }
+  };
+  await Promise.race([closure, sleep(3000)]);
+  if (!closed) {
+    signalOwned("SIGTERM");
+    await Promise.race([closure, sleep(2000)]);
   }
-  rmSync(profile, { recursive: true, force: true, maxRetries: 5, retryDelay: 100 });
+  if (!closed) {
+    signalOwned("SIGKILL");
+    await Promise.race([closure, sleep(2000)]);
+  }
+  assert.ok(closed, "Owned Chromium pipes/process did not close; profile retained");
+  const deadline = Date.now() + 3000;
+  for (;;) {
+    try { await rm(profile, { recursive: true, force: true }); break; }
+    catch (error) {
+      if (!["ENOTEMPTY", "EBUSY", "EPERM"].includes(error.code) || Date.now() >= deadline) throw error;
+      await sleep(100);
+    }
+  }
 }
+console.log("Chromium CSS visibility and actual Tab/Shift+Tab order and owned cleanup: PASS");

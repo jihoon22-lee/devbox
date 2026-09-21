@@ -26,3 +26,10 @@
 - New regression fixtures for digest cancellation/deadline, post-commit warning and
   directory work budget passed. Cargo versions unchanged; notices regenerated from lock.
 - Remaining merge gate: final GitHub CI and Windows native/hosted WSL2 acceptance.
+- First CI found stale Suite source/implementation paths in the parity inventory and
+  a browser fixture cleanup race after successful keyboard assertions. Updated all
+  three inventory paths, close Chromium through CDP and await owned process/pipes
+  before bounded profile removal. Focused catalog contracts and browser/cleanup PASS.
+- First CI dependency policy and Linux Rust PASS; Windows check/Clippy/tests completed
+  without failures. Superseded native acceptance was cancelled early to avoid wasting
+  a long run on a head requiring metadata/fixture corrections. Final head must rerun CI.
