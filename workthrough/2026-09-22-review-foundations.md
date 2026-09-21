@@ -16,5 +16,13 @@
   Actual Chromium Tab/Shift+Tab fixture is part of a11y tests, separate from jsdom.
 - Fixtures: crate-consumer scope, typed draft recovery/non-recovery, injected post-commit
   warning, cancelled/expired digest, empty-directory budget, CSS/actual keyboard order.
-- Validation pending: entire implementation/fixtures/docs before one full affected audit
-  (CI resolver changed), followed by final CI and Windows native acceptance.
+- Validation: completed the full affected audit (resolver selected all). Frontend
+  builds/types/bundle budgets and all Vitest suites PASS; actual Chromium CSS and
+  Tab/Shift+Tab PASS. Rust workspace check/Clippy/fmt and all tests PASS.
+- Corrections collected during validation: secrets reverse-dependency expectation
+  includes suite-runtime; browser fixture starts at dialog focusFirst and uses the
+  CDP Shift bit; one import was reordered. Only failed or not-yet-run checks were
+  resumed under the same resource supervisor. No passed compiler/test scope repeated.
+- New regression fixtures for digest cancellation/deadline, post-commit warning and
+  directory work budget passed. Cargo versions unchanged; notices regenerated from lock.
+- Remaining merge gate: final GitHub CI and Windows native/hosted WSL2 acceptance.

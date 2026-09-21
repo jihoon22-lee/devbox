@@ -82,7 +82,7 @@ assert resolve("crates/search/src/lib.rs").rust_packages == ["devbox-content-ind
 for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engine"]:
     assert resolve(f"crates/{engine}/src/component.rs").rust_packages == sorted(["devbox-"+engine, "devbox-knowledge"])
 secrets = resolve("crates/secrets/src/lib.rs")
-assert secrets.rust_packages == sorted(["devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl"])
+assert secrets.rust_packages == sorted(["devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
 
 native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
 assert native_helper.frontend_scope == "none"

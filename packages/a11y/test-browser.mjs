@@ -34,15 +34,16 @@ try {
   await cdp.evaluate(`(async () => {
     window.helpers = await import(${JSON.stringify("data:text/javascript;base64," + Buffer.from(source).toString("base64"))});
     document.body.innerHTML = '<style>.gone { display:none }.invisible { visibility:hidden }</style><section id="dialog"><button id="zero">zero</button><button id="second" tabindex="2">second</button><button id="first" tabindex="1">first</button><button id="negative" tabindex="-1">negative</button><div class="gone"><button>hidden ancestor</button></div><button class="invisible">hidden style</button><input id="unchecked" type="radio" name="choice"><input id="checked" type="radio" name="choice" checked><button id="last">last</button></section>';
-    document.body.tabIndex=-1; document.body.focus();
+    helpers.focusFirst(document.getElementById("dialog"));
   })()`);
   const press = async (shift = false) => {
-    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: shift ? 1 : 0 });
+    for (const type of ["keyDown", "keyUp"]) await cdp.send("Input.dispatchKeyEvent", { type, key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9, modifiers: shift ? 8 : 0 });
     return cdp.evaluate("document.activeElement.id");
   };
   const expected = ["first", "second", "zero", "checked", "last"];
   assert.deepEqual(await cdp.evaluate("helpers.tabbableElements(document.getElementById('dialog')).map(node => node.id)"), expected);
-  for (const id of expected) assert.equal(await press(), id, `native Tab should reach ${id}`);
+  assert.equal(await cdp.evaluate("document.activeElement.id"), "first");
+  for (const id of expected.slice(1)) assert.equal(await press(), id, `native Tab should reach ${id}`);
   await cdp.evaluate("document.getElementById('dialog').addEventListener('keydown', event => helpers.trapDialogKeyDown(event, event.currentTarget))");
   assert.equal(await press(), "first", "forward trap wraps in real Tab order");
   assert.equal(await press(true), "last", "reverse trap wraps in real Tab order");
