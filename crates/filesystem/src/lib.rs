@@ -36,7 +36,7 @@ pub use ignore::is_ignored_dir;
 pub use project_path::{
     parse_safe_project_path, ProjectPathKind, SafeProjectPath, MAX_PROJECT_PATH_BYTES,
 };
-pub use walk::{collect, collect_limited, IndexedFile, WalkResult};
+pub use walk::{collect, collect_bounded, collect_limited, IndexedFile, WalkResult};
 
 use std::fs::{self, File, OpenOptions};
 use std::io::{self, Write};
@@ -442,7 +442,34 @@ pub fn unlock_exclusive(_file: &std::fs::File) -> io::Result<()> {
 /// up only its own unique temporary file. The target's parent directory must
 /// already exist so callers retain ownership of directory policy.
 pub fn atomic_write(path: impl AsRef<Path>, contents: &[u8]) -> io::Result<()> {
-    let path = path.as_ref();
+    atomic_write_with_outcome(path, contents).map(|_| ())
+}
+
+/// Returned only after replacement committed. A durability warning is not an unsaved file.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WriteOutcome {
+    pub durability_warning: Option<&'static str>,
+}
+fn committed_outcome(sync: io::Result<()>) -> WriteOutcome {
+    WriteOutcome {
+        durability_warning: sync.err().map(|_| "parent_directory_sync_failed"),
+    }
+}
+/// Shared post-commit contract used by atomic writes and revision-checked Editor saves.
+pub fn finish_replacement(path: &Path) -> WriteOutcome {
+    committed_outcome(sync_parent(path))
+}
+pub fn atomic_write_with_outcome(
+    path: impl AsRef<Path>,
+    contents: &[u8],
+) -> io::Result<WriteOutcome> {
+    atomic_write_using(path.as_ref(), contents, finish_replacement)
+}
+fn atomic_write_using(
+    path: &Path,
+    contents: &[u8],
+    finish: impl FnOnce(&Path) -> WriteOutcome,
+) -> io::Result<WriteOutcome> {
     let parent = path
         .parent()
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "path has no parent"))?;
@@ -471,14 +498,12 @@ pub fn atomic_write(path: impl AsRef<Path>, contents: &[u8]) -> io::Result<()> {
             file.sync_all()?;
             drop(file);
             replace_file(&temporary, path)?;
-            let _ = sync_parent(path);
-            Ok(())
+            Ok(finish(path))
         })();
-        if let Err(error) = result {
+        if result.is_err() {
             let _ = fs::remove_file(&temporary);
-            return Err(error);
         }
-        return Ok(());
+        return result;
     }
 
     Err(io::Error::new(
@@ -834,6 +859,25 @@ mod atomic_write_tests {
             "filesystem-atomic-test-{}-{id}",
             std::process::id()
         ))
+    }
+
+    #[test]
+    fn post_commit_sync_failure_returns_warning_and_preserves_committed_bytes() {
+        let root = new_test_dir();
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("state.json");
+        fs::write(&target, b"old").unwrap();
+        let result = super::atomic_write_using(&target, b"new", |_| {
+            super::committed_outcome(Err(std::io::Error::other("injected sync failure")))
+        })
+        .unwrap();
+        assert_eq!(
+            result.durability_warning,
+            Some("parent_directory_sync_failed")
+        );
+        assert_eq!(fs::read(&target).unwrap(), b"new");
+        assert_eq!(fs::read_dir(&root).unwrap().count(), 1);
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

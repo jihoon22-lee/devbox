@@ -140,3 +140,10 @@ RSS 합계는 공유 페이지 중복과 샘플 사이의 peak 누락이 가능�
 두 줄 구조를 검증한다. 주석·빈 줄만 추가 허용하며 새 필드·다른 정책 값은 거부한다.
 새 schema가 필요하면 checker와 회귀 테스트를 함께 변경한다. 다른 agent YAML·실행 스크립트·
 미분류 경로는 기존 fail-safe 전체 검증을 유지한다.
+
+## 실제 Tab 순서 회귀 검사
+
+`packages/a11y` 테스트는 jsdom 검사 뒤 독립 임시 프로필의 headless Chromium에서 CSS 숨김,
+양수/음수 tabindex, radio 그룹, 실제 Tab/Shift+Tab 이동과 dialog 순환을 확인한다.
+Linux의 Google Chrome/Chromium 또는 `DEVBOX_TEST_CHROME`으로 지정한 실행 파일을 사용한다.
+브라우저가 없으면 미실행을 성공으로 숨기지 않고 실패한다. 사용자 프로필과 기존 창은 건드리지 않는다.

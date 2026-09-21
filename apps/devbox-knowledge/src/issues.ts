@@ -1,4 +1,8 @@
 const messages: Record<string, string> = {
+  draft_stale: "저장 위치나 초안 상태가 바뀌었습니다. 새로 준비해 주세요.",
+  draft_busy: "다른 초안을 미리보기 중입니다.",
+  draft_invalid: "초안 요청의 형식이나 대상을 확인해 주세요.",
+  draft_unavailable: "초안을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
   note_conflict: "파일이 외부에서 변경되었습니다. 비교 후 다시 저장해 주세요.",
   note_unavailable: "파일을 읽거나 저장하지 못했습니다. 편집 내용은 유지됩니다.",
   vault_change_invalid: "저장소 변경 정보를 확인할 수 없습니다. 현재 연결과 원본 파일은 유지됩니다.",

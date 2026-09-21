@@ -2,6 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import {
   focusFirst,
   focusableElements,
+  tabbableElements,
   isImeComposing,
   isKeyboardActivation,
   restoreFocus,
@@ -66,4 +67,23 @@ describe("dialog focus helpers", () => {
     expect(restoreFocus(button)).toBe(true);
     expect(document.activeElement).toBe(button);
   });
+});
+
+
+it("separates programmatic focus from visible sequential tab order", () => {
+  document.body.innerHTML = `<style>.gone { display:none } .invisible { visibility:hidden }</style>
+    <section id="dialog"><div class="gone"><button id="hidden">hidden</button></div>
+    <button class="invisible" id="invisible">invisible</button><button id="zero">zero</button>
+    <button id="second" tabindex="2">second</button><button id="first" tabindex="1">first</button>
+    <button id="programmatic" tabindex="-1">programmatic</button>
+    <details><summary id="summary">summary</summary><button id="closed">closed</button></details>
+    <input type="radio" name="choice" id="unchecked"><input type="radio" name="choice" id="checked" checked>
+    </section>`;
+  const dialog = document.querySelector("#dialog")!;
+  expect(focusableElements(dialog).map(node => node.id)).toContain("programmatic");
+  expect(tabbableElements(dialog).map(node => node.id)).toEqual(["first", "second", "zero", "summary", "checked"]);
+  const checked = document.querySelector<HTMLElement>("#checked")!; checked.focus();
+  const preventDefault = vi.fn(), stopPropagation = vi.fn();
+  trapDialogKeyDown({ key: "Tab", shiftKey: false, preventDefault, stopPropagation }, dialog);
+  expect(document.activeElement?.id).toBe("first");
 });

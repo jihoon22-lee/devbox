@@ -91,6 +91,10 @@ pub(crate) fn issue(error: &str) -> &'static str {
     match error {
         "component_args_invalid" => "invalid_request",
         "note_conflict" => "note_conflict",
+        "draft_stale" => "draft_stale",
+        "draft_busy" => "draft_busy",
+        "draft_invalid" => "draft_invalid",
+        "draft_unavailable" => "draft_unavailable",
         "note_unavailable" => "note_unavailable",
         "setup_required" => "setup_required",
         "store_busy" | "digest_busy" | "search_busy" => "busy",
