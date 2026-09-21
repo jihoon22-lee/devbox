@@ -14492,17 +14492,17 @@
         ".github/scripts/windows-suite-workflows.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/webhook_logs.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
         "workthrough/2026-09-07-v08-b02-api-studio.md",
         "workthrough/2026-09-21-v08-review-corrections.md"
       ],
-      "verificationScope": "Historical evidence covers the masked producer only. The corrected native Suite receiver and actual Windows history/fixture-to-Logs fixture await execution; no cross-product end-to-end PASS is claimed.",
+      "verificationScope": "Hosted Windows run 35558568470 passed complete Suite scope with retained binaries from 35556768534 (source 42be2525) and fixture a0c76430: history and saved fixture reach reviewed Workspace Logs; secrets absent, producer preserved, unreviewed/stale/replay denied. Exact-main release candidate acceptance remains separate.",
       "integrationOwnerIssue": 549,
       "integrationContract": "API Studio owns a bounded redacted 120-second projection; verified same-installation Suite peer, explicit Workspace Logs review, revision-bound claim and acknowledgement; no raw path, clipboard or legacy executable.",
-      "verifiedSourceCommit": "4ea48c5967c49a740ef2b77fa4f93dfa5afd41c5",
+      "verifiedSourceCommit": "42be2525aefb9fc30fe7072f45d415e54e3dc0f5",
       "producerVerified": true,
       "baselineSourcePath": "apps/webhook-lab/src-tauri/src/commands.rs"
     },
@@ -14526,17 +14526,17 @@
         ".github/scripts/windows-suite-workflows.mjs"
       ],
       "ownerIssue": 544,
-      "status": "pending",
+      "status": "verified",
       "implementationPath": "apps/devbox-api-studio/src-tauri/src/webhook_logs.rs",
       "dispatchPath": "apps/devbox-api-studio/src-tauri/src/component.rs",
       "evidence": [
         "workthrough/2026-09-07-v08-b02-api-studio.md",
         "workthrough/2026-09-21-v08-review-corrections.md"
       ],
-      "verificationScope": "Historical evidence covers the masked producer only. The corrected native Suite receiver and actual Windows history/fixture-to-Logs fixture await execution; no cross-product end-to-end PASS is claimed.",
+      "verificationScope": "Hosted Windows run 35558568470 passed complete Suite scope with retained binaries from 35556768534 (source 42be2525) and fixture a0c76430: history and saved fixture reach reviewed Workspace Logs; secrets absent, producer preserved, unreviewed/stale/replay denied. Exact-main release candidate acceptance remains separate.",
       "integrationOwnerIssue": 549,
       "integrationContract": "API Studio owns a bounded redacted 120-second projection; verified same-installation Suite peer, explicit Workspace Logs review, revision-bound claim and acknowledgement; no raw path, clipboard or legacy executable.",
-      "verifiedSourceCommit": "4ea48c5967c49a740ef2b77fa4f93dfa5afd41c5",
+      "verifiedSourceCommit": "42be2525aefb9fc30fe7072f45d415e54e3dc0f5",
       "producerVerified": true,
       "baselineSourcePath": "apps/webhook-lab/src-tauri/src/commands.rs"
     },

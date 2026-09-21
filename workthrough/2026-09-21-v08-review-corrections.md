@@ -211,3 +211,17 @@ but the fixture's preceding native log read used generation 700, poisoning the f
 read's smaller generation. Use initial generation zero before the first Logs mount. This is a
 fixture-only correction; preserve 42be2525 binaries and use the existing retained-executable
 continuation with the full-workflow choice (rather than rebuilding or rerunning installation).
+
+## Final pre-merge acceptance
+
+- Required CI 35556768342 passed at production head 42be2525, including Windows GraphQL regression.
+- Full cross-product run 35558568470 passed using unchanged binaries built by 35556768534
+  (source 42be2525), fixture a0c76430: both Webhook sources reach reviewed Logs, secret absent,
+  producer retained, unreviewed/stale/replay rejected; remaining cross-product flows and foreign
+  installation boundaries also passed. The two parity rows are now verified with that exact proof.
+- Preserve independent native passes from 35552488590 and full WSL2 pass 35556724537 as above.
+  No local Docker, firewall or service changes. Hosted evidence is not physical Korean IME or
+  multi-monitor/DPI device evidence. Exact-main release acceptance remains a separate mandatory gate.
+- Final metadata/fixture head receives required CI before squash merge. Release candidate and
+  publication run IDs belong in #541/#542 and Release, per policy, without changing verified source
+  just to append post-publication evidence. Root worktree is host-owned and must remain.
