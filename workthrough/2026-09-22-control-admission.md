@@ -11,8 +11,9 @@
   into a 4 KiB zeroizing buffer cleared after every read; no stderr is published.
   Retain stdout redaction and process-tree cleanup. Replace ring-only tests with a
   backpressure regression using split secret bytes and output beyond pipe capacity.
-- Document execution timeout: multipart, redirects and body share a monotonic budget;
-  template/environment and secret preparation precede it. Protocol deadlines differ.
+- Document execution timeout: multipart body construction, redirects and response body share
+  a monotonic budget; template/environment/secret resolution, request validation and multipart
+  path/metadata preflight precede it. Protocol deadlines differ.
 - Regression implementation complete: explicit command-class/owner/quota/replay tests;
   hosted native fixture fills 64 ordinary dispatcher slots using real pending OpenAPI
   HTTP requests, checks exact overload, then cancels each protocol and checks request,
@@ -38,3 +39,8 @@
   Each native control also requires its resource still alive after saturation and
   before dispatch, preventing an earlier failure from being counted as cancellation.
   Preserve unchanged production/frontend/Rust PASS results; final hosted gates pending.
+
+- Final source cross-check clarified that multipart file canonicalization/metadata preflight
+  precedes the deadline, while body construction is inside it. Documentation diff only; no
+  production or fixture behavior changed. Supersede the in-progress gate before its costly
+  product build so final acceptance uses the corrected documentation head.

@@ -50,10 +50,11 @@ does not establish receiver acceptance.
 
 ### HTTP request lifetime
 
-HTTP timeout covers execution's complete redirect chain, including multipart preparation
-and the final response body. Redirects do not reset this monotonic budget. Template/environment
-resolution and secret preparation occur before execution starts; this is not a deadline for
-all work since the user clicked Send. Protocol connection/idle/RPC budgets remain separate.
+HTTP execution timeout covers multipart body construction, the complete redirect chain and
+the final response body. Redirects do not reset this monotonic budget. Template/environment/secret
+resolution, request validation, and multipart path/metadata preflight occur before execution
+starts; this is not a deadline for all work since the user clicked Send. Protocol connection/idle/
+RPC budgets remain separate.
 New sends supersede older sends; cancellation routing and retained response headers are
 registered in the same order.
 
