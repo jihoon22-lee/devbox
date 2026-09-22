@@ -165,3 +165,19 @@ it("records a committed write with a durability warning as saved", async () => {
   expect(note.snapshot()).toMatchObject({dirty:false,revision:"saved"});
   expect(note.snapshot().error).toContain("파일은 반영");
 });
+
+it("versions preview sources across identical reopenings and edits without changing on save status", async () => {
+  const { note } = await fixture();
+  const original = note.snapshot().sourceVersion;
+  await note.openPath("B.md", () => true);
+  await note.openPath("A.md", () => true);
+  expect(note.snapshot().sourceVersion).toBeGreaterThan(original);
+  const reopened = note.snapshot().sourceVersion;
+  note.edit("changed"); note.edit("original");
+  expect(note.snapshot().sourceVersion).toBeGreaterThan(reopened);
+  const edited = note.snapshot().sourceVersion;
+  await note.save(); await note.inspect();
+  expect(note.snapshot().sourceVersion).toBe(edited);
+  await note.openPath("A.md", () => true);
+  expect(note.snapshot().sourceVersion).toBeGreaterThan(edited);
+});

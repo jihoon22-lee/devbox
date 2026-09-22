@@ -151,7 +151,7 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   const [localDocument] = useState(() => new NoteDocument(readFile, writeFile));
   const editorDocument = session ?? localDocument;
   const note = useSyncExternalStore(editorDocument.subscribe, editorDocument.snapshot);
-  const { path: selected, content, dirty } = note;
+  const { path: selected, content, dirty, sourceVersion } = note;
   useEffect(() => session ? undefined : registerNoteEditor(editorDocument), [session, editorDocument]);
   const [selectedTreePath, setSelectedTreePath] = useState<string | null>(null);
   const [query, setQuery] = useState("");
@@ -160,7 +160,9 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
   const [notice, setNotice] = useState<string | null>(null);
   const [mode, setMode] = useState<ViewMode>("edit");
   const [anchorRequest, setAnchorRequest] = useState<{ path: string; fragment: string; id: number } | null>(null);
-  const [rendered, setRendered] = useState<RenderedDoc | null>(null);
+  const [rendered, setRendered] = useState<{ path: string; sourceVersion: number; doc: RenderedDoc } | null>(null);
+  // Gate during render, before passive cleanup; never pair old HTML with a new path.
+  const preview = rendered?.sourceVersion === sourceVersion && rendered.path === selected ? rendered : null;
   const [contextTarget, setContextTarget] = useState<TreeContextTarget | null>(null);
   const [availableTargets, setAvailableTargets] = useState<KnowledgeOpenTarget[] | null>(null);
   const [wikilinks, setWikilinks] = useState<WikilinkOccurrence[]>([]);
@@ -222,8 +224,8 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     if (!isMarkdown(selected) && mode !== "edit") setMode("edit");
   }, [selected, mode]);
 
-  // 300ms 디바운스 후 렌더 요청. 요청 시점의 rel을 캡처해두고, 응답이 도착했을 때
-  // 그 시점의 선택 문서와 다르면 버린다(늦게 도착한 이전 문서의 결과가 덮어쓰지 않도록).
+  // Capture path and source version for the debounced request. Apply only to the same
+  // opening/edit generation, including same-path reopenings.
   useEffect(() => {
     if (mode === "edit" || !isMarkdown(selected)) {
       setRendered(null);
@@ -234,16 +236,16 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     const timer = setTimeout(() => {
       void renderMarkdown(rel, content)
         .then((doc) => {
-          if (invalidated || !draftMountedRef.current || selectedRef.current !== rel) return;
-          setRendered(doc);
+          if (invalidated || !draftMountedRef.current || editorDocument.snapshot().sourceVersion !== sourceVersion) return;
+          setRendered({ path: rel, sourceVersion, doc });
         })
         .catch((e) => {
-          if (invalidated || !draftMountedRef.current || selectedRef.current !== rel) return;
+          if (invalidated || !draftMountedRef.current || editorDocument.snapshot().sourceVersion !== sourceVersion) return;
           setError(e instanceof Error ? e.message : String(e));
         });
     }, RENDER_DEBOUNCE_MS);
     return () => { invalidated = true; clearTimeout(timer); };
-  }, [content, selected, mode]);
+  }, [content, selected, mode, sourceVersion, editorDocument]);
 
   const loadMeta = useCallback(async () => {
     try {
@@ -1216,8 +1218,8 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
                 {mode !== "edit" && (
                   <MarkdownPreview
                     anchorRequest={anchorRequest?.path === selected ? anchorRequest : null}
-                    doc={rendered}
-                    baseRel={selected}
+                    doc={preview?.doc ?? null}
+                    baseRel={preview?.path ?? selected}
                     onNavigate={(rel, fragment) => void openFile(rel, fragment)}
                     onNavigateWikilink={(rel) => void openIndexedNoteAt(rel)}
                   />
