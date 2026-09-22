@@ -69,6 +69,8 @@ Windows는 원본 보존 옵션을 사용한 ReplaceFileW를 사용하며 지원
 
 충돌·확인 실패 시 같은 폴더의 `.devbox-save-*` 복구 디렉터리 위치를 표시한다.
 `previous.md`와 `submitted.md` 중 존재하는 파일 및 현재 노트를 비교한 뒤 사용자가 복구한다.
+Windows의 게시 중간 실패에서는 같은 이름에 `.previous.md` 또는 `.submitted.md`가 붙은
+복구 디렉터리 옆의 파일도 보존한다.
 교체 실패의 중간 상태에서는 파일 이름만으로 내용을 단정하지 않는다. 정상 완료 시 임시
 디렉터리는 정리한다. 이 디렉터리는 Unix 0700, Windows 소유자/SYSTEM 전용 DACL로 만든다.
 Unix 신규 파일은 0600이며 기존 mode는 게시 전에 보존한다. Windows 갱신은 원본 DACL을

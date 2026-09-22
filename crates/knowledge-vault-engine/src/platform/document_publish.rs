@@ -115,25 +115,104 @@ pub fn replace(staged: &Path, target: &Path, previous: &Path) -> io::Result<()> 
             core::PCWSTR,
             Win32::Storage::FileSystem::{ReplaceFileW, REPLACE_FILE_FLAGS},
         };
-        let staged = wide(staged)?;
-        let target = wide(target)?;
-        let previous = wide(previous)?;
+        // Keep both replacement participants under the original parent while
+        // Windows merges DACLs. A private backup parent must not inject its
+        // inheritable OWNER RIGHTS grant into the published document.
+        let recovery = staged.parent().ok_or(io::ErrorKind::InvalidInput)?;
+        let name = recovery
+            .file_name()
+            .ok_or(io::ErrorKind::InvalidInput)?
+            .to_string_lossy();
+        let parent = target.parent().ok_or(io::ErrorKind::InvalidInput)?;
+        let sibling = parent.join(format!("{name}.submitted.md"));
+        let backup = parent.join(format!("{name}.previous.md"));
+        create(staged, &sibling)?;
+        copy_dacl(target, &sibling)?;
+        // Reserve our backup name without replacing an unrelated existing file.
+        drop(
+            fs::OpenOptions::new()
+                .write(true)
+                .create_new(true)
+                .open(&backup)?,
+        );
+        let from = wide(&sibling)?;
+        let to = wide(target)?;
+        let saved = wide(&backup)?;
         unsafe {
             ReplaceFileW(
-                PCWSTR(target.as_ptr()),
-                PCWSTR(staged.as_ptr()),
-                PCWSTR(previous.as_ptr()),
+                PCWSTR(to.as_ptr()),
+                PCWSTR(from.as_ptr()),
+                PCWSTR(saved.as_ptr()),
                 REPLACE_FILE_FLAGS(0),
                 None,
                 None,
             )
         }
-        .map_err(windows_error)
+        .map_err(windows_error)?;
+        create(&backup, previous)
     }
     #[cfg(not(any(target_os = "linux", windows)))]
     {
         let _ = (staged, target, previous);
         Err(io::ErrorKind::Unsupported.into())
+    }
+}
+
+#[cfg(windows)]
+fn copy_dacl(source: &Path, target: &Path) -> io::Result<()> {
+    use windows::{
+        core::PCWSTR,
+        Win32::{
+            Foundation::{LocalFree, HLOCAL},
+            Security::{
+                Authorization::{GetNamedSecurityInfoW, SetNamedSecurityInfoW, SE_FILE_OBJECT},
+                GetSecurityDescriptorControl, DACL_SECURITY_INFORMATION,
+                PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
+                UNPROTECTED_DACL_SECURITY_INFORMATION,
+            },
+        },
+    };
+    let source = wide(source)?;
+    let target = wide(target)?;
+    let mut descriptor = PSECURITY_DESCRIPTOR::default();
+    let mut dacl = std::ptr::null_mut();
+    unsafe {
+        GetNamedSecurityInfoW(
+            PCWSTR(source.as_ptr()),
+            SE_FILE_OBJECT,
+            DACL_SECURITY_INFORMATION,
+            None,
+            None,
+            Some(&mut dacl),
+            None,
+            &mut descriptor,
+        )
+        .ok()
+        .map_err(windows_error)?;
+        let result = (|| {
+            let mut control = 0;
+            let mut revision = 0;
+            GetSecurityDescriptorControl(descriptor, &mut control, &mut revision)
+                .map_err(windows_error)?;
+            let inheritance = if control & SE_DACL_PROTECTED.0 != 0 {
+                PROTECTED_DACL_SECURITY_INFORMATION
+            } else {
+                UNPROTECTED_DACL_SECURITY_INFORMATION
+            };
+            SetNamedSecurityInfoW(
+                PCWSTR(target.as_ptr()),
+                SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION | inheritance,
+                None,
+                None,
+                Some(dacl),
+                None,
+            )
+            .ok()
+            .map_err(windows_error)
+        })();
+        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+        result
     }
 }
 
@@ -198,22 +277,31 @@ mod tests {
     }
     #[test]
     fn windows_replacement_preserves_target_dacl_and_recovery_is_private() {
-        let root = tempfile::tempdir().unwrap();
-        let target = root.path().join("note.md");
-        fs::write(&target, "original").unwrap();
-        let original = dacl(&target);
-        let directory = root.path().join("recovery");
-        private_directory(&directory).unwrap();
-        let security = dacl(&directory);
-        assert!(security.starts_with("D:P"));
-        assert!(security.contains(";;;OW)"));
-        assert!(!security.contains(";;;WD)"));
-        let staged = directory.join("submitted.md");
-        fs::write(&staged, "replacement").unwrap();
-        let previous = directory.join("previous.md");
-        replace(&staged, &target, &previous).unwrap();
-        assert_eq!(dacl(&target), original);
-        assert_eq!(fs::read_to_string(previous).unwrap(), "original");
+        for protected in [false, true] {
+            let root = tempfile::tempdir().unwrap();
+            let target = root.path().join("note.md");
+            fs::write(&target, "original").unwrap();
+            let directory = root.path().join("recovery");
+            private_directory(&directory).unwrap();
+            let security = dacl(&directory);
+            assert!(security.starts_with("D:P"));
+            assert!(security.contains(";;;OW)"));
+            assert!(!security.contains(";;;WD)"));
+            if protected {
+                copy_dacl(&directory, &target).unwrap();
+                assert!(dacl(&target).starts_with("D:P"));
+                assert!(!dacl(&target).contains(";;;BA)"));
+            }
+            let original = dacl(&target);
+            let staged = directory.join("submitted.md");
+            fs::write(&staged, "replacement").unwrap();
+            let previous = directory.join("previous.md");
+            replace(&staged, &target, &previous).unwrap();
+            // AI records that inheritance was processed. Compare every ACE,
+            // including its inherited bit, and retain the protection flag.
+            assert_eq!(dacl(&target).replace("AI", ""), original.replace("AI", ""));
+            assert_eq!(fs::read_to_string(previous).unwrap(), "original");
+        }
     }
 }
 

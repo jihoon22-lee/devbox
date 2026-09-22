@@ -26,3 +26,16 @@
 - Final local result: frontend 248 PASS; original native run 2572 PASS/1 FAIL,
   corrected document suite PASS with the original Cargo feature union; final native
   check/Clippy/fmt PASS. Windows ACL/publication tests remain CI-only pending gates.
+
+- Initial CI 35677807955 found a stale notices lock hash and a Windows DACL
+  inheritance regression: private staging inherited OWNER RIGHTS leaked into the
+  replacement. Linux/other Windows tests passed. Native run 35677808040 was cancelled
+  because its bundled notices were obsolete.
+- Fix: use same-parent replacement/backup participants on Windows and apply the source
+  DACL with its protection state before publishing; then move the backup into private
+  recovery. ACL regression compares all ACEs/inheritance/protection, ignoring only AI
+  bookkeeping. Intermediate sibling evidence is retained and documented on failure.
+
+- Local Windows has no Cargo, and its script policy rejected a separate synthetic
+  Win32 fixture before execution. No execution-policy setting was changed. Final Windows
+  behavior remains unverified locally and is covered by CI Rust tests/native acceptance.
