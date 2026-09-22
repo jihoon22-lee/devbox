@@ -39,3 +39,10 @@
 - Local Windows has no Cargo, and its script policy rejected a separate synthetic
   Win32 fixture before execution. No execution-policy setting was changed. Final Windows
   behavior remains unverified locally and is covered by CI Rust tests/native acceptance.
+
+- CI 35679657495: notices/Linux/frontend passed; Windows exposed an additional
+  inheritance issue: original inherited ACEs were also retained as explicit grants.
+  Native 35679657338 cancelled as superseded. Capture only explicit ACEs for an
+  unprotected ACL, preserve protected ACLs, and restore inheritance after ReplaceFile
+  through a pre-opened metadata handle bound to the submitted object. No path-based
+  post-commit permission update can touch an external replacement.

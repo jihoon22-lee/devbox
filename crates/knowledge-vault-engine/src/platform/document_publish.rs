@@ -127,7 +127,9 @@ pub fn replace(staged: &Path, target: &Path, previous: &Path) -> io::Result<()> 
         let sibling = parent.join(format!("{name}.submitted.md"));
         let backup = parent.join(format!("{name}.previous.md"));
         create(staged, &sibling)?;
-        copy_dacl(target, &sibling)?;
+        let security = DaclSnapshot::read(target)?;
+        let published_handle = security_handle(&sibling)?;
+        security.apply(&published_handle)?;
         // Reserve our backup name without replacing an unrelated existing file.
         drop(
             fs::OpenOptions::new()
@@ -149,6 +151,10 @@ pub fn replace(staged: &Path, target: &Path, previous: &Path) -> io::Result<()> 
             )
         }
         .map_err(windows_error)?;
+        // ReplaceFile can materialize inherited grants as explicit ACEs. Restore
+        // the original explicit ACL and inheritance on our already-open object,
+        // never on a path that an external writer may have replaced meanwhile.
+        security.apply(&published_handle)?;
         create(&backup, previous)
     }
     #[cfg(not(any(target_os = "linux", windows)))]
@@ -159,61 +165,134 @@ pub fn replace(staged: &Path, target: &Path, previous: &Path) -> io::Result<()> 
 }
 
 #[cfg(windows)]
-fn copy_dacl(source: &Path, target: &Path) -> io::Result<()> {
-    use windows::{
-        core::PCWSTR,
-        Win32::{
-            Foundation::{LocalFree, HLOCAL},
-            Security::{
-                Authorization::{GetNamedSecurityInfoW, SetNamedSecurityInfoW, SE_FILE_OBJECT},
-                GetSecurityDescriptorControl, DACL_SECURITY_INFORMATION,
-                PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, SE_DACL_PROTECTED,
-                UNPROTECTED_DACL_SECURITY_INFORMATION,
-            },
-        },
+fn security_handle(path: &Path) -> io::Result<fs::File> {
+    use std::os::windows::fs::OpenOptionsExt;
+    use windows::Win32::Storage::FileSystem::{
+        FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, READ_CONTROL, WRITE_DAC,
     };
-    let source = wide(source)?;
-    let target = wide(target)?;
-    let mut descriptor = PSECURITY_DESCRIPTOR::default();
-    let mut dacl = std::ptr::null_mut();
-    unsafe {
-        GetNamedSecurityInfoW(
-            PCWSTR(source.as_ptr()),
-            SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION,
-            None,
-            None,
-            Some(&mut dacl),
-            None,
-            &mut descriptor,
-        )
-        .ok()
-        .map_err(windows_error)?;
-        let result = (|| {
-            let mut control = 0;
-            let mut revision = 0;
-            GetSecurityDescriptorControl(descriptor, &mut control, &mut revision)
-                .map_err(windows_error)?;
-            let inheritance = if control & SE_DACL_PROTECTED.0 != 0 {
-                PROTECTED_DACL_SECURITY_INFORMATION
-            } else {
-                UNPROTECTED_DACL_SECURITY_INFORMATION
-            };
-            SetNamedSecurityInfoW(
-                PCWSTR(target.as_ptr()),
+    // Metadata access does not reserve read/write/delete sharing. The handle
+    // remains attached to the submitted file across publication and path races.
+    fs::OpenOptions::new()
+        .access_mode((READ_CONTROL | WRITE_DAC).0)
+        .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+        .open(path)
+}
+
+#[cfg(windows)]
+struct DaclSnapshot {
+    // u32 storage provides native ACL alignment; None represents a null DACL.
+    acl: Option<Vec<u32>>,
+    info: windows::Win32::Security::OBJECT_SECURITY_INFORMATION,
+}
+#[cfg(windows)]
+impl DaclSnapshot {
+    fn read(source: &Path) -> io::Result<Self> {
+        use windows::{
+            core::PCWSTR,
+            Win32::{
+                Foundation::{LocalFree, HLOCAL},
+                Security::{
+                    AclSizeInformation, AddAce,
+                    Authorization::{GetNamedSecurityInfoW, SE_FILE_OBJECT},
+                    GetAce, GetAclInformation, GetSecurityDescriptorControl, InitializeAcl,
+                    ACE_HEADER, ACE_REVISION, ACL, ACL_SIZE_INFORMATION, DACL_SECURITY_INFORMATION,
+                    INHERITED_ACE, PROTECTED_DACL_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR,
+                    SE_DACL_PROTECTED, UNPROTECTED_DACL_SECURITY_INFORMATION,
+                },
+            },
+        };
+        let source = wide(source)?;
+        let mut descriptor = PSECURITY_DESCRIPTOR::default();
+        let mut dacl = std::ptr::null_mut();
+        unsafe {
+            GetNamedSecurityInfoW(
+                PCWSTR(source.as_ptr()),
                 SE_FILE_OBJECT,
-                DACL_SECURITY_INFORMATION | inheritance,
+                DACL_SECURITY_INFORMATION,
                 None,
                 None,
-                Some(dacl),
+                Some(&mut dacl),
                 None,
+                &mut descriptor,
             )
             .ok()
-            .map_err(windows_error)
-        })();
-        let _ = LocalFree(Some(HLOCAL(descriptor.0)));
-        result
+            .map_err(windows_error)?;
+            let result = (|| {
+                let mut control = 0;
+                let mut revision = 0;
+                GetSecurityDescriptorControl(descriptor, &mut control, &mut revision)
+                    .map_err(windows_error)?;
+                let protected = control & SE_DACL_PROTECTED.0 != 0;
+                let info = DACL_SECURITY_INFORMATION
+                    | if protected {
+                        PROTECTED_DACL_SECURITY_INFORMATION
+                    } else {
+                        UNPROTECTED_DACL_SECURITY_INFORMATION
+                    };
+                if dacl.is_null() {
+                    return Ok(Self { acl: None, info });
+                }
+                let mut size = ACL_SIZE_INFORMATION::default();
+                GetAclInformation(
+                    dacl,
+                    (&mut size as *mut ACL_SIZE_INFORMATION).cast(),
+                    std::mem::size_of::<ACL_SIZE_INFORMATION>() as u32,
+                    AclSizeInformation,
+                )
+                .map_err(windows_error)?;
+                let mut buffer = vec![0u32; (size.AclBytesInUse as usize).div_ceil(4)];
+                let acl = buffer.as_mut_ptr().cast::<ACL>();
+                let revision = ACE_REVISION((*dacl).AclRevision as u32);
+                InitializeAcl(acl, size.AclBytesInUse, revision).map_err(windows_error)?;
+                for index in 0..size.AceCount {
+                    let mut ace = std::ptr::null_mut();
+                    GetAce(dacl, index, &mut ace).map_err(windows_error)?;
+                    let header = &*ace.cast::<ACE_HEADER>();
+                    // Inherited ACEs must be regenerated from the real parent,
+                    // not converted into persistent explicit grants by a setter.
+                    if protected || header.AceFlags & INHERITED_ACE.0 as u8 == 0 {
+                        AddAce(acl, revision, u32::MAX, ace, header.AceSize as u32)
+                            .map_err(windows_error)?;
+                    }
+                }
+                Ok(Self {
+                    acl: Some(buffer),
+                    info,
+                })
+            })();
+            let _ = LocalFree(Some(HLOCAL(descriptor.0)));
+            result
+        }
     }
+    fn apply(&self, file: &fs::File) -> io::Result<()> {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{
+            Foundation::HANDLE,
+            Security::Authorization::{SetSecurityInfo, SE_FILE_OBJECT},
+        };
+        let acl = self
+            .acl
+            .as_ref()
+            .map_or(std::ptr::null(), |buffer| buffer.as_ptr().cast());
+        unsafe {
+            SetSecurityInfo(
+                HANDLE(file.as_raw_handle()),
+                SE_FILE_OBJECT,
+                self.info,
+                None,
+                None,
+                Some(acl),
+                None,
+            )
+        }
+        .ok()
+        .map_err(windows_error)
+    }
+}
+
+#[cfg(all(test, windows))]
+fn copy_dacl(source: &Path, target: &Path) -> io::Result<()> {
+    DaclSnapshot::read(source)?.apply(&security_handle(target)?)
 }
 
 #[cfg(windows)]
@@ -275,6 +354,25 @@ mod tests {
             result
         }
     }
+    #[test]
+    fn permission_finalization_follows_our_handle_not_a_replaced_path() {
+        let root = tempfile::tempdir().unwrap();
+        let private = root.path().join("private");
+        private_directory(&private).unwrap();
+        let security = DaclSnapshot::read(&private).unwrap();
+        let target = root.path().join("target.md");
+        fs::write(&target, "ours").unwrap();
+        let handle = security_handle(&target).unwrap();
+        let moved = root.path().join("moved.md");
+        fs::rename(&target, &moved).unwrap();
+        fs::write(&target, "external").unwrap();
+        let external_acl = dacl(&target);
+        security.apply(&handle).unwrap();
+        assert_eq!(dacl(&target), external_acl);
+        assert_eq!(fs::read_to_string(&target).unwrap(), "external");
+        assert!(dacl(&moved).starts_with("D:P"));
+    }
+
     #[test]
     fn windows_replacement_preserves_target_dacl_and_recovery_is_private() {
         for protected in [false, true] {
