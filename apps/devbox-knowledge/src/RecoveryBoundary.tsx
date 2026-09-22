@@ -1,6 +1,8 @@
 import { Component, useState, useSyncExternalStore, type ReactNode } from "react";
 import { useNoteSession } from "@devbox/knowledge-features/notes-lifecycle";
 
+import { RecoveryAttempt } from "./recoveryLazy";
+
 function RecoveryDraft() {
   const document = useNoteSession();
   const [message, setMessage] = useState("");
@@ -16,15 +18,15 @@ function RecoveryDraft() {
     {message && <p role="status">{message}</p>}
   </section>;
 }
-export default class RecoveryBoundary extends Component<{ children: ReactNode; name: string; recoverNote?: boolean }, { failed: boolean }> {
-  state = { failed: false };
+export default class RecoveryBoundary extends Component<{ children: ReactNode; name: string; recoverNote?: boolean }, { failed: boolean; attempt: object }> {
+  state = { failed: false, attempt: {} };
   static getDerivedStateFromError() { return { failed: true }; }
   render() {
-    if (!this.state.failed) return this.props.children;
+    if (!this.state.failed) return <RecoveryAttempt.Provider value={this.state.attempt}>{this.props.children}</RecoveryAttempt.Provider>;
     return <section aria-label={`${this.props.name} 복구`}>
       <p role="alert">{this.props.name} 화면을 표시하지 못했습니다.</p>
       {this.props.recoverNote && <RecoveryDraft/>}
-      <button type="button" onClick={() => this.setState({ failed: false })}>화면 다시 시도</button>
+      <button type="button" onClick={() => this.setState({ failed: false, attempt: {} })}>화면 다시 시도</button>
     </section>;
   }
 }

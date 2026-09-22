@@ -1,11 +1,11 @@
 import type { InboundNote, NoteSnapshot } from "./api";
 
 export interface NoteView {
-  path: string | null; content: string; revision: string; dirty: boolean;
+  sourceVersion: number; path: string | null; content: string; revision: string; dirty: boolean;
   saving: boolean; conflict: NoteSnapshot | null; error: string | null;
 }
 type Writer = (path: string, content: string, revision: string) => Promise<NoteSnapshot>;
-const empty: NoteView = { path: null, content: "", revision: "", dirty: false, saving: false, conflict: null, error: null };
+const empty: NoteView = { sourceVersion: 0, path: null, content: "", revision: "", dirty: false, saving: false, conflict: null, error: null };
 
 /** One editor, one ordered writer. Native revisions are independent of edit revisions. */
 export class NoteDocument {
@@ -21,7 +21,10 @@ export class NoteDocument {
   snapshot = () => this.view;
   subscribe = (listener: () => void) => { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; };
   private publish(change: Partial<NoteView>) {
-    this.view = { ...this.view, ...change };
+    // Reopening identical bytes is still a new source. Save/inspect status alone
+    // does not invalidate a preview of unchanged editor contents.
+    const sourceVersion = this.view.sourceVersion + ("path" in change || "content" in change ? 1 : 0);
+    this.view = { ...this.view, ...change, sourceVersion };
     for (const listener of this.listeners) listener();
   }
   edit(content: string) { this.edits++; this.publish({ content, dirty: true }); }

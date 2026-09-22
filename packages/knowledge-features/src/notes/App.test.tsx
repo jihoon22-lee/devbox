@@ -2,6 +2,7 @@ import { act, cleanup, fireEvent, render, screen, waitFor, within } from "@testi
 import { assertNoA11yViolations } from "@devbox/a11y/testing";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import App from "./App";
+import { NoteSessionProvider, useNoteSession } from "./lifecycle";
 import { EditorView } from "@codemirror/view";
 import {
   applyRename,
@@ -488,4 +489,56 @@ it.each(["switch", "edit", "unmount"])("invalidates outstanding preview on %s", 
   else view.unmount();
   await act(async () => { old.reject(new Error("obsolete render failure")); });
   expect(screen.queryByText("obsolete render failure")).toBeNull();
+});
+
+it("hides the previous document's links while the next preview is pending or failed", async () => {
+  const next = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
+  vi.mocked(renderMarkdown).mockResolvedValueOnce({ title: null, tags: [], html: '<a href="./detail.md">old document link</a>', mermaid: [] }).mockReturnValueOnce(next.promise);
+  render(<App/>);
+  fireEvent.click(await screen.findByText("nested.md"));
+  fireEvent.click(await screen.findByRole("button", { name: "분할" }));
+  await screen.findByRole("link", { name: "old document link" });
+  fireEvent.click(screen.getByText("note.md"));
+  await act(async () => {});
+  expect(screen.queryByRole("link", { name: "old document link" })).toBeNull();
+  await waitFor(() => expect(renderMarkdown).toHaveBeenLastCalledWith("note.md", "# Hello"));
+  await act(async () => { next.reject(new Error("new preview unavailable")); });
+  expect(await screen.findByText("new preview unavailable")).toBeTruthy();
+  expect(screen.queryByRole("link", { name: "old document link" })).toBeNull();
+});
+
+it("invalidates an identical reopened source and resolves links against its own preview path", async () => {
+  const reopened = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
+  vi.mocked(renderMarkdown).mockResolvedValueOnce({ title: null, tags: [], html: '<p>previous opening</p>', mermaid: [] }).mockReturnValueOnce(reopened.promise);
+  render(<App/>);
+  fireEvent.click(await screen.findByText("nested.md"));
+  fireEvent.click(await screen.findByRole("button", { name: "분할" }));
+  await screen.findByText("previous opening");
+  fireEvent.click(screen.getByText("nested.md"));
+  await act(async () => {});
+  expect(screen.queryByText("previous opening")).toBeNull();
+  await waitFor(() => expect(renderMarkdown).toHaveBeenLastCalledWith("Notes/nested.md", "# Hello"));
+  await act(async () => { reopened.resolve({ title: null, tags: [], html: '<a href="./detail.md">current document link</a>', mermaid: [] }); });
+  fireEvent.click(await screen.findByRole("link", { name: "current document link" }));
+  await waitFor(() => expect(readFile).toHaveBeenLastCalledWith("Notes/detail.md"));
+});
+
+it("does not reuse an old preview after batched A-B-A openings with identical content", async () => {
+  let session: ReturnType<typeof useNoteSession>;
+  function SessionNotes() { session = useNoteSession(); return <App/>; }
+  const latest = deferred<Awaited<ReturnType<typeof renderMarkdown>>>();
+  const renderMock = vi.mocked(renderMarkdown).mockClear();
+  renderMock.mockResolvedValueOnce({ title: null, tags: [], html: "<p>old opening HTML</p>", mermaid: [] }).mockReturnValueOnce(latest.promise);
+  render(<NoteSessionProvider><SessionNotes/></NoteSessionProvider>);
+  fireEvent.click(await screen.findByText("note.md"));
+  fireEvent.click(await screen.findByRole("button", { name: "분할" }));
+  await screen.findByText("old opening HTML");
+  await act(async () => {
+    await session!.openPath("Notes/nested.md", () => true);
+    await session!.openPath("note.md", () => true);
+  });
+  expect(screen.queryByText("old opening HTML")).toBeNull();
+  await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
+  await act(async () => { latest.resolve({ title: null, tags: [], html: "<p>current opening HTML</p>", mermaid: [] }); });
+  expect(await screen.findByText("current opening HTML")).toBeTruthy();
 });

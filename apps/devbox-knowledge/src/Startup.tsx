@@ -1,10 +1,11 @@
-import { lazy, Suspense, useEffect, useState, type ReactNode } from "react";
+import { recoveryLazy } from "./recoveryLazy";
+import { Suspense, useEffect, useState, type ReactNode } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
 import { componentInvoke } from "@devbox/knowledge-features/transport";
 const invoke = componentInvoke("knowledge.migration");
-const VaultSettings = lazy(() => import("./VaultSettings"));
-const VaultSetup = lazy(() => import("./VaultSetup"));
-const MigrationSetup = lazy(() => import("./MigrationSetup"));
+const VaultSettings = recoveryLazy(() => import("./VaultSettings"));
+const VaultSetup = recoveryLazy(() => import("./VaultSetup"));
+const MigrationSetup = recoveryLazy(() => import("./MigrationSetup"));
 export function Startup({ children }: { children: ReactNode }) {
   const [active, setActive] = useState(!nativeMode);
   const [loading, setLoading] = useState(nativeMode);
