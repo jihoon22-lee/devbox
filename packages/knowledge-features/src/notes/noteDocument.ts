@@ -15,6 +15,7 @@ export class NoteDocument {
   private edits = 0;
   private opening = 0;
   private inspecting = 0;
+  private saves = 0;
   private writing: Promise<boolean> | null = null;
   constructor(private read: (path: string) => Promise<NoteSnapshot>, private write: Writer) {}
   snapshot = () => this.view;
@@ -25,6 +26,27 @@ export class NoteDocument {
   }
   edit(content: string) { this.edits++; this.publish({ content, dirty: true }); }
   clear() { this.opening++; this.document++; this.edits++; this.publish({ ...empty, saving: !!this.writing }); }
+  /** Capture the exact buffer approved for deletion; completion is one-shot. */
+  approveRemoval(target: string): () => boolean {
+    const affected = (path: string | null) => path === target || !!path?.startsWith(`${target}/`);
+    const { path } = this.view;
+    const document = this.document, edits = this.edits, opening = this.opening, saves = this.saves;
+    const saving = !!this.writing;
+    let completed = false;
+    return () => {
+      if (completed) return false;
+      completed = true;
+      if (!affected(path) || document !== this.document || path !== this.view.path) return false;
+      if (edits !== this.edits || opening !== this.opening || saves !== this.saves || saving || this.writing) {
+        // A pending save must not mark this retained buffer clean afterward.
+        if (this.writing) this.edits++;
+        this.publish({ dirty: true, error: "파일은 삭제했지만 삭제 승인 이후의 노트 내용은 유지했습니다. 디스크 상태를 확인해 주세요." });
+        return false;
+      }
+      this.clear();
+      return true;
+    };
+  }
   async open(load: () => Promise<InboundNote>, discard: () => boolean): Promise<boolean> {
     const request = ++this.opening;
     if (this.view.dirty && !discard()) return false;
@@ -96,6 +118,7 @@ export class NoteDocument {
     const { path, content, revision } = this.view;
     if (!path) return Promise.resolve(true);
     const document = this.document, edits = this.edits;
+    this.saves++;
     this.publish({ saving: true, error: null });
     const task = (async () => {
       try {

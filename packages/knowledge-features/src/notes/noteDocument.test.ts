@@ -100,3 +100,53 @@ it("invalidates inspect across A-B-A, rename and a completed save", async () => 
     expect(note.snapshot().conflict).toBeNull();
   }
 });
+
+
+describe("approved deletion ownership", () => {
+  it("clears only the approved buffer and consumes completion once", async () => {
+    const { note } = await fixture();
+    const complete = note.approveRemoval("A.md");
+    expect(complete()).toBe(true);
+    await note.openPath("A.md", () => true); note.edit("new buffer");
+    expect(complete()).toBe(false);
+    expect(note.snapshot().content).toBe("new buffer");
+  });
+  it.each([false, true])("preserves another document or a reopened original (%s)", async reopen => {
+    const { note } = await fixture(); const complete = note.approveRemoval("A.md");
+    await note.openPath("B.md", () => true);
+    if (reopen) await note.openPath("A.md", () => true);
+    note.edit("keep unsaved");
+    expect(complete()).toBe(false);
+    expect(note.snapshot()).toMatchObject({ content: "keep unsaved", dirty: true });
+  });
+  it("preserves edits after approval including edits saved before completion", async () => {
+    const { note } = await fixture(); const complete = note.approveRemoval("A.md");
+    note.edit("new saved text"); await note.save();
+    expect(complete()).toBe(false);
+    expect(note.snapshot()).toMatchObject({ path: "A.md", content: "new saved text", dirty: true });
+  });
+  it.each([false, true])("preserves a save overlapping deletion (%s)", async finishSaveFirst => {
+    const { note, write } = await fixture(); const pending = deferred<NoteSnapshot>();
+    write.mockReturnValueOnce(pending.promise); note.edit("submitted");
+    const saving = note.save(); const complete = note.approveRemoval("A.md");
+    if (finishSaveFirst) { pending.resolve(disk("submitted", "saved")); await saving; }
+    expect(complete()).toBe(false);
+    expect(note.snapshot().content).toBe("submitted");
+    if (!finishSaveFirst) { pending.resolve(disk("submitted", "saved")); await saving; }
+    expect(note.snapshot()).toMatchObject({ path: "A.md", dirty: true });
+  });
+  it("allows an already requested open to finish after deletion", async () => {
+    const { note, read } = await fixture(); const pending = deferred<NoteSnapshot>();
+    const complete = note.approveRemoval("A.md"); read.mockReturnValueOnce(pending.promise);
+    const opening = note.openPath("B.md", () => true);
+    expect(complete()).toBe(false);
+    pending.resolve(disk("B")); expect(await opening).toBe(true);
+    expect(note.snapshot().path).toBe("B.md");
+  });
+  it("handles directory boundaries without clearing unrelated notes", async () => {
+    const { note } = await fixture();
+    expect(note.approveRemoval("A")()).toBe(false);
+    await note.openPath("Notes/A.md", () => true);
+    expect(note.approveRemoval("Notes")()).toBe(true);
+  });
+});
