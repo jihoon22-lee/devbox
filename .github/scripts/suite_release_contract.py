@@ -23,7 +23,7 @@ def require(condition, message):
 
 def file_names(product):
     names = {f"devbox-{product}.exe", "THIRD_PARTY_NOTICES.md", "devbox-installation.json"}
-    if product == "workspace":
+    if product in {"workspace", "knowledge"}:
         names |= {"resources/wsl/manifest.json", "resources/wsl/devbox-workspace-wsl"}
     if product == "control-center":
         names.add("resources/suite/devbox-suite-bootstrap.exe")

@@ -86,7 +86,7 @@ assert secrets.rust_packages == sorted(["devbox-http-client-engine", "devbox-api
 
 native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
 assert native_helper.frontend_scope == "none"
-assert native_helper.rust_packages == ["devbox-workspace", "workspace-wsl"]
+assert native_helper.rust_packages == ["devbox-knowledge", "devbox-knowledge-vault-engine", "devbox-workspace", "workspace-wsl"]
 helper_manifest = resolve("apps/devbox-workspace/native/Cargo.toml")
 assert helper_manifest.dependency_scope == "all"
 assert helper_manifest.rust_packages == native_helper.rust_packages

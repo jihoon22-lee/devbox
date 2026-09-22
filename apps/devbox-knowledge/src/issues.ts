@@ -3,6 +3,8 @@ const messages: Record<string, string> = {
   draft_busy: "다른 초안을 미리보기 중입니다.",
   draft_invalid: "초안 요청의 형식이나 대상을 확인해 주세요.",
   draft_unavailable: "초안을 처리하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+  note_applied_postprocessing_failed: "파일 작업은 반영했지만 후처리를 완료하지 못했습니다. 다시 실행하기 전에 디스크 상태를 확인해 주세요.",
+  note_commit_unknown: "파일 작업의 반영 상태를 확정하지 못했습니다. 다시 실행하기 전에 디스크 상태를 확인해 주세요.",
   note_conflict: "파일이 외부에서 변경되었습니다. 비교 후 다시 저장해 주세요.",
   note_unavailable: "파일을 읽거나 저장하지 못했습니다. 편집 내용은 유지됩니다.",
   vault_change_invalid: "저장소 변경 정보를 확인할 수 없습니다. 현재 연결과 원본 파일은 유지됩니다.",

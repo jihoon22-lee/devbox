@@ -57,7 +57,7 @@ fn asset(a: &Asset) -> Result<()> {
 pub fn product_file(product: &str, name: &str) -> bool {
     name == format!("devbox-{product}.exe")
         || matches!(name, "THIRD_PARTY_NOTICES.md" | "devbox-installation.json")
-        || (product == "workspace"
+        || (matches!(product, "workspace" | "knowledge")
             && matches!(
                 name,
                 "resources/wsl/manifest.json" | "resources/wsl/devbox-workspace-wsl"
@@ -144,7 +144,12 @@ fn validate_products(products: &[ProductPackage], version: &str, notices: &Asset
             "THIRD_PARTY_NOTICES.md",
             "devbox-installation.json",
         ];
-        if product.id == "workspace" {
+        // Older Knowledge generations did not ship this helper. Preserve their
+        // restore/removal contract, but require the complete pair when present.
+        if product.id == "workspace"
+            || (product.id == "knowledge"
+                && names.iter().any(|name| name.starts_with("resources/wsl/")))
+        {
             expected.extend([
                 "resources/wsl/manifest.json",
                 "resources/wsl/devbox-workspace-wsl",
@@ -202,5 +207,86 @@ impl Payload {
         }
         validate_products(&value.products, &value.suite_version, &value.notices)?;
         Ok(value)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    fn item(name: impl Into<String>) -> Asset {
+        Asset {
+            name: name.into(),
+            sha256: "1".repeat(64),
+            size: 1,
+        }
+    }
+    fn fixture(knowledge_helper: bool) -> Payload {
+        let products = PRODUCTS
+            .iter()
+            .map(|id| {
+                let mut files = vec![
+                    item(format!("devbox-{id}.exe")),
+                    item("THIRD_PARTY_NOTICES.md"),
+                    item("devbox-installation.json"),
+                ];
+                if *id == "workspace" || (*id == "knowledge" && knowledge_helper) {
+                    files.extend([
+                        item("resources/wsl/manifest.json"),
+                        item("resources/wsl/devbox-workspace-wsl"),
+                    ]);
+                }
+                if *id == "control-center" {
+                    files.push(item("resources/suite/devbox-suite-bootstrap.exe"));
+                }
+                ProductPackage {
+                    id: (*id).into(),
+                    version: "0.8.1".into(),
+                    portable: item(format!("devbox-{id}_0.8.1_x64.zip")),
+                    files,
+                }
+            })
+            .collect();
+        Payload {
+            schema_version: 1,
+            suite_version: "0.8.1".into(),
+            source_sha: "2".repeat(40),
+            protocol_version: 1,
+            products,
+            notices: item("THIRD_PARTY_NOTICES.md"),
+        }
+    }
+    #[test]
+    fn accepts_both_legacy_and_helper_backed_knowledge_generations() {
+        for helper in [false, true] {
+            assert!(Payload::parse(&serde_json::to_vec(&fixture(helper)).unwrap()).is_ok());
+        }
+    }
+    #[test]
+    fn helper_pair_is_closed_and_does_not_grant_other_products_new_files() {
+        let mut partial = fixture(true);
+        partial
+            .products
+            .iter_mut()
+            .find(|p| p.id == "knowledge")
+            .unwrap()
+            .files
+            .retain(|f| f.name != "resources/wsl/devbox-workspace-wsl");
+        assert_eq!(
+            Payload::parse(&serde_json::to_vec(&partial).unwrap()).unwrap_err(),
+            "suite_package_incomplete"
+        );
+        let mut wrong_owner = fixture(false);
+        wrong_owner
+            .products
+            .iter_mut()
+            .find(|p| p.id == "api-studio")
+            .unwrap()
+            .files
+            .push(item("resources/wsl/devbox-workspace-wsl"));
+        assert_eq!(
+            Payload::parse(&serde_json::to_vec(&wrong_owner).unwrap()).unwrap_err(),
+            "suite_package_file_invalid"
+        );
+        assert!(!product_file("knowledge", "resources/wsl/untrusted-helper"));
     }
 }

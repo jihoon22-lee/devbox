@@ -36,7 +36,7 @@ function assemble(directory,products=catalog.products){
   const members=products.map(product=>{
     const member=`products/${product.id}/devbox-${product.id}.exe`,file=path.join(directory,member);
     mkdirSync(path.dirname(file),{recursive:true});copyFileSync(path.resolve(`target/debug/devbox-${product.id}.exe`),file);
-    if(product.id==="workspace")cpSync("apps/devbox-workspace/src-tauri/resources/wsl",path.join(path.dirname(file),"resources/wsl"),{recursive:true});
+    if(["workspace","knowledge"].includes(product.id))cpSync(`apps/devbox-${product.id}/src-tauri/resources/wsl`,path.join(path.dirname(file),"resources/wsl"),{recursive:true});
     copyFileSync("THIRD_PARTY_NOTICES.md",path.join(path.dirname(file),"THIRD_PARTY_NOTICES.md"));
     return {product:product.id,executable:member,sha256:digest(file)};
   });

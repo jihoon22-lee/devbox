@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::io::{self, Read, Write};
 
+pub mod document;
+
 pub const VERSION: u32 = 1;
 pub const MAX_FRAME_BYTES: usize = 64 * 1024 * 1024;
 pub const MAX_ROOTS: usize = 16;

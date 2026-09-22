@@ -303,3 +303,15 @@ ineligible. Directory records remain visible without file or stage actions.
 The corrected complete Windows Rust host scenario passed on owned WSL1 (71.37 s)
 and WSL2 (53.10 s), including hook cancellation and removal of each disposable
 fixture. These actual host results do not claim WebView or LSP acceptance.
+
+## Knowledge document publication
+
+The same pinned static artifact is now a declared dependency of Knowledge. Its
+`--document-operation` entry accepts at most 16 KiB of one typed stdin operation:
+private staging, permissions, no-clobber creation, preserving replacement or directory
+sync. It exposes no task, Git, shell or listener capabilities. A five-second watchdog
+requests exit across input and execution; uninterruptible kernel I/O is never reported
+as confirmed retirement by the host. Windows Knowledge pins the installed binary and ancestors,
+uses the registered distro GUID and keeps commit-unknown evidence on timeout.
+WSL1's ENOSYS/wslfs fallback preserves the displaced object before no-clobber linking;
+its brief missing-path interval is explicit and a concurrent creator is never replaced.

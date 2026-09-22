@@ -63,8 +63,19 @@ export async function exerciseKnowledgeWsl({ item, executable, profile, command,
   await wait(item.cdp, '!!document.querySelector(".knowledge-feature-notes .app")', "WSL vault activation missing");
   const currentRoot = succeeded(await command(item, "knowledge.notes", "get_root"));
   assert.equal(identity(currentRoot), identity(root));
+  const linux = (...args) => {
+    const result = spawnSync("wsl.exe", ["--distribution", distro, "--user", "root", "--exec", ...args], { encoding: "utf8", windowsHide: true, timeout: 15_000 });
+    assert.equal(result.status, 0, "owned WSL permission fixture failed");
+    return result.stdout.trim();
+  };
+  const posixNote = "/home/devbox-fixture/한글 project/Notes/Case.md";
+  linux("/bin/chmod", "600", "--", posixNote);
   const content = "# 한글 WSL note\r\nExplicit native save\r\n";
-  succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content, expectedRevision: succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })).revision }));
+  const saved = succeeded(await command(item, "knowledge.notes", "write_file", { rel: "Notes/Case.md", content, expectedRevision: succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/Case.md" })).revision }));
+  evidence.wsl.saveOutcome = saved.saveOutcome ?? { state: "applied" };
+  assert.equal(saved.saveOutcome?.state ?? "applied", "applied", JSON.stringify(saved.saveOutcome));
+  assert.equal(linux("/usr/bin/stat", "-c", "%a", "--", posixNote), "600");
+  evidence.wsl.privateModePreserved = true;
   assert.equal(readFileSync(path.join(notes, "Case.md"), "utf8"), content);
   assert.equal(succeeded(await command(item, "knowledge.notes", "read_file", { rel: "Notes/case.md" })).content, "# Lower case\nSeparate Linux file\n");
   assert.equal(succeeded(await command(item, "knowledge.notes", "list_templates"))[0].content, "new product edit");

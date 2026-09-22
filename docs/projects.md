@@ -24,3 +24,7 @@ engine은 독립 실행 앱이 아니며 Tauri bootstrap·installer·공개 카�
 Suite의 native bus·installation/peer identity·health 구현은 `crates/suite-runtime`이
 소유하며 네 제품이 명시적 Cargo 의존성으로 사용한다. 제품별 command admission과
 domain handler는 각 host에 남는다. Control Center 앱 소스를 `#[path]`로 포함하지 않는다.
+
+Knowledge의 WSL 문서 저장은 `workspace-wsl`의 명시적 Cargo protocol 의존성과 동일 정적
+helper artifact를 사용한다. 각 제품이 별도로 해시를 고정해 패키징하며, Knowledge의 진입점은
+파일 연산만 제공한다. Workspace의 project/task/session authority는 공유하지 않는다.
