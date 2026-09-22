@@ -1,7 +1,7 @@
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, expect, it, vi } from "vitest";
 import App from "./App";
-import { readFile, writeFile, openInboundNote } from "./api";
+import { readFile, writeFile, openInboundNote, deleteFile } from "./api";
 import type { NoteSnapshot } from "./api";
 vi.mock("./api", () => {
   const TREE = [
@@ -140,4 +140,22 @@ it("offers disk comparison and reviewed overwrite without losing the draft on co
   fireEvent.click(screen.getByRole("button",{name:/비교한 내용에 덮어쓰기/}));
   await act(async()=>{});
   expect(writeFile).toHaveBeenLastCalledWith("note.md","local draft","external-2");
+});
+
+
+it("keeps another note's unsaved buffer when a delayed context-menu deletion completes", async () => {
+  vi.spyOn(window, "confirm").mockReturnValue(true);
+  const deleting = pending<void>(); vi.mocked(deleteFile).mockReturnValueOnce(deleting.promise);
+  render(<App/>);
+  const first = await screen.findByText("note.md"); fireEvent.click(first);
+  await screen.findByLabelText("note editor");
+  fireEvent.contextMenu(first.closest("button")!);
+  fireEvent.click(screen.getByRole("menuitem", {name: "삭제"}));
+  expect(deleteFile).toHaveBeenCalledWith("note.md");
+  fireEvent.click(screen.getByText("nested.md"));
+  await act(async () => {});
+  fireEvent.change(screen.getByLabelText("note editor"), {target: {value: "B UNSAVED TEXT"}});
+  await act(async () => { deleting.resolve(); await deleting.promise; });
+  expect(screen.getByLabelText("note editor")).toHaveValue("B UNSAVED TEXT");
+  expect(screen.getByText("● 저장되지 않음")).toBeInTheDocument();
 });

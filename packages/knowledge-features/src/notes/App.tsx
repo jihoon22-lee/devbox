@@ -818,10 +818,10 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     const kind = isDir ? "폴더와 그 안의 모든 항목" : "파일";
     if (!confirm(`'${path}' ${kind}을(를) 삭제할까요? 이 작업은 되돌릴 수 없습니다.`)) return;
     setError(null);
+    const completeRemoval = editorDocument.approveRemoval(path);
     try {
       await deleteFile(path);
-      if (isSameOrChild(selected, path)) {
-        editorDocument.clear();
+      if (completeRemoval()) {
         setCursorRequest(null);
       }
       setSelectedTreePath((current) => (isSameOrChild(current, path) ? null : current));
