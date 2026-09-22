@@ -46,3 +46,40 @@
   unprotected ACL, preserve protected ACLs, and restore inheritance after ReplaceFile
   through a pre-opened metadata handle bound to the submitted object. No path-based
   post-commit permission update can touch an external replacement.
+
+- Final Windows Rust CI 35681022917 passed. Native 35681022912 passed installation,
+  shell, cross-product and API workflows but failed actual WSL1 vault save. A local
+  Win32 executable on exclusively owned synthetic WSL files confirmed GetNamedSecurityInfo
+  returns ERROR_INVALID_FUNCTION and Windows private DACL creation still yields Unix 0755.
+- Preserve WSL support through the existing pinned static helper: explicit Cargo protocol
+  dependency, per-product hash embedding/resources, GUID-bound fixed filesystem entry,
+  private Linux modes and exchange. WSL1-only ENOSYS fallback moves the displaced object
+  before no-clobber link; its missing-path interval is documented, never hidden as exchange.
+- Added protocol/deadline/permission/fallback races, strengthened hosted WSL native save
+  acceptance to require applied outcome and retain 0600, and updated packaging/release
+  resource contracts. This changes CI validators, so final correction validation is a
+  single full affected/all audit plus final GitHub/Windows/WSL acceptance.
+
+- WSL correction implementation, protocol fixtures, host deadline/pinning, native fixture,
+  per-product packaging and documentation are complete. Write/create/delete adapters now
+  run on blocking workers so bounded helper polling never sleeps on the async dispatcher.
+  Source-only checks have no executable helper; actual WSL support is verified from the
+  pinned packaged artifact. No local services, distro registrations or policies changed.
+
+- Full local audit PASS: 1919 frontend tests, 2698 Rust tests, all builds/checks/Clippy/fmt;
+  packaging/installer/release resource tests and dependency notices PASS.
+- Additional musl probe of the exact document module caught a missing libc renameat2
+  symbol; switched to SYS_renameat2. Windows platform modules and tests typecheck for MSVC.
+  The full production helper cannot build locally without musl C tools (aws-lc); no tools
+  were installed. A pure-Rust static probe using the exact document source built and passed
+  an actual Windows executable -> registered current WSL GUID -> private stdin helper
+  fixture: mkdir, permissions, no-clobber, exchange, sync, case preservation, 0600 file and
+  0700 recovery directory. Only explicitly created temporary files were touched; no distro,
+  service or policy changes. Final production static artifact and WSL1 remain hosted gates.
+
+- The Windows interoperability fixture's operations and Linux mode checks passed; its
+  immediate directory cleanup met a delayed WSL handle. The exclusively owned Windows
+  temp directory was then removed and absence confirmed without changing any service.
+  Native Windows staging now confirms protected DACL support before writing any content.
+- After the musl syscall correction, final document regressions and workspace Clippy/fmt
+  passed with the original feature union. Final Windows source checks and hosted gates remain.

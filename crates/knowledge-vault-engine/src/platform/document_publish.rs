@@ -2,6 +2,13 @@
 use std::{fs, io, path::Path};
 
 pub fn private_directory(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    if is_wsl(path)? {
+        return super::document_wsl::invoke(
+            workspace_wsl::document::Method::PrivateDirectory,
+            &[path],
+        );
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::DirBuilderExt;
@@ -20,7 +27,7 @@ pub fn private_directory(path: &Path) -> io::Result<()> {
                 Storage::FileSystem::CreateDirectoryW,
             },
         };
-        let path = wide(path)?;
+        let encoded = wide(path)?;
         let mut descriptor = PSECURITY_DESCRIPTOR::default();
         unsafe {
             ConvertStringSecurityDescriptorToSecurityDescriptorW(
@@ -35,10 +42,24 @@ pub fn private_directory(path: &Path) -> io::Result<()> {
                 lpSecurityDescriptor: descriptor.0,
                 bInheritHandle: false.into(),
             };
-            let result = CreateDirectoryW(windows::core::PCWSTR(path.as_ptr()), Some(&attributes))
-                .map_err(windows_error);
+            let result =
+                CreateDirectoryW(windows::core::PCWSTR(encoded.as_ptr()), Some(&attributes))
+                    .map_err(windows_error);
             let _ = LocalFree(Some(HLOCAL(descriptor.0)));
-            result
+            result?;
+            // Some filesystem providers ignore supplied security attributes.
+            // Refuse to write content unless protected access control exists.
+            let confirmed = DaclSnapshot::read(path).and_then(|acl| {
+                if acl.acl.is_some() && acl.info.0 & 0x8000_0000 != 0 {
+                    Ok(())
+                } else {
+                    Err(io::ErrorKind::Unsupported.into())
+                }
+            });
+            if confirmed.is_err() {
+                let _ = fs::remove_dir(path);
+            }
+            confirmed
         }
     }
     #[cfg(not(any(unix, windows)))]
@@ -51,6 +72,13 @@ pub fn private_directory(path: &Path) -> io::Result<()> {
 /// Publish complete bytes only if the target does not exist. Do not require
 /// hard-link support and never fall back to an overwrite-capable rename.
 pub fn create(staged: &Path, target: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    if is_wsl(target)? {
+        return super::document_wsl::invoke(
+            workspace_wsl::document::Method::Create,
+            &[staged, target],
+        );
+    }
     #[cfg(target_os = "linux")]
     {
         rename_linux(staged, target, libc::RENAME_NOREPLACE)
@@ -104,6 +132,13 @@ fn rename_linux(from: &Path, to: &Path, flags: libc::c_uint) -> io::Result<()> {
 /// external writer after revision validation. The caller must inspect it before
 /// deleting any evidence. Errors may leave an intermediate state on Windows.
 pub fn replace(staged: &Path, target: &Path, previous: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    if is_wsl(target)? {
+        return super::document_wsl::invoke(
+            workspace_wsl::document::Method::Replace,
+            &[staged, target, previous],
+        );
+    }
     #[cfg(target_os = "linux")]
     {
         rename_linux(staged, target, libc::RENAME_EXCHANGE)?;
@@ -408,4 +443,34 @@ fn windows_error(error: windows::core::Error) -> io::Error {
     windows::Win32::Foundation::WIN32_ERROR::from_error(&error)
         .map(|code| io::Error::from_raw_os_error(code.0 as i32))
         .unwrap_or_else(|| io::Error::other(error))
+}
+
+#[cfg(windows)]
+fn is_wsl(path: &Path) -> io::Result<bool> {
+    devbox_wsl::path::parse_wsl_unc_path(&path.to_string_lossy())
+        .map(|p| p.is_some())
+        .map_err(io::Error::other)
+}
+pub fn staging_permissions(staged: &Path, target: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    if is_wsl(target)? {
+        return super::document_wsl::invoke(
+            workspace_wsl::document::Method::Permissions,
+            &[staged, target],
+        );
+    }
+    let _ = (staged, target);
+    Ok(())
+}
+
+pub fn sync_parent(path: &Path) -> io::Result<()> {
+    #[cfg(windows)]
+    if is_wsl(path)? {
+        return super::document_wsl::invoke(
+            workspace_wsl::document::Method::Sync,
+            &[path.parent().ok_or(io::ErrorKind::InvalidInput)?],
+        );
+    }
+    let _ = path;
+    Ok(())
 }

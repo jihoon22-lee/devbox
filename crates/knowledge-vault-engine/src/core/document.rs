@@ -157,13 +157,14 @@ fn save_with(
         _ => return Ok(recovery(&directory, "unknown", "note_commit_unknown")),
     };
     let durability = devbox_filesystem::finish_replacement(path);
+    let native_sync = document_publish::sync_parent(path);
     if fs::remove_dir_all(&directory).is_err() {
         saved.save_outcome = Some(SaveOutcome {
             state: "applied",
             recovery_directory: recovery_name(&directory),
             warning: "note_cleanup_pending",
         });
-    } else if durability.durability_warning.is_some() {
+    } else if durability.durability_warning.is_some() || native_sync.is_err() {
         saved.save_outcome = Some(SaveOutcome {
             state: "applied",
             recovery_directory: None,
@@ -218,6 +219,7 @@ fn prepare(path: &Path, content: &str) -> Result<PathBuf, String> {
                 Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
                 Err(error) => return Err(error),
             }
+            document_publish::staging_permissions(&directory.join("submitted.md"), path)?;
             staged.sync_all()
         })();
         if result.is_err() {
@@ -256,7 +258,8 @@ fn create_with(path: &Path, content: &str, before_publish: impl FnOnce()) -> Res
             if cleanup.is_err()
                 || devbox_filesystem::finish_replacement(path)
                     .durability_warning
-                    .is_some() =>
+                    .is_some()
+                || document_publish::sync_parent(path).is_err() =>
         {
             Err("note_applied_postprocessing_failed".into())
         }

@@ -423,7 +423,9 @@ jobs:
         shell: pwsh
         run: '"DEVBOX_WORKSPACE_LSP_FIXTURE=$((Resolve-Path target/native-lsp-fixture/workspace-lsp-fixture).Path)" >> $env:GITHUB_ENV'
       - name: Verify helper belongs to this product source
-        run: node .github/scripts/workspace-wsl-artifact.mjs verify "${{ github.sha }}"
+        run: |
+          node .github/scripts/workspace-wsl-artifact.mjs verify "${{ github.sha }}"
+          node .github/scripts/workspace-wsl-artifact.mjs stage-knowledge "${{ github.sha }}"
       - name: Prepare dedicated WSL1 filesystem fixture
         if: ${{ !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() }}
         timeout-minutes: 10
@@ -499,8 +501,10 @@ jobs:
             New-Item -ItemType Directory -Path "$payload/$product" | Out-Null
             Copy-Item "target/debug/devbox-$product.exe" "$payload/$product/"
           }
-          New-Item -ItemType Directory -Path "$payload/workspace/resources/wsl" -Force | Out-Null
-          Copy-Item 'apps/devbox-workspace/src-tauri/resources/wsl/*' "$payload/workspace/resources/wsl/"
+          foreach ($product in @('workspace','knowledge')) {
+            New-Item -ItemType Directory -Path "$payload/$product/resources/wsl" -Force | Out-Null
+            Copy-Item "apps/devbox-$product/src-tauri/resources/wsl/*" "$payload/$product/resources/wsl/"
+          }
           New-Item -ItemType Directory -Path "$payload/control-center/resources/suite" -Force | Out-Null
           Copy-Item 'target/debug/devbox-suite-bootstrap.exe' "$payload/control-center/resources/suite/"
           Copy-Item THIRD_PARTY_NOTICES.md "$payload/"

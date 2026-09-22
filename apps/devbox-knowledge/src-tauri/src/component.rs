@@ -374,6 +374,17 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
         .invoke_handler(tauri::generate_handler![execute])
         .setup(|app, _| {
             app.manage(Active::default());
+            #[cfg(windows)]
+            if let (Some(digest), Some(bytes)) = (
+                option_env!("DEVBOX_WSL_HELPER_SHA256"),
+                option_env!("DEVBOX_WSL_HELPER_BYTES"),
+            ) {
+                knowledge_base_lib::component::configure_document_helper(
+                    app.path().resource_dir()?.join("resources/wsl"),
+                    digest,
+                    bytes.parse()?,
+                );
+            }
             crate::lifecycle::initialize(app);
             crate::startup::initialize(app).map_err(Into::into)
         })

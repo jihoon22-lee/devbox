@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { copyFileSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdirSync, lstatSync, readFileSync, writeFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
 
@@ -47,4 +47,14 @@ if (mode === "prepare") {
 console.log(`Workspace WSL artifact ${mode}: PASS`);
 
 }
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) run(process.argv[2], process.argv.slice(3));
+export function stageKnowledge(sourceSha, source = directory, destination = fileURLToPath(new URL("../../apps/devbox-knowledge/src-tauri/resources/wsl/", import.meta.url))) {
+  assert.match(sourceSha, /^[0-9a-f]{40}$/, "exact helper source required");
+  run("verify", [sourceSha], source);
+  mkdirSync(destination, { recursive: true });
+  for (const file of [name, "manifest.json"]) copyFileSync(path.join(source, file), path.join(destination, file));
+  run("verify", [sourceSha], destination);
+}
+if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  if (process.argv[2] === "stage-knowledge") stageKnowledge(process.argv[3]);
+  else run(process.argv[2], process.argv.slice(3));
+}

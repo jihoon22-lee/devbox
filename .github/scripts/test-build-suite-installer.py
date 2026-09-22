@@ -23,10 +23,11 @@ class SuiteInstallerInputs(unittest.TestCase):
             root = self.payload / product
             root.mkdir()
             (root / f"devbox-{product}.exe").write_bytes(f"synthetic {product}".encode())
-        wsl = self.payload / "workspace/resources/wsl"
-        wsl.mkdir(parents=True)
-        (wsl / "manifest.json").write_bytes(b"{}")
-        (wsl / "devbox-workspace-wsl").write_bytes(b"synthetic wsl helper")
+        for product in ("workspace", "knowledge"):
+            wsl = self.payload / f"{product}/resources/wsl"
+            wsl.mkdir(parents=True)
+            (wsl / "manifest.json").write_bytes(b"{}")
+            (wsl / "devbox-workspace-wsl").write_bytes(b"synthetic wsl helper")
         suite = self.payload / "control-center/resources/suite"
         suite.mkdir(parents=True)
         self.bootstrap = suite / "devbox-suite-bootstrap.exe"

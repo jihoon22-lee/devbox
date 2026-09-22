@@ -26,11 +26,11 @@ def prepare(assets, repository, source):
                 target.parent.mkdir(parents=True,exist_ok=True)
                 with archive.open(member['name']) as src,target.open('xb') as dst:shutil.copyfileobj(src,dst,65536)
             names = [f"devbox-{product['id']}.exe"]
-            if product['id']=='workspace':names += ['resources/wsl/manifest.json','resources/wsl/devbox-workspace-wsl']
+            if product['id'] in {'workspace','knowledge'}:names += ['resources/wsl/manifest.json','resources/wsl/devbox-workspace-wsl']
             if product['id']=='control-center':names += ['resources/suite/devbox-suite-bootstrap.exe']
             for name in names:
                 if name.startswith('resources/wsl/'):
-                    target=repository/'apps/devbox-workspace/src-tauri'/name
+                    target=repository/f"apps/devbox-{product['id']}/src-tauri"/name
                 elif name.startswith('resources/suite/'):
                     target=destination/Path(name).name
                 else:target=destination/name

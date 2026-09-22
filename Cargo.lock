@@ -1469,6 +1469,7 @@ dependencies = [
  "tauri-plugin-opener",
  "tempfile",
  "windows 0.61.3",
+ "workspace-wsl",
  "wsl",
 ]
 

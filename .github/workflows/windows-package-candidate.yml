@@ -153,6 +153,8 @@ jobs:
         with:
           name: candidate-workspace-component-${{ github.run_id }}
           path: apps/devbox-workspace/src-tauri/resources/wsl
+      - name: Stage the pinned helper for Knowledge document operations
+        run: node .github/scripts/workspace-wsl-artifact.mjs stage-knowledge "${{ github.sha }}"
       - name: Build each assigned product once, including required components
         shell: pwsh
         env:

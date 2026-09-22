@@ -3,7 +3,7 @@ import assert from "node:assert/strict";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import path from "node:path";
-import { binary, run } from "./workspace-wsl-artifact.mjs";
+import { binary, run, stageKnowledge } from "./workspace-wsl-artifact.mjs";
 
 test("helper staging rejects a foreign source, changed bytes and dynamic ELF", () => {
   const root = mkdtempSync(path.join(tmpdir(), "workspace-helper-artifact-"));
@@ -16,6 +16,10 @@ test("helper staging rejects a foreign source, changed bytes and dynamic ELF", (
     writeFileSync(source, elf);
     run("prepare", [source, "a".repeat(40)], destination);
     run("verify", ["a".repeat(40)], destination);
+    const knowledge = path.join(root, "knowledge");
+    stageKnowledge("a".repeat(40), destination, knowledge);
+    assert.deepEqual(readFileSync(path.join(knowledge, "devbox-workspace-wsl")), elf);
+    assert.throws(() => stageKnowledge("b".repeat(40), destination, knowledge), /source differs/);
     assert.throws(() => run("verify", ["b".repeat(40)], destination), /source differs/);
     const file = path.join(destination, "devbox-workspace-wsl");
     const changed = readFileSync(file); changed[119] = 1; writeFileSync(file, changed);

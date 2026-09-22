@@ -49,7 +49,7 @@ def portables(payload, output, version, source):
     for product in PRODUCTS:
         root = payload / product
         names = [f"devbox-{product}.exe"]
-        if product == "workspace":
+        if product in {"workspace", "knowledge"}:
             names += ["resources/wsl/manifest.json", "resources/wsl/devbox-workspace-wsl"]
         if product == "control-center":
             names += ["resources/suite/devbox-suite-bootstrap.exe"]

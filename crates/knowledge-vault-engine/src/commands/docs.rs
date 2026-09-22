@@ -1001,7 +1001,12 @@ pub(crate) async fn __component_write_file(
         content,
         expected_revision,
     } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let saved = write_file(component_app.state(), rel, content, expected_revision)?;
+    let app = component_app.clone();
+    let saved = tauri::async_runtime::spawn_blocking(move || {
+        write_file(app.state(), rel, content, expected_revision)
+    })
+    .await
+    .map_err(|_| "note_commit_unknown".to_string())??;
     serde_json::to_value(saved).map_err(|_| "component_response_invalid".into())
 }
 
@@ -1019,7 +1024,10 @@ pub(crate) async fn __component_create_file(
     }
     let Input { rel, content } =
         serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    create_file(component_app.state(), rel, content)?;
+    let app = component_app.clone();
+    tauri::async_runtime::spawn_blocking(move || create_file(app.state(), rel, content))
+        .await
+        .map_err(|_| "note_commit_unknown".to_string())??;
     Ok(serde_json::Value::Null)
 }
 
@@ -1053,7 +1061,10 @@ pub(crate) async fn __component_delete_file(
     }
     let Input { rel } =
         serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    delete_file(component_app.state(), rel)?;
+    let app = component_app.clone();
+    tauri::async_runtime::spawn_blocking(move || delete_file(app.state(), rel))
+        .await
+        .map_err(|_| "note_commit_unknown".to_string())??;
     Ok(serde_json::Value::Null)
 }
 

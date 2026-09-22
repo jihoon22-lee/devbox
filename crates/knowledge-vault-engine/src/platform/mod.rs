@@ -5,6 +5,8 @@
 //! registration conflict be reported without exposing a platform error.
 
 pub(crate) mod document_publish;
+#[cfg(windows)]
+pub(crate) mod document_wsl;
 
 use serde::Serialize;
 #[cfg(target_os = "windows")]

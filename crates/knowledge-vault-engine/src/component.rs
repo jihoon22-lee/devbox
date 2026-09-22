@@ -10,6 +10,11 @@ pub use crate::core::session_summary::{
     ProblemCategory as SessionProblemCategory, SelectedProblem as SelectedSessionProblem,
 };
 
+#[cfg(windows)]
+pub fn configure_document_helper(directory: std::path::PathBuf, digest: &'static str, bytes: u64) {
+    crate::platform::document_wsl::configure(directory, digest, bytes);
+}
+
 pub use crate::core::db::product_search as search_projection;
 
 /// Cached health only; a disconnected WSL vault is never probed on the IPC thread.

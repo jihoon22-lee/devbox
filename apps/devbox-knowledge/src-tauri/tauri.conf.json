@@ -30,7 +30,8 @@
       "nsis"
     ],
     "resources": [
-      "../../../THIRD_PARTY_NOTICES.md"
+      "../../../THIRD_PARTY_NOTICES.md",
+      "resources/wsl/*"
     ],
     "icon": [
       "icons/32x32.png",
