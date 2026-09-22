@@ -5,7 +5,7 @@ import { createServer } from "node:http";
 import { createServer as createHttp2Server } from "node:http2";
 import { createHash, randomUUID } from "node:crypto";
 import { once } from "node:events";
-import { writeFileSync, readFileSync, existsSync } from "node:fs";
+import { writeFileSync, readFileSync, existsSync, copyFileSync, constants } from "node:fs";
 import { spawn } from "node:child_process";
 import path from "node:path";
 
@@ -162,13 +162,19 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
       await control(method, { connectionId: connection.connectionId, ...(method.startsWith("cancel") ? { requestId: "control-grpc" } : {}) }, 1, () => !held.has("grpc"), key);
       if (method.startsWith("cancel")) await success("api-studio.api", "disconnect_grpc", { connectionId: connection.connectionId });
     }
+    key = await pending("authorize_mcp_http", { requestId: "control-oauth", endpoint: `${endpoint}/oauth`, issuer: null, clientId: "owned-fixture", scopes: [] });
+    await until(() => held.has("oauth"), "OAuth discovery did not start");
+    await control("cancel_mcp_oauth", { requestId: "control-oauth" }, 1, () => !held.has("oauth"), key);
     // Select Node through the real native dialog; no renderer-created path ID.
     stage("stdio-native-selection");
+    const selectedExecutable = path.join(root, `node-control-${randomUUID()}.exe`);
+    copyFileSync(process.execPath, selectedExecutable, constants.COPYFILE_EXCL);
     const selecting = call("api-studio.api", "pick_mcp_stdio_executable").then(value => ({ value }), error => ({ error }));
-    const picker = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", path.resolve(".github/scripts/windows-api-control-picker.ps1"), "-OwnerProcessId", String(ui.child.pid), "-SelectedFile", process.execPath], { stdio: "inherit", windowsHide: true });
+    const picker = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", path.resolve(".github/scripts/windows-native-file-dialog.ps1"), "-TargetProcessId", String(ui.child.pid), "-ExpectedExecutable", ui.child.spawnfile, "-FixtureRoot", root, "-Action", "Open", "-SelectedFile", selectedExecutable], { stdio: "inherit", windowsHide: true });
     const [pickerCode] = await once(picker, "exit"); assert.equal(pickerCode, 0);
     const selected = await selecting; assert.ok(!selected.error);
     const selectionResponse = selected.value; assert.equal(selectionResponse.operation.outcome.state, "succeeded");
+    assert.equal(selectionResponse.value.label, path.basename(selectedExecutable));
     const executableSelectionId = selectionResponse.value.selectionId;
     for (const method of ["cancel_mcp_stdio", "disconnect_mcp_stdio"]) {
       const pidFile = path.join(root, `control-${randomUUID()}.json`), fixture = path.join(root, `control-${randomUUID()}.mjs`);
@@ -179,9 +185,6 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
       const { pid } = JSON.parse(readFileSync(pidFile));
       await control(method, { connectionId: connection.connectionId, ...(method.startsWith("cancel") ? { requestId: "control-stdio" } : {}) }, 1, () => { try { process.kill(pid, 0); return false; } catch (error) { if (error.code === "ESRCH") return true; throw error; } }, key);
     }
-    key = await pending("authorize_mcp_http", { requestId: "control-oauth", endpoint: `${endpoint}/oauth`, issuer: null, clientId: "owned-fixture", scopes: [] });
-    await until(() => held.has("oauth"), "OAuth discovery did not start");
-    await control("cancel_mcp_oauth", { requestId: "control-oauth" }, 1, () => !held.has("oauth"), key);
     if (socketState.failure) throw socketState.failure;
     evidence.controlAdmission = { normalSlots: 64, released: recorded, expectedDisconnects: socketState.expectedDisconnects, result: "pass" };
     progress("control-admission-complete");

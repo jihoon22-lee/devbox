@@ -44,3 +44,19 @@
   precedes the deadline, while body construction is inside it. Documentation diff only; no
   production or fixture behavior changed. Supersede the in-progress gate before its costly
   product build so final acceptance uses the corrected documentation head.
+- CI `35716127628` PASS. Native `35716127660` passed eight saturated controls
+  (HTTP; MCP HTTP cancel/disconnect; SSE; WebSocket close/disconnect; gRPC
+  cancel/disconnect), with real request/socket/stream retirement. The independent
+  native scopes passed; stdio selection stopped at the test driver's UIA lookup.
+- Reuse the already-tested Workspace chooser driver instead of the API-specific
+  duplicate. Move it and its regression to `windows-native-file-dialog*`, update
+  both consumers, and retain the existing pre-build Cancel/Open/Multi/Slow check.
+  It handles nested native dialogs and Buttons exposed as Panes via bounded Win32
+  messages, exact executable/root identity and process-start checks. The API
+  fixture selects an exclusive Node executable copy inside its owned root.
+  OAuth now runs before stdio selection so independent protocol evidence survives
+  a chooser failure. No production code or authority bypass was introduced.
+- Shared-driver correction: socket regressions, JS syntax, workflow contracts and
+  Windows PowerShell parsing PASS. Local Windows use was parsing only; no GUI or
+  fixture scripts executed locally. Preserve existing production checks; the shared
+  native chooser test and actual API fixture remain hosted acceptance gates.

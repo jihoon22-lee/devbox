@@ -1,6 +1,6 @@
 ﻿# Exercise the exact chooser driver against an owned, disposable native dialog.
-# This verifies the test tool; packaged Workspace acceptance remains separate.
-param([string]$Driver=(Join-Path $PSScriptRoot 'windows-workspace-file-dialog.ps1'))
+# This verifies the test tool; packaged product acceptance remains separate.
+param([string]$Driver=(Join-Path $PSScriptRoot 'windows-native-file-dialog.ps1'))
 $ErrorActionPreference='Stop'
 Set-StrictMode -Version Latest
 $fixtureRoot=Join-Path ([IO.Path]::GetTempPath()) ('devbox-file-dialog-'+[guid]::NewGuid().ToString('N'))
@@ -48,10 +48,10 @@ try {
         if($process.ExitCode -ne $expectedExit){throw 'Fixture chooser returned an unexpected exit code'}
         if($action -ne 'Cancel') {
             if(-not [IO.File]::Exists($result)){throw 'Fixture chooser did not publish its selection'}
-            $actual=@([IO.File]::ReadAllLines($result)|ForEach-Object{[WorkspaceFixturePath]::Canonical($_)})
+            $actual=@([IO.File]::ReadAllLines($result)|ForEach-Object{[NativeFixturePath]::Canonical($_)})
             $expected=if($action -eq 'Multi'){@($chosen,$secondChosen)}else{@($chosen)}
             if($actual.Count -ne @($expected).Count){throw 'Fixture chooser selected a different number of files'}
-            foreach($file in $expected){if($actual -notcontains [WorkspaceFixturePath]::Canonical($file)){throw 'Fixture chooser selected a different file'}}
+            foreach($file in $expected){if($actual -notcontains [NativeFixturePath]::Canonical($file)){throw 'Fixture chooser selected a different file'}}
         } elseif([IO.File]::Exists($result)) {throw 'Cancelled fixture chooser published a file'}
         Write-Output ('Native owned chooser '+$action+': PASS')
         $process.Dispose()

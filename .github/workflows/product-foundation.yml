@@ -51,6 +51,7 @@ on:
       - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-api-workflow.mjs'
       - '.github/scripts/windows-api-control*'
+      - '.github/scripts/windows-native-file-dialog*'
       - '.github/scripts/check-api-studio-routes.mjs'
       - '.github/scripts/check-knowledge-routes.mjs'
       - '.github/scripts/product-route-graph.mjs'
@@ -409,10 +410,10 @@ jobs:
       - name: Check generated Workspace fixture requests
         if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         run: node --test .github/scripts/windows-workspace-registration.test.mjs
-      - name: Check native Workspace chooser driver
+      - name: Check native product chooser driver
         if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only }}
         shell: powershell
-        run: .github/scripts/windows-workspace-file-dialog.test.ps1
+        run: .github/scripts/windows-native-file-dialog.test.ps1
       - uses: actions/download-artifact@v8
         with:
           name: workspace-wsl-${{ github.sha }}

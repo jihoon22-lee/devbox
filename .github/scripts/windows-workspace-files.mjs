@@ -11,7 +11,7 @@ export const nativeFileSave = (doc,text) => ({...nativeFileSnapshot(doc),text,en
 
 export async function nativeFileDialog({processId,executable,directory,action,selectedFile,selectedFiles}) {
   assert.ok(Number.isSafeInteger(processId)&&processId>0,"An owned product process is required for dialog acceptance");
-  const args=["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.resolve(".github/scripts/windows-workspace-file-dialog.ps1"),"-TargetProcessId",String(processId),"-ExpectedExecutable",executable,"-FixtureRoot",directory,"-Action",action];
+  const args=["-NoProfile","-NonInteractive","-ExecutionPolicy","Bypass","-File",path.resolve(".github/scripts/windows-native-file-dialog.ps1"),"-TargetProcessId",String(processId),"-ExpectedExecutable",executable,"-FixtureRoot",directory,"-Action",action];
   if(action==="Open")args.push("-SelectedFilesJson",JSON.stringify(selectedFiles??[selectedFile]));
   const started=performance.now();
   const result={action,state:"running"};
