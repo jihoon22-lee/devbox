@@ -191,10 +191,10 @@ also drops every connection through the same owner.
 - Maximum line and parsed JSON size: 4 MiB.
 - Empty stdout lines, non-UTF-8, non-JSON stdout, oversized lines, duplicate
   response IDs, or an unexpected response ID invalidate the connection.
-- stderr is never parsed as protocol. It is drained concurrently into a
-  64 KiB/256-line zeroizing ring, with controls removed and known resolved
-  values redacted. IPC receives only a bounded safe count/summary, not raw
-  stderr.
+- stderr is never parsed as protocol. The #574 correction removes the unused
+  diagnostic ring: concurrent draining uses a 4 KiB buffer zeroized after each
+  read and on drop. No raw stderr or diagnostic summary is retained or published
+  over IPC; chunk boundaries cannot reconstruct a retained secret.
 
 The Code Pad LSP `Content-Length` transport is not reused for framing. Only its
 no-shell/process-tree ownership patterns are applicable.

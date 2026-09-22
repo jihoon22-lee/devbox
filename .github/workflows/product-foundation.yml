@@ -50,6 +50,7 @@ on:
       - '.github/scripts/run-knowledge-wsl-fixtures.ps1'
       - '.github/scripts/windows-api-lifecycle.mjs'
       - '.github/scripts/windows-api-workflow.mjs'
+      - '.github/scripts/windows-api-control*'
       - '.github/scripts/check-api-studio-routes.mjs'
       - '.github/scripts/check-knowledge-routes.mjs'
       - '.github/scripts/product-route-graph.mjs'
