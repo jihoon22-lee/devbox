@@ -150,3 +150,18 @@ describe("approved deletion ownership", () => {
     expect(note.approveRemoval("Notes")()).toBe(true);
   });
 });
+
+it.each(["appliedWithConflict", "unknown"] as const)("retains the draft and blocks successful quit for a %s write", async state => {
+  const {note, write} = await fixture(); note.edit("my unsaved draft");
+  write.mockResolvedValueOnce({content:null,revision:"",saveOutcome:{state,recoveryDirectory:".devbox-save-fixture",warning:"note_commit_unknown"}});
+  expect(await note.saveBeforeQuit()).toBe(false);
+  expect(note.snapshot()).toMatchObject({content:"my unsaved draft",dirty:true,revision:"disk-1"});
+  expect(note.snapshot().error).toContain(".devbox-save-fixture");
+});
+it("records a committed write with a durability warning as saved", async () => {
+  const {note, write} = await fixture(); note.edit("committed");
+  write.mockResolvedValueOnce({content:"committed",revision:"saved",saveOutcome:{state:"applied",recoveryDirectory:null,warning:"note_durability_warning"}});
+  expect(await note.save()).toBe(true);
+  expect(note.snapshot()).toMatchObject({dirty:false,revision:"saved"});
+  expect(note.snapshot().error).toContain("파일은 반영");
+});

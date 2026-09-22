@@ -50,7 +50,10 @@ export interface OpenRequest {
   from: string | null;
 }
 
-export interface NoteSnapshot { content: string | null; revision: string }
+export interface NoteSnapshot {
+  content: string | null; revision: string;
+  saveOutcome?: { state: "applied" | "appliedWithConflict" | "unknown"; recoveryDirectory: string | null; warning: string };
+}
 
 export interface InboundNote {
   revision: string;

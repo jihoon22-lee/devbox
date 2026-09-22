@@ -482,10 +482,15 @@ fn atomic_write_using(
 
     for _ in 0..32 {
         let temporary = atomic_temporary_path(path)?;
-        let open = OpenOptions::new()
-            .write(true)
-            .create_new(true)
-            .open(&temporary);
+        let mut options = OpenOptions::new();
+        options.write(true).create_new(true);
+        // A temporary file must never expose new contents through the umask.
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o600);
+        }
+        let open = options.open(&temporary);
         let mut file = match open {
             Ok(file) => file,
             Err(error) if error.kind() == io::ErrorKind::AlreadyExists => continue,
@@ -494,6 +499,12 @@ fn atomic_write_using(
 
         let result = (|| {
             file.write_all(contents)?;
+            #[cfg(unix)]
+            match fs::metadata(path) {
+                Ok(metadata) => file.set_permissions(metadata.permissions())?,
+                Err(error) if error.kind() == io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
             file.flush()?;
             file.sync_all()?;
             drop(file);
@@ -859,6 +870,29 @@ mod atomic_write_tests {
             "filesystem-atomic-test-{}-{id}",
             std::process::id()
         ))
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_updates_preserve_modes_and_new_files_are_private() {
+        use std::os::unix::fs::PermissionsExt;
+        let root = new_test_dir();
+        fs::create_dir_all(&root).unwrap();
+        let target = root.join("private.md");
+        atomic_write(&target, b"new").unwrap();
+        assert_eq!(
+            fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+            0o600
+        );
+        for mode in [0o600, 0o640, 0o644] {
+            fs::set_permissions(&target, fs::Permissions::from_mode(mode)).unwrap();
+            atomic_write(&target, b"replacement").unwrap();
+            assert_eq!(
+                fs::metadata(&target).unwrap().permissions().mode() & 0o777,
+                mode
+            );
+        }
+        fs::remove_dir_all(root).unwrap();
     }
 
     #[test]

@@ -4,6 +4,8 @@
 //! keeps `Ctrl+Alt+K` useful while another application has focus and lets a
 //! registration conflict be reported without exposing a platform error.
 
+pub(crate) mod document_publish;
+
 use serde::Serialize;
 #[cfg(target_os = "windows")]
 use std::sync::atomic::AtomicU32;

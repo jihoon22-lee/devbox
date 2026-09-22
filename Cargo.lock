@@ -1456,6 +1456,7 @@ dependencies = [
  "filesystem",
  "integration",
  "launch",
+ "libc",
  "markdown",
  "notify",
  "product-contract",

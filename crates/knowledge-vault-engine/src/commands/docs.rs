@@ -256,10 +256,23 @@ pub fn write_file(
     let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
     let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
     vault.revalidate().map_err(|error| error.to_string())?;
-    let saved = crate::core::document::save(&path, &content, &expected_revision)?;
+    let mut saved = crate::core::document::save(&path, &content, &expected_revision)?;
+    if saved
+        .save_outcome
+        .as_ref()
+        .is_some_and(|outcome| outcome.state != "applied")
+    {
+        return Ok(saved);
+    }
     // Index failure cannot turn an already committed file write into a retry
     // using the obsolete revision. The watcher rebuilds derived metadata.
-    let _ = db::index_doc(&conn, &rel, &content);
+    if db::index_doc(&conn, &rel, &content).is_err() && saved.save_outcome.is_none() {
+        saved.save_outcome = Some(crate::core::document::SaveOutcome {
+            state: "applied",
+            recovery_directory: None,
+            warning: "note_index_pending",
+        });
+    }
     drop(conn);
     let _ = crate::integration::write_snapshot(
         &state.db.lock().unwrap(),
@@ -282,8 +295,9 @@ pub fn create_file(
         return Err("파일이 이미 존재합니다".into());
     }
     let content = content.unwrap_or_default();
-    store::write_file(&path, &content)?;
-    db::index_doc(&conn, &rel, &content).map_err(|e| e.to_string())?;
+    crate::core::document::create(&path, &content)?;
+    db::index_doc(&conn, &rel, &content)
+        .map_err(|_| "note_applied_postprocessing_failed".to_string())?;
     drop(conn);
     let _ = crate::integration::write_snapshot(
         &state.db.lock().unwrap(),
@@ -313,10 +327,10 @@ pub fn delete_file(state: tauri::State<'_, Arc<AppState>>, rel: String) -> Resul
         .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
     db::remove_docs_under(&transaction, &rel)
         .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
-    store::delete_file(&path).map_err(|_| "항목을 삭제할 수 없습니다".to_string())?;
+    store::delete_file(&path).map_err(|_| "note_commit_unknown".to_string())?;
     transaction
         .commit()
-        .map_err(|_| "검색 인덱스를 갱신할 수 없습니다".to_string())?;
+        .map_err(|_| "note_applied_postprocessing_failed".to_string())?;
     drop(conn);
     let _ = crate::integration::write_snapshot(
         &state.db.lock().unwrap(),

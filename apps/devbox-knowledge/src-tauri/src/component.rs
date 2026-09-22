@@ -91,6 +91,8 @@ pub(crate) fn issue(error: &str) -> &'static str {
     match error {
         "component_args_invalid" => "invalid_request",
         "note_conflict" => "note_conflict",
+        "note_commit_unknown" => "note_commit_unknown",
+        "note_applied_postprocessing_failed" => "note_applied_postprocessing_failed",
         "draft_stale" => "draft_stale",
         "draft_busy" => "draft_busy",
         "draft_invalid" => "draft_invalid",

@@ -124,8 +124,20 @@ export class NoteDocument {
       try {
         const saved = await this.write(path, content, overwriteRevision ?? revision);
         if (document !== this.document) return false;
+        const outcome = saved.saveOutcome;
+        const recovery = outcome?.recoveryDirectory ? ` 같은 폴더의 ${outcome.recoveryDirectory}에 보존된 파일을 확인해 주세요.` : "";
+        if (outcome && outcome.state !== "applied") {
+          const message = (outcome.state === "appliedWithConflict"
+            ? "저장 중 외부 변경이 발견되었습니다. 교체된 파일과 현재 편집 내용을 보존했습니다."
+            : "저장 반영 상태를 확정하지 못했습니다. 현재 편집 내용을 유지합니다.") + recovery;
+          this.publish({ dirty: true });
+          await this.inspect();
+          if (document === this.document) this.publish({ error: message });
+          return false;
+        }
         this.inspecting++;
-        this.publish({ revision: saved.revision, dirty: edits !== this.edits, conflict: null });
+        this.publish({ revision: saved.revision, dirty: edits !== this.edits, conflict: null,
+          error: outcome ? "파일은 반영했지만 일부 후처리를 완료하지 못했습니다." + recovery : null });
         return edits === this.edits;
       } catch (error) {
         if (document === this.document) {
