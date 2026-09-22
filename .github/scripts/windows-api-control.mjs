@@ -23,9 +23,19 @@ const protobuf = (...fields) => Buffer.concat(fields);
 function frame(bytes) { const prefix = Buffer.alloc(5); prefix.writeUInt32BE(bytes.length, 1); return Buffer.concat([prefix, bytes]); }
 const descriptor = protobuf(field(1, "control.proto"), field(2, "fixture"), field(4, field(1, "Empty")), field(6, protobuf(field(1, "Control"), field(2, protobuf(field(1, "Hold"), field(2, ".fixture.Empty"), field(3, ".fixture.Empty"))))), field(12, "proto3"));
 
-export async function exerciseControlAdmission({ ui, root, call, success, evidence }) {
+export function observeControlSocket(socket, state) {
+  socket.on("error", error => {
+    // Cancelling a real request can reset TCP, including upgraded sockets whose
+    // errors are no longer owned by Node's HTTP parser. Do not crash the harness.
+    if (["ECONNRESET", "EPIPE"].includes(error.code)) state.expectedDisconnects++;
+    else state.failure ??= error;
+  });
+}
+
+export async function exerciseControlAdmission({ ui, root, call, success, evidence, progress }) {
   assert.equal(process.platform, "win32");
   assert.equal(process.env.GITHUB_ACTIONS, "true"); assert.equal(process.env.RUNNER_ENVIRONMENT, "github-hosted");
+  const socketState = { expectedDisconnects: 0, failure: null };
   const loads = new Map(), held = new Map(), sockets = new Set(), h2sessions = new Set();
   const server = createServer(async (request, response) => {
     const url = new URL(request.url, "http://fixture");
@@ -52,7 +62,7 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
     }
     response.writeHead(404).end();
   });
-  server.on("connection", socket => { sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
+  server.on("connection", socket => { observeControlSocket(socket, socketState); sockets.add(socket); socket.on("close", () => sockets.delete(socket)); });
   server.on("upgrade", (request, socket) => {
     const accept = createHash("sha1").update(request.headers["sec-websocket-key"] + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11").digest("base64");
     socket.write(`HTTP/1.1 101 Switching Protocols\r\nUpgrade: websocket\r\nConnection: Upgrade\r\nSec-WebSocket-Accept: ${accept}\r\n\r\n`);
@@ -99,6 +109,7 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
       const blocked = await completed(overflow);
       assert.equal(blocked.error?.code, "overloaded", "normal operation unexpectedly entered the full dispatcher");
       await action();
+      if (socketState.failure) throw socketState.failure;
       // Prove the workload was still holding normal slots when control finished.
       const stillHeld = await ui.cdp.evaluate(`[${keys.map(key => `window.__controlPending[${JSON.stringify(key)}].done`).join(",")}].every(done=>!done)`);
       assert.equal(stillHeld, true, "load expired before control completion");
@@ -109,14 +120,20 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
   }
   const recorded = [];
   evidence.controlAdmission = { normalSlots: 64, released: recorded, result: "running" };
+  function stage(step) {
+    evidence.controlAdmission.step = step;
+    evidence.controlAdmission.expectedDisconnects = socketState.expectedDisconnects;
+    progress("control-admission");
+  }
   async function control(method, args, occupied, released, pendingKey) {
-    evidence.controlAdmission.step = method;
+    stage(method);
     await saturated(occupied, async () => {
+      assert.equal(await released(), false, `${method} resource retired before the control command`);
       await success("api-studio.api", method, args);
       await until(released, `${method} did not release its owned resource`);
       if (pendingKey) { const result = await completed(pendingKey); assert.ok(!result.error); assert.notEqual(result.value.operation.outcome.state, "succeeded"); }
     });
-    recorded.push(method);
+    recorded.push(method); stage(`${method}:complete`);
   }
   try {
     let key = await pending("send_request", { req: template(`${endpoint}/http`), environment: [], requestId: "control-http" });
@@ -138,7 +155,7 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
       await control(method, { sessionId, ...(method === "close_websocket" ? { close: { code: 1000, reason: "owned fixture" } } : {}) }, 0, () => !held.has("websocket"));
     }
     for (const method of ["cancel_grpc", "disconnect_grpc"]) {
-      evidence.controlAdmission.step = "grpc-connect";
+      stage("grpc-connect");
       const connection = await success("api-studio.api", "connect_grpc", { profile: { endpoint: `http://127.0.0.1:${h2.address().port}`, source: { kind: "reflection" }, tls: { rootMode: "native" }, connectTimeoutMs: 10000, rpcTimeoutMs: 30000 } });
       key = await pending("invoke_grpc", { connectionId: connection.connectionId, requestId: "control-grpc", method: "fixture.Control.Hold", messages: ["{}"] });
       await until(() => held.has("grpc"), "gRPC invocation did not start");
@@ -146,7 +163,7 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
       if (method.startsWith("cancel")) await success("api-studio.api", "disconnect_grpc", { connectionId: connection.connectionId });
     }
     // Select Node through the real native dialog; no renderer-created path ID.
-    evidence.controlAdmission.step = "stdio-native-selection";
+    stage("stdio-native-selection");
     const selecting = call("api-studio.api", "pick_mcp_stdio_executable").then(value => ({ value }), error => ({ error }));
     const picker = spawn("powershell.exe", ["-NoProfile", "-NonInteractive", "-File", path.resolve(".github/scripts/windows-api-control-picker.ps1"), "-OwnerProcessId", String(ui.child.pid), "-SelectedFile", process.execPath], { stdio: "inherit", windowsHide: true });
     const [pickerCode] = await once(picker, "exit"); assert.equal(pickerCode, 0);
@@ -165,7 +182,9 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
     key = await pending("authorize_mcp_http", { requestId: "control-oauth", endpoint: `${endpoint}/oauth`, issuer: null, clientId: "owned-fixture", scopes: [] });
     await until(() => held.has("oauth"), "OAuth discovery did not start");
     await control("cancel_mcp_oauth", { requestId: "control-oauth" }, 1, () => !held.has("oauth"), key);
-    evidence.controlAdmission = { normalSlots: 64, released: recorded, result: "pass" };
+    if (socketState.failure) throw socketState.failure;
+    evidence.controlAdmission = { normalSlots: 64, released: recorded, expectedDisconnects: socketState.expectedDisconnects, result: "pass" };
+    progress("control-admission-complete");
   } finally {
     for (const socket of sockets) socket.destroy();
     for (const session of h2sessions) session.destroy();

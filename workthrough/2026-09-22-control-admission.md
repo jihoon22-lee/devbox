@@ -27,3 +27,14 @@
   builds/typechecks/check/Clippy/fmt. Separate native workflow metadata/contract
   checks and changed JS syntax checks PASS under the shared resource supervisor.
   Hosted protocol saturation and native picker execution remain pending gates.
+- CI `35706862423` PASS. Native `35706862392` passed its build/install/restore/
+  packaged shell/Knowledge checks, but the new API fixture crashed on an unhandled
+  socket `ECONNRESET` during cancellation (Node error event; no protocol-level verdict).
+  Handle expected reset/broken-pipe retirement, retain unexpected socket faults as
+  failures, and persist per-control progress. Add a real loopback TCP-reset regression
+  to the native workflow. No production code changed after the full local/CI PASS.
+- Focused fixture recheck PASS: real TCP reset no longer crashes the observer,
+  unexpected socket errors remain failures, and workflow/syntax contracts pass.
+  Each native control also requires its resource still alive after saturation and
+  before dispatch, preventing an earlier failure from being counted as cancellation.
+  Preserve unchanged production/frontend/Rust PASS results; final hosted gates pending.

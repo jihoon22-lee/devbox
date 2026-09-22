@@ -135,7 +135,7 @@ try {
   const reopened = await success("api-studio.transforms", "get_knowledge_draft", { id: draftId }); assert.equal(reopened.body, draft.body);
   assert.equal((await call("api-studio.api", "get_knowledge_draft", { id: draftId })).operation.outcome.state, "failed");
   progress("control-admission");
-  await exerciseControlAdmission({ ui, root, call, success, evidence });
+  await exerciseControlAdmission({ ui, root, call, success, evidence, progress });
   await stop();
   Object.assign(evidence, { result: "pass", captureMasked: true, explicitApply: true, nativeDpapiReconnect: true, oneExplicitSend: true, responseMasked: true, nativeComparison: true, mockEditorOnly: true, listenerStopped: true, maskedDraftStored: true, restartPreservesDraft: true, ownerIsolation: true }); progress("complete");
 } catch (error) { evidence.error = error.message; throw error; }

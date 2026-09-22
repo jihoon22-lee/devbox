@@ -614,7 +614,11 @@ jobs:
         run: node .github/scripts/windows-api-lifecycle.mjs
       - name: Verify API Studio end-to-end local workflow
         if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
-        run: node .github/scripts/windows-api-workflow.mjs
+        run: |
+          node --test .github/scripts/windows-api-control.test.mjs
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          node .github/scripts/windows-api-workflow.mjs
+          exit $LASTEXITCODE
       - name: Verify Knowledge migration, vault ownership and window lifetime
         if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && !cancelled() && steps.product-build.outcome == 'success' }}
         env:
