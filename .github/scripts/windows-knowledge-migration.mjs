@@ -1,6 +1,7 @@
 // Actual pinned v0.7 executables create the source schemas. Native profiles must
 // be absent before this disposable hosted-runner fixture claims them.
 import assert from "node:assert/strict";
+import { stageKnowledge } from "./workspace-wsl-artifact.mjs";
 import { exerciseKnowledgeWsl } from "./windows-knowledge-wsl.mjs";
 import { mkdtempSync, mkdirSync, readFileSync, writeFileSync, copyFileSync, renameSync, existsSync, readdirSync, lstatSync, rmSync } from "node:fs";
 import path from "node:path";
@@ -221,6 +222,7 @@ try {
   }
   progress("legacy-writer-quiesce");
   const executable = path.join(directory, `knowledge-product-${randomUUID()}.exe`); copyFileSync(path.resolve("target/debug/devbox-knowledge.exe"), executable);
+  stageKnowledge(process.env.GITHUB_SHA, path.resolve("apps/devbox-knowledge/src-tauri/resources/wsl"), path.join(directory, "resources/wsl"));
   const profile = path.join(directory, "product-webview"); let item = await product(executable, profile); const dataRoot = item.dataRoot; assert.ok(dataRoot);
   await click(item.cdp, "기존 앱 데이터 가져오기");
   await click(item.cdp, "가져오기 미리보기 준비");

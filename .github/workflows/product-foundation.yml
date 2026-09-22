@@ -261,6 +261,8 @@ jobs:
             Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/target/debug/devbox-$product.exe" -Destination "target/debug/devbox-$product.exe" -ErrorAction Stop
           }
           Copy-Item -Path "$env:RUNNER_TEMP/suite-retained/apps/devbox-workspace/src-tauri/resources/wsl/*" -Destination apps/devbox-workspace/src-tauri/resources/wsl -ErrorAction Stop
+          node .github/scripts/workspace-wsl-artifact.mjs stage-knowledge "$($record.head_sha)"
+          if ($LASTEXITCODE -ne 0) { throw 'Retained Knowledge helper staging failed' }
           Copy-Item -LiteralPath "$env:RUNNER_TEMP/suite-retained/THIRD_PARTY_NOTICES.md" -Destination THIRD_PARTY_NOTICES.md -ErrorAction Stop
           "DEVBOX_SUITE_ARTIFACT_SOURCE=$($record.head_sha)" >> $env:GITHUB_ENV
           "DEVBOX_SUITE_ARTIFACT_RUN=$env:SOURCE_RUN" >> $env:GITHUB_ENV

@@ -83,3 +83,18 @@
   Native Windows staging now confirms protected DACL support before writing any content.
 - After the musl syscall correction, final document regressions and workspace Clippy/fmt
   passed with the original feature union. Final Windows source checks and hosted gates remain.
+
+- CI 35689538813 passed and the production static helper built successfully. Native
+  35689538731 exposed a missing native Suite package allowlist update for Knowledge's
+  helper, despite publisher/packaging fixtures passing. Admit only its exact helper pair;
+  retain old Knowledge package layouts for restore/removal compatibility. Added native
+  payload tests for both generations, partial pairs, wrong owners and unknown helpers.
+  Await remaining independent native results before the combined correction verification.
+
+- 같은 native 실행의 WSL 저장은 helper 없이 exe만 복사한 Knowledge migration fixture에서
+  `unavailable`로 실패했다. exact-source 검증 후 helper 쌍을 함께 배치하며 Suite workflow 및
+  retained-source 재개 경로도 Knowledge 리소스를 보존하도록 맞춘다. 실제 WSL 저장은 다음
+  native 실행에서 다시 확인한다.
+- 위 두 native 실패 수정 후 공통 자원 감독 하에 suite_package 회귀, 기존 workspace feature 통합의
+  Clippy/fmt, helper staging 테스트, Suite installer/release 계약, CI scope, 변경 JS 문법 검증 PASS.
+  기존 full audit 및 무관한 PASS는 유지하며 최종 hosted CI/native 수용을 다시 기다린다.
