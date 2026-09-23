@@ -50,9 +50,25 @@ does not establish receiver acceptance.
 
 ### HTTP request lifetime
 
-HTTP timeout covers the complete redirect chain, including multipart preparation
-inside execution and the final response body. Redirects do not reset this budget.
-New sends supersede older sends; cancellation routing and retained response headers
-are registered in the same order. Authenticated HTTP cancellation has eight bounded
-control slots independent of the 64 normal component operations, with shared replay
-protection. Exhausting normal slots cannot prevent cancellation admission.
+HTTP execution timeout covers multipart body construction, the complete redirect chain and
+the final response body. Redirects do not reset this monotonic budget. Template/environment/secret
+resolution, request validation, and multipart path/metadata preflight occur before execution
+starts; this is not a deadline for all work since the user clicked Send. Protocol connection/idle/
+RPC budgets remain separate.
+New sends supersede older sends; cancellation routing and retained response headers are
+registered in the same order.
+
+### Cancellation and shutdown admission
+
+The native registry explicitly classifies HTTP cancellation, MCP HTTP/stdio cancellation and
+disconnection, OAuth cancellation, gRPC cancellation/disconnection, SSE stop, and WebSocket
+close/disconnection as controls. Webhook stop/product quit and migration cancellation also use
+this class. Controls have eight bounded slots independent of 64 normal component operations.
+Normal saturation cannot deny their admission. Component/route/session validation, argument
+limits and shared replay protection still run; names or prefixes supplied by a renderer do not
+grant control priority. Saturating all eight control slots still returns overload.
+
+MCP stdio stderr has no diagnostic consumer. It is drained concurrently through a 4 KiB buffer,
+zeroized after each read and on drop, without retention, logging or IPC publication. This avoids
+reassembling secrets split across chunks in an unused diagnostic ring. Stdout protocol handling
+and bounded process-tree cleanup remain separate.

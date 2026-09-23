@@ -10,10 +10,41 @@ use tauri::{Manager, State, WebviewWindow};
 const MAX_ARGUMENT_BYTES: usize = 20 * 1024 * 1024;
 const MAX_ACTIVE: usize = 64;
 const MAX_ACTIVE_CONTROLS: usize = 8;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ExecutionClass {
+    Normal,
+    Control,
+}
+
+// Classification does not authorize a command. The route/owner registry and
+// native session authorization must both succeed before reserving either class.
+const CONTROL_COMMANDS: &[(&str, &str)] = &[
+    ("api-studio.api", "cancel_request"),
+    ("api-studio.api", "cancel_mcp_http"),
+    ("api-studio.api", "disconnect_mcp_http"),
+    ("api-studio.api", "cancel_mcp_oauth"),
+    ("api-studio.api", "cancel_mcp_stdio"),
+    ("api-studio.api", "disconnect_mcp_stdio"),
+    ("api-studio.api", "cancel_grpc"),
+    ("api-studio.api", "disconnect_grpc"),
+    ("api-studio.api", "stop_sse_stream"),
+    ("api-studio.api", "close_websocket"),
+    ("api-studio.api", "disconnect_websocket"),
+    ("api-studio.webhooks", "stop_server"),
+    ("api-studio.webhooks", "quit_product"),
+    ("api-studio.migration", "cancel_migration"),
+];
+fn execution_class(component: &str, method: &str) -> ExecutionClass {
+    if CONTROL_COMMANDS.contains(&(component, method)) {
+        ExecutionClass::Control
+    } else {
+        ExecutionClass::Normal
+    }
+}
 #[derive(Default)]
-struct Active(Arc<Mutex<HashMap<String, bool>>>);
+struct Active(Arc<Mutex<HashMap<String, ExecutionClass>>>);
 struct Reservation {
-    ids: Arc<Mutex<HashMap<String, bool>>>,
+    ids: Arc<Mutex<HashMap<String, ExecutionClass>>>,
     id: String,
 }
 impl Drop for Reservation {
@@ -85,13 +116,13 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
     }
 }
 
-fn reserve(active: &Active, id: &str, control: bool) -> Result<Reservation, ProblemCode> {
+fn reserve(active: &Active, id: &str, class: ExecutionClass) -> Result<Reservation, ProblemCode> {
     let mut ids = active.0.lock().map_err(|_| ProblemCode::Unavailable)?;
     if ids.contains_key(id) {
         return Err(ProblemCode::Replayed);
     }
-    if ids.values().filter(|value| **value == control).count()
-        >= if control {
+    if ids.values().filter(|value| **value == class).count()
+        >= if class == ExecutionClass::Control {
             MAX_ACTIVE_CONTROLS
         } else {
             MAX_ACTIVE
@@ -99,7 +130,7 @@ fn reserve(active: &Active, id: &str, control: bool) -> Result<Reservation, Prob
     {
         return Err(ProblemCode::Overloaded);
     }
-    ids.insert(id.into(), control);
+    ids.insert(id.into(), class);
     Ok(Reservation {
         ids: Arc::clone(&active.0),
         id: id.into(),
@@ -138,7 +169,7 @@ async fn execute(
     let _reservation = reserve(
         &active,
         &request.header.request_id,
-        request.component == "api-studio.api" && request.method == "cancel_request",
+        execution_class(&request.component, &request.method),
     )
     .map_err(problem)?;
     let app = window.app_handle();
@@ -344,50 +375,88 @@ mod tests {
     fn cancellation_has_bounded_capacity_when_data_slots_are_full() {
         let active = Active::default();
         let _data: Vec<_> = (0..MAX_ACTIVE)
-            .map(|i| reserve(&active, &format!("data-{i}"), false).unwrap())
+            .map(|i| reserve(&active, &format!("data-{i}"), ExecutionClass::Normal).unwrap())
             .collect();
         assert!(matches!(
-            reserve(&active, "extra", false),
+            reserve(&active, "extra", ExecutionClass::Normal),
             Err(ProblemCode::Overloaded)
         ));
         assert!(matches!(
-            reserve(&active, "data-0", true),
+            reserve(&active, "data-0", ExecutionClass::Control),
             Err(ProblemCode::Replayed)
         ));
         let mut controls: Vec<_> = (0..MAX_ACTIVE_CONTROLS)
-            .map(|i| reserve(&active, &format!("cancel-{i}"), true).unwrap())
+            .map(|i| reserve(&active, &format!("cancel-{i}"), ExecutionClass::Control).unwrap())
             .collect();
         assert!(matches!(
-            reserve(&active, "extra-control", true),
+            reserve(&active, "extra-control", ExecutionClass::Control),
             Err(ProblemCode::Overloaded)
         ));
         controls.pop();
-        assert!(reserve(&active, "replacement-control", true).is_ok());
+        assert!(reserve(&active, "replacement-control", ExecutionClass::Control).is_ok());
         assert!(matches!(
-            reserve(&active, "extra", false),
+            reserve(&active, "extra", ExecutionClass::Normal),
             Err(ProblemCode::Overloaded)
         ));
     }
 
     #[test]
+    fn every_registered_control_has_capacity_without_widening_authority() {
+        let active = Active::default();
+        let _normal: Vec<_> = (0..MAX_ACTIVE)
+            .map(|i| reserve(&active, &format!("normal-{i}"), ExecutionClass::Normal).unwrap())
+            .collect();
+        for &(component, method) in CONTROL_COMMANDS {
+            let route = if component == "api-studio.webhooks" {
+                "webhooks"
+            } else {
+                "requests"
+            };
+            assert!(allowed(component, route, method), "{component}/{method}");
+            assert!(!allowed(component, "transforms", method));
+            let class = execution_class(component, method);
+            assert_eq!(class, ExecutionClass::Control);
+            let control = reserve(&active, method, class).unwrap();
+            assert!(matches!(
+                reserve(&active, method, class),
+                Err(ProblemCode::Replayed)
+            ));
+            drop(control);
+            assert!(reserve(&active, method, class).is_ok());
+        }
+        for (component, method) in [
+            ("api-studio.transforms", "cancel_request"),
+            ("api-studio.api", "cancel_unknown"),
+            ("api-studio.api", "send_request"),
+            ("api-studio.api", "delete_grpc_tls_credential"),
+        ] {
+            assert_eq!(execution_class(component, method), ExecutionClass::Normal);
+            assert!(matches!(
+                reserve(&active, method, execution_class(component, method)),
+                Err(ProblemCode::Overloaded)
+            ));
+        }
+    }
+
+    #[test]
     fn active_requests_reject_duplicate_ids_until_completion_or_drop() {
         let active = Active::default();
-        let first = reserve(&active, "id", false).unwrap();
+        let first = reserve(&active, "id", ExecutionClass::Normal).unwrap();
         assert!(matches!(
-            reserve(&active, "id", false),
+            reserve(&active, "id", ExecutionClass::Normal),
             Err(ProblemCode::Replayed)
         ));
         drop(first);
-        let _again = reserve(&active, "id", false).unwrap();
+        let _again = reserve(&active, "id", ExecutionClass::Normal).unwrap();
         let mut pending = Vec::new();
         for i in 1..MAX_ACTIVE {
-            pending.push(reserve(&active, &format!("id-{i}"), false).unwrap());
+            pending.push(reserve(&active, &format!("id-{i}"), ExecutionClass::Normal).unwrap());
         }
         assert!(matches!(
-            reserve(&active, "overflow", false),
+            reserve(&active, "overflow", ExecutionClass::Normal),
             Err(ProblemCode::Overloaded)
         ));
         pending.pop();
-        assert!(reserve(&active, "overflow", false).is_ok());
+        assert!(reserve(&active, "overflow", ExecutionClass::Normal).is_ok());
     }
 }

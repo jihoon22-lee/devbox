@@ -27,7 +27,7 @@ use tauri_plugin_dialog::DialogExt;
 use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufReader};
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{watch, Mutex as AsyncMutex};
-use zeroize::Zeroizing;
+use zeroize::{Zeroize, Zeroizing};
 
 #[cfg(target_os = "windows")]
 use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
@@ -43,8 +43,6 @@ const MAX_ENV_NAME_BYTES: usize = 256;
 const MAX_ENV_BYTES: usize = 256 * 1024;
 const MIN_TIMEOUT_MS: u64 = 100;
 const MAX_TIMEOUT_MS: u64 = 120_000;
-const MAX_STDERR_BYTES: usize = 64 * 1024;
-const MAX_STDERR_LINES: usize = 256;
 const MAX_LINE_BYTES: usize = mcp::MAX_RESPONSE_BYTES;
 const MAX_EXCHANGE_BYTES: usize = 4 * 1024 * 1024;
 const MAX_EXCHANGE_MESSAGES: usize = 1_000;
@@ -376,7 +374,6 @@ struct StdioProcess {
     tree: ProcessTree,
     stdin: Option<ChildStdin>,
     stdout: BufReader<ChildStdout>,
-    stderr_ring: Arc<AsyncMutex<Zeroizing<Vec<u8>>>>,
     stderr_task: Option<tokio::task::JoinHandle<()>>,
     terminated: bool,
 }
@@ -425,30 +422,17 @@ impl StdioProcess {
         let Some(stdout) = child.stdout.take() else {
             return terminate_failed_spawn(child, tree).await;
         };
-        let Some(mut stderr) = child.stderr.take() else {
+        let Some(stderr) = child.stderr.take() else {
             return terminate_failed_spawn(child, tree).await;
         };
-        let stderr_ring = Arc::new(AsyncMutex::new(Zeroizing::new(Vec::new())));
-        let task_ring = Arc::clone(&stderr_ring);
-        let stderr_redactor = Arc::clone(&profile.redactor);
-        let stderr_task = tokio::spawn(async move {
-            let mut buffer = Zeroizing::new([0_u8; 4096]);
-            loop {
-                let count = match stderr.read(&mut buffer[..]).await {
-                    Ok(0) | Err(_) => break,
-                    Ok(count) => count,
-                };
-                let sanitized = sanitize_stderr_chunk(stderr_redactor.as_ref(), &buffer[..count]);
-                let mut ring = task_ring.lock().await;
-                append_stderr_ring(&mut ring, &sanitized);
-            }
-        });
+        // No diagnostics consumer exists. Drain with bounded, zeroized storage
+        // instead of retaining chunk-redacted bytes that can reassemble secrets.
+        let stderr_task = tokio::spawn(drain_stderr(stderr));
         Ok(Self {
             child,
             tree,
             stdin: Some(stdin),
             stdout: BufReader::new(stdout),
-            stderr_ring,
             stderr_task: Some(stderr_task),
             terminated: false,
         })
@@ -583,9 +567,6 @@ impl StdioProcess {
         {
             task.abort();
             let _ = tokio::time::timeout_at(deadline, task).await;
-        }
-        if let Ok(mut ring) = tokio::time::timeout_at(deadline, self.stderr_ring.lock()).await {
-            ring.clear();
         }
     }
 }
@@ -1294,39 +1275,14 @@ fn encode_json_line(value: &Value) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn sanitize_stderr_chunk(redactor: &Redactor, bytes: &[u8]) -> Zeroizing<Vec<u8>> {
-    let text = String::from_utf8_lossy(bytes);
-    let redacted = Zeroizing::new(redactor.redact_text(&text));
-    Zeroizing::new(
-        redacted
-            .chars()
-            .filter(|character| *character == '\n' || !character.is_control())
-            .collect::<String>()
-            .into_bytes(),
-    )
-}
-
-fn append_stderr_ring(ring: &mut Vec<u8>, chunk: &[u8]) {
-    ring.extend_from_slice(chunk);
-    let overflow = ring.len().saturating_sub(MAX_STDERR_BYTES);
-    if overflow > 0 {
-        ring.drain(..overflow);
-    }
-    while stderr_line_count(ring) > MAX_STDERR_LINES {
-        match ring.iter().position(|byte| *byte == b'\n') {
-            Some(end) => {
-                ring.drain(..=end);
-            }
-            None => break,
+async fn drain_stderr<R: tokio::io::AsyncRead + Unpin>(mut reader: R) {
+    let mut buffer = Zeroizing::new([0_u8; 4096]);
+    loop {
+        match reader.read(&mut buffer[..]).await {
+            Ok(0) | Err(_) => return,
+            Ok(count) => buffer[..count].zeroize(),
         }
     }
-}
-
-fn stderr_line_count(bytes: &[u8]) -> usize {
-    if bytes.is_empty() {
-        return 0;
-    }
-    bytes.iter().filter(|byte| **byte == b'\n').count() + usize::from(bytes.last() != Some(&b'\n'))
 }
 
 async fn read_json_line<R>(reader: &mut R) -> Result<(Value, usize), String>
@@ -1857,27 +1813,20 @@ mod tests {
         );
     }
 
-    #[test]
-    fn stderr_ring_redacts_controls_and_keeps_only_bounded_newest_lines() {
-        let redactor = Redactor::from_secrets(vec![Zeroizing::new("secret-token".into())]);
-        let sanitized = sanitize_stderr_chunk(
-            &redactor,
-            b"prefix secret-token\x1b[31m suffix\nsecond\tline\n",
-        );
-        let text = String::from_utf8(sanitized.to_vec()).unwrap();
-        assert!(!text.contains("secret-token"));
-        assert!(!text.contains('\x1b'));
-        assert!(!text.contains('\t'));
-
-        let mut ring = Vec::new();
-        for index in 0..(MAX_STDERR_LINES + 8) {
-            append_stderr_ring(&mut ring, format!("line-{index}\n").as_bytes());
-        }
-        assert!(stderr_line_count(&ring) <= MAX_STDERR_LINES);
-        assert!(!String::from_utf8_lossy(&ring).contains("line-0\n"));
-
-        append_stderr_ring(&mut ring, &vec![b'x'; MAX_STDERR_BYTES + 100]);
-        assert!(ring.len() <= MAX_STDERR_BYTES);
+    #[tokio::test]
+    async fn stderr_drain_accepts_split_secrets_and_output_larger_than_pipe_capacity() {
+        let (mut writer, reader) = tokio::io::duplex(17);
+        let drain = tokio::spawn(drain_stderr(reader));
+        tokio::time::timeout(Duration::from_secs(5), async {
+            for _ in 0..10000 {
+                writer.write_all(b"secret-").await.unwrap();
+                writer.write_all(b"token\x1b[31m\n").await.unwrap();
+            }
+            writer.shutdown().await.unwrap();
+            drain.await.unwrap();
+        })
+        .await
+        .unwrap();
     }
 
     #[tokio::test]

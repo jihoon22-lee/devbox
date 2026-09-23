@@ -1,4 +1,4 @@
-# Drive only a chooser belonging to the exact disposable Workspace executable.
+﻿# Drive only a chooser belonging to the exact disposable product executable.
 # UI Automation locates controls; bounded Win32 messages work even when the
 # provider exposes a native Button as a Pane without InvokePattern.
 param(
@@ -19,7 +19,7 @@ using System.Collections.Generic;
 using System.Runtime.InteropServices;
 using System.Text;
 using Microsoft.Win32.SafeHandles;
-public static class WorkspaceFixturePath {
+public static class NativeFixturePath {
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
     static extern SafeFileHandle CreateFileW(string name, uint access, uint share, IntPtr security, uint disposition, uint flags, IntPtr template);
     [DllImport("kernel32.dll", CharSet=CharSet.Unicode, SetLastError=true)]
@@ -93,8 +93,8 @@ public static class WorkspaceFixturePath {
     }
 }
 '@
-$fixturePath = [WorkspaceFixturePath]::Canonical($FixtureRoot).TrimEnd('\') + '\'
-$expectedPath = [WorkspaceFixturePath]::Canonical($ExpectedExecutable)
+$fixturePath = [NativeFixturePath]::Canonical($FixtureRoot).TrimEnd('\') + '\'
+$expectedPath = [NativeFixturePath]::Canonical($ExpectedExecutable)
 if (-not $expectedPath.StartsWith($fixturePath, [StringComparison]::OrdinalIgnoreCase)) {
     throw 'The executable is outside the owned fixture.'
 }
@@ -103,8 +103,8 @@ $started = $ownedProcess.StartTime.ToUniversalTime().Ticks
 function Assert-OwnedProcess {
     $current = Get-Process -Id $TargetProcessId -ErrorAction Stop
     if ($current.StartTime.ToUniversalTime().Ticks -ne $started -or
-        -not [string]::Equals([WorkspaceFixturePath]::Canonical($current.Path), $expectedPath, [StringComparison]::OrdinalIgnoreCase)) {
-        throw 'The owned Workspace process changed.'
+        -not [string]::Equals([NativeFixturePath]::Canonical($current.Path), $expectedPath, [StringComparison]::OrdinalIgnoreCase)) {
+        throw 'The owned product process changed.'
     }
 }
 Assert-OwnedProcess
@@ -121,7 +121,7 @@ if ($Action -eq 'Open') {
     if ($requestedPaths.Count -lt 1 -or $requestedPaths.Count -gt 32) { throw 'A bounded selected file set is required.' }
     foreach ($requestedPath in $requestedPaths) {
         if ($requestedPath -isnot [string] -or [string]::IsNullOrWhiteSpace($requestedPath)) { throw 'A selected fixture file is required.' }
-        $selectedPath = [WorkspaceFixturePath]::Canonical($requestedPath)
+        $selectedPath = [NativeFixturePath]::Canonical($requestedPath)
         if (-not $selectedPath.StartsWith($fixturePath, [StringComparison]::OrdinalIgnoreCase) -or -not [IO.File]::Exists($selectedPath)) { throw 'The selected file is outside the owned fixture.' }
         $selectedPaths += $selectedPath
     }
@@ -132,7 +132,7 @@ while ([DateTime]::UtcNow -lt $deadline) {
     Assert-OwnedProcess
     # Owned modal windows may be nested beneath their parent in the UIA tree.
     # Enumerate native top-level HWNDs before using UIA for their controls.
-    $windows = @([WorkspaceFixturePath]::FindDialogs($TargetProcessId))
+    $windows = @([NativeFixturePath]::FindDialogs($TargetProcessId))
     if ($windows.Count -gt 1) { throw 'More than one owned dialog is open.' }
     if ($windows.Count -eq 1) {
         $dialog = [System.Windows.Automation.AutomationElement]::FromHandle($windows[0])
@@ -170,7 +170,7 @@ if ($Action -eq 'Open') {
         else { $_ }
     })
     $filenameValue = if ($dialogPaths.Count -eq 1) { $dialogPaths[0] } else { ($dialogPaths | ForEach-Object { '"' + $_ + '"' }) -join ' ' }
-    [WorkspaceFixturePath]::SetFilename($dialog.Current.NativeWindowHandle, $filename.Current.NativeWindowHandle, $TargetProcessId, $filenameValue)
+    [NativeFixturePath]::SetFilename($dialog.Current.NativeWindowHandle, $filename.Current.NativeWindowHandle, $TargetProcessId, $filenameValue)
 }
 $buttonId = if ($Action -eq 'Open') { '1' } else { '2' }
 $buttonClass = [System.Windows.Automation.PropertyCondition]::new(
@@ -182,13 +182,13 @@ $button = $dialog.FindFirst([System.Windows.Automation.TreeScope]::Descendants, 
 if ($null -eq $button -or -not $button.Current.IsEnabled) { throw 'The owned chooser action is unavailable.' }
 Assert-OwnedProcess
 $dialogHandle = $dialog.Current.NativeWindowHandle
-$acknowledged = [WorkspaceFixturePath]::ClickButton($dialogHandle, $button.Current.NativeWindowHandle, $TargetProcessId, [int]$buttonId)
+$acknowledged = [NativeFixturePath]::ClickButton($dialogHandle, $button.Current.NativeWindowHandle, $TargetProcessId, [int]$buttonId)
 # Observe completion within the original chooser deadline, including when a
 # synchronous message times out. The caller separately checks the native result
 # and exact selected files; disappearance alone never grants file authority.
 $closed = $false
 while ([DateTime]::UtcNow -lt $deadline) {
-    if (@([WorkspaceFixturePath]::FindDialogs($TargetProcessId)) -notcontains [IntPtr]$dialogHandle) {
+    if (@([NativeFixturePath]::FindDialogs($TargetProcessId)) -notcontains [IntPtr]$dialogHandle) {
         $closed = $true
         break
     }
