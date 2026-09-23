@@ -1113,6 +1113,7 @@ mod tests {
 
         let mut complete = scan_vault(&vault);
         let state = Arc::new(AppState {
+            metadata_scans: crate::core::metadata::ScanControl::default(),
             integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
@@ -1157,6 +1158,7 @@ mod tests {
         let connection = db::init(Path::new(":memory:")).unwrap();
         db::index_doc(&connection, "Notes/raced.md", "# indexed").unwrap();
         let state = Arc::new(AppState {
+            metadata_scans: crate::core::metadata::ScanControl::default(),
             integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),
@@ -1190,6 +1192,7 @@ mod tests {
         let connection = db::init(Path::new(":memory:")).unwrap();
         db::index_doc(&connection, "Notes/last-known.md", "# retained").unwrap();
         let state = Arc::new(AppState {
+            metadata_scans: crate::core::metadata::ScanControl::default(),
             integration_root: None,
             db: Mutex::new(connection),
             rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),

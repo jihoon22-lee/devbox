@@ -25,6 +25,7 @@ pub struct AppState {
     /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
     pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
+    pub metadata_scans: crate::core::metadata::ScanControl,
     pub rename_plans: Mutex<crate::core::rename::RenamePlanStore>,
     pub quick_capture_previews: Mutex<QuickCapturePreviewStore>,
     pub template_previews: Mutex<crate::commands::templates::TemplatePreviewStore>,
@@ -193,6 +194,7 @@ pub fn set_root(
         .map_err(|_| "Knowledge 저장 위치를 확인할 수 없습니다".to_string())?;
     let canonical = vault.canonical_path().to_path_buf();
     db::set_setting(&conn, "root", &canonical.to_string_lossy()).map_err(|e| e.to_string())?;
+    state.metadata_scans.invalidate();
     drop(conn);
     state.rename_plans.lock().unwrap().clear();
     // watcher를 새 루트로 재시작
@@ -202,9 +204,64 @@ pub fn set_root(
 
 #[tauri::command]
 pub fn list_tree(state: tauri::State<'_, Arc<AppState>>) -> Result<Vec<TreeEntry>, String> {
-    let conn = state.db.lock().unwrap();
-    let root = resolve_root(&conn)?;
-    let entries = store::tree(&root)?;
+    scan_tree(
+        &state.db,
+        &state.metadata_scans,
+        |root, ticket, remaining| {
+            store::tree_bounded(
+                root,
+                store::TreeLimits {
+                    duration: remaining,
+                    ..Default::default()
+                },
+                || ticket.cancelled(),
+            )
+        },
+    )
+}
+
+fn scan_tree(
+    database: &Mutex<Connection>,
+    scans: &crate::core::metadata::ScanControl,
+    scan: impl FnOnce(
+        &Path,
+        &crate::core::metadata::ScanTicket,
+        std::time::Duration,
+    ) -> Result<Vec<(String, bool)>, String>,
+) -> Result<Vec<TreeEntry>, String> {
+    let deadline = std::time::Instant::now() + store::TreeLimits::default().duration;
+    let (root, ticket) = {
+        let conn = database.lock().map_err(|_| "metadata_incomplete")?;
+        (resolve_configured_root(&conn)?, scans.begin()?)
+    };
+    // Directory identity acquisition and traversal can block on disconnected
+    // storage. Neither holds the shared DB lock.
+    if ticket.cancelled() {
+        return Err("metadata_cancelled".into());
+    }
+    if std::time::Instant::now() >= deadline {
+        return Err("metadata_timeout".into());
+    }
+    let vault = VaultIdentity::inspect(&root).map_err(|_| "metadata_incomplete")?;
+    if ticket.cancelled() {
+        return Err("metadata_cancelled".into());
+    }
+    let entries = scan(
+        &root,
+        &ticket,
+        deadline.saturating_duration_since(std::time::Instant::now()),
+    )?;
+    if ticket.cancelled() {
+        return Err("metadata_stale".into());
+    }
+    vault.revalidate().map_err(|_| "metadata_stale")?;
+    let conn = database.lock().map_err(|_| "metadata_incomplete")?;
+    if ticket.cancelled() || resolve_configured_root(&conn)? != root {
+        return Err("metadata_stale".into());
+    }
+    if std::time::Instant::now() >= deadline {
+        return Err("metadata_timeout".into());
+    }
     Ok(entries
         .into_iter()
         .map(|(path, is_dir)| TreeEntry { path, is_dir })
@@ -945,7 +1002,10 @@ pub(crate) async fn __component_list_tree(
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct Input {}
     let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_tree(component_app.state())?;
+    let app = component_app.clone();
+    let value = tauri::async_runtime::spawn_blocking(move || list_tree(app.state()))
+        .await
+        .map_err(|_| "metadata_incomplete")??;
     serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
@@ -1232,6 +1292,58 @@ pub(crate) async fn __component_daily_note(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn metadata_database(root: &Path) -> Mutex<Connection> {
+        let conn = Connection::open_in_memory().unwrap();
+        db::migrate(&conn).unwrap();
+        db::set_setting(&conn, "root", root.to_str().unwrap()).unwrap();
+        Mutex::new(conn)
+    }
+
+    #[test]
+    fn metadata_scan_releases_database_for_a_note_save() {
+        let root = tempfile::tempdir().unwrap();
+        let database = metadata_database(root.path());
+        let scans = crate::core::metadata::ScanControl::default();
+        let path = root.path().join("note.md");
+        std::fs::write(&path, "before").unwrap();
+        let revision = crate::core::document::read(&path).unwrap().revision;
+        let result = scan_tree(&database, &scans, |root, _, _| {
+            // Actual conditional save and index work can enter the same DB
+            // critical section while this filesystem scan is outstanding.
+            let conn = database.try_lock().expect("scan must not hold DB mutex");
+            crate::core::document::save(&path, "saved during scan", &revision).unwrap();
+            db::index_doc(&conn, "note.md", "saved during scan").unwrap();
+            store::tree(root)
+        })
+        .unwrap();
+        assert_eq!(result.len(), 1);
+        assert_eq!(std::fs::read_to_string(path).unwrap(), "saved during scan");
+    }
+
+    #[test]
+    fn metadata_rejects_root_generation_and_identity_changes() {
+        let parent = tempfile::tempdir().unwrap();
+        let root = parent.path().join("vault");
+        std::fs::create_dir(&root).unwrap();
+        let database = metadata_database(&root);
+        let scans = crate::core::metadata::ScanControl::default();
+        let result = scan_tree(&database, &scans, |_, _, _| {
+            let conn = database.lock().unwrap();
+            db::set_setting(&conn, "root", "other").unwrap();
+            scans.invalidate();
+            db::set_setting(&conn, "root", root.to_str().unwrap()).unwrap();
+            scans.invalidate();
+            Ok(vec![])
+        });
+        assert_eq!(result.unwrap_err(), "metadata_stale");
+        let result = scan_tree(&database, &scans, |_, _, _| {
+            std::fs::rename(&root, parent.path().join("displaced")).unwrap();
+            std::fs::create_dir(&root).unwrap();
+            Ok(vec![])
+        });
+        assert_eq!(result.unwrap_err(), "metadata_stale");
+    }
 
     fn capture_input(body: &str) -> QuickCaptureInput {
         QuickCaptureInput {

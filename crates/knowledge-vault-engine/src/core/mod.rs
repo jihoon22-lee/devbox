@@ -6,6 +6,7 @@ pub mod entry_actions;
 pub mod frontmatter;
 pub mod handoff;
 pub mod inbound;
+pub mod metadata;
 pub mod rename;
 pub mod session_summary;
 pub mod store;
