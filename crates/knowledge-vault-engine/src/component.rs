@@ -116,6 +116,7 @@ pub fn initialize(
         }
     }
     let state = Arc::new(AppState {
+        metadata_scans: crate::core::metadata::ScanControl::default(),
         integration_root: integration_root.clone(),
         db: Mutex::new(conn),
         rename_plans: Mutex::new(crate::core::rename::RenamePlanStore::default()),

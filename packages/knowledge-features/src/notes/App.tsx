@@ -1,3 +1,4 @@
+import { MetadataRefresh } from "./metadataRefresh";
 import {isProductHosted} from "../transport";
 import { useCallback, useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
 import {
@@ -247,22 +248,30 @@ export default function App({ active = true, onActivate, onDaily, onImport, onVa
     return () => { invalidated = true; clearTimeout(timer); };
   }, [content, selected, mode, sourceVersion, editorDocument]);
 
-  const loadMeta = useCallback(async () => {
-    try {
-      const [t, ts] = await Promise.all([listTree(), listTags()]);
-      if (!draftMountedRef.current) return;
+  const [metadataRefresh] = useState(() => new MetadataRefresh(
+    async () => {
+      // Settle both reads before starting another pair, even when one fails.
+      // The filesystem tree and asynchronously indexed tags are not an atomic
+      // snapshot; the UI publishes only one complete, current request pair.
+      const [t, ts] = await Promise.allSettled([listTree(), listTags()]);
+      if (t.status === "rejected") throw t.reason;
+      if (ts.status === "rejected") throw ts.reason;
+      return [t.value, ts.value] as const;
+    },
+    ([t, ts]) => {
       setTree(t);
       setTags(ts);
       setMetadataRevision((revision) => revision + 1);
-    } catch (e) {
-      if (!draftMountedRef.current) return;
-      setError(e instanceof Error ? e.message : String(e));
-    }
-  }, []);
+    },
+    (e) => setError(e instanceof Error ? e.message : String(e)),
+  ));
+  const loadMeta = metadataRefresh.request;
 
   useEffect(() => {
+    metadataRefresh.start();
     void loadMeta();
-  }, [loadMeta, editorDocument]);
+    return () => metadataRefresh.stop();
+  }, [loadMeta, metadataRefresh, editorDocument]);
 
   useEffect(() => {
     let disposed = false;

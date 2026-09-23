@@ -91,6 +91,12 @@ pub(crate) fn issue(error: &str) -> &'static str {
     match error {
         "component_args_invalid" => "invalid_request",
         "note_conflict" => "note_conflict",
+        "metadata_limit" => "metadata_limit",
+        "metadata_timeout" => "metadata_timeout",
+        "metadata_cancelled" => "metadata_cancelled",
+        "metadata_incomplete" => "metadata_incomplete",
+        "metadata_stale" => "metadata_stale",
+        "metadata_busy" => "metadata_busy",
         "note_commit_unknown" => "note_commit_unknown",
         "note_applied_postprocessing_failed" => "note_applied_postprocessing_failed",
         "draft_stale" => "draft_stale",

@@ -13,6 +13,7 @@ import {
   discardRenamePreview,
   entryPath,
   listTree,
+  listTags,
   onDocsChanged,
   openIn,
   openTargets,
@@ -150,6 +151,7 @@ afterEach(() => {
   openInMock.mockClear();
   readFileMock.mockClear();
   listTreeMock.mockClear();
+  vi.mocked(listTags).mockClear();
   onDocsChangedMock.mockClear();
 });
 
@@ -541,4 +543,51 @@ it("does not reuse an old preview after batched A-B-A openings with identical co
   await waitFor(() => expect(renderMock).toHaveBeenCalledTimes(2));
   await act(async () => { latest.resolve({ title: null, tags: [], html: "<p>current opening HTML</p>", mermaid: [] }); });
   expect(await screen.findByText("current opening HTML")).toBeTruthy();
+});
+
+it("coalesces watcher bursts and preserves the last complete metadata pair on failure", async () => {
+  let changed!: () => void;
+  onDocsChangedMock.mockImplementationOnce(async (listener) => { changed = listener; return () => {}; });
+  const old = deferred<Awaited<ReturnType<typeof listTree>>>();
+  const latest = deferred<Awaited<ReturnType<typeof listTree>>>();
+  listTreeMock.mockResolvedValueOnce([{ path: "kept.md", is_dir: false }]).mockReturnValueOnce(old.promise).mockReturnValueOnce(latest.promise);
+  vi.mocked(listTags).mockResolvedValueOnce(["kept-tag"]).mockResolvedValueOnce(["stale-tag"]).mockResolvedValueOnce(["partial-tag"]);
+  render(<App/>);
+  await screen.findByText("kept.md");
+  await act(async () => { changed(); });
+  expect(listTreeMock).toHaveBeenCalledTimes(2);
+  await act(async () => { for (let i = 0; i < 50; i++) changed(); });
+  expect(listTreeMock).toHaveBeenCalledTimes(2);
+  await act(async () => { old.resolve([{ path: "stale.md", is_dir: false }]); });
+  expect(listTreeMock).toHaveBeenCalledTimes(3);
+  expect(screen.queryByText("stale.md")).toBeNull();
+  await act(async () => { latest.reject(new Error("metadata incomplete")); });
+  expect(await screen.findByText("metadata incomplete")).toBeTruthy();
+  expect(screen.getByText("kept.md")).toBeTruthy();
+  expect(screen.queryByText("partial-tag")).toBeNull();
+  expect(screen.getByText("kept-tag")).toBeTruthy();
+  listTreeMock.mockResolvedValueOnce([{ path: "current.md", is_dir: false }]);
+  vi.mocked(listTags).mockResolvedValueOnce(["current-tag"]);
+  await act(async () => { changed(); });
+  expect(await screen.findByText("current.md")).toBeTruthy();
+  expect(screen.getByText("current-tag")).toBeTruthy();
+  expect(screen.queryByText("kept.md")).toBeNull();
+});
+
+it("waits for both metadata reads and ignores an older error after a new refresh intent", async () => {
+  let changed!: () => void;
+  onDocsChangedMock.mockImplementationOnce(async (listener) => { changed = listener; return () => {}; });
+  const tree = deferred<Awaited<ReturnType<typeof listTree>>>();
+  const tags = deferred<string[]>();
+  listTreeMock.mockReturnValueOnce(tree.promise).mockResolvedValueOnce([{ path: "fresh.md", is_dir: false }]);
+  vi.mocked(listTags).mockReturnValueOnce(tags.promise).mockResolvedValueOnce(["fresh-tag"]);
+  render(<App/>);
+  await waitFor(() => expect(listTreeMock).toHaveBeenCalledTimes(1));
+  await act(async () => { changed(); tree.reject(new Error("obsolete metadata error")); });
+  expect(listTreeMock).toHaveBeenCalledTimes(1);
+  expect(screen.queryByText("obsolete metadata error")).toBeNull();
+  await act(async () => { tags.resolve(["stale-tag"]); });
+  expect(await screen.findByText("fresh.md")).toBeTruthy();
+  expect(screen.getByText("fresh-tag")).toBeTruthy();
+  expect(screen.queryByText("obsolete metadata error")).toBeNull();
 });
