@@ -13,6 +13,7 @@ type SelfOwner = StudioApiCall;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum ApiHostCall {
     PickMultipartFile {},
     SendSelectionToToolbox { text: String },
@@ -29,6 +30,7 @@ impl ApiHostCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum HostApiCall {
     Workspace(super::workspace::WorkspaceCall),
     Knowledge(super::knowledge::KnowledgeCall),
@@ -47,9 +49,10 @@ impl HostApiCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum StudioApiCall {
     Host(HostApiCall),
-    Engine(ApiCall),
+    Engine(Box<ApiCall>),
 }
 impl ComponentCall for StudioApiCall {
     const COMPONENT: &'static str = "api-studio.api";
@@ -83,7 +86,7 @@ pub async fn api(window: WebviewWindow, request: IncomingRequest) -> Result<Repl
     let app = window.app_handle();
     crate::lifecycle::require_open(app).map_err(|_| admission.problem(ProblemCode::Unavailable))?;
     let result = match request.call {
-        StudioApiCall::Engine(call) => api::dispatch(app, call).await,
+        StudioApiCall::Engine(call) => api::dispatch(app, *call).await,
         StudioApiCall::Host(call) => {
             host(
                 app,

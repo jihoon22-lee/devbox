@@ -1,3 +1,4 @@
+import { deliveryMessages } from "@devbox/control-center-features/issues";
 import type { UpdateCall } from "@devbox/control-center-features/generated/UpdateCall";
 import { deliveryCall } from "./delivery";
 import { useEffect, useRef, useState } from "react";
@@ -99,7 +100,11 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
           </p>
           {review.state === "downloading" ? (
             <>
-              <progress aria-label="설치 파일 다운로드" max={review.bytes} value={review.received} />
+              <progress
+                aria-label="설치 파일 다운로드"
+                max={review.bytes ?? undefined}
+                value={review.received ?? undefined}
+              />
               <button disabled={busy} onClick={() => void run("cancel_suite_update")}>
                 다운로드 취소
               </button>
@@ -118,7 +123,9 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
           )}
           {review.issue && (
             <p role="alert">
-              {messages[review.issue] ?? "다운로드를 완료하지 못했습니다. 현재 설치는 변경되지 않았습니다."}
+              {(review.issue in deliveryMessages
+                ? deliveryMessages[review.issue as keyof typeof deliveryMessages]
+                : undefined) ?? "다운로드를 완료하지 못했습니다. 현재 설치는 변경되지 않았습니다."}
             </p>
           )}
           {review.state === "ready" && (

@@ -1,10 +1,19 @@
-import { apiCall, transformCall } from "../calls";
+import { nativeOutputSource } from "../transforms/tools/outputPolicy";
+import { typedCall } from "../typed";
+import type { KnowledgeCall } from "../generated/KnowledgeCall";
+import type { ApiResults } from "../generated/api-results";
+const knowledgeCall = (owner: DraftOwner) => typedCall<KnowledgeCall, Pick<ApiResults, KnowledgeCall["method"]>>(owner);
 import type { Component } from "../transport";
 import type { OutputSource } from "../transforms/tools/outputPolicy";
 
 export type DraftOwner = Extract<Component, "api-studio.api" | "api-studio.transforms">;
-export type DraftSummary = import("../generated/KnowledgeResultSummary").KnowledgeResultSummary;
-export type KnowledgeDraft = import("../generated/KnowledgeResultDraft").KnowledgeResultDraft;
+type NativeSummary = import("../generated/KnowledgeResultSummary").KnowledgeResultSummary;
+export type DraftSummary = NativeSummary & {
+  artifact: NativeSummary["artifact"] & {
+    provenance: NativeSummary["artifact"]["provenance"] & { component: DraftOwner; product: "api-studio" };
+  };
+};
+export type KnowledgeDraft = import("../generated/KnowledgeResultDraft").KnowledgeResultDraft & DraftSummary;
 const ERROR = "보관한 Knowledge 초안을 확인하지 못했습니다.";
 const record = (value: unknown): value is Record<string, unknown> =>
   !!value && typeof value === "object" && !Array.isArray(value);
@@ -49,23 +58,23 @@ export function parseDraft(value: unknown, owner: DraftOwner): KnowledgeDraft {
   return { ...summary, body };
 }
 export async function saveDraft(owner: DraftOwner, output: string, source?: OutputSource): Promise<KnowledgeDraft> {
-  const result = await (owner === "api-studio.api" ? apiCall : transformCall)("save_knowledge_draft", {
+  const result = await knowledgeCall(owner)("save_knowledge_draft", {
     output,
-    ...(source ? { source } : {}),
+    ...(source ? { source: nativeOutputSource(source) } : {}),
   });
   if (!record(result) || !["stored", "unavailable"].includes(String(result.delivery))) throw new Error(ERROR);
   return parseDraft(result.draft, owner);
 }
 export async function listDrafts(owner: DraftOwner): Promise<DraftSummary[]> {
-  const result = await (owner === "api-studio.api" ? apiCall : transformCall)("list_knowledge_drafts", {});
+  const result = await knowledgeCall(owner)("list_knowledge_drafts", {});
   if (!Array.isArray(result) || result.length > 50) throw new Error(ERROR);
   return result.map((value) => parseSummary(value, owner));
 }
 export async function getDraft(owner: DraftOwner, id: string): Promise<KnowledgeDraft> {
-  return parseDraft(await (owner === "api-studio.api" ? apiCall : transformCall)("get_knowledge_draft", { id }), owner);
+  return parseDraft(await knowledgeCall(owner)("get_knowledge_draft", { id }), owner);
 }
 export async function deleteDraft(owner: DraftOwner, id: string): Promise<void> {
-  await (owner === "api-studio.api" ? apiCall : transformCall)("delete_knowledge_draft", { id });
+  await knowledgeCall(owner)("delete_knowledge_draft", { id });
 }
 export function draftError(error: unknown): string {
   return error instanceof Error &&
@@ -86,7 +95,7 @@ export function exportDraft(draft: KnowledgeDraft): void {
 }
 
 export async function sendDraft(owner: DraftOwner, id: string): Promise<void> {
-  const result = await (owner === "api-studio.api" ? apiCall : transformCall)("send_knowledge_draft", { id });
+  const result = await knowledgeCall(owner)("send_knowledge_draft", { id });
   if (
     !record(result) ||
     typeof result.operationId !== "string" ||

@@ -1,3 +1,4 @@
+import { toJsonValue } from "../../json";
 export type GraphqlRequest = import("../../generated/GraphqlRequest").GraphqlRequest;
 
 export type GraphqlLocation = import("../../generated/GraphqlLocation").GraphqlLocation;
@@ -365,7 +366,7 @@ export function projectGraphqlResponse(body: string): GraphqlResponse {
     }
   }
   if (!("errors" in object))
-    return { envelope: "valid", data: object.data ?? null, errors: [], errors_truncated: false };
+    return { envelope: "valid", data: toJsonValue(object.data ?? null), errors: [], errors_truncated: false };
   if (!Array.isArray(object.errors)) return { envelope: "invalid", data: null, errors: [], errors_truncated: false };
   const errors = object.errors;
   const projected: GraphqlError[] = [];
@@ -403,7 +404,7 @@ export function projectGraphqlResponse(body: string): GraphqlResponse {
   }
   return {
     envelope: "valid",
-    data: object.data ?? null,
+    data: toJsonValue(object.data ?? null),
     errors: projected,
     errors_truncated: errors.length > MAX_GRAPHQL_RESPONSE_ERRORS,
   };

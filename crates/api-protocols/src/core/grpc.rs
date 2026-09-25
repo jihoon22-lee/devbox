@@ -73,6 +73,7 @@ pub const MAX_STREAM_MESSAGES: usize = 100;
 pub enum GrpcRootMode {
     Native,
     Custom,
+    #[serde(rename = "native+custom", alias = "native-and-custom")]
     NativeAndCustom,
 }
 

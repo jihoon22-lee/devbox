@@ -3,8 +3,6 @@ import { useCallback, useEffect, useState } from "react";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
-type Product = import("@devbox/control-center-features/generated/SuiteProduct").SuiteProduct;
-type Component = import("@devbox/control-center-features/generated/SuiteComponent").SuiteComponent;
 type Snapshot = import("@devbox/control-center-features/generated/SuiteInventory").SuiteInventory;
 const label = (state: string) =>
   state === "verified" ? "파일 확인됨" : state === "notIncluded" ? "이 패키지에 포함되지 않음" : "확인되지 않음";

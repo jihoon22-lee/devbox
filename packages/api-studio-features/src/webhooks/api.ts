@@ -1,5 +1,4 @@
 import { webhookCall } from "../calls";
-import type { BodyEncoding } from "./lib/body";
 
 import { isTauri } from "./lib/isTauri";
 
@@ -142,7 +141,7 @@ export function listHistory(): Promise<RequestRecord[]> {
 
 export function clearHistory(): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return webhookCall("clear_history", {});
+  return webhookCall("clear_history", {}).then(() => undefined);
 }
 
 function mockHistoryRecord(id: number): RequestRecord {
@@ -171,7 +170,7 @@ export function copyHistoryHeaders(id: number): Promise<string> {
 
 export function deleteHistory(id: number): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return webhookCall("delete_history", { id });
+  return webhookCall("delete_history", { id }).then(() => undefined);
 }
 
 /** Replay only a backend-owned masked history snapshot to the local server. */
@@ -211,7 +210,7 @@ export function deleteFixture(id: string): Promise<void> {
     if (index >= 0) MOCK_FIXTURES.splice(index, 1);
     return Promise.resolve();
   }
-  return webhookCall("delete_fixture", { id });
+  return webhookCall("delete_fixture", { id }).then(() => undefined);
 }
 
 export function clearFixtures(): Promise<void> {
@@ -219,7 +218,7 @@ export function clearFixtures(): Promise<void> {
     MOCK_FIXTURES.splice(0, MOCK_FIXTURES.length);
     return Promise.resolve();
   }
-  return webhookCall("clear_fixtures", {});
+  return webhookCall("clear_fixtures", {}).then(() => undefined);
 }
 
 export function fixtureToRule(id: string): Promise<ResponseRule> {
@@ -295,10 +294,10 @@ export function setRule(rule: ResponseRulePayload, confirmConflicts: boolean): P
 
 export function deleteRule(id: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return webhookCall("delete_rule", { id });
+  return webhookCall("delete_rule", { id }).then(() => undefined);
 }
 
 export function resetRuleSequence(id: string): Promise<void> {
   if (!isTauri()) return Promise.resolve();
-  return webhookCall("reset_rule_sequence", { id });
+  return webhookCall("reset_rule_sequence", { id }).then(() => undefined);
 }

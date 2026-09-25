@@ -5,9 +5,6 @@ import { makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation } from "@devbox/product-shell/operation";
 import catalog from "../../../apps/products.json";
 
-type Checkpoint = import("@devbox/control-center-features/generated/CheckpointReceipt").CheckpointReceipt;
-type RestoreOperation = import("@devbox/control-center-features/generated/RestoreOperation").RestoreOperation;
-type UpdateOperation = import("@devbox/control-center-features/generated/UpdateOperation").UpdateOperation;
 type Inventory = import("@devbox/control-center-features/generated/RestoreInventory").RestoreInventory;
 type Action = import("@devbox/control-center-features/generated/RestoreAction").RestoreAction;
 const labels: Record<string, string> = {

@@ -342,43 +342,6 @@ impl VaultIdentity {
     }
 }
 
-/// Validate the existing portion of a root before the explicit root-selection
-/// command creates a missing tail. Read-only previews always require
-/// `VaultIdentity::inspect` on an already existing configured root.
-pub(crate) fn validate_root_for_creation(path: &Path) -> Result<(), VaultError> {
-    if path.as_os_str().is_empty() || !path.is_absolute() {
-        return Err(VaultError::InvalidRoot);
-    }
-    if path
-        .components()
-        .any(|component| matches!(component, Component::ParentDir))
-    {
-        return Err(VaultError::InvalidRoot);
-    }
-    let mut cursor = PathBuf::new();
-    for component in path.components() {
-        match component {
-            Component::Prefix(prefix) => cursor.push(prefix.as_os_str()),
-            Component::RootDir => cursor.push(component.as_os_str()),
-            Component::CurDir => {}
-            Component::ParentDir => return Err(VaultError::InvalidRoot),
-            Component::Normal(segment) => {
-                cursor.push(segment);
-                match std::fs::symlink_metadata(&cursor) {
-                    Ok(metadata) if is_link_or_reparse(&metadata) => {
-                        return Err(VaultError::InvalidRoot)
-                    }
-                    Ok(metadata) if !metadata.is_dir() => return Err(VaultError::InvalidRoot),
-                    Ok(_) => {}
-                    Err(error) if error.kind() == std::io::ErrorKind::NotFound => break,
-                    Err(_) => return Err(VaultError::InvalidRoot),
-                }
-            }
-        }
-    }
-    Ok(())
-}
-
 /// Publish a fully flushed file without replacing an existing target.
 /// The caller owns cleanup of the private temporary sibling on failure.
 pub(crate) fn publish_new_file(temporary: &Path, target: &Path) -> Result<(), std::io::Error> {

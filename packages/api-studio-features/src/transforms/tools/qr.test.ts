@@ -45,7 +45,7 @@ describe("generateQr", () => {
     expect(first.svg).toContain('shape-rendering="crispEdges"');
     expect(first.svg).not.toContain("example.com");
     expect(first.pngBase64).toBe("cG5n");
-    expect(first.payloadBytes).toBe(new TextEncoder().encode(request().text).length);
+    expect(first.payloadBytes).toBe(new TextEncoder().encode(request().text ?? undefined).length);
   });
 
   it("formats Wi-Fi fields with the standard escaped payload", () => {

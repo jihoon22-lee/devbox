@@ -290,7 +290,7 @@ export function SmartWorkflowPanel({ activeToolId, onOpenTool, incomingText }: S
 
   const loadPipeline = (id: string) => {
     const saved = metadataRef.current.pipelines.find((pipeline) => pipeline.id === id);
-    if (!saved) return;
+    if (!saved || !isPipelineValueType(saved.inputType)) return;
     setInputType(saved.inputType);
     const nextSteps = saved.steps.map((step) => ({ transformerId: step.transformerId }));
     setSteps(nextSteps);

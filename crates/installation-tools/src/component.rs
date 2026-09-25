@@ -1,6 +1,6 @@
 //! Embedded Manager tools only. The suite's installer does not use legacy batch
 //! install, cleanup_partials, startup migration or a legacy executable fallback.
-use crate::commands::{dev_setup, diagnostics, doctor, related_tools};
+use crate::commands::{dev_setup, diagnostics};
 use tauri::Manager;
 pub(crate) struct EmbeddedTools;
 

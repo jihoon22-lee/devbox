@@ -32,6 +32,9 @@ export type QuickCapturePreview = import("../generated/QuickCapturePreview").Qui
 
 export type QuickCaptureSaved = import("../generated/QuickCaptureSaved").QuickCaptureSaved;
 
-export type QuickCaptureShortcutState = import("../generated/ShortcutRegistration").ShortcutRegistration;
+export type QuickCaptureShortcutState = import("../generated/ShortcutRegistration").ShortcutRegistration | "managed";
 
-export type QuickCaptureShortcutStatus = import("../generated/ShortcutStatus").ShortcutStatus;
+/** Product shortcut ownership is a UI state, not a claim that the OS registered the shortcut. */
+export type QuickCaptureShortcutStatus = Omit<import("../generated/ShortcutStatus").ShortcutStatus, "state"> & {
+  state: QuickCaptureShortcutState;
+};

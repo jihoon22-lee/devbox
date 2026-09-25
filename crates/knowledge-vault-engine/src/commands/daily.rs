@@ -6,7 +6,6 @@ use serde::Serialize;
 use std::sync::{Arc, Mutex};
 use tauri::Manager;
 
-pub const METHODS: &[&str] = &["preview_daily", "save_daily", "discard_daily"];
 const TTL_MS: u64 = 300_000;
 #[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]

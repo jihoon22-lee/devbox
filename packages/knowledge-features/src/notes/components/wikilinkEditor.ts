@@ -21,6 +21,8 @@ function occurrenceTitle(link: WikilinkOccurrence): string {
       return "올바르지 않은 위키링크 대상입니다";
     case "missing":
       return "대상 노트가 없습니다";
+    default:
+      return "위키링크 상태를 확인할 수 없습니다";
   }
 }
 

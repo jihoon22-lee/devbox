@@ -1,3 +1,4 @@
+import type { LifecycleCall } from "@devbox/api-studio-features/generated/LifecycleCall";
 import { webhookCall } from "@devbox/api-studio-features/calls";
 import { useEffect, useState } from "react";
 import { nativeMode } from "@devbox/product-shell/api";
@@ -39,7 +40,10 @@ export function ListenerControls() {
       clearInterval(timer);
     };
   }, []);
-  async function act(method: string, args?: Record<string, unknown>) {
+  async function act<M extends LifecycleCall["method"]>(
+    method: M,
+    args: Extract<LifecycleCall, { method: M }> extends { args: infer A } ? A : never,
+  ) {
     setBusy(true);
     setError(null);
     try {
@@ -65,7 +69,11 @@ export function ListenerControls() {
         <select
           disabled={!status || busy || !status.settingsWritable}
           value={status?.policy ?? "stop-on-close"}
-          onChange={(event) => void act("set_close_policy", { policy: event.target.value })}
+          onChange={(event) =>
+            void act("set_close_policy", {
+              policy: event.target.value === "keep-listening" ? "keep-listening" : "stop-on-close",
+            })
+          }
         >
           <option value="stop-on-close">임시 서버를 중지하고 앱 종료</option>
           <option value="keep-listening" disabled={!status?.trayAvailable}>
@@ -89,11 +97,11 @@ export function ListenerControls() {
       <div>
         <button
           disabled={busy || !status?.running || status.policy !== "keep-listening" || !status.trayAvailable}
-          onClick={() => void act("hide_main_window")}
+          onClick={() => void act("hide_main_window", {})}
         >
           서버를 유지하고 창 숨기기
         </button>
-        <button disabled={busy || !status || status.closing} onClick={() => void act("quit_product")}>
+        <button disabled={busy || !status || status.closing} onClick={() => void act("quit_product", {})}>
           API Studio 완전히 종료
         </button>
       </div>

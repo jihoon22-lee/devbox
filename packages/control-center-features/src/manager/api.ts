@@ -618,7 +618,7 @@ function expectedDevSetupAction(
   }
 }
 
-function devSetupActionChangesSystem(action: DevSetupConfigurationAction): boolean {
+function devSetupActionChangesSystem(action: DevSetupConfigurationPackageReview["action"]): boolean {
   return action === "install" || action === "update" || action === "reconcile-version";
 }
 
@@ -959,7 +959,7 @@ function mockDevSetupConfigurationExport(review: DevSetupConfigurationReview): D
 function validateRelatedAction(
   value: unknown,
   toolId: string,
-  status: RelatedToolActionResult["status"],
+  status: keyof typeof RELATED_TOOL_ACTION_MESSAGES,
 ): RelatedToolActionResult {
   if (
     !value ||

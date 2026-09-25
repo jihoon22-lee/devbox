@@ -123,7 +123,7 @@ pub fn authorize(
     request: &RouteRequest,
     component: &str,
 ) -> Result<Provenance, Problem> {
-    authorize_inner(window, request, component, Admission::Ordinary)
+    authorize_inner(window, request, component, AuthorizationMode::Ordinary)
 }
 
 /// Only the native connection method allowlist may call this during setup or recovery.
@@ -137,7 +137,7 @@ pub fn authorize_installation_review(
         window,
         request,
         &format!("{product}.commands"),
-        Admission::InstallationReview,
+        AuthorizationMode::InstallationReview,
     )
 }
 /// Domain adapters use this only after matching their closed importer method
@@ -147,10 +147,15 @@ pub fn authorize_owner_migration(
     request: &RouteRequest,
     component: &str,
 ) -> Result<Provenance, Problem> {
-    authorize_inner(window, request, component, Admission::OwnerMigration)
+    authorize_inner(
+        window,
+        request,
+        component,
+        AuthorizationMode::OwnerMigration,
+    )
 }
 #[derive(Clone, Copy)]
-enum Admission {
+enum AuthorizationMode {
     Ordinary,
     InstallationReview,
     OwnerMigration,
@@ -159,13 +164,13 @@ fn activation_allows(
     marker: &product_contract::activation::Activation,
     product: &str,
     component: &str,
-    admission: Admission,
+    admission: AuthorizationMode,
 ) -> bool {
     marker.allows(product, component)
         || match admission {
-            Admission::Ordinary => false,
-            Admission::InstallationReview => true,
-            Admission::OwnerMigration => {
+            AuthorizationMode::Ordinary => false,
+            AuthorizationMode::InstallationReview => true,
+            AuthorizationMode::OwnerMigration => {
                 marker.phase == product_contract::activation::Phase::Import
             }
         }
@@ -174,7 +179,7 @@ fn authorize_inner(
     window: &WebviewWindow,
     request: &RouteRequest,
     component: &str,
-    admission: Admission,
+    admission: AuthorizationMode,
 ) -> Result<Provenance, Problem> {
     let state = window.state::<ShellState>();
     let provenance = Provenance {
@@ -505,20 +510,20 @@ mod admission_tests {
                 &marker,
                 "workspace",
                 "workspace.commands",
-                Admission::InstallationReview
+                AuthorizationMode::InstallationReview
             ));
             assert!(!activation_allows(
                 &marker,
                 "workspace",
                 "workspace.files",
-                Admission::Ordinary
+                AuthorizationMode::Ordinary
             ));
             assert_eq!(
                 activation_allows(
                     &marker,
                     "workspace",
                     "workspace.files",
-                    Admission::OwnerMigration
+                    AuthorizationMode::OwnerMigration
                 ),
                 phase == Phase::Import
             );

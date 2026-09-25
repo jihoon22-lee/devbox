@@ -81,6 +81,7 @@ pub struct Snapshot {
     pub rows: Vec<Row>,
     pub bounds: Value,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub project_context: Option<product_contract::ProjectContext>,
 }
 #[derive(Clone, Copy, PartialEq, Eq)]

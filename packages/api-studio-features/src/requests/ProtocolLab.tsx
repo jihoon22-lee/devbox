@@ -609,7 +609,9 @@ function McpLab({ environment, native }: ProtocolLabProps) {
 
   const connected = phase === "connected" && connection !== null;
   const busy = activeRequest !== null || phase === "connecting" || phase === "disconnecting";
-  const capabilities = connection?.server.capabilities ?? {};
+  const rawCapabilities = connection?.server.capabilities;
+  const capabilities =
+    rawCapabilities && typeof rawCapabilities === "object" && !Array.isArray(rawCapabilities) ? rawCapabilities : {};
   const secretNames = environment.filter((item) => item.secret).map((item) => item.key);
   const normalizedOAuthScopes = oauthScopes.map((scope) => scope.trim()).filter(Boolean);
   const oauthScopesHaveDuplicates = new Set(normalizedOAuthScopes).size !== normalizedOAuthScopes.length;

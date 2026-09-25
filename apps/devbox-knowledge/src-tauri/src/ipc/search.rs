@@ -1,9 +1,8 @@
 use content_index_engine::api::{self, SearchCall, SearchSettingsCall};
 use product_contract::{Problem, ProblemCode};
-use product_ipc::{ComponentCall, IncomingRequest, TypeExporter};
+use product_ipc::{ComponentCall, ExecutionClass, IncomingRequest, TypeExporter};
 use product_shell_tauri::{admit_request, Reply};
 use serde::{Deserialize, Serialize};
-use serde_json::Value;
 use tauri::{Manager, WebviewWindow};
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(
@@ -13,6 +12,7 @@ use tauri::{Manager, WebviewWindow};
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum HostSearchCall {
     SourceQuery {
         source: String,
@@ -49,6 +49,7 @@ impl HostSearchCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum KnowledgeSearchCall {
     Host(HostSearchCall),
     Engine(SearchCall),
@@ -61,6 +62,12 @@ impl ComponentCall for KnowledgeSearchCall {
             Self::Engine(call) => call.method(),
         }
     }
+    fn class(&self) -> ExecutionClass {
+        match self {
+            Self::Host(HostSearchCall::SourceCancel { .. }) => ExecutionClass::Control,
+            _ => ExecutionClass::Normal,
+        }
+    }
     fn routes(&self) -> &'static [&'static str] {
         match self {
             Self::Engine(SearchCall::SearchFiles { .. } | SearchCall::SearchContent { .. }) => &[],
@@ -70,11 +77,15 @@ impl ComponentCall for KnowledgeSearchCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(transparent)]
+#[ts(optional_fields = nullable)]
 pub struct KnowledgeSearchSettingsCall(pub SearchSettingsCall);
 impl ComponentCall for KnowledgeSearchSettingsCall {
     const COMPONENT: &'static str = "knowledge.search-settings";
     fn method(&self) -> &'static str {
         self.0.method()
+    }
+    fn class(&self) -> ExecutionClass {
+        self.0.class()
     }
     fn routes(&self) -> &'static [&'static str] {
         &["search"]
@@ -84,7 +95,7 @@ impl ComponentCall for KnowledgeSearchSettingsCall {
 pub struct SourceReference {
     pub reference: String,
     pub source: String,
-    pub name: Value,
+    pub name: String,
     pub path: std::path::PathBuf,
 }
 #[derive(Deserialize, ts_rs::TS)]
@@ -95,6 +106,7 @@ pub struct SourceReference {
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum KnowledgeOpenerCall {
     OpenFile { reference: String },
     RevealFile { reference: String },

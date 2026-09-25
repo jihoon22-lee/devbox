@@ -15,6 +15,7 @@ use tauri::Manager;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum ToolsCall {
     RunDiagnosis {},
     PreviewSupportBundle { operation_id: String },
@@ -161,7 +162,17 @@ pub async fn dispatch(app: &tauri::AppHandle, call: ToolsCall) -> Result<Value, 
 fn value<T: Serialize>(result: Result<T, String>) -> Result<Value, String> {
     serde_json::to_value(result?).map_err(|_| "manager_response_invalid".into())
 }
-product_ipc::issue_codes! {pub enum ToolsIssue {ManagerArgsInvalid="manager_args_invalid",ManagerMethodDenied="manager_method_denied",ManagerResponseInvalid="manager_response_invalid",ManagerStateConflict="manager_state_conflict",ManagerUrlDenied="manager_url_denied",ManagerUrlUnavailable="manager_url_unavailable",Unavailable="unavailable",}}
+product_ipc::issue_codes! {
+    pub enum ToolsIssue {
+    ManagerArgsInvalid = "manager_args_invalid",
+    ManagerMethodDenied = "manager_method_denied",
+    ManagerResponseInvalid = "manager_response_invalid",
+    ManagerStateConflict = "manager_state_conflict",
+    ManagerUrlDenied = "manager_url_denied",
+    ManagerUrlUnavailable = "manager_url_unavailable",
+    Unavailable = "unavailable",
+    }
+}
 pub fn classify(error: &str) -> &'static str {
     ToolsIssue::from_code(error)
         .unwrap_or(ToolsIssue::Unavailable)

@@ -96,3 +96,18 @@ for filename, changed_fields in [
             continue
     raise AssertionError("broadened Terminal capability was accepted")
 print("Terminal companion capabilities remain separate and local: PASS")
+
+# A typed product must not regain the former broad execute capability.
+for product in ("knowledge", "api-studio", "control-center"):
+    capability_path = root / f"apps/devbox-{product}/src-tauri/capabilities/default.json"
+    capability = json.loads(original_read(capability_path))
+    capability["permissions"].append(f"{product}:allow-execute")
+    def read_capability(path, *args, **kwargs):
+        return json.dumps(capability) if path == capability_path else original_read(path, *args, **kwargs)
+    with patch.object(Path, "read_text", read_capability), redirect_stdout(io.StringIO()):
+        try:
+            check(root)
+        except AssertionError:
+            continue
+    raise AssertionError(f"retired broad {product} execute capability was accepted")
+print("Typed products cannot regain the retired execute capability: PASS")

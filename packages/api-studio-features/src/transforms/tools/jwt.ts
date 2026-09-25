@@ -576,6 +576,13 @@ function validateNativeRequest(request: JwtVerifyRequest): {
   if (parsed.algorithm !== algorithm) throw error("algorithm_not_allowed");
   const temporal = validateJwtTimes(parsed.payload, Math.floor(Date.now() / 1000));
   if (!temporal.valid) throw error("invalid_claims");
+  if (
+    request.keyEncoding !== "utf8" &&
+    request.keyEncoding !== "hex" &&
+    request.keyEncoding !== "base64" &&
+    request.keyEncoding !== "base64url"
+  )
+    throw error("invalid_key");
   const key = decodeJwtKey(request.key, request.keyEncoding);
   if (key.length < ALGORITHM_TAG_LENGTH[algorithm]) throw error("key_too_short");
   return { algorithm, key, signature, signingInput: request.signingInput };

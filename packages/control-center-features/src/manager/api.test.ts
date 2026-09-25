@@ -224,7 +224,7 @@ describe("Dev Setup API boundary", () => {
     isTauriMock.mockReturnValue(true);
     invokeMock.mockResolvedValueOnce(browserReview);
     await expect(importDevSetupConfiguration()).resolves.toEqual(browserReview);
-    expect(invokeMock).toHaveBeenLastCalledWith("import_dev_setup_configuration");
+    expect(invokeMock).toHaveBeenLastCalledWith("import_dev_setup_configuration", {});
 
     isTauriMock.mockReturnValue(false);
     const browserExport = await exportDevSetupConfiguration(browserReview!.previewId);
@@ -256,7 +256,7 @@ describe("Dev Setup API boundary", () => {
 
     invokeMock.mockResolvedValueOnce(undefined);
     await expect(cancelDevSetupApply()).resolves.toBeUndefined();
-    expect(invokeMock).toHaveBeenLastCalledWith("cancel_dev_setup_apply");
+    expect(invokeMock).toHaveBeenLastCalledWith("cancel_dev_setup_apply", {});
 
     isTauriMock.mockReturnValue(false);
     const nextReview = await importDevSetupConfiguration();

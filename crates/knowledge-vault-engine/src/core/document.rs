@@ -22,6 +22,7 @@ pub struct Snapshot {
     pub content: Option<String>,
     pub revision: String,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub save_outcome: Option<SaveOutcome>,
 }
 

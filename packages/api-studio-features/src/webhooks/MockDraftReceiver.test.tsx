@@ -25,7 +25,7 @@ describe("Mock draft recipient", () => {
     native.invoke.mockResolvedValue(preview);
     const onApply = vi.fn();
     const view = render(<MockDraftReceiver active={false} disabled={false} onApply={onApply} />);
-    await waitFor(() => expect(native.invoke).toHaveBeenCalledWith("peek_mock_draft"));
+    await waitFor(() => expect(native.invoke).toHaveBeenCalledWith("peek_mock_draft", {}));
     expect(screen.queryByRole("dialog")).toBeNull();
     view.rerender(<MockDraftReceiver active disabled={false} onApply={onApply} />);
     await screen.findByRole("dialog");
@@ -37,7 +37,7 @@ describe("Mock draft recipient", () => {
     render(<MockDraftReceiver disabled={false} onApply={onApply} />);
     await screen.findByRole("dialog", { name: "Mock 규칙 초안 미리보기" });
     expect(onApply).not.toHaveBeenCalled();
-    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("peek_mock_draft");
+    expect(native.invoke).toHaveBeenCalledExactlyOnceWith("peek_mock_draft", {});
     expect(document.activeElement).toBe(screen.getByRole("button", { name: "취소" }));
     fireEvent.click(screen.getByRole("button", { name: "현재 규칙 초안 대신 적용" }));
     await waitFor(() => expect(onApply).toHaveBeenCalledExactlyOnceWith(rule));

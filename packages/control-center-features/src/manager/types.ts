@@ -53,7 +53,10 @@ export interface DevSetupPlanItem {
     | "review-winget";
 }
 
-export type DevSetupAudit = import("../generated/DevSetupAuditView").DevSetupAuditView;
+export type DevSetupAudit = Omit<
+  import("../generated/DevSetupAuditView").DevSetupAuditView,
+  "capabilities" | "plan"
+> & { capabilities: DevSetupCapability[]; plan: DevSetupPlanItem[] };
 
 export type DevSetupConfigurationDesired = "present" | "latest" | "version";
 export type DevSetupConfigurationCurrentState = "present" | "absent" | "update-available" | "unknown";

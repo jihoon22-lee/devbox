@@ -1,3 +1,4 @@
+import { toJsonValue } from "../json";
 import { apiCall } from "../calls";
 
 import { isTauri } from "./lib/isTauri";
@@ -122,9 +123,17 @@ export async function pickGrpcClientKey(): Promise<GrpcNativeSelection | null> {
   return pickSelection("pick_grpc_client_key", "client-key");
 }
 
-async function pickSelection(command: string, expected: GrpcSelectionKind): Promise<GrpcNativeSelection | null> {
+async function pickSelection(
+  command:
+    | "pick_grpc_proto"
+    | "pick_grpc_import_root"
+    | "pick_grpc_ca"
+    | "pick_grpc_client_certificate"
+    | "pick_grpc_client_key",
+  expected: GrpcSelectionKind,
+): Promise<GrpcNativeSelection | null> {
   requireNative();
-  const value = await apiCall(command);
+  const value = await apiCall(command, {});
   if (value === null) return null;
   const record = asRecord(value, "grpc_source_selection_invalid");
   if (
@@ -269,15 +278,15 @@ function validateConnectProfile(profile: GrpcConnectProfile): void {
     !Number.isInteger(profile.rpcTimeoutMs) ||
     profile.rpcTimeoutMs < 100 ||
     profile.rpcTimeoutMs > 300_000 ||
-    (profile.tls.serverName !== undefined && !isSafeText(profile.tls.serverName, 253)) ||
-    (profile.tls.credentialId !== undefined && !OPAQUE_ID.test(profile.tls.credentialId))
+    (profile.tls.serverName != null && !isSafeText(profile.tls.serverName, 253)) ||
+    (profile.tls.credentialId != null && !OPAQUE_ID.test(profile.tls.credentialId))
   ) {
     throw new Error("grpc_invalid_profile");
   }
   if (profile.source.kind === "local-proto") {
     if (
       !OPAQUE_ID.test(profile.source.protoSelectionId) ||
-      (profile.source.importRootSelectionId !== undefined && !OPAQUE_ID.test(profile.source.importRootSelectionId))
+      (profile.source.importRootSelectionId != null && !OPAQUE_ID.test(profile.source.importRootSelectionId))
     ) {
       throw new Error("grpc_source_selection_invalid");
     }
@@ -359,7 +368,7 @@ function validateMethod(value: unknown): GrpcMethodProjection {
     inputType: record.inputType,
     outputType: record.outputType,
     rpcKind: record.rpcKind as GrpcRpcKind,
-    inputTemplate: structuredClone(record.inputTemplate),
+    inputTemplate: toJsonValue(record.inputTemplate),
   };
 }
 

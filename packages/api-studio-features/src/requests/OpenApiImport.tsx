@@ -1,3 +1,4 @@
+import { toJsonValue } from "../json";
 import { apiCall } from "../calls";
 import { sanitizeRequestForPersistence } from "./lib/persistence";
 import { useEffect, useMemo, useRef, useState, type ChangeEvent, type FormEvent, type KeyboardEvent } from "react";
@@ -146,7 +147,7 @@ export function OpenApiImport({
     }
     await loadPreview(async () => {
       const source = await fetchOpenApiSource(url);
-      return parseSource({ kind: "url", format: source.format, text: source.text });
+      return parseSource({ kind: "url", format: source.format === "json" ? "json" : "yaml", text: source.text });
     }, "OpenAPI URL을 안전하게 가져오지 못했습니다.");
   };
 
@@ -220,7 +221,7 @@ export function OpenApiImport({
             mockOperations.find(
               (mock) => mock.applyable && mock.method === operation.method && mock.path === operation.path,
             )?.status ?? null,
-          request: sanitizeRequestForPersistence(operation.request),
+          request: toJsonValue(sanitizeRequestForPersistence(operation.request)),
         })),
       });
       if (mountedRef.current) {

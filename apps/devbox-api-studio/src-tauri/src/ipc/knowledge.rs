@@ -7,6 +7,7 @@ use serde::Deserialize;
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum KnowledgeCall {
     SaveKnowledgeDraft {
         output: String,

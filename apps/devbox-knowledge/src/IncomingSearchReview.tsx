@@ -1,7 +1,7 @@
 import type { SavedSearchInput } from "@devbox/knowledge-features/search";
 import { useEffect, useState } from "react";
 import { useIncomingReview } from "@devbox/product-shell/incoming";
-import { searchCall } from "@devbox/knowledge-features/search/api";
+import { searchCall, openerCall } from "@devbox/knowledge-features/search/api";
 
 type Reference = import("@devbox/knowledge-features/generated/SourceReference").SourceReference;
 /** The received ID only selects an owner-issued search reference for review. */
@@ -32,10 +32,10 @@ export default function IncomingSearchReview({
     if (id && savedTarget)
       void searchCall("source_saved_reference", {
         id,
-        revision: review?.commandRevision,
+        revision: review?.commandRevision ?? "",
       })
         .then((value) => {
-          if (current) setSaved(value);
+          if (current) setSaved({ ...value, id: String(value.id) });
         })
         .catch(() => {
           if (current) setIssue("저장한 검색이 변경되었거나 삭제되었습니다. 다시 검색해 주세요.");
@@ -58,10 +58,8 @@ export default function IncomingSearchReview({
     setBusy(true);
     setIssue("");
     try {
-      await searchCall(
-        editor ? "open_in" : "open_file",
-        editor ? { appId: "devbox-workspace", reference: reference.reference } : { reference: reference.reference },
-      );
+      if (editor) await openerCall("open_in", { appId: "devbox-workspace", reference: reference.reference });
+      else await openerCall("open_file", { reference: reference.reference });
       clear();
       if (reference.source === "notes") onNoteOpen();
     } catch {

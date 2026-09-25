@@ -163,6 +163,7 @@ pub struct ExportGitProject {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DailyDigest {
     pub date: String,
     pub start_ms: i64,

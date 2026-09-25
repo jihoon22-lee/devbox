@@ -51,7 +51,7 @@ pub struct ApiHandoffState {
 }
 
 impl ApiHandoffState {
-    fn has_claim(&self, id: &str) -> bool {
+    pub(crate) fn has_claim(&self, id: &str) -> bool {
         self.claims().contains_key(id)
     }
     pub fn with_store(store: HandoffStore) -> Self {

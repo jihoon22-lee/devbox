@@ -1,3 +1,4 @@
+import { nativeOutputSource } from "../transforms/tools/outputPolicy";
 import { apiCall, transformCall } from "../calls";
 import { useEffect, useRef, useState } from "react";
 import type { DraftOwner } from "../knowledge/api";
@@ -50,14 +51,16 @@ export function MockDraftAction({
     setBusy(true);
     setNotice("");
     try {
-      await (owner === "api-studio.api" ? apiCall : transformCall)("send_mock_draft", {
+      const input = {
         output: value,
         status,
         mediaType,
         requestTarget,
         requestMethod,
-        ...(source ? { source } : {}),
-      });
+        ...(source ? { source: nativeOutputSource(source) } : {}),
+      };
+      if (owner === "api-studio.api") await apiCall("send_mock_draft", input);
+      else await transformCall("send_mock_draft", input);
       if (mounted.current && revision.current === version) {
         setNotice("Mock 규칙 미리보기로 전달했습니다. 규칙 저장과 서버 시작은 별도로 확인하세요.");
         onSent?.();

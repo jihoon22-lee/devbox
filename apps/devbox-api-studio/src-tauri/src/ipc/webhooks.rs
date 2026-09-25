@@ -13,6 +13,7 @@ type SelfOwner = StudioWebhookCall;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum WebhookHostCall {
     SendHistoryToApi { history_id: u64 },
     SendFixtureToApi { id: String },
@@ -31,6 +32,7 @@ impl WebhookHostCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum HostWebhookCall {
     Mock(super::mock_draft::MockDraftCall),
     Lifecycle(super::lifecycle::LifecycleCall),
@@ -47,6 +49,7 @@ impl HostWebhookCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum StudioWebhookCall {
     Host(HostWebhookCall),
     Engine(WebhookCall),

@@ -31,6 +31,7 @@ impl ScanControl {
     }
     /// Called while changing the configured root under the DB mutex, including
     /// A → B → A. Path equality alone cannot reauthorize an earlier scan.
+    #[cfg(test)]
     pub fn invalidate(&self) {
         if let Ok(active) = self.0.lock() {
             for token in active.iter().filter_map(Weak::upgrade) {

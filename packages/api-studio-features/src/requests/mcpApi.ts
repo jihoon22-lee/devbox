@@ -1,3 +1,4 @@
+import { toJsonValue } from "../json";
 import { apiCall } from "../calls";
 
 import { isTauri } from "./lib/isTauri";
@@ -98,7 +99,7 @@ export async function connectMcpHttp(
   environment: readonly EnvVariable[],
 ): Promise<McpConnectResult> {
   requireNative();
-  const value = await apiCall("connect_mcp_http", { profile, environment });
+  const value = await apiCall("connect_mcp_http", { profile, environment: [...environment] });
   try {
     return validateConnectResult(value);
   } catch (cause) {
@@ -131,7 +132,7 @@ export async function invokeMcpHttp(
     connectionId,
     requestId,
     method,
-    params,
+    params: toJsonValue(params),
   });
   return validateInvokeResult(value, method, requestId);
 }
@@ -165,7 +166,7 @@ async function pickMcpStdioSelection(
   kind: McpNativeSelection["kind"],
 ): Promise<McpNativeSelection | null> {
   requireNative();
-  const value = await apiCall(command);
+  const value = await apiCall(command, {});
   if (value === null) return null;
   const record = asRecord(value, "mcp_stdio_selection_invalid");
   const selectionId = record.selectionId;
@@ -212,7 +213,7 @@ export async function connectMcpStdio(
     environment: profile.environment.map(({ childName, sourceName }) => ({ childName, sourceName })),
     timeoutMs: profile.timeoutMs,
   };
-  const value = await apiCall("connect_mcp_stdio", { profile: safeProfile, environment });
+  const value = await apiCall("connect_mcp_stdio", { profile: safeProfile, environment: [...environment] });
   try {
     return validateConnectResult(value);
   } catch (cause) {
@@ -245,7 +246,7 @@ export async function invokeMcpStdio(
     connectionId,
     requestId,
     method,
-    params,
+    params: toJsonValue(params),
   });
   return validateInvokeResult(value, method, requestId);
 }
@@ -480,7 +481,7 @@ function validateServer(value: unknown): McpServerProjection {
     protocolVersion,
     serverName,
     serverVersion,
-    capabilities,
+    capabilities: toJsonValue(capabilities),
     supportedVersions,
   };
 }
@@ -536,7 +537,7 @@ function validateInvokeResult(value: unknown, method: string, requestId: string)
     throw new Error("mcp_message_invalid");
   }
   return {
-    result,
+    result: toJsonValue(result),
     errorCode,
     rpcErrorCode,
     nextCursor,

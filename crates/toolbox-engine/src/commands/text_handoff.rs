@@ -20,7 +20,7 @@ pub struct PendingToolboxText {
 }
 
 impl PendingToolboxText {
-    fn has_claim(&self, id: &str) -> bool {
+    pub(crate) fn has_claim(&self, id: &str) -> bool {
         self.slot()
             .as_ref()
             .is_some_and(|current| current.claim.envelope.id == id)

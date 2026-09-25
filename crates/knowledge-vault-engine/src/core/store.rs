@@ -103,10 +103,12 @@ pub fn tree_bounded(
     Ok(out)
 }
 
+#[cfg(all(test, windows))]
 pub fn read_file(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
+#[cfg(test)]
 pub fn write_file(path: &Path, content: &str) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;

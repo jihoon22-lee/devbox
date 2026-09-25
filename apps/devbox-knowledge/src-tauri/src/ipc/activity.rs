@@ -1,7 +1,7 @@
 //! Typed Activity command, preserving native startup and producer boundaries.
 use activity_engine::api::{self, ActivityCall};
 use product_contract::{Problem, ProblemCode};
-use product_ipc::{ComponentCall, IncomingRequest, TypeExporter};
+use product_ipc::{ComponentCall, ExecutionClass, IncomingRequest, TypeExporter};
 use product_shell_tauri::{admit_request, Reply};
 use serde::Deserialize;
 use tauri::{Manager, WebviewWindow};
@@ -14,6 +14,7 @@ use tauri::{Manager, WebviewWindow};
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum HostActivityCall {
     GetClosePolicy {},
     SetClosePolicy { close_to_tray: bool },
@@ -28,6 +29,7 @@ impl HostActivityCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum KnowledgeActivityCall {
     Host(HostActivityCall),
     Engine(ActivityCall),
@@ -38,6 +40,12 @@ impl ComponentCall for KnowledgeActivityCall {
         match self {
             Self::Host(call) => call.method(),
             Self::Engine(call) => call.method(),
+        }
+    }
+    fn class(&self) -> ExecutionClass {
+        match self {
+            Self::Engine(call) => call.class(),
+            Self::Host(_) => ExecutionClass::Normal,
         }
     }
     fn routes(&self) -> &'static [&'static str] {

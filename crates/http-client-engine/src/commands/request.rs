@@ -59,6 +59,7 @@ pub struct RequestHeader {
     pub key: String,
     pub value: String,
     #[serde(default = "default_header_enabled")]
+    #[ts(as = "Option<bool>", optional)]
     pub enabled: bool,
 }
 
@@ -77,6 +78,7 @@ pub struct RequestCookie {
     pub name: String,
     pub value: String,
     #[serde(default = "default_header_enabled")]
+    #[ts(as = "Option<bool>", optional)]
     pub enabled: bool,
 }
 
@@ -99,6 +101,7 @@ pub struct MultipartPart {
     pub file_name: String,
     pub content_type: String,
     #[serde(default = "default_header_enabled")]
+    #[ts(as = "Option<bool>", optional)]
     pub enabled: bool,
 }
 
@@ -128,13 +131,16 @@ pub struct AuthConfig {
 
 /// Frontend가 편집·저장하는 원본. 변수 참조는 해석되지 않은 상태다.
 #[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct RequestTemplate {
     pub method: String,
     pub url: String,
     pub headers: Vec<RequestHeader>,
     #[serde(default)]
+    #[ts(as = "Option<Vec<RequestCookie>>", optional)]
     pub cookies: Vec<RequestCookie>,
     #[serde(default)]
+    #[ts(as = "Option<Vec<MultipartPart>>", optional)]
     pub multipart: Vec<MultipartPart>,
     pub params: Vec<KeyValue>,
     /// none | json | form | multipart | raw
@@ -209,8 +215,10 @@ pub struct ApiResponse {
     pub raw_headers_available: bool,
     pub headers_truncated: bool,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub binary: Option<BinaryResponse>,
     #[serde(skip_serializing_if = "Option::is_none")]
+    #[ts(optional)]
     pub graphql: Option<GraphqlResponse>,
 }
 

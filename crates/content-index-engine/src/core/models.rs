@@ -12,6 +12,7 @@ use devbox_applink::QueryFilter;
 #[derive(ts_rs::TS)]
 pub struct SearchFilter {
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub extensions: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_after: Option<i64>,

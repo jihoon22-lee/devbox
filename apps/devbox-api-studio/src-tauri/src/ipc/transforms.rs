@@ -13,6 +13,7 @@ type SelfOwner = StudioTransformCall;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum TransformHostCall {
     OpenWorkspaceSelection {
         id: String,
@@ -38,6 +39,7 @@ impl TransformHostCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum HostTransformCall {
     Knowledge(super::knowledge::KnowledgeCall),
     Extra(TransformHostCall),
@@ -52,6 +54,7 @@ impl HostTransformCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum StudioTransformCall {
     Host(HostTransformCall),
     Engine(ToolboxCall),

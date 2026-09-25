@@ -28,6 +28,7 @@ SCOPE_DRIVER_PATHS = {
     ".github/scripts/test-ci-scope.py",
     ".github/scripts/test-ci-scope-runners.py",
     ".github/scripts/verify-affected.sh",
+    ".github/scripts/check-generated-bindings.sh",
     ".github/workflows/ci.yml",
 }
 FRONTEND_DRIVER_PATHS = {

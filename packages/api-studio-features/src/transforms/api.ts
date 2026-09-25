@@ -1,5 +1,6 @@
+import { nativeOutputSource } from "./tools/outputPolicy";
 import { transformCall } from "../calls";
-import { isProductHosted } from "../transport";
+import { isProductHosted, componentInvoke } from "../transport";
 
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { readText } from "@tauri-apps/plugin-clipboard-manager";
@@ -138,7 +139,9 @@ export async function createApiRequestHandoff(
   source?: import("./tools/outputPolicy").OutputSource,
 ): Promise<ApiHandoffDispatch> {
   if (!isTauri()) throw new Error(API_HANDOFF_BROWSER_ERROR);
-  return transformCall("create_api_request_handoff", isProductHosted() ? { output, source } : { output });
+  if (!isProductHosted()) return componentInvoke("api-studio.transforms")("create_api_request_handoff", { output });
+  if (!source) throw new Error("transform_export_denied");
+  return transformCall("create_api_request_handoff", { output, source: nativeOutputSource(source) });
 }
 
 const KNOWLEDGE_DRAFT_ERROR_DISPLAY = new Map<string, string>([
@@ -179,7 +182,9 @@ export async function createKnowledgeDraftHandoff(output: string): Promise<Knowl
   }
   let response: unknown;
   try {
-    response = await transformCall("create_knowledge_draft_handoff", { output });
+    // The retired standalone preview adapter has no product command or authority.
+    if (isProductHosted()) throw new Error(KNOWLEDGE_DRAFT_CREATE_ERROR);
+    response = await componentInvoke("api-studio.transforms")("create_knowledge_draft_handoff", { output });
   } catch (cause) {
     throw safeKnowledgeDraftError(cause);
   }
@@ -226,7 +231,7 @@ function parseOpenRequest(value: unknown): OpenRequest | null {
     case "query":
       if (typeof target.text !== "string") return null;
       return {
-        target: { kind: "query", text: target.text, filter: target.filter },
+        target: { kind: "query", text: target.text, filter: parseQueryFilter(target.filter) },
         from: typeof from === "string" ? from : null,
       };
     case "install":
@@ -416,4 +421,26 @@ function browserDiff(a: string, b: string): DiffHunk[] {
   if (aEnd < al.length)
     hunks.push({ kind: 0, old_start: aEnd, old_end: al.length, new_start: bEnd, new_end: bl.length });
   return hunks;
+}
+
+function parseQueryFilter(value: unknown): import("../generated/QueryFilter").QueryFilter | undefined {
+  if (value === undefined || value === null) return undefined;
+  if (!isRecord(value)) throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
+  const filter: import("../generated/QueryFilter").QueryFilter = {};
+  for (const key of ["modifiedAfter", "modifiedBefore", "minSize", "maxSize", "sourceRootId"] as const) {
+    if (value[key] === undefined) continue;
+    if (typeof value[key] !== "number" || !Number.isSafeInteger(value[key]))
+      throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
+    filter[key] = value[key];
+  }
+  if (value.extensions !== undefined) {
+    if (!Array.isArray(value.extensions) || !value.extensions.every((item: unknown) => typeof item === "string"))
+      throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
+    filter.extensions = value.extensions;
+  }
+  if (value.contentStatus !== undefined) {
+    if (typeof value.contentStatus !== "string") throw new Error(TOOLBOX_TEXT_INVALID_ERROR);
+    filter.contentStatus = value.contentStatus;
+  }
+  return filter;
 }

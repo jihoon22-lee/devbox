@@ -58,7 +58,43 @@ mod tests {
             serde_json::from_str(r#"{"method":"start_empty","args":{}}"#).unwrap();
         assert_eq!(setup::SetupCall::COMPONENT, "knowledge.setup");
         assert_eq!(setup.routes(), &["notes"]);
-        assert!(commands::QuitCall::INSTALLATION_REVIEW);
+        const { assert!(commands::QuitCall::INSTALLATION_REVIEW) };
+    }
+    #[test]
+    fn activity_stop_and_cancel_keep_the_control_reservation() {
+        for method in ["cancel_digest", "stop_tracking"] {
+            let call: activity::KnowledgeActivityCall =
+                serde_json::from_value(serde_json::json!({"method": method, "args": {}})).unwrap();
+            assert_eq!(call.class(), product_ipc::ExecutionClass::Control);
+        }
+    }
+    #[test]
+    fn cancellation_and_quit_review_do_not_compete_with_normal_work() {
+        use product_ipc::ExecutionClass::{Control, Normal};
+        let query: search::KnowledgeSearchCall = serde_json::from_value(
+            serde_json::json!({"method":"source_cancel","args":{"generation":"fixture"}}),
+        )
+        .unwrap();
+        assert_eq!(query.class(), Control);
+        let index: search::KnowledgeSearchSettingsCall =
+            serde_json::from_value(serde_json::json!({"method":"cancel_index","args":{}})).unwrap();
+        assert_eq!(index.class(), Control);
+        let vault: setup::SetupCall =
+            serde_json::from_value(serde_json::json!({"method":"cancel_vault_change","args":{}}))
+                .unwrap();
+        assert_eq!(vault.class(), Control);
+        assert_eq!(commands::QuitCall::PendingQuit {}.class(), Control);
+        assert_eq!(
+            commands::QuitCall::DecideQuit {
+                id: "fixture".into(),
+                quit: true
+            }
+            .class(),
+            Control
+        );
+        let read: search::KnowledgeSearchCall =
+            serde_json::from_value(serde_json::json!({"method":"index_status","args":{}})).unwrap();
+        assert_eq!(read.class(), Normal);
     }
     #[test]
     fn search_cannot_read_unowned_files_or_mutate_other_components() {

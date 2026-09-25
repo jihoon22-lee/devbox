@@ -77,6 +77,11 @@ pub fn prepare_log_handoff(
     crate::commands::prepare_log_handoff(app, selection)
 }
 
+pub enum HandoffSelection {
+    History { history_id: u64 },
+    Fixture { id: String },
+}
+
 #[cfg(test)]
 mod profile_tests {
     use super::*;
@@ -106,9 +111,4 @@ mod profile_tests {
         let rebound = TcpListener::bind(("127.0.0.1", port)).unwrap();
         drop(rebound);
     }
-}
-
-pub enum HandoffSelection {
-    History { history_id: u64 },
-    Fixture { id: String },
 }

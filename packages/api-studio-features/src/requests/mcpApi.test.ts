@@ -227,11 +227,11 @@ describe("MCP typed IPC boundary", () => {
       label: "fixture MCP.exe",
       expiresAtMs: 1_000,
     });
-    expect(invokeMock).toHaveBeenCalledWith("pick_mcp_stdio_executable");
+    expect(invokeMock).toHaveBeenCalledWith("pick_mcp_stdio_executable", {});
 
     invokeMock.mockResolvedValueOnce(null);
     await expect(pickMcpStdioCwd()).resolves.toBeNull();
-    expect(invokeMock).toHaveBeenLastCalledWith("pick_mcp_stdio_cwd");
+    expect(invokeMock).toHaveBeenLastCalledWith("pick_mcp_stdio_cwd", {});
 
     invokeMock.mockResolvedValueOnce({
       selectionId: "b".repeat(32),
@@ -361,7 +361,7 @@ describe("MCP typed IPC boundary", () => {
 
     invokeMock.mockResolvedValueOnce([grant]);
     await expect(listMcpOAuthGrants()).resolves.toEqual([authorized]);
-    expect(invokeMock).toHaveBeenLastCalledWith("list_mcp_oauth_grants");
+    expect(invokeMock).toHaveBeenLastCalledWith("list_mcp_oauth_grants", {});
 
     invokeMock.mockResolvedValueOnce({ remoteRevoked: false, removedLocal: true });
     await expect(revokeMcpOAuthGrant("d".repeat(32), true)).resolves.toEqual({

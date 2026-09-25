@@ -2,6 +2,7 @@
 use crate::commands::{autostart, digest, export, handoff, life, privacy, queries, tracking};
 pub use crate::core::digest::{DigestDocument, DigestOrigin};
 pub use crate::core::models::{AppTotal, DayPoint};
+use product_ipc::ExecutionClass;
 use serde::Deserialize;
 use serde_json::Value;
 use tauri::Manager as _;
@@ -14,6 +15,7 @@ use tauri::Manager as _;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum ActivityCall {
     GetDigest {
         input: crate::core::digest::DigestInput,
@@ -110,6 +112,13 @@ pub const METHODS: &[&str] = &[
     "app_stats",
 ];
 impl ActivityCall {
+    pub fn class(&self) -> ExecutionClass {
+        match self {
+            Self::CancelDigest {} | Self::StopTracking {} => ExecutionClass::Control,
+            _ => ExecutionClass::Normal,
+        }
+    }
+
     pub fn method(&self) -> &'static str {
         match self {
             Self::GetDigest { .. } => "get_digest",
@@ -141,7 +150,8 @@ impl ActivityCall {
         }
     }
 }
-product_ipc::issue_codes! { pub enum ActivityIssue {
+product_ipc::issue_codes! {
+    pub enum ActivityIssue {
     ActivityConsentSaveFailed = "activity_consent_save_failed",
     AutostartOwnerConflict = "autostart_owner_conflict",
     AutostartOwnerInvalid = "autostart_owner_invalid",
@@ -172,7 +182,8 @@ product_ipc::issue_codes! { pub enum ActivityIssue {
     TrayUnavailable = "tray_unavailable",
     TrackingStateUnavailable = "tracking_state_unavailable",
     Unavailable = "unavailable",
-}}
+    }
+}
 pub fn classify(error: &str) -> &'static str {
     ActivityIssue::from_code(error)
         .unwrap_or(ActivityIssue::Unavailable)

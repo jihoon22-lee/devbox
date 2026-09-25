@@ -113,7 +113,7 @@ export async function generateQr(request: GenerateQrRequest): Promise<QrResult> 
   qrcode.stringToBytes = (value) => Array.from(new TextEncoder().encode(value));
   let code: ReturnType<typeof qrcode>;
   try {
-    code = qrcode(request.version ?? 0, errorCorrection);
+    code = qrcode((request.version ?? 0) as Parameters<typeof qrcode>[0], errorCorrection);
     code.addData(prepared.text, "Byte");
     code.make();
   } catch {
@@ -176,7 +176,7 @@ function preparePayload(request: GenerateQrRequest): PreparedPayload | QrGenerat
 
 function validateDimensions(request: GenerateQrRequest): true | QrGenerationError {
   if (
-    request.version !== null &&
+    request.version != null &&
     (!Number.isInteger(request.version) || request.version < 1 || request.version > MAX_VERSION)
   ) {
     return new QrGenerationError("invalidVersion");

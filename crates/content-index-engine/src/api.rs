@@ -1,4 +1,5 @@
 //! Typed index operations. Host admission still forbids unowned raw file queries.
+pub use crate::core::models::SavedQuery;
 use serde::Deserialize;
 use tauri::Manager as _;
 #[derive(Deserialize, ts_rs::TS)]
@@ -9,6 +10,7 @@ use tauri::Manager as _;
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum SearchCall {
     TakePendingOpen {},
     WatcherStatuses {},
@@ -140,6 +142,7 @@ pub fn search_result_types(
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum SearchSettingsCall {
     AddRoot {
         path: String,
@@ -166,6 +169,13 @@ pub const SETTINGS_METHODS: &[&str] = &[
     "delete_saved_query",
 ];
 impl SearchSettingsCall {
+    pub fn class(&self) -> product_ipc::ExecutionClass {
+        match self {
+            Self::CancelIndex {} => product_ipc::ExecutionClass::Control,
+            _ => product_ipc::ExecutionClass::Normal,
+        }
+    }
+
     pub fn method(&self) -> &'static str {
         match self {
             Self::AddRoot { .. } => "add_root",
@@ -245,6 +255,7 @@ pub fn settings_result_types(
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum OpenerCall {
     OpenFile { path: String },
     RevealFile { path: String },
@@ -283,31 +294,41 @@ pub fn opener_result_types(
         ("reveal_file", export.register::<()>()?),
     ])
 }
-product_ipc::issue_codes! {pub enum SearchIssue {
-ComponentArgsInvalid = "component_args_invalid",
-ComponentStateConflict = "component_state_conflict",
-FileReferenceInvalid = "file_reference_invalid",
-KnowledgeCommandInvalid = "knowledge_command_invalid",
-KnowledgeCommandUnavailable = "knowledge_command_unavailable",
-KnowledgeFileStale = "knowledge_file_stale",
-KnowledgeQueryModeUnavailable = "knowledge_query_mode_unavailable",
-KnowledgeReferenceInvalid = "knowledge_reference_invalid",
-KnowledgeReferenceStale = "knowledge_reference_stale",
-KnowledgeSourceBusy = "knowledge_source_busy",
-KnowledgeSourceDenied = "knowledge_source_denied",
-KnowledgeSourceInvalid = "knowledge_source_invalid",
-KnowledgeSourceStale = "knowledge_source_stale",
-KnowledgeSourceUnavailable = "knowledge_source_unavailable",
-MigrationBusy = "migration_busy",
-MigrationUnavailable = "migration_unavailable",
-ProviderUnavailable = "provider_unavailable",
-QueryCancelled = "query_cancelled",
-SearchBusy = "search_busy",
-SearchLimit = "search_limit",
-SearchSourceDenied = "search_source_denied",
-SearchStale = "search_stale",
-SearchUnavailable = "search_unavailable",
-SetupRequired = "setup_required",ComponentArgsInvalid="component_args_invalid",ComponentResponseInvalid="component_response_invalid",ComponentStateConflict="component_state_conflict",ComponentStateUnavailable="component_state_unavailable",ComponentStorageUnavailable="component_storage_unavailable",ComponentStoreExists="component_store_exists",ImportRowInvalid="import_row_invalid",ProviderUnavailable="provider_unavailable",RootUnavailable="root_unavailable",SearchBusy="search_busy",SearchStale="search_stale",SearchUnavailable="search_unavailable",Unavailable="unavailable",}}
+product_ipc::issue_codes! {
+    pub enum SearchIssue {
+    ComponentArgsInvalid = "component_args_invalid",
+    ComponentStateConflict = "component_state_conflict",
+    FileReferenceInvalid = "file_reference_invalid",
+    KnowledgeCommandInvalid = "knowledge_command_invalid",
+    KnowledgeCommandUnavailable = "knowledge_command_unavailable",
+    KnowledgeFileStale = "knowledge_file_stale",
+    KnowledgeQueryModeUnavailable = "knowledge_query_mode_unavailable",
+    KnowledgeReferenceInvalid = "knowledge_reference_invalid",
+    KnowledgeReferenceStale = "knowledge_reference_stale",
+    KnowledgeSourceBusy = "knowledge_source_busy",
+    KnowledgeSourceDenied = "knowledge_source_denied",
+    KnowledgeSourceInvalid = "knowledge_source_invalid",
+    KnowledgeSourceStale = "knowledge_source_stale",
+    KnowledgeSourceUnavailable = "knowledge_source_unavailable",
+    MigrationBusy = "migration_busy",
+    MigrationUnavailable = "migration_unavailable",
+    ProviderUnavailable = "provider_unavailable",
+    QueryCancelled = "query_cancelled",
+    SearchBusy = "search_busy",
+    SearchLimit = "search_limit",
+    SearchSourceDenied = "search_source_denied",
+    SearchStale = "search_stale",
+    SearchUnavailable = "search_unavailable",
+    SetupRequired = "setup_required",
+    ComponentResponseInvalid = "component_response_invalid",
+    ComponentStateUnavailable = "component_state_unavailable",
+    ComponentStorageUnavailable = "component_storage_unavailable",
+    ComponentStoreExists = "component_store_exists",
+    ImportRowInvalid = "import_row_invalid",
+    RootUnavailable = "root_unavailable",
+    Unavailable = "unavailable",
+    }
+}
 pub fn classify(error: &str) -> &'static str {
     SearchIssue::from_code(error)
         .unwrap_or(SearchIssue::Unavailable)
@@ -332,5 +353,3 @@ mod tests {
         assert_eq!(classify("credential: private"), "unavailable");
     }
 }
-
-pub use crate::core::models::SavedQuery;

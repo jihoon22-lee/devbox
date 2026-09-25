@@ -106,6 +106,7 @@ pub struct McpStdioEnvironmentBinding {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct McpStdioProfile {
     executable_selection_id: String,
     cwd_selection_id: Option<String>,

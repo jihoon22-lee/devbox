@@ -51,10 +51,13 @@ pub struct GrpcConnectProfile {
 #[derive(Debug, Deserialize)]
 #[serde(tag = "kind", rename_all = "kebab-case", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 enum GrpcSchemaSource {
     LocalProto {
+        #[serde(rename = "protoSelectionId", alias = "proto_selection_id")]
         proto_selection_id: String,
         #[serde(default)]
+        #[serde(rename = "importRootSelectionId", alias = "import_root_selection_id")]
         import_root_selection_id: Option<String>,
     },
     Reflection,
@@ -63,6 +66,7 @@ enum GrpcSchemaSource {
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 struct GrpcTlsProfile {
     root_mode: GrpcRootMode,
     #[serde(default)]
@@ -1221,6 +1225,30 @@ fn elapsed_ms(started: Instant) -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn schema_selection_accepts_frontend_and_previous_native_spellings() {
+        for source in [
+            serde_json::json!({"kind":"local-proto","protoSelectionId":"fixture","importRootSelectionId":"root"}),
+            serde_json::json!({"kind":"local-proto","proto_selection_id":"fixture","import_root_selection_id":"root"}),
+        ] {
+            match serde_json::from_value::<super::GrpcSchemaSource>(source).unwrap() {
+                super::GrpcSchemaSource::LocalProto {
+                    proto_selection_id,
+                    import_root_selection_id,
+                } => {
+                    assert_eq!(proto_selection_id, "fixture");
+                    assert_eq!(import_root_selection_id.as_deref(), Some("root"));
+                }
+                _ => panic!("expected local proto"),
+            }
+        }
+        for spelling in ["native+custom", "native-and-custom"] {
+            let mode: super::GrpcRootMode =
+                serde_json::from_value(serde_json::json!(spelling)).unwrap();
+            assert!(mode.uses_native() && mode.uses_custom());
+            assert_eq!(serde_json::to_value(mode).unwrap(), "native+custom");
+        }
+    }
     use super::*;
     use std::convert::Infallible;
     use std::pin::Pin;

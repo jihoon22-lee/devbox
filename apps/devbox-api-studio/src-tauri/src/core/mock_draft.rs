@@ -2,6 +2,7 @@
 //! preview/accept never changes the listener or the active rule collection.
 use applink::{CreateHandoff, HandoffClaim, HandoffStore, OpenRequest, OpenTarget};
 use serde::{Deserialize, Serialize};
+#[cfg(test)]
 use serde_json::Value;
 use std::sync::Mutex;
 use webhook_core::core::rules::{self, ResponseRule};
@@ -64,14 +65,18 @@ impl Payload {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[ts(optional_fields = nullable)]
 pub struct MockDraftInput {
     output: String,
     source: Option<transforms_core::core::export_policy::OutputSource>,
     #[serde(default = "default_status")]
+    #[ts(as = "Option<u16>", optional)]
     status: u16,
     #[serde(default)]
+    #[ts(as = "Option<MediaType>", optional)]
     media_type: MediaType,
     #[serde(default = "default_target")]
+    #[ts(as = "Option<String>", optional)]
     request_target: String,
     request_method: Option<String>,
 }

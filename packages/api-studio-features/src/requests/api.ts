@@ -267,13 +267,14 @@ export async function renewApiRequest(handoffId: string): Promise<{ leaseUntilMs
 /** Acknowledge an applied preview and return its editable request template. */
 export async function ackApiRequest(handoffId: string): Promise<RequestTemplate> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
-  return apiCall("ack_api_request", { handoffId });
+  const value = await apiCall("ack_api_request", { handoffId });
+  return { ...value, cookies: value.cookies ?? [], multipart: value.multipart ?? [] };
 }
 
 /** Return a cancelled preview to the shared pending queue. */
 export async function restoreApiRequest(handoffId: string): Promise<void> {
   if (!isTauri()) throw new Error(HANDOFF_BROWSER_ERROR);
-  return apiCall("restore_api_request", { handoffId });
+  await apiCall("restore_api_request", { handoffId });
 }
 
 async function browserFetch(
@@ -426,8 +427,8 @@ async function browserFetch(
     headers_truncated: headersTruncated,
     binary: binary
       ? projectBinaryResponse(mediaType, bytes, (value) => redactBrowserText(value, resolved), false)
-      : null,
-    ...(resolved.body_kind === "graphql" && !binary ? { graphql: projectGraphqlResponse(maskedBody) } : {}),
+      : undefined,
+    graphql: resolved.body_kind === "graphql" && !binary ? projectGraphqlResponse(maskedBody) : undefined,
   };
 }
 
@@ -1380,7 +1381,7 @@ async function startNativeWebSocket(
     validateCloseReason(reason);
     if (stopped) return;
     try {
-      await apiCall("close_websocket", { sessionId: activeSessionId, close: { code, reason } });
+      await apiCall("close_websocket", { sessionId: activeSessionId, close: { code: code ?? null, reason } });
     } catch (cause) {
       throw safeWebSocketError(cause);
     }

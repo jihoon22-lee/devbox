@@ -1,4 +1,4 @@
-import { isProductHosted } from "../transport";
+import { sourceRowValue } from "./sourceResult";
 import { typedCall } from "../typed";
 import type { KnowledgeSearchCall } from "../generated/KnowledgeSearchCall";
 import type { KnowledgeSearchSettingsCall } from "../generated/KnowledgeSearchSettingsCall";
@@ -32,7 +32,17 @@ export type EverythingOpenTarget = import("../generated/OpenTargetChoice").OpenT
 const MOCK_OPEN_TARGETS: EverythingOpenTarget[] = [];
 
 const MOCK_FILES: FileEntry[] = [
-  { id: 1, path: "C:\\projects\\devbox\\PLAN.md", name: "PLAN.md", ext: "md", size: 3555, modified_ts: 0 },
+  {
+    id: 1,
+    path: "C:\\projects\\devbox\\PLAN.md",
+    name: "PLAN.md",
+    ext: "md",
+    size: 3555,
+    modified_ts: 0,
+    root_id: null,
+    content_status: null,
+    content_truncated: false,
+  },
   {
     id: 2,
     path: "C:\\projects\\devbox\\apps\\port-manager\\src\\App.tsx",
@@ -40,6 +50,9 @@ const MOCK_FILES: FileEntry[] = [
     ext: "tsx",
     size: 5120,
     modified_ts: 0,
+    root_id: null,
+    content_status: null,
+    content_truncated: false,
   },
   {
     id: 3,
@@ -48,6 +61,9 @@ const MOCK_FILES: FileEntry[] = [
     ext: "json",
     size: 1100,
     modified_ts: 0,
+    root_id: null,
+    content_status: null,
+    content_truncated: false,
   },
 ];
 
@@ -62,6 +78,11 @@ const MOCK_CONTENT: ContentResult[] = [
     root_id: 1,
     content_status: "indexed",
     truncated: false,
+    error_code: null,
+    extractor_version: "fixture",
+    indexed_at: null,
+    encoding: null,
+    text_chars: 0,
   },
 ];
 
@@ -114,7 +135,7 @@ function matchesFilter(file: FileEntry | ContentResult, filter?: SearchFilter): 
   if (filter?.sourceRootId != null && file.root_id !== filter.sourceRootId) return false;
   if (filter?.contentStatus) {
     const status = file.content_status;
-    const truncated = file.truncated ?? ("content_truncated" in file ? file.content_truncated : false);
+    const truncated = "truncated" in file ? file.truncated : file.content_truncated;
     if (filter.contentStatus === "not_indexed" && status) return false;
     if (filter.contentStatus === "failed" && (!status || status === "indexed")) return false;
     if (
@@ -200,7 +221,7 @@ export async function watcherStatuses(): Promise<RootStatus[]> {
   return searchCall("watcher_statuses", {});
 }
 
-export async function openFile(path: string, reference?: string | null): Promise<void> {
+export async function openFile(_path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) {
     window.open("about:blank", "_blank");
     return;
@@ -208,7 +229,7 @@ export async function openFile(path: string, reference?: string | null): Promise
   await openerCall("open_file", { reference: reference ?? "" });
 }
 
-export async function revealFile(path: string, reference?: string | null): Promise<void> {
+export async function revealFile(_path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
   await openerCall("reveal_file", { reference: reference ?? "" });
 }
@@ -222,7 +243,7 @@ export async function openTargets(): Promise<EverythingOpenTarget[]> {
   return openerCall("open_targets", {});
 }
 
-export async function openIn(appId: string, path: string, reference?: string | null): Promise<void> {
+export async function openIn(appId: string, _path: string, reference?: string | null): Promise<void> {
   if (!isTauri()) return;
   await openerCall("open_in", { appId, reference: reference ?? "" });
 }
@@ -239,7 +260,7 @@ export async function saveSavedQuery(request: SaveSavedQueryRequest): Promise<Sa
       id: request.id ?? mockSavedQueries.reduce((max, item) => Math.max(max, item.id), 0) + 1,
       name: request.name.trim(),
       query: request.query.trim(),
-      filter: request.filter,
+      filter: request.filter ?? {},
       createdAt: request.id ? (mockSavedQueries.find((item) => item.id === request.id)?.createdAt ?? now) : now,
       updatedAt: now,
     };
@@ -281,16 +302,18 @@ export async function searchSource(
       source,
       state: source === "files" ? "complete" : "unsupported",
       partial: false,
+      bounds: null,
       rows: rows.map((value) => ({
         source,
         rootIdentity: "fixture",
         reference: null,
         availability: "unverified",
-        value: value as FileEntry & ContentResult,
+        indexStale: false,
+        value: JSON.parse(JSON.stringify(value)) as import("../generated/serde_json/JsonValue").JsonValue,
       })),
     };
     if (!signal.aborted) update(snapshot);
-    return snapshot.rows.map((row) => row.value);
+    return snapshot.rows.map((row) => sourceRowValue(row.value));
   }
   let generation: string | undefined;
   const cancel = () => {
@@ -302,7 +325,7 @@ export async function searchSource(
     generation = snapshot.generation;
     const project = (value: SourceSnapshot) =>
       value.rows.map((row) => ({
-        ...row.value,
+        ...sourceRowValue(row.value),
         source: row.source,
         sourceRoot: row.rootIdentity,
         reference: row.reference,

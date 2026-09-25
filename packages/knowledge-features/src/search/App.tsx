@@ -1,3 +1,4 @@
+import { sourceRowValue } from "./sourceResult";
 import { ContextMenu, useContextMenu, type ContextMenuEntry } from "@devbox/context-menu";
 import { isProductHosted } from "../transport";
 import { isImeComposing } from "@devbox/a11y";
@@ -426,7 +427,7 @@ export default function App({
             const revision = ++snapshotSequence;
             setSourceSnapshot(snapshot);
             const rows = snapshot.rows.map((row) => ({
-              ...row.value,
+              ...sourceRowValue(row.value),
               source: row.source,
               sourceRoot: row.rootIdentity,
               reference: row.reference,
@@ -1020,7 +1021,7 @@ export default function App({
             <input
               aria-label="다음 시간 이후 수정"
               type="datetime-local"
-              value={dateInputValue(filter.modifiedAfter)}
+              value={dateInputValue(filter.modifiedAfter ?? undefined)}
               onChange={(event) => {
                 const value = event.currentTarget.value;
                 const timestamp = value ? Date.parse(value) : Number.NaN;
@@ -1043,7 +1044,7 @@ export default function App({
             <input
               aria-label="다음 시간 이전 수정"
               type="datetime-local"
-              value={dateInputValue(filter.modifiedBefore)}
+              value={dateInputValue(filter.modifiedBefore ?? undefined)}
               onChange={(event) => {
                 const value = event.currentTarget.value;
                 const timestamp = value ? Date.parse(value) : Number.NaN;

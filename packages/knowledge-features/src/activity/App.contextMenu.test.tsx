@@ -646,7 +646,10 @@ it("keeps unmapped and offline project rows visible without changing their Git c
     response.document.git.totalCommits = 3;
     response.projectAssociations = {
       "C:/fixture/unmapped": { state: "unmapped" },
-      "C:/fixture/registered-offline": { state: "offline", context: { projectId: "project", worktreeId: "worktree" } },
+      "C:/fixture/registered-offline": {
+        state: "offline",
+        context: { projectId: "project", worktreeId: "worktree", target: { kind: "windows" }, revision: 1 },
+      },
     };
     return response;
   });

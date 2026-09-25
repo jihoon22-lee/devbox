@@ -40,6 +40,7 @@ const RENDER_ERROR: &str = "QR 이미지를 생성하지 못했습니다.";
 #[derive(Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct GenerateQrRequest {
     pub preset: String,
     pub text: Option<String>,

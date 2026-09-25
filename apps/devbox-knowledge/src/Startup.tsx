@@ -55,7 +55,7 @@ export function Startup({ children }: { children: ReactNode }) {
     setLoading(true);
     setError(null);
     try {
-      const value = await setupCall(hasExisting ? "continue_existing" : "start_empty");
+      const value = await setupCall(hasExisting ? "continue_existing" : "start_empty", {});
       setActive(value.active === true || value.prepared === true);
     } catch (error) {
       setError(error instanceof Error ? error.message : "저장소를 준비하지 못했습니다.");

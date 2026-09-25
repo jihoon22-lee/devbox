@@ -21,7 +21,7 @@ it("does not mount a domain before automatic preparation completes", async () =>
       <p>domain mounted</p>
     </Startup>,
   );
-  await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("start_empty"));
+  await vi.waitFor(() => expect(rpc).toHaveBeenCalledWith("start_empty", {}));
   expect(screen.queryByText("domain mounted")).toBeNull();
   finish({ active: true });
   await screen.findByText("domain mounted");

@@ -7,6 +7,7 @@ use serde::{Deserialize, Serialize};
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum WorkspaceCall {
     ApiWorkspaceState {},
     SaveOpenapiDefinition(crate::core::openapi_definitions::Create),

@@ -55,6 +55,7 @@ const CONNECTION_STALE: &str = "mcp_connection_stale";
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct McpHttpProfile {
     endpoint: String,
     era: EraPreference,

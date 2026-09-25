@@ -106,6 +106,7 @@ jobs:
       - uses: actions/checkout@v7
       - run: bash .github/scripts/check-catalog.sh
       - run: node .github/scripts/check-frontend-accessibility.mjs
+      - run: node --test .github/scripts/typed-component-fixture.test.mjs
 
   scope:
     if: ${{ github.event_name != 'pull_request' || !github.event.pull_request.draft }}
@@ -221,7 +222,7 @@ jobs:
 
       - name: Check generated Workspace fixture requests
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}
-        run: node --test .github/scripts/windows-workspace-registration.test.mjs .github/scripts/typed-component-fixture.test.mjs
+        run: node --test .github/scripts/windows-workspace-registration.test.mjs
 
       - name: Build frontends
         if: ${{ needs.scope.outputs.frontend_scope != 'none' }}

@@ -19,7 +19,9 @@ export type GraphqlError = import("../generated/GraphqlError").GraphqlError;
 export type GraphqlResponse = import("../generated/GraphqlResponse").GraphqlResponse;
 
 /** 사용자가 편집하고 저장하는 요청 원본. 환경 변수 참조는 해석하지 않은 채 유지한다. */
-export type RequestTemplate = import("../generated/RequestTemplate").RequestTemplate;
+type NativeRequestTemplate = import("../generated/RequestTemplate").RequestTemplate;
+/** Editor state materializes arrays that are optional only at the native input boundary. */
+export type RequestTemplate = NativeRequestTemplate & { cookies: RequestCookie[]; multipart: MultipartPart[] };
 
 export type OpenTarget =
   | { kind: "path"; path: string; line: number | null; column: number | null }
@@ -43,7 +45,7 @@ export interface PersistedHistoryRequest extends RequestTemplate {
 export type ApiResponse = import("../generated/ApiResponse").ApiResponse;
 
 /** Safe result returned after the native response selection handoff is queued. */
-export type ToolboxDispatch = import("../generated/HandoffResult").HandoffResult;
+export type ToolboxDispatch = Pick<import("../generated/HandoffResult").HandoffResult, "handoffId" | "redacted">;
 
 /** Safe projection of a binary HTTP response. Raw bytes stay in native memory until explicit save. */
 export type BinaryResponse = import("../generated/BinaryResponse").BinaryResponse;

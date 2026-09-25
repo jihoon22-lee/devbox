@@ -30,6 +30,7 @@ static SNAPSHOT_WRITER: Mutex<()> = Mutex::new(());
 #[derive(Debug, Clone, serde::Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
 #[derive(ts_rs::TS)]
+#[ts(optional_fields = nullable)]
 pub struct SaveSavedQueryRequest {
     pub id: Option<i64>,
     pub name: String,

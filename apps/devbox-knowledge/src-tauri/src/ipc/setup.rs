@@ -1,5 +1,5 @@
 use product_contract::Problem;
-use product_ipc::{ComponentCall, IncomingRequest, TypeExporter};
+use product_ipc::{ComponentCall, ExecutionClass, IncomingRequest, TypeExporter};
 use product_shell_tauri::{admit_request, Reply};
 use serde::{Deserialize, Serialize};
 use tauri::{Manager, WebviewWindow};
@@ -10,6 +10,7 @@ use tauri::{Manager, WebviewWindow};
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum StartupCall {
     Status {},
     StartEmpty {},
@@ -31,6 +32,7 @@ impl StartupCall {
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum VaultCall {
     VaultChangeStatus {},
     ScheduleVaultChange { path: String },
@@ -55,6 +57,7 @@ impl VaultCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum SetupCall {
     Startup(StartupCall),
     Vault(VaultCall),
@@ -65,6 +68,12 @@ impl ComponentCall for SetupCall {
         match self {
             Self::Startup(call) => call.method(),
             Self::Vault(call) => call.method(),
+        }
+    }
+    fn class(&self) -> ExecutionClass {
+        match self {
+            Self::Vault(VaultCall::CancelVaultChange {}) => ExecutionClass::Control,
+            _ => ExecutionClass::Normal,
         }
     }
     fn routes(&self) -> &'static [&'static str] {
@@ -127,7 +136,38 @@ pub enum VaultJob {
         committed: Option<bool>,
     },
 }
-product_ipc::issue_codes! {pub enum SetupIssue {Cancelled="cancelled",ComponentArgsInvalid="component_args_invalid",ComponentInitializationFailed="component_initialization_failed",ComponentResponseInvalid="component_response_invalid",ComponentStateConflict="component_state_conflict",FutureSchema="future_schema",ImportRestartRequired="import_restart_required",RestartRequired="restart_required",SetupRequired="setup_required",StoreBusy="store_busy",StoreFutureSchema="store_future_schema",StoreInvalid="store_invalid",StoreManifestInvalid="store_manifest_invalid",StorePathInvalid="store_path_invalid",StoreUnavailable="store_unavailable",Unavailable="unavailable",VaultBindingInvalid="vault_binding_invalid",VaultBindingUnavailable="vault_binding_unavailable",VaultChangeCancelled="vault_change_cancelled",VaultChangeConflict="vault_change_conflict",VaultChangeFuture="vault_change_future",VaultChangeInvalid="vault_change_invalid",VaultChangeSame="vault_change_same",VaultChangeSaveFailed="vault_change_save_failed",VaultChangeStale="vault_change_stale",VaultChangeTimeout="vault_change_timeout",VaultOwnerBusy="vault_owner_busy",VaultOwnerUnavailable="vault_owner_unavailable",}}
+product_ipc::issue_codes! {
+    pub enum SetupIssue {
+    Cancelled = "cancelled",
+    ComponentArgsInvalid = "component_args_invalid",
+    ComponentInitializationFailed = "component_initialization_failed",
+    ComponentResponseInvalid = "component_response_invalid",
+    ComponentStateConflict = "component_state_conflict",
+    FutureSchema = "future_schema",
+    ImportRestartRequired = "import_restart_required",
+    RestartRequired = "restart_required",
+    SetupRequired = "setup_required",
+    StoreBusy = "store_busy",
+    StoreFutureSchema = "store_future_schema",
+    StoreInvalid = "store_invalid",
+    StoreManifestInvalid = "store_manifest_invalid",
+    StorePathInvalid = "store_path_invalid",
+    StoreUnavailable = "store_unavailable",
+    Unavailable = "unavailable",
+    VaultBindingInvalid = "vault_binding_invalid",
+    VaultBindingUnavailable = "vault_binding_unavailable",
+    VaultChangeCancelled = "vault_change_cancelled",
+    VaultChangeConflict = "vault_change_conflict",
+    VaultChangeFuture = "vault_change_future",
+    VaultChangeInvalid = "vault_change_invalid",
+    VaultChangeSame = "vault_change_same",
+    VaultChangeSaveFailed = "vault_change_save_failed",
+    VaultChangeStale = "vault_change_stale",
+    VaultChangeTimeout = "vault_change_timeout",
+    VaultOwnerBusy = "vault_owner_busy",
+    VaultOwnerUnavailable = "vault_owner_unavailable",
+    }
+}
 pub fn classify(error: &str) -> &'static str {
     SetupIssue::from_code(error)
         .unwrap_or(SetupIssue::Unavailable)

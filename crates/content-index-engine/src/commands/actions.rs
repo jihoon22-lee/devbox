@@ -5,7 +5,6 @@ use std::sync::Arc;
 
 use crate::commands::indexing::AppState;
 use crate::core::db;
-use crate::core::open_targets::EverythingOpenTarget;
 use tauri_plugin_opener::OpenerExt;
 
 const INVALID_RESULT_PATH: &str = "검색 결과 파일 경로가 올바르지 않습니다";
@@ -66,25 +65,6 @@ pub async fn reveal_file(
     app.opener()
         .reveal_item_in_dir(path)
         .map_err(|_| "폴더 열기 실패".to_string())
-}
-
-fn available_open_targets() -> Vec<EverythingOpenTarget> {
-    Vec::new()
-}
-
-/// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
-/// 경로는 frontend에 노출하지 않는다.
-pub fn open_targets() -> Vec<EverythingOpenTarget> {
-    available_open_targets()
-}
-
-pub fn open_in(
-    state: tauri::State<'_, Arc<AppState>>,
-    app_id: String,
-    path: String,
-) -> Result<(), String> {
-    let _ = (state, app_id, path);
-    Err("provider_unavailable".into())
 }
 
 #[cfg(test)]

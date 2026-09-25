@@ -9,3 +9,6 @@ product-contract = { path = "../product-contract" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 ts-rs = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }

@@ -4,6 +4,7 @@ use product_shell_tauri::{admit_request, Reply};
 use tauri::{Manager, WebviewWindow};
 #[derive(serde::Deserialize, ts_rs::TS)]
 #[serde(transparent)]
+#[ts(optional_fields = nullable)]
 pub struct ControlToolsCall(pub installation_tools::api::ToolsCall);
 impl ComponentCall for ControlToolsCall {
     const COMPONENT: &'static str = "control-center.tools";

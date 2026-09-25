@@ -11,6 +11,7 @@ fi
 shift
 
 python3 .github/scripts/check-agent-metadata.py
+node --test .github/scripts/typed-component-fixture.test.mjs
 python3 .github/scripts/test-verification-resources.py
 
 python3 .github/scripts/test-ci-scope.py

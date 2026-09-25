@@ -91,12 +91,12 @@ macro_rules! issue_codes {
     };
 }
 
-/// Export reachable DTOs once and reject distinct Rust types that would
-/// overwrite the same generated TypeScript path.
+/// Export reachable DTOs once. Aliases with identical declarations share a
+/// file; incompatible declarations cannot overwrite the same output path.
 pub struct TypeExporter<'a> {
     cfg: &'a ts_rs::Config,
     seen: std::collections::HashSet<std::any::TypeId>,
-    files: std::collections::BTreeMap<std::path::PathBuf, (std::any::TypeId, String)>,
+    files: std::collections::BTreeMap<std::path::PathBuf, (String, String)>,
     error: Option<String>,
 }
 impl<'a> TypeExporter<'a> {
@@ -122,7 +122,7 @@ impl<'a> TypeExporter<'a> {
             .flat_map(|(_, name)| name.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')))
             .collect();
         let mut out = String::new();
-        for (path, (_, name)) in &self.files {
+        for (path, (name, _)) in &self.files {
             if tokens.contains(name.as_str()) {
                 let module = path.with_extension("").to_string_lossy().replace('\\', "/");
                 out.push_str(&format!("import type {{ {name} }} from \"./{module}\";\n"));
@@ -141,23 +141,24 @@ impl ts_rs::TypeVisitor for TypeExporter<'_> {
             return;
         }
         if let Some(path) = T::output_path() {
-            let id = std::any::TypeId::of::<T>();
             let name = T::ident(self.cfg);
+            let declaration = T::decl(self.cfg);
             if self
                 .files
                 .get(&path)
-                .is_some_and(|(previous, _)| *previous != id)
+                .is_some_and(|(_, previous)| *previous != declaration)
             {
                 self.error = Some(format!("generated type path collision: {}", path.display()));
                 return;
             }
-            self.files.insert(path, (id, name));
+            self.files.insert(path, (name, declaration));
             if let Err(error) = T::export(self.cfg) {
                 self.error = Some(error.to_string());
                 return;
             }
         }
         T::visit_dependencies(self);
+        T::visit_generics(self);
     }
 }
 
@@ -253,6 +254,39 @@ mod tests {
             "{decl}"
         );
     }
+    #[test]
+    fn export_reuses_json_shadow_types_but_rejects_incompatible_dtos() {
+        #[derive(ts_rs::TS)]
+        #[ts(rename = "SameName")]
+        struct First {
+            value: String,
+        }
+        #[derive(ts_rs::TS)]
+        #[ts(rename = "SameName")]
+        struct Different {
+            value: bool,
+        }
+        let first = First {
+            value: "fixture".into(),
+        };
+        let different = Different { value: true };
+        assert!(!first.value.is_empty() && different.value);
+        let root = tempfile::tempdir().unwrap();
+        let cfg = ts_rs::Config::new()
+            .with_large_int("number")
+            .with_out_dir(root.path());
+        let mut export = TypeExporter::new(&cfg);
+        export.register::<serde_json::Value>().unwrap();
+        export.register::<Vec<serde_json::Value>>().unwrap();
+        export.register::<Vec<First>>().unwrap();
+        assert!(export
+            .register::<Different>()
+            .unwrap_err()
+            .contains("collision"));
+        let stored = std::fs::read_to_string(root.path().join("SameName.ts")).unwrap();
+        assert!(stored.contains("string") && !stored.contains("boolean"));
+    }
+
     #[test]
     fn results_map_lists_each_method() {
         assert_eq!(

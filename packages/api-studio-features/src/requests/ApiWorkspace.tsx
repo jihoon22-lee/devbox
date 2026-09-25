@@ -1,3 +1,4 @@
+import type { WorkspaceCall } from "../generated/WorkspaceCall";
 import { apiCall } from "../calls";
 import { useEffect, useRef, useState } from "react";
 import { isTauri } from "./lib/isTauri";
@@ -152,7 +153,10 @@ export function ApiWorkspacePanel({
       version.current += 1;
     };
   }, []);
-  async function mutate(method: string, args: Record<string, unknown>) {
+  async function mutate<M extends WorkspaceCall["method"]>(
+    method: M,
+    args: Extract<WorkspaceCall, { method: M }> extends { args: infer A } ? A : never,
+  ) {
     if (running.current || !state) return;
     running.current = true;
     setBusy(true);
@@ -282,7 +286,7 @@ export function ApiWorkspacePanel({
           className="api-workspace-editor"
           onSubmit={(event) => {
             event.preventDefault();
-            void mutate("save_api_workspace", edit as unknown as Record<string, unknown>);
+            void mutate("save_api_workspace", edit);
           }}
         >
           <h2>{edit.id ? "Workspace 연결 편집" : "새 Workspace"}</h2>

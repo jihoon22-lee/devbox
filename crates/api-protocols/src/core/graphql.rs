@@ -40,7 +40,7 @@ pub struct GraphqlRequest {
     pub operation_name: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct GraphqlLocation {
     pub line: u64,
     pub column: u64,

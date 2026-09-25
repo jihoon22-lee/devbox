@@ -113,6 +113,23 @@ const wsl = (args, input) => {
         .replace(/\0/g, "")
         .slice(-1500),
     };
+    if (!evidence.wslHost && failure.stdout.includes("Wsl/Service/E_UNEXPECTED")) {
+      const diagnostic = spawnSync(
+        "powershell.exe",
+        [
+          "-NoProfile",
+          "-NonInteractive",
+          "-Command",
+          "$ErrorActionPreference='Continue'; $services=@(Get-Service WslService,LxssManager -ErrorAction SilentlyContinue | Select-Object Name,Status); $os=Get-CimInstance Win32_OperatingSystem; $events=@(Get-WinEvent -FilterHashtable @{LogName='System';StartTime=(Get-Date).AddMinutes(-10);Level=1,2} -MaxEvents 12 -ErrorAction SilentlyContinue | Select-Object Id,ProviderName,TimeCreated,Message); @{services=$services;freePhysicalMemoryKiB=$os.FreePhysicalMemory;totalVisibleMemoryKiB=$os.TotalVisibleMemorySize;events=$events} | ConvertTo-Json -Depth 5 -Compress",
+        ],
+        { encoding: "utf8", timeout: 15000, maxBuffer: 64 * 1024, windowsHide: true },
+      );
+      evidence.wslHost = {
+        status: diagnostic.status,
+        error: diagnostic.error?.code ?? null,
+        output: String(diagnostic.stdout ?? "").slice(-32000),
+      };
+    }
     evidence.wslFailure ??= failure;
     throw new Error("Owned WSL command failed: " + JSON.stringify(failure));
   }

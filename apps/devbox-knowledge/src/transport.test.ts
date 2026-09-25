@@ -27,7 +27,9 @@ vi.mock("@devbox/product-shell/api", () => ({
 }));
 import "./transport";
 
-beforeEach(() => native.invoke.mockReset());
+beforeEach(() => {
+  native.invoke.mockReset();
+});
 it("sends Activity through the typed command without a renderer-selected component", async () => {
   native.invoke.mockImplementation(async (command, { request }) => {
     expect(command).toBe("plugin:knowledge|activity");

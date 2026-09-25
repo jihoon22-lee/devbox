@@ -46,6 +46,7 @@ pub const PROTOCOL_VERSION: u32 = 2;
 #[derive(ts_rs::TS)]
 pub struct QueryFilter {
     #[serde(default)]
+    #[ts(as = "Option<Vec<String>>", optional)]
     pub extensions: Vec<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub modified_after: Option<i64>,

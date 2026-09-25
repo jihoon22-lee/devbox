@@ -4,7 +4,7 @@ This inventory is generated from the locked devbox dependency graph. It does not
 license for devbox itself; workspace packages are private and excluded from this third-party
 inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 
-- Cargo.lock SHA-256: `e31742e45fa34a5c2ca535b33239ea413f78bb919e4aaf3e5dc26acf05515953`
+- Cargo.lock SHA-256: `1e7f6537d678ff169764f846d02cea9adb5aa0ab81fdb098122adb3bca9115bd`
 - pnpm-lock.yaml SHA-256: `5b38165ef9da512cca850ee4abdc6cadd4a9b28062d11c24365ca4b67b6bc4b9`
 
 ## Rust dependencies
@@ -555,6 +555,7 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tauri-winrt-notification | 0.7.3 | MIT OR Apache-2.0 | https://github.com/tauri-apps/winrt-notification | `sha256:9ed071c670382e85fc2f48ae706492d8c338f4f89bf72520d32f8abfe880aade` |
 | tempfile | 3.27.0 | MIT OR Apache-2.0 | https://github.com/Stebalien/tempfile | `sha256:32497e9a4c7b38532efcdebeef879707aa9f794296a4f0244f6f69e9bc8574bd` |
 | tendril | 0.5.1 | MIT OR Apache-2.0 | https://github.com/servo/html5ever | `sha256:5fed54709c5b3a53d09bb1c113ea4f5ceafd1e772ddcb0030a82e1d56c087b08` |
+| termcolor | 1.4.1 | Unlicense OR MIT | https://github.com/BurntSushi/termcolor | `sha256:06794f8f6c5c898b3275aebefa6b8a1cb24cd2c6c79397ab15774837a0bc5755` |
 | thiserror | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | `sha256:b6aaf5339b578ea85b50e080feb250a3e8ae8cfcdff9a461c9ec2904bc923f52` |
 | thiserror | 2.0.20 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | `sha256:ec86235f5fcc2a73650310756d2ac5b138a5780bbbdfae3eeccec992c435ba4f` |
 | thiserror-impl | 1.0.69 | MIT OR Apache-2.0 | https://github.com/dtolnay/thiserror | `sha256:4fee6c4efc90059e10f81e6d42c60a18f76588c3d74cb83a0b242a2b6c7504c1` |
@@ -596,6 +597,8 @@ inventory. Regenerate it with `.github/scripts/check-dependencies.py generate`.
 | tray-icon | 0.24.2 | MIT OR Apache-2.0 | https://github.com/tauri-apps/tray-icon | `sha256:045979e3f037cd18ad1cb2a419dfda133c5c29c9f3453370079f2255d46c257e` |
 | tree_magic_mini | 3.2.2 | MIT | https://github.com/mbrubeck/tree_magic/ | `sha256:b8765b90061cba6c22b5831f675da109ae5561588290f9fa2317adab2714d5a6` |
 | try-lock | 0.2.5 | MIT | https://github.com/seanmonstar/try-lock | `sha256:e421abadd41a4225275504ea4d6566923418b7f05506fbc9c0fe86ba7396114b` |
+| ts-rs | 12.0.1 | MIT | https://github.com/Aleph-Alpha/ts-rs | `sha256:756050066659291d47a554a9f558125db17428b073c5ffce1daf5dcb0f7231d8` |
+| ts-rs-macros | 12.0.1 | MIT | https://github.com/Aleph-Alpha/ts-rs | `sha256:38d90eea51bc7988ef9e674bf80a85ba6804739e535e9cab48e4bb34a8b652aa` |
 | tungstenite | 0.30.0 | MIT OR Apache-2.0 | https://github.com/snapview/tungstenite-rs | `sha256:e48ac77174b19c110a50ab2128b24215ac9cb40e0e12e093fb602d175c569d22` |
 | typed-path | 0.12.3 | MIT OR Apache-2.0 | https://github.com/chipsenkbeil/typed-path | `sha256:8e28f89b80c87b8fb0cf04ab448d5dd0dd0ade2f8891bae878de66a75a28600e` |
 | typeid | 1.0.3 | MIT OR Apache-2.0 | https://github.com/dtolnay/typeid | `sha256:bc7d623258602320d5c55d1bc22793b57daff0ec7efc270ea7d55ce1d5f5471c` |

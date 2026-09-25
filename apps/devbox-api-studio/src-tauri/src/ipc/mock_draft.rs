@@ -5,6 +5,7 @@
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum MockDraftCall {
     PeekMockDraft {},
     AcceptMockDraft { id: String },

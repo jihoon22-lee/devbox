@@ -22,6 +22,7 @@ pub struct Navigation {
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum NavigationCall {
     PeekPendingNavigation {},
     AckPendingNavigation { id: String },
@@ -475,9 +476,11 @@ mod tests {
                 1_001
             )
             .is_err());
-        assert!(!is_send(
-            "api-studio.transforms",
-            "send_selection_to_toolbox"
-        ));
+        assert!(
+            serde_json::from_value::<crate::ipc::transforms::StudioTransformCall>(
+                serde_json::json!({"method":"send_selection_to_toolbox","args":{"text":"fixture"}})
+            )
+            .is_err()
+        );
     }
 }

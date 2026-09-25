@@ -13,6 +13,7 @@ use tauri::{Manager, WebviewWindow};
     rename_all_fields = "camelCase",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum HostNotesCall {
     ReadClipboardText {},
     OpenExternalUrl {
@@ -58,6 +59,7 @@ impl HostNotesCall {
 }
 #[derive(Deserialize, ts_rs::TS)]
 #[serde(untagged)]
+#[ts(optional_fields = nullable)]
 pub enum KnowledgeNotesCall {
     Host(HostNotesCall),
     Daily(DailyCall),

@@ -20,7 +20,7 @@ export default function IncomingSessionSummary({ onNotes }: { onNotes: () => voi
     void notesCall("preview_session_summary", {
       sourceId,
       operationId: incoming.operationId,
-      revision: incoming.commandRevision,
+      revision: incoming.commandRevision ?? "",
     })
       .then((value) => {
         if (active) setPreview(value);
@@ -32,7 +32,7 @@ export default function IncomingSessionSummary({ onNotes }: { onNotes: () => voi
       active = false;
     };
   }, [incoming, sourceId]);
-  if (!incoming || dismissed === incoming.operationId) return null;
+  if (!incoming || !sourceId || !incoming.commandRevision || dismissed === incoming.operationId) return null;
   const open = async () => {
     setBusy(true);
     setIssue("");
@@ -40,7 +40,7 @@ export default function IncomingSessionSummary({ onNotes }: { onNotes: () => voi
       const next = await notesCall("open_session_summary", {
         sourceId,
         operationId: incoming.operationId,
-        revision: incoming.commandRevision,
+        revision: incoming.commandRevision ?? "",
       });
       setPreview(next);
       if (next.state !== "saved") onNotes();

@@ -1,5 +1,5 @@
 use product_contract::Problem;
-use product_ipc::{ComponentCall, IncomingRequest};
+use product_ipc::{ComponentCall, ExecutionClass, IncomingRequest};
 use product_shell_tauri::{admit_request, Reply};
 use serde::Deserialize;
 use tauri::{Manager, WebviewWindow};
@@ -10,6 +10,7 @@ use tauri::{Manager, WebviewWindow};
     rename_all = "snake_case",
     deny_unknown_fields
 )]
+#[ts(optional_fields = nullable)]
 pub enum QuitCall {
     PendingQuit {},
     DecideQuit { id: String, quit: bool },
@@ -23,11 +24,20 @@ impl ComponentCall for QuitCall {
             Self::DecideQuit { .. } => "decide_quit",
         }
     }
+    fn class(&self) -> ExecutionClass {
+        ExecutionClass::Control
+    }
     fn routes(&self) -> &'static [&'static str] {
         &["notes"]
     }
 }
-product_ipc::issue_codes! {pub enum QuitIssue {Unavailable="unavailable",QuitUnavailable="quit_unavailable",QuitReviewStale="quit_review_stale"}}
+product_ipc::issue_codes! {
+    pub enum QuitIssue {
+    Unavailable = "unavailable",
+    QuitUnavailable = "quit_unavailable",
+    QuitReviewStale = "quit_review_stale",
+    }
+}
 fn classify(error: &str) -> &'static str {
     QuitIssue::from_code(error)
         .unwrap_or(QuitIssue::Unavailable)
