@@ -274,6 +274,50 @@ fn diagnosis_for_bundle(app: &tauri::AppHandle) -> Vec<SupportDiagnostic> {
         .collect()
 }
 
+/// Suite members share the installation suffix of their data identifiers
+/// (`<product identifier>.i<suffix>`), so Control Center can find the other
+/// products' log folders. Portable builds have per-product suffixes and
+/// simply report the other folders as missing.
+pub(crate) fn suite_log_dirs(
+    data_root: &std::path::Path,
+    own_identifier: &str,
+    products: &[(String, String)],
+) -> Vec<(String, PathBuf)> {
+    let Some((_, suffix)) = own_identifier.rsplit_once(".i") else {
+        return Vec::new();
+    };
+    if suffix.is_empty() || !suffix.bytes().all(|byte| byte.is_ascii_alphanumeric()) {
+        return Vec::new();
+    }
+    products
+        .iter()
+        .map(|(id, identifier)| {
+            (
+                id.clone(),
+                data_root.join(format!("{identifier}.i{suffix}")).join("logs"),
+            )
+        })
+        .collect()
+}
+
+fn operation_summaries(app: &tauri::AppHandle, data_root: &std::path::Path) -> Vec<support_bundle::OperationLogSummary> {
+    let Ok(catalog) = devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE) else {
+        return Vec::new();
+    };
+    let products: Vec<(String, String)> = catalog
+        .products
+        .iter()
+        .map(|product| (product.id.clone(), product.identifier.clone()))
+        .collect();
+    suite_log_dirs(data_root, &app.config().identifier, &products)
+        .into_iter()
+        .map(|(product, dir)| support_bundle::OperationLogSummary {
+            product,
+            summary: product_contract::operation_log::summarize(&dir, 100, 2 * 1024 * 1024),
+        })
+        .collect()
+}
+
 fn installed_for_bundle(app: &tauri::AppHandle) -> Vec<SupportInstalledApp> {
     crate::commands::manager::installed(app.clone())
         .unwrap_or_default()
@@ -301,6 +345,7 @@ pub async fn preview_support_bundle(
             &root,
             diagnosis_for_bundle(&app),
             installed_for_bundle(&app),
+            operation_summaries(&app, &root),
             cancel,
         )
         .map_err(bundle_error)?;
@@ -325,6 +370,7 @@ pub async fn preview_support_bundle(
             "catalog-metadata".to_string(),
             "schema-metadata".to_string(),
             "log-metadata".to_string(),
+            "operation-log".to_string(),
             "diagnosis".to_string(),
         ],
         omitted_sections: vec![
@@ -415,6 +461,24 @@ fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn suite_log_dirs_share_the_installation_suffix() {
+        let products = vec![
+            ("knowledge".to_string(), "com.devbox.v08.knowledge".to_string()),
+            ("control-center".to_string(), "com.devbox.v08.controlcenter".to_string()),
+        ];
+        let root = std::path::Path::new("/data");
+        let dirs = suite_log_dirs(root, "com.devbox.v08.controlcenter.iabc123", &products);
+        assert_eq!(
+            dirs,
+            vec![
+                ("knowledge".to_string(), root.join("com.devbox.v08.knowledge.iabc123").join("logs")),
+                ("control-center".to_string(), root.join("com.devbox.v08.controlcenter.iabc123").join("logs")),
+            ]
+        );
+        assert!(suite_log_dirs(root, "com.devbox.v08.controlcenter", &products).is_empty());
+        assert!(suite_log_dirs(root, "com.devbox.v08.controlcenter.i../x", &products).is_empty());
+    }
     use super::*;
     use std::thread;
 

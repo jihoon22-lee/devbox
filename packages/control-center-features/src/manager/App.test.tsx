@@ -382,7 +382,7 @@ const supportPreviewFixture: SupportBundlePreview = {
   expiresAtMs: Date.now() + 300_000,
   estimatedBytes: 2048,
   databaseCount: 1,
-  includedSections: ["app-metadata", "catalog-metadata", "schema-metadata", "log-metadata", "diagnosis"],
+  includedSections: ["app-metadata", "catalog-metadata", "schema-metadata", "log-metadata", "operation-log", "diagnosis"],
   omittedSections: ["raw-database", "raw-logs", "paths", "environment-values", "credentials", "authorization"],
   redactionVersion: "v1",
 };

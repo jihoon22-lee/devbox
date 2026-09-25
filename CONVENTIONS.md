@@ -70,7 +70,7 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 필수 크레이트 (필요한 것만):
   - `serde`, `serde_json` (직렬화)
   - `anyhow`/`thiserror` (에러)
-  - `log`, `env_logger` (로깅)
+  - 운영 로그는 `product_contract::operation_log`(고정 스키마 JSONL, 제품 데이터 폴더 `logs/`, 14일 보관)만 쓴다. 인자·값·경로·자유 문장은 기록하지 않는다. `log`·`env_logger`·`tracing`은 쓰지 않는다.
   - `tauri-plugin-opener` (외부 실행/브라우저 열기)
 - DB: `rusqlite` (`bundled` + `fts5`)
 - 시스템: `sysinfo`, `windows` crate / HTTP: `reqwest` / 파일 감시: `notify`
