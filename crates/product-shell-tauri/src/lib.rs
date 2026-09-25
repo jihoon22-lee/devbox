@@ -1,6 +1,8 @@
 //! Product session and navigation boundary. Domain plugins separately declare
 //! their command allowlists and reuse this native session authorization.
+mod admission;
 mod installation;
+pub use admission::{admit, admit_request, ActiveRequests, Admission, Reply};
 mod operation_log;
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 pub use installation::WriterGuard;
@@ -342,6 +344,7 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 executable,
                 version: app.package_info().version.to_string(),
             });
+            app.manage(ActiveRequests::default());
             operation_log::initialize(app, product);
             window_state_tauri::restore_main_window(app.handle());
             Ok(())
