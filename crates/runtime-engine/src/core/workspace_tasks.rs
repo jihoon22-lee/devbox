@@ -66,6 +66,7 @@ impl std::error::Error for WorkspaceTaskError {}
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum WorkspaceTaskKind {
     Process,
     Shell,
@@ -73,6 +74,7 @@ pub enum WorkspaceTaskKind {
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum WorkspaceTaskDependsOrder {
     #[default]
     Parallel,
@@ -84,6 +86,7 @@ pub enum WorkspaceTaskDependsOrder {
 /// and are therefore never projected into executable state.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceProblemMatcher {
     pub regexp: String,
     pub file: u32,
@@ -104,6 +107,7 @@ impl WorkspaceTaskKind {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskItem {
     pub id: String,
     pub source_index: u32,
@@ -145,6 +149,7 @@ impl WorkspaceTaskItem {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskPlan {
     pub schema_version: u32,
     pub source_root: String,
@@ -159,6 +164,7 @@ pub struct WorkspaceTaskPlan {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskState {
     pub job_id: String,
     pub source_id: String,
@@ -180,6 +186,7 @@ pub struct WorkspaceTaskState {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskApplyResult {
     pub source_id: String,
     pub created: u32,

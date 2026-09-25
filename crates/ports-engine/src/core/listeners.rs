@@ -27,6 +27,7 @@ pub const MAX_CONTAINER_FIELD_BYTES: usize = 256;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum ListenerSource {
     Windows,
     Wsl,
@@ -35,6 +36,7 @@ pub enum ListenerSource {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ListenerEndpoint {
     pub proto: String,
     pub local_addr: String,
@@ -87,6 +89,7 @@ impl ListenerEndpoint {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub enum ListenerIdentity {
     /// Windows process creation FILETIME ticks (100 ns units since 1601 UTC).
     /// It is a decimal string on the wire so JavaScript cannot round it.
@@ -154,6 +157,7 @@ impl ListenerIdentity {
 /// A frontend request contains only endpoint and identity preconditions.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct KillListenerRequest {
     pub endpoint: ListenerEndpoint,
     pub identity: ListenerIdentity,
@@ -175,6 +179,7 @@ pub enum KillAction {
 /// Validated intent for the WSL Desktop-owned container stop action. The
 /// one-time applink store is intentionally owned by the applink issue.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(ts_rs::TS)]
 pub struct ContainerStopHandoff {
     pub target_app: String,
     pub action: String,

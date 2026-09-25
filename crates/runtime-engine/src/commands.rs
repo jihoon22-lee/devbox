@@ -37,6 +37,7 @@ use tauri::{AppHandle, Manager, State};
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct TailLogInput {
     pub run_id: String,
     pub stream: LogStream,
@@ -429,6 +430,7 @@ pub fn get_service(
 /// DB state는 실제 프로세스 생존을 단정하지 않는다 — PID는 DB 기록 기준 표시.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ServiceObservability {
     pub id: String,
     pub definition: Job,
@@ -488,6 +490,7 @@ pub fn service_observability(
 /// metadata; ciphertext and values are never deserialized from the document.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ImportItem {
     pub id: String,
     pub name: String,
@@ -503,6 +506,7 @@ pub struct ImportItem {
 /// import 계획 — 실제로 생성하지 않고 충돌 여부만 판단한다.
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ImportPlan {
     pub schema_version: u32,
     pub revision: String,
@@ -1285,6 +1289,7 @@ pub fn delete_service(id: String, state: State<'_, Arc<DatabaseState>>) -> Resul
 /// Job의 `envConfigured`(존재 여부)만 나간다 (ciphertext는 read DTO에 원천 차단).
 #[derive(serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DefinitionExport {
     pub schema_version: u32,
     pub exported_at: String,
@@ -1502,12 +1507,14 @@ pub fn list_active_runs(state: State<'_, Arc<RuntimeState>>) -> Result<Vec<RunVi
 
 #[derive(Debug, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CronPreviewInput {
     pub cron_expr: String,
 }
 
 #[derive(Debug, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CronPreviewItem {
     pub timestamp_millis: i64,
     pub datetime: String,

@@ -53,6 +53,7 @@ pub struct WorkspaceTaskOperationPlan {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum WorkspaceTaskOperationStatus {
     Queued,
     Running,
@@ -81,6 +82,7 @@ impl WorkspaceTaskOperationStatus {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum WorkspaceTaskOperationRunStatus {
     Pending,
     Launching,
@@ -107,6 +109,7 @@ impl WorkspaceTaskOperationRunStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskOperationRunView {
     pub job_id: String,
     pub run_id: Option<String>,
@@ -118,6 +121,7 @@ pub struct WorkspaceTaskOperationRunView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskOperationView {
     pub id: String,
     pub root_job_id: String,

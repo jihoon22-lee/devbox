@@ -8,14 +8,7 @@ use sha2::{Digest, Sha256};
 use std::sync::Arc;
 use tauri::Manager;
 
-use crate::core::runtime_controls::legacy_control_method;
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct Control {
-    operation_id: String,
-    method: String,
-    args: Value,
-}
+use crate::api_control::Control;
 fn replay(receipt: RuntimeControlReceipt) -> Result<Value, String> {
     match receipt.state.as_str() {
         "completed" => receipt
@@ -27,22 +20,27 @@ fn replay(receipt: RuntimeControlReceipt) -> Result<Value, String> {
     }
 }
 pub(super) async fn execute(app: &tauri::AppHandle, args: Value) -> Result<Value, String> {
-    let input: Control = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
-    if !legacy_control_method(&input.method) || !input.args.is_object() {
-        return Err("component_args_invalid".into());
-    }
+    execute_typed(
+        app,
+        serde_json::from_value(args).map_err(|_| "component_args_invalid")?,
+    )
+    .await
+}
+pub(crate) async fn execute_typed(app: &tauri::AppHandle, input: Control) -> Result<Value, String> {
+    let method = input.action.method();
+    let wire = serde_json::to_value(&input.action).map_err(|_| "component_args_invalid")?;
+    let args = &wire["args"];
     let database = app
         .try_state::<Arc<DatabaseState>>()
         .ok_or("component_state_unavailable")?
         .inner()
         .clone();
-    let key = if input.method == "stop_workspace_task_operation" {
+    let key = if method == "stop_workspace_task_operation" {
         "operationId"
     } else {
         "id"
     };
-    let id = input
-        .args
+    let id = args
         .get(key)
         .and_then(Value::as_str)
         .ok_or("component_args_invalid")?;
@@ -51,7 +49,7 @@ pub(super) async fn execute(app: &tauri::AppHandle, args: Value) -> Result<Value
         .map_err(|_| "runtime_control_unavailable")?;
     let target_id = if let Some(receipt) = cached {
         receipt.target_id
-    } else if input.method == "stop_workspace_task_operation" {
+    } else if method == "stop_workspace_task_operation" {
         database
             .get_workspace_task_operation(id)
             .map_err(|_| "runtime_control_unavailable")?
@@ -61,14 +59,14 @@ pub(super) async fn execute(app: &tauri::AppHandle, args: Value) -> Result<Value
         id.to_owned()
     };
     let fingerprint: String =
-        Sha256::digest(serde_json::to_vec(&input.args).map_err(|_| "component_args_invalid")?)
+        Sha256::digest(serde_json::to_vec(args).map_err(|_| "component_args_invalid")?)
             .iter()
             .map(|byte| format!("{byte:02x}"))
             .collect();
     match database
         .reserve_runtime_control(
             &input.operation_id,
-            &input.method,
+            method,
             &target_id,
             &fingerprint,
             crate::storage::current_epoch_millis(),
@@ -78,26 +76,13 @@ pub(super) async fn execute(app: &tauri::AppHandle, args: Value) -> Result<Value
         ControlReservation::Existing(receipt) => return replay(receipt),
         ControlReservation::New => {}
     }
-    let result = match input.method.as_str() {
-        "run_job_now" => crate::commands::__component_run_job_now(app, input.args).await,
-        "stop_active_run" => crate::commands::__component_stop_active_run(app, input.args).await,
-        "start_service" => crate::commands::__component_start_service(app, input.args).await,
-        "stop_service" => crate::commands::__component_stop_service(app, input.args).await,
-        "restart_service" => crate::commands::__component_restart_service(app, input.args).await,
-        "run_workspace_task_operation" => {
-            crate::commands::__component_run_workspace_task_operation(app, input.args).await
-        }
-        "stop_workspace_task_operation" => {
-            crate::commands::__component_stop_workspace_task_operation(app, input.args).await
-        }
-        _ => unreachable!("closed control method checked before reservation"),
-    };
+    let result = input.action.execute(app).await;
     database
         .finish_runtime_control(&input.operation_id, result.as_ref().ok())
         .map_err(|_| "runtime_control_recovery_required")?;
     result.map_err(|_| "runtime_control_failed".into())
 }
-pub(super) fn metadata(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
+pub(crate) fn metadata(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Value, String> {
     #[derive(Deserialize)]
     #[serde(rename_all = "camelCase", deny_unknown_fields)]
     struct Id {

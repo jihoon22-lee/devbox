@@ -3,6 +3,7 @@ use serde::Serialize;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum WorkspaceTaskControlReceiptStatus {
     Accepted,
     Rejected,
@@ -25,6 +26,7 @@ impl WorkspaceTaskControlReceiptStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskControlReceipt {
     pub schema_version: u32,
     pub request_id: String,
@@ -39,6 +41,7 @@ pub struct WorkspaceTaskControlReceipt {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskControlPreview {
     pub request_id: String,
     pub task_id: String,

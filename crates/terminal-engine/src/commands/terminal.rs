@@ -62,6 +62,7 @@ impl SessionState {
 }
 
 /// PTY 세션 하나
+#[derive(ts_rs::TS)]
 pub(crate) struct OwnedOutput {
     pub buffer: Mutex<crate::core::terminal_output::OutputBuffer>,
     pub reader_done: AtomicBool,
@@ -189,6 +190,7 @@ fn remove_session_if_handle(
 }
 
 #[derive(Debug, Clone, Serialize)]
+#[derive(ts_rs::TS)]
 pub struct SessionInfo {
     pub id: String,
     pub distro: String,
@@ -196,6 +198,7 @@ pub struct SessionInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct StartedSession {
     pub session_id: String,
     pub resumed: bool,

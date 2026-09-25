@@ -29,6 +29,7 @@ const MAX_RUN_SEGMENTS: usize = 16;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct AdapterPlan {
     pub program: String,
     pub args: Vec<String>,

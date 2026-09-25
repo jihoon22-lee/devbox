@@ -77,6 +77,7 @@ fi
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum ShellKind {
     Bash,
     Zsh,
@@ -100,6 +101,7 @@ impl ShellKind {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum ShellIntegrationStatus {
     Missing,
     Current,
@@ -110,6 +112,7 @@ pub enum ShellIntegrationStatus {
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum ShellIntegrationAction {
     Install,
     Remove,

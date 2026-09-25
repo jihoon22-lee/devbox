@@ -18,6 +18,8 @@ desktop = []
 
 
 [dependencies]
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 process-tree = { workspace = true }
 tauri = { workspace = true }
 serde = { workspace = true }

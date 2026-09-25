@@ -19,6 +19,7 @@ pub const MAX_CURSOR_HASH_BYTES: usize = 16;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum LogFormat {
     Plain,
     Jsonl,
@@ -37,6 +38,7 @@ impl LogFormat {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum LogLevel {
     Trace,
     Debug,
@@ -80,6 +82,7 @@ impl LogLevel {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct LogRecord {
     pub source_id: String,
     pub sequence: u64,
@@ -140,6 +143,7 @@ fn has_disallowed_control(value: &str) -> bool {
 
 #[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct FilterSpec {
     #[serde(default)]
     pub text: String,
@@ -161,6 +165,7 @@ pub struct FilterSpec {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum ContainerEngine {
     Docker,
     Podman,
@@ -168,6 +173,7 @@ pub enum ContainerEngine {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub enum SourceSpec {
     LocalFile {
         path: String,
@@ -210,6 +216,7 @@ pub enum SourceSpec {
 /// bytes cross the handoff boundary.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct LogSourceRef {
     pub kind: String,
     pub source_id: String,
@@ -244,6 +251,7 @@ impl LogSourceRef {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SourceSummary {
     pub source_id: String,
     pub kind: SourceKind,
@@ -254,6 +262,7 @@ pub struct SourceSummary {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum SourceKind {
     LocalFile,
     Directory,
@@ -267,6 +276,7 @@ pub enum SourceKind {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SavedView {
     pub name: String,
     pub sources: Vec<SourceSpec>,
@@ -275,6 +285,7 @@ pub struct SavedView {
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum ReadStatus {
     Initial,
     Advanced,
@@ -285,6 +296,7 @@ pub enum ReadStatus {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct FileIdentity {
     pub device: Option<u64>,
     pub inode: Option<u64>,
@@ -294,6 +306,7 @@ pub struct FileIdentity {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct FileCursor {
     pub identity: Option<FileIdentity>,
     /// Decimal text avoids JavaScript precision loss for a long-lived file.
@@ -331,6 +344,7 @@ impl FileCursor {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SourceSnapshot {
     pub operation_id: String,
     pub generation: u64,

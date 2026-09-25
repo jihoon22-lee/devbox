@@ -12,6 +12,7 @@ const MAX_MESSAGE_CHARS: usize = 1_000;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskDiagnostic {
     pub index: u32,
     pub file: String,
@@ -26,6 +27,7 @@ pub struct WorkspaceTaskDiagnostic {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkspaceTaskDiagnostics {
     pub run_id: String,
     pub items: Vec<WorkspaceTaskDiagnostic>,

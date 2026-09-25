@@ -25,6 +25,7 @@ type WslProcessDetailCache = HashMap<(String, u32), WslProcessDetails>;
 
 /// Process details retained for the detail panel and identity-safe actions.
 #[derive(Debug, Clone, Serialize)]
+#[derive(ts_rs::TS)]
 pub struct ProcessInfo {
     pub pid: u32,
     pub name: String,
@@ -46,6 +47,7 @@ pub struct ProcessInfo {
 /// The executable path/command line are display-only values; they are never
 /// accepted as process-control input.
 #[derive(Debug, Clone, Serialize)]
+#[derive(ts_rs::TS)]
 pub struct PortRow {
     #[serde(flatten)]
     pub port: devbox_process::PortInfo,
@@ -79,6 +81,7 @@ impl PortRow {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(tag = "kind", rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum ListenerActionResult {
     Terminated,
     Handoff { handoff: ContainerStopHandoff },

@@ -9,6 +9,7 @@ use serde_json::Value;
 const RESULT_LIMIT: usize = 512 * 1024;
 #[derive(Clone, Debug, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RuntimeControlReceipt {
     pub operation_id: String,
     pub method: String,

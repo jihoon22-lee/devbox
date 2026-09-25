@@ -9,6 +9,7 @@ pub const DEFAULT_SERVICE_START_GRACE_MS: i64 = 10_000;
 /// deliberately accept only `Job`; the service variant is reserved for Phase 2.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum JobKind {
     Job,
     Service,
@@ -31,6 +32,7 @@ impl fmt::Display for JobKind {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum TargetKind {
     Windows,
     Wsl,
@@ -53,6 +55,7 @@ impl fmt::Display for TargetKind {
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum OverlapPolicy {
     #[default]
     Skip,
@@ -78,6 +81,7 @@ impl fmt::Display for OverlapPolicy {
 
 #[derive(Debug, Clone, Copy, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum RestartPolicy {
     #[default]
     Never,
@@ -103,6 +107,7 @@ impl fmt::Display for RestartPolicy {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum RunStatus {
     Queued,
     Starting,
@@ -119,6 +124,7 @@ pub enum RunStatus {
 /// becomes a path, command, or SQL execution boundary.
 #[derive(Debug, Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RunHistoryFilter {
     pub job_id: Option<String>,
     /// `job` or `service`; `None` means both kinds.
@@ -190,6 +196,7 @@ fn validate_history_text(
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum ServiceInstanceState {
     Stopped,
     Starting,
@@ -234,6 +241,7 @@ pub struct ServiceInstance {
 /// and internal identity never round-trip to the frontend.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ServiceInstanceView {
     pub job_id: String,
     pub generation: i64,
@@ -277,6 +285,7 @@ impl fmt::Display for RunStatus {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct JobInput {
     pub name: String,
     pub command: String,
@@ -347,6 +356,7 @@ impl JobInput {
 /// and `replace` supplies a complete new map for immediate encryption.
 #[derive(Clone, Default, Deserialize, PartialEq, Eq)]
 #[serde(tag = "action", rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum EnvironmentUpdate {
     #[serde(rename = "keep")]
     #[default]
@@ -379,6 +389,7 @@ impl EnvironmentUpdate {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ServiceInput {
     pub name: String,
     pub command: String,
@@ -479,6 +490,7 @@ pub enum EnvironmentCiphertextUpdate {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct Job {
     pub id: String,
     pub kind: JobKind,
@@ -520,6 +532,7 @@ impl Job {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct Run {
     pub id: String,
     pub job_id: String,
@@ -550,6 +563,7 @@ pub struct Run {
 /// `tail_log` resolves the app-owned directory from the run id server-side.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RunView {
     pub id: String,
     pub job_id: String,

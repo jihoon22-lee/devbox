@@ -16,6 +16,7 @@ const RESOURCE_PARSE_ERROR: &str = "WSL resource summary 형식이 올바르지 
 /// A bounded, numeric-only summary shown for one running distro.
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ResourceSummary {
     /// Busy CPU time between two successful samples. The first sample is intentionally null.
     pub cpu_percent: Option<u8>,

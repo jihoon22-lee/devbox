@@ -7,6 +7,7 @@ const MAX_RUN_ID_BYTES: usize = 128;
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum LogSourceStream {
     Stdout,
     Stderr,

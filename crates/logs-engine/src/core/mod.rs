@@ -9,8 +9,8 @@
 mod buffer;
 pub mod handoff;
 mod lifecycle;
-mod model;
-mod parser;
+pub(crate) mod model;
+pub(crate) mod parser;
 pub mod product_saved_views;
 pub mod saved_views;
 mod sources;

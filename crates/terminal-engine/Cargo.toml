@@ -20,6 +20,8 @@ desktop = []
 
 
 [dependencies]
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

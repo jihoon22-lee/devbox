@@ -2,6 +2,7 @@ use serde::Serialize;
 
 /// WSL 배포판 정보
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(ts_rs::TS)]
 pub struct DistroInfo {
     pub name: String,
     pub version: u32,
@@ -13,6 +14,7 @@ pub struct DistroInfo {
 
 /// Docker 컨테이너 정보
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[derive(ts_rs::TS)]
 pub struct ContainerInfo {
     pub id: String,
     pub name: String,

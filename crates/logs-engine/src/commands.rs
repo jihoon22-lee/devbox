@@ -17,12 +17,14 @@ pub struct AppState {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CancelResponse {
     pub found: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SourcesSnapshot {
     pub operation_id: String,
     pub generation: u64,
@@ -40,6 +42,7 @@ const TOOLBOX_UNAVAILABLE: &str =
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ToolboxDispatch {
     pub handoff_id: String,
     pub redacted: bool,

@@ -26,6 +26,7 @@ const COMMAND_NOT_FOUND_EXIT_CODE: i32 = 127;
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum MultiplexerStatus {
     Available,
     Missing,
@@ -34,6 +35,7 @@ pub enum MultiplexerStatus {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct MultiplexerAvailability {
     pub kind: MultiplexerKind,
     pub status: MultiplexerStatus,

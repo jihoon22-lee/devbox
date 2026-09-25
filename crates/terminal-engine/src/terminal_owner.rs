@@ -12,6 +12,7 @@ const MAX_PANES: usize = 32;
 
 #[derive(Clone, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 struct Start {
     distro: String,
     cwd: Option<String>,
@@ -19,6 +20,7 @@ struct Start {
     multiplexer: MultiplexerKind,
 }
 
+#[derive(ts_rs::TS)]
 enum Pane {
     Starting {
         lease: Option<Arc<dyn crate::component::TerminalLaunchLease>>,
@@ -43,6 +45,7 @@ pub struct TerminalOwner {
     restore_only: bool,
 }
 
+#[derive(ts_rs::TS)]
 struct Starting<'a> {
     panes: &'a Mutex<HashMap<String, Pane>>,
     key: String,

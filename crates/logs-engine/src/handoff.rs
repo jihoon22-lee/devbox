@@ -196,6 +196,7 @@ pub fn discard_log_source(
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenewLogSourceResult {
     pub lease_until_ms: u64,
 }

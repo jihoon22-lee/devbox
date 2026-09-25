@@ -24,6 +24,7 @@ pub struct ShellIntegrationState {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ShellIntegrationInfo {
     shell: ShellKind,
     rc_file: String,
@@ -35,6 +36,7 @@ pub struct ShellIntegrationInfo {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ShellIntegrationReport {
     distro: String,
     shells: Vec<ShellIntegrationInfo>,
@@ -42,6 +44,7 @@ pub struct ShellIntegrationReport {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ShellIntegrationMutation {
     changed: bool,
     backup_file: Option<String>,

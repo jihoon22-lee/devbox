@@ -20,6 +20,7 @@ const SHUTDOWN_TIMEOUT: Duration = Duration::from_secs(8);
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RuntimeStatus {
     pub background_launch: bool,
     pub scheduler_running: bool,
