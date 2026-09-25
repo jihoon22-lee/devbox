@@ -22,6 +22,7 @@ use crate::core::entry_actions::{
 
 /// 앱 전역 상태
 pub struct AppState {
+    pub journal: Arc<super::journal::NoteJournalStore>,
     /// Native-owned snapshot namespace; None preserves the standalone legacy contract.
     pub integration_root: Option<std::path::PathBuf>,
     pub db: Mutex<Connection>,
@@ -277,7 +278,10 @@ pub fn read_file(
     let root = resolve_root(&conn)?;
     let vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
     let path = vault.new_entry(&rel).map_err(|error| error.to_string())?;
-    crate::core::document::read(&path)
+    let snapshot = crate::core::document::read(&path)?;
+    // Local cache publication does not probe the source or widen path authority.
+    let _ = state.journal.remember_root(&root, vault.canonical_path());
+    Ok(snapshot)
 }
 
 /// Untrusted applink `Path`를 현재 Knowledge root 안의 실제 Markdown note로
@@ -292,8 +296,15 @@ pub fn open_inbound_note(
         let conn = state.db.lock().unwrap();
         resolve_root(&conn).map_err(|_| "요청한 노트를 열 수 없습니다".to_string())?
     };
+    let vault = VaultIdentity::inspect(&root).map_err(|_| "note_unavailable")?;
     let resolved = crate::core::inbound::resolve_note(&root, &path).map_err(str::to_string)?;
     let snapshot = crate::core::document::read(&resolved.canonical_path)?;
+    vault.revalidate().map_err(|_| "preview_stale")?;
+    let conn = state.db.lock().map_err(|_| "note_unavailable")?;
+    if resolve_configured_root(&conn)? != root {
+        return Err("preview_stale".into());
+    }
+    let _ = state.journal.remember_root(&root, vault.canonical_path());
     Ok(InboundNote {
         path: resolved.relative_path,
         content: snapshot.content.ok_or("note_unavailable")?,
@@ -711,7 +722,8 @@ fn save_normalized_capture_at(
     normalized: capture::NormalizedCapture,
     now_seconds: i64,
 ) -> Result<QuickCaptureSaved, String> {
-    let document = capture::render_markdown(&normalized).map_err(|error| error.code().to_string())?;
+    let document =
+        capture::render_markdown(&normalized).map_err(|error| error.code().to_string())?;
     let inbox = ensure_capture_inbox(vault)?;
 
     let mut selected: Option<(String, PathBuf, EntryIdentity)> = None;
@@ -856,8 +868,8 @@ pub fn save_quick_capture(
         .db
         .lock()
         .map_err(|_| "quick_capture_save_failed".to_string())?;
-    let root = resolve_configured_root(&conn)
-        .map_err(|_| "quick_capture_save_failed".to_string())?;
+    let root =
+        resolve_configured_root(&conn).map_err(|_| "quick_capture_save_failed".to_string())?;
     let current_vault = VaultIdentity::inspect(&root).map_err(|error| error.to_string())?;
     if current_vault != pending.vault {
         return Err("preview_stale".to_string());

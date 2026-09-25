@@ -7,3 +7,5 @@ pub mod rename;
 pub mod templates;
 pub mod watcher;
 pub mod wikilinks;
+
+pub mod journal;

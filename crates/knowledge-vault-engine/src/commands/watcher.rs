@@ -1112,7 +1112,11 @@ mod tests {
         db::index_doc(&connection, "Notes/stale.md", "# stale").unwrap();
 
         let mut complete = scan_vault(&vault);
+        let journal_dir = tempfile::tempdir().unwrap();
         let state = Arc::new(AppState {
+            journal: Arc::new(crate::commands::journal::NoteJournalStore::new(
+                journal_dir.path().join("note-journal.json"),
+            )),
             metadata_scans: crate::core::metadata::ScanControl::default(),
             integration_root: None,
             db: Mutex::new(connection),
@@ -1157,7 +1161,11 @@ mod tests {
         let vault = VaultIdentity::inspect(root.path()).unwrap();
         let connection = db::init(Path::new(":memory:")).unwrap();
         db::index_doc(&connection, "Notes/raced.md", "# indexed").unwrap();
+        let journal_dir = tempfile::tempdir().unwrap();
         let state = Arc::new(AppState {
+            journal: Arc::new(crate::commands::journal::NoteJournalStore::new(
+                journal_dir.path().join("note-journal.json"),
+            )),
             metadata_scans: crate::core::metadata::ScanControl::default(),
             integration_root: None,
             db: Mutex::new(connection),
@@ -1191,7 +1199,11 @@ mod tests {
         let vault = VaultIdentity::inspect(&root).unwrap();
         let connection = db::init(Path::new(":memory:")).unwrap();
         db::index_doc(&connection, "Notes/last-known.md", "# retained").unwrap();
+        let journal_dir = tempfile::tempdir().unwrap();
         let state = Arc::new(AppState {
+            journal: Arc::new(crate::commands::journal::NoteJournalStore::new(
+                journal_dir.path().join("note-journal.json"),
+            )),
             metadata_scans: crate::core::metadata::ScanControl::default(),
             integration_root: None,
             db: Mutex::new(connection),
