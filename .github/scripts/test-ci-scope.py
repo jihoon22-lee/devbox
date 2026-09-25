@@ -283,3 +283,12 @@ assert hotkey.rust_packages == ["devbox-control-center"]
 # Explicit crate edges replace source-inclusion exceptions for Suite ownership.
 suite = resolve("crates/suite-runtime/src/lib.rs")
 assert {"suite-runtime", "devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(suite.rust_packages)
+
+for prefix, owner in [
+    ("packages/knowledge-features", "devbox-knowledge"),
+    ("packages/api-studio-features", "devbox-api-studio"),
+    ("apps/devbox-control-center", "devbox-control-center"),
+]:
+    result = resolve(f"{prefix}/src/generated/Call.ts")
+    assert result.rust_scope == "packages"
+    assert owner in result.rust_packages

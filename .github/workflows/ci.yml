@@ -324,6 +324,16 @@ jobs:
           RUST_SCOPE: ${{ needs.scope.outputs.rust_scope }}
           RUST_PACKAGES: ${{ needs.scope.outputs.rust_packages }}
 
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .nvmrc
+
+      - name: Check generated TypeScript bindings
+        run: |
+          corepack enable pnpm
+          pnpm install --frozen-lockfile
+          bash .github/scripts/check-generated-bindings.sh --check-only
+
   rust-windows:
     name: Rust (Windows)
     runs-on: windows-latest

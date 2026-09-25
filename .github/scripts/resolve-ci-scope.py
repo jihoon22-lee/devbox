@@ -356,6 +356,16 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
                 rust_seeds.add(consumer)
                 reasons.append(f"shared native source consumer selected: {consumer}")
 
+        # Generated bindings must be regenerated even for a TS-only edit.
+        for prefix, owner in {
+            "packages/knowledge-features/src/generated/": "devbox-knowledge",
+            "packages/api-studio-features/src/generated/": "devbox-api-studio",
+            "apps/devbox-control-center/src/generated/": "devbox-control-center",
+        }.items():
+            if path.startswith(prefix):
+                rust_seeds.add(owner)
+                reasons.append(f"native binding exporter selected: {owner}")
+
         parts = PurePosixPath(path).parts
         if len(parts) >= 2 and parts[0] == "packages":
             directory = "/".join(parts[:2])

@@ -61,6 +61,7 @@ if [[ $rust_scope != none ]]; then
   bash .github/scripts/run-rust-scope.sh clippy "$rust_scope" "$rust_packages"
   bash .github/scripts/run-rust-scope.sh fmt "$rust_scope" "$rust_packages"
   bash .github/scripts/run-rust-scope.sh test "$rust_scope" "$rust_packages"
+  bash .github/scripts/check-generated-bindings.sh --check-only
 fi
 
 if [[ $dependency_scope == all ]]; then
