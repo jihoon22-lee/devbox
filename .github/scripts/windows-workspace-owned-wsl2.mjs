@@ -59,10 +59,10 @@ try{
  child.stderr.setEncoding('utf8');child.stderr.on('data',value=>{evidence.nativeError=((evidence.nativeError??'')+value).slice(-16000);});
  await once(child,'spawn');cdp=await connect(port,child);
  const deadline=performance.now()+30000;let ready=false;
- while(performance.now()<deadline){try{ready=await cdp.evaluate('Array.from(document.querySelectorAll(".workspace-registry button")).some(b=>b.textContent.trim()==="빈 Workspace 시작"&&!b.disabled)');}catch{cdp.close();cdp=await connect(port,child,deadline);}if(ready)break;await delay(100);}
+ while(performance.now()<deadline){try{ready=await cdp.evaluate('!!document.getElementById("workspace-project-path")');}catch{cdp.close();cdp=await connect(port,child,deadline);}if(ready)break;await delay(100);}
  assert.ok(ready);const description=await cdp.evaluate('window.__TAURI_INTERNALS__.invoke("plugin:product-shell|describe")');assert.equal(description.handshake.installationId,installationId);confirmed=true;
  const call=(component,method,args={},budgetMs=29000)=>cdp.evaluate(workspaceRequestExpression(component,method,args,budgetMs),{timeoutMs:budgetMs+6000});
- success(await call('workspace.migration','start_empty'));
+
  const connectTerminal=id=>connect(port,child,performance.now()+45000,id);
  if(scope==='all'){
  evidence.observations.runtime=await exerciseRuntimeWslFixture({call,success,distro:owner.name,wsl,wslVersion:2});

@@ -10,8 +10,8 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 - Browser `?route=overview`와 debug `--route=overview`는 개발용 route 선택이다.
   release 권한을 부여하는 옵션이 아니며 native host가 caller·session·route를 다시 검사한다.
 - 제품 identity는 `com.devbox.v08.workspace`, 데이터는 installation별 namespace다.
-  시작만으로 legacy source를 초기화하거나 원본 경로에 새 데이터를 쓰지 않는다.
-- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·이전·복구 안내](../../docs/windows-guide.md).
+  처음 실행하면 프로젝트 저장소를 자동으로 준비한다. 오류가 나면 다시 시도할 수 있다.
+- 배포는 Suite installer 또는 제품 ZIP 전체를 사용한다. [설치·복구 안내](../../docs/windows-guide.md).
 
 ## 유지하는 계약
 

@@ -1,4 +1,3 @@
-import {seedTerminalImport,copyClosedTerminalImport,verifyTerminalImport,cleanupTerminalImport} from "./windows-workspace-terminal-import.mjs";
 import {prepareRuntimeCrash,verifyRuntimeCrash} from "./windows-workspace-runtime-crash.mjs";
 import { createWorkspaceLspProxy } from "./windows-workspace-lsp.mjs";
 import { exerciseWorkspaceRegistration } from "./windows-workspace-registration.mjs";
@@ -131,7 +130,7 @@ async function start(product, suffix) {
   const network = product.id === "workspace" ? await createWorkspaceLspProxy() : null;
   if(network) Object.assign(env,{HTTP_PROXY:network.url,HTTPS_PROXY:network.url,ALL_PROXY:network.url,http_proxy:network.url,https_proxy:network.url,all_proxy:network.url,NO_PROXY:"127.0.0.1,localhost",no_proxy:"127.0.0.1,localhost"});
   let policy = elevated ? inspectElevatedCdpPolicy(imageName, port) : null;
-  let cdp, child, terminalImport;
+  let cdp, child;
   try {
     if (policy) installElevatedCdpPolicy(policy);
     const started = performance.now();
@@ -149,7 +148,7 @@ async function start(product, suffix) {
         ready = await cdp.evaluate(product.id === "api-studio"
           ? '!!document.querySelector(".api-feature-requests .url-input")'
           : product.id === "workspace"
-            ? 'Array.from(document.querySelectorAll(".workspace-registry button")).some(button => button.textContent.trim() === "빈 Workspace 시작" && !button.disabled)'
+            ? '!!document.getElementById("workspace-project-path")'
             : product.id === "knowledge"
             ? '!!document.querySelector(".knowledge-startup button:not([disabled]), .knowledge-feature-notes .app")'
             : '!!document.querySelector(".command-browser")');
@@ -203,18 +202,13 @@ async function start(product, suffix) {
       componentProbe = await exerciseWorkspaceRegistration({cdp, directory, waitForRenderer, suffix, processId:child.pid, executable, network,connectTerminal:id=>connect(port,child,performance.now()+45000,id)});
       progress(product,suffix,"workspace-runtime-crash");
       const runtimeCrash=await prepareRuntimeCrash(cdp,directory);
-      terminalImport=await seedTerminalImport(cdp);
       cdp.close();const crashed=once(child,"exit");child.kill();
       await Promise.race([crashed,delay(10000).then(()=>{throw new Error("Owned native fixture did not exit");})]);
-      copyClosedTerminalImport(terminalImport);
       child=spawn(executable,process.env.DEVBOX_FIXTURE_PROFILE === "release" ? [] : [`--route=${product.defaultRoute}`],{env,stdio:["ignore","ignore","pipe"]});
       retainNativeErrors(child,product,suffix);
       cdp=await connect(port,child,performance.now()+45000);
       await waitForRenderer(cdp,'!!document.querySelector(".workspace-registry")',"Runtime crash recovery did not reopen Workspace");
       componentProbe.runtimeCrash=await verifyRuntimeCrash(cdp,runtimeCrash);
-      componentProbe.terminalImport=await verifyTerminalImport(cdp,terminalImport,id=>connect(port,child,performance.now()+45000,id));
-      cleanupTerminalImport(terminalImport);
-      writeFileSync("product-foundation-evidence/workspace-terminal-import-"+suffix+".json",JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.terminalImport},null,2));
       writeFileSync(`product-foundation-evidence/workspace-runtime-crash-${suffix}.json`,JSON.stringify({source:process.env.GITHUB_SHA,environment:"github-hosted-windows",result:"pass",checks:componentProbe.runtimeCrash},null,2));
     }
     if (product.id === "api-studio") {
@@ -454,7 +448,6 @@ async function start(product, suffix) {
     return { child, cdp, policy, network, handshake: description.handshake, startupMs, componentProbe, performanceProbe };
   } catch (error) {
     stop({ child, cdp, policy, network });
-    try{cleanupTerminalImport(terminalImport);}catch(cleanup){throw new AggregateError([error,cleanup],"Native fixture cleanup incomplete");}
     throw error;
   }
 }
