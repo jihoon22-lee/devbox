@@ -25,6 +25,7 @@ pub const RATE_WINDOW_MS: i64 = 1_000;
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RequestRecord {
     pub id: u64,
     pub method: String,

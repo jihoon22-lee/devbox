@@ -107,6 +107,7 @@ pub fn server_state() -> Arc<ServerState> {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ServerStatus {
     pub running: bool,
     pub address: Option<String>,
@@ -122,7 +123,6 @@ pub struct HandoffDispatch {
     pub expires_at_ms: u64,
 }
 
-#[tauri::command]
 pub fn server_status(state: tauri::State<'_, Arc<ServerState>>) -> ServerStatus {
     current_server_status(state.inner())
 }
@@ -149,7 +149,6 @@ fn current_server_status(state: &Arc<ServerState>) -> ServerStatus {
 }
 
 /// 서버를 시작한다. bind 기본값 127.0.0.1 (LAN 공개는 명시적 설정).
-#[tauri::command]
 pub fn start_server(
     state: tauri::State<'_, Arc<ServerState>>,
     bind: Option<String>,
@@ -249,7 +248,6 @@ pub(crate) fn start_server_inner(
     Ok(current_server_status(state))
 }
 
-#[tauri::command]
 pub fn stop_server(state: tauri::State<'_, Arc<ServerState>>) -> Result<ServerStatus, String> {
     stop_server_inner(state.inner())
 }
@@ -644,7 +642,6 @@ fn sleep_interruptibly(delay_ms: u64, running: &AtomicBool) -> bool {
     }
 }
 
-#[tauri::command]
 pub fn list_history(
     state: tauri::State<'_, Arc<ServerState>>,
 ) -> Vec<crate::core::history::RequestRecord> {
@@ -652,13 +649,11 @@ pub fn list_history(
     h.list_masked()
 }
 
-#[tauri::command]
 pub fn clear_history(state: tauri::State<'_, Arc<ServerState>>) -> Result<(), String> {
     state.history.lock().unwrap().clear();
     Ok(())
 }
 
-#[tauri::command]
 pub fn copy_masked_history(
     state: tauri::State<'_, Arc<ServerState>>,
     id: u64,
@@ -672,7 +667,6 @@ pub fn copy_masked_history(
 }
 
 /// 사용자가 확인한 일회성 원본 복사에서만 호출한다. 반환값을 저장하거나 로그에 남기지 않는다.
-#[tauri::command]
 pub fn copy_raw_history(
     state: tauri::State<'_, Arc<ServerState>>,
     id: u64,
@@ -685,7 +679,6 @@ pub fn copy_raw_history(
         .ok_or_else(history_not_found)
 }
 
-#[tauri::command]
 pub fn copy_history_headers(
     state: tauri::State<'_, Arc<ServerState>>,
     id: u64,
@@ -698,7 +691,6 @@ pub fn copy_history_headers(
         .ok_or_else(history_not_found)
 }
 
-#[tauri::command]
 pub fn delete_history(state: tauri::State<'_, Arc<ServerState>>, id: u64) -> Result<(), String> {
     if state.history.lock().unwrap().remove(id) {
         Ok(())
@@ -709,6 +701,7 @@ pub fn delete_history(state: tauri::State<'_, Arc<ServerState>>, id: u64) -> Res
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ReplayResult {
     /// An opaque source label only; no request body/header or response body is
     /// returned to the renderer.
@@ -789,7 +782,6 @@ fn replay_masked_fixture(
 /// Replay a backend-owned masked history snapshot to the currently running
 /// localhost listener.  The frontend supplies only the opaque history ID;
 /// raw headers never leave the in-memory history vault.
-#[tauri::command]
 pub fn replay_history(
     state: tauri::State<'_, Arc<ServerState>>,
     history_id: u64,
@@ -808,7 +800,6 @@ pub fn replay_history(
 /// Replay a validated masked fixture to the currently running localhost
 /// listener.  Only the fixture ID crosses IPC; path/body/header values are
 /// loaded and revalidated by the backend.
-#[tauri::command]
 pub fn replay_fixture(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -843,7 +834,6 @@ fn fixture_error(error: FixtureError) -> String {
 /// List only validated, masked fixtures from the app-owned store. A missing
 /// file is an empty collection; corrupt, oversized, or link-backed files are
 /// fixed-error failures and are never repaired implicitly.
-#[tauri::command]
 pub fn list_fixtures(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -858,7 +848,6 @@ pub fn list_fixtures(
 
 /// Persist one masked history entry. The request body and headers are read
 /// from the in-memory history by opaque ID, never from frontend-supplied JSON.
-#[tauri::command]
 pub fn save_fixture(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -890,7 +879,6 @@ pub fn save_fixture(
     .map_err(fixture_error)
 }
 
-#[tauri::command]
 pub fn delete_fixture(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -912,7 +900,6 @@ pub fn delete_fixture(
     .map_err(fixture_error)
 }
 
-#[tauri::command]
 pub fn clear_fixtures(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -936,7 +923,6 @@ pub fn clear_fixtures(
 
 /// Return a validated response-rule draft for local editing. This command is
 /// intentionally not an API Playground handoff and never writes a rule.
-#[tauri::command]
 pub fn fixture_to_rule(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -960,7 +946,6 @@ pub fn fixture_to_rule(
 /// one-time handoff store.  The target is discovered from the catalog before
 /// publishing so a missing/old installation never leaves a misleading
 /// clipboard or temporary-file fallback.
-#[tauri::command]
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn send_history_to_api(
@@ -980,7 +965,6 @@ pub fn send_history_to_api(
 
 /// Publish a stored masked fixture by opaque fixture ID.  The frontend cannot
 /// provide a path, URL, body, or header value to this command.
-#[tauri::command]
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn send_fixture_to_api(
@@ -1093,7 +1077,6 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, Stri
 
 /// Publish a bounded, credential-redacted display projection to Log Lens.
 /// Header values and the raw request body have no field in this handoff.
-#[tauri::command]
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn send_history_to_log_lens(
@@ -1112,7 +1095,6 @@ pub fn send_history_to_log_lens(
 }
 
 /// Publish one backend-owned masked fixture to Log Lens by opaque ID.
-#[tauri::command]
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn send_fixture_to_log_lens(
@@ -1141,14 +1123,12 @@ fn publish_log_lens_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch,
     Err(LOG_LENS_TARGET_UNAVAILABLE_ERROR.into())
 }
 
-#[tauri::command]
 pub fn list_rules(state: tauri::State<'_, Arc<ServerState>>) -> Vec<ResponseRule> {
     let mut rules: Vec<ResponseRule> = state.rules.lock().unwrap().values().cloned().collect();
     rules.sort_by(compare_rule_precedence);
     rules
 }
 
-#[tauri::command]
 pub fn preview_rule_conflicts(
     state: tauri::State<'_, Arc<ServerState>>,
     rule: ResponseRule,
@@ -1162,7 +1142,6 @@ pub fn preview_rule_conflicts(
         .map_err(|_| INVALID_RULE_ERROR.to_string())
 }
 
-#[tauri::command]
 pub fn set_rule(
     state: tauri::State<'_, Arc<ServerState>>,
     rule: ResponseRule,
@@ -1193,7 +1172,6 @@ pub fn set_rule(
     result.map_err(|_| INVALID_RULE_ERROR.to_string())
 }
 
-#[tauri::command]
 pub fn delete_rule(state: tauri::State<'_, Arc<ServerState>>, id: String) -> Result<(), String> {
     let mut rules = state
         .rules
@@ -1213,7 +1191,6 @@ pub fn delete_rule(state: tauri::State<'_, Arc<ServerState>>, id: String) -> Res
 
 /// Reset one rule's process-local response cursor.  The rule definition and
 /// any persisted fixture remain unchanged.
-#[tauri::command]
 pub fn reset_rule_sequence(
     state: tauri::State<'_, Arc<ServerState>>,
     id: String,
@@ -1236,7 +1213,6 @@ pub fn reset_rule_sequence(
 /// Persist the current backend-owned rule set as an app-local service profile
 /// and return one disabled Run Manager definition. The renderer supplies no
 /// rule JSON, executable path, bind address, or command string.
-#[tauri::command]
 pub fn export_run_service_definition(
     app: AppHandle,
     state: tauri::State<'_, Arc<ServerState>>,
@@ -1303,350 +1279,6 @@ fn handoff_now_ms() -> Option<u64> {
         .ok()
         .and_then(|duration| u64::try_from(duration.as_millis()).ok())
         .filter(|now| *now > 0)
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_server_status(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = server_status(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_start_server(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        bind: Option<String>,
-        port: u16,
-        allow_lan: Option<bool>,
-    }
-    let Input {
-        bind,
-        port,
-        allow_lan,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = start_server(component_app.state(), bind, port, allow_lan)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_stop_server(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = stop_server(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_list_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_history(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_clear_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    clear_history(component_app.state())?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_copy_masked_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: u64,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = copy_masked_history(component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_copy_raw_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: u64,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = copy_raw_history(component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_copy_history_headers(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: u64,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = copy_history_headers(component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_delete_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: u64,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    delete_history(component_app.state(), id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_replay_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        history_id: u64,
-    }
-    let Input { history_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = replay_history(component_app.state(), history_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_list_fixtures(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_fixtures(component_app.clone(), component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_save_fixture(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        history_id: u64,
-    }
-    let Input { history_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_fixture(component_app.clone(), component_app.state(), history_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_delete_fixture(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    delete_fixture(component_app.clone(), component_app.state(), id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_clear_fixtures(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    clear_fixtures(component_app.clone(), component_app.state())?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_fixture_to_rule(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = fixture_to_rule(component_app.clone(), component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_replay_fixture(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = replay_fixture(component_app.clone(), component_app.state(), id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_list_rules(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_rules(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_preview_rule_conflicts(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rule: ResponseRule,
-    }
-    let Input { rule } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = preview_rule_conflicts(component_app.state(), rule)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_set_rule(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        rule: ResponseRule,
-        confirm_conflicts: bool,
-    }
-    let Input {
-        rule,
-        confirm_conflicts,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = set_rule(component_app.state(), rule, confirm_conflicts)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_delete_rule(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    delete_rule(component_app.state(), id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_reset_rule_sequence(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        id: String,
-    }
-    let Input { id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    reset_rule_sequence(component_app.state(), id)?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

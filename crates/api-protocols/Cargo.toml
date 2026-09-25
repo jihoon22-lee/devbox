@@ -6,6 +6,7 @@ edition = "2021"
 description = "Shared API protocol validation and codecs"
 
 [dependencies]
+ts-rs = { workspace = true }
 base64 = { workspace = true }
 bytes = { workspace = true }
 getrandom = { workspace = true }

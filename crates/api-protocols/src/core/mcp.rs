@@ -45,6 +45,7 @@ pub const SCHEMA_UNSUPPORTED: &str = "mcp_schema_unsupported";
 
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum EraPreference {
     Auto,
     Modern,
@@ -53,6 +54,7 @@ pub enum EraPreference {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum Era {
     Modern,
     Legacy,
@@ -60,6 +62,7 @@ pub enum Era {
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ServerProjection {
     pub era: Era,
     pub protocol_version: String,

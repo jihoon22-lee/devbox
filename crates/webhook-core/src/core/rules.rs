@@ -67,6 +67,7 @@ impl StringMetrics {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ResponseSequenceStep {
     pub status: u16,
     pub headers: Vec<(String, String)>,
@@ -76,6 +77,7 @@ pub struct ResponseSequenceStep {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ResponseRule {
     pub id: String,
     /// Higher values win before path/method specificity. Missing values in
@@ -102,6 +104,7 @@ pub struct ResponseRule {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum RuleConflictKind {
     CandidateShadowsExisting,
     ExistingShadowsCandidate,
@@ -110,6 +113,7 @@ pub enum RuleConflictKind {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub enum RulePrecedenceReason {
     Priority,
     ExactPath,
@@ -120,6 +124,7 @@ pub enum RulePrecedenceReason {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RuleConflict {
     pub existing_rule_id: String,
     pub winner_rule_id: String,
@@ -130,6 +135,7 @@ pub struct RuleConflict {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RuleConflictPreview {
     pub candidate_id: String,
     pub conflicts: Vec<RuleConflict>,

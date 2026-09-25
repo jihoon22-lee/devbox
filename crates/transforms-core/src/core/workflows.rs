@@ -79,6 +79,7 @@ fn workflow_io_guard() -> MutexGuard<'static, ()> {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RecentToolMetadata {
     pub tool_id: String,
     pub used_at: u64,
@@ -86,6 +87,7 @@ pub struct RecentToolMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SavedPipelineMetadata {
     pub id: String,
     pub input_type: String,
@@ -95,12 +97,14 @@ pub struct SavedPipelineMetadata {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct PipelineStep {
     pub transformer_id: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct WorkflowMetadata {
     pub schema_version: u8,
     pub recent_tools: Vec<RecentToolMetadata>,
@@ -112,6 +116,7 @@ pub struct WorkflowMetadata {
 /// malformed/oversized file (must be preserved and never silently replaced).
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct WorkflowLoadResult {
     pub metadata: WorkflowMetadata,
     pub writable: bool,

@@ -88,6 +88,7 @@ struct ApiRequestPayload {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct ApiRequestHandoffPreview {
     pub handoff_id: String,
     pub kind: String,
@@ -99,6 +100,7 @@ pub struct ApiRequestHandoffPreview {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenewApiRequestResult {
     pub lease_until_ms: u64,
 }
@@ -106,7 +108,6 @@ pub struct RenewApiRequestResult {
 /// Claim and validate an opaque handoff ID.  The returned preview contains no
 /// raw credential and no claim token, so the renderer cannot acknowledge a
 /// different request by forging IPC arguments.
-#[tauri::command]
 pub fn claim_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -168,7 +169,6 @@ fn claim_matches_route(claim: &HandoffClaim) -> bool {
 }
 
 /// Renew the short preview lease without extending the envelope TTL.
-#[tauri::command]
 pub fn renew_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -211,7 +211,6 @@ pub fn renew_api_request(
 
 /// Acknowledge a validated preview and return the editable request.  The
 /// shared claim is deleted only after token/lease validation succeeds.
-#[tauri::command]
 pub fn ack_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -247,7 +246,6 @@ pub fn ack_api_request(
 
 /// Restore a preview after the user cancels.  Restore is idempotent for this
 /// claim and leaves the pending envelope available until its expiry.
-#[tauri::command]
 pub fn restore_api_request(
     state: tauri::State<'_, ApiHandoffState>,
     handoff_id: String,
@@ -771,110 +769,6 @@ fn now_ms() -> u64 {
         .map(|duration| duration.as_millis() as u64)
         .unwrap_or(1)
         .max(1)
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_claim_api_request(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = claim_api_request(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<ApiHandoffState>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    let value = result?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_renew_api_request(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = renew_api_request(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<ApiHandoffState>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    let value = result?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_ack_api_request(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = ack_api_request(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<ApiHandoffState>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    let value = result?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product receiver; authorization remains with the native product router.
-pub(crate) async fn __component_restore_api_request(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        handoff_id: String,
-    }
-    let Input { handoff_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let result = restore_api_request(component_app.state(), handoff_id.clone());
-    if !component_app
-        .state::<ApiHandoffState>()
-        .has_claim(&handoff_id)
-    {
-        component_app
-            .state::<crate::applink::PendingOpen>()
-            .release(&handoff_id);
-    }
-    result?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

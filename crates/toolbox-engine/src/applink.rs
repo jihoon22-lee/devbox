@@ -67,7 +67,6 @@ impl PendingOpen {
     }
 }
 
-#[tauri::command]
 pub fn take_pending_open(state: tauri::State<'_, PendingOpen>) -> Option<OpenRequest> {
     state.take()
 }
@@ -82,20 +81,6 @@ pub fn is_toolbox_text_request(request: &OpenRequest) -> bool {
         && id
             .bytes()
             .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte))
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_take_pending_open(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = take_pending_open(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

@@ -21,6 +21,8 @@ default = []
 
 
 [dependencies]
+product-ipc = { workspace = true }
+ts-rs = { workspace = true }
 process-tree = { workspace = true, features = ["tokio"] }
 api-protocols = { path = "../api-protocols" }
 tauri = { workspace = true }

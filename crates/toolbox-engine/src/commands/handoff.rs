@@ -27,7 +27,6 @@ pub struct KnowledgeDraftDispatch {
 /// The payload is bounded and validated by the shared store before it is
 /// written. Launch failure revokes an envelope that is still pending; there
 /// is no clipboard or alternate channel.
-#[tauri::command]
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, String> {
@@ -38,7 +37,6 @@ pub fn create_api_request_handoff(output: String) -> Result<ApiHandoffDispatch, 
 /// Publish the current visible transform result as a strict Knowledge draft.
 /// The consumer still previews and explicitly saves it; this command never
 /// writes a note or falls back to clipboard transport.
-#[tauri::command]
 // The standalone AppLink entry point is not registered by the product adapter.
 #[allow(dead_code)]
 pub fn create_knowledge_draft_handoff(output: String) -> Result<KnowledgeDraftDispatch, String> {

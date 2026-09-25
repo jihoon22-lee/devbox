@@ -33,7 +33,7 @@ pub const GRAPHQL_UNSUPPORTED_INTROSPECTION: &str =
     "GraphQL introspection 요청은 지원하지 않습니다";
 pub const GRAPHQL_UNSUPPORTED_SUBSCRIPTION: &str = "GraphQL subscription은 지원하지 않습니다";
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, PartialEq, Eq, ts_rs::TS)]
 pub struct GraphqlRequest {
     pub query: String,
     pub variables: String,
@@ -46,14 +46,14 @@ pub struct GraphqlLocation {
     pub column: u64,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct GraphqlError {
     pub message: String,
     pub locations: Vec<GraphqlLocation>,
     pub path: Vec<String>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct GraphqlResponse {
     /// valid | not_json | invalid | oversized
     pub envelope: String,

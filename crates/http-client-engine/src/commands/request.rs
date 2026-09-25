@@ -44,7 +44,7 @@ const MAX_REQUEST_ID_BYTES: usize = 128;
 const MAX_PENDING_CANCELLATIONS: usize = 32;
 const BINARY_SAVE_ERROR: &str = "binary 응답을 안전하게 저장할 수 없습니다";
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ts_rs::TS)]
 pub struct KeyValue {
     pub key: String,
     pub value: String,
@@ -54,7 +54,7 @@ fn default_header_enabled() -> bool {
     true
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 pub struct RequestHeader {
     pub key: String,
     pub value: String,
@@ -72,7 +72,7 @@ impl Default for RequestHeader {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 pub struct RequestCookie {
     pub name: String,
     pub value: String,
@@ -90,7 +90,7 @@ impl Default for RequestCookie {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 pub struct MultipartPart {
     pub kind: String,
     pub name: String,
@@ -116,7 +116,7 @@ impl Default for MultipartPart {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+#[derive(Debug, Clone, Serialize, Deserialize, Default, ts_rs::TS)]
 pub struct AuthConfig {
     pub kind: String,
     pub username: String,
@@ -127,7 +127,7 @@ pub struct AuthConfig {
 }
 
 /// Frontend가 편집·저장하는 원본. 변수 참조는 해석되지 않은 상태다.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 pub struct RequestTemplate {
     pub method: String,
     pub url: String,
@@ -172,7 +172,7 @@ pub struct PersistedHistoryRequest {
     requires_secret_review: bool,
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, ts_rs::TS)]
 pub struct EnvironmentVariable {
     pub key: String,
     /// secret=true이면 DPAPI로 봉인된 base64 envelope다.
@@ -180,20 +180,20 @@ pub struct EnvironmentVariable {
     pub secret: bool,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct RedirectHop {
     pub status: u16,
     pub location: String,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ResponseCookie {
     pub name: String,
     pub value: String,
     pub attributes: Vec<KeyValue>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ApiResponse {
     pub status: u16,
     pub status_text: String,
@@ -214,7 +214,7 @@ pub struct ApiResponse {
     pub graphql: Option<GraphqlResponse>,
 }
 
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct BinaryResponse {
     pub media_type: String,
     pub size_bytes: usize,
@@ -452,7 +452,6 @@ struct ExecutedResponse {
 }
 
 /// HTTP 요청을 backend-only resolve 뒤 수행한다. resolved 값은 응답에 포함하지 않는다.
-#[tauri::command]
 pub async fn send_request(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
@@ -487,13 +486,11 @@ async fn send_request_with_vault(
     .await
 }
 
-#[tauri::command]
 pub fn cancel_request(cancellation: tauri::State<'_, RequestCancellation>, request_id: String) {
     cancellation.cancel(&request_id);
 }
 
 /// Renderer teardown에서 현재 응답과 in-flight 결과의 보관 권한을 함께 폐기한다.
-#[tauri::command]
 pub fn discard_current_response(
     response_headers: tauri::State<'_, ResponseHeaderVault>,
 ) -> Result<(), String> {
@@ -542,7 +539,6 @@ async fn send_request_with_vault_and_cancellation(
 }
 
 /// 확인된 현재 응답의 모든 원문 header를 한 번 복사할 때만 호출한다.
-#[tauri::command]
 pub fn copy_raw_response_headers(
     response_headers: tauri::State<'_, ResponseHeaderVault>,
     response_id: String,
@@ -551,7 +547,6 @@ pub fn copy_raw_response_headers(
 }
 
 /// 확인된 현재 응답의 Set-Cookie 원문만 한 번 복사할 때 호출한다.
-#[tauri::command]
 pub fn copy_raw_response_cookies(
     response_headers: tauri::State<'_, ResponseHeaderVault>,
     response_id: String,
@@ -560,7 +555,6 @@ pub fn copy_raw_response_cookies(
 }
 
 /// 확인된 현재 binary 응답을 native save dialog에서 선택한 위치에 한 번 저장한다.
-#[tauri::command]
 pub async fn save_response_binary(
     app: tauri::AppHandle,
     response_headers: tauri::State<'_, ResponseHeaderVault>,
@@ -629,7 +623,6 @@ fn validate_response_save_path(path: &Path) -> Result<(), String> {
 }
 
 /// 사용자가 확인한 일회성 원문 복사에만 사용한다. 호출자는 결과를 저장해서는 안 된다.
-#[tauri::command]
 pub fn build_revealed_curl(
     req: RequestTemplate,
     environment: Vec<EnvironmentVariable>,
@@ -648,7 +641,6 @@ pub fn build_revealed_curl(
 }
 
 /// persistence 직전 현재 environment secret과 알려진 token 패턴을 제거한다.
-#[tauri::command]
 pub fn sanitize_persisted_json(
     serialized: String,
     environment: Vec<EnvironmentVariable>,
@@ -2747,154 +2739,6 @@ fn shell_quote(value: &str) -> String {
 
 fn curl_form_quote(value: &str) -> String {
     format!("\"{}\"", value.replace('\\', "\\\\").replace('"', "\\\""))
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_send_request(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        req: RequestTemplate,
-        environment: Vec<EnvironmentVariable>,
-        request_id: String,
-    }
-    let Input {
-        req,
-        environment,
-        request_id,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = send_request(
-        req,
-        environment,
-        request_id,
-        component_app.state(),
-        component_app.state(),
-    )
-    .await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_cancel_request(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request_id: String,
-    }
-    let Input { request_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    cancel_request(component_app.state(), request_id);
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_discard_current_response(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    discard_current_response(component_app.state())?;
-    serde_json::to_value(()).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_build_revealed_curl(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        req: RequestTemplate,
-        environment: Vec<EnvironmentVariable>,
-    }
-    let Input { req, environment } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = build_revealed_curl(req, environment)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_copy_raw_response_headers(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        response_id: String,
-    }
-    let Input { response_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = copy_raw_response_headers(component_app.state(), response_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_copy_raw_response_cookies(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        response_id: String,
-    }
-    let Input { response_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = copy_raw_response_cookies(component_app.state(), response_id)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_save_response_binary(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        response_id: String,
-    }
-    let Input { response_id } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value =
-        save_response_binary(component_app.clone(), component_app.state(), response_id).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_sanitize_persisted_json(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        serialized: String,
-        environment: Vec<EnvironmentVariable>,
-    }
-    let Input {
-        serialized,
-        environment,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = sanitize_persisted_json(serialized, environment)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

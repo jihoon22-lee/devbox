@@ -89,6 +89,7 @@ fn looks_like_credential(value: &str) -> bool {
 // for the one requested IPC response, but deliberately do not make it Debug.
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RemoteOpenApiSource {
     text: String,
     format: &'static str,
@@ -243,25 +244,8 @@ async fn fetch_openapi_source_impl(value: &str) -> Result<RemoteOpenApiSource, S
     Err(REDIRECT_ERROR.to_string())
 }
 
-#[tauri::command]
 pub async fn fetch_openapi_source(url: String) -> Result<RemoteOpenApiSource, String> {
     fetch_openapi_source_impl(url.trim()).await
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_fetch_openapi_source(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        url: String,
-    }
-    let Input { url } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = fetch_openapi_source(url).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

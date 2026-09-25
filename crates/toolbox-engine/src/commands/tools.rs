@@ -20,6 +20,7 @@ static UUID_V7_STATE: Mutex<Option<[u8; 16]>> = Mutex::new(None);
 /// Identifier generation request shared by the Tauri command and the UI.
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct GenerateIdsRequest {
     pub kind: String,
     pub count: usize,
@@ -28,7 +29,7 @@ pub struct GenerateIdsRequest {
 }
 
 /// 정규식 매치 하나.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct RegexMatch {
     pub start: usize,
     pub end: usize,
@@ -36,7 +37,7 @@ pub struct RegexMatch {
 }
 
 /// diff 변경 구간 하나.
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct DiffHunk {
     /// 0 = 같은 구간, 1 = 삽입(+), 2 = 삭제(-)
     pub kind: u8,
@@ -48,7 +49,6 @@ pub struct DiffHunk {
 
 /// 입력 데이터를 지정한 알고리즘으로 해시한다.
 /// `algorithm`: "md5" | "sha256" | "sha512"
-#[tauri::command]
 pub fn hash(data: String, algorithm: String) -> Result<String, String> {
     use md5::Digest;
     use sha2::Sha256;
@@ -68,7 +68,6 @@ pub fn hash(data: String, algorithm: String) -> Result<String, String> {
 /// Verify a JWT signature with an allow-listed HMAC primitive.  The command
 /// returns only a boolean for a valid request; keys and signatures never
 /// cross back into the frontend or a persistence/logging boundary.
-#[tauri::command]
 pub fn jwt_verify(request: JwtVerifyRequest) -> Result<bool, String> {
     jwt_core::verify(&request)
 }
@@ -80,27 +79,23 @@ fn hex(bytes: &[u8]) -> String {
 /// Generates an HMAC entirely in memory using the standard RustCrypto
 /// primitive selected by the request. The core returns only a fixed safe error
 /// and never receives a logging sink or persistence handle.
-#[tauri::command]
 pub fn hmac_generate(request: HmacRequest) -> Result<String, String> {
     hmac_core::generate(&request)
 }
 
 /// Verifies an HMAC with the primitive's constant-time verification method.
 /// Only the boolean result crosses the command boundary.
-#[tauri::command]
 pub fn hmac_verify(request: HmacVerifyRequest) -> Result<bool, String> {
     hmac_core::verify(&request)
 }
 
 /// 기존 UUID v4 호출과의 호환을 유지하면서 bounded generator와 같은 오류 경계를 사용한다.
-#[tauri::command]
 pub fn generate_uuid() -> Result<String, String> {
     generate_identifier_batch("uuid-v4", 1, false, true)
         .and_then(|mut values| values.pop().ok_or_else(|| SECURE_RANDOM_ERROR.to_string()))
 }
 
 /// UUID v4/v7 또는 ULID를 제한된 수량으로 생성한다.
-#[tauri::command]
 pub fn generate_ids(request: GenerateIdsRequest) -> Result<Vec<String>, String> {
     generate_identifier_batch(
         &request.kind,
@@ -360,7 +355,6 @@ fn format_ulid(value: [u8; 16], uppercase: bool, hyphens: bool) -> String {
 
 /// 정규식을 텍스트에 적용해 전체 매치(위치·본문)를 반환한다.
 /// 매치는 0부터 시작하는 바이트 오프셋 기준이다.
-#[tauri::command]
 pub fn regex_test(pattern: String, text: String) -> Result<Vec<RegexMatch>, String> {
     let re = regex::Regex::new(&pattern).map_err(|e| format!("정규식 오류: {e}"))?;
     Ok(re
@@ -375,7 +369,6 @@ pub fn regex_test(pattern: String, text: String) -> Result<Vec<RegexMatch>, Stri
 
 /// 두 텍스트의 차이를 라인 단위 변경 구간으로 반환한다.
 /// 오프셋은 0부터 시작하는 라인 번호 (kind: 0=equal, 1=insert, 2=delete).
-#[tauri::command]
 pub fn diff(a: String, b: String) -> Vec<DiffHunk> {
     use similar::TextDiff;
 
@@ -434,134 +427,6 @@ pub fn diff(a: String, b: String) -> Vec<DiffHunk> {
             }]
         })
         .collect()
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_hash(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        data: String,
-        algorithm: String,
-    }
-    let Input { data, algorithm } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = hash(data, algorithm)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_hmac_generate(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: HmacRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = hmac_generate(request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_hmac_verify(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: HmacVerifyRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = hmac_verify(request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_generate_uuid(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = generate_uuid()?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_generate_ids(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: GenerateIdsRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = generate_ids(request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_regex_test(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        pattern: String,
-        text: String,
-    }
-    let Input { pattern, text } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = regex_test(pattern, text)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_diff(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        a: String,
-        b: String,
-    }
-    let Input { a, b } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = diff(a, b);
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller owns component/session authorization.
-pub(crate) async fn __component_jwt_verify(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: JwtVerifyRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = jwt_verify(request)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]
