@@ -24,4 +24,15 @@ describe("quick capture IPC error boundary", () => {
 
     await expect(saveQuickCapture("qc-1")).rejects.toThrow("빠른 캡처를 저장하지 못했습니다");
   });
+  it("turns a native capture code into its fixed message", async () => {
+    invokeMock.mockRejectedValueOnce("quick_capture_sensitive");
+    await expect(saveQuickCapture("qc-1")).rejects.toThrow("민감한 정보가 포함되어 있어 저장하지 않았습니다");
+  });
+
+  it("recognizes a product-transport error by its code name", async () => {
+    const stale = new Error("미리보기가 오래되었습니다. 다시 확인해 주세요.");
+    stale.name = "preview_stale";
+    invokeMock.mockRejectedValueOnce(stale);
+    await expect(saveQuickCapture("qc-1")).rejects.toThrow("빠른 캡처 미리보기가 오래되어 다시 확인하세요");
+  });
 });

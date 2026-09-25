@@ -712,28 +712,31 @@ function safeQuickCaptureShortcutStatus(value: unknown): QuickCaptureShortcutSta
   return { shortcut: QUICK_CAPTURE_SHORTCUT, state: "unavailable" };
 }
 
+/** Native quick capture codes → the same fixed messages client validation uses. */
+export const QUICK_CAPTURE_MESSAGES: Readonly<Record<string, string>> = {
+  quick_capture_sensitive: "민감한 정보가 포함되어 있어 저장하지 않았습니다",
+  quick_capture_body_required: "빠른 캡처 본문을 입력하세요",
+  quick_capture_invalid: "빠른 캡처 입력이 올바르지 않습니다",
+  quick_capture_title_limit: "제목은 UTF-8 800바이트·200자 이내로 입력하세요",
+  quick_capture_body_limit: "본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요",
+  quick_capture_tag_count: "태그는 최대 20개까지 입력하세요",
+  quick_capture_tag_limit: "태그 하나는 UTF-8 192바이트·48자 이내로 입력하세요",
+  quick_capture_tags_limit: "태그 전체는 UTF-8 1 KiB 이내로 입력하세요",
+  quick_capture_tag_invalid: "태그에 줄바꿈·쉼표·대괄호·따옴표를 사용할 수 없습니다",
+  preview_stale: "빠른 캡처 미리보기가 오래되어 다시 확인하세요",
+};
+const FIXED_QUICK_CAPTURE_MESSAGES = new Set(Object.values(QUICK_CAPTURE_MESSAGES));
+
 function safeQuickCaptureError(error: unknown, fallback: string): Error {
-  // Tauri command rejections are strings in production, while browser mocks
-  // commonly reject Error instances. Treat both shapes as untrusted and only
-  // preserve an explicitly allowlisted fixed message.
-  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
-  // Native commands only expose these stable validation/storage messages.  A
-  // defensive allowlist keeps an unexpected OS/IPC string out of the UI.
-  if (
-    message === "빠른 캡처 본문을 입력하세요"
-    || message === "민감한 정보가 포함되어 있어 저장하지 않았습니다"
-    || message === "빠른 캡처 입력이 올바르지 않습니다"
-    || message === "제목은 UTF-8 800바이트·200자 이내로 입력하세요"
-    || message === "본문은 LF 기준 64 KiB(원문 128 KiB) 이내로 입력하세요"
-    || message === "태그는 최대 20개까지 입력하세요"
-    || message === "태그 하나는 UTF-8 192바이트·48자 이내로 입력하세요"
-    || message === "태그 전체는 UTF-8 1 KiB 이내로 입력하세요"
-    || message === "태그에 줄바꿈·쉼표·대괄호·따옴표를 사용할 수 없습니다"
-    || message === "빠른 캡처 미리보기가 오래되어 다시 확인하세요"
-  ) {
-    return new Error(message);
+  // Product transport errors carry the native code in `name`; the legacy
+  // runtime rejects with the code string. Client validation throws the fixed
+  // message itself. Anything else is replaced by the fallback.
+  const code = error instanceof Error ? error.name : typeof error === "string" ? error : "";
+  if (Object.prototype.hasOwnProperty.call(QUICK_CAPTURE_MESSAGES, code)) {
+    return new Error(QUICK_CAPTURE_MESSAGES[code]);
   }
-  return new Error(fallback);
+  const message = error instanceof Error ? error.message : typeof error === "string" ? error : "";
+  return new Error(FIXED_QUICK_CAPTURE_MESSAGES.has(message) ? message : fallback);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
