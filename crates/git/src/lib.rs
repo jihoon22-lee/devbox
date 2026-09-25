@@ -1337,7 +1337,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_process_tree_policy_kills_descendants_on_job_close() {
-        assert_eq!(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0, 0x2000);
+        assert_eq!(
+            windows::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0,
+            0x2000
+        );
     }
 
     #[cfg(unix)]
