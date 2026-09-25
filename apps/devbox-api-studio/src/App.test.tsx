@@ -5,7 +5,7 @@ import { ProductShell } from "@devbox/product-shell";
 afterEach(cleanup);
 it("opens the api-studio shell with accessible native-mock status", async () => {
   const { container } = render(<ProductShell product="api-studio" />);
-  await screen.findByText("기능 이전을 준비하고 있습니다");
+  await screen.findByText("이 화면은 아직 제공되지 않습니다");
   expect(screen.getByRole("navigation", { name: "제품 화면" })).toBeTruthy();
   await assertNoA11yViolations(container);
 });
