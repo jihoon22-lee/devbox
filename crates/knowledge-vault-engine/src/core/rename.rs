@@ -72,7 +72,7 @@ impl RenamePlanStore {
     pub fn take(&mut self, plan_id: &str) -> Result<RenamePlan, String> {
         match self.current.take() {
             Some(plan) if plan.id == plan_id => Ok(plan),
-            _ => Err("이름 변경 미리보기가 만료되었습니다".to_string()),
+            _ => Err("preview_expired".to_string()),
         }
     }
 

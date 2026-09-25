@@ -351,7 +351,7 @@ pub fn save_template(
 ) -> Result<SaveTemplateResult, String> {
     let now_ms = u64::try_from(current_epoch_ms()).unwrap_or(0);
     if now_ms == 0 {
-        return Err("템플릿 미리보기가 오래되어 다시 확인하세요".into());
+        return Err("preview_stale".into());
     }
     let pending = state
         .template_previews
@@ -359,9 +359,9 @@ pub fn save_template(
         .map_err(|_| "템플릿을 저장할 수 없습니다".to_string())?
         .take(&preview_id, now_ms)?;
     let vault = VaultIdentity::inspect(pending.vault.canonical_path())
-        .map_err(|_| "템플릿 미리보기가 오래되어 다시 확인하세요".to_string())?;
+        .map_err(|_| "preview_stale".to_string())?;
     if vault != pending.vault {
-        return Err("템플릿 미리보기가 오래되어 다시 확인하세요".into());
+        return Err("preview_stale".into());
     }
     let target = vault
         .new_entry(&pending.target)
@@ -390,12 +390,12 @@ pub fn save_template(
     if !template_revision_matches(&connection, &pending) {
         drop(connection);
         vault::cleanup_file_by_identity(&temporary, &identity);
-        return Err("템플릿 미리보기가 오래되어 다시 확인하세요".into());
+        return Err("preview_stale".into());
     }
     if vault.revalidate().is_err() {
         drop(connection);
         vault::cleanup_file_by_identity(&temporary, &identity);
-        return Err("템플릿 미리보기가 오래되어 다시 확인하세요".into());
+        return Err("preview_stale".into());
     }
     if let Err(error) = vault::publish_new_file(&temporary, &target) {
         drop(connection);
@@ -408,7 +408,7 @@ pub fn save_template(
     if vault.revalidate().is_err() {
         drop(connection);
         vault::cleanup_file_by_identity(&target, &identity);
-        return Err("템플릿 미리보기가 오래되어 다시 확인하세요".into());
+        return Err("preview_stale".into());
     }
     let transaction = match connection.unchecked_transaction() {
         Ok(transaction) => transaction,
