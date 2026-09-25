@@ -1560,6 +1560,7 @@ async fn execute(
     runtime: State<'_, Runtime>,
     request: Request,
 ) -> Result<Response, Problem> {
+    let operation = product_shell_tauri::begin_operation(&window, &request.component, &request.method);
     let rejected = |code| Problem {
         code,
         provenance: Provenance {
@@ -2011,6 +2012,7 @@ async fn execute(
             json!({"issue":issue}),
         ),
     };
+    operation.finish(&outcome, value.get("issue").and_then(serde_json::Value::as_str));
     Ok(Response {
         operation: Operation {
             provenance,

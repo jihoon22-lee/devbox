@@ -56,6 +56,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
     } else {
         "control-center.tools"
     };
+    let operation = product_shell_tauri::begin_operation(&window, component, &request.method);
     let provenance = product_shell_tauri::authorize(&window, &request.header, component)?;
     let allowed = if cleanup {
         matches!(request.header.route.as_str(), "migration" | "recovery")
@@ -340,6 +341,7 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             },
         ),
     };
+    operation.finish(&outcome, value.get("issue").and_then(serde_json::Value::as_str));
     Ok(Response {
         operation: Operation {
             provenance,

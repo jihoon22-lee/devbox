@@ -1,6 +1,8 @@
 //! Product session and navigation boundary. Domain plugins separately declare
 //! their command allowlists and reuse this native session authorization.
 mod installation;
+mod operation_log;
+pub use operation_log::{begin_operation, OperationGuard};
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 pub use installation::WriterGuard;
 use product_contract::{
@@ -330,6 +332,7 @@ pub fn builder(product: &'static str) -> tauri::Builder<tauri::Wry> {
                 executable,
                 version: app.package_info().version.to_string(),
             });
+            operation_log::initialize(app, product);
             window_state_tauri::restore_main_window(app.handle());
             Ok(())
         })
