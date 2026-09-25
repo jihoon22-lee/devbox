@@ -34,9 +34,11 @@ export function isOperation(value: unknown, expected: Provenance): value is Oper
     : Object.keys(outcome).join(",") === "state" && ["running", "succeeded", "cancelled", "stale"].includes(outcome.state as string);
 }
 export function problemMessage(value: unknown, expected: Provenance): string {
-  if (!record(value) || Object.keys(value).sort().join(",") !== "code,provenance"
-    || !matchesProvenance(value.provenance, expected) || !code(value.code)) return messages.unavailable;
-  return messages[value.code];
+  if (!record(value) || Object.keys(value).sort().join(",") !== "code,provenance" || !code(value.code)) return messages.unavailable;
+  // A malformed request cannot be echoed; hosts use this fixed provenance.
+  const earlyRejection = { product: expected.product, component: `${expected.product}.dispatch`, requestId: "rejected", revision: 1 };
+  return matchesProvenance(value.provenance, expected) || matchesProvenance(value.provenance, earlyRejection)
+    ? messages[value.code] : messages.unavailable;
 }
 export function operationMessage(operation: Operation): string {
   switch (operation.outcome.state) {
