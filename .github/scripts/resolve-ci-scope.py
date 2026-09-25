@@ -16,7 +16,6 @@ ROOT = Path(__file__).resolve().parents[2]
 FRONTEND_FIELDS = ("dependencies", "devDependencies", "peerDependencies", "optionalDependencies")
 AGENT_POLICY_PATH = ".agents/skills/devbox-release/agents/openai.yaml"
 SCOPE_DRIVER_PATHS = {
-    "apps/v0.8-feature-parity.json",
     ".github/scripts/check-product-foundation.py",
     ".github/scripts/verify-resources.py",
     ".github/scripts/test-verification-resources.py",
@@ -341,7 +340,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
             reasons.append(f"Rust workspace configuration changed: {path}")
             continue
 
-        if path in {"apps/catalog.json", "apps/legacy-v0.7-catalog.json"}:
+        if path == "apps/catalog.json":
             for directory in CATALOG_FRONTEND_CONSUMERS:
                 node_name = frontend.by_directory.get(directory)
                 if node_name is None:

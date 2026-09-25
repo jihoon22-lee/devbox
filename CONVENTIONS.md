@@ -58,7 +58,6 @@ docs/                       # 현재 가이드, 수용 추적, 역사적 기록
 - 앱 ID와 실행 파일은 `devbox-<product>`, `devbox-<product>.exe`다.
 - 현재 모듈 소유권은 [projects](docs/projects.md), workspace members는 Cargo.toml이 원장이다.
 - `apps/catalog.json`은 네 공개 제품, `apps/products.json`은 typed route·component 계약이다.
-- `apps/legacy-v0.7-catalog.json`은 원본 발견·설치 provenance·역사적 fixture 전용이다.
 - engine에는 standalone bootstrap·installer를 두지 않는다. 순수 로직은 core/, OS 처리는
   command/platform 계층으로 분리한다. B09 추출은 이미 사용 중인 엔진의 소유 위치 변경이다.
 
@@ -342,7 +341,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
 제품은 owner가 검증한 typed context와 source-owned ArtifactRef/SecretRef를 교환한다.
 경로 문자열이나 UI route만으로 다른 제품 권한을 얻지 않는다. legacy exe fallback은 금지한다.
 기존 engine의 command adapter는 제품 host가 명시적으로 허용한 메서드만 등록한다.
-상세 계약과 기능/데이터 수용은 [v0.8 acceptance](docs/v0.8-acceptance.md)를 따른다.
+상세 계약과 기능/데이터 수용은 [v0.8 acceptance](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 따른다.
 
 ## 11. Codex 지침·스킬·작업 기록
 

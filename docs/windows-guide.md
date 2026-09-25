@@ -28,6 +28,6 @@ journal을 남기며 재개/복구 UI에서 처리한다. 복구가 끝나기 �
 
 ## 개발·문제 해결
 
-[개발자 가이드](development.md), [v0.8 수용 범위](v0.8-acceptance.md)를 참조한다.
+[개발자 가이드](development.md), [v0.8 수용 범위](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 참조한다.
 운영 중 Docker·iptables·공유 네트워크를 테스트 준비 목적으로 변경하지 않는다.
 과거 설치 방식은 [v0.7 가이드](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/windows-guide.md)에 보존한다.

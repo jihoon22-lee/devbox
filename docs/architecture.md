@@ -21,5 +21,5 @@ Devbox v0.8은 네 독립 Windows 제품과 명시적인 Suite 연결로 구성�
   공개 후 기본 native 실행을 확인하며 후보 없음·만료 시 rebuild로 대체하지 않는다.
 
 세부 계약은 [foundation](architecture/v0.8-foundation.md), [제품 목록](projects.md),
-[수용 추적](v0.8-acceptance.md), [릴리스 정책](release-policy.md)을 참조한다.
+[수용 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md), [릴리스 정책](release-policy.md)을 참조한다.
 [v0.7 아키텍처 기록](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/architecture.md)은 당시 사실을 그대로 보존한다.

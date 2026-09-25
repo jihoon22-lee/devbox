@@ -187,9 +187,6 @@ for path in ("apps/products.json", "packages/product-shell/fixtures/route-reques
     assert products.frontend_scope == "apps"
     assert set(products.frontend_apps) == {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"}
     assert {"devbox-workspace", "devbox-api-studio", "devbox-knowledge", "devbox-control-center"} <= set(products.rust_packages)
-parity = resolve("apps/v0.8-feature-parity.json")
-assert parity.frontend_scope == parity.rust_scope == "all"
-
 # Discover every explicit include and propagate consumers through shared modules.
 # Same-crate includes require no manual edge unless the including file itself
 # is compiled by a different crate (suite.rs -> platform/mod.rs, for example).
@@ -272,11 +269,6 @@ for path in module.RUST_SHARED_PLATFORM_CONSUMERS:
 
 hotkey = resolve("apps/devbox-control-center/src-tauri/src/platform/hotkey.rs")
 assert hotkey.rust_packages == ["devbox-control-center"]
-
-# The frozen migration catalog must still reach native readers and browser fixtures.
-legacy_catalog = resolve("apps/legacy-v0.7-catalog.json")
-assert legacy_catalog.rust_packages == catalog.rust_packages
-assert legacy_catalog.frontend_packages == catalog.frontend_packages
 
 # Explicit crate edges replace source-inclusion exceptions for Suite ownership.
 suite = resolve("crates/suite-runtime/src/lib.rs")

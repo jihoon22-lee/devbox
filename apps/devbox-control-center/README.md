@@ -31,7 +31,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 기능 코드는 이 제품 host와 `packages/` feature UI, 이름을 가진 `crates/` engine에 있다.
 기존 15개 앱의 standalone shell·Tauri bootstrap은 제거했다. 현재 소유권은
 [projects](../../docs/projects.md), 기능/데이터 및 R01–R26/S01–S08 대응은
-[acceptance trace](../../docs/v0.8-acceptance.md)를 참조한다.
+[acceptance trace](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md)를 참조한다.
 
 [이전 개발 단계의 상세 README](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.8-development/control-center.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.

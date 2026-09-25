@@ -19,7 +19,7 @@ engine은 독립 실행 앱이 아니며 Tauri bootstrap·installer·공개 카�
 
 이전 사용자 데이터·Manager 설치 provenance를 읽는 `apps/legacy-v0.7-catalog.json`은
 고정된 15개 원본 목록이다. 공개 제품 선택·새 실행 권한으로 사용하지 않는다.
-[572개 기능 및 데이터 추적](v0.8-acceptance.md), [v0.7 역사적 목록](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/projects.md).
+[572개 기능 및 데이터 추적](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/v0.8-acceptance.md), [v0.7 역사적 목록](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/projects.md).
 
 Suite의 native bus·installation/peer identity·health 구현은 `crates/suite-runtime`이
 소유하며 네 제품이 명시적 Cargo 의존성으로 사용한다. 제품별 command admission과

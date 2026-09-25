@@ -1306,19 +1306,6 @@ mod tests {
         .is_none());
     }
 
-    #[test]
-    fn run_manager_root_identifier_matches_the_release_catalog() {
-        let catalog: serde_json::Value =
-            serde_json::from_str(include_str!("../../../../apps/legacy-v0.7-catalog.json"))
-                .unwrap();
-        let identifier = catalog["apps"]
-            .as_array()
-            .unwrap()
-            .iter()
-            .find(|app| app["id"] == "run-manager")
-            .and_then(|app| app["identifier"].as_str());
-        assert_eq!(identifier, Some(RUN_MANAGER_IDENTIFIER));
-    }
 
     #[test]
     fn webhook_capture_loads_one_sanitized_ephemeral_record() {
