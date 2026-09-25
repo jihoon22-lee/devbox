@@ -57,13 +57,29 @@ static NEXT_ATOMIC_FILE: AtomicU64 = AtomicU64::new(0);
 pub struct FilesystemIdentity {
     scope: u64,
     object: u64,
+    #[cfg(windows)]
+    extended: Option<(u64, [u8; 16])>,
 }
 impl FilesystemIdentity {
+    /// Legacy evidence used by v0.8.1 installation namespaces and owner records.
+    /// Never replace these values with FILE_ID_INFO or a hash.
     /// OS-supplied evidence components. They cannot reconstruct an open handle
     /// or admit access; consumers must compare a fresh native observation.
     pub fn components(self) -> (u64, u64) {
         (self.scope, self.object)
     }
+    /// Content proof/revision components. Installation records must use `components`.
+    pub fn content_components(self) -> (u64, u64) {
+        #[cfg(windows)]
+        if let Some((volume, id)) = self.extended {
+            // Preserve the legacy representation on ordinary 64-bit file IDs.
+            if id[8..].iter().any(|byte| *byte != 0) {
+                return (volume, object_from_file_id(id));
+            }
+        }
+        self.components()
+    }
+
 }
 
 /// Resolve the identity of the exact final path component without following a
@@ -102,6 +118,85 @@ pub fn open_filesystem_metadata_object(
     open_object(path.as_ref(), directory, false)
 }
 
+#[cfg(windows)]
+struct WindowsObject {
+    scope: u64,
+    object: u64,
+    extended: Option<(u64, [u8; 16])>,
+    attributes: u32,
+}
+
+#[cfg(windows)]
+fn windows_object(raw: std::os::windows::io::RawHandle) -> io::Result<WindowsObject> {
+    use windows::Win32::{
+        Foundation::{HANDLE, WIN32_ERROR},
+        Storage::FileSystem::{
+            FileIdInfo, GetFileInformationByHandle, GetFileInformationByHandleEx,
+            BY_HANDLE_FILE_INFORMATION, FILE_ID_INFO,
+        },
+    };
+    let handle = HANDLE(raw);
+    let to_io = |error: windows::core::Error| {
+        WIN32_ERROR::from_error(&error)
+            .map(|code| io::Error::from_raw_os_error(code.0 as i32))
+            .unwrap_or_else(|| io::Error::other(error))
+    };
+    let mut basic = BY_HANDLE_FILE_INFORMATION::default();
+    unsafe { GetFileInformationByHandle(handle, &mut basic) }.map_err(to_io)?;
+    let mut full = FILE_ID_INFO::default();
+    let extended = unsafe {
+        GetFileInformationByHandleEx(
+            handle,
+            FileIdInfo,
+            (&mut full as *mut FILE_ID_INFO).cast(),
+            std::mem::size_of::<FILE_ID_INFO>() as u32,
+        )
+    };
+    Ok(WindowsObject {
+        scope: u64::from(basic.dwVolumeSerialNumber),
+        object: (u64::from(basic.nFileIndexHigh) << 32) | u64::from(basic.nFileIndexLow),
+        extended: extended.ok().map(|()| (full.VolumeSerialNumber, full.FileId.Identifier)),
+        attributes: basic.dwFileAttributes,
+    })
+}
+
+/// Name-surrogate check for an already-open handle.
+#[cfg(windows)]
+fn windows_handle_is_link(raw: std::os::windows::io::RawHandle, attributes: u32) -> io::Result<bool> {
+    use windows::Win32::{
+        Foundation::HANDLE,
+        Storage::FileSystem::{
+            FileAttributeTagInfo, GetFileInformationByHandleEx, FILE_ATTRIBUTE_REPARSE_POINT,
+            FILE_ATTRIBUTE_TAG_INFO,
+        },
+    };
+    if attributes & FILE_ATTRIBUTE_REPARSE_POINT.0 == 0 {
+        return Ok(false);
+    }
+    let mut tag = FILE_ATTRIBUTE_TAG_INFO::default();
+    unsafe {
+        GetFileInformationByHandleEx(
+            HANDLE(raw),
+            FileAttributeTagInfo,
+            (&mut tag as *mut FILE_ATTRIBUTE_TAG_INFO).cast(),
+            std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
+        )
+    }
+    .map_err(|error| io::Error::other(error))?;
+    Ok(is_name_surrogate_tag(tag.ReparseTag))
+}
+
+/// Volume and object identity for a caller-owned Windows handle, using the
+/// same rules as [`filesystem_identity`].
+#[cfg(windows)]
+pub fn windows_file_id(handle: std::os::windows::io::RawHandle) -> io::Result<(u64, u64)> {
+    let object = windows_object(handle)?;
+    if windows_handle_is_link(handle, object.attributes)? {
+        return Err(io::Error::new(io::ErrorKind::InvalidInput, "unexpected file type"));
+    }
+    Ok(FilesystemIdentity { scope: object.scope, object: object.object, extended: object.extended }.content_components())
+}
+
 /// Identify the exact object of a retained handle without reopening its path.
 /// This is evidence for a native owner, not permission to access another path.
 pub fn opened_filesystem_identity(
@@ -126,33 +221,15 @@ pub fn opened_filesystem_identity(
     #[cfg(windows)]
     {
         use std::os::windows::io::AsRawHandle;
-        use windows::Win32::{
-            Foundation::{HANDLE, WIN32_ERROR},
-            Storage::FileSystem::{
-                GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION, FILE_ATTRIBUTE_DIRECTORY,
-                FILE_ATTRIBUTE_REPARSE_POINT,
-            },
-        };
-        let mut information = BY_HANDLE_FILE_INFORMATION::default();
-        unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut information) }
-            .map_err(|error| {
-                WIN32_ERROR::from_error(&error)
-                    .map(|code| io::Error::from_raw_os_error(code.0 as i32))
-                    .unwrap_or_else(|| io::Error::other(error))
-            })?;
-        if information.dwFileAttributes & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0
-            || (information.dwFileAttributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0) != directory
+        use windows::Win32::Storage::FileSystem::FILE_ATTRIBUTE_DIRECTORY;
+        let raw = handle.as_raw_handle();
+        let object = windows_object(raw)?;
+        if windows_handle_is_link(raw, object.attributes)?
+            || (object.attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0) != directory
         {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "unexpected file type",
-            ));
+            return Err(io::Error::new(io::ErrorKind::InvalidInput, "unexpected file type"));
         }
-        Ok(FilesystemIdentity {
-            scope: u64::from(information.dwVolumeSerialNumber),
-            object: (u64::from(information.nFileIndexHigh) << 32)
-                | u64::from(information.nFileIndexLow),
-        })
+        Ok(FilesystemIdentity { scope: object.scope, object: object.object, extended: object.extended })
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -223,6 +300,23 @@ fn open_object(
     #[cfg(not(any(unix, windows)))]
     let handle = File::open(path)?;
     let identity = opened_filesystem_identity(&handle, directory)?;
+    #[cfg(windows)]
+    if _read_contents && !directory {
+        use std::os::windows::fs::{MetadataExt, OpenOptionsExt};
+        use windows::Win32::Storage::FileSystem::{
+            FILE_ATTRIBUTE_REPARSE_POINT, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        };
+        if handle.metadata()?.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT.0 != 0 {
+            let reopened = OpenOptions::new()
+                .read(true)
+                .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
+                .open(path)?;
+            if opened_filesystem_identity(&reopened, false)? != identity {
+                return Err(io::Error::new(io::ErrorKind::InvalidInput, "object changed while opening"));
+            }
+            return Ok((reopened, identity));
+        }
+    }
     Ok((handle, identity))
 }
 
@@ -231,12 +325,6 @@ fn open_object(
 /// only the final object identity before passing a stale search path to an
 /// opener.
 pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
-    #[cfg(windows)]
-    use std::os::windows::fs::MetadataExt;
-
-    #[cfg(windows)]
-    const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-
     let path = path.as_ref();
     if !path.is_absolute() {
         return Err(io::Error::new(
@@ -250,17 +338,7 @@ pub fn ensure_no_links(path: impl AsRef<Path>) -> io::Result<()> {
     ancestors.reverse();
     for component in ancestors {
         let metadata = fs::symlink_metadata(component)?;
-        let is_reparse_point = {
-            #[cfg(windows)]
-            {
-                metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-            }
-            #[cfg(not(windows))]
-            {
-                false
-            }
-        };
-        if metadata.file_type().is_symlink() || is_reparse_point {
+        if is_link_metadata(&metadata) {
             return Err(io::Error::new(
                 io::ErrorKind::InvalidInput,
                 "path contains a symbolic link or reparse point",
