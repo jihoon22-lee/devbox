@@ -259,7 +259,10 @@ fn read_install_manifest_snapshot_with_missing_executable(
         &records,
         allow_missing_executable,
     )?;
-    let digest = format!("{:x}", Sha256::digest(&bytes));
+    let digest: String = Sha256::digest(&bytes)
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect();
     Ok(InstallManifestSnapshot {
         records,
         bytes,

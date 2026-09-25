@@ -64,8 +64,7 @@ default-features = false
 optional = true
 
 [dependencies.tokio]
-version = "1"
-features = ["rt", "time", "sync"]
+workspace = true
 optional = true
 
 [[bin]]

@@ -113,7 +113,14 @@ fn generated_id(prefix: &str, input: &str) -> String {
     digest.update(input.as_bytes());
     digest.update(sequence.to_le_bytes());
     digest.update(now.to_le_bytes());
-    format!("{prefix}-{:x}", digest.finalize())
+    format!(
+        "{prefix}-{}",
+        digest
+            .finalize()
+            .iter()
+            .map(|byte| format!("{byte:02x}"))
+            .collect::<String>()
+    )
 }
 
 fn diagnosis_for_bundle(app: &tauri::AppHandle) -> Vec<SupportDiagnostic> {
