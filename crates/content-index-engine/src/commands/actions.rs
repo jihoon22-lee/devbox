@@ -43,7 +43,6 @@ fn validate_indexed_path(
 }
 
 /// 기본 앱으로 파일을 연다.
-#[tauri::command]
 pub async fn open_file(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
@@ -57,7 +56,6 @@ pub async fn open_file(
 }
 
 /// 파일이 있는 폴더를 탐색기에서 연다.
-#[tauri::command]
 pub async fn reveal_file(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
@@ -76,12 +74,10 @@ fn available_open_targets() -> Vec<EverythingOpenTarget> {
 
 /// Catalog capability와 실제 설치 executable의 교집합만 반환한다. executable
 /// 경로는 frontend에 노출하지 않는다.
-#[tauri::command]
 pub fn open_targets() -> Vec<EverythingOpenTarget> {
     available_open_targets()
 }
 
-#[tauri::command]
 pub fn open_in(
     state: tauri::State<'_, Arc<AppState>>,
     app_id: String,
@@ -89,71 +85,6 @@ pub fn open_in(
 ) -> Result<(), String> {
     let _ = (state, app_id, path);
     Err("provider_unavailable".into())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_open_file(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let Input { path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    open_file(component_app.clone(), component_app.state(), path).await?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_reveal_file(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let Input { path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    reveal_file(component_app.clone(), component_app.state(), path).await?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_open_targets(
-    _component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = open_targets();
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_open_in(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        app_id: String,
-        path: String,
-    }
-    let Input { app_id, path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    open_in(component_app.state(), app_id, path)?;
-    Ok(serde_json::Value::Null)
 }
 
 #[cfg(test)]

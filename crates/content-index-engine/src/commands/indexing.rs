@@ -106,7 +106,6 @@ impl IndexFilter {
 }
 
 /// 인덱스 루트를 추가하고 인덱싱을 시작한다.
-#[tauri::command]
 pub fn add_root(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
@@ -134,7 +133,6 @@ pub fn add_root(
     Ok(())
 }
 
-#[tauri::command]
 pub fn remove_root(
     app: tauri::AppHandle,
     state: tauri::State<'_, Arc<AppState>>,
@@ -165,7 +163,6 @@ pub fn remove_root(
     Ok(())
 }
 
-#[tauri::command]
 pub fn list_roots(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<crate::core::models::RootInfo>, String> {
@@ -175,7 +172,6 @@ pub fn list_roots(
 
 /// 전체 루트를 다시 인덱싱한다. 이미 실행 중이면 현재 작업을 취소하고
 /// 완료 후 한 번만 최신 상태로 다시 시작한다.
-#[tauri::command]
 pub fn index_now(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
     spawn_index(state.inner().clone(), Vec::new());
     Ok(())
@@ -184,7 +180,6 @@ pub fn index_now(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
 /// 진행 중인 색인을 협력적으로 중단한다. 파일 시스템 순회는 다음
 /// 안전한 배치 경계에서 멈추며, 이미 커밋된 파일은 유효한 부분 색인으로
 /// 남고 재시작하면 전체 루트가 다시 수렴한다.
-#[tauri::command]
 pub fn cancel_index(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String> {
     let _lifecycle = state
         .lifecycle
@@ -197,7 +192,6 @@ pub fn cancel_index(state: tauri::State<'_, Arc<AppState>>) -> Result<(), String
     Ok(())
 }
 
-#[tauri::command]
 pub fn index_status(state: tauri::State<'_, Arc<AppState>>) -> Result<IndexStatus, String> {
     let indexing = state.indexing.load(Ordering::SeqCst);
     let conn = state.db.lock().map_err(|_| INDEX_ERROR.to_string())?;
@@ -739,104 +733,6 @@ fn now_ms() -> i64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|duration| duration.as_millis().min(i64::MAX as u128) as i64)
         .unwrap_or(0)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_add_root(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-        index_content: bool,
-    }
-    let Input {
-        path,
-        index_content,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    add_root(
-        component_app.clone(),
-        component_app.state(),
-        path,
-        index_content,
-    )?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_remove_root(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        path: String,
-    }
-    let Input { path } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    remove_root(component_app.clone(), component_app.state(), path)?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_list_roots(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = list_roots(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_index_now(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    index_now(component_app.state())?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_cancel_index(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    cancel_index(component_app.state())?;
-    Ok(serde_json::Value::Null)
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_index_status(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = index_status(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

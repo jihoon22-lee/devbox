@@ -31,7 +31,6 @@ fn content_result_limit(limit: Option<i64>) -> i64 {
 }
 
 /// 파일명 FTS5 검색.
-#[tauri::command]
 pub fn search_files(
     state: tauri::State<'_, Arc<AppState>>,
     query: String,
@@ -56,7 +55,6 @@ pub fn search_files(
 }
 
 /// 파일 내용 FTS5 검색.
-#[tauri::command]
 pub fn search_content(
     state: tauri::State<'_, Arc<AppState>>,
     query: String,
@@ -78,50 +76,6 @@ pub fn search_content(
     } else {
         search_content_with_filter(&conn, q, limit, &filter).map_err(|_| SEARCH_ERROR.to_string())
     }
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_search_files(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        query: String,
-        limit: Option<i64>,
-        filter: Option<SearchFilter>,
-    }
-    let Input {
-        query,
-        limit,
-        filter,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = search_files(component_app.state(), query, limit, filter)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_search_content(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        query: String,
-        limit: Option<i64>,
-        filter: Option<SearchFilter>,
-    }
-    let Input {
-        query,
-        limit,
-        filter,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = search_content(component_app.state(), query, limit, filter)?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

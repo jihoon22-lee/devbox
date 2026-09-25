@@ -9,6 +9,7 @@ use devbox_applink::QueryFilter;
 /// and prevents a saved query or a stale UI from becoming filesystem authority.
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SearchFilter {
     #[serde(default)]
     pub extensions: Vec<String>,
@@ -206,7 +207,7 @@ mod tests {
 }
 
 /// 인덱스된 파일 하나
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct FileEntry {
     pub id: i64,
     pub path: String,
@@ -220,7 +221,7 @@ pub struct FileEntry {
 }
 
 /// 내용 검색 결과
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct ContentResult {
     pub path: String,
     pub name: String,
@@ -239,7 +240,7 @@ pub struct ContentResult {
 }
 
 /// 검색 루트 (내용 인덱싱 여부 포함)
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct RootInfo {
     pub id: i64,
     pub path: String,
@@ -250,6 +251,7 @@ pub struct RootInfo {
 /// saved query is re-evaluated against the current local index when opened.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SavedQuery {
     pub id: i64,
     pub name: String,
@@ -260,7 +262,7 @@ pub struct SavedQuery {
 }
 
 /// 인덱스 상태
-#[derive(Debug, Clone, Serialize)]
+#[derive(Debug, Clone, Serialize, ts_rs::TS)]
 pub struct IndexStatus {
     pub indexing: bool,
     pub cancel_requested: bool,
@@ -277,6 +279,7 @@ pub struct IndexStatus {
 /// watcher 루트별 상태
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum RootSourceKind {
     Native,
     Wsl,
@@ -284,6 +287,7 @@ pub enum RootSourceKind {
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
+#[derive(ts_rs::TS)]
 pub enum WatchMode {
     Native,
     Polling,
@@ -296,6 +300,7 @@ pub enum WatchMode {
 /// an OS error string.
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RootStatus {
     pub root: String,
     pub source_kind: RootSourceKind,
