@@ -4,7 +4,7 @@
 
 **Goal:** 사용자가 OneDrive 동기화 폴더·WOF 압축 폴더·Dev Drive(ReFS)의 프로젝트나 노트 폴더를 쓸 수 있게 한다. 이름을 다른 위치로 돌리는 링크(심볼릭 링크·junction)는 지금처럼 거부한다(D11).
 
-**Architecture:** 규칙을 "모든 reparse point 거부"에서 "이름 대리(name-surrogate) reparse point만 거부"로 바꾼다. Rust 표준 라이브러리의 Windows `FileType::is_symlink()`가 바로 이 기준(태그의 0x20000000 비트)이므로 경로 검사는 그것을 쓰고, 핸들 검사는 `FILE_ATTRIBUTE_TAG_INFO`로 같은 비트를 본다. 파일 식별자는 `FILE_ID_INFO`(64비트 볼륨 + 128비트 ID)로 읽고 128비트 ID를 64비트로 접어 기존 `FilesystemIdentity` 형태를 유지한다(NTFS는 기존 값과 동일, ReFS만 해시). OneDrive placeholder를 읽을 때는 reparse 핸들을 버리고 일반 핸들로 다시 열어 동기화 드라이버가 내용을 내려받게 한다.
+**Architecture:** 규칙을 "모든 reparse point 거부"에서 "이름 대리(name-surrogate) reparse point만 거부"로 바꾼다. Rust 표준 라이브러리의 Windows `FileType::is_symlink()`가 바로 이 기준(태그의 0x20000000 비트)이므로 경로 검사는 그것을 쓰고, 핸들 검사는 `FILE_ATTRIBUTE_TAG_INFO`로 같은 비트를 본다. 파일 비교는 `FILE_ID_INFO`(64비트 볼륨 + 128비트 ID)를 함께 사용한다. 설치 기록에 사용되는 `components()`는 v0.8.1의 볼륨32·파일64 값을 유지하고, 콘텐츠용 `content_components()`는 확장 ID를 반영한다. OneDrive placeholder를 읽을 때는 reparse 핸들을 버리고 일반 핸들로 다시 열어 동기화 드라이버가 내용을 내려받게 한다.
 
 **Tech Stack:** Rust, `windows` 0.61 (`Win32_Storage_FileSystem`)
 
@@ -16,7 +16,8 @@
 
 - `00-roadmap.md` §3 전부 적용.
 - 이 PR은 사용자 콘텐츠 경로만 바꾼다: `crates/filesystem`, `crates/knowledge-vault-engine/src/core/vault.rs`, `crates/repositories-engine/src/core/dependency_lens.rs`. 제품 데이터 폴더(LOCALAPPDATA) 전용 검사(`webhook-core` fixtures, `integration`, `editor-engine` LSP 설치 경로, Workspace `wsl_helper`, API Studio `owned_copy`, Knowledge `document_wsl`)는 바꾸지 않는다.
-- `FilesystemIdentity`는 저장되지 않는 프로세스 내 값이다(`Serialize` 없음). 형태(`scope: u64`, `object: u64`)와 `components()` 시그니처를 유지한다.
+- `FilesystemIdentity` 자체는 직렬화하지 않지만 `components()`는 설치 namespace·suite-owner·복구·제거 기록에 저장된다. 그 값과 시그니처는 바꾸지 않는다. Windows에서 같은 핸들의 확장 ID를 별도로 보관해 객체 비교에 사용하고, 콘텐츠 proof·revision은 `content_components()`를 쓴다. 기존 데이터 이동·변환은 하지 않는다.
+- 2026-09-25 재개 지시에 따른 호환 보완: Task 2에 기존 설치 키 보존과 128비트 상위 ID 구분 회귀를 추가한다. Task 4는 콘텐츠 proof 생산자·소비자 및 revision을 함께 맞춘다. 설치 namespace 소비자는 기존 API를 유지한다. 아래 예시의 전역 ID 교체 대신 이 호환 계약을 우선 적용한다.
 
 ## Review Focus
 

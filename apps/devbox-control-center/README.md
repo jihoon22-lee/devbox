@@ -38,3 +38,8 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 [이전 개발 단계의 상세 README](../../docs/history/v0.8-development/control-center.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
+
+지원 번들의 `operations`에는 같은 설치의 네 제품 운영 로그 요약이 들어간다.
+로그는 각 제품 데이터 폴더의 `logs/`에 UTC 날짜별로 기록하고 14일 보관한다.
+실패·취소·거부·panic과 250ms 이상 걸린 성공만 기록하며 원문 인자·본문·경로는 포함하지 않는다.
+portable 제품처럼 설치 접미사가 다르면 다른 제품 로그는 `missing`으로 표시된다.

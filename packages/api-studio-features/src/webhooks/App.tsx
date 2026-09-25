@@ -1,3 +1,4 @@
+import { bodyPreview } from "./lib/body";
 import { isProductHosted } from "../transport";
 import { MockDraftReceiver } from "./MockDraftReceiver";
 import {
@@ -73,6 +74,7 @@ const OPENAPI_FILE_TOO_LARGE_ERROR = `OpenAPI 파일이 너무 큽니다. ${OPEN
 const OPENAPI_FILE_READ_ERROR = "OpenAPI 파일을 읽지 못했습니다. JSON 또는 YAML 파일을 확인하세요.";
 const RUN_DEFINITION_EXPORT_ERROR = "Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
+  "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다",
   "요청 기록을 찾을 수 없습니다",
   "규칙을 찾을 수 없습니다",
   "규칙 입력이 유효하지 않습니다",
@@ -1402,7 +1404,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
               <span className={`method ${request.method.toLowerCase()}`}>{request.method}</span>
               <span className="url">{request.url}</span>
               <span className="dim">{new Date(request.receivedAtMs).toLocaleTimeString()}</span>
-              {request.body && <pre className="body">{request.body.slice(0, 200)}</pre>}
+              {request.body && <pre className="body">{bodyPreview(request.body, request.bodyEncoding)}</pre>}
               {request.headers.some(([, value]) => value === "•••••") && (
                 <span className="masked">민감 헤더 마스킹됨</span>
               )}
@@ -1460,7 +1462,7 @@ export default function App({ active = true }: { active?: boolean } = {}) {
                   <span className="dim">{formatFixtureTime(fixture.receivedAtMs)}</span>
                   <span className="masked">마스킹됨</span>
                 </div>
-                {fixture.body && <pre className="body">{fixture.body.slice(0, 200)}</pre>}
+                {fixture.body && <pre className="body">{bodyPreview(fixture.body, fixture.bodyEncoding)}</pre>}
                 <div className="fixture-actions">
                   <button
                     type="button"

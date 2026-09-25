@@ -21,6 +21,7 @@ crate-type = ["rlib"]
 
 
 [dependencies]
+product-contract = { path = "../product-contract" }
 tauri = { version = "2", features = [] }
 tauri-plugin-dialog = "2"
 tauri-plugin-opener = "2"

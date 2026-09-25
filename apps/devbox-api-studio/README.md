@@ -72,3 +72,8 @@ MCP stdio stderr has no diagnostic consumer. It is drained concurrently through 
 zeroized after each read and on drop, without retention, logging or IPC publication. This avoids
 reassembling secrets split across chunks in an unused diagnostic ring. Stdout protocol handling
 and bounded process-tree cleanup remain separate.
+
+웹훅은 chunked 전송과 `Expect: 100-continue`를 지원한다. UTF-8이 아닌 본문은
+base64로 기록·fixture 저장하고 재전송 시 원래 바이트로 복원한다. 수신 한도는
+1,024,000바이트이며 기록에는 바이너리 앞 192,000바이트까지 남는다. 바이너리는
+텍스트 비밀 마스킹 대상이 아니며 API 요청 전달은 거부한다. Logs에는 크기 설명만 전달한다.

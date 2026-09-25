@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
-import { nativeMode, productDataAvailable, type Description } from "@devbox/product-shell/api";
+import { nativeMode, productDataAvailable, currentDescription, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
 import type { Registry } from "./RegistryGate";
 const MigrationOnly=lazy(()=>import("./MigrationOnly"));
@@ -29,15 +29,12 @@ const Logs = lazy(() => import("@devbox/workspace-features/logs"));
 const LegacyLspImport = lazy(() => import("./LegacyLspImport"));
 const LegacyRecoveryImport = lazy(() => import("./LegacyRecoveryImport"));
 const LegacySessionImport = lazy(() => import("./LegacySessionImport"));
-let displayed: Description | undefined;
 let connected = false;
 
 function NativeContent({route, description, refreshContext, navigate}: ShellContentProps) {
-  displayed = description;
   if (!connected) {
-    configureProductTransport(<T,>(component: string, method: string, args: Record<string, unknown>) => {
-      const snapshot = displayed;
-      if (!snapshot) return Promise.reject(new Error("제품 연결 정보를 확인하지 못했습니다."));
+    configureProductTransport(async <T,>(component: string, method: string, args: Record<string, unknown>) => {
+      const snapshot = await currentDescription("workspace");
       const ownerRoute = component === "workspace.files" || component === "workspace.lsp" ? "files"
         : component === "workspace.source" ? "source" : component === "workspace.dependencies" ? "dependencies"
         : component === "workspace.terminal" ? "terminal" : component === "workspace.runtime" ? "tasks" : component === "workspace.logs" ? "logs"

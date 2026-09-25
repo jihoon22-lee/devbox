@@ -6,8 +6,8 @@
 //! leaves a partial body without an idle deadline.  This module deliberately
 //! supports only the request shape the
 //! app needs: one HTTP/1.0 or HTTP/1.1 request per connection, an optional
-//! fixed `Content-Length`, and a bounded UTF-8 body.  Unsupported transfer
-//! encodings are rejected rather than guessed.
+//! fixed `Content-Length` or chunked body, with optional 100-continue.
+//! Non-UTF-8 bodies are retained as base64 within the original byte limit.
 
 use super::fixtures::{
     MAX_FIXTURE_HEADER_NAME_BYTES, MAX_FIXTURE_HEADER_NAME_CHARS, MAX_FIXTURE_HEADER_VALUE_BYTES,
@@ -44,6 +44,7 @@ pub enum ParseError {
     BodyTooLarge,
     Timeout,
     Unsupported,
+    ExpectationFailed,
     RateLimited,
     Io,
 }
@@ -54,9 +55,23 @@ pub struct ParsedRequest {
     pub target: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    pub body_encoding: crate::core::body::BodyEncoding,
 }
 
-type ParsedHead = (String, String, Vec<(String, String)>, Option<usize>);
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum BodyFraming {
+    None,
+    Length(usize),
+    Chunked,
+}
+
+struct ParsedHead {
+    method: String,
+    target: String,
+    headers: Vec<(String, String)>,
+    framing: BodyFraming,
+    expect_continue: bool,
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LineError {
@@ -198,6 +213,10 @@ fn parse_head(
     let mut total_chars = 0usize;
     let mut total_bytes = 0usize;
     let mut content_length = None;
+    let mut chunked = false;
+    let mut transfer_encoding_seen = false;
+    let mut unsupported_transfer_encoding = false;
+    let mut expect_continue = false;
     loop {
         if !running.load(Ordering::Acquire) {
             return Err(ParseError::Cancelled);
@@ -246,31 +265,133 @@ fn parse_head(
                 return Err(ParseError::Malformed);
             }
             content_length = Some(parsed);
-        } else if name.eq_ignore_ascii_case("transfer-encoding")
-            || name.eq_ignore_ascii_case("expect")
-        {
-            return Err(ParseError::Unsupported);
+        } else if name.eq_ignore_ascii_case("transfer-encoding") {
+            unsupported_transfer_encoding |=
+                transfer_encoding_seen || !value.eq_ignore_ascii_case("chunked");
+            transfer_encoding_seen = true;
+            chunked = value.eq_ignore_ascii_case("chunked");
+        } else if name.eq_ignore_ascii_case("expect") {
+            if !value.eq_ignore_ascii_case("100-continue") {
+                return Err(ParseError::ExpectationFailed);
+            }
+            expect_continue = true;
         }
         headers.push((name.to_string(), value.to_string()));
     }
 
-    Ok((
-        method.to_ascii_uppercase(),
-        target.to_string(),
+    if transfer_encoding_seen && content_length.is_some() {
+        return Err(ParseError::Malformed);
+    }
+    if unsupported_transfer_encoding {
+        return Err(ParseError::Unsupported);
+    }
+    let framing = match (chunked, content_length) {
+        (true, Some(_)) => return Err(ParseError::Malformed),
+        (true, None) => BodyFraming::Chunked,
+        (false, None) | (false, Some(0)) => BodyFraming::None,
+        (false, Some(length)) => BodyFraming::Length(length),
+    };
+    Ok(ParsedHead {
+        method: method.to_ascii_uppercase(),
+        target: target.to_string(),
         headers,
-        content_length,
-    ))
+        framing,
+        expect_continue,
+    })
 }
 
 fn within(value: &str, max_chars: usize, max_bytes: usize) -> bool {
     value.chars().count() <= max_chars && value.len() <= max_bytes
 }
 
+const MAX_CHUNK_LINE_BYTES: usize = 128;
+const MAX_TRAILER_BYTES: usize = 8 * 1024;
+
+fn read_exact_until<R: Read>(
+    reader: &mut R,
+    buffer: &mut [u8],
+    deadline: Instant,
+    running: &AtomicBool,
+) -> Result<(), ParseError> {
+    let mut filled = 0;
+    while filled < buffer.len() {
+        if !running.load(Ordering::Acquire) {
+            return Err(ParseError::Cancelled);
+        }
+        if Instant::now() >= deadline {
+            return Err(ParseError::Timeout);
+        }
+        match reader.read(&mut buffer[filled..]) {
+            Ok(0) => return Err(ParseError::Timeout),
+            Ok(read) => filled += read,
+            Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
+            Err(_) => return Err(ParseError::Timeout),
+        }
+    }
+    Ok(())
+}
+
+fn read_chunked<R: Read>(
+    reader: &mut R,
+    deadline: Instant,
+    running: &AtomicBool,
+) -> Result<Vec<u8>, ParseError> {
+    let mut body = Vec::new();
+    loop {
+        if !running.load(Ordering::Acquire) {
+            return Err(ParseError::Cancelled);
+        }
+        let line = read_crlf_line(reader, MAX_CHUNK_LINE_BYTES, deadline)
+            .map_err(|error| map_line_error(error, ParseError::Malformed))?
+            .ok_or(ParseError::Malformed)?;
+        let line = std::str::from_utf8(&line).map_err(|_| ParseError::Malformed)?;
+        let size_text = line.split(';').next().unwrap_or("").trim();
+        if size_text.is_empty() || !size_text.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+            return Err(ParseError::Malformed);
+        }
+        let size = usize::from_str_radix(size_text, 16).map_err(|_| ParseError::BodyTooLarge)?;
+        if size == 0 {
+            let mut trailer_bytes = 0usize;
+            loop {
+                if !running.load(Ordering::Acquire) {
+                    return Err(ParseError::Cancelled);
+                }
+                let trailer = read_crlf_line(reader, MAX_HEADER_LINE_BYTES, deadline)
+                    .map_err(|error| map_line_error(error, ParseError::HeaderTooLarge))?
+                    .ok_or(ParseError::Malformed)?;
+                if trailer.is_empty() {
+                    return Ok(body);
+                }
+                trailer_bytes += trailer.len() + 2;
+                if trailer_bytes > MAX_TRAILER_BYTES {
+                    return Err(ParseError::HeaderTooLarge);
+                }
+            }
+        }
+        if body
+            .len()
+            .checked_add(size)
+            .is_none_or(|total| total > MAX_BODY_BYTES)
+        {
+            return Err(ParseError::BodyTooLarge);
+        }
+        let start = body.len();
+        body.resize(start + size, 0);
+        read_exact_until(reader, &mut body[start..], deadline, running)?;
+        let mut crlf = [0u8; 2];
+        read_exact_until(reader, &mut crlf, deadline, running)?;
+        if &crlf != b"\r\n" {
+            return Err(ParseError::Malformed);
+        }
+    }
+}
+
 /// Read one bounded request from a single-use connection. The admission
 /// callback runs after the complete header but before body allocation/read so
-/// callers can reject rate-limited requests without consuming the body.
-pub fn read_request<R: Read, F>(
-    stream: &mut R,
+/// callers can reject rate-limited requests without consuming the body. A
+/// `100 Continue` interim response is written only after admission.
+pub fn read_request<S: Read + Write, F>(
+    stream: &mut S,
     running: &AtomicBool,
     admit: F,
 ) -> Result<ParsedRequest, ParseError>
@@ -285,59 +406,38 @@ where
     let request_line = read_crlf_line(&mut reader, MAX_REQUEST_LINE_BYTES, deadline)
         .map_err(|error| map_line_error(error, ParseError::RequestLineTooLarge))?
         .ok_or(ParseError::Closed)?;
-    let (method, target, headers, content_length) =
-        parse_head(&request_line, &mut reader, running, deadline)?;
+    let head = parse_head(&request_line, &mut reader, running, deadline)?;
     if !running.load(Ordering::Acquire) {
         return Err(ParseError::Cancelled);
     }
     if !admit() {
         return Err(ParseError::RateLimited);
     }
-    let length = content_length.unwrap_or(0);
-    let mut body = Vec::with_capacity(length.min(MAX_BODY_BYTES));
-    let mut remaining = length;
-    let mut chunk = [0u8; 16 * 1024];
-    while remaining > 0 {
-        if !running.load(Ordering::Acquire) {
-            return Err(ParseError::Cancelled);
-        }
-        if Instant::now() >= deadline {
-            return Err(ParseError::Timeout);
-        }
-        let read_len = remaining.min(chunk.len());
-        let read = loop {
-            match reader.read(&mut chunk[..read_len]) {
-                Ok(read) => break read,
-                Err(error) if error.kind() == io::ErrorKind::Interrupted => continue,
-                Err(error)
-                    if matches!(
-                        error.kind(),
-                        io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
-                    ) =>
-                {
-                    return Err(ParseError::Timeout)
-                }
-                Err(_) => return Err(ParseError::Timeout),
-            }
-        };
-        if read == 0 {
-            return Err(ParseError::Timeout);
-        }
-        body.extend_from_slice(&chunk[..read]);
-        remaining -= read;
+    if head.expect_continue && head.framing != BodyFraming::None {
+        let inner = reader.get_mut();
+        inner
+            .write_all(b"HTTP/1.1 100 Continue\r\n\r\n")
+            .and_then(|()| inner.flush())
+            .map_err(|_| ParseError::Io)?;
     }
-
-    // Request bodies are retained as text in history/fixtures.  Reject
-    // invalid UTF-8 instead of using a lossy conversion: replacing every
-    // invalid byte with U+FFFD can expand a bounded 1 MiB wire body to nearly
-    // 3 MiB per worker and defeats the advertised body-memory bound.
-    let body = String::from_utf8(body).map_err(|_| ParseError::Malformed)?;
-
+    let bytes = match head.framing {
+        BodyFraming::None => Vec::new(),
+        BodyFraming::Length(length) => {
+            let mut body = vec![0u8; length];
+            read_exact_until(&mut reader, &mut body, deadline, running)?;
+            body
+        }
+        BodyFraming::Chunked => read_chunked(&mut reader, deadline, running)?,
+    };
+    // base64 grows an already bounded body by 4/3; the lossy UTF-8
+    // conversion this replaces could grow it three-fold.
+    let (body, body_encoding) = crate::core::body::encode_body(bytes);
     Ok(ParsedRequest {
-        method,
-        target,
-        headers,
+        method: head.method,
+        target: head.target,
+        headers: head.headers,
         body,
+        body_encoding,
     })
 }
 
@@ -476,6 +576,135 @@ pub fn write_response<W: Write>(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn chunked_bodies_with_extensions_and_trailers_are_joined() {
+        let (mut client, mut server) = pair();
+        client
+            .write_all(
+                b"POST /hook HTTP/1.1\r\nTransfer-Encoding: Chunked\r\n\r\n4;ext=1\r\nWiki\r\n5\r\npedia\r\n0\r\nX-Trailer: t\r\n\r\n",
+            )
+            .unwrap();
+        let running = AtomicBool::new(true);
+        let parsed = read_request(&mut server, &running, || true).unwrap();
+        assert_eq!(parsed.body, "Wikipedia");
+        assert!(parsed.body_encoding.is_utf8());
+    }
+
+    #[test]
+    fn chunked_total_over_the_limit_is_rejected() {
+        let (mut client, mut server) = pair();
+        let size = MAX_BODY_BYTES + 1;
+        let head = format!("POST /hook HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{size:x}\r\n");
+        client.write_all(head.as_bytes()).unwrap();
+        let running = AtomicBool::new(true);
+        assert_eq!(
+            read_request(&mut server, &running, || true),
+            Err(ParseError::BodyTooLarge)
+        );
+    }
+
+    #[test]
+    fn conflicting_or_unknown_transfer_encodings_are_rejected() {
+        let running = AtomicBool::new(true);
+        let (mut client, mut server) = pair();
+        client
+            .write_all(
+                b"POST /hook HTTP/1.1\r\nTransfer-Encoding: chunked\r\nContent-Length: 3\r\n\r\n",
+            )
+            .unwrap();
+        assert_eq!(
+            read_request(&mut server, &running, || true),
+            Err(ParseError::Malformed)
+        );
+        let (mut client, mut server) = pair();
+        client
+            .write_all(b"POST /hook HTTP/1.1\r\nTransfer-Encoding: gzip, chunked\r\n\r\n")
+            .unwrap();
+        assert_eq!(
+            read_request(&mut server, &running, || true),
+            Err(ParseError::Unsupported)
+        );
+    }
+
+    #[test]
+    fn transfer_encoding_conflicts_and_admission_precede_body_io() {
+        let running = AtomicBool::new(true);
+        for head in [
+            "Transfer-Encoding: gzip\r\nContent-Length: 3",
+            "Content-Length: 3\r\nTransfer-Encoding: gzip",
+        ] {
+            let mut io =
+                std::io::Cursor::new(format!("POST / HTTP/1.1\r\n{head}\r\n\r\n").into_bytes());
+            assert_eq!(
+                read_request(&mut io, &running, || true),
+                Err(ParseError::Malformed)
+            );
+        }
+        let mut io = std::io::Cursor::new(
+            b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .to_vec(),
+        );
+        assert_eq!(
+            read_request(&mut io, &running, || true),
+            Err(ParseError::Unsupported)
+        );
+        let bytes =
+            b"POST / HTTP/1.1\r\nExpect: 100-continue\r\nContent-Length: 2\r\n\r\n".to_vec();
+        let mut io = std::io::Cursor::new(bytes.clone());
+        assert_eq!(
+            read_request(&mut io, &running, || false),
+            Err(ParseError::RateLimited)
+        );
+        assert_eq!(io.into_inner(), bytes);
+    }
+
+    #[test]
+    fn expect_continue_gets_an_interim_response_before_the_body() {
+        let (mut client, mut server) = pair();
+        client
+            .write_all(b"POST /hook HTTP/1.1\r\nContent-Length: 2\r\nExpect: 100-continue\r\n\r\n")
+            .unwrap();
+        let running = std::sync::Arc::new(AtomicBool::new(true));
+        let worker_running = running.clone();
+        let worker = thread::spawn(move || read_request(&mut server, &worker_running, || true));
+        let mut interim = [0u8; 25];
+        client.read_exact(&mut interim).unwrap();
+        assert_eq!(&interim, b"HTTP/1.1 100 Continue\r\n\r\n");
+        client.write_all(b"ok").unwrap();
+        assert_eq!(worker.join().unwrap().unwrap().body, "ok");
+    }
+
+    #[test]
+    fn unknown_expectations_fail() {
+        let (mut client, mut server) = pair();
+        client
+            .write_all(b"POST /hook HTTP/1.1\r\nContent-Length: 2\r\nExpect: something\r\n\r\nok")
+            .unwrap();
+        let running = AtomicBool::new(true);
+        assert_eq!(
+            read_request(&mut server, &running, || true),
+            Err(ParseError::ExpectationFailed)
+        );
+    }
+
+    #[test]
+    fn binary_bodies_are_kept_as_base64() {
+        let (mut client, mut server) = pair();
+        client
+            .write_all(b"POST /hook HTTP/1.1\r\nContent-Length: 3\r\n\r\n\xff\x00\x01")
+            .unwrap();
+        let running = AtomicBool::new(true);
+        let parsed = read_request(&mut server, &running, || true).unwrap();
+        assert_eq!(
+            parsed.body_encoding,
+            crate::core::body::BodyEncoding::Base64
+        );
+        assert_eq!(
+            crate::core::body::decode_body(&parsed.body, parsed.body_encoding).unwrap(),
+            vec![0xff, 0x00, 0x01]
+        );
+    }
+
     use super::*;
     use std::net::{TcpListener, TcpStream};
     use std::thread;
@@ -504,17 +733,8 @@ mod tests {
     }
 
     #[test]
-    fn parser_rejects_chunked_and_oversized_headers_without_input_reflection() {
-        let (mut client, mut server) = pair();
-        client
-            .write_all(b"POST /hook HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n")
-            .unwrap();
+    fn parser_rejects_oversized_headers_without_input_reflection() {
         let running = AtomicBool::new(true);
-        assert_eq!(
-            read_request(&mut server, &running, || true),
-            Err(ParseError::Unsupported)
-        );
-
         let (mut client, mut server) = pair();
         client
             .write_all(
@@ -572,19 +792,6 @@ mod tests {
             Err(ParseError::Timeout)
         );
         drop(client);
-    }
-
-    #[test]
-    fn parser_rejects_non_utf8_body_without_lossy_expansion() {
-        let (mut client, mut server) = pair();
-        client
-            .write_all(b"POST /hook HTTP/1.1\r\nContent-Length: 1\r\n\r\n\xff")
-            .unwrap();
-        let running = AtomicBool::new(true);
-        assert_eq!(
-            read_request(&mut server, &running, || true),
-            Err(ParseError::Malformed)
-        );
     }
 
     #[test]

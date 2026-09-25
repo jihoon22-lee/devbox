@@ -15,3 +15,9 @@ it("preserves the reviewed Webhook receiver-unavailable message only for its own
   expect(componentFailure("api-studio.api", {issue}).message).toBe("작업을 완료하지 못했습니다.");
   expect(componentFailure("api-studio.webhooks", {issue:issue+" synthetic-secret"}).message).toBe("작업을 완료하지 못했습니다.");
 });
+
+it("preserves the binary webhook handoff explanation", () => {
+  const issue = "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
+  expect(componentFailure("api-studio.webhooks", {issue}).message).toBe(issue);
+  expect(componentFailure("api-studio.api", {issue}).message).toBe("작업을 완료하지 못했습니다.");
+});

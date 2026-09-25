@@ -61,6 +61,13 @@ pub struct SupportInstalledApp {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct OperationLogSummary {
+    pub product: String,
+    pub summary: product_contract::operation_log::Summary,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 struct SupportBundleDocument {
     schema_version: u32,
     generated_at_ms: u64,
@@ -69,6 +76,7 @@ struct SupportBundleDocument {
     catalog: SupportCatalog,
     databases: Vec<DataDatabaseInfo>,
     logs: Vec<LogMetadata>,
+    operations: Vec<OperationLogSummary>,
     omitted: Vec<&'static str>,
 }
 
@@ -161,6 +169,7 @@ pub fn build_bundle(
     data_root: &Path,
     diagnosis: Vec<SupportDiagnostic>,
     installed: Vec<SupportInstalledApp>,
+    operations: Vec<OperationLogSummary>,
     cancel: Arc<AtomicBool>,
 ) -> Result<BundleDraft, BundleFailure> {
     if !data_root.is_absolute() || data_root.to_string_lossy().len() > 4096 {
@@ -193,7 +202,8 @@ pub fn build_bundle(
         .collect::<Vec<_>>();
     let source_logs = logs.clone();
     let document = SupportBundleDocument {
-        schema_version: 1,
+        schema_version: 2,
+        operations,
         generated_at_ms: now_ms(),
         redaction: RedactionContract {
             version: REDACTION_VERSION,
@@ -479,6 +489,42 @@ fn now_ms() -> u64 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn operation_summaries_are_included_without_changing_the_source_revision() {
+        let root = std::env::temp_dir().join("devbox-support-bundle-operations");
+        let _ = fs::remove_dir_all(&root);
+        fs::create_dir_all(&root).unwrap();
+        let summary = product_contract::operation_log::Summary {
+            state: "available".into(),
+            ..Default::default()
+        };
+        let with = build_bundle(
+            &catalog(),
+            &root,
+            Vec::new(),
+            Vec::new(),
+            vec![OperationLogSummary {
+                product: "knowledge".into(),
+                summary,
+            }],
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let without = build_bundle(
+            &catalog(),
+            &root,
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+            Arc::new(AtomicBool::new(false)),
+        )
+        .unwrap();
+        let text = String::from_utf8(with.bytes).unwrap();
+        assert!(text.contains("\"operations\""));
+        assert!(text.contains("\"schemaVersion\": 2"));
+        assert_eq!(with.source_revision, without.source_revision);
+        let _ = fs::remove_dir_all(root);
+    }
     use super::*;
     use crate::core::catalog::CatalogApp;
     use std::fs;
@@ -517,6 +563,7 @@ mod tests {
                 detail: "Authorization: Bearer secret /home/alice/project".into(),
             }],
             Vec::new(),
+            Vec::new(),
             Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
@@ -537,6 +584,7 @@ mod tests {
         let draft = build_bundle(
             &catalog(),
             &root,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Arc::new(AtomicBool::new(false)),
@@ -566,6 +614,7 @@ mod tests {
             &root,
             Vec::new(),
             Vec::new(),
+            Vec::new(),
             Arc::new(AtomicBool::new(false)),
         )
         .unwrap();
@@ -581,6 +630,7 @@ mod tests {
         let error = build_bundle(
             &catalog(),
             &root,
+            Vec::new(),
             Vec::new(),
             Vec::new(),
             Arc::new(AtomicBool::new(true)),

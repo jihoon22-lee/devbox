@@ -330,6 +330,7 @@ fn parse_error_response(error: ParseError) -> Option<(u16, &'static str)> {
         ParseError::HeaderTooLarge => Some((431, REQUEST_HEADER_ERROR)),
         ParseError::BodyTooLarge => Some((413, REQUEST_TOO_LARGE_ERROR)),
         ParseError::Timeout => Some((408, REQUEST_TIMEOUT_ERROR)),
+        ParseError::ExpectationFailed => Some((417, "지원하지 않는 Expect 요청입니다")),
         ParseError::Unsupported => Some((501, "지원하지 않는 HTTP 요청입니다")),
         ParseError::RateLimited => Some((429, RATE_LIMIT_ERROR)),
     }
@@ -468,11 +469,12 @@ fn handle_request<W: Write>(
 
     // history 기록 (마스킹 적용)
     if let Ok(mut history) = state.history.lock() {
-        history.push(
+        history.push_encoded(
             request.method.clone(),
             request.target.clone(),
             request.headers.clone(),
             request.body.clone(),
+            request.body_encoding,
             received_at,
         );
     } else {
@@ -1071,10 +1073,17 @@ pub(crate) fn prepare_api_handoff(
     saved: bool,
 ) -> Result<serde_json::Value, String> {
     let fixture = selected_handoff_fixture(app, args, saved)?;
-    let payload =
-        build_api_request_payload(&fixture).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    let payload = build_api_request_payload(&fixture).map_err(str::to_string)?;
     serde_json::to_value(payload).map_err(|_| HANDOFF_INPUT_ERROR.to_string())
 }
+fn log_body(fixture: &CapturedFixture) -> String {
+    if fixture.body_encoding.is_utf8() {
+        return fixture.body.clone();
+    }
+    let bytes = crate::core::body::decoded_len(&fixture.body, fixture.body_encoding).unwrap_or(0);
+    format!("[binary body {bytes} bytes]")
+}
+
 pub(crate) fn prepare_log_handoff(
     app: &AppHandle,
     args: serde_json::Value,
@@ -1086,7 +1095,7 @@ pub(crate) fn prepare_log_handoff(
         &fixture.url,
         fixture.received_at_ms,
         &fixture.headers,
-        &fixture.body,
+        &log_body(&fixture),
     )
     .map_err(|_| HANDOFF_INPUT_ERROR.to_string())
 }
@@ -1100,8 +1109,7 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, Stri
         return Err(API_TARGET_UNAVAILABLE_ERROR.to_string());
     }
 
-    let payload =
-        build_api_request_payload(&fixture).map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
+    let payload = build_api_request_payload(&fixture).map_err(str::to_string)?;
     let created_at_ms = handoff_now_ms().ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
     let expires_at_ms = created_at_ms
         .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)
@@ -1195,7 +1203,7 @@ fn publish_log_lens_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch,
         &fixture.url,
         fixture.received_at_ms,
         &fixture.headers,
-        &fixture.body,
+        &log_body(&fixture),
     )
     .map_err(|_| HANDOFF_INPUT_ERROR.to_string())?;
     let created_at_ms =

@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { configureProductTransport, type Component } from "@devbox/api-studio-features/transport";
-import { describe, makeRequest, nativeMode } from "@devbox/product-shell/api";
+import { currentDescription, makeRequest, nativeMode } from "@devbox/product-shell/api";
 import { isOperation, problemMessage, type Operation } from "@devbox/product-shell/operation";
 import { migrationFailure } from "./migration/protocol";
 import { componentFailure } from "./componentErrors";
@@ -12,7 +12,7 @@ const routeFor: Record<Component, string> = {
 
 configureProductTransport(async <T>(component: Component, method: string, args: Record<string, unknown>): Promise<T> => {
   if (!nativeMode) throw new Error("데스크톱 앱에서 사용할 수 있습니다.");
-  const description = await describe("api-studio");
+  const description = await currentDescription("api-studio");
   const header = makeRequest(description.handshake, routeFor[component], Date.now(), description.context);
   if(method==="send_knowledge_draft" || method==="open_workspace_selection")header.deadlineMs=Date.now()+29000;
   const provenance = { product: "api-studio", component, requestId: header.requestId, revision: catalog.catalogRevision };

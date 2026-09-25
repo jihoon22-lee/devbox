@@ -143,6 +143,8 @@ async fn execute(
     active: State<'_, Active>,
     request: Request,
 ) -> Result<Response, Problem> {
+    let operation =
+        product_shell_tauri::begin_operation(&window, &request.component, &request.method);
     // Untrusted names never enter the returned provenance.
     let rejected = |code| Problem {
         code,
@@ -177,30 +179,32 @@ async fn execute(
         crate::migration::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
     }
     if request.component == "api-studio.migration" {
-        return Ok(
-            match crate::migration::dispatch(app, &request.method, request.args).await {
-                Ok(value) => Response {
-                    operation: Operation {
-                        provenance,
-                        outcome: OperationState::Succeeded {},
+        let result = crate::migration::dispatch(app, &request.method, request.args).await;
+        let (outcome, value, failure) = match result {
+            Ok(value) => (OperationState::Succeeded {}, value, None),
+            Err(error) => {
+                let issue = crate::migration::issue(&error);
+                (
+                    if issue == "cancelled" {
+                        OperationState::Cancelled {}
+                    } else {
+                        OperationState::Failed {
+                            code: ProblemCode::Unavailable,
+                        }
                     },
-                    value,
-                },
-                Err(error) => Response {
-                    operation: Operation {
-                        provenance,
-                        outcome: if crate::migration::issue(&error) == "cancelled" {
-                            OperationState::Cancelled {}
-                        } else {
-                            OperationState::Failed {
-                                code: ProblemCode::Unavailable,
-                            }
-                        },
-                    },
-                    value: serde_json::json!({ "issue": crate::migration::issue(&error) }),
-                },
+                    serde_json::json!({ "issue": issue }),
+                    Some(issue),
+                )
+            }
+        };
+        operation.finish(&outcome, failure);
+        return Ok(Response {
+            operation: Operation {
+                provenance,
+                outcome,
             },
-        );
+            value,
+        });
     }
     crate::lifecycle::require_open(app).map_err(|_| problem(ProblemCode::Unavailable))?;
     let value = if request.component == "api-studio.api"
@@ -318,6 +322,10 @@ async fn execute(
             (outcome, serde_json::json!({ "issue": issue }))
         }
     };
+    operation.finish(
+        &outcome,
+        value.get("issue").and_then(serde_json::Value::as_str),
+    );
     Ok(Response {
         operation: Operation {
             provenance,

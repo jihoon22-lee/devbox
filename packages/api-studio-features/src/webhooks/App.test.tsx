@@ -1342,3 +1342,17 @@ describe("Webhook Lab history and rule context menus", () => {
     await waitFor(() => expect(startServerMock).toHaveBeenCalledWith("0.0.0.0", 9000, true));
   });
 });
+
+it("labels binary history and explains the blocked API handoff accessibly", async () => {
+  history = [{ ...initialHistory[0], id: 1, method: "POST", url: "/hook", body: "/wAB", bodyEncoding: "base64" }];
+  const issue = "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
+  sendHistoryToApiMock.mockRejectedValueOnce(new Error(issue));
+  const {container} = render(<App />);
+  await screen.findByText("바이너리 본문 · 3 bytes");
+  fireEvent.contextMenu(await screen.findByLabelText("POST /hook 요청"));
+  fireEvent.click(screen.getByRole("menuitem", {name: "API Playground로 변환"}));
+  await screen.findByText(issue);
+  expect(screen.getByLabelText("POST /hook 요청")).toBeTruthy();
+  expect(writeTextMock).not.toHaveBeenCalled();
+  await assertNoA11yViolations(container);
+});

@@ -1,3 +1,4 @@
+import { currentDescription, publishDescription, invalidateDescription } from "./api";
 import { Component, lazy, Suspense, useEffect, useRef, useState, useCallback, type ReactNode } from "react";
 import { isImeComposing } from "@devbox/a11y";
 import { describe, nativeMode, type Description, type ProductId } from "./api";
@@ -72,8 +73,8 @@ export function ProductShell({ product, renderContent }: { product: ProductId; r
     let active = true;
     const id = ++loadId.current;
     setDescription(null); setError(false);
-    void describe(product).then((value) => { if (active && id === loadId.current) setDescription(value); }, () => { if (active && id === loadId.current) setError(true); });
-    return () => { active = false; loadId.current += 1; };
+    void currentDescription(product).then((value) => { if (active && id === loadId.current) { publishDescription(value); setDescription(value); } }, () => { if (active && id === loadId.current) setError(true); });
+    return () => { active = false; loadId.current += 1; invalidateDescription(product); };
   }, [product, attempt]);
   const refreshContext = useCallback(async () => {
     const id = ++loadId.current;
@@ -83,6 +84,7 @@ export function ProductShell({ product, renderContent }: { product: ProductId; r
       || next.handshake.installationId !== description.handshake.installationId) throw new Error("제품 연결이 변경되었습니다. 앱을 다시 열어 주세요.");
     // Keep the mounted feature and its dirty buffers while refreshing only
     // native-owned description/context metadata.
+    publishDescription(next);
     setDescription(next);
   }, [product, description]);
   if (error) return <main role="alert"><h1>제품 연결을 확인할 수 없습니다</h1><button onClick={() => setAttempt((v) => v + 1)}>다시 시도</button></main>;
