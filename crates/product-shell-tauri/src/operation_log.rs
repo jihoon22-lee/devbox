@@ -15,7 +15,9 @@ pub(crate) struct Sink {
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
-        .map_or(0, |duration| duration.as_millis().min(u128::from(u64::MAX)) as u64)
+        .map_or(0, |duration| {
+            duration.as_millis().min(u128::from(u64::MAX)) as u64
+        })
 }
 
 pub(crate) fn outcome_of(state: &OperationState) -> Outcome {
@@ -121,8 +123,16 @@ impl OperationGuard {
                 now_ms(),
                 &self.version,
                 &self.product,
-                &if self.finished { self.component.clone() } else { operation_log::opaque_token(&self.component) },
-                &if self.finished { self.method.clone() } else { operation_log::opaque_token(&self.method) },
+                &if self.finished {
+                    self.component.clone()
+                } else {
+                    operation_log::opaque_token(&self.component)
+                },
+                &if self.finished {
+                    self.method.clone()
+                } else {
+                    operation_log::opaque_token(&self.method)
+                },
                 duration_ms,
                 outcome,
                 code,
@@ -163,10 +173,18 @@ mod tests {
 
     #[test]
     fn operation_states_map_to_log_outcomes() {
-        assert_eq!(outcome_of(&OperationState::Succeeded {}), Outcome::Succeeded);
-        assert_eq!(outcome_of(&OperationState::Cancelled {}), Outcome::Cancelled);
         assert_eq!(
-            outcome_of(&OperationState::Failed { code: ProblemCode::Unavailable }),
+            outcome_of(&OperationState::Succeeded {}),
+            Outcome::Succeeded
+        );
+        assert_eq!(
+            outcome_of(&OperationState::Cancelled {}),
+            Outcome::Cancelled
+        );
+        assert_eq!(
+            outcome_of(&OperationState::Failed {
+                code: ProblemCode::Unavailable
+            }),
             Outcome::Failed
         );
         assert_eq!(outcome_of(&OperationState::Stale {}), Outcome::Failed);
@@ -174,20 +192,45 @@ mod tests {
 
     #[test]
     fn panic_locations_keep_only_the_file_name() {
-        assert_eq!(location_token("crates\\knowledge\\src\\component.rs", 212), "component.rs:212");
-        assert_eq!(location_token("/home/runner/work/devbox/src/lib.rs", 9), "lib.rs:9");
+        assert_eq!(
+            location_token("crates\\knowledge\\src\\component.rs", 212),
+            "component.rs:212"
+        );
+        assert_eq!(
+            location_token("/home/runner/work/devbox/src/lib.rs", 9),
+            "lib.rs:9"
+        );
     }
 
     #[test]
     fn a_dropped_guard_records_a_rejection_and_a_finished_one_does_not_double_count() {
         let dir = tempfile::tempdir().unwrap();
         let log = Arc::new(OperationLog::open(dir.path().to_path_buf()).unwrap());
-        let sink = Sink { log: Some(log), product: "knowledge".into(), version: "0.9.0".into() };
-        drop(OperationGuard::start(&sink, "knowledge.notes", "write_file"));
-        OperationGuard::start(&sink, "knowledge.notes", "read_file")
-            .finish(&OperationState::Failed { code: product_contract::ProblemCode::Unavailable }, Some("vault_unavailable"));
+        let sink = Sink {
+            log: Some(log),
+            product: "knowledge".into(),
+            version: "0.9.0".into(),
+        };
+        drop(OperationGuard::start(
+            &sink,
+            "knowledge.notes",
+            "write_file",
+        ));
+        OperationGuard::start(&sink, "knowledge.notes", "read_file").finish(
+            &OperationState::Failed {
+                code: product_contract::ProblemCode::Unavailable,
+            },
+            Some("vault_unavailable"),
+        );
         let summary = product_contract::operation_log::summarize(dir.path(), 10, 1 << 20);
         assert_eq!(summary.counts.rejected, 1);
+        let rejected = summary
+            .recent
+            .iter()
+            .find(|entry| entry.outcome == Outcome::Rejected)
+            .unwrap();
+        assert!(rejected.component.starts_with("msg-"));
+        assert!(rejected.method.starts_with("msg-"));
         assert_eq!(summary.counts.failed, 1);
         assert_eq!(summary.recent[0].code.as_deref(), Some("vault_unavailable"));
     }

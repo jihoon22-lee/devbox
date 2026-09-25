@@ -1073,8 +1073,7 @@ pub(crate) fn prepare_api_handoff(
     saved: bool,
 ) -> Result<serde_json::Value, String> {
     let fixture = selected_handoff_fixture(app, args, saved)?;
-    let payload =
-        build_api_request_payload(&fixture).map_err(str::to_string)?;
+    let payload = build_api_request_payload(&fixture).map_err(str::to_string)?;
     serde_json::to_value(payload).map_err(|_| HANDOFF_INPUT_ERROR.to_string())
 }
 fn log_body(fixture: &CapturedFixture) -> String {
@@ -1110,8 +1109,7 @@ fn publish_api_handoff(fixture: CapturedFixture) -> Result<HandoffDispatch, Stri
         return Err(API_TARGET_UNAVAILABLE_ERROR.to_string());
     }
 
-    let payload =
-        build_api_request_payload(&fixture).map_err(str::to_string)?;
+    let payload = build_api_request_payload(&fixture).map_err(str::to_string)?;
     let created_at_ms = handoff_now_ms().ok_or_else(|| HANDOFF_CREATE_ERROR.to_string())?;
     let expires_at_ms = created_at_ms
         .checked_add(devbox_applink::DEFAULT_HANDOFF_TTL_MS)

@@ -294,14 +294,21 @@ pub(crate) fn suite_log_dirs(
         .map(|(id, identifier)| {
             (
                 id.clone(),
-                data_root.join(format!("{identifier}.i{suffix}")).join("logs"),
+                data_root
+                    .join(format!("{identifier}.i{suffix}"))
+                    .join("logs"),
             )
         })
         .collect()
 }
 
-fn operation_summaries(app: &tauri::AppHandle, data_root: &std::path::Path) -> Vec<support_bundle::OperationLogSummary> {
-    let Ok(catalog) = devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE) else {
+fn operation_summaries(
+    app: &tauri::AppHandle,
+    data_root: &std::path::Path,
+) -> Vec<support_bundle::OperationLogSummary> {
+    let Ok(catalog) =
+        devbox_catalog::products::ProductCatalog::parse(devbox_catalog::products::SOURCE)
+    else {
         return Vec::new();
     };
     let products: Vec<(String, String)> = catalog
@@ -464,16 +471,29 @@ mod tests {
     #[test]
     fn suite_log_dirs_share_the_installation_suffix() {
         let products = vec![
-            ("knowledge".to_string(), "com.devbox.v08.knowledge".to_string()),
-            ("control-center".to_string(), "com.devbox.v08.controlcenter".to_string()),
+            (
+                "knowledge".to_string(),
+                "com.devbox.v08.knowledge".to_string(),
+            ),
+            (
+                "control-center".to_string(),
+                "com.devbox.v08.controlcenter".to_string(),
+            ),
         ];
         let root = std::path::Path::new("/data");
         let dirs = suite_log_dirs(root, "com.devbox.v08.controlcenter.iabc123", &products);
         assert_eq!(
             dirs,
             vec![
-                ("knowledge".to_string(), root.join("com.devbox.v08.knowledge.iabc123").join("logs")),
-                ("control-center".to_string(), root.join("com.devbox.v08.controlcenter.iabc123").join("logs")),
+                (
+                    "knowledge".to_string(),
+                    root.join("com.devbox.v08.knowledge.iabc123").join("logs")
+                ),
+                (
+                    "control-center".to_string(),
+                    root.join("com.devbox.v08.controlcenter.iabc123")
+                        .join("logs")
+                ),
             ]
         );
         assert!(suite_log_dirs(root, "com.devbox.v08.controlcenter", &products).is_empty());

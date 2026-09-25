@@ -64,10 +64,16 @@ pub(crate) fn activation(
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
-struct Stamp { len: u64, modified: std::time::SystemTime }
+struct Stamp {
+    len: u64,
+    modified: std::time::SystemTime,
+}
 fn stamp(path: &Path) -> Option<Stamp> {
     let metadata = std::fs::metadata(path).ok()?;
-    Some(Stamp { len: metadata.len(), modified: metadata.modified().ok()? })
+    Some(Stamp {
+        len: metadata.len(),
+        modified: metadata.modified().ok()?,
+    })
 }
 struct ActivationEntry {
     executable: std::path::PathBuf,
@@ -83,27 +89,53 @@ pub(crate) struct ActivationCache {
     reads: std::sync::atomic::AtomicUsize,
 }
 impl ActivationCache {
-    pub(crate) fn activation(&self, executable: &Path, version: &str) -> Result<Option<product_contract::activation::Activation>> {
-        let Some(root) = generation_root(executable) else { return Ok(None); };
-        let stamps = || stamp(&root.join("devbox-installation.json")).zip(stamp(&root.join("devbox-activation.json")));
-        let mut entry = self.entry.lock().map_err(|_| "suite_activation_unavailable")?;
+    pub(crate) fn activation(
+        &self,
+        executable: &Path,
+        version: &str,
+    ) -> Result<Option<product_contract::activation::Activation>> {
+        let Some(root) = generation_root(executable) else {
+            return Ok(None);
+        };
+        let stamps = || {
+            stamp(&root.join("devbox-installation.json"))
+                .zip(stamp(&root.join("devbox-activation.json")))
+        };
+        let mut entry = self
+            .entry
+            .lock()
+            .map_err(|_| "suite_activation_unavailable")?;
         let before = stamps();
         if let Some(cached) = entry.as_ref() {
-            if cached.executable == executable && cached.version == version && Some(cached.stamps) == before {
+            if cached.executable == executable
+                && cached.version == version
+                && Some(cached.stamps) == before
+            {
                 return Ok(Some(cached.value.clone()));
             }
         }
         *entry = None;
         #[cfg(test)]
-        self.reads.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.reads
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let result = activation(executable, version)?;
-        if let (Some(stamps), Some(value)) = (before.filter(|before| Some(*before) == stamps()), result.as_ref()) {
-            *entry = Some(ActivationEntry { executable: executable.to_owned(), version: version.to_owned(), stamps, value: value.clone() });
+        if let (Some(stamps), Some(value)) = (
+            before.filter(|before| Some(*before) == stamps()),
+            result.as_ref(),
+        ) {
+            *entry = Some(ActivationEntry {
+                executable: executable.to_owned(),
+                version: version.to_owned(),
+                stamps,
+                value: value.clone(),
+            });
         }
         Ok(result)
     }
     #[cfg(test)]
-    fn full_reads(&self) -> usize { self.reads.load(std::sync::atomic::Ordering::Relaxed) }
+    fn full_reads(&self) -> usize {
+        self.reads.load(std::sync::atomic::Ordering::Relaxed)
+    }
 }
 
 pub(crate) fn namespace(executable: &Path, product: &str, version: &str) -> Result<String> {
@@ -272,13 +304,22 @@ mod tests {
         let path = root.0.join("devbox-activation.json");
         fs::write(&path, marker("import", 0)).unwrap();
         let cache = ActivationCache::default();
-        let phase = |cache: &ActivationCache| cache.activation(&executable, "0.8.0").unwrap().unwrap().phase;
+        let phase = |cache: &ActivationCache| {
+            cache
+                .activation(&executable, "0.8.0")
+                .unwrap()
+                .unwrap()
+                .phase
+        };
         assert_eq!(phase(&cache), Phase::Import);
         assert_eq!(phase(&cache), Phase::Import);
         assert_eq!(cache.full_reads(), 1);
+        assert!(cache.activation(&executable, "99.0.0").is_err());
+        assert_eq!(phase(&cache), Phase::Import);
+        assert_eq!(cache.full_reads(), 3);
         fs::write(&path, marker("committed", 1)).unwrap();
         assert_eq!(phase(&cache), Phase::Committed);
-        assert_eq!(cache.full_reads(), 2);
+        assert_eq!(cache.full_reads(), 4);
         fs::remove_file(&path).unwrap();
         assert!(cache.activation(&executable, "0.8.0").is_err());
         let direct = root.0.join("devbox-workspace.exe");

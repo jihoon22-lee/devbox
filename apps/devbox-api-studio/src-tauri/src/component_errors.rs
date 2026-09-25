@@ -25,6 +25,13 @@ pub fn project(component: &str, error: &str) -> &'static str {
 mod tests {
     use super::*;
     #[test]
+    fn binary_webhook_handoff_failure_survives_only_for_its_owner() {
+        let message = "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
+        assert_eq!(project("api-studio.webhooks", message), message);
+        assert_eq!(project("api-studio.api", message), "component_unavailable");
+    }
+
+    #[test]
     fn webhook_unavailable_message_is_fixed_and_owner_scoped() {
         let message = "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.";
         assert_eq!(project("api-studio.webhooks", message), message);

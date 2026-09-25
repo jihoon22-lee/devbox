@@ -658,8 +658,14 @@ fn open_windows_path_handle(
 #[cfg(windows)]
 fn windows_handle_identity(handle: ::windows::Win32::Foundation::HANDLE) -> FileIdentity {
     match devbox_filesystem::windows_file_id(handle.0) {
-        Ok((volume, file_index)) => FileIdentity::Windows { volume: Some(volume), file_index: Some(file_index) },
-        Err(_) => FileIdentity::Windows { volume: None, file_index: None },
+        Ok((volume, file_index)) => FileIdentity::Windows {
+            volume: Some(volume),
+            file_index: Some(file_index),
+        },
+        Err(_) => FileIdentity::Windows {
+            volume: None,
+            file_index: None,
+        },
     }
 }
 

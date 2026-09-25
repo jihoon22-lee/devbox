@@ -28,10 +28,10 @@
 //!   구현한다.
 
 pub mod ignore;
+pub mod links;
 pub mod project;
 pub mod project_path;
 pub mod walk;
-pub mod links;
 pub use links::{is_link_metadata, is_name_surrogate_tag, object_from_file_id};
 
 pub use ignore::is_ignored_dir;
@@ -79,7 +79,6 @@ impl FilesystemIdentity {
         }
         self.components()
     }
-
 }
 
 /// Resolve the identity of the exact final path component without following a
@@ -155,14 +154,19 @@ fn windows_object(raw: std::os::windows::io::RawHandle) -> io::Result<WindowsObj
     Ok(WindowsObject {
         scope: u64::from(basic.dwVolumeSerialNumber),
         object: (u64::from(basic.nFileIndexHigh) << 32) | u64::from(basic.nFileIndexLow),
-        extended: extended.ok().map(|()| (full.VolumeSerialNumber, full.FileId.Identifier)),
+        extended: extended
+            .ok()
+            .map(|()| (full.VolumeSerialNumber, full.FileId.Identifier)),
         attributes: basic.dwFileAttributes,
     })
 }
 
 /// Name-surrogate check for an already-open handle.
 #[cfg(windows)]
-fn windows_handle_is_link(raw: std::os::windows::io::RawHandle, attributes: u32) -> io::Result<bool> {
+fn windows_handle_is_link(
+    raw: std::os::windows::io::RawHandle,
+    attributes: u32,
+) -> io::Result<bool> {
     use windows::Win32::{
         Foundation::HANDLE,
         Storage::FileSystem::{
@@ -182,7 +186,7 @@ fn windows_handle_is_link(raw: std::os::windows::io::RawHandle, attributes: u32)
             std::mem::size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
         )
     }
-    .map_err(|error| io::Error::other(error))?;
+    .map_err(io::Error::other)?;
     Ok(is_name_surrogate_tag(tag.ReparseTag))
 }
 
@@ -192,9 +196,17 @@ fn windows_handle_is_link(raw: std::os::windows::io::RawHandle, attributes: u32)
 pub fn windows_file_id(handle: std::os::windows::io::RawHandle) -> io::Result<(u64, u64)> {
     let object = windows_object(handle)?;
     if windows_handle_is_link(handle, object.attributes)? {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "unexpected file type"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "unexpected file type",
+        ));
     }
-    Ok(FilesystemIdentity { scope: object.scope, object: object.object, extended: object.extended }.content_components())
+    Ok(FilesystemIdentity {
+        scope: object.scope,
+        object: object.object,
+        extended: object.extended,
+    }
+    .content_components())
 }
 
 /// Identify the exact object of a retained handle without reopening its path.
@@ -227,9 +239,16 @@ pub fn opened_filesystem_identity(
         if windows_handle_is_link(raw, object.attributes)?
             || (object.attributes & FILE_ATTRIBUTE_DIRECTORY.0 != 0) != directory
         {
-            return Err(io::Error::new(io::ErrorKind::InvalidInput, "unexpected file type"));
+            return Err(io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "unexpected file type",
+            ));
         }
-        Ok(FilesystemIdentity { scope: object.scope, object: object.object, extended: object.extended })
+        Ok(FilesystemIdentity {
+            scope: object.scope,
+            object: object.object,
+            extended: object.extended,
+        })
     }
     #[cfg(not(any(unix, windows)))]
     {
@@ -312,7 +331,10 @@ fn open_object(
                 .share_mode((FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE).0)
                 .open(path)?;
             if opened_filesystem_identity(&reopened, false)? != identity {
-                return Err(io::Error::new(io::ErrorKind::InvalidInput, "object changed while opening"));
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    "object changed while opening",
+                ));
             }
             return Ok((reopened, identity));
         }
@@ -777,7 +799,11 @@ mod identity_tests {
             let mut id = [0; 16];
             id[..8].copy_from_slice(&7u64.to_le_bytes());
             id[8..].copy_from_slice(&high.to_le_bytes());
-            super::FilesystemIdentity { scope: 123, object: 7, extended: Some((0x123456780000007b, id)) }
+            super::FilesystemIdentity {
+                scope: 123,
+                object: 7,
+                extended: Some((0x123456780000007b, id)),
+            }
         };
         assert_eq!(make(0).components(), (123, 7));
         assert_eq!(make(1).components(), (123, 7));
@@ -791,12 +817,21 @@ mod identity_tests {
     #[test]
     fn persisted_components_match_v081_native_observation() {
         use std::os::windows::io::AsRawHandle;
-        use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION}};
+        use windows::Win32::{
+            Foundation::HANDLE,
+            Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION},
+        };
         let root = fixture_root();
         let (handle, identity) = open_filesystem_object(&root, true).unwrap();
         let mut old = BY_HANDLE_FILE_INFORMATION::default();
         unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut old) }.unwrap();
-        assert_eq!(identity.components(), (u64::from(old.dwVolumeSerialNumber), (u64::from(old.nFileIndexHigh) << 32) | u64::from(old.nFileIndexLow)));
+        assert_eq!(
+            identity.components(),
+            (
+                u64::from(old.dwVolumeSerialNumber),
+                (u64::from(old.nFileIndexHigh) << 32) | u64::from(old.nFileIndexLow)
+            )
+        );
         drop(handle);
         fs::remove_dir_all(root).unwrap();
     }

@@ -143,7 +143,8 @@ async fn execute(
     active: State<'_, Active>,
     request: Request,
 ) -> Result<Response, Problem> {
-    let operation = product_shell_tauri::begin_operation(&window, &request.component, &request.method);
+    let operation =
+        product_shell_tauri::begin_operation(&window, &request.component, &request.method);
     // Untrusted names never enter the returned provenance.
     let rejected = |code| Problem {
         code,
@@ -196,7 +197,7 @@ async fn execute(
                 )
             }
         };
-        operation.finish(&outcome, failure.as_deref());
+        operation.finish(&outcome, failure);
         return Ok(Response {
             operation: Operation {
                 provenance,
@@ -321,7 +322,10 @@ async fn execute(
             (outcome, serde_json::json!({ "issue": issue }))
         }
     };
-    operation.finish(&outcome, value.get("issue").and_then(serde_json::Value::as_str));
+    operation.finish(
+        &outcome,
+        value.get("issue").and_then(serde_json::Value::as_str),
+    );
     Ok(Response {
         operation: Operation {
             provenance,

@@ -2,9 +2,9 @@
 //! their command allowlists and reuse this native session authorization.
 mod installation;
 mod operation_log;
-pub use operation_log::{begin_operation, OperationGuard};
 use catalog::products::{Feature, Product, ProductCatalog, SOURCE};
 pub use installation::WriterGuard;
+pub use operation_log::{begin_operation, OperationGuard};
 use product_contract::{
     Handshake, Operation, OperationState, Problem, ProblemCode, ProjectContext, Provenance,
     RouteRequest, RouteStatus, SessionGuard,
@@ -48,7 +48,10 @@ fn local_main(window: &WebviewWindow) -> bool {
 }
 
 #[tauri::command]
-async fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result<Description, String> {
+async fn describe(
+    window: WebviewWindow,
+    state: State<'_, ShellState>,
+) -> Result<Description, String> {
     if !local_main(&window) {
         return Err("허용되지 않은 창입니다.".into());
     }
@@ -66,7 +69,10 @@ async fn describe(window: WebviewWindow, state: State<'_, ShellState>) -> Result
     let handshake = session.handshake().clone();
     let context = session.context().cloned();
     drop(session);
-    let delivery_state = match state.activation.activation(&state.executable, &state.version) {
+    let delivery_state = match state
+        .activation
+        .activation(&state.executable, &state.version)
+    {
         Ok(None) => "direct",
         Ok(Some(marker)) => match marker.phase {
             product_contract::activation::Phase::Import => "import",
@@ -203,7 +209,9 @@ fn authorize_inner(
         .filter(|f| f.owner == state.product)
         .map(|f| f.route.as_str())
         .collect();
-    if !state.activation.activation(&state.executable, &state.version)
+    if !state
+        .activation
+        .activation(&state.executable, &state.version)
         .map_err(|_| problem(ProblemCode::Unavailable))?
         .is_none_or(|marker| activation_allows(&marker, &state.product, component, admission))
     {

@@ -214,6 +214,8 @@ fn parse_head(
     let mut total_bytes = 0usize;
     let mut content_length = None;
     let mut chunked = false;
+    let mut transfer_encoding_seen = false;
+    let mut unsupported_transfer_encoding = false;
     let mut expect_continue = false;
     loop {
         if !running.load(Ordering::Acquire) {
@@ -264,10 +266,10 @@ fn parse_head(
             }
             content_length = Some(parsed);
         } else if name.eq_ignore_ascii_case("transfer-encoding") {
-            if chunked || !value.eq_ignore_ascii_case("chunked") {
-                return Err(ParseError::Unsupported);
-            }
-            chunked = true;
+            unsupported_transfer_encoding |=
+                transfer_encoding_seen || !value.eq_ignore_ascii_case("chunked");
+            transfer_encoding_seen = true;
+            chunked = value.eq_ignore_ascii_case("chunked");
         } else if name.eq_ignore_ascii_case("expect") {
             if !value.eq_ignore_ascii_case("100-continue") {
                 return Err(ParseError::ExpectationFailed);
@@ -277,6 +279,12 @@ fn parse_head(
         headers.push((name.to_string(), value.to_string()));
     }
 
+    if transfer_encoding_seen && content_length.is_some() {
+        return Err(ParseError::Malformed);
+    }
+    if unsupported_transfer_encoding {
+        return Err(ParseError::Unsupported);
+    }
     let framing = match (chunked, content_length) {
         (true, Some(_)) => return Err(ParseError::Malformed),
         (true, None) => BodyFraming::Chunked,
@@ -330,7 +338,9 @@ fn read_chunked<R: Read>(
 ) -> Result<Vec<u8>, ParseError> {
     let mut body = Vec::new();
     loop {
-        if !running.load(Ordering::Acquire) { return Err(ParseError::Cancelled); }
+        if !running.load(Ordering::Acquire) {
+            return Err(ParseError::Cancelled);
+        }
         let line = read_crlf_line(reader, MAX_CHUNK_LINE_BYTES, deadline)
             .map_err(|error| map_line_error(error, ParseError::Malformed))?
             .ok_or(ParseError::Malformed)?;
@@ -343,7 +353,9 @@ fn read_chunked<R: Read>(
         if size == 0 {
             let mut trailer_bytes = 0usize;
             loop {
-                if !running.load(Ordering::Acquire) { return Err(ParseError::Cancelled); }
+                if !running.load(Ordering::Acquire) {
+                    return Err(ParseError::Cancelled);
+                }
                 let trailer = read_crlf_line(reader, MAX_HEADER_LINE_BYTES, deadline)
                     .map_err(|error| map_line_error(error, ParseError::HeaderTooLarge))?
                     .ok_or(ParseError::Malformed)?;
@@ -582,8 +594,7 @@ mod tests {
     fn chunked_total_over_the_limit_is_rejected() {
         let (mut client, mut server) = pair();
         let size = MAX_BODY_BYTES + 1;
-        let head =
-            format!("POST /hook HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{size:x}\r\n");
+        let head = format!("POST /hook HTTP/1.1\r\nTransfer-Encoding: chunked\r\n\r\n{size:x}\r\n");
         client.write_all(head.as_bytes()).unwrap();
         let running = AtomicBool::new(true);
         assert_eq!(
@@ -613,6 +624,38 @@ mod tests {
             read_request(&mut server, &running, || true),
             Err(ParseError::Unsupported)
         );
+    }
+
+    #[test]
+    fn transfer_encoding_conflicts_and_admission_precede_body_io() {
+        let running = AtomicBool::new(true);
+        for head in [
+            "Transfer-Encoding: gzip\r\nContent-Length: 3",
+            "Content-Length: 3\r\nTransfer-Encoding: gzip",
+        ] {
+            let mut io =
+                std::io::Cursor::new(format!("POST / HTTP/1.1\r\n{head}\r\n\r\n").into_bytes());
+            assert_eq!(
+                read_request(&mut io, &running, || true),
+                Err(ParseError::Malformed)
+            );
+        }
+        let mut io = std::io::Cursor::new(
+            b"POST / HTTP/1.1\r\nTransfer-Encoding: chunked\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .to_vec(),
+        );
+        assert_eq!(
+            read_request(&mut io, &running, || true),
+            Err(ParseError::Unsupported)
+        );
+        let bytes =
+            b"POST / HTTP/1.1\r\nExpect: 100-continue\r\nContent-Length: 2\r\n\r\n".to_vec();
+        let mut io = std::io::Cursor::new(bytes.clone());
+        assert_eq!(
+            read_request(&mut io, &running, || false),
+            Err(ParseError::RateLimited)
+        );
+        assert_eq!(io.into_inner(), bytes);
     }
 
     #[test]
@@ -652,7 +695,10 @@ mod tests {
             .unwrap();
         let running = AtomicBool::new(true);
         let parsed = read_request(&mut server, &running, || true).unwrap();
-        assert_eq!(parsed.body_encoding, crate::core::body::BodyEncoding::Base64);
+        assert_eq!(
+            parsed.body_encoding,
+            crate::core::body::BodyEncoding::Base64
+        );
         assert_eq!(
             crate::core::body::decode_body(&parsed.body, parsed.body_encoding).unwrap(),
             vec![0xff, 0x00, 0x01]

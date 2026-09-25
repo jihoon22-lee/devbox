@@ -341,7 +341,10 @@ async fn execute(window: tauri::WebviewWindow, request: Request) -> Result<Respo
             },
         ),
     };
-    operation.finish(&outcome, value.get("issue").and_then(serde_json::Value::as_str));
+    operation.finish(
+        &outcome,
+        value.get("issue").and_then(serde_json::Value::as_str),
+    );
     Ok(Response {
         operation: Operation {
             provenance,

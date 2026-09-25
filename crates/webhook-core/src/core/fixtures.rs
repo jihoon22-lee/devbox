@@ -103,7 +103,10 @@ pub struct CapturedFixture {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
-    #[serde(default, skip_serializing_if = "crate::core::body::BodyEncoding::is_utf8")]
+    #[serde(
+        default,
+        skip_serializing_if = "crate::core::body::BodyEncoding::is_utf8"
+    )]
     pub body_encoding: crate::core::body::BodyEncoding,
     pub received_at_ms: i64,
 }
@@ -1371,13 +1374,18 @@ mod tests {
         let json = r#"{"id":"fixture-1","method":"POST","url":"/hook","headers":[],"body":"{}","receivedAtMs":1}"#;
         let fixture: CapturedFixture = serde_json::from_str(json).unwrap();
         assert!(fixture.body_encoding.is_utf8());
-        assert!(!serde_json::to_string(&fixture).unwrap().contains("bodyEncoding"));
+        assert!(!serde_json::to_string(&fixture)
+            .unwrap()
+            .contains("bodyEncoding"));
     }
 
     #[test]
     fn binary_fixtures_keep_their_bytes_and_reject_invalid_base64() {
         use crate::core::body::BodyEncoding;
-        assert_eq!(sanitize_fixture_body("/wAB", BodyEncoding::Base64).unwrap(), "/wAB");
+        assert_eq!(
+            sanitize_fixture_body("/wAB", BodyEncoding::Base64).unwrap(),
+            "/wAB"
+        );
         assert_eq!(
             sanitize_fixture_body("not base64!", BodyEncoding::Base64),
             Err(FixtureError::Invalid)
@@ -1435,7 +1443,7 @@ mod tests {
                     ("X-Trace-Token".into(), "trace-secret".into()),
                 ],
                 body: r#"{"event":"push","password":"body-secret","ok":true}"#.into(),
-            body_encoding: Default::default(),
+                body_encoding: Default::default(),
                 received_at_ms: 1,
             },
         )

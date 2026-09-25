@@ -1402,6 +1402,7 @@ dependencies = [
  "integration",
  "launch",
  "libc",
+ "product-contract",
  "reqwest",
  "rusqlite",
  "semver",
@@ -4808,6 +4809,7 @@ dependencies = [
  "sha2 0.11.0",
  "tauri",
  "tauri-plugin-single-instance",
+ "tempfile",
  "uuid",
  "window-state-tauri",
 ]
@@ -7493,6 +7495,7 @@ name = "webhook-core"
 version = "0.1.0"
 dependencies = [
  "applink",
+ "base64 0.22.1",
  "filesystem",
  "serde",
  "serde_json",

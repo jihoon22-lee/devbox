@@ -69,8 +69,12 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("file"), b"x").unwrap();
         std::os::unix::fs::symlink(dir.join("file"), dir.join("link")).unwrap();
-        assert!(!is_link_metadata(&std::fs::symlink_metadata(dir.join("file")).unwrap()));
-        assert!(is_link_metadata(&std::fs::symlink_metadata(dir.join("link")).unwrap()));
+        assert!(!is_link_metadata(
+            &std::fs::symlink_metadata(dir.join("file")).unwrap()
+        ));
+        assert!(is_link_metadata(
+            &std::fs::symlink_metadata(dir.join("link")).unwrap()
+        ));
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

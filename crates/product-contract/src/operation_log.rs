@@ -6,7 +6,7 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::io::{self, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
 
@@ -138,7 +138,9 @@ pub fn day_file_name(ts_ms: u64) -> String {
 
 fn parse_day(name: &str) -> Option<i64> {
     let date = name.strip_prefix(FILE_PREFIX)?.strip_suffix(FILE_SUFFIX)?;
-    if date.len() != 10 || !date.is_ascii() { return None; }
+    if date.len() != 10 || !date.is_ascii() {
+        return None;
+    }
     let mut parts = date.split('-');
     let year: i64 = parts.next()?.parse().ok()?;
     let month: u32 = parts.next()?.parse().ok()?;
@@ -203,17 +205,22 @@ impl OperationLog {
             let file = OpenOptions::new()
                 .create(true)
                 .append(true)
+                .read(true)
                 .open(self.dir.join(&name))
                 .ok();
             let bytes = file
                 .as_ref()
                 .and_then(|file| file.metadata().ok())
                 .map_or(0, |metadata| metadata.len());
+            let capped = bytes >= self.limit
+                || file
+                    .as_ref()
+                    .is_some_and(|file| has_limit_marker(file, bytes));
             *state = DayFile {
                 name,
                 file,
                 bytes,
-                capped: bytes >= self.limit,
+                capped,
             };
         }
         if state.capped {
@@ -246,6 +253,28 @@ impl OperationLog {
             state.bytes += line.len() as u64;
         }
     }
+}
+
+// A short final marker can leave the file below the byte cap. Preserve that
+// day's stopped state across application restarts without reading the full log.
+fn has_limit_marker(file: &File, bytes: u64) -> bool {
+    let Ok(mut reader) = file.try_clone() else {
+        return false;
+    };
+    if reader
+        .seek(SeekFrom::Start(bytes.saturating_sub(1024)))
+        .is_err()
+    {
+        return false;
+    }
+    let mut tail = String::new();
+    if reader.take(1024).read_to_string(&mut tail).is_err() {
+        return false;
+    }
+    tail.lines()
+        .last()
+        .and_then(|line| serde_json::from_str::<Entry>(line).ok())
+        .is_some_and(|entry| entry.outcome == Outcome::Limit)
 }
 
 /// Delete day files older than the retention window. Other files are kept.
@@ -309,10 +338,12 @@ pub fn summarize(dir: &Path, max_entries: usize, max_read_bytes: u64) -> Summary
         .filter_map(|entry| {
             let day = entry.file_name().to_str().and_then(parse_day)?;
             let metadata = fs::symlink_metadata(entry.path()).ok()?;
-            metadata.is_file().then(|| (day, entry.path(), metadata.len()))
+            metadata
+                .is_file()
+                .then(|| (day, entry.path(), metadata.len()))
         })
         .collect();
-    days.sort_by(|left, right| right.0.cmp(&left.0));
+    days.sort_by_key(|entry| std::cmp::Reverse(entry.0));
     summary.state = "available".into();
     summary.file_count = days.len();
     let mut budget = max_read_bytes;
@@ -323,12 +354,19 @@ pub fn summarize(dir: &Path, max_entries: usize, max_read_bytes: u64) -> Summary
             continue;
         }
         let mut text = String::new();
-        let read = File::open(&path).and_then(|file| file.take(budget.saturating_add(1)).read_to_string(&mut text));
+        let read = File::open(&path).and_then(|file| {
+            file.take(budget.saturating_add(1))
+                .read_to_string(&mut text)
+        });
         let Ok(read) = read else {
             summary.truncated = true;
             continue;
         };
-        if read as u64 > budget { summary.truncated = true; budget = 0; continue; }
+        if read as u64 > budget {
+            summary.truncated = true;
+            budget = 0;
+            continue;
+        }
         budget -= read as u64;
         for line in text.lines().rev() {
             let Ok(entry) = serde_json::from_str::<Entry>(line) else {
@@ -363,7 +401,16 @@ mod tests {
     const DAY0: u64 = 19_990 * DAY_MS; // 2024-09-24T00:00:00Z
 
     fn entry(ts_ms: u64, outcome: Outcome, code: Option<&str>) -> Entry {
-        Entry::new(ts_ms, "0.9.0", "knowledge", "knowledge.notes", "write_file", 12, outcome, code)
+        Entry::new(
+            ts_ms,
+            "0.9.0",
+            "knowledge",
+            "knowledge.notes",
+            "write_file",
+            12,
+            outcome,
+            code,
+        )
     }
 
     #[test]
@@ -375,15 +422,24 @@ mod tests {
         assert_eq!(hashed, token("C:\\Users\\me\\vault 없음"));
         assert!(token(&"a".repeat(65)).starts_with("msg-"));
         assert!(token("").starts_with("msg-"));
-        let line = serde_json::to_string(&entry(DAY0, Outcome::Failed, Some("경로 /home/me 없음"))).unwrap();
-        assert!(!line.contains("/home/me") && !line.contains("경로"), "{line}");
+        let line = serde_json::to_string(&entry(DAY0, Outcome::Failed, Some("경로 /home/me 없음")))
+            .unwrap();
+        assert!(
+            !line.contains("/home/me") && !line.contains("경로"),
+            "{line}"
+        );
     }
 
     #[test]
     fn fast_successes_are_skipped_and_everything_else_is_kept() {
         assert!(!should_record(Outcome::Succeeded, SLOW_OPERATION_MS - 1));
         assert!(should_record(Outcome::Succeeded, SLOW_OPERATION_MS));
-        for outcome in [Outcome::Failed, Outcome::Cancelled, Outcome::Rejected, Outcome::Panicked] {
+        for outcome in [
+            Outcome::Failed,
+            Outcome::Cancelled,
+            Outcome::Rejected,
+            Outcome::Panicked,
+        ] {
             assert!(should_record(outcome, 0));
         }
     }
@@ -392,12 +448,21 @@ mod tests {
     fn files_are_named_by_utc_day() {
         assert_eq!(day_file_name(0), "operations-1970-01-01.jsonl");
         assert_eq!(day_file_name(DAY0), "operations-2024-09-24.jsonl");
-        assert_eq!(day_file_name(DAY0 + DAY_MS - 1), "operations-2024-09-24.jsonl");
-        assert_eq!(day_file_name(11_016 * DAY_MS), "operations-2000-02-29.jsonl");
+        assert_eq!(
+            day_file_name(DAY0 + DAY_MS - 1),
+            "operations-2024-09-24.jsonl"
+        );
+        assert_eq!(
+            day_file_name(11_016 * DAY_MS),
+            "operations-2000-02-29.jsonl"
+        );
         assert_eq!(parse_day("operations-2000-02-29.jsonl"), Some(11_016));
         assert_eq!(parse_day("operations-2000-02-30.jsonl"), None);
         assert_eq!(parse_day("other.jsonl"), None);
-        assert_eq!(parse_day("operations-9223372036854775807-01-01.jsonl"), None);
+        assert_eq!(
+            parse_day("operations-9223372036854775807-01-01.jsonl"),
+            None
+        );
     }
 
     #[test]
@@ -430,6 +495,30 @@ mod tests {
         log.append(&entry(DAY0, Outcome::Failed, Some("x")));
         let again = std::fs::read_to_string(dir.path().join(day_file_name(DAY0))).unwrap();
         assert_eq!(again.lines().count(), lines);
+    }
+
+    #[test]
+    fn a_short_limit_marker_is_respected_after_restart() {
+        let dir = tempfile::tempdir().unwrap();
+        let log = OperationLog::with_limit(dir.path().to_path_buf(), 300).unwrap();
+        let large = Entry::new(
+            DAY0,
+            "0.8.1",
+            "knowledge",
+            &"a".repeat(64),
+            &"b".repeat(64),
+            0,
+            Outcome::Failed,
+            Some(&"c".repeat(64)),
+        );
+        log.append(&large);
+        let path = dir.path().join(day_file_name(DAY0));
+        let before = std::fs::read(&path).unwrap();
+        assert!(before.len() < 300);
+        drop(log);
+        let log = OperationLog::with_limit(dir.path().to_path_buf(), 300).unwrap();
+        log.append(&entry(DAY0, Outcome::Failed, None));
+        assert_eq!(std::fs::read(path).unwrap(), before);
     }
 
     #[test]
@@ -471,6 +560,9 @@ mod tests {
         assert_eq!(summary.recent[1].code.as_deref(), Some("last"));
         assert_eq!(summary.recent[2].outcome, Outcome::Cancelled);
         assert!(summary.truncated);
-        assert_eq!(summarize(&dir.path().join("missing"), 3, 1024).state, "missing");
+        assert_eq!(
+            summarize(&dir.path().join("missing"), 3, 1024).state,
+            "missing"
+        );
     }
 }

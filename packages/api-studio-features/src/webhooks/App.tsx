@@ -74,6 +74,7 @@ const OPENAPI_FILE_TOO_LARGE_ERROR = `OpenAPI 파일이 너무 큽니다. ${OPEN
 const OPENAPI_FILE_READ_ERROR = "OpenAPI 파일을 읽지 못했습니다. JSON 또는 YAML 파일을 확인하세요.";
 const RUN_DEFINITION_EXPORT_ERROR = "Run Manager 정의를 다운로드하지 못했습니다. 서버 상태를 확인한 뒤 다시 시도하세요.";
 const SAFE_ERROR_MESSAGES = new Set([
+  "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다",
   "요청 기록을 찾을 수 없습니다",
   "규칙을 찾을 수 없습니다",
   "규칙 입력이 유효하지 않습니다",

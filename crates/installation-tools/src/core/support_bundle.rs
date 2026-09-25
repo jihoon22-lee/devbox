@@ -503,7 +503,10 @@ mod tests {
             &root,
             Vec::new(),
             Vec::new(),
-            vec![OperationLogSummary { product: "knowledge".into(), summary }],
+            vec![OperationLogSummary {
+                product: "knowledge".into(),
+                summary,
+            }],
             Arc::new(AtomicBool::new(false)),
         )
         .unwrap();

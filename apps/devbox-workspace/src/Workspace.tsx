@@ -1,7 +1,7 @@
 import { lazy, Suspense, useCallback, useEffect, useRef, useState } from "react";
 import { ProductShell, type ShellContentProps } from "@devbox/product-shell";
 
-import { nativeMode, productDataAvailable, currentDescription } from "@devbox/product-shell/api";
+import { nativeMode, productDataAvailable, currentDescription, type Description } from "@devbox/product-shell/api";
 import { configureProductTransport } from "@devbox/workspace-features/transport";
 import type { Registry } from "./RegistryGate";
 const MigrationOnly=lazy(()=>import("./MigrationOnly"));

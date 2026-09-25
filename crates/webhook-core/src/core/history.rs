@@ -3,14 +3,14 @@
 //! Authorization·Cookie·API key 헤더는 일반 history DTO에서 마스킹한다 (§15.3 안전 경계).
 //! 원본 헤더는 bounded in-memory entry에만 남기고 명시적인 일회성 복사에서만 사용한다.
 
-use serde::Serialize;
 use crate::core::body::BodyEncoding;
+use serde::Serialize;
 use std::collections::VecDeque;
 
 pub const MAX_HISTORY: usize = 200;
 #[allow(dead_code)]
 pub const MAX_BODY_CHARS: usize = 256_000;
-const _: () = assert!(MAX_BODY_CHARS % 4 == 0);
+const _: () = assert!(MAX_BODY_CHARS.is_multiple_of(4));
 pub const MAX_BODY_BYTES: usize = 1_024_000;
 pub const MAX_HEADERS: usize = 100;
 pub const MAX_HEADER_CHARS: usize = 64_000;
@@ -89,7 +89,14 @@ impl History {
         body: String,
         received_at_ms: i64,
     ) {
-        self.push_encoded(method, url, headers, body, BodyEncoding::Utf8, received_at_ms);
+        self.push_encoded(
+            method,
+            url,
+            headers,
+            body,
+            BodyEncoding::Utf8,
+            received_at_ms,
+        );
     }
 
     pub fn push_encoded(
@@ -317,13 +324,27 @@ mod tests {
     fn binary_history_bodies_skip_text_masking_and_keep_whole_base64_groups() {
         use crate::core::body::{decode_body, BodyEncoding};
         let mut h = History::default();
-        h.push_encoded("POST".into(), "/hook".into(), vec![], "/wAB".into(), BodyEncoding::Base64, 1);
+        h.push_encoded(
+            "POST".into(),
+            "/hook".into(),
+            vec![],
+            "/wAB".into(),
+            BodyEncoding::Base64,
+            1,
+        );
         let record = &h.list_masked()[0];
         assert_eq!(record.body, "/wAB");
         assert_eq!(record.body_encoding, BodyEncoding::Base64);
 
         let long = "AAAA".repeat(MAX_BODY_CHARS / 4 + 10);
-        h.push_encoded("POST".into(), "/hook".into(), vec![], long, BodyEncoding::Base64, 2);
+        h.push_encoded(
+            "POST".into(),
+            "/hook".into(),
+            vec![],
+            long,
+            BodyEncoding::Base64,
+            2,
+        );
         let record = &h.list_masked()[0];
         assert_eq!(record.body.len(), MAX_BODY_CHARS);
         assert!(decode_body(&record.body, record.body_encoding).is_ok());

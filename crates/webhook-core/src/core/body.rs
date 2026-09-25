@@ -27,12 +27,15 @@ pub fn encode_body(bytes: Vec<u8>) -> (String, BodyEncoding) {
     }
 }
 
-pub fn decode_body(body: &str, encoding: BodyEncoding) -> Result<Vec<u8>, ()> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct InvalidBodyEncoding;
+
+pub fn decode_body(body: &str, encoding: BodyEncoding) -> Result<Vec<u8>, InvalidBodyEncoding> {
     match encoding {
         BodyEncoding::Utf8 => Ok(body.as_bytes().to_vec()),
         BodyEncoding::Base64 => base64::engine::general_purpose::STANDARD
             .decode(body)
-            .map_err(|_| ()),
+            .map_err(|_| InvalidBodyEncoding),
     }
 }
 
@@ -71,6 +74,9 @@ mod tests {
         }
         let record: Record = serde_json::from_str("{}").unwrap();
         assert!(record.body_encoding.is_utf8());
-        assert_eq!(serde_json::to_string(&BodyEncoding::Base64).unwrap(), "\"base64\"");
+        assert_eq!(
+            serde_json::to_string(&BodyEncoding::Base64).unwrap(),
+            "\"base64\""
+        );
     }
 }
