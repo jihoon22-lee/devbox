@@ -285,10 +285,10 @@ pub fn deliver(app: &tauri::AppHandle, request: devbox_applink::OpenRequest) -> 
 
 /// Native product workers reuse the MCP stdio process-tree ownership primitive.
 /// Windows callers must create the root suspended before assignment.
-pub struct OwnedProcessTree(crate::commands::process_tree::ProcessTree);
+pub struct OwnedProcessTree(process_tree::ProcessTree);
 impl OwnedProcessTree {
     pub fn assign(child: &tokio::process::Child) -> Result<Self, String> {
-        crate::commands::process_tree::ProcessTree::assign(child)
+        process_tree::ProcessTree::assign(child)
             .map(Self)
             .map_err(|_| "owned_worker_assignment_failed".into())
     }
