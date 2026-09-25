@@ -18,6 +18,7 @@ use std::path::{Component, Path, PathBuf};
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveExportResult {
     pub saved: bool,
     pub format: export::ExportFormat,
@@ -186,7 +187,6 @@ fn valid_csv_output(content: &str) -> bool {
 
 /// Export content를 미리 생성한다. 이 command는 파일·clipboard·history를
 /// 변경하지 않으며, 브라우저 fixture에서도 같은 payload를 사용할 수 있다.
-#[tauri::command]
 pub async fn export_life_log(
     state: tauri::State<'_, Arc<AppState>>,
     input: ExportInput,
@@ -197,7 +197,6 @@ pub async fn export_life_log(
 /// 사용자가 context menu 또는 export dialog에서 저장을 확정했을 때만 호출된다.
 /// Windows native save dialog가 취소되면 `saved: false`를 반환하고 아무 파일도
 /// 만들지 않는다. 선택 후 기록은 sibling temp + atomic replace다.
-#[tauri::command]
 pub async fn save_life_log(
     state: tauri::State<'_, Arc<AppState>>,
     input: ExportInput,
@@ -305,40 +304,6 @@ fn validate_save_path(path: &Path, format: export::ExportFormat) -> Result<(), S
         return Err("선택한 파일 확장자가 export 형식과 일치하지 않습니다".into());
     }
     Ok(())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_export_life_log(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        input: ExportInput,
-    }
-    let Input { input } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = export_life_log(component_app.state(), input).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_life_log(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        input: ExportInput,
-    }
-    let Input { input } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_life_log(component_app.state(), input).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

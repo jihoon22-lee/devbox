@@ -88,6 +88,76 @@ macro_rules! issue_codes {
     };
 }
 
+/// Export reachable DTOs once and reject distinct Rust types that would
+/// overwrite the same generated TypeScript path.
+pub struct TypeExporter<'a> {
+    cfg: &'a ts_rs::Config,
+    seen: std::collections::HashSet<std::any::TypeId>,
+    files: std::collections::BTreeMap<std::path::PathBuf, (std::any::TypeId, String)>,
+    error: Option<String>,
+}
+impl<'a> TypeExporter<'a> {
+    pub fn new(cfg: &'a ts_rs::Config) -> Self {
+        Self {
+            cfg,
+            seen: Default::default(),
+            files: Default::default(),
+            error: None,
+        }
+    }
+    pub fn register<T: ts_rs::TS + 'static + ?Sized>(&mut self) -> Result<String, String> {
+        <Self as ts_rs::TypeVisitor>::visit::<T>(self);
+        match &self.error {
+            Some(error) => Err(error.clone()),
+            None => Ok(T::name(self.cfg)),
+        }
+    }
+    pub fn results(&self, type_name: &str, entries: &[(&str, String)]) -> String {
+        let body = results_map(type_name, entries);
+        let tokens: std::collections::BTreeSet<_> = entries
+            .iter()
+            .flat_map(|(_, name)| name.split(|c: char| !(c.is_ascii_alphanumeric() || c == '_')))
+            .collect();
+        let mut out = String::new();
+        for (path, (_, name)) in &self.files {
+            if tokens.contains(name.as_str()) {
+                let module = path.with_extension("").to_string_lossy().replace('\\', "/");
+                out.push_str(&format!("import type {{ {name} }} from \"./{module}\";\n"));
+            }
+        }
+        if !out.is_empty() {
+            out.push('\n');
+        }
+        out.push_str(&body);
+        out
+    }
+}
+impl ts_rs::TypeVisitor for TypeExporter<'_> {
+    fn visit<T: ts_rs::TS + 'static + ?Sized>(&mut self) {
+        if self.error.is_some() || !self.seen.insert(std::any::TypeId::of::<T>()) {
+            return;
+        }
+        if let Some(path) = T::output_path() {
+            let id = std::any::TypeId::of::<T>();
+            let name = T::ident(self.cfg);
+            if self
+                .files
+                .get(&path)
+                .is_some_and(|(previous, _)| *previous != id)
+            {
+                self.error = Some(format!("generated type path collision: {}", path.display()));
+                return;
+            }
+            self.files.insert(path, (id, name));
+            if let Err(error) = T::export(self.cfg) {
+                self.error = Some(error.to_string());
+                return;
+            }
+        }
+        T::visit_dependencies(self);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

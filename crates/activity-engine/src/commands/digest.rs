@@ -15,6 +15,7 @@ const DIGEST_CANCEL_WAIT: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SaveDigestResult {
     pub saved: bool,
     pub byte_length: usize,
@@ -53,7 +54,6 @@ pub(crate) async fn build_for_state(
 
 /// Build a bounded, deterministic local digest.  This command has no file,
 /// clipboard, history, network, or external-LLM side effect.
-#[tauri::command]
 pub async fn get_digest(
     state: tauri::State<'_, Arc<AppState>>,
     input: DigestInput,
@@ -74,7 +74,6 @@ pub async fn get_digest(
 /// Cancel the currently running native digest. Cancellation is cooperative:
 /// the DB progress hook and Git child observe the same generation token, and
 /// the single-flight guard remains held until both have stopped.
-#[tauri::command]
 pub async fn cancel_digest(state: tauri::State<'_, Arc<AppState>>) -> Result<bool, String> {
     let generation = state.digest_operations.cancel_generation();
     let Some(generation) = generation else {
@@ -100,13 +99,13 @@ pub async fn cancel_digest(state: tauri::State<'_, Arc<AppState>>) -> Result<boo
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SaveDigestRequest {
     pub handle: String,
 }
 
 /// Save the already rendered digest only after the user confirms a native
 /// Markdown save dialog.  Cancellation creates no file.
-#[tauri::command]
 pub async fn save_digest(
     state: tauri::State<'_, Arc<AppState>>,
     request: SaveDigestRequest,
@@ -220,52 +219,4 @@ fn validate_save_path(path: &std::path::Path) -> Result<(), String> {
         return Err("digest 저장 형식이 올바르지 않습니다".into());
     }
     Ok(())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_get_digest(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        input: DigestInput,
-    }
-    let Input { input } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = get_digest(component_app.state(), input).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_cancel_digest(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = cancel_digest(component_app.state()).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_save_digest(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        request: SaveDigestRequest,
-    }
-    let Input { request } =
-        serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = save_digest(component_app.state(), request).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }

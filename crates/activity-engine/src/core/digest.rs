@@ -33,6 +33,7 @@ const DIGEST_MARKDOWN_HEADER: &str = "# Life Log local digest\n\n";
 /// uses the export contract's exclusive `endMs` and authoritative boundaries.
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum DigestPeriod {
     Day,
     Week,
@@ -59,6 +60,7 @@ impl DigestPeriod {
 
 #[derive(Debug, Clone, Default, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestFilter {
     /// Exact sanitized application name.  `None` means all applications.
     pub app: Option<String>,
@@ -66,6 +68,7 @@ pub struct DigestFilter {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestInput {
     pub start_date: String,
     pub end_date: String,
@@ -80,6 +83,7 @@ pub struct DigestInput {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestRules {
     pub session_window: String,
     pub session_duration: String,
@@ -94,6 +98,7 @@ pub struct DigestRules {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestDay {
     pub date: String,
     pub start_ms: i64,
@@ -110,6 +115,7 @@ pub struct DigestDay {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestSummary {
     pub pc_usage_ms: i64,
     pub session_count: usize,
@@ -124,6 +130,7 @@ pub struct DigestSummary {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestDocument {
     pub schema_version: u32,
     pub period: DigestPeriod,
@@ -140,6 +147,7 @@ pub struct DigestDocument {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum DigestOrigin {
     Native,
     BrowserPreview,
@@ -147,6 +155,7 @@ pub enum DigestOrigin {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct DigestResponse {
     pub origin: DigestOrigin,
     pub document: DigestDocument,

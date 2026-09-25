@@ -68,114 +68,25 @@ pub fn validate_import_history(connection: &rusqlite::Connection) -> Result<(), 
 
 /// Product-owned delivery preserves the producer's validation, cancellation and
 /// one-time history without requiring a standalone Knowledge installation.
-pub async fn send_product_draft<F>(
+pub async fn send_product_draft_typed<F>(
     app: &tauri::AppHandle,
-    args: serde_json::Value,
+    input: crate::core::digest::DigestInput,
+    regenerated_from: Option<String>,
     deliver: F,
 ) -> Result<serde_json::Value, String>
 where
     F: FnOnce(&devbox_applink::OpenRequest) -> Result<(), String> + Send,
 {
     use tauri::Manager;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        input: crate::core::digest::DigestInput,
-        regenerated_from: Option<String>,
-    }
-    let input: Input = serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
     let result = crate::commands::handoff::send_with_delivery(
         app.state(),
-        input.input,
-        input.regenerated_from,
+        input,
+        regenerated_from,
         false,
         deliver,
     )
     .await?;
     serde_json::to_value(result).map_err(|_| "component_response_invalid".into())
-}
-
-pub const COMMANDS: &[&str] = &[
-    "get_digest",
-    "cancel_digest",
-    "save_digest",
-    "send_digest_to_knowledge",
-    "knowledge_draft_history",
-    "export_life_log",
-    "save_life_log",
-    "set_projects",
-    "get_projects",
-    "probe_project",
-    "get_day",
-    "get_range",
-    "start_tracking",
-    "stop_tracking",
-    "is_tracking",
-    "set_idle_threshold",
-    "get_idle_threshold",
-    "get_privacy_rules",
-    "set_privacy_rules",
-    "redact_existing",
-    "autostart_status",
-    "set_autostart",
-    "integration_sources",
-    "project_attribution",
-    "timeline",
-    "app_stats",
-];
-
-pub async fn dispatch(
-    app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    match method {
-        "get_digest" => crate::commands::digest::__component_get_digest(app, args).await,
-        "cancel_digest" => crate::commands::digest::__component_cancel_digest(app, args).await,
-        "save_digest" => crate::commands::digest::__component_save_digest(app, args).await,
-        "send_digest_to_knowledge" => {
-            crate::commands::handoff::__component_send_digest_to_knowledge(app, args).await
-        }
-        "knowledge_draft_history" => {
-            crate::commands::handoff::__component_knowledge_draft_history(app, args).await
-        }
-        "export_life_log" => crate::commands::export::__component_export_life_log(app, args).await,
-        "save_life_log" => crate::commands::export::__component_save_life_log(app, args).await,
-        "set_projects" => crate::commands::life::__component_set_projects(app, args).await,
-        "get_projects" => crate::commands::life::__component_get_projects(app, args).await,
-        "probe_project" => crate::commands::life::__component_probe_project(app, args).await,
-        "get_day" => crate::commands::life::__component_get_day(app, args).await,
-        "get_range" => crate::commands::life::__component_get_range(app, args).await,
-        "start_tracking" => crate::commands::tracking::__component_start_tracking(app, args).await,
-        "stop_tracking" => crate::commands::tracking::__component_stop_tracking(app, args).await,
-        "is_tracking" => crate::commands::tracking::__component_is_tracking(app, args).await,
-        "set_idle_threshold" => {
-            crate::commands::tracking::__component_set_idle_threshold(app, args).await
-        }
-        "get_idle_threshold" => {
-            crate::commands::tracking::__component_get_idle_threshold(app, args).await
-        }
-        "get_privacy_rules" => {
-            crate::commands::privacy::__component_get_privacy_rules(app, args).await
-        }
-        "set_privacy_rules" => {
-            crate::commands::privacy::__component_set_privacy_rules(app, args).await
-        }
-        "redact_existing" => crate::commands::privacy::__component_redact_existing(app, args).await,
-        "autostart_status" => {
-            crate::commands::autostart::__component_autostart_status(app, args).await
-        }
-        "set_autostart" => crate::commands::autostart::__component_set_autostart(app, args).await,
-        "integration_sources" => {
-            crate::commands::life::__component_integration_sources(app, args).await
-        }
-        "project_attribution" => {
-            crate::commands::life::__component_project_attribution(app, args).await
-        }
-        "timeline" => crate::commands::queries::__component_timeline(app, args).await,
-        "app_stats" => crate::commands::queries::__component_app_stats(app, args).await,
-        _ => Err("component_method_unavailable".into()),
-    }
 }
 
 const CLOSE_TO_TRAY_KEY: &str = "devbox_knowledge_close_to_tray_v1";

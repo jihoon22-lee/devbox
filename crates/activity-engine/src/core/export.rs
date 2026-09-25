@@ -61,6 +61,7 @@ pub const MAX_DAILY_SNAPSHOT_FRESHNESS_MS: u64 = 10 * 60 * 1_000;
 /// 실제 경계를 담아 DST에서도 날짜별 집계를 보존한다.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportInput {
     pub start_date: String,
     pub end_date: String,
@@ -75,6 +76,7 @@ pub struct ExportInput {
 /// 가정하지 않으므로 DST 전환일도 선택한 달력 날짜에 정확히 귀속할 수 있다.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportDayBoundary {
     pub date: String,
     pub start_ms: i64,
@@ -83,6 +85,7 @@ pub struct ExportDayBoundary {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum ExportFormat {
     Markdown,
     Json,
@@ -109,6 +112,7 @@ impl ExportFormat {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportRange {
     pub start_date: String,
     pub end_date: String,
@@ -131,6 +135,7 @@ pub struct ExportSession {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportAppTotal {
     pub app: String,
     pub duration_ms: i64,
@@ -139,6 +144,7 @@ pub struct ExportAppTotal {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportGit {
     pub projects: Vec<ExportGitProject>,
     pub total_commits: u32,
@@ -147,6 +153,7 @@ pub struct ExportGit {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct ExportGitProject {
     pub path: String,
     pub commits: u32,
@@ -169,6 +176,7 @@ pub struct DailyDigest {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RunDigest {
     pub succeeded: u64,
     pub failed: u64,
@@ -177,6 +185,7 @@ pub struct RunDigest {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct KnowledgeDigest {
     pub notes_modified: u64,
     pub last_modified_at_ms: Option<i64>,
@@ -186,6 +195,7 @@ pub struct KnowledgeDigest {
 /// snapshot의 generatedAt을 그대로 보존해 동일한 fixture가 동일한 결과를 낸다.
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct SourceMetadata {
     pub id: String,
     pub available: bool,
@@ -236,6 +246,7 @@ pub struct ExportDocument {
 
 #[derive(Debug, Clone, Copy, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "kebab-case")]
+#[derive(ts_rs::TS)]
 pub enum ExportOrigin {
     Native,
     BrowserPreview,
@@ -243,6 +254,7 @@ pub enum ExportOrigin {
 
 #[derive(Debug, Clone, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RenderedExport {
     pub origin: ExportOrigin,
     pub format: ExportFormat,

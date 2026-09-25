@@ -19,6 +19,7 @@ use std::sync::Arc;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SendKnowledgeDraftResult {
     pub id: String,
     pub kind: String,
@@ -29,7 +30,6 @@ pub struct SendKnowledgeDraftResult {
 /// Reconcile durable handoff sidecars into the bounded local history. Missing
 /// metadata is never guessed as consumed; only an elapsed envelope TTL can
 /// move a non-terminal row to expired.
-#[tauri::command]
 pub fn knowledge_draft_history(
     state: tauri::State<'_, Arc<AppState>>,
 ) -> Result<Vec<draft_history::DraftHistoryEntry>, String> {
@@ -151,7 +151,6 @@ fn record_expired_status(
 
 /// Build and send a Life Log digest to Knowledge.  Browser preview and
 /// non-Windows builds never publish a pending handoff or attempt a launch.
-#[tauri::command]
 pub async fn send_digest_to_knowledge(
     state: tauri::State<'_, Arc<AppState>>,
     input: DigestInput,
@@ -399,38 +398,4 @@ fn discard_producer_state(
         let _ = draft_history::remove(&connection, &descriptor.id);
     }
     let _ = store.discard_created(descriptor);
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_send_digest_to_knowledge(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {
-        input: DigestInput,
-        regenerated_from: Option<String>,
-    }
-    let Input {
-        input,
-        regenerated_from,
-    } = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = send_digest_to_knowledge(component_app.state(), input, regenerated_from).await?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_knowledge_draft_history(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = knowledge_draft_history(component_app.state())?;
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }

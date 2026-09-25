@@ -28,6 +28,7 @@ const ENTRY_PROJECTION: &str = "length(CAST(handoff_id AS BLOB)),
 
 #[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "lowercase")]
+#[derive(ts_rs::TS)]
 pub enum DraftStatus {
     Pending,
     Sent,
@@ -48,6 +49,7 @@ impl DraftStatus {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DraftHistoryEntry {
     pub handoff_id: String,
     pub kind: String,
