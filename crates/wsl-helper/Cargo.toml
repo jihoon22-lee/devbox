@@ -25,7 +25,7 @@ gix-config = { version = "=0.60.0", default-features = false, features = ["sha1"
 serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
-devbox-filesystem = { package = "filesystem", path = "../../../crates/filesystem", optional = true }
+devbox-filesystem = { package = "filesystem", path = "../filesystem", optional = true }
 sha2 = { workspace = true, optional = true }
 
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -33,17 +33,17 @@ libc = { workspace = true, optional = true }
 
 [dependencies.editor_engine]
 package = "devbox-editor-engine"
-path = "../../../crates/editor-engine"
+path = "../editor-engine"
 default-features = false
 optional = true
 
 [dependencies.product-contract]
-path = "../../../crates/product-contract"
+path = "../product-contract"
 optional = true
 
 [dependencies.devbox-wsl]
 package = "wsl"
-path = "../../../crates/wsl"
+path = "../wsl"
 optional = true
 
 [target.'cfg(windows)'.dependencies]
@@ -54,12 +54,12 @@ tempfile = { workspace = true }
 
 [dependencies.devbox-git]
 package = "git"
-path = "../../../crates/git"
+path = "../git"
 optional = true
 
 [dependencies.repositories_engine]
 package = "devbox-repositories-engine"
-path = "../../../crates/repositories-engine"
+path = "../repositories-engine"
 default-features = false
 optional = true
 

@@ -83,10 +83,10 @@ for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engin
 secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == sorted(["devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
 
-native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
+native_helper = resolve("crates/wsl-helper/src/engine.rs")
 assert native_helper.frontend_scope == "none"
 assert native_helper.rust_packages == ["devbox-knowledge", "devbox-knowledge-vault-engine", "devbox-workspace", "workspace-wsl"]
-helper_manifest = resolve("apps/devbox-workspace/native/Cargo.toml")
+helper_manifest = resolve("crates/wsl-helper/Cargo.toml")
 assert helper_manifest.dependency_scope == "all"
 assert helper_manifest.rust_packages == native_helper.rust_packages
 rust_graph = module.load_rust_graph(ROOT)

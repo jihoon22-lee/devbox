@@ -45,7 +45,6 @@ CATALOG_RUST_CONSUMERS: set[str] = set()
 # product's application crate. Keep their exact source edges visible to CI.
 RUST_SHARED_PLATFORM_CONSUMERS = {
     "apps/devbox-control-center/src-tauri/src/platform/hotkey.rs": {"devbox-control-center"},
-    "crates/http-client-engine/src/commands/process_tree.rs": {"devbox-workspace"},
 }
 
 
@@ -386,7 +385,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
 
         if len(parts) >= 2 and parts[0] == "apps":
             app_directory = "/".join(parts[:2])
-            if len(parts) >= 3 and parts[2] in {"src-tauri", "native"}:
+            if len(parts) >= 3 and parts[2] == "src-tauri":
                 rust_directory = f"{app_directory}/{parts[2]}"
                 node_name = rust.by_directory.get(rust_directory)
                 if node_name is None:

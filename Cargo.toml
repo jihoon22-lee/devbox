@@ -2,7 +2,7 @@
 resolver = "2"
 members = [
     "apps/devbox-workspace/src-tauri",
-    "apps/devbox-workspace/native",
+    "crates/wsl-helper",
     "apps/devbox-api-studio/src-tauri",
     "apps/devbox-knowledge/src-tauri",
     "apps/devbox-control-center/src-tauri",
