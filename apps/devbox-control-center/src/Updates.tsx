@@ -5,7 +5,7 @@ import {makeRequest,nativeMode} from "@devbox/product-shell/api";
 import {isOperation} from "@devbox/product-shell/operation";
 import catalog from "../../../apps/products.json";
 interface Review {available:boolean;id?:string;version:string;sourceSha?:string;bytes?:number;received?:number;state?:string;issue?:string|null}
-const messages:Record<string,string>={update_installed_suite_required:"설치형 Suite에서 업데이트할 수 있습니다. 독립 portable는 새 ZIP을 별도 폴더에서 검토하세요.",update_network_unavailable:"공식 릴리스 서버에 연결하지 못했습니다.",update_network_timeout:"릴리스 확인 시간이 초과되었습니다.",update_asset_changed:"다운로드한 파일의 크기 또는 해시가 공식 배포 정보와 다릅니다. 실행하지 않았습니다.",update_download_cancelled:"다운로드를 취소했습니다.",update_cache_review_required:"이전에 보관한 설치 파일의 용량·개수를 정리한 뒤 다시 시도하세요.",update_review_expired:"업데이트 정보를 다시 확인하세요.",update_busy:"진행 중인 업데이트 요청이 있습니다."};
+const messages:Record<string,string>={update_installed_suite_required:"설치형 Suite에서 업데이트할 수 있습니다. 독립 portable는 새 ZIP을 별도 폴더에서 검토하세요.",update_network_unavailable:"공식 릴리스 서버에 연결하지 못했습니다.",update_network_timeout:"릴리스 확인 시간이 초과되었습니다.",update_asset_changed:"다운로드한 파일의 크기 또는 해시가 공식 배포 정보와 다릅니다. 실행하지 않았습니다.",update_download_cancelled:"다운로드를 취소했습니다.",update_review_expired:"업데이트 정보를 다시 확인하세요.",update_busy:"진행 중인 업데이트 요청이 있습니다."};
 export default function Updates({description,route}:Pick<ShellContentProps,"description"|"route">) {
  const [review,setReview]=useState<Review|null>(null),[busy,setBusy]=useState(false),[issue,setIssue]=useState(""),[confirmed,setConfirmed]=useState(false),[launching,setLaunching]=useState(false);
  const sequence=useRef(0);
