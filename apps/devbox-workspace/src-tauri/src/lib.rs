@@ -1,4 +1,5 @@
 mod component;
+mod ipc;
 pub mod core;
 pub mod definitions;
 mod dependencies_host;

@@ -258,7 +258,7 @@ fn migration_method(component: &str, method: &str) -> bool {
     }
 }
 
-fn allowed(component: &str, route: &str, method: &str) -> bool {
+pub(crate) fn allowed(component: &str, route: &str, method: &str) -> bool {
     if component == "workspace.problems" {
         return matches!(
             route,
