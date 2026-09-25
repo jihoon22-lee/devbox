@@ -454,19 +454,12 @@ impl LspProcess {
             .stdout(std::process::Stdio::piped())
             .stderr(std::process::Stdio::piped())
             .kill_on_drop(true);
-        #[cfg(unix)]
-        command.process_group(0);
+        process_tree::ProcessTree::prepare_tokio(&mut command);
         #[cfg(target_os = "linux")]
         if spec.linux_supervisor.is_some() {
             // Dropping the transport asks the reaper to retire. SIGKILL would
             // destroy its ownership of detached descendants before cleanup.
             command.kill_on_drop(false);
-        }
-        #[cfg(windows)]
-        {
-            const CREATE_NO_WINDOW: u32 = 0x0800_0000;
-            const CREATE_SUSPENDED: u32 = 0x0000_0004;
-            command.creation_flags(CREATE_NO_WINDOW | CREATE_SUSPENDED);
         }
         let mut child = command.spawn().map_err(ProcessError::Spawn)?;
         #[cfg(all(unix, not(target_os = "linux")))]

@@ -815,7 +815,7 @@ impl RuntimeResolver {
             command.env(key, value);
         }
         #[cfg(windows)]
-        command.creation_flags(0x0800_0000 | 0x0000_0004);
+        process_tree::ProcessTree::prepare_tokio(&mut command);
         let mut child = command
             .spawn()
             .map_err(|_| RuntimeError::RuntimeProbeFailed)?;

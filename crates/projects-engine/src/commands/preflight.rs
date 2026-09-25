@@ -28,8 +28,6 @@ use std::time::{Duration, Instant};
 use tokio::io::AsyncReadExt;
 use tokio::process::{Child, Command};
 use tokio::time::{timeout_at, Instant as TokioInstant};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
 const PREFLIGHT_TIMEOUT: Duration = Duration::from_secs(2);
 const PREFLIGHT_OPERATION_TIMEOUT: Duration = Duration::from_secs(10);
@@ -59,13 +57,7 @@ async fn run_bounded_stdout(
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    #[cfg(target_os = "windows")]
-    // ProcessTree::assign resumes the sole primary thread only after the Job
-    // Object has been configured and assigned, so no probe helper can run
-    // before ownership is established.
-    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
+    ProcessTree::prepare_tokio(&mut command);
     let Ok(mut child) = command.spawn() else {
         return Ok((CommandProbe::Unavailable, Vec::new()));
     };
@@ -146,10 +138,7 @@ async fn run_fixed_command(
     budget.check(&token)?;
     let mut command = Command::new(program);
     command.args(args);
-    #[cfg(unix)]
-    command.process_group(0);
-    #[cfg(target_os = "windows")]
-    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
+    ProcessTree::prepare_tokio(&mut command);
     let Ok(mut child) = command
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -201,8 +190,6 @@ async fn wsl_distro_probe(
     }
     let mut command = Command::new("wsl.exe");
     command.args(["-l", "-v"]);
-    #[cfg(target_os = "windows")]
-    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
     let (probe, bytes) = run_bounded_stdout(command, token, budget).await?;
     if probe != CommandProbe::Success {
         return Ok((DirectoryProbe::Unavailable, false));

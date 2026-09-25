@@ -20,6 +20,7 @@ default = []
 
 
 [dependencies]
+process-tree = { workspace = true, features = ["tokio"] }
 tauri = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }

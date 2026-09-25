@@ -9,13 +9,13 @@ use super::mcp::{
     filter_reflected_list_definitions, interpret_exchange, project_result_for_ipc,
     sanitize_server_projection, McpConnectResult, McpInvokeResult, McpTimelineEntry,
 };
-use super::process_tree::ProcessTree;
 use crate::commands::request::{
     is_sensitive_name, unseal_environment_value, EnvironmentVariable, Redactor,
 };
 use crate::core::mcp::{self, Era, EraPreference, RpcMessage, ServerProjection};
 use crate::platform::platform_sealer;
 use devbox_filesystem::{filesystem_identity, FilesystemIdentity};
+use process_tree::ProcessTree;
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, BTreeSet, HashMap};
@@ -28,9 +28,6 @@ use tokio::io::{AsyncBufRead, AsyncBufReadExt, AsyncReadExt, AsyncWriteExt, BufR
 use tokio::process::{Child, ChildStdin, ChildStdout, Command};
 use tokio::sync::{watch, Mutex as AsyncMutex};
 use zeroize::{Zeroize, Zeroizing};
-
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
 
 const MAX_CONNECTIONS: usize = 8;
 const MAX_SELECTIONS: usize = 32;
@@ -403,10 +400,7 @@ impl StdioProcess {
         for (name, value) in &profile.environment {
             command.env(name, value.as_str());
         }
-        #[cfg(unix)]
-        command.process_group(0);
-        #[cfg(target_os = "windows")]
-        command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
+        ProcessTree::prepare_tokio(&mut command);
 
         let mut child = command.spawn().map_err(|_| SPAWN_FAILED.to_string())?;
         let tree = match ProcessTree::assign(&child) {
@@ -524,7 +518,7 @@ impl StdioProcess {
     }
 
     async fn cancel_and_terminate(&mut self, request_id: &str) -> bool {
-        let deadline = tokio::time::Instant::now() + super::process_tree::CLEANUP_TIMEOUT;
+        let deadline = tokio::time::Instant::now() + process_tree::CLEANUP_TIMEOUT;
         if let Ok(notification) = mcp::build_legacy_cancelled(request_id) {
             let notification_deadline =
                 (tokio::time::Instant::now() + Duration::from_millis(200)).min(deadline);
@@ -536,7 +530,7 @@ impl StdioProcess {
     async fn terminate(&mut self, graceful: bool) -> bool {
         self.terminate_until(
             graceful,
-            tokio::time::Instant::now() + super::process_tree::CLEANUP_TIMEOUT,
+            tokio::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
         )
         .await
     }
