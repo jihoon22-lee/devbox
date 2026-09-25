@@ -54,7 +54,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Verify annotated source and freshly downloaded public assets
         shell: pwsh
         run: |

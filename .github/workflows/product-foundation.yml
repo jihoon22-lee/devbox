@@ -168,7 +168,7 @@ jobs:
           fetch-depth: 0
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Acquire original Suite setup and payload
         env:
           GH_TOKEN: ${{ github.token }}
@@ -192,7 +192,7 @@ jobs:
         run: |
           corepack enable pnpm
           pnpm install --frozen-lockfile
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
         if: inputs.delivery_rebuild_control_center
       - uses: Swatinem/rust-cache@v2
         if: inputs.delivery_rebuild_control_center
@@ -243,7 +243,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Acquire original suite executables
         env:
           GH_TOKEN: ${{ github.token }}
@@ -297,7 +297,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Download the original private artifact without rebuilding
         env:
           GH_TOKEN: ${{ github.token }}
@@ -344,8 +344,8 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
-      - uses: dtolnay/rust-toolchain@stable
+          node-version-file: .nvmrc
+      - uses: dtolnay/rust-toolchain@1.98.1
         with:
           targets: x86_64-unknown-linux-musl
       - uses: Swatinem/rust-cache@v2
@@ -397,10 +397,10 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Enable repository-pinned pnpm
         run: corepack enable pnpm
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-product-foundation
@@ -658,7 +658,7 @@ jobs:
       - uses: actions/checkout@v7
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - uses: actions/download-artifact@v8
         if: inputs.wsl2_diagnostic_run == ''
         with:
@@ -739,7 +739,7 @@ jobs:
           persist-credentials: false
       - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: .nvmrc
       - name: Enable repository-pinned pnpm
         run: corepack enable pnpm
       - name: Measure pinned native baseline with synthetic fixtures
@@ -784,7 +784,7 @@ jobs:
       - uses: actions/checkout@v7
         with:
           persist-credentials: false
-      - uses: dtolnay/rust-toolchain@stable
+      - uses: dtolnay/rust-toolchain@1.98.1
       - uses: Swatinem/rust-cache@v2
         with:
           shared-key: devbox-product-foundation
