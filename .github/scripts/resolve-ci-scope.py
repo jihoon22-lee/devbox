@@ -360,7 +360,7 @@ def resolve_paths(paths: Iterable[str], root: Path = ROOT, *, empty_is_all: bool
         for prefix, owner in {
             "packages/knowledge-features/src/generated/": "devbox-knowledge",
             "packages/api-studio-features/src/generated/": "devbox-api-studio",
-            "apps/devbox-control-center/src/generated/": "devbox-control-center",
+            "packages/control-center-features/src/generated/": "devbox-control-center",
         }.items():
             if path.startswith(prefix):
                 rust_seeds.add(owner)

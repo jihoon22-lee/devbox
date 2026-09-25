@@ -18,6 +18,6 @@
     "commands:allow-command-shortcut",
     "commands:allow-command-cancel",
     "commands:allow-command-trigger-shortcut",
-    "control-center:allow-execute"
+    "control-center:allow-tools", "control-center:allow-delivery"
   ]
 }

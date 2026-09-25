@@ -15,6 +15,7 @@ const MAX_DIAGNOSIS_LINE_CHARS: usize = 256;
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DiagnosisItem {
     pub name: String,
     pub ok: bool,
@@ -290,7 +291,6 @@ pub(crate) fn collect_diagnosis(_app: &tauri::AppHandle) -> Vec<DiagnosisItem> {
 }
 
 /// 전체 진단 실행 (read-only).
-#[tauri::command]
 pub async fn run_diagnosis(app: tauri::AppHandle) -> Result<Vec<DiagnosisItem>, String> {
     tauri::async_runtime::spawn_blocking(move || collect_diagnosis(&app))
         .await

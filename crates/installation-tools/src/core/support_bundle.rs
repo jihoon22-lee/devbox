@@ -12,6 +12,7 @@ pub const MAX_SUPPORT_BUNDLE_BYTES: usize = 512 * 1024;
 pub const SUPPORT_PREVIEW_TTL_MS: u64 = 5 * 60 * 1000;
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SupportBundlePreview {
     pub preview_id: String,
     pub expires_at_ms: u64,
@@ -24,6 +25,7 @@ pub struct SupportBundlePreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SupportBundleExport {
     pub filename: String,
     pub mime_type: String,

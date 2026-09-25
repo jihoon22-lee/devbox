@@ -1,29 +1,9 @@
+import type { UpdateCall } from "@devbox/control-center-features/generated/UpdateCall";
+import { deliveryCall } from "./delivery";
 import { useEffect, useRef, useState } from "react";
-import { invoke } from "@tauri-apps/api/core";
 import type { ShellContentProps } from "@devbox/product-shell";
 import { makeRequest, nativeMode } from "@devbox/product-shell/api";
-import { isOperation } from "@devbox/product-shell/operation";
-import catalog from "../../../apps/products.json";
-interface Review {
-  available: boolean;
-  id?: string;
-  version: string;
-  sourceSha?: string;
-  bytes?: number;
-  received?: number;
-  state?: string;
-  issue?: string | null;
-}
-const messages: Record<string, string> = {
-  update_installed_suite_required:
-    "설치형 Suite에서 업데이트할 수 있습니다. 독립 portable는 새 ZIP을 별도 폴더에서 검토하세요.",
-  update_network_unavailable: "공식 릴리스 서버에 연결하지 못했습니다.",
-  update_network_timeout: "릴리스 확인 시간이 초과되었습니다.",
-  update_asset_changed: "다운로드한 파일의 크기 또는 해시가 공식 배포 정보와 다릅니다. 실행하지 않았습니다.",
-  update_download_cancelled: "다운로드를 취소했습니다.",
-  update_review_expired: "업데이트 정보를 다시 확인하세요.",
-  update_busy: "진행 중인 업데이트 요청이 있습니다.",
-};
+type Review = import("@devbox/control-center-features/generated/UpdateReview").UpdateReview;
 export default function Updates({ description, route }: Pick<ShellContentProps, "description" | "route">) {
   const [review, setReview] = useState<Review | null>(null),
     [busy, setBusy] = useState(false),
@@ -37,23 +17,13 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
     },
     [],
   );
-  const request = async <T,>(method: string, args: Record<string, string> = {}) => {
+  const request = async <M extends UpdateCall["method"]>(
+    method: M,
+    args: Extract<UpdateCall, { method: M }> extends { args: infer A } ? A : never,
+  ) => {
     const header = makeRequest(description.handshake, route, Date.now(), description.context);
     header.deadlineMs += 24000;
-    const result = await invoke<{ operation: unknown; value: T & { issue?: string } }>(
-      "plugin:control-center|execute",
-      { request: { header, method, args } },
-    );
-    if (
-      !isOperation(result.operation, {
-        product: "control-center",
-        component: "control-center.delivery",
-        requestId: header.requestId,
-        revision: catalog.catalogRevision,
-      }) ||
-      result.operation.outcome.state !== "succeeded"
-    )
-      throw new Error(result.value?.issue ?? "update_unavailable");
+    const result = await deliveryCall(header, method, args);
     return result.value;
   };
   // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
@@ -62,7 +32,7 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
     let active = true;
     const id = review.id;
     const timer = setTimeout(() => {
-      void request<Review>("suite_update_status", { id })
+      void request("suite_update_status", { id })
         .then((value) => {
           if (active) setReview(value);
         })
@@ -78,7 +48,7 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
       clearTimeout(timer);
     };
   }, [review, description, route]);
-  const run = async (method: string) => {
+  const run = async (method: UpdateCall["method"]) => {
     if (busy) return;
     const current = ++sequence.current;
     setBusy(true);
@@ -89,7 +59,8 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
         await request("launch_suite_update", { id: review.id });
         if (current === sequence.current) setLaunching(true);
       } else {
-        const value = await request<Review>(method, method === "check_suite_update" ? {} : { id: review?.id ?? "" });
+        const value =
+          method === "check_suite_update" ? await request(method, {}) : await request(method, { id: review?.id ?? "" });
         if (current === sequence.current) {
           setReview(value);
           setConfirmed(false);
@@ -98,7 +69,7 @@ export default function Updates({ description, route }: Pick<ShellContentProps, 
     } catch (error) {
       if (current === sequence.current)
         setIssue(
-          messages[error instanceof Error ? error.message : ""] ??
+          (error instanceof Error ? error.message : undefined) ??
             "업데이트 요청을 완료하지 못했습니다. 현재 설치는 유지됩니다.",
         );
     } finally {

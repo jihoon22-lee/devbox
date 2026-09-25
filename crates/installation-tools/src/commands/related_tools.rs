@@ -76,6 +76,7 @@ static RELATED_ACTION_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RelatedToolView {
     pub id: String,
     pub display_name: String,
@@ -94,6 +95,7 @@ pub struct RelatedToolView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct CapabilityEvidenceView {
     pub source: String,
     pub result: String,
@@ -101,6 +103,7 @@ pub struct CapabilityEvidenceView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DockerCapabilityView {
     pub desktop_install: String,
     pub desktop_launch: String,
@@ -112,6 +115,7 @@ pub struct DockerCapabilityView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupCapabilityView {
     pub id: String,
     pub scope: String,
@@ -121,6 +125,7 @@ pub struct DevSetupCapabilityView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupPlanItemView {
     pub capability_id: String,
     pub status: String,
@@ -129,6 +134,7 @@ pub struct DevSetupPlanItemView {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct DevSetupAuditView {
     pub schema_version: u32,
     pub observed_at_ms: u64,
@@ -139,6 +145,7 @@ pub struct DevSetupAuditView {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct RelatedToolInstallRequest {
     pub tool_id: String,
     /// The confirmation is collected by the UI immediately before this
@@ -149,6 +156,7 @@ pub struct RelatedToolInstallRequest {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RelatedToolActionView {
     pub tool_id: String,
     pub status: String,
@@ -337,7 +345,6 @@ pub(crate) fn acquire_related_action() -> Result<MutexGuard<'static, ()>, String
 /// Return the bounded status of every reviewed tool.  The blocking probes run
 /// off the Tauri command thread and expose only stable metadata plus a coarse
 /// detection source.
-#[tauri::command]
 pub async fn related_tools() -> Result<Vec<RelatedToolView>, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let _guard = acquire_related_action()?;
@@ -350,7 +357,6 @@ pub async fn related_tools() -> Result<Vec<RelatedToolView>, String> {
 /// Produce the first Dev Setup contract as a read-only audit and review plan.
 /// This command never installs a package, starts a distro, edits PATH/the
 /// registry, or returns a resolved executable path.
-#[tauri::command]
 pub async fn dev_setup_audit() -> Result<DevSetupAuditView, String> {
     tauri::async_runtime::spawn_blocking(|| {
         let _guard = acquire_related_action()?;
@@ -362,7 +368,6 @@ pub async fn dev_setup_audit() -> Result<DevSetupAuditView, String> {
 
 /// Start one exact WinGet install only after an explicit user confirmation.
 /// No arbitrary package search, installer URL, or shell command is accepted.
-#[tauri::command]
 pub async fn install_related_tool(
     request: RelatedToolInstallRequest,
 ) -> Result<RelatedToolActionView, String> {
@@ -406,7 +411,6 @@ pub async fn install_related_tool(
 /// command id is revalidated and the executable is selected from fixed names
 /// or fixed vendor installation layouts; no path or argument comes from the
 /// frontend.
-#[tauri::command]
 pub async fn launch_related_tool(tool_id: String) -> Result<RelatedToolActionView, String> {
     let spec = validated_tool(&tool_id)?;
     let outcome = tauri::async_runtime::spawn_blocking(move || {

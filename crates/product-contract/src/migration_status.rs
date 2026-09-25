@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "StoreSummary")]
 pub struct Summary {
     pub schema_version: u32,
     pub owner: String,
@@ -19,6 +21,8 @@ pub struct Summary {
 /// paths or content, and does not certify source backup or activation readiness.
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "StoreMappingSummary")]
 pub struct MappingSummary {
     pub record_count: u64,
     pub revision: String,

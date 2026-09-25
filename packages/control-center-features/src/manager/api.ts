@@ -1,4 +1,5 @@
-import { invoke, isProductHosted } from "../transport";
+import { isProductHosted } from "../transport";
+import { toolsCall } from "../calls";
 import { openUrl } from "@tauri-apps/plugin-opener";
 import catalogJson from "../../../../apps/products.json";
 import { isTauri } from "./lib/isTauri";
@@ -977,11 +978,7 @@ function validateRelatedAction(
   };
 }
 
-export interface DiagnosisItem {
-  name: string;
-  ok: boolean;
-  detail: string;
-}
+export type DiagnosisItem = import("../generated/DiagnosisItem").DiagnosisItem;
 
 export async function runDiagnosis(): Promise<DiagnosisItem[]> {
   if (!isTauri()) {
@@ -997,7 +994,7 @@ export async function runDiagnosis(): Promise<DiagnosisItem[]> {
       { name: "runtime-metadata", ok: true, detail: "runtime catalog와 install-root locator 정합" },
     ];
   }
-  return invoke<DiagnosisItem[]>("run_diagnosis");
+  return toolsCall("run_diagnosis", {});
 }
 
 export async function previewSupportBundle(operationId: string): Promise<SupportBundlePreview> {
@@ -1012,12 +1009,12 @@ export async function previewSupportBundle(operationId: string): Promise<Support
       redactionVersion: "v1",
     };
   }
-  return invoke<SupportBundlePreview>("preview_support_bundle", { operationId });
+  return toolsCall("preview_support_bundle", { operationId });
 }
 
 export async function cancelSupportBundle(operationId: string): Promise<void> {
   if (!isTauri()) return;
-  await invoke("cancel_support_bundle", { request: { operationId } });
+  await toolsCall("cancel_support_bundle", { request: { operationId } });
 }
 
 export async function exportSupportBundle(previewId: string): Promise<SupportBundleExport> {
@@ -1042,16 +1039,16 @@ export async function exportSupportBundle(previewId: string): Promise<SupportBun
       redactionVersion: "v1",
     };
   }
-  return invoke<SupportBundleExport>("export_support_bundle", { previewId });
+  return toolsCall("export_support_bundle", { previewId });
 }
 
 export async function relatedTools(): Promise<RelatedTool[]> {
-  const result = isTauri() ? await invoke<unknown>("related_tools") : MOCK_RELATED_TOOLS.map((tool) => ({ ...tool }));
+  const result = isTauri() ? await toolsCall("related_tools", {}) : MOCK_RELATED_TOOLS.map((tool) => ({ ...tool }));
   return validateRelatedTools(result);
 }
 
 export async function devSetupAudit(): Promise<DevSetupAudit> {
-  const result = isTauri() ? await invoke<unknown>("dev_setup_audit") : mockDevSetupAudit();
+  const result = isTauri() ? await toolsCall("dev_setup_audit", {}) : mockDevSetupAudit();
   return validateDevSetupAudit(result);
 }
 
@@ -1064,7 +1061,7 @@ export async function importDevSetupConfiguration(): Promise<DevSetupConfigurati
     result = mockDevSetupConfigurationReview();
   } else {
     try {
-      result = await invoke<unknown>("import_dev_setup_configuration");
+      result = await toolsCall("import_dev_setup_configuration", {});
     } catch {
       throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
     }
@@ -1085,7 +1082,7 @@ export async function discardDevSetupConfiguration(previewId: string): Promise<v
   }
   if (isTauri()) {
     try {
-      await invoke("discard_dev_setup_configuration", {
+      await toolsCall("discard_dev_setup_configuration", {
         request: { previewId },
       });
     } catch {
@@ -1107,7 +1104,7 @@ export async function exportDevSetupConfiguration(previewId: string): Promise<De
     result = mockDevSetupConfigurationExport(review);
   } else {
     try {
-      result = await invoke<unknown>("export_dev_setup_configuration", {
+      result = await toolsCall("export_dev_setup_configuration", {
         request: { previewId },
       });
     } catch {
@@ -1155,7 +1152,7 @@ export async function applyDevSetupConfiguration(
     };
   } else {
     try {
-      result = await invoke<unknown>("apply_dev_setup_configuration", {
+      result = await toolsCall("apply_dev_setup_configuration", {
         request: {
           previewId,
           confirmed,
@@ -1174,7 +1171,7 @@ export async function applyDevSetupConfiguration(
 export async function cancelDevSetupApply(): Promise<void> {
   if (!isTauri()) return;
   try {
-    await invoke("cancel_dev_setup_apply");
+    await toolsCall("cancel_dev_setup_apply", {});
   } catch {
     throw new Error(DEV_SETUP_CONFIGURATION_COMMAND_ERROR);
   }
@@ -1195,7 +1192,7 @@ export async function installRelatedTool(toolId: string, confirmed: boolean): Pr
       "installed",
     );
   }
-  const result = await invoke<unknown>("install_related_tool", {
+  const result = await toolsCall("install_related_tool", {
     request: { toolId, confirmed },
   });
   return validateRelatedAction(result, toolId, "installed");
@@ -1214,7 +1211,7 @@ export async function launchRelatedTool(toolId: string): Promise<RelatedToolActi
       "launched",
     );
   }
-  const result = await invoke<unknown>("launch_related_tool", { toolId });
+  const result = await toolsCall("launch_related_tool", { toolId });
   return validateRelatedAction(result, toolId, "launched");
 }
 
@@ -1254,6 +1251,6 @@ export async function openRelatedToolUrl(url: string): Promise<void> {
     window.open(url, "_blank", "noopener,noreferrer");
     return;
   }
-  if (isProductHosted()) await invoke("open_related_url", { url });
+  if (isProductHosted()) await toolsCall("open_related_url", { url });
   else await openUrl(url);
 }

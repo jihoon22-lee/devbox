@@ -23,7 +23,7 @@ pub fn run() {
             .plugin(commands::plugin())
             .plugin(tauri_plugin_dialog::init())
             .plugin(tauri_plugin_opener::init())
-            .plugin(tools_host::plugin())
+            .plugin(ipc::plugin())
     })
     .expect("error while running Devbox Control Center");
 }
@@ -32,7 +32,7 @@ pub mod core;
 mod command_receipts;
 mod commands;
 
-mod tools_host;
+pub mod ipc;
 #[cfg(windows)]
 mod updates;
 

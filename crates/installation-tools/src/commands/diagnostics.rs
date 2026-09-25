@@ -34,12 +34,14 @@ struct StoredBundlePreview {
 
 #[derive(Debug, Clone, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct CancelDiagnosticsRequest {
     pub operation_id: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct SupportBundleStatus {
     pub status: String,
     pub message: String,
@@ -192,7 +194,6 @@ fn operation_summaries(
         .collect()
 }
 
-#[tauri::command]
 pub async fn preview_support_bundle(
     app: tauri::AppHandle,
     state: tauri::State<'_, DiagnosticsState>,
@@ -264,7 +265,6 @@ pub async fn preview_support_bundle(
     Ok(preview)
 }
 
-#[tauri::command]
 pub fn cancel_support_bundle(
     state: tauri::State<'_, DiagnosticsState>,
     request: CancelDiagnosticsRequest,
@@ -281,7 +281,6 @@ pub fn cancel_support_bundle(
     Err("지원 번들 작업이 이미 끝났거나 없습니다.".to_string())
 }
 
-#[tauri::command]
 pub async fn export_support_bundle(
     state: tauri::State<'_, DiagnosticsState>,
     preview_id: String,

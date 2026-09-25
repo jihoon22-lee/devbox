@@ -287,7 +287,7 @@ assert {"suite-runtime", "devbox-workspace", "devbox-api-studio", "devbox-knowle
 for prefix, owner in [
     ("packages/knowledge-features", "devbox-knowledge"),
     ("packages/api-studio-features", "devbox-api-studio"),
-    ("apps/devbox-control-center", "devbox-control-center"),
+    ("packages/control-center-features", "devbox-control-center"),
 ]:
     result = resolve(f"{prefix}/src/generated/Call.ts")
     assert result.rust_scope == "packages"

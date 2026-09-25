@@ -1,20 +1,6 @@
-export interface SupportBundlePreview {
-  previewId: string;
-  expiresAtMs: number;
-  estimatedBytes: number;
-  databaseCount: number;
-  includedSections: string[];
-  omittedSections: string[];
-  redactionVersion: string;
-}
+export type SupportBundlePreview = import("../generated/SupportBundlePreview").SupportBundlePreview;
 
-export interface SupportBundleExport {
-  filename: string;
-  mimeType: string;
-  content: string;
-  byteCount: number;
-  redactionVersion: string;
-}
+export type SupportBundleExport = import("../generated/SupportBundleExport").SupportBundleExport;
 
 export type RelatedToolDetection = "path" | "known-location" | "not-found" | "unavailable";
 export type InstallCapabilityState = "present" | "absent" | "unknown";
@@ -35,27 +21,9 @@ export interface DockerCapability {
   observedAtMs: number;
 }
 
-export interface RelatedTool {
-  id: string;
-  displayName: string;
-  summary: string;
-  wingetId: string;
-  officialUrl: string;
-  licenseUrl: string;
-  license: string;
-  platformSupported: boolean;
-  installed: boolean;
-  detection: RelatedToolDetection;
-  installState: InstallCapabilityState;
-  launchState: AvailabilityCapabilityState;
-  dockerCapability: DockerCapability | null;
-}
+export type RelatedTool = import("../generated/RelatedToolView").RelatedToolView;
 
-export interface RelatedToolActionResult {
-  toolId: string;
-  status: "installed" | "launched";
-  message: string;
-}
+export type RelatedToolActionResult = import("../generated/RelatedToolActionView").RelatedToolActionView;
 
 export type DevSetupCapabilityId =
   | "docker-desktop-install"
@@ -85,50 +53,20 @@ export interface DevSetupPlanItem {
     | "review-winget";
 }
 
-export interface DevSetupAudit {
-  schemaVersion: 1;
-  observedAtMs: number;
-  mode: "read-only";
-  capabilities: DevSetupCapability[];
-  plan: DevSetupPlanItem[];
-}
+export type DevSetupAudit = import("../generated/DevSetupAuditView").DevSetupAuditView;
 
 export type DevSetupConfigurationDesired = "present" | "latest" | "version";
 export type DevSetupConfigurationCurrentState = "present" | "absent" | "update-available" | "unknown";
 export type DevSetupConfigurationAction = "none" | "install" | "update" | "reconcile-version" | "verify";
 
-export interface DevSetupConfigurationPackageReview {
-  packageId: string;
-  desired: DevSetupConfigurationDesired;
-  version: string | null;
-  currentState: DevSetupConfigurationCurrentState;
-  action: DevSetupConfigurationAction;
-  requestedAgreementAcceptance: boolean;
-  declaredElevation: boolean;
-}
+export type DevSetupConfigurationPackageReview =
+  import("../generated/DevSetupPackageReviewView").DevSetupPackageReviewView;
 
-export interface DevSetupConfigurationReview {
-  schemaVersion: "0.3";
-  previewId: string;
-  expiresAtMs: number;
-  configurationDigest: string;
-  sourceTrust: "external-restricted";
-  mode: "package-only";
-  canApply: boolean;
-  hasChanges: boolean;
-  requiresAgreementConfirmation: boolean;
-  mayRequireAdmin: boolean;
-  mayRequireReboot: boolean;
-  packages: DevSetupConfigurationPackageReview[];
-}
+export type DevSetupConfigurationReview =
+  import("../generated/DevSetupConfigurationReviewView").DevSetupConfigurationReviewView;
 
-export interface DevSetupConfigurationExport {
-  filename: "devbox-packages.winget";
-  mimeType: "application/yaml;charset=utf-8";
-  content: string;
-  byteCount: number;
-  sha256: string;
-}
+export type DevSetupConfigurationExport =
+  import("../generated/DevSetupConfigurationExportView").DevSetupConfigurationExportView;
 
 export type DevSetupConfigurationApplyStatus = "complete" | "partial" | "cancelled";
 export type DevSetupConfigurationPackageApplyStatus =
@@ -139,16 +77,10 @@ export type DevSetupConfigurationPackageApplyStatus =
   | "cancelled"
   | "skipped";
 
-export interface DevSetupConfigurationPackageApplyResult {
-  packageId: string;
-  status: DevSetupConfigurationPackageApplyStatus;
-}
+export type DevSetupConfigurationPackageApplyResult =
+  import("../generated/DevSetupPackageApplyView").DevSetupPackageApplyView;
 
-export interface DevSetupConfigurationApplyResult {
-  status: DevSetupConfigurationApplyStatus;
-  observedAtMs: number;
-  results: DevSetupConfigurationPackageApplyResult[];
-}
+export type DevSetupConfigurationApplyResult = import("../generated/DevSetupApplyView").DevSetupApplyView;
 
 // Native names use `*View`; these aliases keep the frontend vocabulary
 // consistent with the other Manager API DTOs while preserving that contract.

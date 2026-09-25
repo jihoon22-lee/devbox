@@ -75,6 +75,8 @@ pub struct Manifest {
 }
 #[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
+#[ts(rename = "CheckpointReceipt")]
 pub struct Receipt {
     pub id: String,
     pub revision: String,

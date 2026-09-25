@@ -352,14 +352,14 @@ async fn download(review: Review, state: Arc<Mutex<Option<Review>>>) -> Result<(
     progress(&state, &review.id, received, "ready", None);
     Ok(())
 }
-pub(crate) async fn execute(
+pub(crate) async fn execute_typed(
     app: tauri::AppHandle,
-    method: &str,
-    args: Value,
+    call: crate::ipc::delivery::UpdateCall,
     deadline: u64,
 ) -> Result<Value> {
     let state = app.state::<Updates>();
-    if method == "check_suite_update" {
+    use crate::ipc::delivery::UpdateCall;
+    if matches!(call, UpdateCall::CheckSuiteUpdate {}) {
         let now = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .map_err(|_| "update_clock_invalid")?
@@ -377,10 +377,11 @@ pub(crate) async fn execute(
         state.checking.store(false, Ordering::Release);
         return result;
     }
-    let id = args["id"]
-        .as_str()
+    let id = call
+        .id()
         .filter(|id| product_contract::commands::revision(id))
-        .ok_or("update_review_invalid")?;
+        .ok_or("update_review_invalid")?
+        .to_owned();
     let mut review = state
         .review
         .lock()
@@ -389,14 +390,14 @@ pub(crate) async fn execute(
         .filter(|review| review.id == id)
         .cloned()
         .ok_or("update_review_expired")?;
-    match method {
-        "suite_update_status" => Ok(view(&review)),
-        "cancel_suite_update" => {
+    match call {
+        UpdateCall::SuiteUpdateStatus { .. } => Ok(view(&review)),
+        UpdateCall::CancelSuiteUpdate { .. } => {
             review.cancel.cancelled.store(true, Ordering::Release);
             review.cancel.wake.notify_one();
             Ok(view(&review))
         }
-        "download_suite_update" => {
+        UpdateCall::DownloadSuiteUpdate { .. } => {
             let (root, key) = installation(&app)?;
             if root != review.root || key != review.key {
                 return Err("update_owner_changed");
@@ -435,7 +436,7 @@ pub(crate) async fn execute(
             });
             Ok(value)
         }
-        "launch_suite_update" => {
+        UpdateCall::LaunchSuiteUpdate { .. } => {
             if review.state != "ready" {
                 return Err("update_download_required");
             }
@@ -468,6 +469,6 @@ pub(crate) async fn execute(
             }
             result
         }
-        _ => Err("update_request_invalid"),
+        UpdateCall::CheckSuiteUpdate {} => unreachable!("check handled before review lookup"),
     }
 }
