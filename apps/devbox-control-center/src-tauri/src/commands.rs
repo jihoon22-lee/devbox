@@ -506,86 +506,6 @@ async fn command_cancel(
     })
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct ImportRequest {
-    header: RouteRequest,
-    method: String,
-    id: Option<String>,
-}
-#[tauri::command]
-async fn command_import_launcher(
-    window: WebviewWindow,
-    request: ImportRequest,
-) -> Result<Response<serde_json::Value>, Problem> {
-    let provenance = product_shell_tauri::authorize_owner_migration(
-        &window,
-        &request.header,
-        "control-center.commands",
-    )?;
-    let app = window.app_handle().clone();
-    let mut exact = std::collections::BTreeMap::<String, String>::new();
-    if matches!(request.method.as_str(), "preview" | "apply") {
-        let owner = app.clone();
-        if let Ok(Ok(ids)) =
-            tokio::task::spawn_blocking(move || crate::launcher_import::mapping_ids(&owner)).await
-        {
-            if !ids.is_empty() {
-                if let Ok(value) = crate::suite::remote(
-                    &app,
-                    "workspace",
-                    product_contract::transport::Call::LegacyCommandMappings { ids: ids.clone() },
-                    request.header.deadline_ms,
-                )
-                .await
-                {
-                    if let Ok(mapping) =
-                        serde_json::from_value::<std::collections::BTreeMap<String, String>>(value)
-                    {
-                        if mapping.len() <= 128
-                            && mapping.iter().all(|(old, new)| {
-                                ids.contains(old)
-                                    && new.starts_with("workspace.")
-                                    && product_contract::launcher_preferences::validate_result_id(
-                                        new,
-                                    )
-                                    .is_ok()
-                            })
-                        {
-                            exact = mapping;
-                        }
-                    }
-                }
-            }
-        }
-    }
-    let value = tokio::task::spawn_blocking(move || {
-        crate::launcher_import::dispatch(
-            &app,
-            &request.method,
-            request.id.as_deref(),
-            exact,
-            request.header.deadline_ms,
-        )
-    })
-    .await
-    .map_err(|_| Problem {
-        code: ProblemCode::Unavailable,
-        provenance: provenance.clone(),
-    })?
-    .map_err(|_| Problem {
-        code: ProblemCode::Unavailable,
-        provenance: provenance.clone(),
-    })?;
-    Ok(Response {
-        operation: Operation {
-            provenance,
-            outcome: OperationState::Succeeded {},
-        },
-        value,
-    })
-}
-
 pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("commands")
         .invoke_handler(tauri::generate_handler![
@@ -598,7 +518,6 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
             command_preferences,
             command_shortcut,
             command_trigger_shortcut,
-            command_import_launcher
         ])
         .setup(|app, _| {
             let catalog =
@@ -608,7 +527,6 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .map_err(std::io::Error::other)?;
             app.manage(index);
             app.manage(PreferenceOwner::default());
-            app.manage(crate::launcher_import::Owner::default());
             app.manage(crate::command_receipts::Owner::default());
             tauri::async_runtime::spawn(crate::command_receipts::run(app.clone()));
             app.manage(crate::shortcuts::Owner::default());

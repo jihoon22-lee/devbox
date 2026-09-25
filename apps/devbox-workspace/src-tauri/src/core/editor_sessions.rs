@@ -96,22 +96,6 @@ impl StoredSession {
         Ok(())
     }
 }
-#[cfg(test)]
-mod tests {
-    use super::*;
-    #[test]
-    fn session_envelopes_reject_future_or_unknown_fields_without_dropping_import_receipts() {
-        let session = Session::empty();
-        let mut unknown = serde_json::to_value(&session).unwrap();
-        unknown["future_setting"] = serde_json::json!(true);
-        assert!(StoredSession::decode(&serde_json::to_vec(&unknown).unwrap()).is_err());
-        let future = serde_json::json!({"schemaVersion":2,"session":session,"imports":[]});
-        assert!(StoredSession::decode(&serde_json::to_vec(&future).unwrap()).is_err());
-        let invalid = serde_json::json!({"schemaVersion":1,"session":session,"imports":[{"snapshotId":"../foreign","documentIds":[],"recentFiles":[],"sourceWorkspace":null}]});
-        assert!(StoredSession::decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
-    }
-}
-
 use serde_json::Value;
 pub(super) fn known_shape(raw: &Value, normalized: &Value, cursor_aliases: bool) -> bool {
     match (raw, normalized) {
@@ -138,5 +122,21 @@ pub(super) fn known_shape(raw: &Value, normalized: &Value, cursor_aliases: bool)
                     .all(|(a, b)| known_shape(a, b, cursor_aliases))
         }
         _ => raw == normalized,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn session_envelopes_reject_future_or_unknown_fields_without_dropping_import_receipts() {
+        let session = Session::empty();
+        let mut unknown = serde_json::to_value(&session).unwrap();
+        unknown["future_setting"] = serde_json::json!(true);
+        assert!(StoredSession::decode(&serde_json::to_vec(&unknown).unwrap()).is_err());
+        let future = serde_json::json!({"schemaVersion":2,"session":session,"imports":[]});
+        assert!(StoredSession::decode(&serde_json::to_vec(&future).unwrap()).is_err());
+        let invalid = serde_json::json!({"schemaVersion":1,"session":session,"imports":[{"snapshotId":"../foreign","documentIds":[],"recentFiles":[],"sourceWorkspace":null}]});
+        assert!(StoredSession::decode(&serde_json::to_vec(&invalid).unwrap()).is_err());
     }
 }

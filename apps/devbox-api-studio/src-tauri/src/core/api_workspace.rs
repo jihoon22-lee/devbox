@@ -253,8 +253,8 @@ impl Store {
         })
     }
     pub fn load(&self) -> Result<Document, String> {
-        let Some(raw) = crate::core::store_file::read_file(&self.path, MAX_BYTES)
-            .map_err(|_| STORAGE)?
+        let Some(raw) =
+            crate::core::store_file::read_file(&self.path, MAX_BYTES).map_err(|_| STORAGE)?
         else {
             return Ok(Document::default());
         };

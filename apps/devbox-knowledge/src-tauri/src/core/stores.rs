@@ -223,7 +223,7 @@ fn inventory(connection: &Connection, source: StoreKind) -> Result<(), String> {
         if index >= 64
             || (!allowed.contains(&name.as_str())
                 && !name.starts_with("sqlite_")
-                && !(name == "knowledge_import_rows_v1"))
+                && name != "knowledge_import_rows_v1")
         {
             return Err("import_schema_unsupported".into());
         }

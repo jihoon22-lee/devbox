@@ -1,6 +1,7 @@
 //! Native Registry owner. Renderer requests carry one-time preview IDs, never
 //! serialized filesystem evidence. Host authorization precedes these methods;
 //! the host calls blocking methods only inside its bounded IO worker.
+use crate::core::templates;
 use crate::{
     core::{
         profiles,
@@ -350,7 +351,7 @@ impl ProjectOwner {
             .map(|(registry, ())| registry)
     }
     fn prepare(&self, revision: u64, lease: ProjectLease) -> Result<RegistrationPreview> {
-        self.prepare_import_binding(revision, lease, None)
+        self.prepare_candidate(revision, lease, None, None)
     }
     fn prepare_candidate(
         &self,
@@ -621,6 +622,7 @@ mod tests {
         let root = tempfile::tempdir().unwrap();
         let owner = ProjectOwner::open(directory.path()).unwrap();
         let mut template = ProfileTemplate::new("보관한 기본값");
+        template.id.clear();
         template.expected_ports = vec![4321];
         template.run_manager_service_ids = vec!["old-service".into()];
         template.wsl = Some(WslProfile {
@@ -673,7 +675,7 @@ mod tests {
             Some(imported.id.as_str())
         );
         assert_eq!(profile.source_snapshot_id, imported.source_snapshot_id);
-        assert_ne!(profile.profile.id, template.id);
+        assert_ne!(profile.profile.id, imported.template.id);
         assert_eq!(profile.profile.name, "검토한 이름");
         assert_eq!(profile.profile.expected_ports, vec![4321]);
         assert!(profile.profile.environment.is_none());

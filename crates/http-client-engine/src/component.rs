@@ -335,3 +335,8 @@ pub fn sanitize_openapi_request(value: serde_json::Value) -> Result<serde_json::
     let request = serde_json::from_value(normalized).map_err(|_| "openapi_definition_invalid")?;
     crate::commands::request::sanitize_openapi_template(request)
 }
+
+/// Reuse the current persistence sanitizer for product-owned OpenAPI definitions.
+pub fn sanitize_saved_json(serialized: String, environment: &str) -> Result<String, String> {
+    crate::commands::saved_environment::sanitize(serialized, environment)
+}

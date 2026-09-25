@@ -250,7 +250,10 @@ pub fn dispatch(app: &tauri::AppHandle, method: &str, args: Value) -> Result<Val
                 .map_err(|_| "store_unavailable")?
                 .clone()
             {
-                if error == "vault_binding_unavailable" {
+                if matches!(
+                    error.as_str(),
+                    "vault_binding_unavailable" | "vault_binding_invalid"
+                ) {
                     return Ok(
                         json!({"active":false,"hasExisting":stores::read(&state.root)?.is_some(),"bindingUnavailable":true,"vaultChange":crate::vault_binding::pending(app)}),
                     );
@@ -379,4 +382,28 @@ pub(crate) fn suite_status(app: &tauri::AppHandle) -> Result<Value, &'static str
         &native,
     )?;
     serde_json::to_value(summary).map_err(|_| "migration_unavailable")
+}
+
+#[cfg(test)]
+mod external_binding_tests {
+    #[test]
+    fn external_folder_requires_explicit_approval() {
+        let root = tempfile::tempdir().unwrap();
+        let external = tempfile::tempdir().unwrap();
+        let manifest = super::stores::create_empty(root.path()).unwrap();
+        let db = super::stores::directory(root.path(), &manifest, "notes")
+            .unwrap()
+            .join("data.db");
+        let connection = super::Connection::open(db).unwrap();
+        connection
+            .execute(
+                "UPDATE settings SET value=?1 WHERE key='root'",
+                [external.path().to_string_lossy().as_ref()],
+            )
+            .unwrap();
+        assert_eq!(
+            super::binding(root.path(), &manifest).unwrap_err(),
+            "vault_binding_invalid"
+        );
+    }
 }

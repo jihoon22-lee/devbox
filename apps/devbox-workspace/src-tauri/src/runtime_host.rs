@@ -2,6 +2,7 @@
 //! the external process-action broker and bounded log readers. No legacy
 //! executable, database discovery or generic spawn/unseal command is exposed.
 mod observations;
+mod reconnect;
 use crate::{definitions::Definitions, host::Host};
 use log_lens_lib::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
 use port_manager_lib::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
@@ -344,6 +345,11 @@ pub(crate) async fn dispatch(
         return crate::webhook_logs::open(app, value, deadline).await;
     }
     owners.initialize_runtime(app, host)?;
+    if component == "workspace.logs" && method == "reconnect_runtime_sources" {
+        owners.initialize_logs(app, host)?;
+        host.component("logs")?;
+        return reconnect::execute(app, value, deadline);
+    }
     let result = match component {
         "workspace.runtime" => {
             host.component("runtime")?;

@@ -1,10 +1,10 @@
 pub mod context_activity;
 pub mod registry;
 
-pub mod profiles;
 pub mod editor_recovery;
 pub mod editor_sessions;
 pub mod manifest;
+pub mod profiles;
 pub mod registry_store;
 pub mod stores;
 

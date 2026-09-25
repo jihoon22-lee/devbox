@@ -97,11 +97,9 @@ impl Definition {
         }
         // Same native DPAPI/persistence sanitizer as Collections, including
         // supplied current environment secret references, never saved themselves.
-        let safe = api_playground_lib::component::sanitize_legacy_json(
-            raw.to_string(),
-            &input.environment,
-        )
-        .map_err(|_| INVALID)?;
+        let safe =
+            api_playground_lib::component::sanitize_saved_json(raw.to_string(), &input.environment)
+                .map_err(|_| INVALID)?;
         let definition: Self = serde_json::from_str(&safe).map_err(|_| INVALID)?;
         definition.validate()?;
         Ok(definition)

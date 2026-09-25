@@ -45,7 +45,7 @@ fn key(raw: &str) -> Result<String, String> {
     if raw.starts_with('/') && !raw.starts_with("//") {
         return Ok(format!("unix:{}", raw.trim_end_matches('/')));
     }
-    devbox_wsl::path::canonical_project_key(Some(&raw))
+    devbox_wsl::path::canonical_project_key(Some(&raw), None)
         .map(|key| key.to_ascii_lowercase())
         .map_err(|_| "vault_binding_invalid".into())
 }

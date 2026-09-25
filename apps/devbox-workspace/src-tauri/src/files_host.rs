@@ -190,9 +190,6 @@ impl FilesHost {
             deadline,
         )
     }
-    pub(crate) fn has_documents(&self) -> bool {
-        self.document_count() != 0
-    }
     fn document_count(&self) -> usize {
         let count = self.owner.document_count();
         #[cfg(windows)]
@@ -232,13 +229,6 @@ impl FilesHost {
             return self.close_wsl(context, path);
         }
         self.owner.close_for_context(context, path).map(|_| ())
-    }
-    fn session_path_eligible(&self, root: Option<&str>, path: &str) -> bool {
-        #[cfg(windows)]
-        if wsl::posix(path) {
-            return root.is_some_and(|root| crate::core::wsl_files::eligible(root, path));
-        }
-        self.owner.session_path_eligible(root, path)
     }
     fn validate_metadata_paths(
         &self,

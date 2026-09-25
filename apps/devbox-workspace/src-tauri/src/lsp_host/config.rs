@@ -136,6 +136,7 @@ mod tests {
     fn existing_receipts_survive_normal_changes_and_future_fields_fail() {
         let raw = serde_json::json!({"schemaVersion":1,"config":LspConfig::default(),"imports":["a".repeat(64)]});
         let mut stored = StoredConfig::decode(&serde_json::to_vec(&raw).unwrap()).unwrap();
+        stored.config.workspace_root = "C:/fixture/project".into();
         stored.config.enabled = true;
         let reloaded = StoredConfig::decode(&stored.encode().unwrap()).unwrap();
         assert!(reloaded.config.enabled);

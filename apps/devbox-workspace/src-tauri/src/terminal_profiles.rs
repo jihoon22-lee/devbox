@@ -131,16 +131,6 @@ pub(crate) fn preferences(root: &MetadataRoot, method: &str, args: Value) -> Res
     Ok(Value::Null)
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase", deny_unknown_fields)]
-struct HistoryRecord {
-    schema_version: u32,
-    source_revision: String,
-    mapping: Vec<Value>,
-    before_present: bool,
-    before_revision: String,
-    preserved_preference_conflicts: Vec<String>,
-}
 fn fingerprint(value: &str) -> bool {
     value.len() == 64
         && value
