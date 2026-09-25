@@ -25,6 +25,6 @@ v0.8 배포는 `Devbox_0.8.1_x64-setup.exe` 하나와 제품별 portable ZIP 네
 - [Windows 설치·이전·복구](docs/windows-guide.md)
 - [제품과 내부 모듈](docs/projects.md) · [아키텍처](docs/architecture.md)
 - [개발](docs/development.md) · [공통 규약](CONVENTIONS.md)
-- [v0.8 수용 추적](docs/v0.8-acceptance.md) · [로드맵](docs/roadmap.md)
+- [v0.8 수용 추적](docs/v0.8-acceptance.md) · [개선 로드맵](docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md)
 - [릴리스 정책](docs/release-policy.md) · [과거 릴리스 근거](docs/release-evidence.md)
-- [v0.7 역사적 제품·배포 안내](docs/history/v0.7/README.md)
+- [v0.7 역사적 제품·배포 안내](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/README.md)

@@ -206,7 +206,7 @@ alert를 닫거나 dismiss하지 않으며, package가 graph에서 사라지면 
 
 ## Adding or updating a dependency
 
-runtime dependency PR은 다음 표를 PR body 또는 해당 workthrough에 채운다. gate PR merge 전에는
+runtime dependency PR은 다음 표를 PR 본문 또는 ledger 댓글에 채운다. gate PR merge 전에는
 새 runtime dependency PR을 merge하지 않는다.
 
 | Field | Required evidence |

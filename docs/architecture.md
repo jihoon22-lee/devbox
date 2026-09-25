@@ -22,4 +22,4 @@ Devbox v0.8은 네 독립 Windows 제품과 명시적인 Suite 연결로 구성�
 
 세부 계약은 [foundation](architecture/v0.8-foundation.md), [제품 목록](projects.md),
 [수용 추적](v0.8-acceptance.md), [릴리스 정책](release-policy.md)을 참조한다.
-[v0.7 아키텍처 기록](history/v0.7/architecture.md)은 당시 사실을 그대로 보존한다.
+[v0.7 아키텍처 기록](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.7/architecture.md)은 당시 사실을 그대로 보존한다.

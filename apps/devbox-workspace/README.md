@@ -32,7 +32,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 [projects](../../docs/projects.md), 기능/데이터 및 R01–R26/S01–S08 대응은
 [acceptance trace](../../docs/v0.8-acceptance.md)를 참조한다.
 
-[이전 개발 단계의 상세 README](../../docs/history/v0.8-development/workspace.md)는 당시 구현
+[이전 개발 단계의 상세 README](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/history/v0.8-development/workspace.md)는 당시 구현
 순서·결정의 역사적 기록이다. 그 문서의 hidden/pending 상태를 현재 배포 상태로 해석하지 않는다.
 제품 실행/installer 근거와 deterministic fixture·browser·physical device 검사는 구분한다.
 

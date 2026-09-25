@@ -227,7 +227,7 @@ def load_rust_graph(root: Path = ROOT) -> WorkspaceGraph:
 def _is_documentation(path: str) -> bool:
     name = PurePosixPath(path).name
     return (
-        path.startswith(("docs/", "workthrough/"))
+        path.startswith("docs/")
         or name.endswith(".md")
         or name in {"README", "LICENSE"}
         or path == ".gitignore"

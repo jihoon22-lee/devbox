@@ -128,7 +128,7 @@ assert dependency_metadata.frontend_scope == "none"
 assert dependency_metadata.rust_scope == "none"
 assert dependency_metadata.dependency_scope == "all"
 
-docs = resolve("docs/development.md", "workthrough/example.md", "README.md")
+docs = resolve("docs/development.md", "docs/adr/0001-four-products.md", "README.md")
 assert docs.frontend_scope == "none"
 assert docs.rust_scope == "none"
 assert docs.dependency_scope == "none"

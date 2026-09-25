@@ -247,7 +247,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
   반드시 1:1일 필요가 없다.
 - 같은 앱·같은 사용자 흐름에 속하고 구현 기반, 상태 모델, migration/reindex, 보안·자원
   제한, 테스트 fixture를 공유하는 형식별 변형이나 밀접한 보강은 여러 이슈를 한 PR로
-  묶을 수 있다. 관련 README·architecture·roadmap·workthrough 갱신도 그 PR에 포함한다.
+  묶을 수 있다. 관련 README·architecture·roadmap과 PR·ledger 갱신도 그 PR에 포함한다.
 - 독립적으로 배포하거나 되돌려야 하는 작업, 권한·비밀·외부 mutation처럼 위험 경계가 다른
   작업, 선행 작업 없이는 검증할 수 없는 작업, 한 번에 리뷰하기 과도한 작업은 별도 PR로
   유지한다. 단순히 같은 앱이라는 이유만으로 묶지 않는다.
@@ -334,7 +334,7 @@ docs/<scope>           문서 작업   예: docs/roadmap
   함께 추가하고, notices를 수동 편집하지 않는다.
 
 기능별 판단과 v0.5.0 적용 범위는
-[`docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md`](./docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
+[`docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
 기준으로 한다.
 
 ## 10. 제품 통합

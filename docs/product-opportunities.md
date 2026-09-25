@@ -3,7 +3,7 @@
 > - 상태: **완료(Completed)** — §17 실행 계획(PR 1~39 + Stage 4/5)은 v0.4.0에서 전부 실행됨.
 > - 이 문서는 이제 **결정·분석 근거의 보존용**이다. 신규 작업은
 >   `docs/roadmap.md`와
->   [`2026-08-22-v0.5.0-native-first-plan.md`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
+>   [`2026-08-22-v0.5.0-native-first-plan.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)를
 >   따른다.
 > - 최초 검토일: 2026-08-13 · 실행 완료: 2026-08-15 · v0.5.0 방향 개정: 2026-08-22
 > - 검토 기준: `main` (`43f941b`), 12개 앱 코드 직접 대조
@@ -1617,7 +1617,7 @@ engine-neutral 방식으로 native 제공한다.
 
 > **역사적 실행 계획.** 이 절의 PR 1~39와 Stage 4/5는 v0.4.0에서 완료됐다. v0.5.0의
 > 현재 실행 순서와 PR 지도는
-> [`2026-08-22-v0.5.0-native-first-plan.md` §7](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을
+> [`2026-08-22-v0.5.0-native-first-plan.md` §7](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)을
 > 따른다. 아래 내용은 기존 결정과 구현 근거를 보존하기 위해 유지한다.
 
 ## 17.0 이 계획을 읽는 법
@@ -3957,5 +3957,5 @@ native-first 지침 + API secret 안전성
 ```
 
 전체 기능·제외·상한·버전·검증 조건은
-[`2026-08-22-v0.5.0-native-first-plan.md`](./superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)가
+[`2026-08-22-v0.5.0-native-first-plan.md`](https://github.com/jihoon22-lee/devbox-archive/blob/main/docs/superpowers/specs/2026-08-22-v0.5.0-native-first-plan.md)가
 단일 원본이다.
