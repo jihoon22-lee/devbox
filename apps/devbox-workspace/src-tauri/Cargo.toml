@@ -16,6 +16,7 @@ serde_json = { workspace = true }
 tauri-build = { workspace = true }
 
 [dependencies]
+product-ipc = { path = "../../../crates/product-ipc" }
 suite-runtime = { path = "../../../crates/suite-runtime" }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
 workspace-wsl = { path = "../../../crates/wsl-helper", default-features = false, features = ["files", "git"] }

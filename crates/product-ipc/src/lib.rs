@@ -3,6 +3,7 @@ use product_contract::RouteRequest;
 use serde::{de::DeserializeOwned, Deserialize};
 
 pub use ts_rs;
+pub mod workspace;
 
 #[derive(Debug, Deserialize)]
 #[serde(rename_all = "camelCase", bound = "C: DeserializeOwned")]

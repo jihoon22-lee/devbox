@@ -1,111 +1,58 @@
 //! Native product command admission. Route names do not grant Registry writes.
-use crate::{host::Host, project_owner::RegistrationAction};
+use crate::{
+    host::Host,
+    ipc::lanes::{Lane, Lanes},
+    project_owner::RegistrationAction,
+};
 use product_contract::{Operation, OperationState, Problem, ProblemCode, Provenance, RouteRequest};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::sync::{
-    atomic::{AtomicBool, AtomicUsize, Ordering},
+    atomic::{AtomicBool, Ordering},
     Arc, Mutex, OnceLock,
 };
 use std::time::Duration;
 use tauri::{Manager, State, WebviewWindow};
 
-#[derive(Clone, Default)]
-struct Pool(Arc<AtomicUsize>);
-struct Permit(Arc<AtomicUsize>);
-impl Pool {
-    fn reserve(&self) -> Result<Permit, &'static str> {
-        self.reserve_with_limit(2)
-    }
-    fn reserve_with_limit(&self, limit: usize) -> Result<Permit, &'static str> {
-        self.0
-            .fetch_update(Ordering::AcqRel, Ordering::Acquire, |n| {
-                (n < limit).then_some(n + 1)
-            })
-            .map_err(|_| "busy")?;
-        Ok(Permit(self.0.clone()))
-    }
-}
-impl Drop for Permit {
-    fn drop(&mut self) {
-        self.0.fetch_sub(1, Ordering::AcqRel);
-    }
-}
 #[derive(Clone)]
 struct Runtime {
+    lanes: Lanes,
     shutdown_started: Arc<AtomicBool>,
     ui_ready: Arc<AtomicBool>,
     engines: Arc<crate::runtime_host::Owners>,
     terminals: Arc<crate::terminal_host::Terminals>,
     sessions: Arc<crate::development_host::Sessions>,
-    terminal_requests: Pool,
-    terminal_io_requests: Pool,
-    terminal_stop_requests: Pool,
-    terminal_io_workers: Arc<tokio::sync::Semaphore>,
-    terminal_workers: Arc<tokio::sync::Semaphore>,
-    terminal_stop_workers: Arc<tokio::sync::Semaphore>,
-    engine_requests: Pool,
-    engine_workers: Arc<tokio::sync::Semaphore>,
-    engine_stop_workers: Arc<tokio::sync::Semaphore>,
     exit_authorized: Arc<AtomicBool>,
     context_activity: crate::core::context_activity::ContextActivity,
-    context_waiters: Pool,
     filesystem_activity: crate::core::context_activity::ContextActivity,
     definitions: Arc<Mutex<crate::definitions::Definitions>>,
     source: Arc<Mutex<crate::source_host::SourceHost>>,
-    source_requests: Pool,
     source_operations: crate::core::source_operations::Operations,
-    source_workers: Arc<tokio::sync::Semaphore>,
     host: Arc<OnceLock<Result<Arc<Host>, &'static str>>>,
-    metadata: Pool,
-    probes: Pool,
     files: Arc<Mutex<crate::files_host::FilesHost>>,
-    file_requests: Pool,
-    file_workers: Arc<tokio::sync::Semaphore>,
-    dialogs: Pool,
     lsp: Arc<Mutex<Option<Arc<crate::lsp_host::LspHost>>>>,
-    lsp_requests: Pool,
     lsp_operations: crate::core::source_operations::Operations,
-    lsp_workers: Arc<tokio::sync::Semaphore>,
     lsp_shutdown: editor_engine::lsp::RequestCancellation,
 }
 impl Default for Runtime {
     fn default() -> Self {
         Self {
+            lanes: Lanes::default(),
             shutdown_started: Arc::default(),
             ui_ready: Arc::default(),
             engines: Arc::default(),
             terminals: Arc::default(),
             sessions: Arc::default(),
-            terminal_requests: Pool::default(),
-            terminal_io_requests: Pool::default(),
-            terminal_stop_requests: Pool::default(),
-            terminal_io_workers: Arc::new(tokio::sync::Semaphore::new(4)),
-            terminal_workers: Arc::new(tokio::sync::Semaphore::new(4)),
-            terminal_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            engine_requests: Pool::default(),
-            engine_workers: Arc::new(tokio::sync::Semaphore::new(4)),
-            engine_stop_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             exit_authorized: Arc::default(),
             context_activity: Default::default(),
-            context_waiters: Pool::default(),
             filesystem_activity: Default::default(),
             definitions: Arc::default(),
             source: Arc::default(),
-            source_requests: Pool::default(),
             source_operations: Default::default(),
-            source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             host: Arc::default(),
-            metadata: Pool::default(),
-            probes: Pool::default(),
             files: Arc::default(),
-            file_requests: Pool::default(),
-            file_workers: Arc::new(tokio::sync::Semaphore::new(2)),
-            dialogs: Pool::default(),
             lsp: Arc::default(),
-            lsp_requests: Pool::default(),
             lsp_operations: Default::default(),
-            lsp_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             lsp_shutdown: Default::default(),
         }
     }
@@ -172,8 +119,8 @@ impl Runtime {
                     continue;
                 }
                 let (Ok(queued), Ok(worker), Ok(filesystem)) = (
-                    runtime.file_requests.reserve_with_limit(1),
-                    runtime.file_workers.clone().try_acquire_owned(),
+                    runtime.lanes.try_enter(Lane::FilesWatch),
+                    runtime.lanes.workers(Lane::Files).try_acquire_owned(),
                     runtime.filesystem_activity.enter(false),
                 ) else {
                     continue;
@@ -198,7 +145,7 @@ impl Runtime {
     #[cfg(windows)]
     async fn retire_files(&self) -> Result<(), &'static str> {
         tokio::time::timeout(Duration::from_secs(30), async {
-            while self.file_requests.0.load(Ordering::Acquire) != 0 {
+            while self.lanes.active(Lane::Files) != 0 {
                 tokio::time::sleep(Duration::from_millis(20)).await;
             }
         })
@@ -388,22 +335,16 @@ async fn terminal_worker(
         method.as_str(),
         "close_session" | "stop_terminal" | "stop_development_session"
     );
-    let permit = if io {
-        &runtime.terminal_io_requests
+    let lane = if io {
+        Lane::TerminalIo
     } else if stopping {
-        &runtime.terminal_stop_requests
+        Lane::TerminalStop
     } else {
-        &runtime.terminal_requests
-    }
-    .reserve_with_limit(64)?;
-    let host = runtime.host()?;
-    let workers = if io {
-        runtime.terminal_io_workers.clone()
-    } else if stopping {
-        runtime.terminal_stop_workers.clone()
-    } else {
-        runtime.terminal_workers.clone()
+        Lane::Terminal
     };
+    let permit = runtime.lanes.try_enter(lane)?;
+    let host = runtime.host()?;
+    let workers = runtime.lanes.workers(lane);
     // The native worker owns the request even if its renderer disappears.
     tauri::async_runtime::spawn(async move {
         let now = std::time::SystemTime::now()
@@ -533,19 +474,18 @@ async fn execute_runtime(
         &request.method
     };
     let stopping = crate::runtime_host::stops(control_method);
-    let permit = runtime
-        .engine_requests
-        .reserve_with_limit(if stopping { 32 } else { 24 })?;
+    let lane = if stopping {
+        Lane::EngineStop
+    } else {
+        Lane::Engine
+    };
+    let permit = runtime.lanes.try_enter(lane)?;
     let host = runtime.host()?;
     let owners = runtime.engines.clone();
     let terminals = runtime.terminals.clone();
     let definitions = runtime.definitions.clone();
     let shutdown = runtime.shutdown_started.clone();
-    let workers = if stopping {
-        runtime.engine_stop_workers.clone()
-    } else {
-        runtime.engine_workers.clone()
-    };
+    let workers = runtime.lanes.workers(lane);
     let app = window.app_handle().clone();
     // The spawned owner retains permits even if the renderer abandons its IPC
     // future. Cancellation/stop requests have independent execution capacity.
@@ -598,14 +538,12 @@ async fn execute_lsp(
     context_permit: Option<crate::core::context_activity::ContextPermit>,
 ) -> Result<Value, &'static str> {
     use tauri_plugin_dialog::DialogExt;
-    let queued =
-        runtime
-            .lsp_requests
-            .reserve_with_limit(if crate::lsp_host::stops(&request.method) {
-                10
-            } else {
-                8
-            })?;
+    let lane = if crate::lsp_host::stops(&request.method) {
+        Lane::LspStop
+    } else {
+        Lane::Lsp
+    };
+    let queued = runtime.lanes.try_enter(lane)?;
     let (operation_id, cancelled) =
         crate::lsp_host::admission(&request.method, request.args.clone())?;
     let context_key =
@@ -631,7 +569,7 @@ async fn execute_lsp(
     let mut deadline = request.header.deadline_ms;
     let chosen = if request.method == "pick_lsp_archives" {
         empty(&request.args)?;
-        let dialog = runtime.dialogs.reserve_with_limit(1)?;
+        let dialog = runtime.lanes.try_enter(Lane::Dialogs)?;
         let (sender, receiver) = tokio::sync::oneshot::channel();
         window
             .dialog()
@@ -668,8 +606,8 @@ async fn execute_lsp(
     let worker = if crate::lsp_host::worker_required(&request.method) {
         Some(
             runtime
-                .lsp_workers
-                .clone()
+                .lanes
+                .workers(Lane::Lsp)
                 .acquire_owned()
                 .await
                 .map_err(|_| "worker_unavailable")?,
@@ -744,11 +682,11 @@ async fn execute_files(
     context_permit: crate::core::context_activity::ContextPermit,
 ) -> Result<Value, &'static str> {
     use tauri_plugin_dialog::DialogExt;
-    let queued = runtime.file_requests.reserve_with_limit(16)?;
+    let queued = runtime.lanes.try_enter(Lane::Files)?;
     let mut deadline = request.header.deadline_ms;
     let chosen = if request.method == "pick_files" {
         empty(&request.args)?;
-        let dialog = runtime.dialogs.reserve_with_limit(1)?;
+        let dialog = runtime.lanes.try_enter(Lane::Dialogs)?;
         let (sender, receiver) = tokio::sync::oneshot::channel();
         window
             .dialog()
@@ -797,8 +735,8 @@ async fn execute_files(
     }
     crate::files_host::current_deadline(deadline)?;
     let worker = runtime
-        .file_workers
-        .clone()
+        .lanes
+        .workers(Lane::Files)
         .acquire_owned()
         .await
         .map_err(|_| "worker_unavailable")?;
@@ -836,7 +774,7 @@ async fn execute_dependencies(
     context_permit: crate::core::context_activity::ContextPermit,
 ) -> Result<Value, &'static str> {
     let host = runtime.host()?;
-    let permit = runtime.probes.reserve()?;
+    let permit = runtime.lanes.try_enter(Lane::Probes)?;
     let deadline = request.header.deadline_ms;
     let context = request.header.context.ok_or("project_selection_required")?;
     let access = tauri::async_runtime::spawn_blocking(move || {
@@ -937,7 +875,7 @@ async fn execute_source(
                 .enter(source_mutation(&request.method))?,
         )
     };
-    let queued = runtime.source_requests.reserve_with_limit(16)?;
+    let queued = runtime.lanes.try_enter(Lane::Source)?;
     let operation_id = if request.method == "create_worktree" {
         request.args.get("operationId")
     } else {
@@ -955,7 +893,7 @@ async fn execute_source(
     let _cancel_on_drop = admitted.cancel_on_drop();
     let worker_slot = tokio::time::timeout(
         remaining()?,
-        admitted.until_cancelled(runtime.source_workers.clone().acquire_owned()),
+        admitted.until_cancelled(runtime.lanes.workers(Lane::Source).acquire_owned()),
     )
     .await
     .map_err(|_| "request_expired")??
@@ -1375,8 +1313,8 @@ async fn execute(
     {
         if context_change {
             let _waiting = runtime
-                .context_waiters
-                .reserve_with_limit(1)
+                .lanes
+                .try_enter(Lane::Context)
                 .map_err(|_| problem(ProblemCode::Overloaded))?;
             let now = std::time::SystemTime::now()
                 .duration_since(std::time::UNIX_EPOCH)
@@ -1480,7 +1418,7 @@ async fn execute(
         .await
     } else if problems {
         let host = runtime.host();
-        match (host, runtime.metadata.reserve()) {
+        match (host, runtime.lanes.try_enter(Lane::Metadata)) {
             (Ok(host), Ok(permit)) => {
                 let app = window.app_handle().clone();
                 let retained_context = context_permit.clone();
@@ -1532,7 +1470,7 @@ async fn execute(
     } else if definitions {
         let host = runtime.host();
         let owner = runtime.definitions.clone();
-        let permit = runtime.probes.reserve();
+        let permit = runtime.lanes.try_enter(Lane::Probes);
         let filesystem = match definition_access(&request.method) {
             Some(write) => runtime.filesystem_permit(write, deadline).await.map(Some),
             None => Ok(None),
@@ -1626,7 +1564,7 @@ async fn execute(
         let host = runtime.host();
         let owners = runtime.engines.clone();
         let app = window.app_handle().clone();
-        let permit = runtime.engine_requests.reserve();
+        let permit = runtime.lanes.try_enter(Lane::EngineBackground);
         let shutdown = runtime.shutdown_started.clone();
         match (host, permit) {
             (Ok(host), Ok(permit)) => tauri::async_runtime::spawn_blocking(move || {
@@ -1658,12 +1596,12 @@ async fn execute(
         empty(&request.args).map(|()| runtime.status())
     } else {
         let preview = project_probe(&request.method);
-        let pool = if preview {
-            &runtime.probes
+        let lane = if preview {
+            Lane::Probes
         } else {
-            &runtime.metadata
+            Lane::Metadata
         };
-        match (runtime.host(), pool.reserve()) {
+        match (runtime.host(), runtime.lanes.try_enter(lane)) {
             (Ok(host), Ok(permit)) => {
                 let worker_context = context_permit.clone();
                 let worker = tauri::async_runtime::spawn_blocking(move || {
@@ -1808,9 +1746,10 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                     tokio::time::sleep(Duration::from_millis(10)).await;
                 }
                 if !runtime.shutdown_started.load(Ordering::Acquire) {
-                    if let (Ok(host), Ok(permit)) =
-                        (runtime.host(), runtime.engine_requests.reserve())
-                    {
+                    if let (Ok(host), Ok(permit)) = (
+                        runtime.host(),
+                        runtime.lanes.try_enter(Lane::EngineBackground),
+                    ) {
                         let owners = runtime.engines.clone();
                         let shutdown = runtime.shutdown_started.clone();
                         let worker_app = app.clone();
@@ -1830,7 +1769,9 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 }
                 loop {
                     tokio::time::sleep(Duration::from_secs(10)).await;
-                    if let (Ok(host), Ok(permit)) = (runtime.host(), runtime.metadata.reserve()) {
+                    if let (Ok(host), Ok(permit)) =
+                        (runtime.host(), runtime.lanes.try_enter(Lane::Metadata))
+                    {
                         let definitions = runtime.definitions.clone();
                         let source = runtime.source.clone();
                         let lsp = runtime.lsp.clone();
@@ -1923,11 +1864,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 // Cancellation interrupts downloads; the LSP worker retains its
                 // request permit until archive IO/index work actually retires.
                 let retired = tokio::time::timeout(Duration::from_secs(5), async {
-                    while runtime.lsp_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.engine_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.terminal_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.terminal_io_requests.0.load(Ordering::Acquire) != 0
-                        || runtime.terminal_stop_requests.0.load(Ordering::Acquire) != 0
+                    while runtime.lanes.active(Lane::Lsp) != 0
+                        || runtime.lanes.active(Lane::EngineBackground) != 0
+                        || runtime.lanes.active(Lane::Terminal) != 0
+                        || runtime.lanes.active(Lane::TerminalIo) != 0
+                        || runtime.lanes.active(Lane::TerminalStop) != 0
                     {
                         tokio::time::sleep(Duration::from_millis(20)).await;
                     }
@@ -1965,11 +1906,11 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
                 .await
                 .is_ok_and(|result| result.is_ok());
                 let retired = retired
-                    || (runtime.lsp_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.engine_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.terminal_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.terminal_io_requests.0.load(Ordering::Acquire) == 0
-                        && runtime.terminal_stop_requests.0.load(Ordering::Acquire) == 0);
+                    || (runtime.lanes.active(Lane::Lsp) == 0
+                        && runtime.lanes.active(Lane::EngineBackground) == 0
+                        && runtime.lanes.active(Lane::Terminal) == 0
+                        && runtime.lanes.active(Lane::TerminalIo) == 0
+                        && runtime.lanes.active(Lane::TerminalStop) == 0);
                 if retired
                     && sessions_stopped
                     && terminals_stopped
@@ -2091,8 +2032,8 @@ pub(crate) async fn editor_selection_proof(
     let context = product_shell_tauri::workspace_context(&window)?;
     let filesystem = runtime.filesystem_permit(false, deadline).await?;
     let worker = runtime
-        .file_workers
-        .clone()
+        .lanes
+        .workers(Lane::Files)
         .try_acquire_owned()
         .map_err(|_| "file_busy")?;
     tokio::task::spawn_blocking(move || {
@@ -2122,8 +2063,8 @@ pub(crate) async fn approve_received_file(
     let window = app.get_webview_window("main").ok_or("window_unavailable")?;
     let context = product_shell_tauri::workspace_context(&window)?;
     let permit = runtime
-        .file_workers
-        .clone()
+        .lanes
+        .workers(Lane::Files)
         .try_acquire_owned()
         .map_err(|_| "file_busy")?;
     let app = app.clone();
@@ -2274,29 +2215,26 @@ mod tests {
         let _restores = (0..4)
             .map(|_| {
                 runtime
-                    .terminal_workers
-                    .clone()
+                    .lanes
+                    .workers(Lane::Terminal)
                     .try_acquire_owned()
                     .unwrap()
             })
             .collect::<Vec<_>>();
         let _queued = (0..64)
-            .map(|_| runtime.terminal_requests.reserve_with_limit(64).unwrap())
+            .map(|_| runtime.lanes.try_enter(Lane::Terminal).unwrap())
             .collect::<Vec<_>>();
-        assert!(runtime.terminal_requests.reserve_with_limit(64).is_err());
-        let _input = runtime.terminal_io_requests.reserve_with_limit(64).unwrap();
+        assert!(runtime.lanes.try_enter(Lane::Terminal).is_err());
+        let _input = runtime.lanes.try_enter(Lane::TerminalIo).unwrap();
         let _input_worker = runtime
-            .terminal_io_workers
-            .clone()
+            .lanes
+            .workers(Lane::TerminalIo)
             .try_acquire_owned()
             .unwrap();
-        let _stop = runtime
-            .terminal_stop_requests
-            .reserve_with_limit(64)
-            .unwrap();
+        let _stop = runtime.lanes.try_enter(Lane::TerminalStop).unwrap();
         let _stop_worker = runtime
-            .terminal_stop_workers
-            .clone()
+            .lanes
+            .workers(Lane::TerminalStop)
             .try_acquire_owned()
             .unwrap();
     }
@@ -2390,19 +2328,35 @@ mod tests {
     #[test]
     fn saturated_lsp_workers_leave_files_and_project_selection_available() {
         let runtime = Runtime::default();
-        let _first = runtime.lsp_workers.clone().try_acquire_owned().unwrap();
-        let _second = runtime.lsp_workers.clone().try_acquire_owned().unwrap();
-        assert!(runtime.lsp_workers.clone().try_acquire_owned().is_err());
-        let _editor = runtime.file_workers.clone().try_acquire_owned().unwrap();
+        let _first = runtime
+            .lanes
+            .workers(Lane::Lsp)
+            .try_acquire_owned()
+            .unwrap();
+        let _second = runtime
+            .lanes
+            .workers(Lane::Lsp)
+            .try_acquire_owned()
+            .unwrap();
+        assert!(runtime
+            .lanes
+            .workers(Lane::Lsp)
+            .try_acquire_owned()
+            .is_err());
+        let _editor = runtime
+            .lanes
+            .workers(Lane::Files)
+            .try_acquire_owned()
+            .unwrap();
         let _file_owner = runtime.files.try_lock().unwrap();
         let _selection = runtime.context_activity.enter(true).unwrap();
         let _private_install = runtime.lsp.lock().unwrap();
-        let request = runtime.lsp_requests.reserve().unwrap();
-        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 1);
+        let request = runtime.lanes.try_enter(Lane::Lsp).unwrap();
+        assert_eq!(runtime.lanes.active(Lane::Lsp), 1);
         runtime.lsp_shutdown.cancel();
-        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 1);
+        assert_eq!(runtime.lanes.active(Lane::Lsp), 1);
         drop(request);
-        assert_eq!(runtime.lsp_requests.0.load(Ordering::Acquire), 0);
+        assert_eq!(runtime.lanes.active(Lane::Lsp), 0);
     }
 
     #[test]
