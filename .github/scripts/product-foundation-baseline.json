@@ -8,5 +8,49 @@
     "api-studio": "api-playground",
     "knowledge": "knowledge-base",
     "control-center": "devbox-manager"
-  }
+  },
+  "anchorInstallations": [
+    {
+      "id": "api-playground",
+      "productName": "ApiPlayground",
+      "binaryName": "api-playground.exe",
+      "identifier": "com.devbox.apiplayground",
+      "legacyIdentifiers": [
+        "com.workbench.apiplayground"
+      ],
+      "baseline": true,
+      "title": "API Playground"
+    },
+    {
+      "id": "knowledge-base",
+      "productName": "Knowledge",
+      "binaryName": "knowledge-base.exe",
+      "identifier": "com.devbox.knowledgebase",
+      "legacyIdentifiers": [
+        "com.workbench.knowledgebase"
+      ],
+      "baseline": true,
+      "title": "Knowledge Base"
+    },
+    {
+      "id": "devbox-manager",
+      "productName": "DevboxManager",
+      "binaryName": "devbox-manager.exe",
+      "identifier": "com.devbox.devboxmanager",
+      "legacyIdentifiers": [
+        "com.workbench.devboxmanager"
+      ],
+      "baseline": true,
+      "title": "Devbox Manager"
+    },
+    {
+      "id": "workbench",
+      "productName": "Workbench",
+      "binaryName": "workbench.exe",
+      "identifier": "com.devbox.workbench",
+      "legacyIdentifiers": [],
+      "baseline": true,
+      "title": "Workbench"
+    }
+  ]
 }

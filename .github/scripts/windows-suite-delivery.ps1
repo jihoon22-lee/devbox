@@ -17,15 +17,13 @@ $env:DEVBOX_SUITE_PRODUCT_SOURCES = $productSources | ConvertTo-Json -Compress
 $scratch = Join-Path $env:RUNNER_TEMP ('devbox-suite-delivery-' + [guid]::NewGuid().ToString('N'))
 $install = Join-Path $scratch 'Suite Custom Directory'
 New-Item -ItemType Directory -Path $scratch | Out-Null
-$evidence = [ordered]@{ sourceSha=$artifactSource; productSources=$productSources; fixtureSourceSha=$source; artifactRun=$env:DEVBOX_SUITE_ARTIFACT_RUN; scope='installed-activation-source-cutover-generation-update-reinstall-data-restore-removal'; result='failed'; checks=[ordered]@{} }
-if ($RemainingOnly) { $evidence.scope = 'remaining-updated-uninstaller-reviewed-cutover-legacy-cleanup' }
+$evidence = [ordered]@{ sourceSha=$artifactSource; productSources=$productSources; fixtureSourceSha=$source; artifactRun=$env:DEVBOX_SUITE_ARTIFACT_RUN; scope='installed-activation-generation-update-reinstall-data-restore-removal'; result='failed'; checks=[ordered]@{} }
+if ($RemainingOnly) { $evidence.scope = 'remaining-updated-uninstaller-restore-reinstall' }
 $caseFailures = [Collections.Generic.List[string]]::new()
 $key = $null
 $registration = $null
 $dataRoots = @()
 $installations = @()
-$legacyRoot = $null
-$legacyMarker = $null
 $catalog = Get-Content -Raw apps/products.json | ConvertFrom-Json
 function Require([bool]$Condition, [string]$Check) {
   if (-not $Condition) { throw "Suite fixture failed: $Check" }
@@ -159,36 +157,6 @@ try {
     Require (-not (Test-Path -LiteralPath $arp)) 'originalUninstallerRemovesUpdatedGeneration'
     foreach ($data in $dataRoots) { Require ((Get-FileHash -LiteralPath (Join-Path $data 'fixture-preserve.json')).Hash -eq $before[$data]) "updatedUninstallPreserves_$([IO.Path]::GetFileName($data).Split('.')[3])" }
   } catch { $caseFailures.Add('installed recovery/removal: ' + $_.Exception.Message) }
-  try {
-    $legacyCandidate = Join-Path $env:LOCALAPPDATA 'com.devbox.devboxlauncher'
-    Require (-not (Test-Path -LiteralPath $legacyCandidate)) 'legacyFixtureRequiresAbsentOriginal'
-    New-Item -ItemType Directory -Path $legacyCandidate | Out-Null
-    $legacyRoot = $legacyCandidate
-    $legacyMarker = [guid]::NewGuid().ToString()
-    [IO.File]::WriteAllText((Join-Path $legacyRoot 'suite-fixture-owner'), $legacyMarker)
-    $legacyPreferences = Join-Path $legacyRoot 'launcher-preferences.json'
-    [IO.File]::WriteAllText($legacyPreferences, '{"version":1,"favorites":[],"recents":[]}')
-    $migrationInstall = Join-Path $scratch 'Suite Migration Directory'
-    Run-Installer (Join-Path $Staging "Devbox_$($payload.suiteVersion)_x64-setup.exe") "/S /D=$migrationInstall"
-    $migrationRegistration = Get-Content -Raw -LiteralPath (Join-Path $migrationInstall 'suite-registration.json') | ConvertFrom-Json
-    $installations += @{ root=$migrationInstall; key=$migrationRegistration.installationKey; registration=$migrationRegistration }
-    Native $migrationInstall 'legacyImport'
-    Helper @('--activate-clean-install',$migrationInstall,$payloadPath) 'bootstrap_source_cutover_required'
-    # Mutating the owned synthetic original after review must invalidate cutover.
-    [IO.File]::WriteAllText($legacyPreferences, '{"version":1,"favorites":[],"recents":[]} ')
-    Helper @('--activate-reviewed-install',$migrationInstall,$payloadPath) 'cutover_source_changed'
-    Native $migrationInstall 'legacyReview'
-    Helper @('--activate-reviewed-install',$migrationInstall,$payloadPath) | Out-Null
-    Native $migrationInstall 'health'
-    Helper @('--commit-reviewed-install',$migrationInstall,$payloadPath) | Out-Null
-    Require ([IO.File]::ReadAllText($legacyPreferences).EndsWith(' ')) 'explicitlySkippedChangedOriginalPreserved'
-    # Cleanup is a separate postcommit outcome. Exercise restore/update/reinstall
-    # first so a legacy cleanup defect does not hide their independent findings.
-    & "$PSScriptRoot/windows-suite-legacy-cleanup.ps1" -SuiteRoot $migrationInstall
-    Require ($LASTEXITCODE -eq 0) 'postcommitVerifiedInstallerAndPortableCleanup'
-    Run-Installer (Join-Path $migrationInstall 'Uninstall.exe') '/S'
-    Wait-Until { Test-Path -LiteralPath (Join-Path $migrationInstall 'uninstall-complete.json') }
-  } catch { $caseFailures.Add('reviewed cutover/cleanup: ' + $_.Exception.Message) }
   if ($caseFailures.Count -gt 0) { throw ($caseFailures -join '; ') }
   $evidence.result = 'passed'
 } catch {
@@ -217,12 +185,6 @@ try {
       }
       $shortcuts = $ownedInstall.registration.shortcutDirectory
       if (Test-Path -LiteralPath $shortcuts) { Remove-Item -LiteralPath $shortcuts -Recurse -Force }
-    } catch { $cleanupFailures.Add($_.Exception.Message) }
-  }
-  if ($legacyRoot) {
-    try {
-      if ([IO.File]::ReadAllText((Join-Path $legacyRoot 'suite-fixture-owner')) -ne $legacyMarker) { throw 'Legacy fixture ownership changed' }
-      Remove-Item -LiteralPath $legacyRoot -Recurse -Force
     } catch { $cleanupFailures.Add($_.Exception.Message) }
   }
   try { Remove-Item -LiteralPath $scratch -Recurse -Force } catch { $cleanupFailures.Add($_.Exception.Message) }

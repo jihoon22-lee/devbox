@@ -10,8 +10,6 @@ import sys
 
 
 ROOT = pathlib.Path(__file__).resolve().parents[2]
-CONFIG_PATH = ROOT / ".github/scripts/legacy-v0.7-windows-packaged-smoke-config.json"
-CATALOG_PATH = ROOT / "apps/legacy-v0.7-catalog.json"
 
 
 def read_json(path: pathlib.Path) -> dict:
@@ -78,55 +76,6 @@ def test_workspace_source_boundary() -> None:
 
 def check() -> list[str]:
     failures: list[str] = []
-    config = read_json(CONFIG_PATH)
-    catalog = read_json(CATALOG_PATH)
-    if set(config) != {"schemaVersion", "apps"} or config.get("schemaVersion") != 1:
-        failures.append("acceptance config envelope must be schema v1 with only apps")
-        return failures
-
-    configured = config.get("apps")
-    if not isinstance(configured, list):
-        failures.append("acceptance config apps must be an array")
-        return failures
-
-    released = {app["id"]: app for app in catalog["apps"] if app["release"]}
-    configured_ids = [app.get("id") for app in configured]
-    if len(configured_ids) != len(set(configured_ids)):
-        failures.append("acceptance config app ids must be unique")
-    if set(configured_ids) != set(released):
-        failures.append("acceptance config app ids must equal the release catalog")
-    isolated_knowledge_ids = [
-        app.get("id") for app in configured if app.get("isolatedKnowledgeRoot") is True
-    ]
-    if isolated_knowledge_ids != ["knowledge-base"]:
-        failures.append("only Knowledge Base must declare the isolated acceptance root")
-    if any(
-        "isolatedKnowledgeRoot" in app and app.get("isolatedKnowledgeRoot") is not True
-        for app in configured
-    ):
-        failures.append("isolated Knowledge root declarations must be true")
-
-    for app in configured:
-        app_id = app.get("id")
-        if app_id not in released:
-            continue
-        catalog_app = released[app_id]
-        if app.get("identifier") != catalog_app.get("identifier"):
-            failures.append(f"{app_id}: frozen identifier differs from legacy catalog")
-        process_names = app.get("additionalProcessNames", [])
-        if not process_names or len(process_names) != len(set(process_names)):
-            failures.append(f"{app_id}: protected process names omit or duplicate the product image")
-        if any(
-            not isinstance(name, str)
-            or re.fullmatch(r"[A-Za-z0-9 .+_-]+\.exe", name) is None
-            or pathlib.PureWindowsPath(name).name != name
-            for name in process_names
-        ):
-            failures.append(f"{app_id}: protected process name is unsafe")
-
-        if not app.get("markers") or not app.get("probes"):
-            failures.append(f"{app_id}: frozen native contract missing")
-
     # Current public product identities come from the four Tauri sources.
     live = read_json(ROOT / ".github/scripts/windows-packaged-smoke-config.json")
     assert live == read_json(ROOT / ".github/scripts/windows-installer-acceptance-config.json")
@@ -151,7 +100,7 @@ def main() -> int:
         for failure in failures:
             print(f"  - {failure}", file=sys.stderr)
         return 1
-    print("WINDOWS PACKAGED SMOKE CONFIG OK: release catalog and 15 app contracts align")
+    print("WINDOWS PACKAGED SMOKE CONFIG OK: four Suite product contracts align")
     return 0
 
 

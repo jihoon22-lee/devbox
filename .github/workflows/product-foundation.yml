@@ -38,7 +38,6 @@ on:
       - '.github/scripts/windows-product-foundation.mjs'
       - '.github/scripts/windows-suite-workflows.mjs'
       - '.github/scripts/windows-suite-delivery*'
-      - '.github/scripts/windows-suite-legacy-cleanup.ps1'
       - '.github/scripts/build-suite-*'
       - '.github/scripts/windows-workspace-*'
       - '.github/scripts/copy-owned-terminal-profile.ps1'
@@ -80,7 +79,7 @@ on:
         type: string
         default: ''
       delivery_remaining_only:
-        description: Finish updated uninstall, reviewed source cutover and legacy cleanup; retain restore/reinstall evidence
+        description: Finish updated uninstall, updated uninstall and restore/reinstall; retain restore/reinstall evidence
         type: boolean
         default: false
       delivery_rebuild_control_center:
@@ -112,10 +111,6 @@ on:
         description: Reuse this original private Workspace artifact for isolated WSL2 acceptance without rebuilding
         type: string
         default: ''
-      legacy_reference_only:
-        description: Acquire fixed legacy installed-file identities on a disposable hosted VM without building products
-        type: boolean
-        default: false
       terminal_diagnostic_run:
         description: Reuse this prior foundation run's exact Workspace artifact for hosted companion diagnosis only
         type: string
@@ -130,30 +125,10 @@ permissions:
   actions: read
 
 concurrency:
-  group: product-foundation-${{ github.ref }}-${{ inputs.legacy_reference_only && 'legacy-reference' || inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
+  group: product-foundation-${{ github.ref }}-${{ inputs.delivery_diagnostic_run || inputs.wsl2_diagnostic_run || inputs.suite_diagnostic_run || inputs.terminal_diagnostic_run || 'full' }}
   cancel-in-progress: true
 
 jobs:
-  legacy-reference:
-    if: ${{ github.event_name == 'workflow_dispatch' && inputs.legacy_reference_only }}
-    runs-on: windows-2025
-    timeout-minutes: 30
-    steps:
-      - uses: actions/checkout@v7
-      - name: Acquire fixed v0.7 installed-file identities on two owned roots
-        shell: pwsh
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: .github/scripts/windows-legacy-installer-reference.ps1
-      - name: Preserve reference provenance and result
-        if: ${{ always() }}
-        uses: actions/upload-artifact@v7
-        with:
-          name: legacy-installer-reference-${{ github.run_id }}
-          path: legacy-installer-reference.json
-          if-no-files-found: error
-          retention-days: 7
-
   delivery-diagnostic:
     if: ${{ github.event_name == 'workflow_dispatch' && inputs.delivery_diagnostic_run != '' }}
     runs-on: windows-2025
@@ -287,7 +262,7 @@ jobs:
           if-no-files-found: error
 
   terminal-diagnostic:
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && inputs.terminal_diagnostic_run != '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.terminal_diagnostic_run != '' }}
     name: Retained Workspace artifact companion diagnostic
     runs-on: windows-2025
     timeout-minutes: 12
@@ -332,7 +307,7 @@ jobs:
           if-no-files-found: error
 
   workspace-wsl-helper:
-    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
     name: Workspace static WSL helper
     runs-on: ubuntu-24.04
     timeout-minutes: 20
@@ -380,7 +355,7 @@ jobs:
 
   windows:
     needs: workspace-wsl-helper
-    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
+    if: ${{ (github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '') }}
     name: Hidden products (Windows native)
     outputs:
       workspace_fixture_exported: ${{ steps.workspace-export.outcome }}
@@ -724,7 +699,7 @@ jobs:
           retention-days: 7
 
   baseline-performance:
-    if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
+    if: ${{ !inputs.delivery_completion_only && !inputs.wsl2_build_only && !inputs.suite_remaining_only && ((github.event_name == 'pull_request' && !github.event.pull_request.draft) || (github.event_name == 'workflow_dispatch' && !inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '')) }}
     name: Legacy performance baseline (Windows)
     runs-on: windows-2025
     timeout-minutes: 60
@@ -774,7 +749,7 @@ jobs:
 
   wsl-fixture-artifact:
     name: Knowledge WSL test executables (private)
-    if: ${{ github.event_name == 'workflow_dispatch' && !inputs.legacy_reference_only && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.wsl_fixture_artifact_only && inputs.terminal_diagnostic_run == '' && inputs.wsl2_diagnostic_run == '' && inputs.suite_diagnostic_run == '' && inputs.delivery_diagnostic_run == '' }}
     runs-on: windows-2025
     timeout-minutes: 30
     env:
