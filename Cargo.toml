@@ -29,6 +29,7 @@ members = [
     "crates/filesystem",
     "crates/markdown",
     "crates/process",
+    "crates/process-tree",
     "crates/wsl",
     "crates/search",
     "crates/integration",
@@ -44,6 +45,7 @@ members = [
 edition = "2021"
 
 [workspace.dependencies]
+process-tree = { path = "crates/process-tree" }
 base64 = { version = "0.22.1" }
 bytes = { version = "1.12.1" }
 chrono = { version = "0.4.45", default-features = false, features = ["alloc", "clock", "std"] }
