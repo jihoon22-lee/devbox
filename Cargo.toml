@@ -9,6 +9,7 @@ members = [
     "crates/product-shell-tauri",
     "crates/suite-runtime",
     "crates/product-contract",
+    "crates/product-ipc",
     "crates/api-protocols",
     "crates/webhook-core",
     "crates/transforms-core",
@@ -45,6 +46,8 @@ members = [
 edition = "2021"
 
 [workspace.dependencies]
+product-ipc = { path = "crates/product-ipc" }
+ts-rs = { version = "=12.0.1", features = ["serde-json-impl", "no-serde-warnings"] }
 process-tree = { path = "crates/process-tree" }
 base64 = { version = "0.22.1" }
 bytes = { version = "1.12.1" }
