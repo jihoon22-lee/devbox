@@ -449,6 +449,9 @@ importers:
       '@devbox/editor':
         specifier: workspace:*
         version: link:../editor
+      '@devbox/markdown-view':
+        specifier: workspace:*
+        version: link:../markdown-view
       '@devbox/mermaid-renderer':
         specifier: workspace:*
         version: link:../mermaid-renderer
@@ -486,6 +489,22 @@ importers:
       vite:
         specifier: ^7.0.4
         version: 7.3.6(yaml@2.9.0)
+
+  packages/markdown-view:
+    dependencies:
+      '@devbox/mermaid-renderer':
+        specifier: workspace:*
+        version: link:../mermaid-renderer
+      react:
+        specifier: ^19.0.0
+        version: 19.2.8
+    devDependencies:
+      '@types/react':
+        specifier: ^19.0.0
+        version: 19.2.18
+      typescript:
+        specifier: ~5.8.3
+        version: 5.8.3
 
   packages/mermaid-renderer:
     dependencies:
@@ -608,6 +627,9 @@ importers:
       '@devbox/editor':
         specifier: workspace:*
         version: link:../editor
+      '@devbox/markdown-view':
+        specifier: workspace:*
+        version: link:../markdown-view
       '@devbox/mermaid-renderer':
         specifier: workspace:*
         version: link:../mermaid-renderer

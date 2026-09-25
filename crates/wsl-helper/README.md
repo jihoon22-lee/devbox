@@ -150,7 +150,7 @@ admission and actual subprocess framing/context/replay/EOF behavior.
 `musl-tools` is needed for native C dependencies.
 `cargo build --locked --release -p workspace-wsl --target
 x86_64-unknown-linux-musl` produces the static artifact; see the
-[resource instructions](../src-tauri/resources/wsl/README.md).
+[resource instructions](../../apps/devbox-workspace/src-tauri/resources/wsl/README.md).
 The Windows owner selects the native resource directory, verifies the compiled
 size/hash, pins it read-only and pins every ancestor against replacement, then launches by distro GUID with structured argv.
 Stopped distributions require an explicit start choice. Source-only Rust builds

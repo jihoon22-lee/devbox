@@ -1,5 +1,4 @@
-//! secret 봉인 플랫폼 레이어. DPAPI(Windows)는 여기서 구현하고,
-//! 순수 envelope·마스킹은 `crates/secrets`(devbox_secrets)를 쓴다 (CONVENTIONS §4).
+//! 용도별 entropy를 정하는 secret 경계. DPAPI와 envelope는 공유 secrets crate가 소유한다.
 
 use devbox_secrets::SealError;
 use zeroize::Zeroizing;
@@ -8,7 +7,7 @@ use zeroize::Zeroizing;
 pub fn platform_sealer() -> Box<dyn devbox_secrets::Sealer> {
     #[cfg(target_os = "windows")]
     {
-        Box::new(windows_impl::DpapiSealer::environment())
+        Box::new(devbox_secrets::dpapi::DpapiSealer::new(ENVIRONMENT_ENTROPY))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -21,7 +20,7 @@ pub fn platform_sealer() -> Box<dyn devbox_secrets::Sealer> {
 pub fn platform_grpc_sealer() -> Box<dyn devbox_secrets::Sealer> {
     #[cfg(target_os = "windows")]
     {
-        Box::new(windows_impl::DpapiSealer::grpc_tls())
+        Box::new(devbox_secrets::dpapi::DpapiSealer::new(GRPC_TLS_ENTROPY))
     }
     #[cfg(not(target_os = "windows"))]
     {
@@ -29,135 +28,31 @@ pub fn platform_grpc_sealer() -> Box<dyn devbox_secrets::Sealer> {
     }
 }
 
-#[cfg(target_os = "windows")]
-mod windows_impl {
+// Persisted purpose domains: changing these would strand existing secrets.
+#[cfg(windows)]
+const ENVIRONMENT_ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
+#[cfg(windows)]
+const GRPC_TLS_ENTROPY: &[u8] = b"devbox.api-playground.grpc-tls-credentials.v1";
+
+#[cfg(all(test, windows))]
+mod tests {
     use super::*;
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{LocalFree, HLOCAL};
-    use windows::Win32::Security::Cryptography::{
-        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-    };
-    use zeroize::Zeroize;
-
-    const ENVIRONMENT_ENTROPY: &[u8] = b"devbox.api-playground.secrets.v1";
-    const GRPC_TLS_ENTROPY: &[u8] = b"devbox.api-playground.grpc-tls-credentials.v1";
-
-    pub(crate) struct DpapiSealer {
-        entropy: &'static [u8],
-    }
-
-    impl DpapiSealer {
-        pub(crate) fn environment() -> Self {
-            Self {
-                entropy: ENVIRONMENT_ENTROPY,
-            }
-        }
-
-        pub(crate) fn grpc_tls() -> Self {
-            Self {
-                entropy: GRPC_TLS_ENTROPY,
-            }
-        }
-    }
-
-    impl devbox_secrets::Sealer for DpapiSealer {
-        fn seal(&self, plaintext: &str) -> Result<Vec<u8>, SealError> {
-            unsafe {
-                let input = blob(plaintext.as_bytes())?;
-                let entropy = blob(self.entropy)?;
-                let mut output = CRYPT_INTEGER_BLOB::default();
-                CryptProtectData(
-                    &input,
-                    PCWSTR::null(),
-                    Some(&entropy as *const _),
-                    None,
-                    None,
-                    CRYPTPROTECT_UI_FORBIDDEN,
-                    &mut output,
-                )
-                .map_err(|_| SealError::CryptoFailure)?;
-                copy_and_free(output)
-            }
-        }
-
-        fn unseal(&self, ciphertext: &[u8]) -> Result<Zeroizing<String>, SealError> {
-            unsafe {
-                let input = blob(ciphertext)?;
-                let entropy = blob(self.entropy)?;
-                let mut output = CRYPT_INTEGER_BLOB::default();
-                CryptUnprotectData(
-                    &input,
-                    None,
-                    Some(&entropy as *const _),
-                    None,
-                    None,
-                    CRYPTPROTECT_UI_FORBIDDEN,
-                    &mut output,
-                )
-                .map_err(|_| SealError::CryptoFailure)?;
-                let mut bytes = Zeroizing::new(copy_and_free(output)?);
-                let owned = std::mem::take(&mut *bytes);
-                let text = match String::from_utf8(owned) {
-                    Ok(value) => value,
-                    Err(error) => {
-                        let mut invalid = error.into_bytes();
-                        invalid.zeroize();
-                        return Err(SealError::InvalidInput);
-                    }
-                };
-                Ok(Zeroizing::new(text))
-            }
-        }
-    }
-
-    unsafe fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, SealError> {
-        let cb_data = u32::try_from(bytes.len()).map_err(|_| SealError::InvalidInput)?;
-        Ok(CRYPT_INTEGER_BLOB {
-            cbData: cb_data,
-            pbData: bytes.as_ptr() as *mut u8,
-        })
-    }
-
-    unsafe fn copy_and_free(blob: CRYPT_INTEGER_BLOB) -> Result<Vec<u8>, SealError> {
-        if blob.pbData.is_null() {
-            return Err(SealError::CryptoFailure);
-        }
-        let length = blob.cbData as usize;
-        let copied = std::slice::from_raw_parts(blob.pbData, length).to_vec();
-        for index in 0..length {
-            std::ptr::write_volatile(blob.pbData.add(index), 0);
-        }
-        let _ = LocalFree(Some(HLOCAL(blob.pbData.cast())));
-        if copied.is_empty() {
-            Err(SealError::CryptoFailure)
-        } else {
-            Ok(copied)
-        }
-    }
-
-    #[cfg(test)]
-    mod tests {
-        use super::DpapiSealer;
-        use devbox_secrets::Sealer;
-
-        #[test]
-        fn dpapi_entropy_domains_do_not_cross_unseal() {
-            let environment = DpapiSealer::environment();
-            let grpc = DpapiSealer::grpc_tls();
-            let environment_blob = environment.seal("environment-secret").unwrap();
-            let grpc_blob = grpc.seal("grpc-private-key").unwrap();
-
-            assert_eq!(
-                environment.unseal(&environment_blob).unwrap().as_str(),
-                "environment-secret"
-            );
-            assert_eq!(
-                grpc.unseal(&grpc_blob).unwrap().as_str(),
-                "grpc-private-key"
-            );
-            assert!(grpc.unseal(&environment_blob).is_err());
-            assert!(environment.unseal(&grpc_blob).is_err());
-        }
+    #[test]
+    fn dpapi_entropy_domains_do_not_cross_unseal() {
+        let environment = platform_sealer();
+        let grpc = platform_grpc_sealer();
+        let environment_blob = environment.seal("environment-secret").unwrap();
+        let grpc_blob = grpc.seal("grpc-private-key").unwrap();
+        assert_eq!(
+            environment.unseal(&environment_blob).unwrap().as_str(),
+            "environment-secret"
+        );
+        assert_eq!(
+            grpc.unseal(&grpc_blob).unwrap().as_str(),
+            "grpc-private-key"
+        );
+        assert!(grpc.unseal(&environment_blob).is_err());
+        assert!(environment.unseal(&grpc_blob).is_err());
     }
 }
 

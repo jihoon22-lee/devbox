@@ -18,7 +18,7 @@ tauri-build = { workspace = true }
 [dependencies]
 suite-runtime = { path = "../../../crates/suite-runtime" }
 devbox-catalog = { package = "catalog", path = "../../../crates/catalog" }
-workspace-wsl = { path = "../native", default-features = false, features = ["files", "git"] }
+workspace-wsl = { path = "../../../crates/wsl-helper", default-features = false, features = ["files", "git"] }
 tauri = { workspace = true }
 product-shell-tauri = { path = "../../../crates/product-shell-tauri" }
 product-contract = { path = "../../../crates/product-contract" }

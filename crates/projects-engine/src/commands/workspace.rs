@@ -622,15 +622,7 @@ async fn run_fixed_native_command_inner(
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
         .kill_on_drop(true);
-    #[cfg(unix)]
-    command.process_group(0);
-    #[cfg(target_os = "windows")]
-    // CREATE_SUSPENDED is required so no WSL helper can run before the Job
-    // Object is configured, assigned, and the primary thread is resumed.
-    command.creation_flags(
-        windows::Win32::System::Threading::CREATE_NO_WINDOW.0
-            | windows::Win32::System::Threading::CREATE_SUSPENDED.0,
-    );
+    ProcessTree::prepare_tokio(&mut command);
     let mut child = command.spawn().map_err(|_| NativeCommandError::Io)?;
     let mut process_tree = match ProcessTree::assign(&child) {
         Ok(tree) => tree,

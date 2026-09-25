@@ -1,6 +1,5 @@
-import { getMermaidRenderer } from "@devbox/mermaid-renderer";
-import { useEffect, useRef } from "react";
-import { applySvgResult } from "../lib/previewState";
+import { MarkdownBody } from "@devbox/markdown-view";
+import { useMemo } from "react";
 import type { PreviewResponse } from "../types";
 
 interface PreviewPaneProps {
@@ -15,90 +14,11 @@ interface PreviewPaneProps {
  * successful SVG for that block and show a small error badge.
  */
 export default function PreviewPane({ docPath, response, error }: PreviewPaneProps) {
-  const containerRef = useRef<HTMLDivElement>(null);
-  const lastGoodSvg = useRef<Map<string, string>>(new Map());
-  const renderSequence = useRef(0);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
-  useEffect(() => {
-    lastGoodSvg.current.clear();
-  }, [docPath]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !response) return;
-    let cancelled = false;
-
-    const canApply = (element: HTMLElement): boolean =>
-      !cancelled && containerRef.current === container && element.isConnected;
-
-    const applyError = (element: HTMLElement, key: string) => {
-      if (!canApply(element)) return;
-      const applied = applySvgResult(lastGoodSvg.current, key, { ok: false });
-      element.innerHTML = `${applied.svg}<span class="mermaid-error-badge" title="mermaid 구문 오류">⚠ 구문 오류</span>`;
-    };
-
-    const renderBlocks = async () => {
-      if (response.kind === "mermaid") {
-        const source = response.source;
-        const key = "standalone";
-        try {
-          const renderer = await getMermaidRenderer();
-          const { svg } = await renderer.render(`code-pad-mermaid-${renderSequence.current++}`, source);
-          if (!canApply(container)) return;
-          const applied = applySvgResult(lastGoodSvg.current, key, { ok: true, svg });
-          container.innerHTML = applied.svg;
-        } catch {
-          applyError(container, key);
-        }
-        return;
-      }
-
-      const blocks = container.querySelectorAll<HTMLDivElement>(".mermaid-block[data-idx]");
-      if (blocks.length === 0) return;
-
-      let renderer;
-      try {
-        renderer = await getMermaidRenderer();
-      } catch {
-        blocks.forEach((element) => {
-          const index = Number(element.dataset.idx);
-          if (response.mermaid[index] !== undefined) applyError(element, String(index));
-        });
-        return;
-      }
-
-      await Promise.all(
-        Array.from(blocks).map(async (element) => {
-          const index = Number(element.dataset.idx);
-          const source = response.mermaid[index];
-          if (source === undefined) return;
-          const key = String(index);
-          try {
-            const { svg } = await renderer.render(`code-pad-mermaid-${index}-${renderSequence.current++}`, source);
-            if (!canApply(element)) return;
-            const applied = applySvgResult(lastGoodSvg.current, key, { ok: true, svg });
-            element.innerHTML = applied.svg;
-          } catch {
-            applyError(element, key);
-          }
-        }),
-      );
-    };
-
-    if (response.kind === "markdown") {
-      // The native markdown crate has already sanitized this HTML.  It is the
-      // only value in the app that is intentionally assigned as HTML.
-      container.innerHTML = response.html;
-    } else {
-      container.replaceChildren();
-    }
-    void renderBlocks();
-    return () => {
-      cancelled = true;
-    };
-  }, [docPath, response]);
+  const mermaid = useMemo(
+    () => (response?.kind === "mermaid" ? [response.source] : (response?.mermaid ?? [])),
+    [response],
+  );
+  const html = response?.kind === "mermaid" ? '<div class="mermaid-block" data-idx="0"></div>' : (response?.html ?? "");
 
   return (
     <aside className="preview-pane" aria-label="프리뷰">
@@ -111,7 +31,17 @@ export default function PreviewPane({ docPath, response, error }: PreviewPanePro
           {error}
         </p>
       )}
-      {!response ? <p className="preview-empty">렌더링 중...</p> : <div ref={containerRef} className="preview-body" />}
+      {!response ? (
+        <p className="preview-empty">렌더링 중...</p>
+      ) : (
+        <MarkdownBody
+          html={html}
+          mermaid={mermaid}
+          docKey={docPath}
+          idPrefix="code-pad-mermaid"
+          className="preview-body"
+        />
+      )}
     </aside>
   );
 }

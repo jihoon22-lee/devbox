@@ -1,7 +1,7 @@
 # Workspace WSL helper resource
 
 `devbox-workspace-wsl` is the first-party static Linux x86-64 helper built from
-`apps/devbox-workspace/native`. The private CI artifact includes a bounded
+`crates/wsl-helper`. The private CI artifact includes a bounded
 `manifest.json` with source commit, protocol, size and SHA-256. Neither generated
 file is committed. Windows packaging must validate both before invoking Tauri;
 the build script embeds the verified digest and size for native launch checks.

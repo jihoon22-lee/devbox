@@ -10,26 +10,11 @@ use serde::Serialize;
 use std::collections::BTreeMap;
 use std::fs::{self, File};
 use std::io::{Read, Seek, SeekFrom};
-#[cfg(windows)]
-use std::mem::size_of;
 use std::path::{Path, PathBuf};
 use std::process::{Child, Command, Stdio};
 use std::sync::mpsc::{self, TryRecvError};
 use std::thread;
 use std::time::{Duration, Instant, UNIX_EPOCH};
-
-#[cfg(windows)]
-use std::os::windows::io::AsRawHandle;
-#[cfg(windows)]
-use windows::core::PCWSTR;
-#[cfg(windows)]
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
-#[cfg(windows)]
-use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-};
 
 const READ_CHUNK_BYTES: usize = 64 * 1024;
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(10);
@@ -714,15 +699,6 @@ fn run_fixed_adapter(plan: &AdapterPlan, context: &LoadContext<'_>) -> Result<Ve
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    // A fixed adapter can still create descendants (for example a WSL
-    // helper). Give it a private process group on Unix; Windows assigns the
-    // child to a kill-on-close Job Object below. Both boundaries cover the
-    // complete adapter tree without passing user input to a shell utility.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
     let (mut child, mut process_tree) =
         ProcessTree::spawn(&mut command).map_err(|_| CoreError::AdapterUnavailable)?;
     let mut stdout = match child.stdout.take() {
@@ -906,216 +882,29 @@ fn kill_child_and_reap(child: &mut Child) {
     reap_child_bounded(child);
 }
 
-/// Own an adapter's complete process tree. Windows uses a Job Object with
-/// kill-on-close; Unix uses the process group assigned before spawn.
-#[cfg(windows)]
-struct ProcessTree {
-    handle: HANDLE,
-}
-
-#[cfg(windows)]
+/// Adapter policy over the common OS owner, with the existing bounded reap.
+struct ProcessTree(Option<process_tree::ProcessTree>);
 impl ProcessTree {
     fn spawn(command: &mut Command) -> Result<(Child, Self), ()> {
-        use std::os::windows::process::CommandExt;
-        use windows::Win32::System::Threading::{CREATE_NO_WINDOW, CREATE_SUSPENDED};
-
-        // A normally-running child could create an unowned descendant in the
-        // interval between spawn and Job assignment. Start the sole primary
-        // thread suspended, establish exact Job ownership, prove the Job
-        // contains exactly this root, and only then resume it.
-        command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
-        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if unsafe {
-            SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        }
-        .is_err()
-        {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        let mut child = match command.spawn() {
-            Ok(child) => child,
-            Err(_) => {
-                unsafe {
-                    let _ = CloseHandle(handle);
-                }
-                return Err(());
-            }
-        };
-        let process = HANDLE(child.as_raw_handle());
-        if unsafe { AssignProcessToJobObject(handle, process) }.is_err() {
-            kill_child_and_reap(&mut child);
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        if query_job_active_processes(handle) != Some(1)
-            || resume_primary_thread(child.id(), handle).is_err()
-        {
-            let _ = unsafe { TerminateJobObject(handle, 1) };
-            reap_child_bounded(&mut child);
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        Ok((child, Self { handle }))
-    }
-
-    fn terminate(&mut self, child: &mut Child) {
-        self.terminate_descendants();
-        reap_child_bounded(child);
-    }
-
-    fn terminate_descendants(&mut self) {
-        let _ = unsafe { TerminateJobObject(self.handle, 1) };
-    }
-}
-
-#[cfg(windows)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
-#[cfg(unix)]
-struct ProcessTree {
-    process_group: i32,
-}
-
-#[cfg(unix)]
-impl ProcessTree {
-    fn spawn(command: &mut Command) -> Result<(Child, Self), ()> {
+        process_tree::ProcessTree::prepare_std(command);
         let mut child = command.spawn().map_err(|_| ())?;
-        let process_group = match i32::try_from(child.id()) {
-            Ok(process_group) => process_group,
-            Err(_) => {
+        match process_tree::ProcessTree::assign_std(&child) {
+            Ok(tree) => Ok((child, Self(Some(tree)))),
+            Err(()) => {
                 kill_child_and_reap(&mut child);
-                return Err(());
+                Err(())
             }
-        };
-        if process_group <= 0 {
-            kill_child_and_reap(&mut child);
-            return Err(());
         }
-        Ok((child, Self { process_group }))
     }
-
     fn terminate(&mut self, child: &mut Child) {
         self.terminate_descendants();
         reap_child_bounded(child);
     }
-
     fn terminate_descendants(&mut self) {
-        // `Command::new("kill")` would trust the ambient PATH during cleanup
-        // and can leave an inherited stdout pipe open if that utility is
-        // replaced or unavailable. Kill the private process group directly.
-        let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
-    }
-}
-
-#[cfg(not(any(windows, unix)))]
-struct ProcessTree;
-
-#[cfg(not(any(windows, unix)))]
-impl ProcessTree {
-    fn spawn(command: &mut Command) -> Result<(Child, Self), ()> {
-        command.spawn().map(|child| (child, Self)).map_err(|_| ())
-    }
-    fn terminate(&mut self, child: &mut Child) {
-        kill_child_and_reap(child);
-    }
-    fn terminate_descendants(&mut self) {}
-}
-
-#[cfg(windows)]
-fn query_job_active_processes(handle: HANDLE) -> Option<u32> {
-    use windows::Win32::System::JobObjects::{
-        JobObjectBasicAccountingInformation, QueryInformationJobObject,
-        JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-    };
-    let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
-    unsafe {
-        QueryInformationJobObject(
-            Some(handle),
-            JobObjectBasicAccountingInformation,
-            (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-            None,
-        )
-    }
-    .ok()
-    .map(|_| accounting.ActiveProcesses)
-}
-
-#[cfg(windows)]
-fn resume_primary_thread(pid: u32, job: HANDLE) -> Result<(), ()> {
-    use windows::Win32::Foundation::{GetLastError, ERROR_NO_MORE_FILES};
-    use windows::Win32::System::Diagnostics::ToolHelp::{
-        CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-    };
-    use windows::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
-
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }.map_err(|_| ())?;
-    let mut entry = THREADENTRY32 {
-        dwSize: size_of::<THREADENTRY32>() as u32,
-        ..Default::default()
-    };
-    let mut thread_id = None;
-    if unsafe { Thread32First(snapshot, &mut entry) }.is_err() {
-        unsafe {
-            let _ = CloseHandle(snapshot);
-        }
-        return Err(());
-    }
-    loop {
-        if entry.th32OwnerProcessID == pid && thread_id.replace(entry.th32ThreadID).is_some() {
-            unsafe {
-                let _ = CloseHandle(snapshot);
-            }
-            return Err(());
-        }
-        entry.dwSize = size_of::<THREADENTRY32>() as u32;
-        if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
-            let finished = unsafe { GetLastError() } == ERROR_NO_MORE_FILES;
-            unsafe {
-                let _ = CloseHandle(snapshot);
-            }
-            if !finished {
-                return Err(());
-            }
-            break;
+        if let Some(tree) = self.0.take() {
+            let _ = tree.signal_and_release(true);
         }
     }
-    unsafe {
-        let _ = CloseHandle(snapshot);
-    }
-    let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, thread_id.ok_or(())?) }
-        .map_err(|_| ())?;
-    if query_job_active_processes(job) != Some(1) {
-        unsafe {
-            let _ = CloseHandle(thread);
-        }
-        return Err(());
-    }
-    let previous_suspend_count = unsafe { ResumeThread(thread) };
-    unsafe {
-        let _ = CloseHandle(thread);
-    }
-    (previous_suspend_count == 1).then_some(()).ok_or(())
 }
 
 fn file_identity(_file: &File, metadata: &fs::Metadata) -> FileIdentity {

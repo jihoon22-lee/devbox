@@ -19,6 +19,7 @@ crate-type = ["rlib"]
 
 
 [dependencies]
+process-tree = { workspace = true }
 product-contract = { path = "../product-contract" }
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }

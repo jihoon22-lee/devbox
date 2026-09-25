@@ -155,34 +155,19 @@ fn platform_protector() -> unavailable::UnavailableProtector {
 #[cfg(windows)]
 mod windows_impl {
     use super::*;
-    use windows::core::PCWSTR;
-    use windows::Win32::Foundation::{LocalFree, HLOCAL};
-    use windows::Win32::Security::Cryptography::{
-        CryptProtectData, CryptUnprotectData, CRYPTPROTECT_UI_FORBIDDEN, CRYPT_INTEGER_BLOB,
-    };
+    use devbox_secrets::{dpapi::DpapiSealer, Sealer};
     use zeroize::Zeroizing;
 
-    /// This value is application-fixed, not a user secret. It prevents other
-    /// DPAPI consumers from accidentally unprotecting this app's blobs while
-    /// DPAPI still scopes the key to the current Windows user.
+    // Persisted CurrentUser purpose domain, including the legacy raw envelope.
     const OPTIONAL_ENTROPY: &[u8] = b"devbox.run-manager.environment.v1";
-
     pub(super) struct DpapiProtector;
 
-    impl devbox_secrets::Sealer for DpapiProtector {
+    impl Sealer for DpapiProtector {
         fn seal(&self, plaintext: &str) -> Result<Vec<u8>, devbox_secrets::SealError> {
-            protect_blob(plaintext.as_bytes()).map_err(|_| devbox_secrets::SealError::CryptoFailure)
+            DpapiSealer::new(OPTIONAL_ENTROPY).seal(plaintext)
         }
-
-        fn unseal(
-            &self,
-            blob: &[u8],
-        ) -> Result<zeroize::Zeroizing<String>, devbox_secrets::SealError> {
-            let bytes =
-                unprotect_blob(blob).map_err(|_| devbox_secrets::SealError::CryptoFailure)?;
-            let text = String::from_utf8(bytes.to_vec())
-                .map_err(|_| devbox_secrets::SealError::InvalidInput)?;
-            Ok(zeroize::Zeroizing::new(text))
+        fn unseal(&self, blob: &[u8]) -> Result<Zeroizing<String>, devbox_secrets::SealError> {
+            DpapiSealer::new(OPTIONAL_ENTROPY).unseal(blob)
         }
     }
 
@@ -193,16 +178,13 @@ mod windows_impl {
         ) -> Result<Vec<u8>, EnvironmentProtectionError> {
             crate::core::shell::validate_environment(environment)
                 .map_err(|_| EnvironmentProtectionError::InvalidInput)?;
-            let serialized = Zeroizing::new(
-                serde_json::to_vec(environment)
+            let plaintext = Zeroizing::new(
+                serde_json::to_string(environment)
                     .map_err(|_| EnvironmentProtectionError::CryptoFailure)?,
             );
-            let plaintext = String::from_utf8(serialized.to_vec())
-                .map_err(|_| EnvironmentProtectionError::CryptoFailure)?;
             devbox_secrets::seal_v1(self, &plaintext)
                 .map_err(|_| EnvironmentProtectionError::CryptoFailure)
         }
-
         fn decrypt(
             &self,
             ciphertext: &[u8],
@@ -210,13 +192,11 @@ mod windows_impl {
             if ciphertext.is_empty() {
                 return Err(EnvironmentProtectionError::InvalidCiphertext);
             }
-            // v1 envelope 시도 → 실패 시 legacy(버전 byte 없음) raw blob fallback
-            let plaintext = match devbox_secrets::unseal_v1(self, ciphertext) {
-                Ok(text) => Zeroizing::new(text.as_bytes().to_vec()),
-                Err(_) => unprotect_blob(ciphertext)
-                    .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?,
-            };
-            let environment = serde_json::from_slice(&plaintext)
+            // Preserve v0.8.1's versioned envelope and older raw DPAPI fallback.
+            let plaintext = devbox_secrets::unseal_v1(self, ciphertext)
+                .or_else(|_| self.unseal(ciphertext))
+                .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?;
+            let environment = serde_json::from_slice(plaintext.as_bytes())
                 .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?;
             if crate::core::shell::validate_environment(&environment).is_err() {
                 drop(SecretEnvironment::new(environment));
@@ -226,90 +206,20 @@ mod windows_impl {
         }
     }
 
-    fn protect_blob(bytes: &[u8]) -> Result<Vec<u8>, EnvironmentProtectionError> {
-        let input = blob(bytes)?;
-        let entropy = blob(OPTIONAL_ENTROPY)?;
-        let mut output = CRYPT_INTEGER_BLOB::default();
-        unsafe {
-            CryptProtectData(
-                &input,
-                PCWSTR::null(),
-                Some(&entropy as *const _),
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        }
-        .map_err(|_| EnvironmentProtectionError::CryptoFailure)?;
-        copy_and_free(output)
-    }
-
-    fn unprotect_blob(bytes: &[u8]) -> Result<Zeroizing<Vec<u8>>, EnvironmentProtectionError> {
-        let input = blob(bytes)?;
-        let entropy = blob(OPTIONAL_ENTROPY)?;
-        let mut output = CRYPT_INTEGER_BLOB::default();
-        unsafe {
-            CryptUnprotectData(
-                &input,
-                None,
-                Some(&entropy as *const _),
-                None,
-                None,
-                CRYPTPROTECT_UI_FORBIDDEN,
-                &mut output,
-            )
-        }
-        .map_err(|_| EnvironmentProtectionError::InvalidCiphertext)?;
-        copy_and_zeroize_free(output)
-    }
-
-    fn blob(bytes: &[u8]) -> Result<CRYPT_INTEGER_BLOB, EnvironmentProtectionError> {
-        let cb_data =
-            u32::try_from(bytes.len()).map_err(|_| EnvironmentProtectionError::InvalidInput)?;
-        Ok(CRYPT_INTEGER_BLOB {
-            cbData: cb_data,
-            pbData: bytes.as_ptr() as *mut u8,
-        })
-    }
-
-    fn copy_and_free(blob: CRYPT_INTEGER_BLOB) -> Result<Vec<u8>, EnvironmentProtectionError> {
-        if blob.pbData.is_null() {
-            return Err(EnvironmentProtectionError::CryptoFailure);
-        }
-        let copied =
-            unsafe { std::slice::from_raw_parts(blob.pbData, blob.cbData as usize).to_vec() };
-        unsafe {
-            let _ = LocalFree(Some(HLOCAL(blob.pbData.cast())));
-        }
-        if copied.is_empty() {
-            Err(EnvironmentProtectionError::CryptoFailure)
-        } else {
-            Ok(copied)
-        }
-    }
-
-    /// Copy a DPAPI plaintext result while it is still in the LocalAlloc
-    /// buffer, then scrub that buffer before releasing it. `CryptUnprotectData`
-    /// owns this allocation and the caller must not leave plaintext behind in
-    /// it; the returned `Zeroizing` value covers the Rust-owned copy.
-    fn copy_and_zeroize_free(
-        blob: CRYPT_INTEGER_BLOB,
-    ) -> Result<Zeroizing<Vec<u8>>, EnvironmentProtectionError> {
-        if blob.pbData.is_null() {
-            return Err(EnvironmentProtectionError::InvalidCiphertext);
-        }
-        let length = blob.cbData as usize;
-        let mut copied = unsafe { std::slice::from_raw_parts(blob.pbData, length).to_vec() };
-        unsafe {
-            std::slice::from_raw_parts_mut(blob.pbData, length).zeroize();
-            let _ = LocalFree(Some(HLOCAL(blob.pbData.cast())));
-        }
-        if copied.is_empty() {
-            copied.zeroize();
-            Err(EnvironmentProtectionError::InvalidCiphertext)
-        } else {
-            Ok(Zeroizing::new(copied))
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        #[test]
+        fn legacy_raw_and_versioned_ciphertexts_still_decrypt() {
+            let values = BTreeMap::from([("TOKEN".to_owned(), "비밀".to_owned())]);
+            let sealer = DpapiSealer::new(OPTIONAL_ENTROPY);
+            let serialized = Zeroizing::new(serde_json::to_string(&values).unwrap());
+            for ciphertext in [
+                sealer.seal(&serialized).unwrap(),
+                devbox_secrets::seal_v1(&sealer, &serialized).unwrap(),
+            ] {
+                assert_eq!(DpapiProtector.decrypt(&ciphertext).unwrap(), values);
+            }
         }
     }
 }

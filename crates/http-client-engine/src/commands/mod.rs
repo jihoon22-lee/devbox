@@ -6,7 +6,6 @@ pub mod mcp;
 pub mod mcp_oauth;
 pub mod mcp_stdio;
 pub mod openapi;
-pub(crate) mod process_tree;
 pub mod request;
 pub(crate) mod saved_environment;
 pub mod secrets;

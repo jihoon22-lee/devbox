@@ -21,6 +21,7 @@ default = []
 
 
 [dependencies]
+process-tree = { workspace = true, features = ["tokio"] }
 api-protocols = { path = "../api-protocols" }
 tauri = { workspace = true }
 tauri-plugin-dialog = { workspace = true }

@@ -83,10 +83,25 @@ for engine in ["knowledge-vault-engine", "activity-engine", "content-index-engin
 secrets = resolve("crates/secrets/src/lib.rs")
 assert secrets.rust_packages == sorted(["devbox-installation-tools", "devbox-http-client-engine", "devbox-api-studio", "devbox-control-center", "devbox-knowledge", "devbox-workspace", "devbox-knowledge-vault-engine", "product-contract", "product-shell-tauri", "devbox-runtime-engine", "secrets", "devbox-projects-engine", "workspace-wsl", "suite-runtime"])
 
-native_helper = resolve("apps/devbox-workspace/native/src/engine.rs")
+shared_tree = resolve("crates/process-tree/src/lib.rs")
+assert shared_tree.frontend_scope == "none"
+assert set(shared_tree.rust_packages) >= {
+    "process-tree", "git", "devbox-http-client-engine", "devbox-projects-engine",
+    "devbox-editor-engine", "devbox-logs-engine", "devbox-ports-engine",
+    "devbox-installation-tools", "devbox-workspace", "devbox-api-studio",
+    "devbox-knowledge", "devbox-control-center",
+}
+markdown_view = resolve("packages/markdown-view/src/MarkdownBody.tsx")
+assert markdown_view.frontend_packages == [
+    "apps/devbox-knowledge", "apps/devbox-workspace", "packages/knowledge-features",
+    "packages/markdown-view", "packages/workspace-features",
+]
+assert markdown_view.rust_scope == "none"
+
+native_helper = resolve("crates/wsl-helper/src/engine.rs")
 assert native_helper.frontend_scope == "none"
 assert native_helper.rust_packages == ["devbox-knowledge", "devbox-knowledge-vault-engine", "devbox-workspace", "workspace-wsl"]
-helper_manifest = resolve("apps/devbox-workspace/native/Cargo.toml")
+helper_manifest = resolve("crates/wsl-helper/Cargo.toml")
 assert helper_manifest.dependency_scope == "all"
 assert helper_manifest.rust_packages == native_helper.rust_packages
 rust_graph = module.load_rust_graph(ROOT)

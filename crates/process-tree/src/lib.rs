@@ -6,121 +6,68 @@
 //! malicious descendant which deliberately calls `setsid()`; that OS authority
 //! limit is documented by the stdio contract rather than hidden.
 
+// The public unit error preserves existing consumer error mappings.
+#![allow(clippy::result_unit_err)]
+
 use std::time::Duration;
+#[cfg(feature = "tokio")]
 use tokio::process::Child;
+#[cfg(feature = "tokio")]
 use tokio::time::Instant;
 
-pub(crate) const CLEANUP_TIMEOUT: Duration = Duration::from_millis(750);
+pub const CLEANUP_TIMEOUT: Duration = Duration::from_millis(750);
 const POLL_INTERVAL: Duration = Duration::from_millis(10);
 
-#[cfg(target_os = "windows")]
-use std::mem::size_of;
-#[cfg(target_os = "windows")]
-use windows::core::PCWSTR;
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::{CloseHandle, GetLastError, ERROR_NO_MORE_FILES, HANDLE};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
-    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
-    TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+#[cfg(windows)]
+pub mod windows_job;
 
-pub(crate) struct ProcessTree {
+pub struct ProcessTree {
     #[cfg(target_os = "windows")]
-    job: HANDLE,
+    job: windows_job::WindowsJob,
     #[cfg(unix)]
     process_group: i32,
     terminal_empty: bool,
 }
 
-// A Job handle is process-wide rather than thread-affine. This type owns the
-// sole handle and only mutates it through `&mut self`.
-#[cfg(target_os = "windows")]
-unsafe impl Send for ProcessTree {}
-
 impl ProcessTree {
-    pub(crate) fn assign(child: &Child) -> Result<Self, ()> {
-        #[cfg(target_os = "windows")]
+    /// Prepare a private group or a suspended, non-windowed Windows child.
+    pub fn prepare_std(command: &mut std::process::Command) {
+        #[cfg(windows)]
         {
-            let raw_handle = child.raw_handle().ok_or(())?;
-            let process = HANDLE(raw_handle);
-            let job = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
-            let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-            limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-            if unsafe {
-                SetInformationJobObject(
-                    job,
-                    JobObjectExtendedLimitInformation,
-                    (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                    size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-                )
-            }
-            .is_err()
-            {
-                unsafe {
-                    let _ = CloseHandle(job);
-                }
-                return Err(());
-            }
-            if unsafe { AssignProcessToJobObject(job, process) }.is_err() {
-                unsafe {
-                    let _ = TerminateJobObject(job, 1);
-                    let _ = CloseHandle(job);
-                }
-                return Err(());
-            }
-            if query_job_active_processes(job) != Some(1) {
-                unsafe {
-                    let _ = TerminateJobObject(job, 1);
-                    let _ = CloseHandle(job);
-                }
-                return Err(());
-            }
-            let Some(pid) = child.id() else {
-                unsafe {
-                    let _ = TerminateJobObject(job, 1);
-                }
-                unsafe {
-                    let _ = CloseHandle(job);
-                }
-                return Err(());
-            };
-            if resume_primary_thread(pid, job).is_err() {
-                unsafe {
-                    let _ = TerminateJobObject(job, 1);
-                }
-                unsafe {
-                    let _ = CloseHandle(job);
-                }
-                return Err(());
-            }
-            Ok(Self {
-                job,
-                terminal_empty: false,
-            })
+            use std::os::windows::process::CommandExt;
+            command.creation_flags(0x0800_0000 | 0x0000_0004);
         }
-
         #[cfg(unix)]
         {
-            let process_group = i32::try_from(child.id().ok_or(())?).map_err(|_| ())?;
-            if process_group <= 1 {
-                return Err(());
-            }
-            Ok(Self {
-                process_group,
-                terminal_empty: false,
-            })
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
         }
+        #[cfg(not(any(unix, windows)))]
+        let _ = command;
+    }
 
-        #[cfg(not(any(unix, target_os = "windows")))]
+    #[cfg(feature = "tokio")]
+    pub fn prepare_tokio(command: &mut tokio::process::Command) {
+        Self::prepare_std(command.as_std_mut());
+    }
+
+    /// Call only for a child prepared by `prepare_std`; on failure the caller
+    /// must kill and reap the root. Windows admission resumes it exactly once.
+    pub fn assign_std(child: &std::process::Child) -> Result<Self, ()> {
+        #[cfg(windows)]
+        {
+            windows_job::WindowsJob::assign_std(child)
+                .map(|job| Self {
+                    job,
+                    terminal_empty: false,
+                })
+                .map_err(|_| ())
+        }
+        #[cfg(unix)]
+        {
+            Self::assign_group(child.id())
+        }
+        #[cfg(not(any(unix, windows)))]
         {
             let _ = child;
             Ok(Self {
@@ -129,12 +76,132 @@ impl ProcessTree {
         }
     }
 
-    pub(crate) async fn terminate(&mut self, child: &mut Child) -> bool {
+    #[cfg(feature = "tokio")]
+    pub fn assign(child: &Child) -> Result<Self, ()> {
+        #[cfg(windows)]
+        {
+            windows_job::WindowsJob::assign_to(child)
+                .map(|job| Self {
+                    job,
+                    terminal_empty: false,
+                })
+                .map_err(|_| ())
+        }
+        #[cfg(unix)]
+        {
+            Self::assign_group(child.id().ok_or(())?)
+        }
+        #[cfg(not(any(unix, windows)))]
+        {
+            let _ = child;
+            Ok(Self {
+                terminal_empty: false,
+            })
+        }
+    }
+
+    #[cfg(unix)]
+    fn assign_group(pid: u32) -> Result<Self, ()> {
+        let process_group = i32::try_from(pid).map_err(|_| ())?;
+        if process_group <= 1 {
+            return Err(());
+        }
+        Ok(Self {
+            process_group,
+            terminal_empty: false,
+        })
+    }
+
+    pub fn is_empty(&self) -> Option<bool> {
+        if self.terminal_empty {
+            Some(true)
+        } else {
+            self.authority_is_empty()
+        }
+    }
+
+    pub fn terminate_blocking(
+        &mut self,
+        child: &mut std::process::Child,
+        deadline: std::time::Instant,
+    ) -> bool {
+        let wait_root = |child: &mut std::process::Child, until: std::time::Instant| loop {
+            match child.try_wait() {
+                Ok(Some(_)) => return true,
+                Ok(None) if std::time::Instant::now() < until => std::thread::sleep(POLL_INTERVAL),
+                _ => return false,
+            }
+        };
+        if !self.terminal_empty
+            && !self.signal_termination(false)
+            && self.authority_is_empty() != Some(true)
+        {
+            let _ = child.kill();
+        }
+        let now = std::time::Instant::now();
+        let grace = now + deadline.saturating_duration_since(now) / 2;
+        let mut root_gone = wait_root(child, grace);
+        if !root_gone || self.authority_is_empty() != Some(true) {
+            let _ = self.signal_termination(true);
+            if !root_gone {
+                let _ = child.kill();
+                root_gone = wait_root(child, deadline);
+            }
+        }
+        let tree_gone = self.wait_empty_blocking(deadline);
+        tree_gone && root_gone
+    }
+
+    pub fn terminate_descendants(&mut self) -> bool {
+        self.terminate_descendants_until(std::time::Instant::now() + CLEANUP_TIMEOUT)
+    }
+
+    /// Consumer-specific budgets remain owned by the consumer.
+    pub fn terminate_descendants_until(&mut self, deadline: std::time::Instant) -> bool {
+        if self.is_empty() == Some(true) {
+            self.terminal_empty = true;
+            return true;
+        }
+        let _ = self.signal_termination(true);
+        self.wait_empty_blocking(deadline)
+    }
+
+    /// Signals alone never establish successful cleanup. This low-level path
+    /// lets existing consumers preserve their staged grace/reap deadlines.
+    pub fn signal(&self, force: bool) -> bool {
+        self.terminal_empty || self.signal_termination(force)
+    }
+
+    /// Send the final signal while the caller still reserves the root PID,
+    /// then release this owner without a second Unix signal during Drop.
+    /// This reports signal delivery only, never confirmed tree cleanup.
+    pub fn signal_and_release(mut self, force: bool) -> bool {
+        let sent = self.signal(force);
+        self.terminal_empty = true;
+        sent
+    }
+
+    pub fn wait_empty_blocking(&mut self, deadline: std::time::Instant) -> bool {
+        loop {
+            if self.is_empty() == Some(true) {
+                self.terminal_empty = true;
+                return true;
+            }
+            if std::time::Instant::now() >= deadline {
+                return false;
+            }
+            std::thread::sleep(POLL_INTERVAL);
+        }
+    }
+
+    #[cfg(feature = "tokio")]
+    pub async fn terminate(&mut self, child: &mut Child) -> bool {
         self.terminate_until(child, Instant::now() + CLEANUP_TIMEOUT)
             .await
     }
 
-    pub(crate) async fn terminate_until(&mut self, child: &mut Child, deadline: Instant) -> bool {
+    #[cfg(feature = "tokio")]
+    pub async fn terminate_until(&mut self, child: &mut Child, deadline: Instant) -> bool {
         if self.terminal_empty {
             return tokio::time::timeout_at(deadline, child.wait())
                 .await
@@ -171,7 +238,7 @@ impl ProcessTree {
 
     #[cfg(target_os = "windows")]
     fn signal_termination(&self, _force: bool) -> bool {
-        unsafe { TerminateJobObject(self.job, 1) }.is_ok()
+        self.job.terminate().is_ok()
     }
 
     #[cfg(unix)]
@@ -189,7 +256,7 @@ impl ProcessTree {
 
     #[cfg(target_os = "windows")]
     fn authority_is_empty(&self) -> Option<bool> {
-        query_job_active_processes(self.job).map(|active| active == 0)
+        self.job.is_empty().ok()
     }
 
     #[cfg(unix)]
@@ -210,7 +277,8 @@ impl ProcessTree {
         Some(true)
     }
 
-    pub(crate) async fn terminate_unassigned(child: &mut Child) -> bool {
+    #[cfg(feature = "tokio")]
+    pub async fn terminate_unassigned(child: &mut Child) -> bool {
         let deadline = Instant::now() + CLEANUP_TIMEOUT;
         let _ = child.start_kill();
         tokio::time::timeout_at(deadline, child.wait())
@@ -224,22 +292,7 @@ fn signal_group(process_group: i32, signal: i32) -> bool {
     process_group > 1 && unsafe { libc::kill(-process_group, signal) } == 0
 }
 
-#[cfg(target_os = "windows")]
-fn query_job_active_processes(job: HANDLE) -> Option<u32> {
-    let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
-    unsafe {
-        QueryInformationJobObject(
-            Some(job),
-            JobObjectBasicAccountingInformation,
-            (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-            size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-            None,
-        )
-    }
-    .ok()
-    .map(|_| accounting.ActiveProcesses)
-}
-
+#[cfg(feature = "tokio")]
 async fn wait_for_empty(deadline: Instant, mut probe: impl FnMut() -> Option<bool>) -> bool {
     loop {
         if probe() == Some(true) {
@@ -252,73 +305,9 @@ async fn wait_for_empty(deadline: Instant, mut probe: impl FnMut() -> Option<boo
     }
 }
 
-#[cfg(target_os = "windows")]
-fn resume_primary_thread(pid: u32, job: HANDLE) -> Result<(), ()> {
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }.map_err(|_| ())?;
-    let mut entry = THREADENTRY32 {
-        dwSize: size_of::<THREADENTRY32>() as u32,
-        ..Default::default()
-    };
-    let mut thread_id = None;
-    if unsafe { Thread32First(snapshot, &mut entry) }.is_err() {
-        unsafe {
-            let _ = CloseHandle(snapshot);
-        }
-        return Err(());
-    }
-    loop {
-        if entry.th32OwnerProcessID == pid && thread_id.replace(entry.th32ThreadID).is_some() {
-            unsafe {
-                let _ = CloseHandle(snapshot);
-            }
-            return Err(());
-        }
-        entry.dwSize = size_of::<THREADENTRY32>() as u32;
-        if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
-            let end = unsafe { GetLastError() } == ERROR_NO_MORE_FILES;
-            unsafe {
-                let _ = CloseHandle(snapshot);
-            }
-            if !end {
-                return Err(());
-            }
-            break;
-        }
-    }
-    unsafe {
-        let _ = CloseHandle(snapshot);
-    }
-    let thread_id = thread_id.ok_or(())?;
-    let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, thread_id) }.map_err(|_| ())?;
-    if query_job_active_processes(job) != Some(1) {
-        unsafe {
-            let _ = CloseHandle(thread);
-        }
-        return Err(());
-    }
-    let previous_suspend_count = unsafe { ResumeThread(thread) };
-    unsafe {
-        let _ = CloseHandle(thread);
-    }
-    (previous_suspend_count == 1).then_some(()).ok_or(())
-}
-
-#[cfg(target_os = "windows")]
 impl Drop for ProcessTree {
     fn drop(&mut self) {
-        // Drop is only the signal/kill-on-close fallback, never proof of cleanup.
-        if !self.terminal_empty {
-            let _ = self.signal_termination(true);
-        }
-        unsafe {
-            let _ = CloseHandle(self.job);
-        }
-    }
-}
-
-#[cfg(unix)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
+        // Drop is a signal/kill-on-close fallback, never proof of cleanup.
         if !self.terminal_empty {
             let _ = self.signal_termination(true);
         }
@@ -334,6 +323,7 @@ mod tests {
         assert_send::<super::ProcessTree>();
     }
 
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn unconfirmed_authority_yields_and_obeys_one_deadline() {
         use super::*;
@@ -353,6 +343,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn force_escalation_keeps_time_to_reap_before_the_same_deadline() {
         use super::*;
@@ -381,6 +372,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn unassigned_cleanup_reaps_and_drop_does_not_poll() {
         use super::*;
@@ -405,6 +397,7 @@ mod tests {
     }
 
     #[cfg(unix)]
+    #[cfg(feature = "tokio")]
     #[tokio::test]
     async fn terminate_reaps_the_root_and_private_group_descendant() {
         use std::process::Stdio;
@@ -440,5 +433,65 @@ mod tests {
             std::io::Error::last_os_error().raw_os_error(),
             Some(libc::ESRCH)
         );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn blocking_termination_ends_the_whole_group() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "sleep 30 & wait"]);
+        super::ProcessTree::prepare_std(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut tree = super::ProcessTree::assign_std(&child).unwrap();
+        assert_eq!(tree.is_empty(), Some(false));
+        assert!(tree.terminate_blocking(
+            &mut child,
+            std::time::Instant::now() + super::CLEANUP_TIMEOUT
+        ));
+        assert_eq!(tree.is_empty(), Some(true));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn descendants_are_ended_after_the_root_exits() {
+        let mut command = std::process::Command::new("sh");
+        command.args(["-c", "sleep 30 & exit 0"]);
+        super::ProcessTree::prepare_std(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut tree = super::ProcessTree::assign_std(&child).unwrap();
+        child.wait().unwrap();
+        assert!(tree.terminate_descendants());
+        assert_eq!(tree.is_empty(), Some(true));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_children_start_owned_and_end_with_their_descendants() {
+        let mut command = std::process::Command::new("cmd");
+        command.args([
+            "/C",
+            "start /B ping -n 30 127.0.0.1 >NUL & ping -n 30 127.0.0.1 >NUL",
+        ]);
+        super::ProcessTree::prepare_std(&mut command);
+        let mut child = command.spawn().unwrap();
+        let mut tree = super::ProcessTree::assign_std(&child).unwrap();
+        assert_eq!(tree.is_empty(), Some(false));
+        assert!(tree.terminate_blocking(
+            &mut child,
+            std::time::Instant::now() + super::CLEANUP_TIMEOUT
+        ));
+        assert_eq!(tree.is_empty(), Some(true));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn a_child_that_was_not_started_suspended_is_refused() {
+        let mut child = std::process::Command::new("cmd")
+            .args(["/C", "ping -n 5 127.0.0.1 >NUL"])
+            .spawn()
+            .unwrap();
+        assert!(super::ProcessTree::assign_std(&child).is_err());
+        let _ = child.kill();
+        let _ = child.wait();
     }
 }

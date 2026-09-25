@@ -19,32 +19,6 @@ pub mod execution;
 #[cfg(target_os = "windows")]
 use std::os::windows::process::CommandExt;
 
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-
-#[cfg(target_os = "windows")]
-use std::mem::size_of;
-#[cfg(target_os = "windows")]
-use std::os::windows::io::AsRawHandle;
-#[cfg(target_os = "windows")]
-use windows::core::PCWSTR;
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Diagnostics::ToolHelp::{
-    CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::Threading::{
-    OpenThread, ResumeThread, CREATE_NO_WINDOW, CREATE_SUSPENDED, THREAD_SUSPEND_RESUME,
-};
-
 /// Git for Windows 기본 설치 위치 (우선순위 순). GUI 앱이 물려받은 PATH에
 /// git이 없어도 동작하도록 절대 경로를 우선한다.
 #[cfg(target_os = "windows")]
@@ -95,171 +69,54 @@ fn clear_repository_overrides(command: &mut Command) {
     }
 }
 
-/// Own the complete Git process tree on Windows. Git can spawn hooks,
-/// credential helpers, SSH, and transport children, so killing only the root
-/// `git.exe` is not a sufficient cancellation boundary.
-#[cfg(target_os = "windows")]
+/// The supervisor owns Linux detached descendants; ordinary commands use
+/// the shared private group/Job. Root PID reservation remains in poll_child.
 struct ProcessTree {
-    handle: HANDLE,
-}
-
-#[cfg(target_os = "windows")]
-impl ProcessTree {
-    fn assign_to(child: &Child) -> Result<Self, ()> {
-        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if unsafe {
-            SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        }
-        .is_err()
-        {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        let process = HANDLE(child.as_raw_handle());
-        if unsafe { AssignProcessToJobObject(handle, process) }.is_err() {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        let mut tree = Self { handle };
-        if resume_suspended_process(child.id()).is_err() {
-            tree.terminate_descendants();
-            return Err(());
-        }
-        Ok(tree)
-    }
-
-    fn terminate(&mut self, child: &mut Child) {
-        let _ = unsafe { TerminateJobObject(self.handle, 1) };
-        let _ = child.wait();
-    }
-
-    fn terminate_descendants(&mut self) {
-        // The root may already have exited, but the stable Job handle still
-        // owns every non-breakaway helper/hook/transport descendant.
-        let _ = unsafe { TerminateJobObject(self.handle, 1) };
-    }
-
-    fn close(self) {}
-}
-
-/// `std::process::Command` retains the caller-supplied `CREATE_SUSPENDED`
-/// flag but does not expose the primary thread handle. A newly created
-/// suspended process has not executed user code and therefore has exactly one
-/// thread. Resolve that thread by the exact child PID only after the process is
-/// assigned to the Job Object, then resume it once. Any ambiguity or unexpected
-/// suspend count fails closed while the Job still owns the process.
-#[cfg(target_os = "windows")]
-fn resume_suspended_process(process_id: u32) -> Result<(), ()> {
-    let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }.map_err(|_| ())?;
-    let mut entry = THREADENTRY32 {
-        dwSize: size_of::<THREADENTRY32>() as u32,
-        ..Default::default()
-    };
-    let mut thread_id = None;
-    if unsafe { Thread32First(snapshot, &mut entry) }.is_ok() {
-        loop {
-            if entry.th32OwnerProcessID == process_id
-                && thread_id.replace(entry.th32ThreadID).is_some()
-            {
-                unsafe {
-                    let _ = CloseHandle(snapshot);
-                }
-                return Err(());
-            }
-            if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
-                break;
-            }
-        }
-    }
-    unsafe {
-        let _ = CloseHandle(snapshot);
-    }
-    let thread = unsafe { OpenThread(THREAD_SUSPEND_RESUME, false, thread_id.ok_or(())?) }
-        .map_err(|_| ())?;
-    let previous_suspend_count = unsafe { ResumeThread(thread) };
-    unsafe {
-        let _ = CloseHandle(thread);
-    }
-    if previous_suspend_count == 1 {
-        Ok(())
-    } else {
-        Err(())
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
-#[cfg(unix)]
-struct ProcessTree {
-    process_group: Option<i32>,
+    owner: Option<process_tree::ProcessTree>,
     #[cfg(target_os = "linux")]
-    supervised: bool,
+    supervisor: Option<i32>,
 }
 
-#[cfg(unix)]
 impl ProcessTree {
     fn assign_to(child: &Child) -> Result<Self, ()> {
+        #[cfg(target_os = "linux")]
+        if execution::current().is_some_and(|policy| policy.supervisor.is_some()) {
+            return Ok(Self {
+                owner: None,
+                supervisor: Some(i32::try_from(child.id()).map_err(|_| ())?),
+            });
+        }
         Ok(Self {
-            process_group: Some(i32::try_from(child.id()).map_err(|_| ())?),
+            owner: Some(process_tree::ProcessTree::assign_std(child)?),
             #[cfg(target_os = "linux")]
-            supervised: execution::current().is_some_and(|policy| policy.supervisor.is_some()),
+            supervisor: None,
         })
     }
 
     fn terminate(&mut self, child: &mut Child) {
         #[cfg(target_os = "linux")]
-        if self.supervised {
-            if let Some(pid) = self.process_group.take() {
-                // The direct supervisor is still unreaped. TERM requests its
-                // own descendant retirement; killing its group would kill the
-                // reaper before it can collect detached descendants.
-                let _ = unsafe { libc::kill(pid, libc::SIGTERM) };
-            }
+        if let Some(pid) = self.supervisor.take() {
+            // TERM the unreaped supervisor, never KILL its reaper group.
+            let _ = unsafe { libc::kill(pid, libc::SIGTERM) };
             let _ = child.wait();
             return;
         }
-        self.terminate_group();
+        self.terminate_descendants();
         let _ = child.wait();
     }
 
     fn terminate_descendants(&mut self) {
         #[cfg(target_os = "linux")]
-        if self.supervised {
-            // A normally exited supervisor has already confirmed ECHILD.
-            self.process_group.take();
+        if self.supervisor.take().is_some() {
+            // A normally exited supervisor already confirmed ECHILD.
             return;
         }
-        self.terminate_group();
+        if let Some(owner) = self.owner.take() {
+            let _ = owner.signal_and_release(true);
+        }
     }
 
     fn close(self) {}
-
-    fn terminate_group(&mut self) {
-        // The child is spawned as its own process-group leader below. A
-        // negative pid therefore addresses Git and every hook/helper child
-        // without touching the desktop application's process group.
-        if let Some(group) = self.process_group.take() {
-            let _ = unsafe { libc::kill(-group, libc::SIGKILL) };
-        }
-    }
 }
 
 fn poll_child(
@@ -298,25 +155,6 @@ fn poll_child(
         let _ = tree;
         child.try_wait()
     }
-}
-
-#[cfg(not(any(target_os = "windows", unix)))]
-struct ProcessTree;
-
-#[cfg(not(any(target_os = "windows", unix)))]
-impl ProcessTree {
-    fn assign_to(_child: &Child) -> Result<Self, ()> {
-        Ok(Self)
-    }
-
-    fn terminate(&mut self, child: &mut Child) {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-
-    fn terminate_descendants(&mut self) {}
-
-    fn close(self) {}
 }
 
 /// 실행에 쓸 git 프로그램 경로. 기본 설치 경로가 있으면 절대 경로, 없으면 `git`(PATH).
@@ -660,10 +498,7 @@ fn run_bounded_inner(
         // are deliberately not read or returned to the caller.
         .stderr(Stdio::null());
     clear_repository_overrides(&mut command);
-    #[cfg(target_os = "windows")]
-    command.creation_flags(CREATE_NO_WINDOW.0 | CREATE_SUSPENDED.0);
-    #[cfg(unix)]
-    command.process_group(0);
+    process_tree::ProcessTree::prepare_std(&mut command);
 
     if let Some(policy) = &policy {
         policy.boundary()?;
@@ -1502,7 +1337,10 @@ mod tests {
     #[cfg(target_os = "windows")]
     #[test]
     fn windows_process_tree_policy_kills_descendants_on_job_close() {
-        assert_eq!(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0, 0x2000);
+        assert_eq!(
+            windows::Win32::System::JobObjects::JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE.0,
+            0x2000
+        );
     }
 
     #[cfg(unix)]

@@ -267,6 +267,9 @@ docs/<scope>           문서 작업   예: docs/roadmap
   acceptance, 60–90분)는 머지를 막지 않고 머지 뒤 결과를 확인하며, 실패는 다음 묶음을 머지하기 전에 고친다(로드맵 §4.7).
 - v0.8의 B01~B09 통합 정책(#541~#551)은 닫힌 역사 기록이다.
 
+로컬 blame은 `git config blame.ignoreRevsFile .git-blame-ignore-revs`를 한 번 설정한다.
+GitHub blame은 이 파일을 자동으로 따른다.
+
 ### 커밋 규칙 (Conventional Commits, 영어)
 ```
 <type>(<scope>): <subject>

@@ -20,7 +20,7 @@ default = []
 
 
 [dependencies]
-workspace-wsl = { path = "../../apps/devbox-workspace/native", default-features = false }
+workspace-wsl = { path = "../wsl-helper", default-features = false }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 serde = { workspace = true }

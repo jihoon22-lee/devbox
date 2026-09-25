@@ -717,146 +717,6 @@ fn command_deadline() -> std::time::Instant {
     std::time::Instant::now() + std::time::Duration::from_secs(15)
 }
 
-/// Own every descendant of a fixed discovery command. Auto-refresh invokes
-/// `wsl.exe`, Docker, and Podman repeatedly; killing only the root on timeout
-/// can otherwise leave a descendant holding the stdout pipe and accumulating
-/// across polls.
-#[cfg(target_os = "windows")]
-struct FixedCommandJob {
-    handle: windows::Win32::Foundation::HANDLE,
-}
-
-#[cfg(target_os = "windows")]
-impl FixedCommandJob {
-    fn assign_to(child: &std::process::Child) -> Result<Self, ListenerError> {
-        use std::mem::size_of;
-        use std::os::windows::io::AsRawHandle;
-        use windows::core::PCWSTR;
-        use windows::Win32::Foundation::{CloseHandle, HANDLE};
-        use windows::Win32::System::JobObjects::{
-            AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-            SetInformationJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-            JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-        };
-
-        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }
-            .map_err(|_| ListenerError::SourceUnavailable)?;
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if unsafe {
-            SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        }
-        .is_err()
-        {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(ListenerError::SourceUnavailable);
-        }
-        if unsafe { AssignProcessToJobObject(handle, HANDLE(child.as_raw_handle())) }.is_err() {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(ListenerError::SourceUnavailable);
-        }
-        Ok(Self { handle })
-    }
-
-    fn resume(&self, child: &std::process::Child) -> Result<(), ListenerError> {
-        use std::mem::size_of;
-        use windows::Win32::Foundation::CloseHandle;
-        use windows::Win32::System::Diagnostics::ToolHelp::{
-            CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
-        };
-        use windows::Win32::System::JobObjects::{
-            JobObjectBasicAccountingInformation, QueryInformationJobObject,
-            JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-        };
-        use windows::Win32::System::Threading::{
-            GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
-            THREAD_SUSPEND_RESUME,
-        };
-        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
-        unsafe {
-            QueryInformationJobObject(
-                Some(self.handle),
-                JobObjectBasicAccountingInformation,
-                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-                None,
-            )
-        }
-        .map_err(|_| ListenerError::SourceUnavailable)?;
-        if accounting.ActiveProcesses != 1 {
-            return Err(ListenerError::SourceUnavailable);
-        }
-        let snapshot = unsafe { CreateToolhelp32Snapshot(TH32CS_SNAPTHREAD, 0) }
-            .map_err(|_| ListenerError::SourceUnavailable)?;
-        let mut entry = THREADENTRY32 {
-            dwSize: size_of::<THREADENTRY32>() as u32,
-            ..Default::default()
-        };
-        let mut threads = Vec::new();
-        if unsafe { Thread32First(snapshot, &mut entry) }.is_ok() {
-            loop {
-                if entry.th32OwnerProcessID == child.id() {
-                    threads.push(entry.th32ThreadID);
-                }
-                if unsafe { Thread32Next(snapshot, &mut entry) }.is_err() {
-                    break;
-                }
-            }
-        }
-        unsafe {
-            let _ = CloseHandle(snapshot);
-        }
-        if threads.len() != 1 {
-            return Err(ListenerError::SourceUnavailable);
-        }
-        let thread = unsafe {
-            OpenThread(
-                THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
-                false,
-                threads[0],
-            )
-        }
-        .map_err(|_| ListenerError::SourceUnavailable)?;
-        let valid = unsafe { GetProcessIdOfThread(thread) } == child.id();
-        let resumed = valid && unsafe { ResumeThread(thread) } == 1;
-        unsafe {
-            let _ = CloseHandle(thread);
-        }
-        if resumed {
-            Ok(())
-        } else {
-            Err(ListenerError::SourceUnavailable)
-        }
-    }
-
-    fn terminate(&self, child: &mut std::process::Child) {
-        use windows::Win32::System::JobObjects::TerminateJobObject;
-        let _ = unsafe { TerminateJobObject(self.handle, 1) };
-        let _ = child.wait();
-    }
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for FixedCommandJob {
-    fn drop(&mut self) {
-        use windows::Win32::Foundation::CloseHandle;
-        unsafe {
-            // KILL_ON_JOB_CLOSE guarantees that a successful root command
-            // cannot leave a helper holding the bounded stdout pipe either.
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
 #[cfg(target_os = "windows")]
 fn run_fixed_command(
     program: &str,
@@ -873,7 +733,6 @@ fn run_fixed_command_checked(
     deadline: std::time::Instant,
     reject_stderr: bool,
 ) -> Result<Vec<u8>, ListenerError> {
-    use std::os::windows::process::CommandExt;
     use std::process::{Command, Stdio};
     use std::sync::mpsc::{self, TryRecvError};
     use std::thread;
@@ -892,33 +751,33 @@ fn run_fixed_command_checked(
             Stdio::piped()
         } else {
             Stdio::null()
-        })
-        // Assign the discovery Job before user code can exit or spawn a
-        // descendant. An already-exited fast command cannot be assigned.
-        .creation_flags(0x0800_0000 | 0x0000_0004);
+        });
+    process_tree::ProcessTree::prepare_std(&mut command);
     let mut child = command
         .spawn()
         .map_err(|_| ListenerError::SourceUnavailable)?;
-    let job = match FixedCommandJob::assign_to(&child) {
+    let mut job = match process_tree::ProcessTree::assign_std(&child) {
         Ok(job) => job,
-        Err(error) => {
+        Err(()) => {
             let _ = child.kill();
             let _ = child.wait();
-            return Err(error);
+            return Err(ListenerError::SourceUnavailable);
         }
     };
-    if let Err(error) = job.resume(&child) {
-        job.terminate(&mut child);
-        return Err(error);
-    }
     let Some(mut stdout) = child.stdout.take() else {
-        job.terminate(&mut child);
+        let _ = job.terminate_blocking(
+            &mut child,
+            std::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
+        );
         return Err(ListenerError::SourceUnavailable);
     };
     let (sender, receiver) = mpsc::sync_channel(2);
     if reject_stderr {
         let Some(mut stderr) = child.stderr.take() else {
-            job.terminate(&mut child);
+            let _ = job.terminate_blocking(
+                &mut child,
+                std::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
+            );
             return Err(ListenerError::SourceUnavailable);
         };
         let sender = sender.clone();
@@ -967,11 +826,17 @@ fn run_fixed_command_checked(
                 Ok(Ok((true, _))) => stderr_complete = true,
                 Ok(Ok((false, bytes))) => output = Some(bytes),
                 Ok(Err(error)) => {
-                    job.terminate(&mut child);
+                    let _ = job.terminate_blocking(
+                        &mut child,
+                        std::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
+                    );
                     return Err(error);
                 }
                 Err(TryRecvError::Disconnected) => {
-                    job.terminate(&mut child);
+                    let _ = job.terminate_blocking(
+                        &mut child,
+                        std::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
+                    );
                     return Err(ListenerError::SourceUnavailable);
                 }
                 Err(TryRecvError::Empty) => {}
@@ -989,14 +854,20 @@ fn run_fixed_command_checked(
             }
             Ok(None) => {}
             Err(_) => {
-                job.terminate(&mut child);
+                let _ = job.terminate_blocking(
+                    &mut child,
+                    std::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
+                );
                 return Err(ListenerError::SourceUnavailable);
             }
         }
 
         let remaining = deadline.saturating_duration_since(std::time::Instant::now());
         if remaining.is_zero() {
-            job.terminate(&mut child);
+            let _ = job.terminate_blocking(
+                &mut child,
+                std::time::Instant::now() + process_tree::CLEANUP_TIMEOUT,
+            );
             return Err(ListenerError::CommandTimedOut);
         }
         thread::sleep(remaining.min(Duration::from_millis(10)));
