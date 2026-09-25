@@ -346,6 +346,8 @@ docs/<scope>           문서 작업   예: docs/roadmap
 
 ## 11. Codex 지침·스킬·작업 기록
 
+결정의 이유는 [docs/adr/](docs/adr/README.md)를 본다.
+
 - 루트 AGENTS는 필수 제약과 문서 탐색 경로를 담는다. 공통 규약은 이 문서가 원장이며,
   상세 절차는 관련 문서를 필요할 때 읽는다. 과거 SHA·workflow·실기 기록은
   [release evidence](./docs/release-evidence.md)에 보존한다.

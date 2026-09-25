@@ -22,6 +22,8 @@ v0.8 배포는 `Devbox_0.8.1_x64-setup.exe` 하나와 제품별 portable ZIP 네
 
 ## 문서
 
+- [아키텍처 결정 기록](docs/adr/README.md)
+
 - [Windows 설치·이전·복구](docs/windows-guide.md)
 - [제품과 내부 모듈](docs/projects.md) · [아키텍처](docs/architecture.md)
 - [개발](docs/development.md) · [공통 규약](CONVENTIONS.md)
