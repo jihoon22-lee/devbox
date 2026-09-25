@@ -1,4 +1,4 @@
-import { getMermaidRenderer } from "@devbox/mermaid-renderer";
+import { MarkdownBody } from "@devbox/markdown-view";
 import { useEffect, useRef } from "react";
 import { openExternal } from "../api";
 import type { RenderedDoc } from "../types";
@@ -53,90 +53,6 @@ export default function MarkdownPreview({
   anchorRequest,
 }: MarkdownPreviewProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  // 인덱스별 마지막 성공 SVG. mermaid 문법 오류가 나도 지우지 않고 유지한다(설계 결정 6).
-  const lastGoodSvg = useRef<Map<number, string>>(new Map());
-  const renderSeq = useRef(0);
-
-  // 문서를 전환하면 이전 문서의 인덱스 기준 SVG는 더 이상 의미가 없다.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
-  useEffect(() => {
-    lastGoodSvg.current.clear();
-  }, [baseRel]);
-
-  // biome-ignore lint/correctness/useExhaustiveDependencies: existing dependency list; review in P1-15
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !doc) return;
-    let cancelled = false;
-    const blocks = container.querySelectorAll<HTMLDivElement>(".mermaid-block[data-idx]");
-
-    const canApply = (element: HTMLElement): boolean =>
-      !cancelled && containerRef.current === container && element.isConnected;
-
-    const applyError = (element: HTMLElement, index: number) => {
-      if (!canApply(element)) return;
-      const cached = lastGoodSvg.current.get(index);
-      element.innerHTML = `${cached ?? ""}<span class="mermaid-error-badge" title="mermaid 구문 오류">⚠ 구문 오류</span>`;
-    };
-
-    const renderBlocks = async () => {
-      // Avoid importing the large Mermaid runtime for ordinary Markdown.
-      if (blocks.length === 0) return;
-
-      let renderer;
-      try {
-        renderer = await getMermaidRenderer();
-      } catch {
-        blocks.forEach((element) => {
-          const index = Number(element.dataset.idx);
-          if (doc.mermaid[index] !== undefined) applyError(element, index);
-        });
-        return;
-      }
-
-      await Promise.all(
-        Array.from(blocks).map(async (element) => {
-          const index = Number(element.dataset.idx);
-          const source = doc.mermaid[index];
-          if (source === undefined) return;
-          try {
-            const { svg } = await renderer.render(`mermaid-preview-${index}-${renderSeq.current++}`, source);
-            if (!canApply(element)) return;
-            lastGoodSvg.current.set(index, svg);
-            element.innerHTML = svg;
-          } catch {
-            applyError(element, index);
-          }
-        }),
-      );
-    };
-
-    void renderBlocks();
-    return () => {
-      cancelled = true;
-    };
-  }, [baseRel, doc]);
-
-  useEffect(() => {
-    const container = containerRef.current;
-    if (!container || !doc) return;
-    const used = new Set(Array.from(container.querySelectorAll("[id]")).map((node) => node.id));
-    for (const heading of container.querySelectorAll("h1,h2,h3,h4,h5,h6")) {
-      if (heading.id) continue;
-      const base =
-        (heading.textContent ?? "")
-          .trim()
-          .toLowerCase()
-          .replace(/[^\p{L}\p{N}_\s-]/gu, "")
-          .replace(/\s/g, "-") || "section";
-      let id = base,
-        index = 1;
-      while (used.has(id)) id = `${base}-${index++}`;
-      heading.id = id;
-      used.add(id);
-    }
-  }, [doc]);
-
   useEffect(() => {
     if (!doc || !anchorRequest) return;
     const target = Array.from(containerRef.current?.querySelectorAll<HTMLElement>("[id]") ?? []).find(
@@ -182,12 +98,14 @@ export default function MarkdownPreview({
           ))}
         </div>
       )}
-      <div
-        ref={containerRef}
-        className="preview-body md-body"
+      <MarkdownBody
+        html={doc.html}
+        mermaid={doc.mermaid}
+        docKey={baseRel}
+        idPrefix="mermaid-preview"
+        assignHeadingIds
         onClick={handleClick}
-        // html은 Rust 쪽 ammonia로 이미 살균되어 도착한다.
-        dangerouslySetInnerHTML={{ __html: doc.html }}
+        bodyRef={containerRef}
       />
     </div>
   );

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { applySvgResult } from "./previewState";
+import { applySvgResult } from "@devbox/markdown-view";
 
 describe("preview SVG state", () => {
   it("retains the last successful SVG after a syntax failure", () => {

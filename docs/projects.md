@@ -31,3 +31,6 @@ helper artifact를 사용한다. 각 제품이 별도로 해시를 고정해 패
 공유 OS 구현은 `crates/process-tree`(자식 프로세스 트리)와 `crates/secrets`(DPAPI)에 있다.
 소비자는 기존 종료 기한·오류·용도별 entropy를 소유한다. `workspace-wsl`의 소스는
 `crates/wsl-helper`에 있고 패키지·실행 파일 이름과 제품별 resource 경로는 유지한다.
+
+Knowledge·Workspace의 살균된 Markdown HTML과 Mermaid 블록은 `packages/markdown-view`를
+공유한다. 노트 링크·wikilink·앵커 이동과 각 제품의 미리보기 상태는 소비자가 소유한다.

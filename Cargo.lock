@@ -1316,6 +1316,7 @@ dependencies = [
  "lsp-types",
  "markdown",
  "notify",
+ "process-tree",
  "reqwest",
  "serde",
  "serde_json",
@@ -1347,6 +1348,7 @@ dependencies = [
  "getrandom 0.4.3",
  "integration",
  "libc",
+ "process-tree",
  "prost",
  "prost-reflect",
  "prost-types",
@@ -1380,6 +1382,7 @@ dependencies = [
  "getrandom 0.4.3",
  "git",
  "libc",
+ "process-tree",
  "product-contract",
  "serde",
  "serde_json",
@@ -1458,6 +1461,7 @@ dependencies = [
  "filesystem",
  "integration",
  "libc",
+ "process-tree",
  "regex",
  "serde",
  "serde_json",
@@ -1478,6 +1482,7 @@ dependencies = [
  "filesystem",
  "integration",
  "process",
+ "process-tree",
  "serde",
  "serde_json",
  "sysinfo",
@@ -1497,6 +1502,7 @@ dependencies = [
  "git",
  "integration",
  "libc",
+ "process-tree",
  "secrets",
  "serde",
  "serde_json",
@@ -2424,6 +2430,7 @@ name = "git"
 version = "0.1.0"
 dependencies = [
  "libc",
+ "process-tree",
  "windows 0.61.3",
  "wsl",
 ]
@@ -4726,6 +4733,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "process-tree"
+version = "0.1.0"
+dependencies = [
+ "libc",
+ "tempfile",
+ "tokio",
+ "windows 0.61.3",
+]
+
+[[package]]
 name = "prodash"
 version = "31.0.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5397,6 +5414,7 @@ name = "secrets"
 version = "0.1.0"
 dependencies = [
  "serde",
+ "windows 0.61.3",
  "zeroize",
 ]
 
