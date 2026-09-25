@@ -16,4 +16,4 @@ devbox-wsl = { package = "wsl", path = "../wsl" }
 libc = { workspace = true }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.58", features = ["Win32_Foundation", "Win32_Security", "Win32_System_Diagnostics_ToolHelp", "Win32_System_JobObjects", "Win32_System_Pipes", "Win32_System_Threading"] }
+windows = { workspace = true }
