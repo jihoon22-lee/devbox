@@ -1,8 +1,7 @@
 # AGENTS.md
 
-Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
-현재 소스는 v0.8.1의 네 제품이며, 공개 완료 여부와 정확한 배포 근거는 #541과 Release에서 확인한다.
-기존 v0.7의 15개 앱 목록은 migration/reference 입력으로만 보존한다.
+Devbox는 Windows 11용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
+현재 소스는 네 제품(Workspace·API Studio·Knowledge·Control Center)이다. 공개 상태는 GitHub Release를 확인한다.
 원격은 `https://github.com/jihoon22-lee/devbox`다.
 
 ## 먼저 읽을 규약과 작업 범위
@@ -11,9 +10,9 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   환경·스택·검증·Git 정책을 읽고, 작업에 해당하는 절을 추가로 읽는다.
 - 대상 디렉터리의 AGENTS/override, `apps/<app>/README.md`, 해당 설계 문서를 확인한다.
   전체 README·과거 계획을 매번 읽지 않는다. 현재 구현은 코드와 테스트로 확인한다.
-- v0.8 원장 [#541](https://github.com/jihoon22-lee/devbox/issues/541), 수용 기준 #542,
-  실행 계획 #543~#551을 따른다. **v0.8에서는 CONVENTIONS §8의 B01~B09 통합 PR 정책이
-  일반 기능별 PR 규칙보다 우선한다.** #541/#542를 구현 PR에서 자동으로 닫지 않는다.
+- 진행 중인 작업의 원장은 리뷰 후속 ledger 이슈와
+  `docs/superpowers/plans/2026-09-23-review-remediation/00-roadmap.md`다. PR 단위·순서·게이트는
+  로드맵 §4–§6을 따른다. v0.8 원장 #541·#542는 닫힌 역사 기록이다.
 - 현재/과거 stable의 SHA·workflow·실기 근거는 [release evidence](./docs/release-evidence.md),
   앱·공용 모듈 목록은 CONVENTIONS §2와 [projects](./docs/projects.md)를 필요할 때 읽는다.
 
@@ -24,20 +23,16 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
   두 번째 실제 소비자가 생길 때만 `crates/`·`packages/`로 추출한다. 앱/crate 추가 시 Cargo
   workspace members와 필요한 카탈로그·검증 등록을 함께 갱신한다.
 - WSL에서 Rust 사용 전 `source ~/.cargo/env`. 실제 앱 실행·배포 빌드는 Windows에서만 한다.
-- **개발을 먼저 끝내고 검증한다.** PR 묶음의 계획한 구현·importer·fixture·문서가 모두
-  끝나기 전에는 test·Clippy·build·affected·실기 검증을 실행하지 않는다. 하나 구현하고
-  검증하는 반복은 금지한다. 결함·설계 불확실성을 이유로 이 시점을 앞당기지 않는다.
-- 커밋 전에는 diff·계획 범위와 필요한 최소 문법·타입 오류만 확인한다. 문서는 diff만
-  확인한다. 테스트·fixture는 개발 중 작성하되 실행은 PR 개발 완료 후에 모은다.
-- 상세 검증은 **PR에 계획한 구현·importer·fixture가 모두 끝난 시점**에 모아 수행한다.
-  기본 완료 검증은 루트 `pnpm verify:affected`이며 commit·staged·unstaged·untracked와
-  역의존 소비자를 포함한다. 포함된 검사와 별도 집중 검증을 중복 실행하지 않는다.
-  resolver가 all을 선택하면 전체 검증한다. `pnpm verify:all`은 release 준비·CI 검증기 변경·
-  명시적 전체 감사에 사용한다. 실패하면 확인된 수정들을 먼저 마친 뒤 실패·영향 범위만
-  모아 재검증한다. 수정 하나마다 재실행하거나 통과한 무관한 검사를 반복하지 않는다.
-- 이 규칙은 로컬·수동 CI·push로 발생하는 자동 실행에 모두 적용한다. 중간 커밋은 로컬에
-  모으고 PR 개발 완료 시 push하여 반복 CI를 피한다. 최종 CI·필수 수용 조건은 유지한다.
-  검증 대기를 이유로 미완료 선행 PR을 둔 채 의존하는 후속 개발을 시작하지 않는다.
+- **과제 단위로 필요한 테스트만 먼저 실행하고, 전체 검증은 PR 끝에 한 번 한다.** 과제를 구현할 때는
+  실패하는 테스트를 먼저 쓰고 그 테스트와 직접 영향받는 테스트만 실행한다
+  (`cargo test -p <crate> --lib <module>`, `pnpm --filter <package> exec vitest run <file>`).
+  clippy·전체 build·`pnpm verify:affected`·Windows/WSL 실기 검증은 PR의 모든 과제가 끝난 뒤 모아 실행한다.
+  `pnpm verify:all`은 release 준비·CI 검증기 변경·명시적 전체 감사에만 쓴다.
+- 커밋은 과제 단위로 한다. push와 PR 생성은 PR의 상세 검증을 마친 뒤 한 번 한다
+  (초안 PR은 CI를 실행하지 않는다). 완료 검증이 실패하면 확인된 수정을 먼저 모두 마치고
+  실패·영향 범위만 다시 실행한다. 통과한 무관한 검사는 반복하지 않는다.
+- 선행 PR에 의존하는 작업은 선행 PR 머지 후 시작한다. 파일이 겹치지 않는 독립 PR은 앞 PR의 CI를
+  기다리는 동안 시작할 수 있다.
 - 로컬 검증은 공통 자원 제한과 worktree 간 실행 잠금을 따른다. 전체 검증을 중복 실행하거나
   제한을 우회하지 않는다. 기본값·조정·측정은 [검증 운영](./docs/verification.md)을 따른다.
 - 로컬의 기존 서비스·Docker·방화벽·공유 네트워크를 테스트 때문에 변경하지 않는다.
@@ -64,5 +59,6 @@ Devbox는 Windows용 Tauri v2·React 19·TypeScript·Rust 모노레포다.
 
 - 일반 개발·migration 검토에 별도 스킬을 요구하지 않는다. 이 지침과 CONVENTIONS를
   직접 따른다. `.agents/skills/`에는 릴리스 전용 `devbox-release`만 유지한다.
-- 작업 기록은 PR 묶음당 workthrough 하나를 갱신한다. 결정·영향·검증·남은 작업만 적는다.
-  상세 운영과 컨텍스트 인계는 CONVENTIONS §11, 개인 설정은 [Codex setup](./docs/codex-setup.md)을 따른다.
+- 작업 기록은 PR 본문과 ledger 이슈 댓글로 남긴다. 새 `workthrough/` 파일은 만들지 않는다.
+  결정·영향·검증 결과·미실행 실기 항목을 PR 본문에 적고, 머지 후 ledger에 요약을 남긴다.
+  컨텍스트 인계는 CONVENTIONS §11, 개인 설정은 [Codex setup](./docs/codex-setup.md)을 따른다.
