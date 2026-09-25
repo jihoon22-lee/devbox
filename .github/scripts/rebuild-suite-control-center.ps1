@@ -9,7 +9,9 @@ if ($LASTEXITCODE -ne 0) { throw 'Retained source must be an ancestor of this pr
 $changes = @(git diff --name-only $receipt.sourceSha HEAD)
 if ($LASTEXITCODE -ne 0) { throw 'Cannot compare retained product inputs' }
 $privateNative = @(
-  'apps/devbox-control-center/src-tauri/src/tools_host.rs'
+  'apps/devbox-control-center/src-tauri/src/ipc/mod.rs'
+  'apps/devbox-control-center/src-tauri/src/ipc/tools.rs'
+  'apps/devbox-control-center/src-tauri/src/ipc/delivery.rs'
 )
 foreach ($change in $changes) {
   if ($change -notmatch '^(\.github/|docs/|workthrough/|apps/devbox-control-center/src/)' -and $change -notin $privateNative -and $change -notin @('apps/devbox-control-center/README.md')) {

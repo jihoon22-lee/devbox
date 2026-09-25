@@ -41,3 +41,7 @@ B01~B08의 owner 수용은 완료됐고, 최종 B09 후보·공개 결과는 [#5
 로그는 각 제품 데이터 폴더의 `logs/`에 UTC 날짜별로 기록하고 14일 보관한다.
 실패·취소·거부·panic과 250ms 이상 걸린 성공만 기록하며 원문 인자·본문·경로는 포함하지 않는다.
 portable 제품처럼 설치 접미사가 다르면 다른 제품 로그는 `missing`으로 표시된다.
+
+## 타입 IPC 개발
+
+제품 플러그인의 명령은 `tools·delivery`다. native enum이 메서드·인자·허용 route를 정하며, 공용 admission이 세션·소유권·동시 실행을 확인한다. TypeScript 계약은 `packages/control-center-features/src/generated`에 생성한다. 전체 묶음 개발을 마친 뒤 루트 `.github/scripts/check-generated-bindings.sh`를 실행하고 생성 결과를 커밋한다. CI는 Rust exporter와 포맷한 생성물의 차이·새 파일을 검사한다.

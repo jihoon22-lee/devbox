@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // Owned, disposable Windows processes only. Proves temporary UI listeners and
 // explicit service-profile workers have separate lifetimes and port ownership.
 import assert from "node:assert/strict";
@@ -116,7 +117,7 @@ async function startUi() {
 }
 async function command(ui, method, args = {}) {
   return ui.cdp.evaluate(
-    `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke("plugin:product-shell|describe");const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"webhooks"};return invoke("plugin:api-studio|execute",{request:{header,component:"api-studio.webhooks",method:${JSON.stringify(method)},args:${JSON.stringify(args)}}});})()`,
+    `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}const d=await invoke("plugin:product-shell|describe");const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"webhooks"};return invokeComponent("api-studio",{request:{header,component:"api-studio.webhooks",method:${JSON.stringify(method)},args:${JSON.stringify(args)}}});})()`,
   );
 }
 async function success(ui, method, args) {

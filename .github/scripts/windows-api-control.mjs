@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // Actual authenticated dispatcher saturation, exclusively inside the disposable
 // hosted Windows acceptance app. No product fixture command or authority bypass.
 import assert from "node:assert/strict";
@@ -189,7 +190,7 @@ export async function exerciseControlAdmission({ ui, root, call, success, eviden
   const pending = async (method, args) => {
     const key = randomUUID();
     await ui.cdp.evaluate(
-      `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke("plugin:product-shell|describe");window.__controlPending??={};const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"requests"};window.__controlPending[${JSON.stringify(key)}]={done:false};void invoke("plugin:api-studio|execute",{request:{header,component:"api-studio.api",method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}).then(value=>{window.__controlPending[${JSON.stringify(key)}]={done:true,value};},error=>{window.__controlPending[${JSON.stringify(key)}]={done:true,error};});})()`,
+      `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}const d=await invoke("plugin:product-shell|describe");window.__controlPending??={};const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:"requests"};window.__controlPending[${JSON.stringify(key)}]={done:false};void invokeComponent("api-studio",{request:{header,component:"api-studio.api",method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}).then(value=>{window.__controlPending[${JSON.stringify(key)}]={done:true,value};},error=>{window.__controlPending[${JSON.stringify(key)}]={done:true,error};});})()`,
     );
     return key;
   };

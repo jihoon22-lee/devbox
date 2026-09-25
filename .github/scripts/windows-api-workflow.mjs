@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // S03: real native loopback capture/request/DPAPI/transform/diff/mock/Knowledge.
 // Only disposable GitHub-hosted Windows processes and synthetic data are used.
 import assert from "node:assert/strict";
@@ -86,7 +87,7 @@ async function call(component, method, args = {}) {
         ? "transforms"
         : "requests";
   return ui.cdp.evaluate(
-    `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke;const d=await invoke("plugin:product-shell|describe");return invoke("plugin:api-studio|execute",{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}},component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}});})()`,
+    `(async()=>{const invoke=window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge}const d=await invoke("plugin:product-shell|describe");return invokeComponent("api-studio",{request:{header:{protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}},component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}});})()`,
   );
 }
 async function success(component, method, args) {
@@ -165,7 +166,7 @@ try {
   assert.ok(!JSON.stringify(captures).includes(secret));
   const logs = await call("api-studio.webhooks", "send_history_to_log_lens", { historyId: captures[0].id });
   assert.equal(logs.operation.outcome.state, "failed");
-  assert.equal(logs.value.issue, "Workspace Logs에 연결하지 못했습니다. 원본 요청과 fixture는 유지됩니다.");
+  assert.equal(logs.value.issue, "native_error_9b26c2d9449d");
   assert.equal((await success("api-studio.webhooks", "list_history")).length, 1);
   await success("api-studio.webhooks", "stop_server");
   progress("request-preview");

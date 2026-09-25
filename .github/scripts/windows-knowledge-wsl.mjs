@@ -106,7 +106,7 @@ export async function exerciseKnowledgeWsl({
     throw new Error(label);
   };
   progress("wsl-vault-approval-and-atomic-edit");
-  succeeded(await command(item, "knowledge.migration", "schedule_vault_change", { path: alternate }));
+  succeeded(await command(item, "knowledge.setup", "schedule_vault_change", { path: alternate }));
   await stop(item);
   item = await product(executable, profile);
   await wait(item.cdp, '!!document.querySelector("#vault-setup-title")', "WSL vault review missing");

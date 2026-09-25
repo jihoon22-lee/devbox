@@ -1,3 +1,4 @@
+import { typedComponentBridge } from "./typed-component-fixture.mjs";
 // Current product vault ownership, rebinding and window lifetime.
 import assert from "node:assert/strict";
 import { stageKnowledge } from "./workspace-wsl-artifact.mjs";
@@ -157,9 +158,9 @@ async function command(item, component, method, args = {}) {
       : component.includes("search") || component === "knowledge.opener"
         ? "search"
         : "notes";
-  return item.cdp.evaluate(`(async () => { const invoke=window.__TAURI_INTERNALS__.invoke; const d=await invoke("plugin:product-shell|describe");
+  return item.cdp.evaluate(`(async () => { const invoke=window.__TAURI_INTERNALS__.invoke; ${typedComponentBridge} const d=await invoke("plugin:product-shell|describe");
     const header={protocolVersion:1,installationId:d.handshake.installationId,sessionId:d.handshake.sessionId,requestId:crypto.randomUUID(),deadlineMs:Date.now()+5000,route:${JSON.stringify(route)}};
-    return invoke("plugin:knowledge|execute",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
+    return invokeComponent("knowledge",{request:{header,component:${JSON.stringify(component)},method:${JSON.stringify(method)},args:${JSON.stringify(args)}}}); })()`);
 }
 async function sourceQuery(item, source, query, filter = {}, limit = 200, mode = "name") {
   let result = await command(item, "knowledge.search", "source_query", { source, query, mode, limit, filter });
@@ -265,7 +266,7 @@ try {
   await stop(item);
   item = await product(executable, profile);
   await wait(item.cdp, '!!document.querySelector("#vault-setup-title")', "next-start vault review missing");
-  assert.equal((await command(item, "knowledge.migration", "status")).value.active, false);
+  assert.equal((await command(item, "knowledge.setup", "status")).value.active, false);
   await click(item.cdp, "폴더 연결 미리보기");
   await wait(item.cdp, '!!document.querySelector("#vault-preview-title")', "vault preview missing");
   assert.deepEqual(readdirSync(selectedVault, { recursive: true }).sort(), selectedBefore);
@@ -277,7 +278,7 @@ try {
   );
   assert.ok(sameDirectory((await command(item, "knowledge.notes", "get_root")).value, vault));
   await scheduleVault();
-  const vaultPlan = (await command(item, "knowledge.migration", "vault_change_status")).value.schedule;
+  const vaultPlan = (await command(item, "knowledge.setup", "vault_change_status")).value.schedule;
   await stop(item);
   item = await product(executable, profile);
   await wait(item.cdp, '!!document.querySelector("#vault-setup-title")', "second vault review missing");
@@ -332,7 +333,7 @@ try {
     "second private store startup missing",
   );
   assert.equal(
-    (await command(second, "knowledge.migration", "schedule_vault_change", { path: selectedVault })).operation.outcome
+    (await command(second, "knowledge.setup", "schedule_vault_change", { path: selectedVault })).operation.outcome
       .state,
     "succeeded",
   );
@@ -341,7 +342,7 @@ try {
   await wait(second.cdp, '!!document.querySelector("#vault-setup-title")', "second vault review missing");
   await click(second.cdp, "폴더 연결 미리보기");
   await wait(second.cdp, '!!document.querySelector("[role=alert]")', "shared vault owner was not rejected");
-  assert.equal((await command(second, "knowledge.migration", "status")).value.active, false);
+  assert.equal((await command(second, "knowledge.setup", "status")).value.active, false);
   evidence.secondInstallationBlocked = true;
   await stop(second);
   progress("configured-notes-performance");
