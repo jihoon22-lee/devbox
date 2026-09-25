@@ -25,6 +25,7 @@ const ROLLBACK_FAILED: &str =
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameDiffItem {
     pub path: String,
     pub before: String,
@@ -34,6 +35,7 @@ pub struct RenameDiffItem {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenamePreview {
     pub plan_id: String,
     pub from: String,
@@ -44,6 +46,7 @@ pub struct RenamePreview {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct RenameApplied {
     pub from: String,
     pub to: String,

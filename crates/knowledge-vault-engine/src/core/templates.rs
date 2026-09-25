@@ -22,6 +22,7 @@ pub const PLACEHOLDERS: [&str; 4] = [
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct NoteTemplate {
     pub id: i64,
     pub name: String,
@@ -32,6 +33,7 @@ pub struct NoteTemplate {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct TemplateDraft {
     pub name: String,
     pub content: String,
@@ -39,6 +41,7 @@ pub struct TemplateDraft {
 
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
+#[derive(ts_rs::TS)]
 pub struct TemplateApplyInput {
     pub template_id: i64,
     pub target: String,
@@ -49,6 +52,7 @@ pub struct TemplateApplyInput {
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct TemplatePreview {
     pub preview_id: String,
     pub template_id: i64,

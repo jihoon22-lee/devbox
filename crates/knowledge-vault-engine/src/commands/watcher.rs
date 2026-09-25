@@ -35,6 +35,7 @@ const WSL_POLL_INTERVAL: Duration = Duration::from_secs(5);
 
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct KnowledgeWatcherStatus {
     pub source_kind: String,
     pub watch_mode: String,
@@ -341,7 +342,6 @@ fn status_snapshot(status: &SharedStatus, failed: bool) -> KnowledgeWatcherStatu
     snapshot
 }
 
-#[tauri::command]
 pub fn knowledge_watcher_status(
     watcher: tauri::State<'_, Arc<KnowledgeWatcher>>,
 ) -> KnowledgeWatcherStatus {
@@ -995,20 +995,6 @@ fn read_bounded_note(
         return Err(());
     }
     String::from_utf8(bytes).map_err(|_| ())
-}
-
-/// Typed product adapter; the caller enforces native owner/session authorization.
-pub(crate) async fn __component_knowledge_watcher_status(
-    component_app: &tauri::AppHandle,
-    args: serde_json::Value,
-) -> Result<serde_json::Value, String> {
-    use tauri::Manager as _;
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Input {}
-    let Input {} = serde_json::from_value(args).map_err(|_| "component_args_invalid".to_owned())?;
-    let value = knowledge_watcher_status(component_app.state());
-    serde_json::to_value(value).map_err(|_| "component_response_invalid".to_owned())
 }
 
 #[cfg(test)]

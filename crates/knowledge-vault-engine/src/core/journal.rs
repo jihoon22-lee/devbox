@@ -22,6 +22,7 @@ pub struct JournalEntry {
 }
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct JournalEntryView {
     pub path: String,
     pub content: String,
@@ -30,6 +31,7 @@ pub struct JournalEntryView {
 }
 #[derive(Debug, Clone, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+#[derive(ts_rs::TS)]
 pub struct JournalView {
     pub entries: Vec<JournalEntryView>,
     pub other_vault_count: usize,

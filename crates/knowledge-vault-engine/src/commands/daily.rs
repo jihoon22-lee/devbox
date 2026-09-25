@@ -8,9 +8,9 @@ use tauri::Manager;
 
 pub const METHODS: &[&str] = &["preview_daily", "save_daily", "discard_daily"];
 const TTL_MS: u64 = 300_000;
-#[derive(Serialize)]
+#[derive(Serialize, ts_rs::TS)]
 #[serde(rename_all = "camelCase")]
-struct Preview {
+pub struct DailyPreview {
     path: String,
     content: String,
     preview_id: Option<String>,
@@ -28,8 +28,8 @@ pub struct DailyPreviews {
     sequence: u64,
     pending: Option<Pending>,
 }
-#[derive(Serialize)]
-struct Saved {
+#[derive(Serialize, ts_rs::TS)]
+pub struct DailySaved {
     path: String,
     indexed: bool,
 }
@@ -39,7 +39,7 @@ impl DailyPreviews {
         connection: &Connection,
         date: &str,
         now: u64,
-    ) -> Result<Preview, String> {
+    ) -> Result<DailyPreview, String> {
         self.pending = None;
         if !templates::valid_date(date) || now == 0 {
             return Err("component_args_invalid".into());
@@ -60,7 +60,7 @@ impl DailyPreviews {
                 vault
                     .existing_entry(&path)
                     .map_err(|_| "daily_vault_unavailable")?;
-                return Ok(Preview {
+                return Ok(DailyPreview {
                     path,
                     content: String::new(),
                     preview_id: None,
@@ -84,7 +84,7 @@ impl DailyPreviews {
             content: content.clone(),
             issued_at: now,
         });
-        Ok(Preview {
+        Ok(DailyPreview {
             path,
             content,
             preview_id: Some(id),
@@ -100,7 +100,7 @@ impl DailyPreviews {
             self.pending = None;
         }
     }
-    fn save(&mut self, connection: &Connection, id: &str, now: u64) -> Result<Saved, String> {
+    fn save(&mut self, connection: &Connection, id: &str, now: u64) -> Result<DailySaved, String> {
         if !self
             .pending
             .as_ref()
@@ -130,7 +130,7 @@ impl DailyPreviews {
         // Markdown is authoritative. A derived-index failure does not remove a
         // successfully published note or present a retry that could duplicate it.
         let indexed = db::index_doc(connection, &pending.path, &pending.content).is_ok();
-        Ok(Saved {
+        Ok(DailySaved {
             path: pending.path,
             indexed,
         })
@@ -138,19 +138,8 @@ impl DailyPreviews {
 }
 pub fn dispatch(
     app: &tauri::AppHandle,
-    method: &str,
-    args: serde_json::Value,
+    call: crate::api::DailyCall,
 ) -> Result<serde_json::Value, String> {
-    #[derive(serde::Deserialize)]
-    #[serde(deny_unknown_fields)]
-    struct Date {
-        date: String,
-    }
-    #[derive(serde::Deserialize)]
-    #[serde(rename_all = "camelCase", deny_unknown_fields)]
-    struct Approval {
-        preview_id: String,
-    }
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map_err(|_| "daily_preview_stale")?
@@ -160,29 +149,22 @@ pub fn dispatch(
     let state = app.state::<Arc<docs::AppState>>();
     let previews = app.state::<Mutex<DailyPreviews>>();
     let mut previews = previews.lock().map_err(|_| "daily_write_failed")?;
-    let value = match method {
-        "preview_daily" => {
-            let Date { date } =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+    let value = match call {
+        crate::api::DailyCall::PreviewDaily { date } => {
             let connection = state.db.lock().map_err(|_| "daily_vault_unavailable")?;
             serde_json::to_value(previews.prepare(&connection, &date, now)?)
         }
-        "save_daily" => {
-            let Approval { preview_id } =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+        crate::api::DailyCall::SaveDaily { preview_id } => {
             let connection = state.db.lock().map_err(|_| "daily_write_failed")?;
             let result = previews.save(&connection, &preview_id, now)?;
             let _ =
                 crate::integration::write_snapshot(&connection, state.integration_root.as_deref());
             serde_json::to_value(result)
         }
-        "discard_daily" => {
-            let Approval { preview_id } =
-                serde_json::from_value(args).map_err(|_| "component_args_invalid")?;
+        crate::api::DailyCall::DiscardDaily { preview_id } => {
             previews.discard(&preview_id);
             Ok(serde_json::Value::Null)
         }
-        _ => return Err("component_method_invalid".into()),
     };
     value.map_err(|_| "component_response_invalid".into())
 }
