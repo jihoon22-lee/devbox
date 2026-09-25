@@ -31,6 +31,8 @@ pub mod ignore;
 pub mod project;
 pub mod project_path;
 pub mod walk;
+pub mod links;
+pub use links::{is_link_metadata, is_name_surrogate_tag, object_from_file_id};
 
 pub use ignore::is_ignored_dir;
 pub use project_path::{
