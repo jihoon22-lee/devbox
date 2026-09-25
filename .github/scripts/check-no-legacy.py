@@ -36,6 +36,18 @@ PATTERNS = [
 ]
 SUFFIXES = {".rs", ".ts", ".tsx", ".json", ".toml", ".mjs", ".ps1", ".py", ".yml", ".yaml"}
 
+# These exact current Activity DTO lines retain the pre-existing wire key. They
+# are not v0.7 source acquisition or import paths; no file-wide exemption applies.
+COMPATIBILITY_LINES = {
+    "crates/activity-engine/src/commands/life.rs": {'#[serde(rename = "legacy_snapshot")]'},
+    "packages/knowledge-features/src/generated/KnowledgeActivity.ts": {"legacy_snapshot: boolean;"},
+    "packages/knowledge-features/src/activity/App.tsx": {
+        '{activity.legacy_snapshot && " · 구버전 snapshot"}',
+        '!activity.legacy_snapshot &&',
+    },
+    "packages/knowledge-features/src/activity/App.test.ts": {"legacy_snapshot: false,"},
+}
+
 def scan(paths: list[str]) -> list[str]:
     compiled = [re.compile(pattern) for pattern in PATTERNS]
     hits = []
@@ -56,7 +68,7 @@ def scan(paths: list[str]) -> list[str]:
                 continue
             for number, line in enumerate(path.read_text(encoding="utf-8", errors="ignore").splitlines(), 1):
                 # Preserve the current integration DTO's serialized compatibility key.
-                if relative_name == "crates/activity-engine/src/commands/life.rs" and line.strip() == '#[serde(rename = "legacy_snapshot")]':
+                if line.strip() in COMPATIBILITY_LINES.get(relative_name, ()):
                     continue
                 if any(pattern.search(line) for pattern in compiled):
                     hits.append(f"{path.relative_to(ROOT)}:{number}: {line.strip()[:120]}")
