@@ -722,6 +722,85 @@ pub fn migrate_legacy_identifier_dir(
 
 #[cfg(test)]
 mod identity_tests {
+    #[cfg(windows)]
+    #[test]
+    fn windows_junctions_are_still_rejected() {
+        let root = fixture_root();
+        let target = root.join("target");
+        let junction = root.join("junction");
+        fs::create_dir(&target).unwrap();
+        let status = std::process::Command::new("cmd")
+            .args(["/C", "mklink", "/J"])
+            .arg(&junction)
+            .arg(&target)
+            .status()
+            .unwrap();
+        assert!(status.success());
+        assert!(super::ensure_no_links(&junction).is_err());
+        assert!(super::ensure_no_links(junction.join("child")).is_err());
+        assert!(filesystem_identity(&junction, true).is_err());
+        let _ = fs::remove_dir(&junction);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn windows_wof_compressed_files_are_ordinary_files() {
+        use std::io::Read;
+        use std::os::windows::fs::MetadataExt;
+        let root = fixture_root();
+        let file = root.join("compressed.bin");
+        fs::write(&file, vec![b'a'; 256 * 1024]).unwrap();
+        let _ = std::process::Command::new("compact.exe")
+            .args(["/C", "/EXE:XPRESS4K"])
+            .arg(&file)
+            .status();
+        let compressed = fs::symlink_metadata(&file).unwrap().file_attributes() & 0x400 != 0;
+        if !compressed {
+            eprintln!("skipping: WOF compression is unavailable on this volume");
+            let _ = fs::remove_dir_all(root);
+            return;
+        }
+        super::ensure_no_links(&file).unwrap();
+        let (mut handle, identity) = open_filesystem_object(&file, false).unwrap();
+        assert_eq!(identity, filesystem_identity(&file, false).unwrap());
+        let mut bytes = Vec::new();
+        handle.read_to_end(&mut bytes).unwrap();
+        assert_eq!(bytes.len(), 256 * 1024);
+        drop(handle);
+        let _ = fs::remove_dir_all(root);
+    }
+    #[cfg(windows)]
+    #[test]
+    fn extended_ids_never_change_legacy_installation_components() {
+        let make = |high: u64| {
+            let mut id = [0; 16];
+            id[..8].copy_from_slice(&7u64.to_le_bytes());
+            id[8..].copy_from_slice(&high.to_le_bytes());
+            super::FilesystemIdentity { scope: 123, object: 7, extended: Some((0x123456780000007b, id)) }
+        };
+        assert_eq!(make(0).components(), (123, 7));
+        assert_eq!(make(1).components(), (123, 7));
+        assert_eq!(make(2).components(), (123, 7));
+        assert_eq!(make(0).content_components(), (123, 7));
+        assert_ne!(make(1), make(2));
+        assert_ne!(make(1).content_components(), make(2).content_components());
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn persisted_components_match_v081_native_observation() {
+        use std::os::windows::io::AsRawHandle;
+        use windows::Win32::{Foundation::HANDLE, Storage::FileSystem::{GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION}};
+        let root = fixture_root();
+        let (handle, identity) = open_filesystem_object(&root, true).unwrap();
+        let mut old = BY_HANDLE_FILE_INFORMATION::default();
+        unsafe { GetFileInformationByHandle(HANDLE(handle.as_raw_handle()), &mut old) }.unwrap();
+        assert_eq!(identity.components(), (u64::from(old.dwVolumeSerialNumber), (u64::from(old.nFileIndexHigh) << 32) | u64::from(old.nFileIndexLow)));
+        drop(handle);
+        fs::remove_dir_all(root).unwrap();
+    }
+
     use super::{filesystem_identity, open_filesystem_object};
     use std::fs;
     use std::path::PathBuf;
