@@ -24,55 +24,44 @@ default = []
 
 [dependencies]
 api-protocols = { path = "../api-protocols" }
-tauri = { version = "2", features = [] }
-tauri-plugin-dialog = "2"
-tauri-plugin-opener = "2"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
-reqwest = { version = "0.13.4", features = ["brotli", "deflate", "form", "gzip", "multipart", "stream", "zstd"] }
-futures-util = { version = "0.3.31", default-features = false, features = ["sink", "std"] }
-bytes = "1"
-getrandom = "0.4.3"
-prost = "0.14"
+tauri = { workspace = true }
+tauri-plugin-dialog = { workspace = true }
+tauri-plugin-opener = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+reqwest = { workspace = true, features = ["default"] }
+futures-util = { workspace = true }
+bytes = { workspace = true }
+getrandom = { workspace = true }
+prost = { workspace = true }
 prost-types = "0.14"
-prost-reflect = { version = "0.16.5", features = ["serde"] }
+prost-reflect = { workspace = true }
 rustls-pki-types = "1.15.1"
 devbox-secrets = { package = "secrets", path = "../secrets" }
-base64 = "0.22"
-zeroize = "1"
-url = "2"
-dirs = "6.0.0"
+base64 = { workspace = true }
+zeroize = { workspace = true }
+url = { workspace = true }
+dirs = { workspace = true }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-applink = { package = "applink", path = "../applink" }
 devbox-integration = { package = "integration", path = "../integration" }
-tokio = { version = "1.53.1", features = ["io-util", "macros", "net", "process", "sync", "time"] }
+tokio = { workspace = true }
 tokio-stream = "0.1.17"
 tokio-tungstenite = { version = "0.30.0", default-features = false, features = [
     "connect",
     "rustls-tls-native-roots",
 ] }
-tonic = { version = "0.14.6", default-features = false, features = [
-    "channel",
-    "codegen",
-    "tls-aws-lc",
-    "tls-native-roots",
-] }
+tonic = { workspace = true }
 tonic-reflection = { version = "0.14.6", default-features = false }
 
 [dev-dependencies]
-tempfile = "3"
-tonic = { version = "0.14.6", default-features = false, features = ["server"] }
+tempfile = { workspace = true }
+tonic = { workspace = true }
 tonic-prost = "0.14.6"
 tonic-reflection = { version = "0.14.6", default-features = false, features = ["server"] }
 
 [target.'cfg(windows)'.dependencies]
-windows = { version = "0.61", features = [
-    "Win32_Foundation",
-    "Win32_Security_Cryptography",
-    "Win32_System_Diagnostics_ToolHelp",
-    "Win32_System_JobObjects",
-    "Win32_System_Threading",
-] }
+windows = { workspace = true }
 
 [target.'cfg(unix)'.dependencies]
-libc = "0.2"
+libc = { workspace = true }

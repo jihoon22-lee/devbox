@@ -5,8 +5,8 @@ publish = false
 edition.workspace = true
 
 [dependencies]
-serde = { version = "1", features = ["derive"] }
-sysinfo = "0.39.6"
+serde = { workspace = true }
+sysinfo = { workspace = true }
 
 [dev-dependencies]
-serde_json = "1"
+serde_json = { workspace = true }

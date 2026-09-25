@@ -10,6 +10,7 @@
 //! snapshot, and compares `revision` before saving, so a preview cannot
 //! silently apply stale source data.
 
+use toml_08 as toml;
 use crate::core::models::JobKind;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;

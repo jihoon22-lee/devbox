@@ -12,5 +12,5 @@ path = "src/lib.rs"
 
 [dependencies]
 filesystem = { path = "../filesystem" }
-tauri = { version = "2", features = [] }
+tauri = { workspace = true }
 window-state = { path = "../window-state" }

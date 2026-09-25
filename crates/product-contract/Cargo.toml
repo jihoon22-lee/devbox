@@ -8,11 +8,11 @@ description = "Bounded product shell request and provenance contracts"
 [dependencies]
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-catalog = { package = "catalog", path = "../catalog" }
-sha2 = "0.11.0"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+sha2 = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
 applink = { path = "../applink" }
 devbox-secrets = { package = "secrets", path = "../secrets" }
 
 [dev-dependencies]
-tempfile = "3"
+tempfile = { workspace = true }
