@@ -75,7 +75,7 @@ pub fn probe_windows(root: &str) -> Result<ProjectLease> {
 fn probe(root: &Path, target: ExecutionTarget, spelling: String) -> Result<ProjectLease> {
     let observation = ProjectObservation::capture(root, super::windows_path::admit)?;
     let stamp = |id: FilesystemIdentity| {
-        let (scope, object) = id.components();
+        let (scope, object) = id.content_components();
         ObjectStamp {
             scope: format!("{scope:x}"),
             object: format!("{object:x}"),

@@ -926,17 +926,7 @@ fn safe_relative(root: &Path, path: &Path) -> Result<String, String> {
 }
 
 fn is_link_metadata(metadata: &Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        const FILE_ATTRIBUTE_REPARSE_POINT: u32 = 0x400;
-        metadata.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0
-    }
-    #[cfg(not(windows))]
-    false
+    devbox_filesystem::is_link_metadata(metadata)
 }
 
 fn recognized_input(relative: &str) -> Option<DependencyEcosystem> {

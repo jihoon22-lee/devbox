@@ -568,7 +568,7 @@ pub async fn open(app: &tauri::AppHandle, method: &str, args: Value) -> Result<V
                 if source == "notes" {
                     return Err("search_source_denied".into());
                 }
-                let (volume, object) = reference.file_identity.components();
+                let (volume, object) = reference.file_identity.content_components();
                 let proof = product_contract::file_reference::Proof {
                     reference: input.reference.clone(),
                     path: row.path.to_str().ok_or("search_stale")?.into(),

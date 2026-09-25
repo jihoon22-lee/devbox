@@ -52,7 +52,7 @@ impl Proof {
         .collect())
     }
     pub fn matches(&self, identity: devbox_filesystem::FilesystemIdentity) -> bool {
-        let (volume, object) = identity.components();
+        let (volume, object) = identity.content_components();
         self.volume == format!("{volume:x}") && self.object == format!("{object:x}")
     }
 }
@@ -68,7 +68,7 @@ mod tests {
         std::fs::write(&first, b"first synthetic file").unwrap();
         std::fs::write(&second, b"other synthetic file").unwrap();
         let (_handle, identity) = devbox_filesystem::open_filesystem_object(&first, false).unwrap();
-        let (volume, object) = identity.components();
+        let (volume, object) = identity.content_components();
         let proof = Proof {
             reference: "reference-one".into(),
             path: first.to_str().unwrap().into(),

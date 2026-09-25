@@ -41,7 +41,7 @@ fn read_at(path: &Path, logical_path: &Path) -> Result<Snapshot, String> {
     devbox_filesystem::ensure_no_links(parent).map_err(|_| UNAVAILABLE)?;
     let parent_id = devbox_filesystem::filesystem_identity(parent, true)
         .map_err(|_| UNAVAILABLE)?
-        .components();
+        .content_components();
     let mut hash = Sha256::new();
     hash.update(b"knowledge-document/v1\0");
     hash.update(parent_id.0.to_be_bytes());
@@ -76,7 +76,7 @@ fn read_at(path: &Path, logical_path: &Path) -> Result<Snapshot, String> {
             {
                 return Err(CONFLICT.into());
             }
-            let (volume, entry) = identity.components();
+            let (volume, entry) = identity.content_components();
             hash.update(volume.to_be_bytes());
             hash.update(entry.to_be_bytes());
             hash.update(format!("{modified:?}"));

@@ -78,7 +78,7 @@ enum FileIdentity {
     Unix { device: u64, inode: u64 },
     #[cfg(windows)]
     Windows {
-        volume: Option<u32>,
+        volume: Option<u64>,
         file_index: Option<u64>,
     },
     #[cfg(not(any(unix, windows)))]
@@ -547,20 +547,7 @@ fn is_plain_directory(metadata: &std::fs::Metadata) -> bool {
 }
 
 fn is_link_or_reparse(metadata: &std::fs::Metadata) -> bool {
-    if metadata.file_type().is_symlink() {
-        return true;
-    }
-    #[cfg(windows)]
-    {
-        use std::os::windows::fs::MetadataExt;
-        // FILE_ATTRIBUTE_REPARSE_POINT.  Using the std metadata extension
-        // keeps junction detection in this app without another dependency.
-        metadata.file_attributes() & 0x400 != 0
-    }
-    #[cfg(not(windows))]
-    {
-        false
-    }
+    devbox_filesystem::is_link_metadata(metadata)
 }
 
 fn file_identity(path: &Path, metadata: &std::fs::Metadata) -> FileIdentity {
@@ -670,22 +657,9 @@ fn open_windows_path_handle(
 
 #[cfg(windows)]
 fn windows_handle_identity(handle: ::windows::Win32::Foundation::HANDLE) -> FileIdentity {
-    use ::windows::Win32::Storage::FileSystem::{
-        GetFileInformationByHandle, BY_HANDLE_FILE_INFORMATION,
-    };
-
-    let mut information = BY_HANDLE_FILE_INFORMATION::default();
-    if unsafe { GetFileInformationByHandle(handle, &mut information) }.is_err() {
-        return FileIdentity::Windows {
-            volume: None,
-            file_index: None,
-        };
-    }
-    FileIdentity::Windows {
-        volume: Some(information.dwVolumeSerialNumber),
-        file_index: Some(
-            (u64::from(information.nFileIndexHigh) << 32) | u64::from(information.nFileIndexLow),
-        ),
+    match devbox_filesystem::windows_file_id(handle.0) {
+        Ok((volume, file_index)) => FileIdentity::Windows { volume: Some(volume), file_index: Some(file_index) },
+        Err(_) => FileIdentity::Windows { volume: None, file_index: None },
     }
 }
 
