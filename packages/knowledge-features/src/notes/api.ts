@@ -865,3 +865,31 @@ export async function openExternal(url: string): Promise<void> {
   const { openUrl } = await import("@tauri-apps/plugin-opener");
   await openUrl(url);
 }
+
+export interface NoteJournalEntry {
+  path: string;
+  content: string;
+  baseRevision: string;
+  savedAtMs: number;
+}
+export interface NoteJournalView {
+  entries: NoteJournalEntry[];
+  otherVaultCount: number;
+}
+
+export async function saveNoteJournal(path: string, content: string, baseRevision: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("save_note_journal", { path, content, baseRevision });
+}
+export async function clearNoteJournal(path: string): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("clear_note_journal", { path });
+}
+export async function loadNoteJournal(): Promise<NoteJournalView> {
+  if (!isTauri()) return { entries: [], otherVaultCount: 0 };
+  return invoke<NoteJournalView>("load_note_journal");
+}
+export async function discardOtherVaultJournal(): Promise<void> {
+  if (!isTauri()) return;
+  await invoke("discard_other_vault_journal", {});
+}
