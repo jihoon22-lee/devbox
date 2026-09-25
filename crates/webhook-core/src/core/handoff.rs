@@ -14,6 +14,8 @@ pub const API_REQUEST_HANDOFF_KIND: &str = "api-request/v1";
 pub const PRODUCER_APP_ID: &str = "webhook-lab";
 pub const CONSUMER_APP_ID: &str = "api-playground";
 pub const WEBHOOK_SECRET_REFERENCE: &str = "${WEBHOOK_SECRET}";
+pub const HANDOFF_BINARY_BODY_ERROR: &str =
+    "바이너리 본문 fixture는 API 요청으로 보낼 수 없습니다";
 pub const HANDOFF_INPUT_ERROR: &str = "handoff 요청에 사용할 fixture가 유효하지 않습니다";
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -44,6 +46,7 @@ pub fn build_api_request_payload(
     if fixture.url == REDACTED_PATH {
         return Err(HANDOFF_INPUT_ERROR);
     }
+    if !fixture.body_encoding.is_utf8() { return Err(HANDOFF_BINARY_BODY_ERROR); }
     let payload = ApiRequestPayload {
         method: fixture.method.to_ascii_uppercase(),
         url: rewrite_sensitive_query(&fixture.url),
@@ -201,6 +204,13 @@ fn hex_digit(byte: u8) -> Option<u8> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn binary_fixtures_are_not_sent_as_api_requests() {
+        let mut binary = fixture();
+        binary.body = "/wAB".into();
+        binary.body_encoding = crate::core::body::BodyEncoding::Base64;
+        assert_eq!(build_api_request_payload(&binary), Err(HANDOFF_BINARY_BODY_ERROR));
+    }
     use super::*;
     use devbox_applink::{CreateHandoff, HandoffError, HandoffStore};
     use tempfile::tempdir;
@@ -215,6 +225,7 @@ mod tests {
                 ("Content-Type".into(), "application/json".into()),
             ],
             body: r#"{"event":"push","token":"[REDACTED]"}"#.into(),
+            body_encoding: Default::default(),
             received_at_ms: 1,
         }
     }

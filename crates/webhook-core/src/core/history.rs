@@ -4,11 +4,13 @@
 //! 원본 헤더는 bounded in-memory entry에만 남기고 명시적인 일회성 복사에서만 사용한다.
 
 use serde::Serialize;
+use crate::core::body::BodyEncoding;
 use std::collections::VecDeque;
 
 pub const MAX_HISTORY: usize = 200;
 #[allow(dead_code)]
 pub const MAX_BODY_CHARS: usize = 256_000;
+const _: () = assert!(MAX_BODY_CHARS % 4 == 0);
 pub const MAX_BODY_BYTES: usize = 1_024_000;
 pub const MAX_HEADERS: usize = 100;
 pub const MAX_HEADER_CHARS: usize = 64_000;
@@ -29,6 +31,8 @@ pub struct RequestRecord {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    #[serde(default, skip_serializing_if = "BodyEncoding::is_utf8")]
+    pub body_encoding: BodyEncoding,
     pub received_at_ms: i64,
 }
 
@@ -76,12 +80,25 @@ impl Default for History {
 
 impl History {
     /// 요청을 기록하고 마스킹을 적용한다. 상한 초과 시 가장 오래된 것을 버린다.
+    /// 요청을 기록하고 마스킹을 적용한다. 상한 초과 시 가장 오래된 것을 버린다.
     pub fn push(
         &mut self,
         method: String,
         url: String,
         headers: Vec<(String, String)>,
         body: String,
+        received_at_ms: i64,
+    ) {
+        self.push_encoded(method, url, headers, body, BodyEncoding::Utf8, received_at_ms);
+    }
+
+    pub fn push_encoded(
+        &mut self,
+        method: String,
+        url: String,
+        headers: Vec<(String, String)>,
+        body: String,
+        body_encoding: BodyEncoding,
         received_at_ms: i64,
     ) {
         // Never wrap a user-visible identifier.  Reaching u64::MAX is
@@ -109,7 +126,16 @@ impl History {
                 *value = "•••••".to_string();
             }
         }
-        let body = crate::core::fixtures::sanitize_body_for_history(&body);
+        let body = match body_encoding {
+            BodyEncoding::Utf8 => crate::core::fixtures::sanitize_body_for_history(&body),
+            // Base64 is opaque ASCII with no readable secret to mask. Cutting
+            // at the display cap (a multiple of 4) keeps a decodable prefix.
+            BodyEncoding::Base64 => {
+                let mut kept = body;
+                kept.truncate(MAX_BODY_CHARS);
+                kept
+            }
+        };
         let method = bounded_method(&method);
         let url = crate::core::fixtures::sanitize_target(&url);
         let record = RequestRecord {
@@ -118,6 +144,7 @@ impl History {
             url,
             headers: masked,
             body,
+            body_encoding,
             received_at_ms,
         };
         self.entries.push(HistoryEntry {
@@ -286,6 +313,21 @@ fn serialize_record(record: &RequestRecord) -> Result<String, serde_json::Error>
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn binary_history_bodies_skip_text_masking_and_keep_whole_base64_groups() {
+        use crate::core::body::{decode_body, BodyEncoding};
+        let mut h = History::default();
+        h.push_encoded("POST".into(), "/hook".into(), vec![], "/wAB".into(), BodyEncoding::Base64, 1);
+        let record = &h.list_masked()[0];
+        assert_eq!(record.body, "/wAB");
+        assert_eq!(record.body_encoding, BodyEncoding::Base64);
+
+        let long = "AAAA".repeat(MAX_BODY_CHARS / 4 + 10);
+        h.push_encoded("POST".into(), "/hook".into(), vec![], long, BodyEncoding::Base64, 2);
+        let record = &h.list_masked()[0];
+        assert_eq!(record.body.len(), MAX_BODY_CHARS);
+        assert!(decode_body(&record.body, record.body_encoding).is_ok());
+    }
     use super::*;
 
     #[test]

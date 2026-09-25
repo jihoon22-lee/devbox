@@ -103,6 +103,8 @@ pub struct CapturedFixture {
     pub url: String,
     pub headers: Vec<(String, String)>,
     pub body: String,
+    #[serde(default, skip_serializing_if = "crate::core::body::BodyEncoding::is_utf8")]
+    pub body_encoding: crate::core::body::BodyEncoding,
     pub received_at_ms: i64,
 }
 
@@ -677,6 +679,22 @@ fn sanitize_json(
     }
 }
 
+/// Text bodies go through the credential sanitizer. Base64 bodies are opaque
+/// bytes: they are bounded like text and must decode, but are kept verbatim.
+pub fn sanitize_fixture_body(
+    body: &str,
+    encoding: crate::core::body::BodyEncoding,
+) -> Result<String, FixtureError> {
+    if encoding.is_utf8() {
+        return sanitize_body(body);
+    }
+    if !within(body, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
+        return Err(FixtureError::Size);
+    }
+    crate::core::body::decode_body(body, encoding).map_err(|_| FixtureError::Invalid)?;
+    Ok(body.to_string())
+}
+
 pub fn sanitize_body(body: &str) -> Result<String, FixtureError> {
     if !within(body, MAX_FIXTURE_BODY_CHARS, MAX_FIXTURE_BODY_BYTES) {
         return Err(FixtureError::Size);
@@ -834,7 +852,7 @@ pub fn validate_fixture(fixture: &CapturedFixture) -> Result<(), FixtureError> {
     if sanitize_headers(&fixture.headers)? != fixture.headers {
         return Err(FixtureError::Invalid);
     }
-    if sanitize_body(&fixture.body)? != fixture.body {
+    if sanitize_fixture_body(&fixture.body, fixture.body_encoding)? != fixture.body {
         return Err(FixtureError::Invalid);
     }
     Ok(())
@@ -882,7 +900,8 @@ pub fn fixture_from_request(
         method,
         url: sanitize_target(&request.url),
         headers: sanitize_headers(&request.headers)?,
-        body: sanitize_body(&request.body)?,
+        body: sanitize_fixture_body(&request.body, request.body_encoding)?,
+        body_encoding: request.body_encoding,
         received_at_ms: request.received_at_ms,
     };
     validate_fixture(&fixture)?;
@@ -1347,6 +1366,28 @@ pub fn sorted_fixtures(document: &FixtureDocument) -> Vec<CapturedFixture> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn v08_fixtures_without_body_encoding_load_and_serialize_unchanged() {
+        let json = r#"{"id":"fixture-1","method":"POST","url":"/hook","headers":[],"body":"{}","receivedAtMs":1}"#;
+        let fixture: CapturedFixture = serde_json::from_str(json).unwrap();
+        assert!(fixture.body_encoding.is_utf8());
+        assert!(!serde_json::to_string(&fixture).unwrap().contains("bodyEncoding"));
+    }
+
+    #[test]
+    fn binary_fixtures_keep_their_bytes_and_reject_invalid_base64() {
+        use crate::core::body::BodyEncoding;
+        assert_eq!(sanitize_fixture_body("/wAB", BodyEncoding::Base64).unwrap(), "/wAB");
+        assert_eq!(
+            sanitize_fixture_body("not base64!", BodyEncoding::Base64),
+            Err(FixtureError::Invalid)
+        );
+        let mut record = request("/hook", "/wAB");
+        record.body_encoding = BodyEncoding::Base64;
+        let fixture = fixture_from_request("fixture-1".into(), &record).unwrap();
+        assert_eq!(fixture.body, "/wAB");
+        assert_eq!(fixture.body_encoding, BodyEncoding::Base64);
+    }
     use super::*;
     use crate::core::history::History;
     use std::fs;
@@ -1364,6 +1405,7 @@ mod tests {
                 ("X-Trace".into(), "trace-123".into()),
             ],
             body: body.into(),
+            body_encoding: Default::default(),
             received_at_ms: 100,
         }
     }
@@ -1375,6 +1417,7 @@ mod tests {
             url: "/hook".into(),
             headers: vec![("Content-Type".into(), "application/json".into())],
             body: "{\"ok\":true}".into(),
+            body_encoding: Default::default(),
             received_at_ms,
         }
     }
@@ -1392,6 +1435,7 @@ mod tests {
                     ("X-Trace-Token".into(), "trace-secret".into()),
                 ],
                 body: r#"{"event":"push","password":"body-secret","ok":true}"#.into(),
+            body_encoding: Default::default(),
                 received_at_ms: 1,
             },
         )

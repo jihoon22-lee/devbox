@@ -52,7 +52,7 @@ pub struct ReplayRequest {
     pub method: String,
     pub target: String,
     pub headers: Vec<(String, String)>,
-    pub body: String,
+    pub body: Vec<u8>,
 }
 
 impl ReplayRequest {
@@ -78,7 +78,7 @@ impl ReplayRequest {
         }
         head.push_str("\r\n");
         let mut bytes = head.into_bytes();
-        bytes.extend_from_slice(self.body.as_bytes());
+        bytes.extend_from_slice(&self.body);
         bytes
     }
 }
@@ -184,7 +184,9 @@ pub fn build_request(
         return Err(ReplayError::InvalidFixture);
     }
     let destination = loopback_socket(server_address)?;
-    if fixture.body.len() > MAX_REPLAY_BODY_BYTES {
+    let body = crate::core::body::decode_body(&fixture.body, fixture.body_encoding)
+        .map_err(|_| ReplayError::InvalidFixture)?;
+    if body.len() > MAX_REPLAY_BODY_BYTES {
         return Err(ReplayError::TooLarge);
     }
     if fixture.headers.len() > MAX_REPLAY_HEADERS {
@@ -199,7 +201,7 @@ pub fn build_request(
         }
         headers.push((name.clone(), value.clone()));
     }
-    headers.push(("Content-Length".to_string(), fixture.body.len().to_string()));
+    headers.push(("Content-Length".to_string(), body.len().to_string()));
     headers.push(("Connection".to_string(), "close".to_string()));
 
     // `validate_fixture` bounds the source, while this second check includes
@@ -228,7 +230,7 @@ pub fn build_request(
             method: fixture.method.clone(),
             target: fixture.url.clone(),
             headers,
-            body: fixture.body.clone(),
+            body,
         },
     ))
 }
@@ -374,6 +376,16 @@ fn read_response_status(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn base64_fixtures_replay_their_original_bytes() {
+        let mut binary = fixture();
+        binary.body = "/wAB".into();
+        binary.body_encoding = crate::core::body::BodyEncoding::Base64;
+        let (_, request) = build_request(&binary, "127.0.0.1:9000").unwrap();
+        let wire = request.wire_bytes();
+        assert!(wire.ends_with(&[0xff, 0x00, 0x01]));
+        assert!(String::from_utf8_lossy(&wire).contains("Content-Length: 3\r\n"));
+    }
     use super::*;
     use std::net::TcpListener;
     use std::thread;
@@ -390,6 +402,7 @@ mod tests {
                 ("Content-Length".into(), "999999".into()),
             ],
             body: r#"{"event":"push","token":"[REDACTED]"}"#.into(),
+            body_encoding: Default::default(),
             received_at_ms: 1,
         }
     }
