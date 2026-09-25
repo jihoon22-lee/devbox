@@ -9,25 +9,6 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 
-#[cfg(target_os = "windows")]
-use std::mem::size_of;
-#[cfg(unix)]
-use std::os::unix::process::CommandExt;
-#[cfg(target_os = "windows")]
-use std::os::windows::io::AsRawHandle;
-#[cfg(target_os = "windows")]
-use std::os::windows::process::CommandExt;
-#[cfg(target_os = "windows")]
-use windows::core::PCWSTR;
-#[cfg(target_os = "windows")]
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
-#[cfg(target_os = "windows")]
-use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectExtendedLimitInformation,
-    SetInformationJobObject, TerminateJobObject, JOBOBJECT_EXTENDED_LIMIT_INFORMATION,
-    JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-};
-
 const DIAGNOSIS_TIMEOUT: Duration = Duration::from_secs(2);
 const MAX_DIAGNOSIS_OUTPUT_BYTES: usize = 64 * 1024;
 const MAX_DIAGNOSIS_LINE_CHARS: usize = 256;
@@ -75,10 +56,7 @@ fn run_bounded_command_with_limits(
         .stdin(Stdio::null())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
-    #[cfg(target_os = "windows")]
-    command.creation_flags(0x0800_0000); // CREATE_NO_WINDOW
-    #[cfg(unix)]
-    command.process_group(0);
+    process_tree::ProcessTree::prepare_std(&mut command);
 
     let mut child = command.spawn().ok()?;
     let mut process_tree = match DiagnosisProcessTree::assign_to(&child) {
@@ -188,112 +166,21 @@ fn run_bounded_command_with_limits(
     Some(bytes)
 }
 
-#[cfg(target_os = "windows")]
-struct DiagnosisProcessTree {
-    handle: HANDLE,
-}
-
-#[cfg(target_os = "windows")]
+struct DiagnosisProcessTree(Option<process_tree::ProcessTree>);
 impl DiagnosisProcessTree {
     fn assign_to(child: &Child) -> Result<Self, ()> {
-        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if unsafe {
-            SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        }
-        .is_err()
-        {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        let process = HANDLE(child.as_raw_handle());
-        if unsafe { AssignProcessToJobObject(handle, process) }.is_err() {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-        Ok(Self { handle })
+        process_tree::ProcessTree::assign_std(child).map(|tree| Self(Some(tree)))
     }
-
-    fn terminate(&mut self, child: &mut Child) {
-        if unsafe { TerminateJobObject(self.handle, 1) }.is_err() {
-            // Keep the root timeout fail-closed even if the job handle was
-            // invalidated by an unusual Windows process-lifecycle race.
-            let _ = child.kill();
-        }
-        let _ = child.wait();
-    }
-
-    fn terminate_descendants(&mut self) {
-        let _ = unsafe { TerminateJobObject(self.handle, 0) };
-    }
-
-    fn close(self) {}
-}
-
-#[cfg(target_os = "windows")]
-impl Drop for DiagnosisProcessTree {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
-        }
-    }
-}
-
-#[cfg(unix)]
-struct DiagnosisProcessTree {
-    process_group: i32,
-}
-
-#[cfg(unix)]
-impl DiagnosisProcessTree {
-    fn assign_to(child: &Child) -> Result<Self, ()> {
-        let process_group = i32::try_from(child.id()).map_err(|_| ())?;
-        (process_group > 0)
-            .then_some(Self { process_group })
-            .ok_or(())
-    }
-
     fn terminate(&mut self, child: &mut Child) {
         self.terminate_descendants();
         let _ = child.kill();
         let _ = child.wait();
     }
-
     fn terminate_descendants(&mut self) {
-        // `process_group(0)` made the diagnostic root its own group leader.
-        // Negative PID targets the root and every ordinary helper descendant.
-        let _ = unsafe { libc::kill(-self.process_group, libc::SIGKILL) };
+        if let Some(tree) = self.0.take() {
+            let _ = tree.signal_and_release(true);
+        }
     }
-
-    fn close(self) {}
-}
-
-#[cfg(not(any(target_os = "windows", unix)))]
-struct DiagnosisProcessTree;
-
-#[cfg(not(any(target_os = "windows", unix)))]
-impl DiagnosisProcessTree {
-    fn assign_to(_child: &Child) -> Result<Self, ()> {
-        Ok(Self)
-    }
-
-    fn terminate(&mut self, child: &mut Child) {
-        let _ = child.kill();
-        let _ = child.wait();
-    }
-
-    fn terminate_descendants(&mut self) {}
-
     fn close(self) {}
 }
 

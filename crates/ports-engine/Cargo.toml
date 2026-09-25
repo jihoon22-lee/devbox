@@ -21,6 +21,7 @@ desktop = []
 
 
 [dependencies]
+process-tree = { workspace = true }
 tauri = { workspace = true }
 tauri-plugin-opener = { workspace = true }
 dirs = { workspace = true }

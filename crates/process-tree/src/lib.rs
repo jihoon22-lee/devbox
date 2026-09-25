@@ -172,6 +172,15 @@ impl ProcessTree {
         self.terminal_empty || self.signal_termination(force)
     }
 
+    /// Send the final signal while the caller still reserves the root PID,
+    /// then release this owner without a second Unix signal during Drop.
+    /// This reports signal delivery only, never confirmed tree cleanup.
+    pub fn signal_and_release(mut self, force: bool) -> bool {
+        let sent = self.signal(force);
+        self.terminal_empty = true;
+        sent
+    }
+
     pub fn wait_empty_blocking(&mut self, deadline: std::time::Instant) -> bool {
         loop {
             if self.is_empty() == Some(true) {

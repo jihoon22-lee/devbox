@@ -26,7 +26,10 @@ use windows::Win32::System::IO::{CreateIoCompletionPort, GetQueuedCompletionStat
 use windows::Win32::System::Diagnostics::ToolHelp::{
     CreateToolhelp32Snapshot, Thread32First, Thread32Next, TH32CS_SNAPTHREAD, THREADENTRY32,
 };
-use windows::Win32::System::Threading::{OpenThread, ResumeThread, THREAD_SUSPEND_RESUME};
+use windows::Win32::System::Threading::{
+    GetProcessIdOfThread, OpenThread, ResumeThread, THREAD_QUERY_LIMITED_INFORMATION,
+    THREAD_SUSPEND_RESUME,
+};
 
 const JOB_OBJECT_MSG_ACTIVE_PROCESS_ZERO: u32 = 4;
 
@@ -247,13 +250,13 @@ fn resume_suspended_process(process_id: u32, job: &WindowsJob) -> Result<(), Str
     }
     let thread = unsafe {
         OpenThread(
-            THREAD_SUSPEND_RESUME,
+            THREAD_SUSPEND_RESUME | THREAD_QUERY_LIMITED_INFORMATION,
             false,
             thread_id.ok_or("suspended child thread missing")?,
         )
     }
     .map_err(|_| "suspended child thread unavailable".to_owned())?;
-    if job.active_processes() != Some(1) {
+    if job.active_processes() != Some(1) || unsafe { GetProcessIdOfThread(thread) } != process_id {
         unsafe {
             let _ = CloseHandle(thread);
         }

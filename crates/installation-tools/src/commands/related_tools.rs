@@ -42,13 +42,6 @@ use windows::core::{PCWSTR, PWSTR};
 #[cfg(windows)]
 use windows::Win32::Foundation::{CloseHandle, HANDLE, WAIT_OBJECT_0, WAIT_TIMEOUT};
 #[cfg(windows)]
-use windows::Win32::System::JobObjects::{
-    AssignProcessToJobObject, CreateJobObjectW, JobObjectBasicAccountingInformation,
-    JobObjectExtendedLimitInformation, QueryInformationJobObject, SetInformationJobObject,
-    TerminateJobObject, JOBOBJECT_BASIC_ACCOUNTING_INFORMATION,
-    JOBOBJECT_EXTENDED_LIMIT_INFORMATION, JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE,
-};
-#[cfg(windows)]
 use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 #[cfg(windows)]
 use windows::Win32::System::Threading::{
@@ -194,81 +187,38 @@ pub(crate) enum GuardedWingetOutcome {
     Cancelled,
 }
 
-/// Own the complete WinGet process tree on Windows.  WinGet can hand work to
-/// an installer or helper process; killing only the root process on timeout
-/// would leave an unbounded external mutation running after Manager reports
-/// failure.  The job's kill-on-close limit is also the crash/drop fallback.
+/// WinGet retains its native process/thread handles, quoting and environment
+/// boundary. Only its Job ownership is shared with the other consumers.
 #[cfg(windows)]
-struct ProcessTree {
-    handle: HANDLE,
-}
+struct ProcessTree(process_tree::windows_job::WindowsJob);
 
 #[cfg(windows)]
 impl ProcessTree {
     fn new() -> Result<Self, ()> {
-        let handle = unsafe { CreateJobObjectW(None, PCWSTR::null()) }.map_err(|_| ())?;
-        let mut limits = JOBOBJECT_EXTENDED_LIMIT_INFORMATION::default();
-        limits.BasicLimitInformation.LimitFlags = JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE;
-        if unsafe {
-            SetInformationJobObject(
-                handle,
-                JobObjectExtendedLimitInformation,
-                (&limits as *const JOBOBJECT_EXTENDED_LIMIT_INFORMATION).cast(),
-                size_of::<JOBOBJECT_EXTENDED_LIMIT_INFORMATION>() as u32,
-            )
-        }
-        .is_err()
-        {
-            unsafe {
-                let _ = CloseHandle(handle);
-            }
-            return Err(());
-        }
-
-        Ok(Self { handle })
+        process_tree::windows_job::WindowsJob::new()
+            .map(Self)
+            .map_err(|_| ())
     }
-
     fn assign(&self, process: HANDLE) -> Result<(), ()> {
-        unsafe { AssignProcessToJobObject(self.handle, process) }.map_err(|_| ())
+        // PROCESS_INFORMATION retains this handle until WingetProcess drops.
+        let borrowed = unsafe { std::os::windows::io::BorrowedHandle::borrow_raw(process.0) };
+        self.0.assign_native(borrowed).map_err(|_| ())
     }
-
     fn terminate(&self) {
-        let _ = unsafe { TerminateJobObject(self.handle, 1) };
+        let _ = self.0.terminate();
     }
-
     fn active_processes(&self) -> Option<u32> {
-        let mut accounting = JOBOBJECT_BASIC_ACCOUNTING_INFORMATION::default();
-        unsafe {
-            QueryInformationJobObject(
-                Some(self.handle),
-                JobObjectBasicAccountingInformation,
-                (&mut accounting as *mut JOBOBJECT_BASIC_ACCOUNTING_INFORMATION).cast(),
-                size_of::<JOBOBJECT_BASIC_ACCOUNTING_INFORMATION>() as u32,
-                None,
-            )
-        }
-        .ok()?;
-        Some(accounting.ActiveProcesses)
+        self.0.active_processes()
     }
-
     fn wait_until_empty(&self, deadline: Instant) -> bool {
         loop {
             match self.active_processes() {
                 Some(0) => return true,
                 Some(_) if Instant::now() < deadline => {
-                    std::thread::sleep(Duration::from_millis(10));
+                    std::thread::sleep(Duration::from_millis(10))
                 }
                 Some(_) | None => return false,
             }
-        }
-    }
-}
-
-#[cfg(windows)]
-impl Drop for ProcessTree {
-    fn drop(&mut self) {
-        unsafe {
-            let _ = CloseHandle(self.handle);
         }
     }
 }
