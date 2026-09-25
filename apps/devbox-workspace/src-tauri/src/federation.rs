@@ -292,13 +292,9 @@ pub(crate) fn handle(
             return tokio::task::spawn_blocking(move || {
                 let _permit = permit;
                 match call {
-                    Call::VerifyMigrationSources {} => crate::component::suite_sources(&app),
-                    Call::ListMigrationBackups {} => {
-                        crate::component::suite_backups(&app, None, _deadline)
-                    }
-                    Call::VerifyMigrationBackup { id } => {
-                        crate::component::suite_backups(&app, Some(&id), _deadline)
-                    }
+                    Call::VerifyMigrationSources {}
+                    | Call::ListMigrationBackups {}
+                    | Call::VerifyMigrationBackup { .. } => Err("migration_retired"),
                     _ => crate::component::suite_migration_status(&app),
                 }
             })
@@ -349,20 +345,8 @@ pub(crate) fn handle(
                 Call::DeliverFileReference { reference, operation_id, revision } => crate::file_receive::offer(&app, &reference, &operation_id, &revision),
                 Call::ReadSessionSummary { source_id } => serde_json::to_value(crate::session_summary::delivery(&app, &source_id).map_err(|_| "workspace_summary_stale")?).map_err(|_| "workspace_summary_invalid"),
                 Call::LegacyCommandMappings { ids } => {
-                    use crate::core::{legacy_references, registry::LegacyOwner};
-                    let mut mappings = std::collections::BTreeMap::new();
-                    for id in ids {
-                        let parsed = id.strip_prefix("snapshot/workbench/").map(|old| (old, LegacyOwner::Workbench, "project"))
-                            .or_else(|| id.strip_prefix("snapshot/repo-manager/").map(|old| (old, LegacyOwner::RepoManager, "worktree")));
-                        let Some((old_id, owner, kind)) = parsed else { continue; };
-                        let resolved = legacy_references::resolve(&registry, &legacy_references::Query { registry_revision: registry.revision, owner, old_id: old_id.into(), target: None, imported_id: None })?;
-                        if resolved.state == legacy_references::State::Resolved {
-                            let context = &resolved.candidates[0].context;
-                            if kind == "worktree" && !registry.worktrees.iter().any(|tree| tree.id == context.worktree_id && tree.repo_id.is_some()) { continue; }
-                            mappings.insert(id, format!("workspace.{kind}-{}", context.worktree_id));
-                        }
-                    }
-                    serde_json::to_value(mappings).map_err(|_| "workspace_mapping_invalid")
+                    let _ = ids;
+                    Ok(json!({}))
                 }
                 Call::ProjectSnapshot { verify_current } => crate::project_provider::snapshot(&app, &registry, verify_current),
                 Call::ResolveShortcut{command}=>serde_json::to_value(shortcut(&app,&registry,&command)?).map_err(|_|"workspace_command_invalid"),

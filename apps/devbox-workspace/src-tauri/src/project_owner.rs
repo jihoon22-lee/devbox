@@ -3,7 +3,7 @@
 //! the host calls blocking methods only inside its bounded IO worker.
 use crate::{
     core::{
-        profiles, templates,
+        profiles,
         registry::{Binding, Discovery, Registry},
         registry_store::RegistryStore,
     },
@@ -78,31 +78,9 @@ struct Pending {
     imported_profile_id: Option<String>,
     template_profile: Option<profiles::ImportedProfile>,
 }
-struct PendingProfileImport {
-    plan: profiles::Plan,
-    created: Instant,
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct ProfileImportPreview {
-    preview_id: String,
-    plan: profiles::Plan,
-}
-struct PendingTemplateImport {
-    plan: templates::Plan,
-    created: Instant,
-}
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct TemplateImportPreview {
-    preview_id: String,
-    plan: templates::Plan,
-}
 pub struct ProjectOwner {
     store: RegistryStore,
     pending: Mutex<HashMap<String, Pending>>,
-    pending_profile_imports: Mutex<HashMap<String, PendingProfileImport>>,
-    pending_template_imports: Mutex<HashMap<String, PendingTemplateImport>>,
 }
 impl ProjectOwner {
     #[cfg(test)]
@@ -123,120 +101,10 @@ impl ProjectOwner {
         Ok(Self {
             store: RegistryStore::open(generation)?,
             pending: Mutex::new(HashMap::new()),
-            pending_profile_imports: Mutex::new(HashMap::new()),
-            pending_template_imports: Mutex::new(HashMap::new()),
         })
     }
     pub fn snapshot(&self) -> Result<Registry> {
         self.store.read()
-    }
-    /// Typed metadata handoff; callers still use normal admission to open or run.
-    pub fn resolve_legacy(
-        &self,
-        query: &crate::core::legacy_references::Query,
-    ) -> Result<crate::core::legacy_references::Resolution> {
-        crate::core::legacy_references::resolve(&self.snapshot()?, query)
-    }
-    /// Native importer handoff after its owner has reviewed the source record.
-    /// No renderer command exposes these writes or turns a mapping into a grant.
-    pub fn link_legacy_reference(
-        &self,
-        revision: u64,
-        context: &ProjectContext,
-        owner: crate::core::registry::LegacyOwner,
-        old_id: String,
-    ) -> Result<Registry> {
-        self.change_legacy_reference(revision, context, owner, old_id, true)
-    }
-    pub fn unlink_legacy_reference(
-        &self,
-        revision: u64,
-        context: &ProjectContext,
-        owner: crate::core::registry::LegacyOwner,
-        old_id: String,
-    ) -> Result<Registry> {
-        self.change_legacy_reference(revision, context, owner, old_id, false)
-    }
-    fn change_legacy_reference(
-        &self,
-        revision: u64,
-        context: &ProjectContext,
-        owner: crate::core::registry::LegacyOwner,
-        old_id: String,
-        link: bool,
-    ) -> Result<Registry> {
-        self.store
-            .update(revision, |registry| {
-                context.validate().map_err(|_| "invalid_context")?;
-                if !registry
-                    .worktrees
-                    .iter()
-                    .any(|tree| tree.context() == *context)
-                {
-                    return Err("stale_context");
-                }
-                let reference = crate::core::registry::LegacyReference {
-                    owner,
-                    old_id,
-                    worktree_id: context.worktree_id.clone(),
-                };
-                if link {
-                    registry.map_legacy(revision, reference)
-                } else {
-                    registry.unlink_legacy(revision, &reference)
-                }
-            })
-            .map(|(registry, ())| registry)
-    }
-    pub(crate) fn preview_profile_import(
-        &self,
-        snapshot_id: String,
-        source: workbench_lib::component::ProfileStore,
-    ) -> Result<ProfileImportPreview> {
-        self.expire()?;
-        let plan = profiles::Plan::build(snapshot_id, source, &self.snapshot()?)?;
-        let mut pending = self
-            .pending_profile_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?;
-        if pending.len() >= 4 {
-            return Err("legacy_profile_review_limit");
-        }
-        let preview_id = uuid::Uuid::new_v4().to_string();
-        pending.insert(
-            preview_id.clone(),
-            PendingProfileImport {
-                plan: plan.clone(),
-                created: Instant::now(),
-            },
-        );
-        Ok(ProfileImportPreview { preview_id, plan })
-    }
-    pub(crate) fn cancel_profile_import(&self, preview_id: &str) -> Result<()> {
-        self.pending_profile_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?
-            .remove(preview_id);
-        Ok(())
-    }
-    pub(crate) fn apply_profile_import(
-        &self,
-        preview_id: &str,
-        choices: Vec<profiles::Choice>,
-    ) -> Result<(Registry, profiles::Applied)> {
-        let pending = self
-            .pending_profile_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?
-            .remove(preview_id)
-            .ok_or("legacy_profile_review_stale")?;
-        if pending.created.elapsed() >= PREVIEW_TTL {
-            return Err("legacy_profile_review_stale");
-        }
-        self.store
-            .update(pending.plan.registry_revision, |registry| {
-                pending.plan.apply(registry, choices)
-            })
     }
     pub(crate) fn save_template(
         &self,
@@ -256,56 +124,6 @@ impl ProjectOwner {
                 super::core::template_editor::archive(registry, revision, id)
             })
             .map(|(registry, ())| registry)
-    }
-    pub(crate) fn preview_template_import(
-        &self,
-        snapshot_id: String,
-        source: workbench_lib::component::ProfileTemplateStore,
-    ) -> Result<TemplateImportPreview> {
-        self.expire()?;
-        let plan = templates::Plan::build(snapshot_id, source, &self.snapshot()?)?;
-        let mut pending = self
-            .pending_template_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?;
-        if pending.len() >= 4 {
-            return Err("legacy_template_review_limit");
-        }
-        let preview_id = uuid::Uuid::new_v4().to_string();
-        pending.insert(
-            preview_id.clone(),
-            PendingTemplateImport {
-                plan: plan.clone(),
-                created: Instant::now(),
-            },
-        );
-        Ok(TemplateImportPreview { preview_id, plan })
-    }
-    pub(crate) fn cancel_template_import(&self, preview_id: &str) -> Result<()> {
-        self.pending_template_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?
-            .remove(preview_id);
-        Ok(())
-    }
-    pub(crate) fn apply_template_import(
-        &self,
-        preview_id: &str,
-        choices: Vec<profiles::Choice>,
-    ) -> Result<(Registry, profiles::Applied)> {
-        let pending = self
-            .pending_template_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?
-            .remove(preview_id)
-            .ok_or("legacy_template_review_stale")?;
-        if pending.created.elapsed() >= PREVIEW_TTL {
-            return Err("legacy_template_review_stale");
-        }
-        self.store
-            .update(pending.plan.registry_revision, |registry| {
-                pending.plan.apply(registry, choices)
-            })
     }
     /// Resolve the exact persisted context, then obtain fresh native evidence.
     /// A renderer-supplied root, target or object stamp cannot admit an operation.
@@ -416,27 +234,6 @@ impl ProjectOwner {
             Err("windows_required")
         }
     }
-    pub(crate) fn preview_imported_profile_windows(
-        &self,
-        imported_id: &str,
-    ) -> Result<RegistrationPreview> {
-        let registry = self.snapshot()?;
-        let profile = registry
-            .imported_profiles
-            .iter()
-            .find(|profile| profile.id == imported_id)
-            .ok_or("unknown_imported_profile")?;
-        let root = profile
-            .profile
-            .windows_path
-            .as_deref()
-            .ok_or("legacy_profile_target_missing")?;
-        self.prepare_import_binding(
-            registry.revision,
-            probe_windows(root)?,
-            Some(imported_id.into()),
-        )
-    }
     pub(crate) fn preview_template_profile_windows(
         &self,
         template_id: &str,
@@ -505,55 +302,6 @@ impl ProjectOwner {
             Err("windows_required")
         }
     }
-    pub(crate) fn preview_imported_profile_wsl(
-        &self,
-        resources: &Path,
-        imported_id: &str,
-        distro_id: &str,
-        start_stopped: bool,
-    ) -> Result<RegistrationPreview> {
-        let registry = self.snapshot()?;
-        let imported = registry
-            .imported_profiles
-            .iter()
-            .find(|profile| profile.id == imported_id)
-            .ok_or("unknown_imported_profile")?;
-        let profile = imported
-            .profile
-            .wsl
-            .as_ref()
-            .ok_or("legacy_profile_target_missing")?;
-        #[cfg(windows)]
-        {
-            // An imported name is only a proposal. A current explicit selection
-            // must match it before any root access or permission to start.
-            if !crate::platform::wsl_distro::list()?.iter().any(|distro| {
-                distro.id == distro_id && distro.name.eq_ignore_ascii_case(&profile.distro)
-            }) {
-                return Err("legacy_profile_distro_mismatch");
-            }
-            let lease = crate::platform::wsl_project::WslProjectLease::observe(
-                resources,
-                distro_id,
-                &profile.path,
-                start_stopped,
-            )?;
-            if !lease.distro_name()?.eq_ignore_ascii_case(&profile.distro) {
-                return Err("legacy_profile_distro_mismatch");
-            }
-            self.prepare_observed(
-                registry.revision,
-                RegistrationLease::Wsl(Box::new(lease)),
-                Some(imported_id.into()),
-                None,
-            )
-        }
-        #[cfg(not(windows))]
-        {
-            let _ = (resources, profile, distro_id, start_stopped);
-            Err("windows_required")
-        }
-    }
     fn prepare_template_binding(
         &self,
         revision: u64,
@@ -603,14 +351,6 @@ impl ProjectOwner {
     }
     fn prepare(&self, revision: u64, lease: ProjectLease) -> Result<RegistrationPreview> {
         self.prepare_import_binding(revision, lease, None)
-    }
-    fn prepare_import_binding(
-        &self,
-        revision: u64,
-        lease: ProjectLease,
-        imported_profile_id: Option<String>,
-    ) -> Result<RegistrationPreview> {
-        self.prepare_candidate(revision, lease, imported_profile_id, None)
     }
     fn prepare_candidate(
         &self,
@@ -688,14 +428,6 @@ impl ProjectOwner {
                 .collect::<Vec<_>>()
         };
         drop(expired);
-        self.pending_profile_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?
-            .retain(|_, value| value.created.elapsed() < PREVIEW_TTL);
-        self.pending_template_imports
-            .lock()
-            .map_err(|_| "registry_owner_busy")?
-            .retain(|_, value| value.created.elapsed() < PREVIEW_TTL);
         Ok(())
     }
     pub fn apply(
@@ -884,10 +616,7 @@ mod tests {
     }
     #[test]
     fn template_tokens_and_concrete_profile_creation_share_the_native_registry_commit() {
-        use profiles::{Choice, Decision};
-        use workbench_lib::component::{
-            ProfileTemplate, ProfileTemplateStore, ProjectProfile, WslProfile,
-        };
+        use workbench_lib::component::{ProfileTemplate, ProjectProfile, WslProfile};
         let directory = tempfile::tempdir().unwrap();
         let root = tempfile::tempdir().unwrap();
         let owner = ProjectOwner::open(directory.path()).unwrap();
@@ -898,55 +627,9 @@ mod tests {
             distro: "Missing fixture distro".into(),
             path: "/fixture".into(),
         });
-        let source = || ProfileTemplateStore {
-            version: 1,
-            templates: vec![template.clone()],
-        };
-        let choices = || {
-            vec![Choice {
-                source_id: template.id.clone(),
-                decision: Decision::Import,
-            }]
-        };
-        let cancelled = owner
-            .preview_template_import("a".repeat(64), source())
+        let saved = owner
+            .save_template(owner.snapshot().unwrap().revision, None, template.clone())
             .unwrap();
-        owner.cancel_template_import(&cancelled.preview_id).unwrap();
-        assert!(matches!(
-            owner.apply_template_import(&cancelled.preview_id, choices()),
-            Err("legacy_template_review_stale")
-        ));
-        let expired = owner
-            .preview_template_import("a".repeat(64), source())
-            .unwrap();
-        owner
-            .pending_template_imports
-            .lock()
-            .unwrap()
-            .get_mut(&expired.preview_id)
-            .unwrap()
-            .created = Instant::now() - PREVIEW_TTL;
-        assert!(matches!(
-            owner.apply_template_import(&expired.preview_id, choices()),
-            Err("legacy_template_review_stale")
-        ));
-        let preview = owner
-            .preview_template_import("a".repeat(64), source())
-            .unwrap();
-        let stale = owner
-            .preview_template_import("a".repeat(64), source())
-            .unwrap();
-        let (saved, _) = owner
-            .apply_template_import(&preview.preview_id, choices())
-            .unwrap();
-        assert!(matches!(
-            owner.apply_template_import(&preview.preview_id, choices()),
-            Err("legacy_template_review_stale")
-        ));
-        assert!(matches!(
-            owner.apply_template_import(&stale.preview_id, choices()),
-            Err("stale_registry")
-        ));
         assert!(saved.projects.is_empty() && saved.imported_profiles.is_empty());
         let imported = &saved.imported_templates[0];
         let create_preview = || {
@@ -992,17 +675,6 @@ mod tests {
         assert_eq!(profile.source_snapshot_id, imported.source_snapshot_id);
         assert_ne!(profile.profile.id, template.id);
         assert_eq!(profile.profile.name, "검토한 이름");
-        let query = crate::core::legacy_references::Query {
-            registry_revision: registered.revision,
-            owner: crate::core::registry::LegacyOwner::Workbench,
-            old_id: profile.profile.id.clone(),
-            target: None,
-            imported_id: Some(profile.id.clone()),
-        };
-        assert_eq!(
-            owner.resolve_legacy(&query).unwrap().state,
-            crate::core::legacy_references::State::Unmapped
-        );
         assert_eq!(profile.profile.expected_ports, vec![4321]);
         assert!(profile.profile.environment.is_none());
         assert!(registered.worktrees[0].trusted_digest.is_none());
@@ -1030,245 +702,7 @@ mod tests {
             Err("invalid_imported_template_reference")
         );
     }
-    #[test]
-    fn imported_registration_commits_its_binding_atomically_and_keeps_conflicting_metadata() {
-        use crate::core::profiles::{Choice, Decision};
-        let directory = tempfile::tempdir().unwrap();
-        let root = tempfile::tempdir().unwrap();
-        let owner = ProjectOwner::open(directory.path()).unwrap();
-        let mut profile = workbench_lib::component::ProjectProfile::new("first imported profile");
-        profile.windows_path = Some(if cfg!(windows) {
-            root.path().to_string_lossy().into_owned()
-        } else {
-            "C:\\fixture".into()
-        });
-        // probe_fixture uses a marked portable target on Linux, not a WSL
-        // transport. Both legacy target proposals stay metadata in this test.
-        profile.wsl = Some(workbench_lib::component::WslProfile {
-            distro: "Fixture".into(),
-            path: "/fixture".into(),
-        });
-        let mut ids = vec![];
-        for (index, decision) in [(1, Decision::Import), (2, Decision::KeepBoth)] {
-            profile.id = uuid::Uuid::new_v4().to_string();
-            profile.name = format!("imported {index}");
-            let preview = owner
-                .preview_profile_import(
-                    index.to_string().repeat(64),
-                    workbench_lib::component::ProfileStore {
-                        version: 1,
-                        profiles: vec![profile.clone()],
-                    },
-                )
-                .unwrap();
-            let (_, result) = owner
-                .apply_profile_import(
-                    &preview.preview_id,
-                    vec![Choice {
-                        source_id: profile.id.clone(),
-                        decision,
-                    }],
-                )
-                .unwrap();
-            ids.push(result.mappings[0].imported_id.clone().unwrap());
-        }
-        let preview = owner
-            .prepare_import_binding(
-                owner.snapshot().unwrap().revision,
-                crate::platform::project_probe::probe_fixture(root.path()).unwrap(),
-                Some(ids[0].clone()),
-            )
-            .unwrap();
-        let (saved, context) = owner
-            .apply(
-                &preview.preview_id,
-                "native fixture",
-                RegistrationAction::Register,
-            )
-            .unwrap();
-        assert_eq!(saved.imported_profile_bindings.len(), 1);
-        let query = crate::core::legacy_references::Query {
-            registry_revision: saved.revision,
-            owner: crate::core::registry::LegacyOwner::Workbench,
-            old_id: saved.imported_profiles[0].profile.id.clone(),
-            target: Some(context.target.clone()),
-            imported_id: Some(ids[0].clone()),
-        };
-        let resolved = owner.resolve_legacy(&query).unwrap();
-        assert_eq!(
-            resolved.state,
-            crate::core::legacy_references::State::Resolved
-        );
-        assert_eq!(resolved.candidates[0].context, context);
-        assert_eq!(owner.snapshot().unwrap(), saved);
-        assert_eq!(
-            saved.imported_profile_bindings[0].worktree_id,
-            context.worktree_id
-        );
-        let conflicting = owner
-            .prepare_import_binding(
-                saved.revision,
-                crate::platform::project_probe::probe_fixture(root.path()).unwrap(),
-                Some(ids[1].clone()),
-            )
-            .unwrap();
-        assert!(matches!(
-            owner.apply(
-                &conflicting.preview_id,
-                "unchanged",
-                RegistrationAction::Register
-            ),
-            Err("legacy_profile_binding_conflict")
-        ));
-        assert_eq!(owner.snapshot().unwrap(), saved);
-        assert_eq!(saved.imported_profiles.len(), 2);
-        assert_eq!(saved.worktrees.len(), 1);
-        assert!(saved.worktrees[0].trusted_digest.is_none());
-    }
 
-    #[test]
-    fn native_reference_handoff_persists_exact_ids_and_requires_current_context_for_unlink() {
-        use crate::core::{
-            legacy_references::{Query, State},
-            registry::LegacyOwner,
-        };
-        let directory = tempfile::tempdir().unwrap();
-        let root = tempfile::tempdir().unwrap();
-        let owner = ProjectOwner::open(directory.path()).unwrap();
-        let preview = owner.preview_fixture(root.path()).unwrap();
-        let (saved, context) = owner
-            .apply(
-                &preview.preview_id,
-                "reference fixture",
-                RegistrationAction::Register,
-            )
-            .unwrap();
-        // Life Log source keys may be long Windows/WSL paths. Preserve the
-        // exact string as metadata, never parse it as a new project identity.
-        let old_id = format!("C:/previous/{}/한글", "segment/".repeat(80));
-        let linked = owner
-            .link_legacy_reference(
-                saved.revision,
-                &context,
-                LegacyOwner::LifeLog,
-                old_id.clone(),
-            )
-            .unwrap();
-        assert_eq!(
-            owner
-                .link_legacy_reference(
-                    linked.revision,
-                    &context,
-                    LegacyOwner::LifeLog,
-                    old_id.clone()
-                )
-                .unwrap(),
-            linked
-        );
-        assert_eq!(
-            owner.remove(linked.revision, &context).unwrap_err(),
-            "referenced_worktree"
-        );
-        assert!(linked.worktrees[0].trusted_digest.is_none());
-        drop(owner);
-        let owner = ProjectOwner::open(directory.path()).unwrap();
-        let mut query = Query {
-            registry_revision: linked.revision,
-            owner: LegacyOwner::LifeLog,
-            old_id: old_id.clone(),
-            target: None,
-            imported_id: None,
-        };
-        let result = owner.resolve_legacy(&query).unwrap();
-        assert_eq!(result.old_id, old_id);
-        assert_eq!(result.candidates[0].context, context);
-        let mut stale = context.clone();
-        stale.revision += 1;
-        assert_eq!(
-            owner
-                .unlink_legacy_reference(
-                    linked.revision,
-                    &stale,
-                    LegacyOwner::LifeLog,
-                    old_id.clone()
-                )
-                .unwrap_err(),
-            "stale_context"
-        );
-        assert_eq!(owner.snapshot().unwrap(), linked);
-        let unlinked = owner
-            .unlink_legacy_reference(linked.revision, &context, LegacyOwner::LifeLog, old_id)
-            .unwrap();
-        query.registry_revision = unlinked.revision;
-        assert_eq!(owner.resolve_legacy(&query).unwrap().state, State::Unmapped);
-        assert_eq!(unlinked.worktrees, linked.worktrees);
-        assert!(root.path().is_dir());
-    }
-    #[test]
-    fn profile_import_tokens_are_one_time_and_the_registry_is_the_only_commit_point() {
-        use crate::core::profiles::{Choice, Decision};
-        let directory = tempfile::tempdir().unwrap();
-        let owner = ProjectOwner::open(directory.path()).unwrap();
-        let mut profile = workbench_lib::component::ProjectProfile::new("saved profile");
-        profile.windows_path = Some("C:\\offline fixture".into());
-        let source = workbench_lib::component::ProfileStore {
-            version: 1,
-            profiles: vec![profile.clone()],
-        };
-        let choices = || {
-            vec![Choice {
-                source_id: profile.id.clone(),
-                decision: Decision::Import,
-            }]
-        };
-        let cancelled = owner
-            .preview_profile_import("a".repeat(64), source.clone())
-            .unwrap();
-        owner.cancel_profile_import(&cancelled.preview_id).unwrap();
-        assert!(matches!(
-            owner.apply_profile_import(&cancelled.preview_id, choices()),
-            Err("legacy_profile_review_stale")
-        ));
-        assert!(!directory.path().join("project-registry.json").exists());
-        let expired = owner
-            .preview_profile_import("a".repeat(64), source.clone())
-            .unwrap();
-        owner
-            .pending_profile_imports
-            .lock()
-            .unwrap()
-            .get_mut(&expired.preview_id)
-            .unwrap()
-            .created = Instant::now() - PREVIEW_TTL;
-        assert!(matches!(
-            owner.apply_profile_import(&expired.preview_id, choices()),
-            Err("legacy_profile_review_stale")
-        ));
-        let current = owner
-            .preview_profile_import("a".repeat(64), source.clone())
-            .unwrap();
-        let stale = owner
-            .preview_profile_import("a".repeat(64), source)
-            .unwrap();
-        let (saved, result) = owner
-            .apply_profile_import(&current.preview_id, choices())
-            .unwrap();
-        assert_eq!(result.added, 1);
-        assert!(matches!(
-            owner.apply_profile_import(&current.preview_id, choices()),
-            Err("legacy_profile_review_stale")
-        ));
-        assert!(matches!(
-            owner.apply_profile_import(&stale.preview_id, choices()),
-            Err("stale_registry")
-        ));
-        assert_eq!(owner.snapshot().unwrap(), saved);
-        drop(owner);
-        let reopened = ProjectOwner::open(directory.path()).unwrap();
-        assert_eq!(reopened.snapshot().unwrap(), saved);
-        assert!(saved.worktrees.is_empty());
-        assert_eq!(saved.imported_profiles[0].profile, profile);
-    }
     use std::fs;
     fn preview_root(owner: &ProjectOwner, root: &Path) -> Result<RegistrationPreview> {
         #[cfg(windows)]

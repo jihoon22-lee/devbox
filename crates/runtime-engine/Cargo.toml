@@ -42,7 +42,6 @@ devbox-applink = { package = "applink", path = "../applink" }
 devbox-launch = { package = "launch", path = "../launch" }
 devbox-secrets = { package = "secrets", path = "../secrets" }
 dirs = "6.0.0"
-devbox-data-migration = { package = "data-migration", path = "../data-migration" }
 devbox-filesystem = { package = "filesystem", path = "../filesystem" }
 devbox-window-state-tauri = { package = "window-state-tauri", path = "../window-state-tauri" }
 

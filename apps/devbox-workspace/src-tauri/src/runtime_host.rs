@@ -2,7 +2,6 @@
 //! the external process-action broker and bounded log readers. No legacy
 //! executable, database discovery or generic spawn/unseal command is exposed.
 mod observations;
-mod settings;
 use crate::{definitions::Definitions, host::Host};
 use log_lens_lib::core::{CoreError, RuntimeLogLease, RuntimeLogProvider, SourceSpec};
 use port_manager_lib::component::{ProductBindings, ProductPortOwner, SnapshotSourceState};
@@ -15,7 +14,6 @@ use tauri::Emitter;
 type Result<T> = std::result::Result<T, &'static str>;
 #[derive(Default)]
 pub(crate) struct Owners {
-    settings: Mutex<Option<settings::Review>>,
     runtime: OnceLock<Result<()>>,
     processes: OnceLock<Result<()>>,
     logs: OnceLock<Result<()>>,
@@ -35,9 +33,6 @@ impl Owners {
                 app,
                 &data,
                 &common,
-                host.storage_root()
-                    .parent()
-                    .ok_or("runtime_owner_unavailable")?,
                 Some(Arc::new(crate::platform::task_sources::Sources {
                     host: crate::component::provider_host(app)?,
                 })),
@@ -349,14 +344,6 @@ pub(crate) async fn dispatch(
         return crate::webhook_logs::open(app, value, deadline).await;
     }
     owners.initialize_runtime(app, host)?;
-    if matches!(
-        method,
-        "preview_legacy_runtime_settings"
-            | "apply_legacy_runtime_settings"
-            | "reconnect_runtime_sources"
-    ) {
-        return settings::execute(app, host, owners, component, method, value, deadline);
-    }
     let result = match component {
         "workspace.runtime" => {
             host.component("runtime")?;

@@ -265,15 +265,7 @@ CREATE TRIGGER IF NOT EXISTS delete_workspace_task_member_operations
 /// A process-wide SQLite connection. Every connection is configured with the
 /// same foreign-key and busy-timeout policy before migrations run.
 mod controls;
-pub(crate) mod imports;
-pub use imports::{ImportReceipt, ImportedJobReview};
-pub(crate) fn import_schema() -> Result<Connection, String> {
-    let connection = Connection::open_in_memory().map_err(|_| "runtime_import_invalid")?;
-    connection
-        .execute_batch(MIGRATION_SQL)
-        .map_err(|_| "runtime_import_invalid")?;
-    Ok(connection)
-}
+mod secret_review;
 pub(crate) use controls::ControlReservation;
 pub use controls::RuntimeControlReceipt;
 
@@ -363,7 +355,6 @@ impl DatabaseState {
         controls::validate_schema(&connection)?;
         migrate_connection(&mut connection)?;
         controls::initialize(&mut connection)?;
-        imports::initialize(&connection)?;
         Ok(Self {
             connection: Mutex::new(connection),
             log_maintenance: Mutex::new(()),
@@ -2168,7 +2159,7 @@ impl DatabaseState {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         ensure_service(&transaction, id)?;
         if !self.legacy_publication && !matches!(environment, EnvironmentCiphertextUpdate::Keep) {
-            imports::resolve_secret_review(&transaction, id)?;
+            secret_review::resolve(&transaction, id)?;
         }
         let (environment_action, environment_ciphertext) = match environment {
             EnvironmentCiphertextUpdate::Keep => ("keep", None),
@@ -2537,7 +2528,7 @@ impl DatabaseState {
         let transaction = connection.transaction_with_behavior(TransactionBehavior::Immediate)?;
         let current = ensure_job(&transaction, id)?;
         if !self.legacy_publication && !matches!(environment, EnvironmentCiphertextUpdate::Keep) {
-            imports::resolve_secret_review(&transaction, id)?;
+            secret_review::resolve(&transaction, id)?;
         }
         ensure_workspace_task_managed_fields_unchanged(&transaction, id, &current, &input)?;
         if input.enabled {

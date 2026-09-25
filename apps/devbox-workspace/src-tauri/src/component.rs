@@ -58,7 +58,6 @@ struct Runtime {
     source_workers: Arc<tokio::sync::Semaphore>,
     host: Arc<OnceLock<Result<Arc<Host>, &'static str>>>,
     metadata: Pool,
-    window_imports: Arc<Mutex<crate::window_import::WindowImports>>,
     probes: Pool,
     files: Arc<Mutex<crate::files_host::FilesHost>>,
     file_requests: Pool,
@@ -98,7 +97,6 @@ impl Default for Runtime {
             source_workers: Arc::new(tokio::sync::Semaphore::new(2)),
             host: Arc::default(),
             metadata: Pool::default(),
-            window_imports: Arc::default(),
             probes: Pool::default(),
             files: Arc::default(),
             file_requests: Pool::default(),
@@ -254,64 +252,8 @@ struct Response {
 }
 fn migration_method(component: &str, method: &str) -> bool {
     match component {
-        "workspace.migration" => true,
-        "workspace.registry" => matches!(
-            method,
-            "snapshot"
-                | "list_wsl_distros"
-                | "preview_wsl"
-                | "preview_legacy_workspace_windows"
-                | "preview_imported_profile_windows"
-                | "preview_imported_profile_wsl"
-                | "apply_registration"
-                | "cancel_registration"
-                | "select_project"
-                | "clear_project"
-        ),
-        "workspace.runtime" => matches!(
-            method,
-            "runtime_import_prepare"
-                | "runtime_import_resume"
-                | "runtime_import_apply"
-                | "runtime_import_cancel"
-                | "runtime_import_status"
-                | "runtime_import_catalog"
-                | "runtime_import_reviews"
-        ),
-        "workspace.files" => matches!(
-            method,
-            "preview_session_import"
-                | "apply_session_import"
-                | "cancel_session_import"
-                | "list_session_history"
-                | "preview_session_restore"
-                | "preview_recovery_import"
-                | "apply_recovery_import"
-                | "cancel_recovery_import"
-                | "list_recovery_history"
-                | "preview_recovery_restore"
-        ),
-        "workspace.lsp" => matches!(
-            method,
-            "preview_lsp_config_import"
-                | "apply_lsp_config_import"
-                | "cancel_lsp_config_import"
-                | "list_lsp_config_history"
-                | "preview_lsp_config_restore"
-        ),
-        "workspace.terminal" => matches!(
-            method,
-            "start_terminal_import"
-                | "cancel_terminal_import"
-                | "cleanup_terminal_import"
-                | "terminal_imports"
-                | "preview_terminal_import"
-                | "apply_terminal_import"
-                | "terminal_import_history"
-                | "preview_terminal_import_restore"
-                | "restore_terminal_import"
-                | "list_workspace_profiles"
-        ),
+        "workspace.migration" => matches!(method, "status" | "start_empty"),
+        "workspace.registry" => method == "snapshot",
         _ => false,
     }
 }
@@ -344,15 +286,6 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
                         | "summon_terminal"
                         | "open_terminal_profile"
                         | "restore_terminal"
-                        | "start_terminal_import"
-                        | "cancel_terminal_import"
-                        | "cleanup_terminal_import"
-                        | "terminal_imports"
-                        | "preview_terminal_import"
-                        | "apply_terminal_import"
-                        | "terminal_import_history"
-                        | "preview_terminal_import_restore"
-                        | "restore_terminal_import"
                         | "read_terminal_log"
                         | "ack_terminal_log"
                         | "open_terminal"
@@ -403,45 +336,22 @@ fn allowed(component: &str, route: &str, method: &str) -> bool {
         }
         "workspace.files" => route == "files" && crate::files_host::allowed(component, method),
         "workspace.lsp" => route == "files" && crate::lsp_host::allowed(method),
-        "workspace.migration" => {
-            matches!(method, "status" | "start_empty")
-                || (route == "overview" && crate::window_import::WindowImports::allowed(method))
-                || (route == "overview"
-                    && matches!(
-                        method,
-                        "prepare_legacy_snapshot"
-                            | "legacy_snapshot_job"
-                            | "cancel_legacy_snapshot"
-                            | "list_legacy_snapshots"
-                            | "verify_legacy_snapshot"
-                            | "preview_profile_import"
-                            | "cancel_profile_import"
-                            | "apply_profile_import"
-                            | "preview_template_import"
-                            | "cancel_template_import"
-                            | "apply_template_import"
-                            | "legacy_workspace"
-                    ))
-        }
+        "workspace.migration" => matches!(method, "status" | "start_empty"),
         "workspace.registry" => {
             (route == "overview"
                 && matches!(
                     method,
                     "save_template"
-                        | "resolve_legacy_reference"
                         | "archive_template"
                         | "list_wsl_distros"
                         | "preview_wsl"
                         | "preview_template_profile_wsl"
-                        | "preview_imported_profile_wsl"
                 ))
                 || matches!(
                     method,
                     "snapshot"
                         | "preview_windows"
-                        | "preview_imported_profile_windows"
                         | "preview_template_profile_windows"
-                        | "preview_legacy_workspace_windows"
                         | "unbind_imported_profile"
                         | "cancel_registration"
                         | "apply_registration"
@@ -476,7 +386,7 @@ async fn terminal_worker(
     );
     let stopping = matches!(
         method.as_str(),
-        "close_session" | "stop_terminal" | "stop_development_session" | "cancel_terminal_import"
+        "close_session" | "stop_terminal" | "stop_development_session"
     );
     let permit = if io {
         &runtime.terminal_io_requests
@@ -1158,16 +1068,6 @@ fn file_access(method: &str) -> Option<bool> {
         "sync_editor_document"
         | "load_session"
         | "save_session"
-        | "preview_session_import"
-        | "apply_session_import"
-        | "cancel_session_import"
-        | "list_session_history"
-        | "preview_session_restore"
-        | "preview_recovery_import"
-        | "apply_recovery_import"
-        | "cancel_recovery_import"
-        | "list_recovery_history"
-        | "preview_recovery_restore"
         | "load_recovery"
         | "save_recovery"
         | "discard_recovery"
@@ -1178,10 +1078,6 @@ fn file_access(method: &str) -> Option<bool> {
         | "lsp_catalog"
         | "lsp_installed"
         | "load_lsp_config"
-        | "preview_lsp_config_import"
-        | "apply_lsp_config_import"
-        | "cancel_lsp_config_import"
-        | "list_lsp_config_history"
         | "preview_lsp_config_restore" => None,
         _ => Some(false),
     }
@@ -1234,65 +1130,6 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         context: product_contract::ProjectContext,
     }
     match method {
-        "prepare_legacy_snapshot" => {
-            #[derive(Deserialize)]
-            #[serde(deny_unknown_fields)]
-            struct Source {
-                source: crate::core::legacy_inventory::Source,
-            }
-            let value: Source = input(args)?;
-            Ok(json!(host.legacy.start(value.source)?))
-        }
-        "legacy_snapshot_job" => {
-            empty(&args)?;
-            Ok(json!(host.legacy.status()?))
-        }
-        "list_legacy_snapshots" => {
-            empty(&args)?;
-            Ok(json!(host.legacy.catalog()?))
-        }
-        "preview_profile_import" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Job {
-                job_id: String,
-            }
-            let value: Job = input(args)?;
-            let (snapshot_id, profiles) = host.legacy.profile_source(&value.job_id)?;
-            Ok(json!(host
-                .projects()?
-                .preview_profile_import(snapshot_id, profiles)?))
-        }
-        "preview_template_import" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Job {
-                job_id: String,
-            }
-            let value: Job = input(args)?;
-            let (snapshot_id, templates) = host.legacy.template_source(&value.job_id)?;
-            Ok(json!(host
-                .projects()?
-                .preview_template_import(snapshot_id, templates)?))
-        }
-        "legacy_workspace" | "preview_legacy_workspace_windows" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Job {
-                job_id: String,
-            }
-            let value: Job = input(args)?;
-            let proposal = host.legacy.workspace(&value.job_id)?;
-            if method == "legacy_workspace" {
-                return Ok(json!(proposal));
-            }
-            let proposal = proposal
-                .filter(|proposal| {
-                    proposal.target == crate::core::legacy_workspace::Target::Windows
-                })
-                .ok_or("legacy_workspace_unsupported")?;
-            Ok(json!(host.projects()?.preview_windows(&proposal.path)?))
-        }
         "save_template" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1323,22 +1160,6 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
         "preview_template_profile_wsl" => Ok(json!(host
             .projects()?
             .preview_template_profile_wsl(host.helper_directory()?, input(args)?)?)),
-        "preview_imported_profile_wsl" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Profile {
-                imported_id: String,
-                distro_id: String,
-                start_stopped: bool,
-            }
-            let value: Profile = input(args)?;
-            Ok(json!(host.projects()?.preview_imported_profile_wsl(
-                host.helper_directory()?,
-                &value.imported_id,
-                &value.distro_id,
-                value.start_stopped
-            )?))
-        }
         "preview_template_profile_windows" => {
             #[derive(Deserialize)]
             #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -1353,17 +1174,6 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 &value.root,
                 &value.name
             )?))
-        }
-        "preview_imported_profile_windows" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Profile {
-                imported_id: String,
-            }
-            let value: Profile = input(args)?;
-            Ok(json!(host
-                .projects()?
-                .preview_imported_profile_windows(&value.imported_id)?))
         }
         "unbind_imported_profile" => {
             #[derive(Deserialize)]
@@ -1380,71 +1190,6 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
                 value.target
             )?))
         }
-        "apply_profile_import" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Apply {
-                preview_id: String,
-                choices: Vec<crate::core::profiles::Choice>,
-            }
-            let value: Apply = input(args)?;
-            let (registry, result) = host
-                .projects()?
-                .apply_profile_import(&value.preview_id, value.choices)?;
-            Ok(json!({"registry":registry,"result":result}))
-        }
-        "cancel_profile_import" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Cancel {
-                preview_id: String,
-            }
-            let value: Cancel = input(args)?;
-            host.projects()?.cancel_profile_import(&value.preview_id)?;
-            Ok(Value::Null)
-        }
-        "apply_template_import" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Apply {
-                preview_id: String,
-                choices: Vec<crate::core::profiles::Choice>,
-            }
-            let value: Apply = input(args)?;
-            let (registry, result) = host
-                .projects()?
-                .apply_template_import(&value.preview_id, value.choices)?;
-            Ok(json!({"registry":registry,"result":result}))
-        }
-        "cancel_template_import" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Cancel {
-                preview_id: String,
-            }
-            let value: Cancel = input(args)?;
-            host.projects()?.cancel_template_import(&value.preview_id)?;
-            Ok(Value::Null)
-        }
-        "verify_legacy_snapshot" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Snapshot {
-                snapshot_id: String,
-            }
-            let value: Snapshot = input(args)?;
-            Ok(json!(host.legacy.verify(value.snapshot_id)?))
-        }
-        "cancel_legacy_snapshot" => {
-            #[derive(Deserialize)]
-            #[serde(rename_all = "camelCase", deny_unknown_fields)]
-            struct Job {
-                job_id: String,
-            }
-            let value: Job = input(args)?;
-            host.legacy.cancel(&value.job_id)?;
-            Ok(Value::Null)
-        }
         "start_empty" => {
             empty(&args)?;
             host.start_empty()?;
@@ -1454,7 +1199,6 @@ fn dispatch(host: &Host, method: &str, args: Value) -> Result<Value, &'static st
             empty(&args)?;
             Ok(json!(host.projects()?.snapshot()?))
         }
-        "resolve_legacy_reference" => Ok(json!(host.projects()?.resolve_legacy(&input(args)?)?)),
         "select_project" => {
             let value: Select = input(args)?;
             let binding = if cfg!(windows)
@@ -1526,13 +1270,10 @@ fn project_probe(method: &str) -> bool {
     matches!(
         method,
         "preview_template_profile_wsl"
-            | "preview_imported_profile_wsl"
             | "preview_windows"
             | "list_wsl_distros"
             | "preview_wsl"
-            | "preview_imported_profile_windows"
             | "preview_template_profile_windows"
-            | "preview_legacy_workspace_windows"
             | "select_project"
     )
 }
@@ -1549,7 +1290,6 @@ fn changes_context(method: &str) -> bool {
             | "approve_trust"
             | "revoke_trust"
             | "save_lsp_config"
-            | "apply_lsp_config_import"
             | "lsp_execution_approve"
             | "lsp_execution_revoke"
     )
@@ -1713,10 +1453,7 @@ async fn execute(
         &request.args,
     );
     let notify_registry = request.component == "workspace.registry"
-        && matches!(
-            request.method.as_str(),
-            "apply_registration" | "remove" | "apply_profile_import" | "apply_template_import"
-        );
+        && matches!(request.method.as_str(), "apply_registration" | "remove");
     let select = request.method == "select_project";
     let expected_context = request.header.context.clone();
     let deadline = request.header.deadline_ms;
@@ -1880,32 +1617,6 @@ async fn execute(
                 .unwrap_or(Err("worker_unavailable"))
             }
             (Err(issue), _, _) | (_, Err(issue), _) | (_, _, Err(issue)) => Err(issue),
-        }
-    } else if request.component == "workspace.migration"
-        && crate::window_import::WindowImports::allowed(&request.method)
-    {
-        match (runtime.host(), runtime.metadata.reserve()) {
-            (Ok(host), Ok(permit)) => {
-                let owner = runtime.window_imports.clone();
-                let geometry = crate::window_import::NativeGeometry {
-                    window: window.clone(),
-                    deadline,
-                };
-                tauri::async_runtime::spawn_blocking(move || {
-                    let _permit = permit;
-                    crate::files_host::current_deadline(deadline)?;
-                    owner.lock().map_err(|_| "busy")?.dispatch(
-                        &host,
-                        &geometry,
-                        &request.method,
-                        request.args,
-                        deadline,
-                    )
-                })
-                .await
-                .unwrap_or(Err("worker_unavailable"))
-            }
-            (Err(issue), _) | (_, Err(issue)) => Err(issue),
         }
     } else if request.method == "start_empty" {
         let host = runtime.host();
@@ -2302,7 +2013,6 @@ pub(crate) fn operation_rows(
     let runtime = app.try_state::<Runtime>().ok_or("initializing")?;
     let mut rows = runtime.sessions.operation_rows()?;
     if let Ok(host) = runtime.host() {
-        rows.extend(host.legacy.operation_rows()?);
         if let Ok(root) = host.component("runtime") {
             use product_contract::operations::{Phase, Row};
             match run_manager_lib::component::search::read(
@@ -2431,15 +2141,7 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
     let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
     let host = runtime.host()?;
     let status = host.status()?;
-    let rows = host.legacy.operation_rows()?;
-    let busy = rows.iter().any(|row| {
-        matches!(
-            row.phase,
-            product_contract::operations::Phase::Running
-                | product_contract::operations::Phase::CancelRequested
-                | product_contract::operations::Phase::Uncancellable
-        )
-    });
+    let busy = false;
     let selected = status
         .get("selected")
         .and_then(Value::as_bool)
@@ -2454,9 +2156,8 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
     } else {
         None
     };
-    let native =
-        serde_json::to_vec(&(status, rows, registry)).map_err(|_| "migration_unavailable")?;
-    let mut summary = product_contract::migration_status::Summary::new(
+    let native = serde_json::to_vec(&(status, registry)).map_err(|_| "migration_unavailable")?;
+    let summary = product_contract::migration_status::Summary::new(
         "workspace",
         env!("CARGO_PKG_VERSION"),
         busy,
@@ -2464,202 +2165,60 @@ pub(crate) fn suite_migration_status(app: &tauri::AppHandle) -> Result<Value, &'
         !selected,
         &native,
     )?;
-    if selected && !busy {
-        summary = summary.with_mappings(crate::migration_ledger::summarize(&host)?)?;
-    }
     serde_json::to_value(summary).map_err(|_| "migration_unavailable")
-}
-
-pub(crate) fn suite_backups(
-    app: &tauri::AppHandle,
-    id: Option<&str>,
-    deadline: u64,
-) -> Result<Value, &'static str> {
-    use product_contract::migration_backup::{Descriptor, Verified};
-    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
-    let host = runtime.host()?;
-    if let Some(id) = id.filter(|id| id.starts_with("runtime_")) {
-        crate::files_host::current_deadline(deadline)?;
-        let digest = id
-            .strip_prefix("runtime_")
-            .ok_or("migration_backup_invalid")?;
-        let (bytes, schema, sha256, logs) = run_manager_lib::component::verify_migration_backup(
-            &host.component("runtime")?,
-            digest,
-        )
-        .map_err(|_| "migration_backup_unavailable")?;
-        crate::files_host::current_deadline(deadline)?;
-        return serde_json::to_value(Verified {
-            owner: "workspace".into(),
-            id: id.into(),
-            acquisition: if logs {
-                "sqlite-and-logs-copy/v1"
-            } else {
-                "sqlite-online-backup/v1"
-            }
-            .into(),
-            bytes,
-            schema,
-            sha256,
-        })
-        .map_err(|_| "migration_backup_invalid");
-    }
-    if let Some(id) = id.filter(|id| id.starts_with("terminal_")) {
-        crate::files_host::current_deadline(deadline)?;
-        let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
-        let verified = crate::terminal_profiles::verify_backup(&terminal, host.storage_root(), id)?;
-        crate::files_host::current_deadline(deadline)?;
-        return serde_json::to_value(verified).map_err(|_| "migration_backup_invalid");
-    }
-    let catalog = host.legacy.catalog()?;
-    if catalog.unrecognized != 0 {
-        return Err("migration_backup_invalid");
-    }
-    if let Some(id) = id {
-        if !catalog.snapshots.iter().any(|snapshot| snapshot.id == id) {
-            return Err("migration_backup_missing");
-        }
-        let snapshot = crate::core::legacy_snapshot::Snapshot::load_checked(
-            &host.storage_root().join("legacy-imports"),
-            id,
-            || crate::files_host::current_deadline(deadline),
-        )?;
-        let verified = Verified {
-            owner: "workspace".into(),
-            id: id.into(),
-            acquisition: "stable-json-files/v1".into(),
-            bytes: snapshot
-                .manifest
-                .files
-                .iter()
-                .map(|file| file.bytes as u64)
-                .sum(),
-            schema: snapshot.manifest.schema_version,
-            sha256: snapshot.id()?,
-        };
-        host.legacy.catalog()?;
-        serde_json::to_value(verified).map_err(|_| "migration_backup_invalid")
-    } else {
-        let mut rows = catalog
-            .snapshots
-            .into_iter()
-            .map(|snapshot| Descriptor {
-                id: snapshot.id,
-                acquisition: "stable-json-files/v1".into(),
-            })
-            .collect::<Vec<_>>();
-        if host.status()?.get("selected").and_then(Value::as_bool) == Some(true) {
-            let terminal =
-                crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
-            rows.extend(crate::terminal_profiles::backup_catalog(&terminal)?);
-            if let Some((digest, logs)) =
-                run_manager_lib::component::migration_backup_digest(&host.component("runtime")?)
-                    .map_err(|_| "migration_backup_unavailable")?
-            {
-                rows.push(Descriptor {
-                    id: format!("runtime_{digest}"),
-                    acquisition: if logs {
-                        "sqlite-and-logs-copy/v1"
-                    } else {
-                        "sqlite-online-backup/v1"
-                    }
-                    .into(),
-                });
-            }
-        }
-        serde_json::to_value(rows).map_err(|_| "migration_backup_invalid")
-    }
-}
-
-pub(crate) fn suite_sources(app: &tauri::AppHandle) -> Result<Value, &'static str> {
-    use crate::core::legacy_snapshot::Snapshot;
-    let runtime = app.try_state::<Runtime>().ok_or("migration_unavailable")?;
-    let host = runtime.host()?;
-    let base = host
-        .storage_root()
-        .parent()
-        .ok_or("migration_source_unavailable")?;
-    let (before, accepted) = crate::migration_ledger::summarize_with_sources(&host)?;
-    let mut rows = product_contract::migration_source::empty("workspace");
-    let catalog = host.legacy.catalog()?;
-    if catalog.unrecognized != 0 {
-        return Err("migration_source_invalid");
-    }
-    for entry in catalog
-        .snapshots
-        .iter()
-        .filter(|entry| accepted.contains(&entry.id))
-    {
-        let retained = Snapshot::load(&host.storage_root().join("legacy-imports"), &entry.id)?;
-        let source = retained.manifest.source;
-        if Snapshot::acquire(base, source, || Ok(()))
-            .and_then(|fresh| fresh.id())
-            .is_ok_and(|id| id == entry.id)
-        {
-            rows.iter_mut()
-                .find(|row| row.identifier == source.identifier())
-                .ok_or("migration_source_invalid")?
-                .backups
-                .push(entry.id.clone());
-        }
-    }
-    if let Some(id) = run_manager_lib::component::migration_source_current(
-        &host.component("runtime")?,
-        &base.join("com.devbox.runmanager"),
-    )
-    .map_err(|_| "migration_source_unavailable")?
-    {
-        rows.iter_mut()
-            .find(|row| row.identifier == "com.devbox.runmanager")
-            .ok_or("migration_source_invalid")?
-            .backups
-            .push(id);
-    }
-    let terminal = crate::private_metadata::MetadataRoot::open(&host.component("terminal")?)?;
-    let ids = crate::terminal_profiles::current_sources(
-        &terminal,
-        host.storage_root(),
-        &base.join("com.devbox.wsldesktop"),
-    )?;
-    rows.iter_mut()
-        .find(|row| row.identifier == "com.devbox.wsldesktop")
-        .ok_or("migration_source_invalid")?
-        .backups
-        .extend(ids);
-    if crate::migration_ledger::summarize(&host)? != before {
-        return Err("migration_source_changed");
-    }
-    serde_json::to_value(rows).map_err(|_| "migration_source_invalid")
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn retired_import_methods_are_denied_and_current_templates_remain() {
+        for (component, route, parts) in [
+            (
+                "workspace.migration",
+                "overview",
+                vec!["prepare", "legacy", "snapshot"],
+            ),
+            (
+                "workspace.files",
+                "files",
+                vec!["preview", "session", "import"],
+            ),
+            (
+                "workspace.lsp",
+                "files",
+                vec!["preview", "lsp", "config", "import"],
+            ),
+            (
+                "workspace.terminal",
+                "terminal",
+                vec!["start", "terminal", "import"],
+            ),
+            (
+                "workspace.runtime",
+                "tasks",
+                vec!["runtime", "import", "prepare"],
+            ),
+        ] {
+            let method = parts.join("_");
+            assert!(!allowed(component, route, &method));
+            assert!(!migration_method(component, &method));
+        }
+        assert!(allowed("workspace.migration", "overview", "start_empty"));
+        assert!(migration_method("workspace.registry", "snapshot"));
+        assert!(allowed("workspace.registry", "overview", "save_template"));
+        assert!(allowed(
+            "workspace.registry",
+            "overview",
+            "preview_template_profile_wsl"
+        ));
+    }
     fn after_ms(milliseconds: u64) -> u64 {
         std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_millis() as u64
             + milliseconds
-    }
-    #[test]
-    fn migration_allowlist_includes_metadata_imports_without_opening_files_or_servers() {
-        for (component, method) in [
-            ("workspace.files", "apply_session_import"),
-            ("workspace.files", "preview_recovery_restore"),
-            ("workspace.lsp", "apply_lsp_config_import"),
-        ] {
-            assert!(migration_method(component, method));
-        }
-        for (component, method) in [
-            ("workspace.files", "open_file"),
-            ("workspace.files", "save_file"),
-            ("workspace.lsp", "open_lsp_document"),
-            ("workspace.terminal", "open_terminal_profile"),
-            ("workspace.runtime", "start_service"),
-        ] {
-            assert!(!migration_method(component, method));
-        }
     }
     #[tokio::test]
     async fn a_file_write_waits_for_the_retained_reader_and_enters_only_once() {
@@ -2808,18 +2367,6 @@ mod tests {
             .enter(changes_context("save_lsp_config"))
             .is_err());
         drop(reading);
-        for method in [
-            "preview_lsp_config_import",
-            "apply_lsp_config_import",
-            "cancel_lsp_config_import",
-            "list_lsp_config_history",
-            "preview_lsp_config_restore",
-        ] {
-            assert!(crate::lsp_host::allowed(method));
-            assert!(crate::lsp_host::contextual(method));
-            assert_eq!(file_access(method), None);
-        }
-        assert!(changes_context("apply_lsp_config_import"));
         let writing = runtime
             .context_activity
             .enter(changes_context("save_lsp_config"))
@@ -2831,7 +2378,7 @@ mod tests {
         assert!(runtime.context_activity.enter(false).is_err());
         assert!(runtime
             .context_activity
-            .enter(changes_context("apply_lsp_config_import"))
+            .enter(changes_context("save_lsp_config"))
             .is_err());
         drop(writing);
         assert!(runtime.context_activity.enter(false).is_ok());
@@ -2915,7 +2462,6 @@ mod tests {
         for (component, route, method) in [
             ("workspace.registry", "overview", "snapshot"),
             ("workspace.migration", "overview", "status"),
-            ("workspace.migration", "overview", "prepare_legacy_snapshot"),
             ("workspace.definitions", "overview", "load"),
             (
                 "workspace.dependencies",
@@ -2934,147 +2480,5 @@ mod tests {
                 "the product shell would reject {component} before its domain adapter"
             );
         }
-    }
-    #[test]
-    fn window_geometry_changes_require_the_migration_overview_role() {
-        for method in [
-            "preview_window_import",
-            "preview_window_restore",
-            "apply_window_import",
-            "cancel_window_import",
-            "list_window_history",
-        ] {
-            assert!(allowed("workspace.migration", "overview", method));
-            assert!(!allowed("workspace.migration", "files", method));
-            assert!(!allowed("workspace.files", "overview", method));
-            assert!(!allowed("workspace.registry", "overview", method));
-        }
-    }
-    #[test]
-    fn legacy_snapshot_admission_rejects_renderer_paths_and_foreign_roles() {
-        let root = tempfile::tempdir().unwrap();
-        let host = Host::open(root.path()).unwrap();
-        for args in [
-            json!({"source":"workbench","path":"C:\\foreign"}),
-            json!({"source":"unknown"}),
-            json!({"source":"code-pad","destination":"C:\\foreign"}),
-        ] {
-            assert_eq!(
-                dispatch(&host, "prepare_legacy_snapshot", args),
-                Err("invalid_request")
-            );
-        }
-        assert!(host.legacy.status().unwrap().is_none());
-        assert_eq!(
-            dispatch(&host, "list_legacy_snapshots", json!({"path":"foreign"})),
-            Err("invalid_request")
-        );
-        assert_eq!(
-            dispatch(
-                &host,
-                "verify_legacy_snapshot",
-                json!({"snapshotId":"../foreign"})
-            ),
-            Err("invalid_legacy_snapshot")
-        );
-        assert!(!allowed(
-            "workspace.files",
-            "files",
-            "verify_legacy_snapshot"
-        ));
-        assert!(!allowed(
-            "workspace.migration",
-            "source",
-            "list_legacy_snapshots"
-        ));
-        assert!(!root.path().join("legacy-imports").exists());
-        assert!(!allowed(
-            "workspace.source",
-            "overview",
-            "prepare_legacy_snapshot"
-        ));
-        assert!(!allowed(
-            "workspace.migration",
-            "files",
-            "prepare_legacy_snapshot"
-        ));
-        assert!(!allowed(
-            "workspace.migration",
-            "overview",
-            "apply_registration"
-        ));
-    }
-    #[test]
-    fn registry_and_activation_roles_are_closed_and_probes_remain_bounded() {
-        assert!(allowed(
-            "workspace.registry",
-            "overview",
-            "resolve_legacy_reference"
-        ));
-        for route in ["files", "source", "runtime", "terminal", "dependencies"] {
-            assert!(!allowed(
-                "workspace.registry",
-                route,
-                "resolve_legacy_reference"
-            ));
-        }
-        assert!(!project_probe("resolve_legacy_reference"));
-        assert!(allowed("workspace.registry", "overview", "preview_windows"));
-        for method in [
-            "list_wsl_distros",
-            "preview_wsl",
-            "preview_template_profile_wsl",
-            "preview_imported_profile_wsl",
-        ] {
-            assert!(allowed("workspace.registry", "overview", method));
-            assert!(!allowed("workspace.registry", "files", method));
-            assert!(!allowed("workspace.registry", "source", method));
-            assert!(project_probe(method));
-        }
-        for method in [
-            "preview_windows",
-            "preview_imported_profile_windows",
-            "preview_template_profile_windows",
-            "preview_legacy_workspace_windows",
-            "select_project",
-        ] {
-            assert!(project_probe(method));
-            assert!(allowed("workspace.registry", "overview", method));
-        }
-        for method in [
-            "preview_template_import",
-            "apply_template_import",
-            "cancel_template_import",
-        ] {
-            assert!(allowed("workspace.migration", "overview", method));
-            assert!(!allowed("workspace.migration", "files", method));
-            assert!(!allowed("workspace.registry", "overview", method));
-            assert!(!project_probe(method));
-        }
-        assert!(!project_probe("legacy_workspace"));
-        assert!(allowed(
-            "workspace.migration",
-            "overview",
-            "legacy_workspace"
-        ));
-        assert!(!allowed("workspace.migration", "files", "legacy_workspace"));
-        assert!(!allowed(
-            "workspace.migration",
-            "overview",
-            "apply_registration"
-        ));
-        for route in ["tasks", "runtime", "logs"] {
-            assert!(allowed("workspace.registry", route, "snapshot"));
-            assert!(!allowed("workspace.registry", route, "run_job_now"));
-        }
-        assert!(!allowed("workspace.registry", "unknown", "snapshot"));
-        assert!(!allowed("workspace.shell", "overview", "start_empty"));
-        let pool = Pool::default();
-        let one = pool.reserve().unwrap();
-        let two = pool.reserve().unwrap();
-        assert!(pool.reserve().is_err());
-        drop(one);
-        assert!(pool.reserve().is_ok());
-        drop(two);
     }
 }

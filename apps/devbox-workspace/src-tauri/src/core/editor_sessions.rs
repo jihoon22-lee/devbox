@@ -113,7 +113,7 @@ mod tests {
 }
 
 use serde_json::Value;
-fn known_shape(raw: &Value, normalized: &Value, cursor_aliases: bool) -> bool {
+pub(super) fn known_shape(raw: &Value, normalized: &Value, cursor_aliases: bool) -> bool {
     match (raw, normalized) {
         (Value::Object(raw), Value::Object(normalized)) => raw.iter().all(|(key, value)| {
             let key =
