@@ -6,8 +6,6 @@ mod federation;
 mod handoff;
 mod knowledge;
 mod lifecycle;
-mod migration;
-mod migration_export;
 mod mock_draft;
 mod platform;
 mod service_worker;
@@ -15,14 +13,6 @@ use suite_runtime as suite;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
-    let args: Vec<String> = std::env::args().skip(1).collect();
-    if let Some(stage) =
-        migration_export::worker_argument(&args).expect("invalid import worker arguments")
-    {
-        migration_export::run_worker(stage, tauri::generate_context!())
-            .expect("import worker failed");
-        return;
-    }
     if let Some(profile) = service_worker::argument(&std::env::args().collect::<Vec<_>>())
         .expect("invalid service worker arguments")
     {

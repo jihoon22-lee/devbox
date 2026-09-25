@@ -32,7 +32,6 @@ const CONTROL_COMMANDS: &[(&str, &str)] = &[
     ("api-studio.api", "disconnect_websocket"),
     ("api-studio.webhooks", "stop_server"),
     ("api-studio.webhooks", "quit_product"),
-    ("api-studio.migration", "cancel_migration"),
 ];
 fn execution_class(component: &str, method: &str) -> ExecutionClass {
     if CONTROL_COMMANDS.contains(&(component, method)) {
@@ -72,9 +71,6 @@ struct Response {
 
 fn allowed(component: &str, route: &str, method: &str) -> bool {
     match component {
-        "api-studio.migration" => {
-            route == "requests" && crate::migration::COMMANDS.contains(&method)
-        }
         "api-studio.api" => {
             if route == "protocols"
                 && (crate::knowledge::is_command(component, method)
@@ -175,37 +171,6 @@ async fn execute(
     )
     .map_err(problem)?;
     let app = window.app_handle();
-    if request.component != "api-studio.migration" {
-        crate::migration::require_active(app).map_err(|_| problem(ProblemCode::Unavailable))?;
-    }
-    if request.component == "api-studio.migration" {
-        let result = crate::migration::dispatch(app, &request.method, request.args).await;
-        let (outcome, value, failure) = match result {
-            Ok(value) => (OperationState::Succeeded {}, value, None),
-            Err(error) => {
-                let issue = crate::migration::issue(&error);
-                (
-                    if issue == "cancelled" {
-                        OperationState::Cancelled {}
-                    } else {
-                        OperationState::Failed {
-                            code: ProblemCode::Unavailable,
-                        }
-                    },
-                    serde_json::json!({ "issue": issue }),
-                    Some(issue),
-                )
-            }
-        };
-        operation.finish(&outcome, failure);
-        return Ok(Response {
-            operation: Operation {
-                provenance,
-                outcome,
-            },
-            value,
-        });
-    }
     crate::lifecycle::require_open(app).map_err(|_| problem(ProblemCode::Unavailable))?;
     let value = if request.component == "api-studio.api"
         && crate::api_workspace::COMMANDS.contains(&request.method.as_str())
@@ -339,7 +304,6 @@ pub fn plugin() -> tauri::plugin::TauriPlugin<tauri::Wry> {
     tauri::plugin::Builder::new("api-studio")
         .setup(|app, _| {
             app.manage(Active::default());
-            crate::migration::initialize(app).map_err(std::io::Error::other)?;
             let store = crate::handoff::initialize(app).map_err(std::io::Error::other)?;
             crate::mock_draft::initialize(app, store.clone()).map_err(std::io::Error::other)?;
             api_playground_lib::component::initialize(app, store.clone())

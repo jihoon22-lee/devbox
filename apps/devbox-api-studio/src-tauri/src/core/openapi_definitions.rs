@@ -142,7 +142,7 @@ impl Store {
         Ok(self.directory.join(format!("{id}.json")))
     }
     pub fn get(&self, id: &str) -> Result<Definition, String> {
-        let raw = super::import_repository::read_file(&self.path(id)?, MAX_BYTES)
+        let raw = super::store_file::read_file(&self.path(id)?, MAX_BYTES)
             .map_err(|_| STORAGE)?
             .ok_or(INVALID)?;
         let definition: Definition = serde_json::from_str(&raw).map_err(|_| INVALID)?;

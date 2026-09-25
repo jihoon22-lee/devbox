@@ -1,6 +1,6 @@
 {
   "schemaVersion": 3,
-  "catalogRevision": 14,
+  "catalogRevision": 15,
   "channel": "stable",
   "products": [
     {
@@ -75,13 +75,6 @@
       "id": "api-studio.transforms",
       "owner": "api-studio",
       "authority": "transform-local",
-      "lifecycle": "product",
-      "protocolVersion": 1
-    },
-    {
-      "id": "api-studio.migration",
-      "owner": "api-studio",
-      "authority": "legacy-import",
       "lifecycle": "product",
       "protocolVersion": 1
     },

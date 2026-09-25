@@ -1,8 +1,8 @@
 //! Interactive listener close policy. Service workers have a separate process
 //! entry point and are never stopped by this interactive instance's controls.
 use crate::core::{
-    import_repository::read_file,
     lifecycle::{close_action, CloseAction, ClosePolicy},
+    store_file::read_file,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};

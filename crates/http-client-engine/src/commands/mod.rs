@@ -5,7 +5,6 @@ pub mod handoff;
 pub mod mcp;
 pub mod mcp_oauth;
 pub mod mcp_stdio;
-pub(crate) mod migration;
 pub mod openapi;
 pub(crate) mod process_tree;
 pub mod request;
