@@ -181,3 +181,21 @@ it("versions preview sources across identical reopenings and edits without chang
   await note.openPath("A.md", () => true);
   expect(note.snapshot().sourceVersion).toBeGreaterThan(edited);
 });
+
+  it("saves through the switch hook before asking to discard", async () => {
+    const { note, write } = await fixture();
+    const discard = vi.fn(() => false);
+    note.setBeforeSwitch(() => note.save());
+    note.edit("changed");
+    expect(await note.openPath("B.md", discard)).toBe(true);
+    expect(write).toHaveBeenCalledWith("A.md", "changed", "disk-1");
+    expect(discard).not.toHaveBeenCalled();
+  });
+it("preserves the newest open intent while pre-switch saves are waiting", async () => {
+  const {note} = await fixture(), older=deferred<void>(), newer=deferred<void>();
+  note.edit("dirty"); note.setBeforeSwitch(vi.fn().mockReturnValueOnce(older.promise).mockReturnValueOnce(newer.promise));
+  const first=note.open(async()=>({path:"first.md",content:"first",revision:"r"}),()=>true);
+  const second=note.open(async()=>({path:"second.md",content:"second",revision:"r"}),()=>true);
+  newer.resolve(); expect(await second).toBe(true); older.resolve(); expect(await first).toBe(false);
+  expect(note.snapshot().path).toBe("second.md");
+});
